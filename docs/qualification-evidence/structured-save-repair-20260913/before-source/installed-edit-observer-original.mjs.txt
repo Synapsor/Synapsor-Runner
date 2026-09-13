@@ -1,0 +1,91 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {DatabaseSync} from 'node:sqlite';
+import {once} from 'node:events';
+import assert from 'node:assert/strict';
+import * as driver from './runtime-driver.mjs';
+import {verifyPackedStructuredSave} from '/home/sandesh-tiwari/Desktop/C++/synapsor-runner/scripts/verify-packed-structured-save.mjs';
+const {PublicMcp,PgRelay,operator,owner,sourceSnapshot,ledgerSnapshot,runtime,timeout,schedule,log}=driver;
+const current=kind=>{const db=new DatabaseSync(path.join(owner.project,'.synapsor/local.db'),{readOnly:true});try {
+ const rows=db.prepare('SELECT a.name,a.revision_id,r.content_json FROM control_policy_active a JOIN control_policy_revisions r USING(deployment_id,scope_key,kind,name,revision_id) WHERE a.kind=? AND a.revision_id IS NOT NULL').all(kind);
+ assert.equal(rows.length,1);return {...rows[0],content:JSON.parse(rows[0].content_json)};
+}finally{db.close();}};
+const marker=async(name,value)=>{await fs.writeFile(path.join(runtime,name+'.json'),JSON.stringify({at:new Date().toISOString(),...value},null,2)+'\n',{flag:'wx'});console.log(name+': '+JSON.stringify(value));};
+const waitFor=async(test,ms,label)=>{const deadline=Date.now()+ms;for(;;){const value=await test();if(value)return value;assert(Date.now()<deadline,label+' deadline');await new Promise(r=>setTimeout(r,50));}};
+const signal=async name=>{try{return JSON.parse(await fs.readFile(path.join(runtime,name+'.json'),'utf8'));}catch(e){if(e.code==='ENOENT')return undefined;throw e;}};
+const result={case:owner.case,status:'running'},relay=new PgRelay(),client=new PublicMcp();
+let waiting;
+try {
+ assert(['edit','replacement_first','admission_first'].includes(owner.case));
+ await relay.start();await client.start({relay,inspector:false});
+ result.client_pid=client.child.pid;
+ await client.call('app.describe_actions',{});
+ const rows=await client.call('app.explore_data',{plan:{kind:'rows',resource:'reserve_ops.claims',select:['claim_ref','reserve_cents']}});assert(rows.ok);
+ const args=(claim,desired)=>{const i=rows.data.findIndex(r=>r.claim_ref===claim);assert(i>=0);return {outcome:'reserve_ops.adjust_claim_reserve',subject_refs:{selected_claim:rows.subjects.find(s=>s.row_index===i).ref},inputs:{desired_cents:desired}};};
+ const baseline=ledgerSnapshot('edit-before'),source=await sourceSnapshot('edit-before'),original=current('action');assert.equal(baseline.approvals.length,1);
+ assert(baseline.approvals.every(a=>a.approver.startsWith('policy:')&&a.status==='approved'));
+ assert(baseline.approvals.every(a=>Date.parse(a.created_at)>=Date.now()-86400000),'Saved legitimate history must still lie in the unchanged rolling window');
+ schedule('installed '+owner.case+' exact automatic limit edit');
+ if(owner.case==='edit'){
+  result.unstarted=await client.call('app.request_change',args('CL-901',2000));assert(result.unstarted.ok);assert.equal(result.unstarted.proposal.status,'approved');
+ }
+ result.draft=await verifyPackedStructuredSave({driver,spelling:owner.case==='admission_first'?'start':'onboard'});
+ if(owner.case==='admission_first'){
+  result.admission_first=await client.call('app.request_change',args('CL-103',25000));assert(result.admission_first.ok);assert.equal(result.admission_first.proposal.status,'approved');
+  log('admission_completed_while_original_current',{revision:current('action').revision_id});assert.equal(current('action').revision_id,original.revision_id);
+ }
+ const admitted=ledgerSnapshot('edit-pre-publication');
+ assert.equal(admitted.approvals.length,owner.case==='replacement_first'?1:2);
+ const added=admitted.proposals.filter(p=>!baseline.proposals.some(b=>b.proposal_id===p.proposal_id));
+ if(owner.case!=='replacement_first'){
+  assert.equal(added.length,1);result.unstarted_proposal_id=added[0].proposal_id;
+  assert.equal(admitted.worker_queue.find(q=>q.proposal_id===added[0].proposal_id).status,'queued');
+ }
+ await marker('operator-review-ready',{case:owner.case,original_revision:original.revision_id,history:admitted.approvals.length,client_pid:client.child.pid});
+ if(owner.case==='replacement_first'){
+  // The operator reaches its real final confirmation before this timed request.
+  // The signal coordinates only the harness, never authority or request payloads.
+  await waitFor(()=>signal('begin-order'),600000,'operator preparation');
+  relay.arm();const held=once(relay,'held');waiting=client.call('app.request_change',args('CL-103',25000));waiting.catch(()=>{});
+  await timeout(held,8000,'old rule facts held');
+  await marker('publication-ready',{revision_id:original.revision_id,history:1});
+ }
+ const replacement=await waitFor(()=>{const value=current('action');return value.revision_id!==original.revision_id?value:undefined;},owner.case==='replacement_first'?20000:600000,'operator publication');
+ result.revisions={before:original.revision_id,after:replacement.revision_id};log('installed_publication_observed',result.revisions);
+ const oldAuthority=original.content.authority.authority,newAuthority=replacement.content.authority.authority;
+ assert.deepEqual(newAuthority.catalog,oldAuthority.catalog);
+ const ruleSource=rules=>rules.map(({activated_at,...rule})=>rule);
+ assert.deepEqual(ruleSource(newAuthority.rules),ruleSource(oldAuthority.rules));
+ const expectedClasses=structuredClone(oldAuthority.approval_classes);let edits=0;
+ for(const approval of expectedClasses)for(const limit of approval.shared_limits??[])if(limit.id==='reserve_adjustment_per_insurer_24h'){
+  assert.equal(limit.maximum,3);assert.equal(limit.window_seconds,86400);assert.equal(limit.scope,'tenant');limit.maximum=1;edits++;
+ }
+ assert.equal(edits,1);assert.deepEqual(newAuthority.approval_classes,expectedClasses);
+ result.exact_edit={tenant_maximum:[3,1],unchanged_catalog:true,unchanged_rule_verification_effect:true,unchanged_other_approval_semantics:true};
+ if(waiting){
+  relay.release();result.old_request=await waiting;assert.equal(result.old_request.ok,false);assert(JSON.stringify(result.old_request).includes('SEMANTIC_ACTION_UNAVAILABLE'));
+  const refused=ledgerSnapshot('edit-stale-refused');assert.deepEqual(refused.approvals,admitted.approvals);assert.deepEqual(refused.worker_queue,admitted.worker_queue);
+ }
+ await marker('replacement-observed',{...result.revisions,needs_execution_review:owner.case==='edit'});
+ if(owner.case==='edit'){
+  const execution=await waitFor(()=>{const value=current('execution');return value.content.policy.enabled&&value.content.policy.outcomes.some(o=>o.outcome==='reserve_ops.adjust_claim_reserve'&&o.action_boundary_digest===newAuthority.action_boundary.digest)?value:undefined;},600000,'separate exact execution review');
+  result.reviewed_execution_revision=execution.revision_id;
+  assert.notEqual(execution.revision_id,baseline.control_policy_active.find(p=>p.kind==='execution').revision_id);
+ }
+ result.current_actions=await client.call('app.describe_actions',{});
+ const freshRows=await client.call('app.explore_data',{plan:{kind:'rows',resource:'reserve_ops.claims',select:['claim_ref','reserve_cents']}});assert(freshRows.ok);
+ const claim=owner.case==='admission_first'?'CL-901':'CL-103';const i=freshRows.data.findIndex(r=>r.claim_ref===claim);assert(i>=0);
+ result.fresh=await client.call('app.request_change',{outcome:'reserve_ops.adjust_claim_reserve',subject_refs:{selected_claim:freshRows.subjects.find(s=>s.row_index===i).ref},inputs:{desired_cents:claim==='CL-901'?2000:25000}});
+ assert(result.fresh.ok);assert.equal(result.fresh.proposal.status,'pending_review');
+ if(owner.case==='edit'){
+  const beforeWorker=ledgerSnapshot('edit-before-worker');
+  result.worker=await operator(['worker','run','--supervised','--once','--yes','--config','synapsor.actions.runner.json','--worker-id','semantic_action_worker']);
+  const after=ledgerSnapshot('edit-after-worker');assert.deepEqual(after.approvals,admitted.approvals);assert.deepEqual(after.writeback_receipts,baseline.writeback_receipts);
+  const old=after.worker_queue.find(q=>q.proposal_id===result.unstarted_proposal_id);assert.equal(old.lease_id,null);assert.equal(old.attempts,0);
+  assert.equal(after.writeback_jobs.length,beforeWorker.writeback_jobs.length);result.old_unstarted_queue=old;
+ }
+ const final=ledgerSnapshot('edit-final');assert.deepEqual(final.approvals,admitted.approvals);
+ assert.deepEqual(await sourceSnapshot('edit-final'),source);assert.equal(client.child.pid,result.client_pid);
+ result.status='passed_installed_'+owner.case;result.history_retained=admitted.approvals.length;result.already_dispatched='not exercised by this old-unstarted-work check';
+}catch(e){result.status='failed_or_incomplete';result.error=e.stack;process.exitCode=1;log('edit_failure',{message:e.message});}
+finally{if(relay.held)relay.release();await client.close();if(relay.server)await relay.close();await fs.writeFile(path.join(runtime,'edit-result.json'),JSON.stringify(result,null,2)+'\n',{flag:'wx'});console.log(JSON.stringify(result));}

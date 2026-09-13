@@ -11,9 +11,9 @@ const current=kind=>{const db=new DatabaseSync(path.join(owner.project,'.synapso
  assert.equal(rows.length,1);return {...rows[0],content:JSON.parse(rows[0].content_json)};
 }finally{db.close();}};
 const marker=async(name,value)=>{await fs.writeFile(path.join(runtime,name+'.json'),JSON.stringify({at:new Date().toISOString(),...value},null,2)+'\n',{flag:'wx'});console.log(name+': '+JSON.stringify(value));};
-const waitFor=async(test,ms,label)=>{const deadline=Date.now()+ms;for(;;){const value=await test();if(value)return value;assert(Date.now()<deadline,label+' deadline');await new Promise(r=>setTimeout(r,50));}};
+const waitFor=async(test,ms,label)=>{const deadline=Date.now()+ms;for(;;){let value;try{value=await test();}catch(error){if(error.code!=='ERR_SQLITE_ERROR'||error.errcode!==5)throw error;log('observer_sqlite_busy',{code:error.code,errcode:error.errcode});}if(value)return value;assert(Date.now()<deadline,label+' deadline');await new Promise(r=>setTimeout(r,50));}};
 const signal=async name=>{try{return JSON.parse(await fs.readFile(path.join(runtime,name+'.json'),'utf8'));}catch(e){if(e.code==='ENOENT')return undefined;throw e;}};
-const result={case:owner.case,status:'running'},relay=new PgRelay(),client=new PublicMcp();
+const result={case:owner.case,fixture:owner.fixture??owner.case,status:'running'},relay=new PgRelay(),client=new PublicMcp();
 let waiting;
 try {
  assert(['edit','replacement_first','admission_first'].includes(owner.case));
@@ -55,7 +55,18 @@ try {
  const oldAuthority=original.content.authority.authority,newAuthority=replacement.content.authority.authority;
  assert.deepEqual(newAuthority.catalog,oldAuthority.catalog);
  const ruleSource=rules=>rules.map(({activated_at,...rule})=>rule);
- assert.deepEqual(ruleSource(newAuthority.rules),ruleSource(oldAuthority.rules));
+ const readPointer=baseline.control_policy_active.find(p=>p.kind==='read');
+ const oldRead=JSON.parse(baseline.control_policy_revisions.find(p=>p.revision_id===readPointer.revision_id).content_json).boundary;
+ const currentRead=current('read').content.boundary;
+ // The saved fixture exports kept-out fields in canonical scope order. The
+ // documented Read review must bind its resulting exact digest, even when the
+ // only pack difference is order within this field set. Compare all semantics.
+ const normalizeRead=pack=>{const copy=structuredClone(pack);for(const resource of copy.resources)if(resource.kept_out_fields)resource.kept_out_fields.sort();return copy;};
+ assert.deepEqual(normalizeRead(currentRead.pack),normalizeRead(oldRead.pack));
+ assert(oldAuthority.rules.every(rule=>rule.read_boundary_name===currentRead.pack.name));
+ const expectedRules=ruleSource(oldAuthority.rules).map(rule=>({...rule,read_boundary_digest:currentRead.activation.digest}));
+ assert.deepEqual(ruleSource(newAuthority.rules),expectedRules);
+ result.read_review={before_digest:oldRead.activation.digest,after_digest:currentRead.activation.digest,unchanged_pack_except_kept_out_field_set_order:true};
  const expectedClasses=structuredClone(oldAuthority.approval_classes);let edits=0;
  for(const approval of expectedClasses)for(const limit of approval.shared_limits??[])if(limit.id==='reserve_adjustment_per_insurer_24h'){
   assert.equal(limit.maximum,3);assert.equal(limit.window_seconds,86400);assert.equal(limit.scope,'tenant');limit.maximum=1;edits++;
@@ -65,6 +76,7 @@ try {
  if(waiting){
   relay.release();result.old_request=await waiting;assert.equal(result.old_request.ok,false);assert(JSON.stringify(result.old_request).includes('SEMANTIC_ACTION_UNAVAILABLE'));
   const refused=ledgerSnapshot('edit-stale-refused');assert.deepEqual(refused.approvals,admitted.approvals);assert.deepEqual(refused.worker_queue,admitted.worker_queue);
+  for(const table of ['control_policy_effect_admissions','control_policy_budget_requests','writeback_jobs','writeback_receipts'])assert.deepEqual(refused[table],admitted[table],table);
  }
  await marker('replacement-observed',{...result.revisions,needs_execution_review:owner.case==='edit'});
  if(owner.case==='edit'){
@@ -74,7 +86,12 @@ try {
  }
  result.current_actions=await client.call('app.describe_actions',{});
  const freshRows=await client.call('app.explore_data',{plan:{kind:'rows',resource:'reserve_ops.claims',select:['claim_ref','reserve_cents']}});assert(freshRows.ok);
- const claim=owner.case==='admission_first'?'CL-901':'CL-103';const i=freshRows.data.findIndex(r=>r.claim_ref===claim);assert(i>=0);
+ if(owner.case==='replacement_first'){
+  const oldIndex=freshRows.data.findIndex(row=>row.claim_ref==='CL-103');assert(oldIndex>=0);
+  result.same_subject_duplicate=await client.call('app.request_change',{outcome:'reserve_ops.adjust_claim_reserve',subject_refs:{selected_claim:freshRows.subjects.find(s=>s.row_index===oldIndex).ref},inputs:{desired_cents:25000}});
+  assert.equal(result.same_subject_duplicate.error_code,'PROPOSAL_ALREADY_EXISTS');
+ }
+ const claim=owner.case==='edit'?'CL-103':'CL-901';const i=freshRows.data.findIndex(r=>r.claim_ref===claim);assert(i>=0);
  result.fresh=await client.call('app.request_change',{outcome:'reserve_ops.adjust_claim_reserve',subject_refs:{selected_claim:freshRows.subjects.find(s=>s.row_index===i).ref},inputs:{desired_cents:claim==='CL-901'?2000:25000}});
  assert(result.fresh.ok);assert.equal(result.fresh.proposal.status,'pending_review');
  if(owner.case==='edit'){

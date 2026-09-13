@@ -1,0 +1,159 @@
+Script started on 2026-09-12 20:45:57-07:00 [COMMAND="node '/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/invoke-interactive.mjs' action review --project-root ." TERM="xterm-256color" TTY="/dev/pts/1" COLUMNS="80" LINES="24"]
+(node:1643740) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[?1049h[H[2J[?25l[2K    ACTION BOUNDARY
+[2K    The Action Boundary is the reviewed set of changes an agent may propose.
+[2K    Approval and apply stay outside the agent.
+[2K  ... 6 rows hidden ...
+[2K    Caller-supplied actions: active 0 | drafts 0 | proposal-only by default.
+[2K    Targets with at least one proposal operation 2 | Fully blocked 0.
+[2K
+[2K    > Verified Action Boundary [SAVED - ACCESS RECHECK REQUIRED]
+[2K        reviewed_staging_actions | 1 reviewed outcome behind
+[2K        app.request_change
+[2K      Change a verified outcome with a model [recommended]
+[2K        Describe the business-policy change. Runner retains the exact
+[2K        baseline and saves only a disabled replacement.
+[2K      Edit business rules manually
+[2K        Create or edit one supported proposal-only rule. Changes stay
+[2K        disabled until separate review; unsupported rules remain unchanged.
+[2K      Caller-supplied Action Boundary [OFF]
+[2K        No agent change authority is active or drafted.
+[2K  ... 14 rows hidden ...
+[2K        evidence.
+[2K      Quit
+[2K
+[2K    Up/Down Navigate   Enter Select   Esc Back   Q Quit
+[2K    PgUp/PgDn Scroll hidden details[23F[0J[?25h[?25l[2K    VERIFIED ACTION BOUNDARY
+[2K    SAVED AUTHORITY - READ DEPENDENCY UNAVAILABLE  reviewed_staging_actions
+[2K    +--------------------+---------------------------------------------------+
+[2K  ... 37 rows hidden ...
+[2K    The saved activation is unchanged until you separately confirm this exact
+[2K    replacement.
+[2K
+[2K    > Activate this exact proposal authority
+[2K        Agents may nominate these outcomes; approval and apply remain
+[2K        separate.
+[2K      View replacement draft details
+[2K        Shows private fields, refusals, examples, and digests for the
+[2K        disabled revision.
+[2K      View saved activation details
+[2K        Shows the exact saved rules; current Read dependencies still
+[2K        determine availability.
+[2K      Edit business rules manually
+[2K        The current draft and live permissions stay unchanged until a
+[2K  ... 8 rows hidden ...
+[2K        Stops app.request_change for these outcomes; source data is unchanged.
+[2K      Back
+[2K
+[2K    Up/Down Navigate   Enter Select   Esc Back
+[2K    PgUp/PgDn Scroll hidden details[23F[2K    VERIFIED ACTION BOUNDARY
+[2K    SAVED AUTHORITY - READ DEPENDENCY UNAVAILABLE  reviewed_staging_actions
+[2K    +--------------------+---------------------------------------------------+
+[2K  ... 40 rows hidden ...
+[2K      Activate this exact proposal authority
+[2K        Agents may nominate these outcomes; approval and apply remain
+[2K        separate.
+[2K    > View replacement draft details
+[2K        Shows private fields, refusals, examples, and digests for the
+[2K        disabled revision.
+[2K      View saved activation details
+[2K        Shows the exact saved rules; current Read dependencies still
+[2K        determine availability.
+[2K      Edit business rules manually
+[2K        The current draft and live permissions stay unchanged until a
+[2K        separate review activates a disabled replacement.
+[2K      Describe a verified outcome change with a model
+[2K        Retains the exact current Read and Action baseline; any replacement
+[2K  ... 5 rows hidden ...
+[2K        Stops app.request_change for these outcomes; source data is unchanged.
+[2K      Back
+[2K
+[2K    Up/Down Navigate   Enter Select   Esc Back
+[2K    PgUp/PgDn Scroll hidden details[23F[0J[?25h[?25l[2K    EXACT REPLACEMENT DRAFT DETAILS
+[2K    Existing requests: 1 tied to the previous rules (0 awaiting review, 1
+[2K    approved or in progress, 0 needing a receipt check).
+[2K    Earlier requests and approvals are not rewritten. No request is rejected
+[2K    or cancelled by this review.
+[2K    1 queued or waiting to retry. To stop one before its next lease, use
+[2K    "/usr/bin/node" "/home/sandesh-tiwari/Desktop/C++/Progress docs
+[2K    tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/frozen/i
+[2K    nstalled/node_modules/@synapsor/runner/dist/cli.js" worker cancel
+[2K    <reference> --yes --config ./synapsor.actions.runner.json.
+[2K    Any later decision rechecks the request state and required operator
+[2K    authorization; the snapshot is not permission to act.
+[2K    A change already dispatched may finish under its admitted rules. Check
+[2K    its receipt before retrying; replacement never undoes a completed
+[2K    database change.
+[2K    From the project directory, inspect each request with "/usr/bin/node"
+[2K    "/home/sandesh-tiwari/Desktop/C++/Progress docs
+[2K    tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/frozen/i
+[2K  ... 1185 rows hidden ...
+[2K
+[2K    > Back to Action Boundary
+[2K
+[2K    Up/Down Navigate   Enter Select   Esc Back
+[2K    PgUp/PgDn Scroll hidden details[23F[0J[?25h[?25l[2K    VERIFIED ACTION BOUNDARY
+[2K    SAVED AUTHORITY - READ DEPENDENCY UNAVAILABLE  reviewed_staging_actions
+[2K    +--------------------+---------------------------------------------------+
+[2K  ... 37 rows hidden ...
+[2K    The saved activation is unchanged until you separately confirm this exact
+[2K    replacement.
+[2K
+[2K    > Activate this exact proposal authority
+[2K        Agents may nominate these outcomes; approval and apply remain
+[2K        separate.
+[2K      View replacement draft details
+[2K        Shows private fields, refusals, examples, and digests for the
+[2K        disabled revision.
+[2K      View saved activation details
+[2K        Shows the exact saved rules; current Read dependencies still
+[2K        determine availability.
+[2K      Edit business rules manually
+[2K        The current draft and live permissions stay unchanged until a
+[2K  ... 8 rows hidden ...
+[2K        Stops app.request_change for these outcomes; source data is unchanged.
+[2K      Back
+[2K
+[2K    Up/Down Navigate   Enter Select   Esc Back
+[2K    PgUp/PgDn Scroll hidden details[23F[0J[?25h[?25l[2K    CONFIRM REVIEWED DECISION
+[2K    Default: no
+[2K
+[2K      Yes
+[2K        Activate verified Action Boundary "reviewed_staging_actions"?
+[2K    > No
+[2K        Leave this decision unchanged or return.
+[2K
+[2K    Up/Down Navigate   Enter Select   Esc Back[8F[2K    CONFIRM REVIEWED DECISION
+[2K    Default: no
+[2K
+[2K    > Yes
+[2K        Activate verified Action Boundary "reviewed_staging_actions"?
+[2K      No
+[2K        Leave this decision unchanged or return.
+[2K
+[2K    Up/Down Navigate   Enter Select   Esc Back[8F[0J[?25h[?25l[2K    ACTION BOUNDARY
+[2K    The Action Boundary is the reviewed set of changes an agent may propose.
+[2K    Approval and apply stay outside the agent.
+[2K  ... 10 rows hidden ...
+[2K    Action MCP config: ./synapsor.actions.runner.json
+[2K    Approval and apply remain separate. Source database changed: no.
+[2K
+[2K    > Change a verified outcome with a model [recommended]
+[2K        Describe the business-policy change. Runner retains the exact
+[2K        baseline and saves only a disabled replacement.
+[2K      Verified Action Boundary [ACTIVE]
+[2K        reviewed_staging_actions | 1 reviewed outcome behind
+[2K        app.request_change
+[2K      Edit business rules manually
+[2K        Create or edit one supported proposal-only rule. Changes stay
+[2K        disabled until separate review; unsupported rules remain unchanged.
+[2K      Caller-supplied Action Boundary [OFF]
+[2K        No agent change authority is active or drafted.
+[2K  ... 14 rows hidden ...
+[2K        evidence.
+[2K      Quit
+[2K
+[2K    Up/Down Navigate   Enter Select   Esc Back   Q Quit
+[2K    PgUp/PgDn Scroll hidden details[23F[0J[?25h[0m[?25h[?1049l
+Script done on 2026-09-12 20:49:16-07:00 [COMMAND_EXIT_CODE="0"]

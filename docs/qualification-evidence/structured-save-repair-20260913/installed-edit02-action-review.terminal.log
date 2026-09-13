@@ -1,0 +1,266 @@
+Script started on 2026-09-12 20:54:26-07:00 [COMMAND="node '/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/invoke-interactive.mjs' action review --project-root ." TERM="xterm-256color" TTY="/dev/pts/1" COLUMNS="140" LINES="42"]
+(node:1661275) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[?1049h[H[2J[?25l[2K    ACTION BOUNDARY
+[2K    The Action Boundary is the reviewed set of changes an agent may propose. Approval and apply stay outside the agent.
+[2K    Verified Action Boundary SAVED - ACCESS RECHECK REQUIRED (1 outcome) | fixed app.describe_actions + app.request_change surface.
+[2K    Some saved changes cannot be used until their access dependencies are rechecked. Open their review to repair the disabled revision.
+[2K    Caller-supplied Action Boundary OFF | no caller-supplied proposal authority.
+[2K    Caller-supplied actions: active 0 | drafts 0 | proposal-only by default.
+[2K    Targets with at least one proposal operation 2 | Fully blocked 0.
+[2K
+[2K    > Verified Action Boundary [SAVED - ACCESS RECHECK REQUIRED]
+[2K        reviewed_staging_actions | 1 reviewed outcome behind app.request_change
+[2K      Change a verified outcome with a model [recommended]
+[2K        Describe the business-policy change. Runner retains the exact baseline and saves only a disabled replacement.
+[2K      Edit business rules manually
+[2K        Create or edit one supported proposal-only rule. Changes stay disabled until separate review; unsupported rules remain unchanged.
+[2K      Caller-supplied Action Boundary [OFF]
+[2K        No agent change authority is active or drafted.
+[2K      Create a proposal action (recommended)
+[2K        Describe the effect. Runner prepares one proposal-only action card and rehearses it without source writes.
+[2K      Advanced action design
+[2K        Choose fixed values, transitions, approval policy, execution posture, receipts, and every low-level field decision.
+[2K      Ask a model for a bounded suggestion
+[2K        Sends structural candidate metadata only; the result remains untrusted and non-authoritative.
+[2K      Readiness and blocked targets
+[2K        2 have at least one proposal operation; 0 need direct write-scope or schema remediation.
+[2K      Proposal inbox and lifecycle
+[2K        Review proposals, approvals, apply posture, receipts, replay, and evidence.
+[2K      Quit
+[2K
+[2K    Up/Down Navigate   Enter Select   Esc Back   Q Quit[28F[0J[?25h
+[?25l[2K    VERIFIED ACTION BOUNDARY
+[2K    SAVED AUTHORITY - READ DEPENDENCY UNAVAILABLE  reviewed_staging_actions
+[2K    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+[2K  ... 4 rows hidden ...
+[2K
+[2K    REPLACEMENT DRAFT - NOT ACTIVE  reviewed_staging_actions
+[2K    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+[2K    | Outcome                           | Derived effect                      | Approval                      | Apply                    |
+[2K    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+[2K    | reserve_ops.adjust_claim_reserve  | UPDATE reserve_ops.claims           | Policy + fallback             | Eligible, off            |
+[2K    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+[2K    Existing requests: 1 tied to the previous rules (0 awaiting review, 1 approved or in progress, 0 needing a receipt check).
+[2K    Earlier requests and approvals are not rewritten. No request is rejected or cancelled by this review.
+[2K    1 queued or waiting to retry. To stop one before its next lease, use "/usr/bin/node" "/home/sandesh-tiwari/Desktop/C++/Progress docs
+[2K    tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/frozen/installed/node_modules/@synapsor/runner/dist/cli.js" worker
+[2K    cancel <reference> --yes --config ./synapsor.actions.runner.json.
+[2K    The agent supplies an outcome and opaque subject reference only. Runner reloads facts and derives the effect.
+[2K    Read dependency unavailable: reserve_ops.adjust_claim_reserve. These outcomes cannot be used or executed.
+[2K    Their activation records are retained. Review the linked Read authority; opening these details does not restore access.
+[2K    Execution review required after activation: reserve_ops.adjust_claim_reserve.
+[2K    The complete Action Boundary digest changes. Existing supervised execution is not carried forward; each listed outcome needs separate
+[2K    writer review after proposal authority activation.
+[2K    The saved activation is unchanged until you separately confirm this exact replacement.
+[2K
+[2K    > Activate this exact proposal authority
+[2K        Agents may nominate these outcomes; approval and apply remain separate.
+[2K      View replacement draft details
+[2K        Shows private fields, refusals, examples, and digests for the disabled revision.
+[2K      View saved activation details
+[2K        Shows the exact saved rules; current Read dependencies still determine availability.
+[2K      Edit business rules manually
+[2K        The current draft and live permissions stay unchanged until a separate review activates a disabled replacement.
+[2K      Describe a verified outcome change with a model
+[2K        Retains the exact current Read and Action baseline; any replacement remains disabled until separate review.
+[2K      Disable supervised execution for reserve_ops.adjust_claim_reserve
+[2K        Stops new worker leases for this exact outcome; proposal authority stays active.
+[2K      Deactivate verified proposal authority
+[2K        Stops app.request_change for these outcomes; source data is unchanged.
+[2K      Back
+[2K
+[2K    Up/Down Navigate   Enter Select   Esc Back
+[2K    PgUp/PgDn Scroll hidden details[41F[0J[?25h[?25l[2K    CONFIRM REVIEWED DECISION
+[2K    Default: no
+[2K
+[2K      Yes
+[2K        Activate verified Action Boundary "reviewed_staging_actions"?
+[2K    > No
+[2K        Leave this decision unchanged or return.
+[2K
+[2K    Up/Down Navigate   Enter Select   Esc Back[8F[2K    CONFIRM REVIEWED DECISION
+[2K    Default: no
+[2K
+[2K    > Yes
+[2K        Activate verified Action Boundary "reviewed_staging_actions"?
+[2K      No
+[2K        Leave this decision unchanged or return.
+[2K
+[2K    Up/Down Navigate   Enter Select   Esc Back[8F[0J[?25h[?25l[2K    ACTION BOUNDARY
+[2K    The Action Boundary is the reviewed set of changes an agent may propose. Approval and apply stay outside the agent.
+[2K    Verified Action Boundary ACTIVE (1 outcome) | fixed app.describe_actions + app.request_change surface.
+[2K    Caller-supplied Action Boundary OFF | no caller-supplied proposal authority.
+[2K    Caller-supplied actions: active 0 | drafts 0 | proposal-only by default.
+[2K    Targets with at least one proposal operation 2 | Fully blocked 0.
+[2K    Verified Action Boundary active.
+[2K    reviewed_staging_actions: 1 verified outcome.
+[2K    Agents may nominate an outcome and opaque subjects; Runner verifies and derives the exact proposal.
+[2K    Action MCP config: ./synapsor.actions.runner.json
+[2K    Approval and apply remain separate. Source database changed: no.
+[2K
+[2K    > Change a verified outcome with a model [recommended]
+[2K        Describe the business-policy change. Runner retains the exact baseline and saves only a disabled replacement.
+[2K      Verified Action Boundary [ACTIVE]
+[2K        reviewed_staging_actions | 1 reviewed outcome behind app.request_change
+[2K      Edit business rules manually
+[2K        Create or edit one supported proposal-only rule. Changes stay disabled until separate review; unsupported rules remain unchanged.
+[2K      Caller-supplied Action Boundary [OFF]
+[2K        No agent change authority is active or drafted.
+[2K      Create a proposal action (recommended)
+[2K        Describe the effect. Runner prepares one proposal-only action card and rehearses it without source writes.
+[2K      Advanced action design
+[2K        Choose fixed values, transitions, approval policy, execution posture, receipts, and every low-level field decision.
+[2K      Ask a model for a bounded suggestion
+[2K        Sends structural candidate metadata only; the result remains untrusted and non-authoritative.
+[2K      Readiness and blocked targets
+[2K        2 have at least one proposal operation; 0 need direct write-scope or schema remediation.
+[2K      Proposal inbox and lifecycle
+[2K        Review proposals, approvals, apply posture, receipts, replay, and evidence.
+[2K      Quit
+[2K
+[2K    Up/Down Navigate   Enter Select   Esc Back   Q Quit[32F[2K    ACTION BOUNDARY
+[2K    The Action Boundary is the reviewed set of changes an agent may propose. Approval and apply stay outside the agent.
+[2K    Verified Action Boundary ACTIVE (1 outcome) | fixed app.describe_actions + app.request_change surface.
+[2K    Caller-supplied Action Boundary OFF | no caller-supplied proposal authority.
+[2K    Caller-supplied actions: active 0 | drafts 0 | proposal-only by default.
+[2K    Targets with at least one proposal operation 2 | Fully blocked 0.
+[2K    Verified Action Boundary active.
+[2K    reviewed_staging_actions: 1 verified outcome.
+[2K    Agents may nominate an outcome and opaque subjects; Runner verifies and derives the exact proposal.
+[2K    Action MCP config: ./synapsor.actions.runner.json
+[2K    Approval and apply remain separate. Source database changed: no.
+[2K
+[2K      Change a verified outcome with a model [recommended]
+[2K        Describe the business-policy change. Runner retains the exact baseline and saves only a disabled replacement.
+[2K    > Verified Action Boundary [ACTIVE]
+[2K        reviewed_staging_actions | 1 reviewed outcome behind app.request_change
+[2K      Edit business rules manually
+[2K        Create or edit one supported proposal-only rule. Changes stay disabled until separate review; unsupported rules remain unchanged.
+[2K      Caller-supplied Action Boundary [OFF]
+[2K        No agent change authority is active or drafted.
+[2K      Create a proposal action (recommended)
+[2K        Describe the effect. Runner prepares one proposal-only action card and rehearses it without source writes.
+[2K      Advanced action design
+[2K        Choose fixed values, transitions, approval policy, execution posture, receipts, and every low-level field decision.
+[2K      Ask a model for a bounded suggestion
+[2K        Sends structural candidate metadata only; the result remains untrusted and non-authoritative.
+[2K      Readiness and blocked targets
+[2K        2 have at least one proposal operation; 0 need direct write-scope or schema remediation.
+[2K      Proposal inbox and lifecycle
+[2K        Review proposals, approvals, apply posture, receipts, replay, and evidence.
+[2K      Quit
+[2K
+[2K    Up/Down Navigate   Enter Select   Esc Back   Q Quit[32F[0J[?25h[?25l[2K    VERIFIED ACTION BOUNDARY
+[2K    ACTIVE AUTHORITY  reviewed_staging_actions
+[2K    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+[2K    | Outcome                           | Derived effect                      | Approval                      | Apply                    |
+[2K    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+[2K    | reserve_ops.adjust_claim_reserve  | UPDATE reserve_ops.claims           | Policy + fallback             | Eligible, off            |
+[2K    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+[2K    The agent supplies an outcome and opaque subject reference only. Runner reloads facts and derives the effect.
+[2K    This verified Action Boundary is active. Approval and apply remain separate.
+[2K
+[2K      View active authority details
+[2K        Shows the exact saved rules; current Read dependencies still determine availability.
+[2K      Continue client setup
+[2K        Connect Claude Code, Cursor or VS Code, review trusted identity and worker startup. Pending drafts stay saved; this choice grants
+[2K        no authority.
+[2K      Edit business rules manually
+[2K        The current draft and live permissions stay unchanged until a separate review activates a disabled replacement.
+[2K    > Describe a verified outcome change with a model
+[2K        Retains the exact current Read and Action baseline; any replacement remains disabled until separate review.
+[2K      Review supervised execution for reserve_ops.adjust_claim_reserve
+[2K        Separately inspect and bind one least-privilege writer. No write runs during setup.
+[2K      Deactivate verified proposal authority
+[2K        Stops app.request_change for these outcomes; source data is unchanged.
+[2K      Back
+[2K
+[2K    Up/Down Navigate   Enter Select   Esc Back[25F[2K    VERIFIED ACTION BOUNDARY
+[2K    ACTIVE AUTHORITY  reviewed_staging_actions
+[2K    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+[2K    | Outcome                           | Derived effect                      | Approval                      | Apply                    |
+[2K    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+[2K    | reserve_ops.adjust_claim_reserve  | UPDATE reserve_ops.claims           | Policy + fallback             | Eligible, off            |
+[2K    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+[2K    The agent supplies an outcome and opaque subject reference only. Runner reloads facts and derives the effect.
+[2K    This verified Action Boundary is active. Approval and apply remain separate.
+[2K
+[2K      View active authority details
+[2K        Shows the exact saved rules; current Read dependencies still determine availability.
+[2K      Continue client setup
+[2K        Connect Claude Code, Cursor or VS Code, review trusted identity and worker startup. Pending drafts stay saved; this choice grants
+[2K        no authority.
+[2K      Edit business rules manually
+[2K        The current draft and live permissions stay unchanged until a separate review activates a disabled replacement.
+[2K      Describe a verified outcome change with a model
+[2K        Retains the exact current Read and Action baseline; any replacement remains disabled until separate review.
+[2K    > Review supervised execution for reserve_ops.adjust_claim_reserve
+[2K        Separately inspect and bind one least-privilege writer. No write runs during setup.
+[2K      Deactivate verified proposal authority
+[2K        Stops app.request_change for these outcomes; source data is unchanged.
+[2K      Back
+[2K
+[2K    Up/Down Navigate   Enter Select   Esc Back[25F[0J[?25h[?25l[2K    Check your write connection
+[2K    Outcome: reserve_ops.adjust_claim_reserve
+[2K    Connection: SYNAPSOR_WRITE_RESERVE_OPS_ADJUST_CLAIM_RESERVE_6DDD2DB6 is set (value hidden). Execution authorization comes after
+[2K    verification.
+[2K    The saved reference is a review default only, not current execution authority.
+[2K
+[2K    > Check the configured write connection
+[2K        Verify its permissions; do not enable execution or run a request.
+[2K      Use another configured connection
+[2K      Set up this outcome later
+[2K
+[2K    Up/Down Navigate   Enter Select   Esc Back[11F[0J[?25h[?25l[2K    CONFIRM REVIEWED DECISION
+[2K    Default: no
+[2K
+[2K      Yes
+[2K        Enable supervised source execution for reserve_ops.adjust_claim_reserve?
+[2K    > No
+[2K        Leave this decision unchanged or return.
+[2K
+[2K    Up/Down Navigate   Enter Select   Esc Back[8F[2K    CONFIRM REVIEWED DECISION
+[2K    Default: no
+[2K
+[2K    > Yes
+[2K        Enable supervised source execution for reserve_ops.adjust_claim_reserve?
+[2K      No
+[2K        Leave this decision unchanged or return.
+[2K
+[2K    Up/Down Navigate   Enter Select   Esc Back[8F[0J[?25h[?25l[2K    ACTION BOUNDARY
+[2K    The Action Boundary is the reviewed set of changes an agent may propose. Approval and apply stay outside the agent.
+[2K    Verified Action Boundary ACTIVE (1 outcome) | fixed app.describe_actions + app.request_change surface.
+[2K    Caller-supplied Action Boundary OFF | no caller-supplied proposal authority.
+[2K    Caller-supplied actions: active 0 | drafts 0 | proposal-only by default.
+[2K    Targets with at least one proposal operation 2 | Fully blocked 0.
+[2K    Supervised execution enabled for this outcome.
+[2K    reserve_ops.adjust_claim_reserve: approved proposals may be leased by semantic_action_worker.
+[2K    Run: "/usr/bin/node" "/home/sandesh-tiwari/Desktop/C++/Progress docs
+[2K    tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/frozen/installed/node_modules/@synapsor/runner/dist/cli.js" worker
+[2K    run --supervised --yes --config './synapsor.actions.runner.json'
+[2K    Transaction-time fact reload, rule evaluation, effect comparison, scope, conflict, rate, and receipt checks remain mandatory.
+[2K    No proposal was executed and source data is unchanged.
+[2K
+[2K    > Change a verified outcome with a model [recommended]
+[2K        Describe the business-policy change. Runner retains the exact baseline and saves only a disabled replacement.
+[2K      Verified Action Boundary [ACTIVE]
+[2K        reviewed_staging_actions | 1 reviewed outcome behind app.request_change
+[2K      Edit business rules manually
+[2K        Create or edit one supported proposal-only rule. Changes stay disabled until separate review; unsupported rules remain unchanged.
+[2K      Caller-supplied Action Boundary [OFF]
+[2K        No agent change authority is active or drafted.
+[2K      Create a proposal action (recommended)
+[2K        Describe the effect. Runner prepares one proposal-only action card and rehearses it without source writes.
+[2K      Advanced action design
+[2K        Choose fixed values, transitions, approval policy, execution posture, receipts, and every low-level field decision.
+[2K      Ask a model for a bounded suggestion
+[2K        Sends structural candidate metadata only; the result remains untrusted and non-authoritative.
+[2K      Readiness and blocked targets
+[2K        2 have at least one proposal operation; 0 need direct write-scope or schema remediation.
+[2K      Proposal inbox and lifecycle
+[2K        Review proposals, approvals, apply posture, receipts, replay, and evidence.
+[2K      Quit
+[2K
+[2K    Up/Down Navigate   Enter Select   Esc Back   Q Quit[34F[0J[?25h[0m[?25h[?1049l
+Script done on 2026-09-12 20:55:48-07:00 [COMMAND_EXIT_CODE="0"]

@@ -1,0 +1,50 @@
+2026-09-13T02:16:43.512288572Z ********************************************************************************
+2026-09-13T02:16:43.512313636Z WARNING: POSTGRES_HOST_AUTH_METHOD has been set to "trust". This will allow
+2026-09-13T02:16:43.512316074Z          anyone with access to the Postgres port to access your database without
+2026-09-13T02:16:43.512317337Z          a password, even if POSTGRES_PASSWORD is set. See PostgreSQL
+2026-09-13T02:16:43.512318535Z          documentation about "trust":
+2026-09-13T02:16:43.512321224Z          https://www.postgresql.org/docs/current/auth-trust.html
+2026-09-13T02:16:43.512322487Z          In Docker's default configuration, this is effectively any other
+2026-09-13T02:16:43.512323932Z          container on the same system.
+2026-09-13T02:16:43.512324998Z 
+2026-09-13T02:16:43.512326050Z          It is not recommended to use POSTGRES_HOST_AUTH_METHOD=trust. Replace
+2026-09-13T02:16:43.512327245Z          it with "-e POSTGRES_PASSWORD=password" instead to set a password in
+2026-09-13T02:16:43.512328486Z          "docker run".
+2026-09-13T02:16:43.512330010Z ********************************************************************************
+2026-09-13T02:16:44.353110669Z initdb: warning: enabling "trust" authentication for local connections
+2026-09-13T02:16:44.353174161Z initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+2026-09-13T02:16:44.838624056Z 2026-09-13 02:16:44.838 UTC [1] LOG:  starting PostgreSQL 17.10 (Debian 17.10-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit
+2026-09-13T02:16:44.845083337Z 2026-09-13 02:16:44.844 UTC [1] LOG:  listening on Unix socket "/var/run/postgresql/.s.PGSQL.5432"
+2026-09-13T02:16:44.866683905Z 2026-09-13 02:16:44.866 UTC [83] LOG:  database system was shut down at 2026-09-13 02:16:44 UTC
+2026-09-13T02:16:44.875989698Z 2026-09-13 02:16:44.875 UTC [1] LOG:  database system is ready to accept connections
+2026-09-13T02:21:44.966116192Z 2026-09-13 02:21:44.966 UTC [81] LOG:  checkpoint starting: time
+2026-09-13T02:25:06.087616836Z 2026-09-13 02:25:06.087 UTC [81] LOG:  checkpoint complete: wrote 1997 buffers (12.2%); 0 WAL file(s) added, 0 removed, 1 recycled; write=199.237 s, sync=1.825 s, total=201.122 s; sync files=676, longest=0.010 s, average=0.003 s; distance=9179 kB, estimate=9179 kB; lsn=0/220C7F0, redo lsn=0/220C760
+2026-09-13T02:32:52.362921536Z 2026-09-13 02:32:52.362 UTC [341] ERROR:  canceling statement due to lock timeout
+2026-09-13T02:32:52.362965409Z 2026-09-13 02:32:52.362 UTC [341] CONTEXT:  while updating tuple (0,4) in relation "control_policy_deployments"
+2026-09-13T02:32:52.362973903Z 2026-09-13 02:32:52.362 UTC [341] STATEMENT:  UPDATE "publication_3a7c284249a64334a97b485f9edf8bcf"."control_policy_deployments" SET epoch = epoch + 1
+2026-09-13T02:32:52.362977675Z 	        WHERE deployment_id = $1 AND epoch = $2 RETURNING epoch
+2026-09-13T02:32:58.398355403Z 2026-09-13 02:32:58.398 UTC [351] ERROR:  canceling statement due to lock timeout
+2026-09-13T02:32:58.398386069Z 2026-09-13 02:32:58.398 UTC [351] CONTEXT:  while locking tuple (0,4) in relation "control_policy_deployments"
+2026-09-13T02:32:58.398392477Z 2026-09-13 02:32:58.398 UTC [351] STATEMENT:  SELECT deployment_id FROM "publication_a35ed8162d284555a40b2b89c74e6f15".control_policy_deployments
+2026-09-13T02:32:58.398397337Z 	          WHERE deployment_id = $1 FOR SHARE
+2026-09-13T02:34:01.046077869Z 2026-09-13 02:34:01.045 UTC [370] ERROR:  insert or update on table "control_policy_active" violates foreign key constraint "control_policy_active_deployment_id_scope_key_kind_name_re_fkey"
+2026-09-13T02:34:01.046106650Z 2026-09-13 02:34:01.045 UTC [370] DETAIL:  Key (deployment_id, scope_key, kind, name, revision_id)=(interrupted, {"level":"operator"}, action, university.enroll, missing) is not present in table "control_policy_revisions".
+2026-09-13T02:34:01.046113289Z 2026-09-13 02:34:01.045 UTC [370] STATEMENT:  INSERT INTO "synapsor_policy_1469467_6f9aa79b"."control_policy_active" (deployment_id, scope_key, kind, name, revision_id)
+2026-09-13T02:34:01.046117407Z 	            VALUES ($1, $2, $3, $4, $5) ON CONFLICT (deployment_id, scope_key, kind, name)
+2026-09-13T02:34:01.046120984Z 	            DO UPDATE SET revision_id = excluded.revision_id
+2026-09-13T02:34:01.219669513Z 2026-09-13 02:34:01.219 UTC [368] ERROR:  insert or update on table "control_policy_active" violates foreign key constraint "control_policy_active_deployment_id_scope_key_kind_name_re_fkey"
+2026-09-13T02:34:01.219708579Z 2026-09-13 02:34:01.219 UTC [368] DETAIL:  Key (deployment_id, scope_key, kind, name, revision_id)=(owners, {"level":"principal","principal":"maya","tenant_id":"beta"}, action, university.enroll, acme-v1) is not present in table "control_policy_revisions".
+2026-09-13T02:34:01.219718369Z 2026-09-13 02:34:01.219 UTC [368] STATEMENT:  INSERT INTO "synapsor_policy_1469467_6f9aa79b"."control_policy_active" (deployment_id, scope_key, kind, name, revision_id)
+2026-09-13T02:34:01.219741994Z 	            VALUES ($1, $2, $3, $4, $5) ON CONFLICT (deployment_id, scope_key, kind, name)
+2026-09-13T02:34:01.219747347Z 	            DO UPDATE SET revision_id = excluded.revision_id
+2026-09-13T02:34:01.231266566Z 2026-09-13 02:34:01.231 UTC [368] ERROR:  duplicate key value violates unique constraint "control_policy_revisions_pkey"
+2026-09-13T02:34:01.231295327Z 2026-09-13 02:34:01.231 UTC [368] DETAIL:  Key (deployment_id, revision_id)=(immutable, v1) already exists.
+2026-09-13T02:34:01.231299961Z 2026-09-13 02:34:01.231 UTC [368] STATEMENT:  INSERT INTO "synapsor_policy_1469467_6f9aa79b"."control_policy_revisions"
+2026-09-13T02:34:01.231303143Z 	          (deployment_id, scope_key, kind, name, revision_id, epoch, authority_digest, content_digest, content_json)
+2026-09-13T02:34:01.231306037Z 	          VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+2026-09-13T02:36:44.786132554Z 2026-09-13 02:36:44.786 UTC [81] LOG:  checkpoint starting: time
+2026-09-13T02:37:24.976318567Z 2026-09-13 02:37:24.976 UTC [81] LOG:  checkpoint complete: wrote 373 buffers (2.3%); 0 WAL file(s) added, 0 removed, 0 recycled; write=37.214 s, sync=2.905 s, total=40.191 s; sync files=1519, longest=0.008 s, average=0.002 s; distance=13161 kB, estimate=13161 kB; lsn=0/2EE6D28, redo lsn=0/2EE6C98
+2026-09-13T03:46:46.309483471Z 2026-09-13 03:46:46.309 UTC [81] LOG:  checkpoint starting: time
+2026-09-13T03:51:17.790653197Z 2026-09-13 03:51:17.790 UTC [81] LOG:  checkpoint complete: wrote 3837 buffers (23.4%); 0 WAL file(s) added, 0 removed, 2 recycled; write=269.730 s, sync=1.700 s, total=271.481 s; sync files=1555, longest=0.007 s, average=0.002 s; distance=17581 kB, estimate=17581 kB; lsn=0/4461AE0, redo lsn=0/40121C0
+2026-09-13T04:06:47.121258452Z 2026-09-13 04:06:47.120 UTC [81] LOG:  checkpoint starting: time
+2026-09-13T04:10:00.243224625Z 2026-09-13 04:10:00.242 UTC [81] LOG:  checkpoint complete: wrote 1924 buffers (11.7%); 0 WAL file(s) added, 0 removed, 0 recycled; write=192.748 s, sync=0.336 s, total=193.123 s; sync files=574, longest=0.007 s, average=0.001 s; distance=8806 kB, estimate=16703 kB; lsn=0/48ABB68, redo lsn=0/48ABAD8

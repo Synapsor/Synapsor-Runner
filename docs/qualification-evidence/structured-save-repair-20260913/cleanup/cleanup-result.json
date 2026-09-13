@@ -1,0 +1,78 @@
+{
+  "stopped_at": "2026-09-13T04:11:03.672914+00:00",
+  "container_name": "synapsor-structured-save-7ed59302",
+  "container_id": "2124e8ac01cb70cd9f8b33ccd20096ed8d5573588fe82a0097280020f02b6c3e",
+  "stop_exit_code": 0,
+  "running_after": false,
+  "removed": false,
+  "recorded_processes_checked": 95,
+  "recorded_test_application_processes_running": 0,
+  "owned_sqlite_and_failure_directories": "retained; no further workers",
+  "dumps": [
+    {
+      "database": "synapsor_structured_save",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/cleanup/synapsor_structured_save.dump",
+      "bytes": 957,
+      "sha256": "7074bc8bcd2b920b62e789b3ee49ca03debfe321b360baadc03303210bdd61b9",
+      "pg_restore_list_exit": 0
+    },
+    {
+      "database": "insurance_stagea_admission_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/cleanup/insurance_stagea_admission_first.dump",
+      "bytes": 19064,
+      "sha256": "beef8f83cf1d86287a2ea110664a9246232773b697a7b57afd0f88bac3f19b98",
+      "pg_restore_list_exit": 0
+    },
+    {
+      "database": "insurance_stagea_before_onboard",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/cleanup/insurance_stagea_before_onboard.dump",
+      "bytes": 19058,
+      "sha256": "2a0fe84c89dd7bcacd5d72505008c1618727b1df05a2492d0f738f603c8b5f0c",
+      "pg_restore_list_exit": 0
+    },
+    {
+      "database": "insurance_stagea_before_start",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/cleanup/insurance_stagea_before_start.dump",
+      "bytes": 19046,
+      "sha256": "9d8d9b9949b86ade469a11915940adb28b2e9ad5c21117e36b48b1b459de98c4",
+      "pg_restore_list_exit": 0
+    },
+    {
+      "database": "insurance_stagea_edit",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/cleanup/insurance_stagea_edit.dump",
+      "bytes": 18998,
+      "sha256": "123b7a4f3ff24d20ba1f2bf8d8b02ca57333aa565d012c42e5c9c4d5d3c68987",
+      "pg_restore_list_exit": 0
+    },
+    {
+      "database": "insurance_stagea_edit_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/cleanup/insurance_stagea_edit_02.dump",
+      "bytes": 19016,
+      "sha256": "36d5ba438a18805e1ddb3b205ca1853db8709be2071db87ee54a70f6ddece4a4",
+      "pg_restore_list_exit": 0
+    },
+    {
+      "database": "insurance_stagea_main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/cleanup/insurance_stagea_main.dump",
+      "bytes": 19001,
+      "sha256": "9a20d784a3b210674cb1542a4a19bc7679d51d6c7b56c2a30e1ef407dbce563e",
+      "pg_restore_list_exit": 0
+    },
+    {
+      "database": "insurance_stagea_replacement_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/cleanup/insurance_stagea_replacement_first.dump",
+      "bytes": 19076,
+      "sha256": "d285b91f090dc11d70f0b2549fd6a828f826f30fd336fa8ba04025dabe2ba0c8",
+      "pg_restore_list_exit": 0
+    },
+    {
+      "database": "insurance_stagea_replacement_first_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/cleanup/insurance_stagea_replacement_first_02.dump",
+      "bytes": 19094,
+      "sha256": "8e208dfe1f459a7bdfe2fde1799005885da072ec7ee6074860b69ff7e14c9b77",
+      "pg_restore_list_exit": 0
+    }
+  ],
+  "original_resources_touched": false,
+  "logs_saved_before_stop": true
+}

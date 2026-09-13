@@ -1,0 +1,27 @@
+{
+  "created_at": "2026-09-13T03:49:17.593Z",
+  "case": "edit",
+  "fixture": "edit_02",
+  "owned": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02",
+  "project": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02/project",
+  "logical": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/isolation-final-5e3e78b/insurance-fresh/project",
+  "database": "insurance_stagea_edit_02",
+  "container": "synapsor-structured-save-7ed59302",
+  "artifact_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/frozen",
+  "artifact_tree": "ee313994a4a542915f5ad9efca04ed29a027b5b86f8b6c717df7a451a786266f",
+  "original_hashes": {
+    "original-policy.txt": "31cf8412c3cde34fa57341762ddb878c427d2363e1c0a53435e40ee3a5607875",
+    "original-schema.sql": "54e8debabb1493534bcb5153e0b7b208a2fb31623994b6cf411efc055078876a",
+    "fixture-rows.mjs": "7f814d80cab9ced868f3cfd9686af9f21ebea00e445a47183887f458041f988e"
+  },
+  "original_rows_preserved": 40,
+  "additions": {
+    "portfolios": [],
+    "claims": []
+  },
+  "writer_handoff": {
+    "grants.sql": "f890047c7dce500dfab80745f23bb9634d59c8b2675f88ebd057ebf3a686fc00",
+    "scoped-policies.sql": "e42879d6d301b234055d52fc12703b986b481ebe4656c6fd22f5728f6814d7ca"
+  },
+  "role_creation_omitted_because_task_fixture_role_already_exists": true
+}

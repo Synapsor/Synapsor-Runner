@@ -1,0 +1,4554 @@
+{
+  "schema_version": "synapsor.boundary-draft-input.v1",
+  "review_bundle_digest": "sha256:78d4563cd26e8e5b48c6377a22213fdc9c4e7d72a372deb9b58eca22724f1d0d",
+  "bindings": {
+    "draft_digest": "sha256:dec7d3c09fe28c71f30436f29b88e860ca2844d96be2958ca6886fd6b9bac700",
+    "candidate_digest": "sha256:b049393ecc158fa60fc9be86aa810fc1498403af5eecdcf15ab99628fc7aca42",
+    "generation_lock_fingerprint": "sha256:6f5cab71c0315171d81b44029908608d555444245279d216d0d65b621092ad17",
+    "schema_fingerprint": "sha256:090e24799c356d246301fe71d75396e346613ef69a2f372fecf261f5c6ace1d9",
+    "role_posture_fingerprint": "sha256:b0012bf6b9bd0be9f8801f5c0e9c13fd2cf7db64d982270b1132667895a0d3b9",
+    "review_revision": 12,
+    "authoring": {
+      "repository_id": "f458c8e2-bd1c-4575-a174-58d5daba5952",
+      "deployment_id": "f07ebc67-e21d-4d79-9382-0b181b46118a",
+      "project_id": "dad291f6-d7df-442e-8d01-47cf93f45a8c",
+      "epoch": 31,
+      "revision_id": "policy:27242939948420e3a3e2fbfa4b6dde66f4ce6dfa415c36b51c5306aa91a95c0d"
+    }
+  },
+  "read": {
+    "resources": [
+      {
+        "resource_id": "reserve_ops.claims",
+        "include": true
+      },
+      {
+        "resource_id": "reserve_ops.portfolios",
+        "include": true
+      }
+    ]
+  },
+  "actions": [
+    {
+      "schema_version": "synapsor.action-rule-model-draft.v1",
+      "inputs": [
+        {
+          "description": "Desired claim reserve, in cents.",
+          "maximum": 100000,
+          "minimum": 1000,
+          "name": "desired_cents",
+          "type": {
+            "kind": "integer",
+            "unit": "minor_currency_units"
+          }
+        }
+      ],
+      "name": "reserve_ops.adjust_claim_reserve",
+      "outcome": "reserve_ops.adjust_claim_reserve",
+      "discovery": {
+        "aliases": [
+          "adjust claim reserve",
+          "change reserve",
+          "update claim reserve"
+        ],
+        "summary": "Request a reserve amount change for a claim you are assigned to adjust.",
+        "title": "Adjust claim reserve"
+      },
+      "verification": {
+        "name": "reserve_ops.adjust_claim_reserve.verification",
+        "resources": [
+          {
+            "binding": "selected_claim",
+            "resource": "reserve_ops.claims",
+            "source": {
+              "kind": "subject_ref"
+            },
+            "fields": [
+              "claim_id",
+              "claim_ref",
+              "portfolio_id",
+              "reserve_cents",
+              "status"
+            ]
+          },
+          {
+            "binding": "portfolio",
+            "resource": "reserve_ops.portfolios",
+            "source": {
+              "kind": "relationship",
+              "from_binding": "selected_claim",
+              "relationship": "claims_insurer_id_adjuster_id_portfolio_id_fkey",
+              "direction": "forward"
+            },
+            "fields": [
+              "per_claim_ceiling_cents",
+              "reserve_cap_cents",
+              "routine_ceiling_cents",
+              "status"
+            ]
+          },
+          {
+            "binding": "portfolio_claims",
+            "resource": "reserve_ops.claims",
+            "source": {
+              "kind": "relationship",
+              "from_binding": "portfolio",
+              "relationship": "claims_insurer_id_adjuster_id_portfolio_id_fkey",
+              "direction": "inverse"
+            },
+            "fields": [
+              "claim_id",
+              "portfolio_id",
+              "reserve_cents",
+              "status"
+            ],
+            "max_rows": 64,
+            "overflow": "ineligible",
+            "collection_consistency": "complete_locked",
+            "deterministic_order": [
+              {
+                "direction": "asc",
+                "field": "claim_id"
+              }
+            ]
+          },
+          {
+            "binding": "portfolio_freezes",
+            "resource": "reserve_ops.freezes",
+            "source": {
+              "kind": "relationship",
+              "from_binding": "portfolio",
+              "relationship": "freezes_insurer_id_adjuster_id_portfolio_id_fkey",
+              "direction": "inverse"
+            },
+            "fields": [
+              "active",
+              "freeze_id",
+              "portfolio_id"
+            ],
+            "max_rows": 64,
+            "overflow": "ineligible",
+            "collection_consistency": "complete_locked",
+            "deterministic_order": [
+              {
+                "direction": "asc",
+                "field": "freeze_id"
+              }
+            ]
+          }
+        ]
+      },
+      "effect": {
+        "name": "reserve_ops.adjust_claim_reserve.effect",
+        "operation": "update",
+        "target_resource": "reserve_ops.claims",
+        "target_binding": "selected_claim",
+        "allowed_fields": [
+          {
+            "name": "reserve_cents",
+            "minimum": 1000,
+            "maximum": 100000
+          }
+        ],
+        "set": {
+          "reserve_cents": {
+            "kind": "input",
+            "name": "desired_cents"
+          }
+        },
+        "writeback": "supervised"
+      },
+      "require": {
+        "expressions": [
+          {
+            "expression": {
+              "binding": "portfolio_freezes",
+              "kind": "exists",
+              "where": {
+                "kind": "compare",
+                "left": {
+                  "binding": "portfolio_freezes",
+                  "field": "active",
+                  "kind": "field"
+                },
+                "operator": "eq",
+                "right": {
+                  "kind": "literal",
+                  "value": true,
+                  "value_type": {
+                    "kind": "boolean"
+                  }
+                }
+              }
+            },
+            "kind": "not"
+          },
+          {
+            "kind": "compare",
+            "left": {
+              "binding": "portfolio_claims",
+              "kind": "aggregate",
+              "operation": "count",
+              "where": {
+                "kind": "compare",
+                "left": {
+                  "binding": "portfolio_claims",
+                  "field": "claim_id",
+                  "kind": "field"
+                },
+                "operator": "eq",
+                "right": {
+                  "binding": "selected_claim",
+                  "field": "claim_id",
+                  "kind": "field"
+                }
+              }
+            },
+            "operator": "eq",
+            "right": {
+              "kind": "literal",
+              "value": 1,
+              "value_type": {
+                "kind": "integer",
+                "unit": "rows"
+              }
+            }
+          },
+          {
+            "kind": "compare",
+            "left": {
+              "binding": "portfolio",
+              "field": "status",
+              "kind": "field"
+            },
+            "operator": "eq",
+            "right": {
+              "kind": "literal",
+              "value": "active",
+              "value_type": {
+                "comparison": "exact",
+                "enum": [
+                  "active",
+                  "closed"
+                ],
+                "kind": "string",
+                "max_length": 6
+              }
+            }
+          },
+          {
+            "kind": "compare",
+            "left": {
+              "binding": "selected_claim",
+              "field": "status",
+              "kind": "field"
+            },
+            "operator": "eq",
+            "right": {
+              "kind": "literal",
+              "value": "active",
+              "value_type": {
+                "comparison": "exact",
+                "enum": [
+                  "active",
+                  "closed"
+                ],
+                "kind": "string",
+                "max_length": 6
+              }
+            }
+          },
+          {
+            "kind": "compare",
+            "left": {
+              "inputs": [
+                {
+                  "inputs": [
+                    {
+                      "binding": "portfolio_claims",
+                      "field": "reserve_cents",
+                      "kind": "aggregate",
+                      "operation": "sum",
+                      "where": {
+                        "kind": "compare",
+                        "left": {
+                          "binding": "portfolio_claims",
+                          "field": "status",
+                          "kind": "field"
+                        },
+                        "operator": "eq",
+                        "right": {
+                          "kind": "literal",
+                          "value": "active",
+                          "value_type": {
+                            "comparison": "exact",
+                            "enum": [
+                              "active",
+                              "closed"
+                            ],
+                            "kind": "string",
+                            "max_length": 6
+                          }
+                        }
+                      }
+                    },
+                    {
+                      "binding": "selected_claim",
+                      "field": "reserve_cents",
+                      "kind": "field"
+                    }
+                  ],
+                  "kind": "math",
+                  "operation": "subtract"
+                },
+                {
+                  "kind": "input",
+                  "name": "desired_cents"
+                }
+              ],
+              "kind": "math",
+              "operation": "add"
+            },
+            "operator": "lte",
+            "right": {
+              "binding": "portfolio",
+              "field": "reserve_cap_cents",
+              "kind": "field"
+            }
+          },
+          {
+            "kind": "compare",
+            "left": {
+              "kind": "input",
+              "name": "desired_cents"
+            },
+            "operator": "lte",
+            "right": {
+              "binding": "portfolio",
+              "field": "per_claim_ceiling_cents",
+              "kind": "field"
+            }
+          }
+        ],
+        "kind": "all"
+      },
+      "derive": {},
+      "approval": {
+        "class_name": "reserve_ops.adjust_claim_reserve.approval",
+        "mode": "policy",
+        "auto_approve_when": {
+          "kind": "compare",
+          "left": {
+            "kind": "input",
+            "name": "desired_cents"
+          },
+          "operator": "lte",
+          "right": {
+            "binding": "portfolio",
+            "field": "routine_ceiling_cents",
+            "kind": "field"
+          }
+        },
+        "required_role": "insurance_supervisor",
+        "required_approvals": 1,
+        "shared_limits": [
+          {
+            "id": "reserve_adjustment_overall_24h",
+            "kind": "count",
+            "scope": "capability",
+            "maximum": 8,
+            "window_seconds": 86400,
+            "capability": "reserve_ops.adjust_claim_reserve"
+          },
+          {
+            "id": "reserve_adjustment_per_insurer_24h",
+            "kind": "count",
+            "scope": "tenant",
+            "maximum": 3,
+            "window_seconds": 86400,
+            "capability": "reserve_ops.adjust_claim_reserve"
+          }
+        ]
+      },
+      "ttl_seconds": 300,
+      "review": {
+        "when": "The selected assigned claim and its current portfolio are active, the requested reserve is within the private claim ceiling and portfolio cap, there is no active freeze, and the complete current claim and freeze collections remain within their reviewed bounds.",
+        "then": "Propose changing only the selected claim's reserve to the requested cents. It can complete only after approval, separate execution enablement, and a running supervised worker rechecks current facts.",
+        "refused": [
+          "Refuse requests outside 1,000–100,000 cents.",
+          "Refuse when any current status, private ceiling, freeze, collection, budget, identity, or concurrency check fails or cannot be proven."
+        ],
+        "human_review": "A valid request not automatically approved, including one above the routine ceiling or over an automatic-approval limit, requires one insurance supervisor. Invalid requests are refused.",
+        "examples": [
+          {
+            "kind": "eligible",
+            "scenario": "An active assigned claim has a requested reserve within all private ceilings and cap, no active freeze, and the automatic criteria and limits allow approval.",
+            "result": "The reserve-change proposal is automatically approved; completion still requires separately enabled supervised execution."
+          },
+          {
+            "kind": "human_review",
+            "scenario": "All validity checks pass, but the requested reserve is above the routine automatic-approval ceiling or an automatic approval limit is reached.",
+            "result": "The valid proposal requires one insurance supervisor and does not bypass any check."
+          },
+          {
+            "kind": "ineligible",
+            "scenario": "The claim or portfolio is closed, an active freeze exists, a collection is incomplete or over 64 rows, or the adjusted total would exceed the cap.",
+            "result": "The request is refused without disclosing private facts."
+          }
+        ]
+      }
+    }
+  ],
+  "action_skeletons": [
+    {
+      "schema_version": "synapsor.action-rule-intent-skeleton.v1",
+      "state": "incomplete",
+      "intent_index": 0,
+      "intent": "Draft one rule-derived outcome: adjust a caller-selected opaque claim reference's reserve_cents to bounded desired_cents (1000–100000), advancing its version, only for the Runner-injected trusted insurer/adjuster. Require the selected claim and exact current portfolio active; desired_cents within the private per-claim ceiling; complete current scoped freeze collection (stable PK order, <=64) with zero active freezes; complete current scoped claim collection (stable PK order, <=64), selected active claim exactly once, and active-claim reserve sum minus current selected reserve plus desired_cents within the private portfolio reserve cap. Protect current parent, selected row, and collections through the source transaction and reject stale/concurrent evidence. Automatically approve only when all checks pass, desired_cents is within the current private routine ceiling, and Runner proposal-ledger limits for this outcome allow at most 8 approvals overall and 3 per trusted insurer in rolling 24 hours. Other valid requests require exactly one insurance_supervisor; invalid requests refuse. Human approval bypasses no hard checks. After approval, separately reviewed supervised worker completion reruns current checks before applying the update; routing/drafting remains disabled pending later activation.",
+      "resume": {
+        "revision_digest": "sha256:62b88f8cd66a23121041b1d6d6cd0298ce8dd18006c2945354c4dac45ad90c1c",
+        "binding": {
+          "boundary_name": "reviewed_staging",
+          "generation_lock_fingerprint": "sha256:6f5cab71c0315171d81b44029908608d555444245279d216d0d65b621092ad17",
+          "schema_fingerprint": "sha256:090e24799c356d246301fe71d75396e346613ef69a2f372fecf261f5c6ace1d9",
+          "role_posture_fingerprint": "sha256:b0012bf6b9bd0be9f8801f5c0e9c13fd2cf7db64d982270b1132667895a0d3b9"
+        }
+      },
+      "candidates": {
+        "resources": [
+          {
+            "name": "reserve_ops.claims",
+            "primary_key": "claim_id",
+            "tenant_scope": "direct",
+            "tenant_key": "insurer_id",
+            "principal_scope": "direct",
+            "principal_key": "adjuster_id",
+            "principal_rls_setting": "app.adjuster_id",
+            "version_candidates": [
+              "version"
+            ],
+            "version_field_options": [
+              "reserve_cents",
+              "version"
+            ],
+            "selected_version_field": "version",
+            "operations": {
+              "update": true,
+              "insert": true
+            },
+            "fields": [
+              {
+                "name": "claim_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 36,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              },
+              {
+                "name": "insurer_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 36,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              },
+              {
+                "name": "adjuster_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 36,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              },
+              {
+                "name": "portfolio_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 36,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "runner_verification_only",
+                "writable": true
+              },
+              {
+                "name": "claim_ref",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "model_visible",
+                "writable": true
+              },
+              {
+                "name": "status",
+                "type": {
+                  "kind": "string",
+                  "max_length": 6,
+                  "enum": [
+                    "active",
+                    "closed"
+                  ],
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "model_visible",
+                "writable": true,
+                "enum_source": "schema"
+              },
+              {
+                "name": "reserve_cents",
+                "type": {
+                  "kind": "integer",
+                  "unit": "minor_currency_units"
+                },
+                "nullable": false,
+                "role": "model_visible",
+                "writable": true
+              },
+              {
+                "name": "service_label",
+                "type": {
+                  "kind": "string",
+                  "max_length": 8,
+                  "enum": [
+                    "review",
+                    "standard"
+                  ],
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "model_visible",
+                "writable": true,
+                "enum_source": "schema"
+              },
+              {
+                "name": "version",
+                "type": {
+                  "kind": "integer"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              }
+            ],
+            "source_constraints": {
+              "resource": "reserve_ops.claims",
+              "primary_key": {
+                "columns": [
+                  "claim_id"
+                ],
+                "column_count": 1,
+                "non_null_columns": [
+                  "claim_id"
+                ],
+                "all_columns_non_null": true,
+                "unconditional": true
+              },
+              "unique_constraints": {
+                "claims_claim_ref_key": {
+                  "columns": [
+                    "claim_ref"
+                  ],
+                  "column_count": 1,
+                  "non_null_columns": [
+                    "claim_ref"
+                  ],
+                  "all_columns_non_null": true,
+                  "unconditional": true
+                }
+              },
+              "check_constraints": {
+                "claims_reserve_cents_check": {
+                  "definition": "CHECK (reserve_cents >= 0 AND reserve_cents <= 100000)",
+                  "enforced": true
+                },
+                "claims_service_label_check": {
+                  "definition": "CHECK (service_label = ANY (ARRAY['standard'::text, 'review'::text]))",
+                  "enforced": true
+                },
+                "claims_status_check": {
+                  "definition": "CHECK (status = ANY (ARRAY['active'::text, 'closed'::text]))",
+                  "enforced": true
+                },
+                "claims_version_check": {
+                  "definition": "CHECK (version >= 1)",
+                  "enforced": true
+                }
+              }
+            }
+          },
+          {
+            "name": "reserve_ops.freezes",
+            "primary_key": "freeze_id",
+            "tenant_scope": "direct",
+            "tenant_key": "insurer_id",
+            "principal_scope": "direct",
+            "principal_key": "adjuster_id",
+            "version_candidates": [
+              "version"
+            ],
+            "version_field_options": [
+              "version"
+            ],
+            "selected_version_field": "version",
+            "operations": {
+              "update": true,
+              "insert": true
+            },
+            "fields": [
+              {
+                "name": "freeze_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 36,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              },
+              {
+                "name": "insurer_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 36,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              },
+              {
+                "name": "adjuster_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 36,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              },
+              {
+                "name": "portfolio_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 36,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "runner_verification_only",
+                "writable": true
+              },
+              {
+                "name": "active",
+                "type": {
+                  "kind": "boolean"
+                },
+                "nullable": false,
+                "role": "runner_verification_only",
+                "writable": true
+              },
+              {
+                "name": "version",
+                "type": {
+                  "kind": "integer"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              }
+            ],
+            "source_constraints": {
+              "resource": "reserve_ops.freezes",
+              "primary_key": {
+                "columns": [
+                  "freeze_id"
+                ],
+                "column_count": 1,
+                "non_null_columns": [
+                  "freeze_id"
+                ],
+                "all_columns_non_null": true,
+                "unconditional": true
+              },
+              "unique_constraints": {},
+              "check_constraints": {
+                "freezes_version_check": {
+                  "definition": "CHECK (version >= 1)",
+                  "enforced": true
+                }
+              }
+            }
+          },
+          {
+            "name": "reserve_ops.portfolios",
+            "primary_key": "portfolio_id",
+            "tenant_scope": "direct",
+            "tenant_key": "insurer_id",
+            "principal_scope": "direct",
+            "principal_key": "adjuster_id",
+            "principal_rls_setting": "app.adjuster_id",
+            "version_candidates": [
+              "version"
+            ],
+            "version_field_options": [
+              "per_claim_ceiling_cents",
+              "reserve_cap_cents",
+              "routine_ceiling_cents",
+              "version"
+            ],
+            "selected_version_field": "version",
+            "operations": {
+              "update": true,
+              "insert": true
+            },
+            "fields": [
+              {
+                "name": "portfolio_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 36,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              },
+              {
+                "name": "insurer_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 36,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              },
+              {
+                "name": "adjuster_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 36,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              },
+              {
+                "name": "portfolio_ref",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "model_visible",
+                "writable": true
+              },
+              {
+                "name": "status",
+                "type": {
+                  "kind": "string",
+                  "max_length": 6,
+                  "enum": [
+                    "active",
+                    "closed"
+                  ],
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "model_visible",
+                "writable": true,
+                "enum_source": "schema"
+              },
+              {
+                "name": "reserve_cap_cents",
+                "type": {
+                  "kind": "integer",
+                  "unit": "minor_currency_units"
+                },
+                "nullable": false,
+                "role": "runner_verification_only",
+                "writable": true
+              },
+              {
+                "name": "per_claim_ceiling_cents",
+                "type": {
+                  "kind": "integer",
+                  "unit": "minor_currency_units"
+                },
+                "nullable": false,
+                "role": "runner_verification_only",
+                "writable": true
+              },
+              {
+                "name": "routine_ceiling_cents",
+                "type": {
+                  "kind": "integer",
+                  "unit": "minor_currency_units"
+                },
+                "nullable": false,
+                "role": "runner_verification_only",
+                "writable": true
+              },
+              {
+                "name": "version",
+                "type": {
+                  "kind": "integer"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              }
+            ],
+            "source_constraints": {
+              "resource": "reserve_ops.portfolios",
+              "primary_key": {
+                "columns": [
+                  "portfolio_id"
+                ],
+                "column_count": 1,
+                "non_null_columns": [
+                  "portfolio_id"
+                ],
+                "all_columns_non_null": true,
+                "unconditional": true
+              },
+              "unique_constraints": {
+                "portfolios_insurer_id_adjuster_id_portfolio_id_key": {
+                  "columns": [
+                    "insurer_id",
+                    "adjuster_id",
+                    "portfolio_id"
+                  ],
+                  "column_count": 3,
+                  "non_null_columns": [
+                    "insurer_id",
+                    "adjuster_id",
+                    "portfolio_id"
+                  ],
+                  "all_columns_non_null": true,
+                  "unconditional": true
+                },
+                "portfolios_portfolio_ref_key": {
+                  "columns": [
+                    "portfolio_ref"
+                  ],
+                  "column_count": 1,
+                  "non_null_columns": [
+                    "portfolio_ref"
+                  ],
+                  "all_columns_non_null": true,
+                  "unconditional": true
+                }
+              },
+              "check_constraints": {
+                "portfolios_check": {
+                  "definition": "CHECK (routine_ceiling_cents >= 1000 AND routine_ceiling_cents <= per_claim_ceiling_cents)",
+                  "enforced": true
+                },
+                "portfolios_per_claim_ceiling_cents_check": {
+                  "definition": "CHECK (per_claim_ceiling_cents >= 1000 AND per_claim_ceiling_cents <= 100000)",
+                  "enforced": true
+                },
+                "portfolios_reserve_cap_cents_check": {
+                  "definition": "CHECK (reserve_cap_cents >= 1000 AND reserve_cap_cents <= 1000000)",
+                  "enforced": true
+                },
+                "portfolios_status_check": {
+                  "definition": "CHECK (status = ANY (ARRAY['active'::text, 'closed'::text]))",
+                  "enforced": true
+                },
+                "portfolios_version_check": {
+                  "definition": "CHECK (version >= 1)",
+                  "enforced": true
+                }
+              }
+            }
+          }
+        ],
+        "relationships": [
+          {
+            "name": "claims_insurer_id_adjuster_id_portfolio_id_fkey",
+            "from_resource": "reserve_ops.claims",
+            "to_resource": "reserve_ops.portfolios",
+            "field_pairs": [
+              {
+                "local_field": "insurer_id",
+                "target_field": "insurer_id"
+              },
+              {
+                "local_field": "adjuster_id",
+                "target_field": "adjuster_id"
+              },
+              {
+                "local_field": "portfolio_id",
+                "target_field": "portfolio_id"
+              }
+            ],
+            "cardinality": "many_to_one",
+            "nullable": false,
+            "target_unique": true
+          },
+          {
+            "name": "freezes_insurer_id_adjuster_id_portfolio_id_fkey",
+            "from_resource": "reserve_ops.freezes",
+            "to_resource": "reserve_ops.portfolios",
+            "field_pairs": [
+              {
+                "local_field": "insurer_id",
+                "target_field": "insurer_id"
+              },
+              {
+                "local_field": "adjuster_id",
+                "target_field": "adjuster_id"
+              },
+              {
+                "local_field": "portfolio_id",
+                "target_field": "portfolio_id"
+              }
+            ],
+            "cardinality": "many_to_one",
+            "nullable": false,
+            "target_unique": true
+          }
+        ],
+        "subject_ref_resource_candidates": [
+          "reserve_ops.claims",
+          "reserve_ops.freezes",
+          "reserve_ops.portfolios"
+        ]
+      },
+      "verification": {
+        "state": "unknown",
+        "required": [
+          "select resource and subject binding",
+          "select verification fields"
+        ]
+      },
+      "effect": {
+        "state": "unknown",
+        "required": [
+          "select operation",
+          "select target resource and fields",
+          "define bounded effect"
+        ]
+      },
+      "policy": {
+        "state": "unknown",
+        "required": [
+          "define eligibility",
+          "define approval and limits",
+          "define refusal and review behavior"
+        ]
+      },
+      "continuation": {
+        "state": "exact_current_draft",
+        "outcome": "reserve_ops.adjust_claim_reserve",
+        "digest": "sha256:5c67e6f5c40cb8d90be49084f41ec416b331a6453dc6c09936c6fc52e29cc7b8",
+        "draft": {
+          "schema_version": "synapsor.action-rule-model-draft.v1",
+          "inputs": [
+            {
+              "description": "Desired claim reserve, in cents.",
+              "maximum": 100000,
+              "minimum": 1000,
+              "name": "desired_cents",
+              "type": {
+                "kind": "integer",
+                "unit": "minor_currency_units"
+              }
+            }
+          ],
+          "name": "reserve_ops.adjust_claim_reserve",
+          "outcome": "reserve_ops.adjust_claim_reserve",
+          "discovery": {
+            "aliases": [
+              "adjust claim reserve",
+              "change reserve",
+              "update claim reserve"
+            ],
+            "summary": "Request a reserve amount change for a claim you are assigned to adjust.",
+            "title": "Adjust claim reserve"
+          },
+          "verification": {
+            "name": "reserve_ops.adjust_claim_reserve.verification",
+            "resources": [
+              {
+                "binding": "selected_claim",
+                "resource": "reserve_ops.claims",
+                "source": {
+                  "kind": "subject_ref"
+                },
+                "fields": [
+                  "claim_id",
+                  "claim_ref",
+                  "portfolio_id",
+                  "reserve_cents",
+                  "status"
+                ]
+              },
+              {
+                "binding": "portfolio",
+                "resource": "reserve_ops.portfolios",
+                "source": {
+                  "kind": "relationship",
+                  "from_binding": "selected_claim",
+                  "relationship": "claims_insurer_id_adjuster_id_portfolio_id_fkey",
+                  "direction": "forward"
+                },
+                "fields": [
+                  "per_claim_ceiling_cents",
+                  "reserve_cap_cents",
+                  "routine_ceiling_cents",
+                  "status"
+                ]
+              },
+              {
+                "binding": "portfolio_claims",
+                "resource": "reserve_ops.claims",
+                "source": {
+                  "kind": "relationship",
+                  "from_binding": "portfolio",
+                  "relationship": "claims_insurer_id_adjuster_id_portfolio_id_fkey",
+                  "direction": "inverse"
+                },
+                "fields": [
+                  "claim_id",
+                  "portfolio_id",
+                  "reserve_cents",
+                  "status"
+                ],
+                "max_rows": 64,
+                "overflow": "ineligible",
+                "collection_consistency": "complete_locked",
+                "deterministic_order": [
+                  {
+                    "direction": "asc",
+                    "field": "claim_id"
+                  }
+                ]
+              },
+              {
+                "binding": "portfolio_freezes",
+                "resource": "reserve_ops.freezes",
+                "source": {
+                  "kind": "relationship",
+                  "from_binding": "portfolio",
+                  "relationship": "freezes_insurer_id_adjuster_id_portfolio_id_fkey",
+                  "direction": "inverse"
+                },
+                "fields": [
+                  "active",
+                  "freeze_id",
+                  "portfolio_id"
+                ],
+                "max_rows": 64,
+                "overflow": "ineligible",
+                "collection_consistency": "complete_locked",
+                "deterministic_order": [
+                  {
+                    "direction": "asc",
+                    "field": "freeze_id"
+                  }
+                ]
+              }
+            ]
+          },
+          "effect": {
+            "name": "reserve_ops.adjust_claim_reserve.effect",
+            "operation": "update",
+            "target_resource": "reserve_ops.claims",
+            "target_binding": "selected_claim",
+            "allowed_fields": [
+              {
+                "name": "reserve_cents",
+                "minimum": 1000,
+                "maximum": 100000
+              }
+            ],
+            "set": {
+              "reserve_cents": {
+                "kind": "input",
+                "name": "desired_cents"
+              }
+            },
+            "writeback": "supervised"
+          },
+          "require": {
+            "expressions": [
+              {
+                "expression": {
+                  "binding": "portfolio_freezes",
+                  "kind": "exists",
+                  "where": {
+                    "kind": "compare",
+                    "left": {
+                      "binding": "portfolio_freezes",
+                      "field": "active",
+                      "kind": "field"
+                    },
+                    "operator": "eq",
+                    "right": {
+                      "kind": "literal",
+                      "value": true,
+                      "value_type": {
+                        "kind": "boolean"
+                      }
+                    }
+                  }
+                },
+                "kind": "not"
+              },
+              {
+                "kind": "compare",
+                "left": {
+                  "binding": "portfolio_claims",
+                  "kind": "aggregate",
+                  "operation": "count",
+                  "where": {
+                    "kind": "compare",
+                    "left": {
+                      "binding": "portfolio_claims",
+                      "field": "claim_id",
+                      "kind": "field"
+                    },
+                    "operator": "eq",
+                    "right": {
+                      "binding": "selected_claim",
+                      "field": "claim_id",
+                      "kind": "field"
+                    }
+                  }
+                },
+                "operator": "eq",
+                "right": {
+                  "kind": "literal",
+                  "value": 1,
+                  "value_type": {
+                    "kind": "integer",
+                    "unit": "rows"
+                  }
+                }
+              },
+              {
+                "kind": "compare",
+                "left": {
+                  "binding": "portfolio",
+                  "field": "status",
+                  "kind": "field"
+                },
+                "operator": "eq",
+                "right": {
+                  "kind": "literal",
+                  "value": "active",
+                  "value_type": {
+                    "comparison": "exact",
+                    "enum": [
+                      "active",
+                      "closed"
+                    ],
+                    "kind": "string",
+                    "max_length": 6
+                  }
+                }
+              },
+              {
+                "kind": "compare",
+                "left": {
+                  "binding": "selected_claim",
+                  "field": "status",
+                  "kind": "field"
+                },
+                "operator": "eq",
+                "right": {
+                  "kind": "literal",
+                  "value": "active",
+                  "value_type": {
+                    "comparison": "exact",
+                    "enum": [
+                      "active",
+                      "closed"
+                    ],
+                    "kind": "string",
+                    "max_length": 6
+                  }
+                }
+              },
+              {
+                "kind": "compare",
+                "left": {
+                  "inputs": [
+                    {
+                      "inputs": [
+                        {
+                          "binding": "portfolio_claims",
+                          "field": "reserve_cents",
+                          "kind": "aggregate",
+                          "operation": "sum",
+                          "where": {
+                            "kind": "compare",
+                            "left": {
+                              "binding": "portfolio_claims",
+                              "field": "status",
+                              "kind": "field"
+                            },
+                            "operator": "eq",
+                            "right": {
+                              "kind": "literal",
+                              "value": "active",
+                              "value_type": {
+                                "comparison": "exact",
+                                "enum": [
+                                  "active",
+                                  "closed"
+                                ],
+                                "kind": "string",
+                                "max_length": 6
+                              }
+                            }
+                          }
+                        },
+                        {
+                          "binding": "selected_claim",
+                          "field": "reserve_cents",
+                          "kind": "field"
+                        }
+                      ],
+                      "kind": "math",
+                      "operation": "subtract"
+                    },
+                    {
+                      "kind": "input",
+                      "name": "desired_cents"
+                    }
+                  ],
+                  "kind": "math",
+                  "operation": "add"
+                },
+                "operator": "lte",
+                "right": {
+                  "binding": "portfolio",
+                  "field": "reserve_cap_cents",
+                  "kind": "field"
+                }
+              },
+              {
+                "kind": "compare",
+                "left": {
+                  "kind": "input",
+                  "name": "desired_cents"
+                },
+                "operator": "lte",
+                "right": {
+                  "binding": "portfolio",
+                  "field": "per_claim_ceiling_cents",
+                  "kind": "field"
+                }
+              }
+            ],
+            "kind": "all"
+          },
+          "derive": {},
+          "approval": {
+            "class_name": "reserve_ops.adjust_claim_reserve.approval",
+            "mode": "policy",
+            "auto_approve_when": {
+              "kind": "compare",
+              "left": {
+                "kind": "input",
+                "name": "desired_cents"
+              },
+              "operator": "lte",
+              "right": {
+                "binding": "portfolio",
+                "field": "routine_ceiling_cents",
+                "kind": "field"
+              }
+            },
+            "required_role": "insurance_supervisor",
+            "required_approvals": 1,
+            "shared_limits": [
+              {
+                "id": "reserve_adjustment_overall_24h",
+                "kind": "count",
+                "scope": "capability",
+                "maximum": 8,
+                "window_seconds": 86400,
+                "capability": "reserve_ops.adjust_claim_reserve"
+              },
+              {
+                "id": "reserve_adjustment_per_insurer_24h",
+                "kind": "count",
+                "scope": "tenant",
+                "maximum": 3,
+                "window_seconds": 86400,
+                "capability": "reserve_ops.adjust_claim_reserve"
+              }
+            ]
+          },
+          "ttl_seconds": 300,
+          "review": {
+            "when": "The selected assigned claim and its current portfolio are active, the requested reserve is within the private claim ceiling and portfolio cap, there is no active freeze, and the complete current claim and freeze collections remain within their reviewed bounds.",
+            "then": "Propose changing only the selected claim's reserve to the requested cents. It can complete only after approval, separate execution enablement, and a running supervised worker rechecks current facts.",
+            "refused": [
+              "Refuse requests outside 1,000–100,000 cents.",
+              "Refuse when any current status, private ceiling, freeze, collection, budget, identity, or concurrency check fails or cannot be proven."
+            ],
+            "human_review": "A valid request not automatically approved, including one above the routine ceiling or over an automatic-approval limit, requires one insurance supervisor. Invalid requests are refused.",
+            "examples": [
+              {
+                "kind": "eligible",
+                "scenario": "An active assigned claim has a requested reserve within all private ceilings and cap, no active freeze, and the automatic criteria and limits allow approval.",
+                "result": "The reserve-change proposal is automatically approved; completion still requires separately enabled supervised execution."
+              },
+              {
+                "kind": "human_review",
+                "scenario": "All validity checks pass, but the requested reserve is above the routine automatic-approval ceiling or an automatic approval limit is reached.",
+                "result": "The valid proposal requires one insurance supervisor and does not bypass any check."
+              },
+              {
+                "kind": "ineligible",
+                "scenario": "The claim or portfolio is closed, an active freeze exists, a collection is incomplete or over 64 rows, or the adjusted total would exceed the cap.",
+                "result": "The request is refused without disclosing private facts."
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "read_request_json_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "resource_id"
+    ],
+    "properties": {
+      "resource_id": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      },
+      "include": {
+        "type": "boolean"
+      },
+      "exclude": {
+        "type": "boolean"
+      },
+      "row_identity": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      },
+      "tenant_key": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      },
+      "tenant_scope_path": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 256
+      },
+      "shared_reference_scope": {
+        "const": "table_has_no_per_tenant_rows"
+      },
+      "principal_key": {
+        "oneOf": [
+          {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "principal_scope_path": {
+        "oneOf": [
+          {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "principal_rls_setting": {
+        "oneOf": [
+          {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "metadata": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "label": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "description": {
+            "oneOf": [
+              {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 280
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        }
+      },
+      "field_metadata": {
+        "type": "array",
+        "maxItems": 500,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "field"
+          ],
+          "properties": {
+            "field": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            },
+            "label": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "description": {
+              "oneOf": [
+                {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 280
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      },
+      "keep_out_fields": {
+        "type": "array",
+        "maxItems": 500,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "withhold_from_model_fields": {
+        "type": "array",
+        "maxItems": 500,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "allow_reviewed_fields": {
+        "type": "array",
+        "maxItems": 500,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "selectable_fields": {
+        "type": "array",
+        "maxItems": 500,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "filterable_fields": {
+        "type": "array",
+        "maxItems": 500,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "sortable_fields": {
+        "type": "array",
+        "maxItems": 500,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "groupable_fields": {
+        "type": "array",
+        "maxItems": 500,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "allow_exact_numeric_grouping_fields": {
+        "type": "array",
+        "maxItems": 500,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "remove_exact_numeric_grouping_fields": {
+        "type": "array",
+        "maxItems": 500,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "aggregate_measures": {
+        "type": "array",
+        "maxItems": 500,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "count_distinct_fields": {
+        "type": "array",
+        "maxItems": 500,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "time_bucket_fields": {
+        "type": "array",
+        "maxItems": 500,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "relationship_ids": {
+        "type": "array",
+        "maxItems": 500,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "private_model_fields": {
+        "type": "array",
+        "maxItems": 500,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "preserve_unselected_fields": {
+        "type": "array",
+        "maxItems": 500,
+        "uniqueItems": true,
+        "items": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 256
+        }
+      },
+      "minimum_cohort_size": {
+        "type": "integer",
+        "minimum": 1,
+        "maximum": 5
+      },
+      "nullable_relationship": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "relationship_id",
+          "unmatched_rows"
+        ],
+        "properties": {
+          "relationship_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "unmatched_rows": {
+            "enum": [
+              "exclude",
+              "keep_null"
+            ]
+          }
+        }
+      },
+      "field_enum": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "field",
+          "values"
+        ],
+        "properties": {
+          "field": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 256
+          },
+          "values": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 256,
+            "uniqueItems": true,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256
+            }
+          }
+        }
+      }
+    }
+  },
+  "action_rule_draft_json_schema": {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "schema_version",
+      "name",
+      "outcome",
+      "require",
+      "derive",
+      "ttl_seconds",
+      "review",
+      "verification",
+      "effect",
+      "approval"
+    ],
+    "properties": {
+      "schema_version": {
+        "const": "synapsor.action-rule-model-draft.v1"
+      },
+      "name": {
+        "type": "string",
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)+$",
+        "maxLength": 256
+      },
+      "outcome": {
+        "type": "string",
+        "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)+$",
+        "maxLength": 256
+      },
+      "discovery": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "title",
+          "summary",
+          "aliases"
+        ],
+        "description": "Public client catalog wording, reviewed with this rule. Use only established business meaning; never private facts or identity values. Does not grant eligibility.",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 160
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 400
+          },
+          "aliases": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 80
+            }
+          }
+        }
+      },
+      "inputs": {
+        "type": "array",
+        "maxItems": 32,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "description",
+            "type"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "pattern": "^[A-Za-z_][A-Za-z0-9_]{0,127}$"
+            },
+            "description": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            "type": {
+              "$ref": "#/$defs/scalar_type"
+            },
+            "minimum": {
+              "type": "integer"
+            },
+            "maximum": {
+              "type": "integer"
+            }
+          }
+        }
+      },
+      "require": {
+        "$ref": "#/$defs/boolean_expression"
+      },
+      "derive": {
+        "type": "object",
+        "maxProperties": 32,
+        "additionalProperties": {
+          "$ref": "#/$defs/scalar_expression"
+        }
+      },
+      "ttl_seconds": {
+        "type": "integer",
+        "minimum": 30,
+        "maximum": 3600
+      },
+      "review": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "when",
+          "then",
+          "refused",
+          "human_review",
+          "examples"
+        ],
+        "properties": {
+          "when": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "then": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "refused": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 16,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            }
+          },
+          "human_review": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000
+          },
+          "examples": {
+            "type": "array",
+            "minItems": 2,
+            "maxItems": 16,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "kind",
+                "scenario",
+                "result"
+              ],
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "eligible",
+                    "ineligible",
+                    "human_review"
+                  ]
+                },
+                "scenario": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                },
+                "result": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 500
+                }
+              }
+            }
+          }
+        }
+      },
+      "verification": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "name",
+          "resources"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "resources": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 12,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "binding",
+                "resource",
+                "source",
+                "fields"
+              ],
+              "properties": {
+                "binding": {
+                  "type": "string"
+                },
+                "resource": {
+                  "type": "string"
+                },
+                "source": {
+                  "type": "object",
+                  "oneOf": [
+                    {
+                      "additionalProperties": false,
+                      "required": [
+                        "kind"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "const": "subject_ref"
+                        }
+                      }
+                    },
+                    {
+                      "additionalProperties": false,
+                      "required": [
+                        "kind",
+                        "from_binding",
+                        "relationship",
+                        "direction"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "const": "relationship"
+                        },
+                        "from_binding": {
+                          "type": "string"
+                        },
+                        "relationship": {
+                          "type": "string"
+                        },
+                        "direction": {
+                          "type": "string",
+                          "enum": [
+                            "forward",
+                            "inverse"
+                          ]
+                        }
+                      }
+                    }
+                  ]
+                },
+                "fields": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "maxItems": 128
+                },
+                "max_rows": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 100
+                },
+                "overflow": {
+                  "type": "string",
+                  "enum": [
+                    "ineligible",
+                    "unsupported"
+                  ]
+                },
+                "collection_consistency": {
+                  "const": "complete_locked",
+                  "description": "A reviewed complete relationship collection; Runner also derives this requirement for negative existence. Never substitute a stored eligibility flag for a required absence check."
+                },
+                "deterministic_order": {
+                  "type": "array",
+                  "maxItems": 4,
+                  "items": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                      "field",
+                      "direction"
+                    ],
+                    "properties": {
+                      "field": {
+                        "type": "string"
+                      },
+                      "direction": {
+                        "type": "string",
+                        "enum": [
+                          "asc",
+                          "desc"
+                        ]
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "effect": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "operation",
+              "target_resource",
+              "target_binding",
+              "allowed_fields",
+              "set",
+              "writeback"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "operation": {
+                "const": "update"
+              },
+              "target_resource": {
+                "type": "string"
+              },
+              "target_binding": {
+                "type": "string"
+              },
+              "atomic_updates": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 3,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "operation",
+                    "target_resource",
+                    "target_binding",
+                    "allowed_fields",
+                    "set"
+                  ],
+                  "properties": {
+                    "operation": {
+                      "const": "update"
+                    },
+                    "target_resource": {
+                      "type": "string"
+                    },
+                    "target_binding": {
+                      "type": "string"
+                    },
+                    "allowed_fields": {
+                      "type": "array",
+                      "minItems": 1,
+                      "maxItems": 32,
+                      "items": {
+                        "type": "object",
+                        "additionalProperties": false,
+                        "required": [
+                          "name"
+                        ],
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "minimum": {
+                            "type": "number"
+                          },
+                          "maximum": {
+                            "type": "number"
+                          },
+                          "values": {
+                            "type": "array",
+                            "maxItems": 128,
+                            "items": {
+                              "oneOf": [
+                                {
+                                  "type": "string"
+                                },
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "boolean"
+                                },
+                                {
+                                  "type": "null"
+                                }
+                              ]
+                            }
+                          }
+                        }
+                      }
+                    },
+                    "set": {
+                      "type": "object",
+                      "minProperties": 1,
+                      "maxProperties": 32,
+                      "additionalProperties": {
+                        "$ref": "#/$defs/scalar_expression"
+                      }
+                    }
+                  }
+                }
+              },
+              "allowed_fields": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 32,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "minimum": {
+                      "type": "number"
+                    },
+                    "maximum": {
+                      "type": "number"
+                    },
+                    "values": {
+                      "type": "array",
+                      "maxItems": 128,
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "boolean"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              "set": {
+                "type": "object",
+                "minProperties": 1,
+                "maxProperties": 32,
+                "additionalProperties": {
+                  "$ref": "#/$defs/scalar_expression"
+                }
+              },
+              "writeback": {
+                "type": "string",
+                "enum": [
+                  "proposal_only",
+                  "supervised"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "name",
+              "operation",
+              "target_resource",
+              "allowed_fields",
+              "set",
+              "writeback"
+            ],
+            "properties": {
+              "name": {
+                "type": "string"
+              },
+              "operation": {
+                "const": "insert"
+              },
+              "target_resource": {
+                "type": "string"
+              },
+              "allowed_fields": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 32,
+                "items": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "name"
+                  ],
+                  "properties": {
+                    "name": {
+                      "type": "string"
+                    },
+                    "minimum": {
+                      "type": "number"
+                    },
+                    "maximum": {
+                      "type": "number"
+                    },
+                    "values": {
+                      "type": "array",
+                      "maxItems": 128,
+                      "items": {
+                        "oneOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "boolean"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              "set": {
+                "type": "object",
+                "minProperties": 1,
+                "maxProperties": 32,
+                "additionalProperties": {
+                  "$ref": "#/$defs/scalar_expression"
+                }
+              },
+              "writeback": {
+                "type": "string",
+                "enum": [
+                  "proposal_only",
+                  "supervised"
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "approval": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "class_name",
+          "mode",
+          "required_role",
+          "required_approvals",
+          "shared_limits"
+        ],
+        "properties": {
+          "class_name": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_]*(?:\\.[A-Za-z_][A-Za-z0-9_]*)+$",
+            "maxLength": 256
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "human",
+              "policy"
+            ]
+          },
+          "auto_approve_when": {
+            "$ref": "#/$defs/boolean_expression"
+          },
+          "required_role": {
+            "type": "string",
+            "pattern": "^[A-Za-z_][A-Za-z0-9_.:-]{0,159}$",
+            "description": "Internal label for the operator's business reviewer role. Derive warehouse_manager from warehouse manager; this does not authenticate or authorize a reviewer."
+          },
+          "required_approvals": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 16
+          },
+          "shared_limits": {
+            "type": "array",
+            "maxItems": 16,
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "kind",
+                "scope",
+                "maximum",
+                "window_seconds"
+              ],
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "count",
+                    "total"
+                  ]
+                },
+                "scope": {
+                  "type": "string",
+                  "enum": [
+                    "boundary",
+                    "capability",
+                    "tenant",
+                    "tenant_principal",
+                    "tenant_object"
+                  ]
+                },
+                "maximum": {
+                  "type": "number",
+                  "exclusiveMinimum": 0
+                },
+                "window_seconds": {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                "capability": {
+                  "type": "string"
+                },
+                "field": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "$defs": {
+      "scalar_type": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "boolean"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "integer"
+              },
+              "unit": {
+                "type": "string",
+                "maxLength": 32
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "currency"
+            ],
+            "properties": {
+              "kind": {
+                "const": "money_minor"
+              },
+              "currency": {
+                "type": "string",
+                "pattern": "^[A-Z]{3}$"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "max_length",
+              "comparison"
+            ],
+            "properties": {
+              "kind": {
+                "const": "string"
+              },
+              "max_length": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 4096
+              },
+              "enum": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 256,
+                "uniqueItems": true,
+                "items": {
+                  "type": "string"
+                }
+              },
+              "comparison": {
+                "const": "exact"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "date"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind"
+            ],
+            "properties": {
+              "kind": {
+                "const": "timestamp"
+              }
+            }
+          }
+        ]
+      },
+      "scalar_expression": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "name"
+            ],
+            "properties": {
+              "kind": {
+                "const": "input"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "value",
+              "value_type"
+            ],
+            "properties": {
+              "kind": {
+                "const": "literal"
+              },
+              "value": {
+                "oneOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              "value_type": {
+                "$ref": "#/$defs/scalar_type"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "binding"
+            ],
+            "properties": {
+              "kind": {
+                "const": "trusted"
+              },
+              "binding": {
+                "type": "string",
+                "enum": [
+                  "tenant",
+                  "organization",
+                  "principal",
+                  "transaction_time"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "binding",
+              "field"
+            ],
+            "properties": {
+              "kind": {
+                "const": "field"
+              },
+              "binding": {
+                "type": "string"
+              },
+              "field": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "name"
+            ],
+            "properties": {
+              "kind": {
+                "const": "derived"
+              },
+              "name": {
+                "type": "string"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "operation",
+              "binding"
+            ],
+            "properties": {
+              "kind": {
+                "const": "aggregate"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "count",
+                  "sum",
+                  "min",
+                  "max"
+                ]
+              },
+              "binding": {
+                "type": "string"
+              },
+              "field": {
+                "type": "string"
+              },
+              "where": {
+                "$ref": "#/$defs/boolean_expression"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "operation",
+              "inputs"
+            ],
+            "properties": {
+              "kind": {
+                "const": "math"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "add",
+                  "subtract",
+                  "min",
+                  "max"
+                ]
+              },
+              "inputs": {
+                "type": "array",
+                "minItems": 2,
+                "maxItems": 16,
+                "items": {
+                  "$ref": "#/$defs/scalar_expression"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "operation",
+              "input",
+              "constant",
+              "rounding"
+            ],
+            "properties": {
+              "kind": {
+                "const": "scale"
+              },
+              "operation": {
+                "type": "string",
+                "enum": [
+                  "multiply",
+                  "divide"
+                ]
+              },
+              "input": {
+                "$ref": "#/$defs/scalar_expression"
+              },
+              "constant": {
+                "type": "integer"
+              },
+              "rounding": {
+                "type": "string",
+                "enum": [
+                  "floor",
+                  "ceiling",
+                  "half_even"
+                ]
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "input",
+              "minimum",
+              "maximum"
+            ],
+            "properties": {
+              "kind": {
+                "const": "clamp"
+              },
+              "input": {
+                "$ref": "#/$defs/scalar_expression"
+              },
+              "minimum": {
+                "$ref": "#/$defs/scalar_expression"
+              },
+              "maximum": {
+                "$ref": "#/$defs/scalar_expression"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "timestamp",
+              "seconds"
+            ],
+            "properties": {
+              "kind": {
+                "const": "add_duration"
+              },
+              "timestamp": {
+                "$ref": "#/$defs/scalar_expression"
+              },
+              "seconds": {
+                "type": "integer",
+                "minimum": -31536000,
+                "maximum": 31536000
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "timestamp",
+              "timezone"
+            ],
+            "properties": {
+              "kind": {
+                "const": "date_of"
+              },
+              "timestamp": {
+                "$ref": "#/$defs/scalar_expression"
+              },
+              "timezone": {
+                "const": "UTC"
+              }
+            }
+          }
+        ]
+      },
+      "boolean_expression": {
+        "oneOf": [
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "expressions"
+            ],
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "any"
+                ]
+              },
+              "expressions": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 32,
+                "items": {
+                  "$ref": "#/$defs/boolean_expression"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "expression"
+            ],
+            "properties": {
+              "kind": {
+                "const": "not"
+              },
+              "expression": {
+                "$ref": "#/$defs/boolean_expression"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "operator",
+              "left",
+              "right"
+            ],
+            "properties": {
+              "kind": {
+                "const": "compare"
+              },
+              "operator": {
+                "type": "string",
+                "enum": [
+                  "eq",
+                  "neq",
+                  "lt",
+                  "lte",
+                  "gt",
+                  "gte"
+                ]
+              },
+              "left": {
+                "$ref": "#/$defs/scalar_expression"
+              },
+              "right": {
+                "$ref": "#/$defs/scalar_expression"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "operator",
+              "value"
+            ],
+            "properties": {
+              "kind": {
+                "const": "null_check"
+              },
+              "operator": {
+                "type": "string",
+                "enum": [
+                  "is_null",
+                  "is_not_null"
+                ]
+              },
+              "value": {
+                "$ref": "#/$defs/scalar_expression"
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "value",
+              "values"
+            ],
+            "properties": {
+              "kind": {
+                "const": "in"
+              },
+              "value": {
+                "$ref": "#/$defs/scalar_expression"
+              },
+              "values": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 256,
+                "items": {
+                  "$ref": "#/$defs/scalar_expression"
+                }
+              }
+            }
+          },
+          {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "kind",
+              "binding",
+              "where"
+            ],
+            "properties": {
+              "kind": {
+                "const": "exists"
+              },
+              "binding": {
+                "type": "string"
+              },
+              "where": {
+                "$ref": "#/$defs/boolean_expression"
+              }
+            }
+          }
+        ]
+      }
+    }
+  },
+  "action_authoring_catalog": {
+    "schema_version": "synapsor.action-rule-authoring-catalog.v1",
+    "source": "local_postgres",
+    "engine": "postgres",
+    "read_boundary_name": "reviewed_staging",
+    "generation_lock_fingerprint": "sha256:6f5cab71c0315171d81b44029908608d555444245279d216d0d65b621092ad17",
+    "resources": [
+      {
+        "name": "reserve_ops.claims",
+        "primary_key": "claim_id",
+        "tenant_scope": "direct",
+        "tenant_key": "insurer_id",
+        "principal_scope": "direct",
+        "principal_key": "adjuster_id",
+        "principal_rls_setting": "app.adjuster_id",
+        "version_candidates": [
+          "version"
+        ],
+        "version_field_options": [
+          "reserve_cents",
+          "version"
+        ],
+        "selected_version_field": "version",
+        "operations": {
+          "update": true,
+          "insert": true
+        },
+        "fields": [
+          {
+            "name": "claim_id",
+            "type": {
+              "kind": "string",
+              "max_length": 36,
+              "comparison": "exact"
+            },
+            "nullable": false,
+            "role": "guard",
+            "writable": false
+          },
+          {
+            "name": "insurer_id",
+            "type": {
+              "kind": "string",
+              "max_length": 36,
+              "comparison": "exact"
+            },
+            "nullable": false,
+            "role": "guard",
+            "writable": false
+          },
+          {
+            "name": "adjuster_id",
+            "type": {
+              "kind": "string",
+              "max_length": 36,
+              "comparison": "exact"
+            },
+            "nullable": false,
+            "role": "guard",
+            "writable": false
+          },
+          {
+            "name": "portfolio_id",
+            "type": {
+              "kind": "string",
+              "max_length": 36,
+              "comparison": "exact"
+            },
+            "nullable": false,
+            "role": "runner_verification_only",
+            "writable": true
+          },
+          {
+            "name": "claim_ref",
+            "type": {
+              "kind": "string",
+              "max_length": 4096,
+              "comparison": "exact"
+            },
+            "nullable": false,
+            "role": "model_visible",
+            "writable": true
+          },
+          {
+            "name": "status",
+            "type": {
+              "kind": "string",
+              "max_length": 6,
+              "enum": [
+                "active",
+                "closed"
+              ],
+              "comparison": "exact"
+            },
+            "nullable": false,
+            "role": "model_visible",
+            "writable": true,
+            "enum_source": "schema"
+          },
+          {
+            "name": "reserve_cents",
+            "type": {
+              "kind": "integer",
+              "unit": "minor_currency_units"
+            },
+            "nullable": false,
+            "role": "model_visible",
+            "writable": true
+          },
+          {
+            "name": "service_label",
+            "type": {
+              "kind": "string",
+              "max_length": 8,
+              "enum": [
+                "review",
+                "standard"
+              ],
+              "comparison": "exact"
+            },
+            "nullable": false,
+            "role": "model_visible",
+            "writable": true,
+            "enum_source": "schema"
+          },
+          {
+            "name": "version",
+            "type": {
+              "kind": "integer"
+            },
+            "nullable": false,
+            "role": "guard",
+            "writable": false
+          }
+        ],
+        "source_constraints": {
+          "resource": "reserve_ops.claims",
+          "primary_key": {
+            "columns": [
+              "claim_id"
+            ],
+            "column_count": 1,
+            "non_null_columns": [
+              "claim_id"
+            ],
+            "all_columns_non_null": true,
+            "unconditional": true
+          },
+          "unique_constraints": {
+            "claims_claim_ref_key": {
+              "columns": [
+                "claim_ref"
+              ],
+              "column_count": 1,
+              "non_null_columns": [
+                "claim_ref"
+              ],
+              "all_columns_non_null": true,
+              "unconditional": true
+            }
+          },
+          "check_constraints": {
+            "claims_reserve_cents_check": {
+              "definition": "CHECK (reserve_cents >= 0 AND reserve_cents <= 100000)",
+              "enforced": true
+            },
+            "claims_service_label_check": {
+              "definition": "CHECK (service_label = ANY (ARRAY['standard'::text, 'review'::text]))",
+              "enforced": true
+            },
+            "claims_status_check": {
+              "definition": "CHECK (status = ANY (ARRAY['active'::text, 'closed'::text]))",
+              "enforced": true
+            },
+            "claims_version_check": {
+              "definition": "CHECK (version >= 1)",
+              "enforced": true
+            }
+          }
+        }
+      },
+      {
+        "name": "reserve_ops.freezes",
+        "primary_key": "freeze_id",
+        "tenant_scope": "direct",
+        "tenant_key": "insurer_id",
+        "principal_scope": "direct",
+        "principal_key": "adjuster_id",
+        "version_candidates": [
+          "version"
+        ],
+        "version_field_options": [
+          "version"
+        ],
+        "selected_version_field": "version",
+        "operations": {
+          "update": true,
+          "insert": true
+        },
+        "fields": [
+          {
+            "name": "freeze_id",
+            "type": {
+              "kind": "string",
+              "max_length": 36,
+              "comparison": "exact"
+            },
+            "nullable": false,
+            "role": "guard",
+            "writable": false
+          },
+          {
+            "name": "insurer_id",
+            "type": {
+              "kind": "string",
+              "max_length": 36,
+              "comparison": "exact"
+            },
+            "nullable": false,
+            "role": "guard",
+            "writable": false
+          },
+          {
+            "name": "adjuster_id",
+            "type": {
+              "kind": "string",
+              "max_length": 36,
+              "comparison": "exact"
+            },
+            "nullable": false,
+            "role": "guard",
+            "writable": false
+          },
+          {
+            "name": "portfolio_id",
+            "type": {
+              "kind": "string",
+              "max_length": 36,
+              "comparison": "exact"
+            },
+            "nullable": false,
+            "role": "runner_verification_only",
+            "writable": true
+          },
+          {
+            "name": "active",
+            "type": {
+              "kind": "boolean"
+            },
+            "nullable": false,
+            "role": "runner_verification_only",
+            "writable": true
+          },
+          {
+            "name": "version",
+            "type": {
+              "kind": "integer"
+            },
+            "nullable": false,
+            "role": "guard",
+            "writable": false
+          }
+        ],
+        "source_constraints": {
+          "resource": "reserve_ops.freezes",
+          "primary_key": {
+            "columns": [
+              "freeze_id"
+            ],
+            "column_count": 1,
+            "non_null_columns": [
+              "freeze_id"
+            ],
+            "all_columns_non_null": true,
+            "unconditional": true
+          },
+          "unique_constraints": {},
+          "check_constraints": {
+            "freezes_version_check": {
+              "definition": "CHECK (version >= 1)",
+              "enforced": true
+            }
+          }
+        }
+      },
+      {
+        "name": "reserve_ops.portfolios",
+        "primary_key": "portfolio_id",
+        "tenant_scope": "direct",
+        "tenant_key": "insurer_id",
+        "principal_scope": "direct",
+        "principal_key": "adjuster_id",
+        "principal_rls_setting": "app.adjuster_id",
+        "version_candidates": [
+          "version"
+        ],
+        "version_field_options": [
+          "per_claim_ceiling_cents",
+          "reserve_cap_cents",
+          "routine_ceiling_cents",
+          "version"
+        ],
+        "selected_version_field": "version",
+        "operations": {
+          "update": true,
+          "insert": true
+        },
+        "fields": [
+          {
+            "name": "portfolio_id",
+            "type": {
+              "kind": "string",
+              "max_length": 36,
+              "comparison": "exact"
+            },
+            "nullable": false,
+            "role": "guard",
+            "writable": false
+          },
+          {
+            "name": "insurer_id",
+            "type": {
+              "kind": "string",
+              "max_length": 36,
+              "comparison": "exact"
+            },
+            "nullable": false,
+            "role": "guard",
+            "writable": false
+          },
+          {
+            "name": "adjuster_id",
+            "type": {
+              "kind": "string",
+              "max_length": 36,
+              "comparison": "exact"
+            },
+            "nullable": false,
+            "role": "guard",
+            "writable": false
+          },
+          {
+            "name": "portfolio_ref",
+            "type": {
+              "kind": "string",
+              "max_length": 4096,
+              "comparison": "exact"
+            },
+            "nullable": false,
+            "role": "model_visible",
+            "writable": true
+          },
+          {
+            "name": "status",
+            "type": {
+              "kind": "string",
+              "max_length": 6,
+              "enum": [
+                "active",
+                "closed"
+              ],
+              "comparison": "exact"
+            },
+            "nullable": false,
+            "role": "model_visible",
+            "writable": true,
+            "enum_source": "schema"
+          },
+          {
+            "name": "reserve_cap_cents",
+            "type": {
+              "kind": "integer",
+              "unit": "minor_currency_units"
+            },
+            "nullable": false,
+            "role": "runner_verification_only",
+            "writable": true
+          },
+          {
+            "name": "per_claim_ceiling_cents",
+            "type": {
+              "kind": "integer",
+              "unit": "minor_currency_units"
+            },
+            "nullable": false,
+            "role": "runner_verification_only",
+            "writable": true
+          },
+          {
+            "name": "routine_ceiling_cents",
+            "type": {
+              "kind": "integer",
+              "unit": "minor_currency_units"
+            },
+            "nullable": false,
+            "role": "runner_verification_only",
+            "writable": true
+          },
+          {
+            "name": "version",
+            "type": {
+              "kind": "integer"
+            },
+            "nullable": false,
+            "role": "guard",
+            "writable": false
+          }
+        ],
+        "source_constraints": {
+          "resource": "reserve_ops.portfolios",
+          "primary_key": {
+            "columns": [
+              "portfolio_id"
+            ],
+            "column_count": 1,
+            "non_null_columns": [
+              "portfolio_id"
+            ],
+            "all_columns_non_null": true,
+            "unconditional": true
+          },
+          "unique_constraints": {
+            "portfolios_insurer_id_adjuster_id_portfolio_id_key": {
+              "columns": [
+                "insurer_id",
+                "adjuster_id",
+                "portfolio_id"
+              ],
+              "column_count": 3,
+              "non_null_columns": [
+                "insurer_id",
+                "adjuster_id",
+                "portfolio_id"
+              ],
+              "all_columns_non_null": true,
+              "unconditional": true
+            },
+            "portfolios_portfolio_ref_key": {
+              "columns": [
+                "portfolio_ref"
+              ],
+              "column_count": 1,
+              "non_null_columns": [
+                "portfolio_ref"
+              ],
+              "all_columns_non_null": true,
+              "unconditional": true
+            }
+          },
+          "check_constraints": {
+            "portfolios_check": {
+              "definition": "CHECK (routine_ceiling_cents >= 1000 AND routine_ceiling_cents <= per_claim_ceiling_cents)",
+              "enforced": true
+            },
+            "portfolios_per_claim_ceiling_cents_check": {
+              "definition": "CHECK (per_claim_ceiling_cents >= 1000 AND per_claim_ceiling_cents <= 100000)",
+              "enforced": true
+            },
+            "portfolios_reserve_cap_cents_check": {
+              "definition": "CHECK (reserve_cap_cents >= 1000 AND reserve_cap_cents <= 1000000)",
+              "enforced": true
+            },
+            "portfolios_status_check": {
+              "definition": "CHECK (status = ANY (ARRAY['active'::text, 'closed'::text]))",
+              "enforced": true
+            },
+            "portfolios_version_check": {
+              "definition": "CHECK (version >= 1)",
+              "enforced": true
+            }
+          }
+        }
+      }
+    ],
+    "relationships": [
+      {
+        "name": "claims_insurer_id_adjuster_id_portfolio_id_fkey",
+        "from_resource": "reserve_ops.claims",
+        "to_resource": "reserve_ops.portfolios",
+        "field_pairs": [
+          {
+            "local_field": "insurer_id",
+            "target_field": "insurer_id"
+          },
+          {
+            "local_field": "adjuster_id",
+            "target_field": "adjuster_id"
+          },
+          {
+            "local_field": "portfolio_id",
+            "target_field": "portfolio_id"
+          }
+        ],
+        "cardinality": "many_to_one",
+        "nullable": false,
+        "target_unique": true
+      },
+      {
+        "name": "freezes_insurer_id_adjuster_id_portfolio_id_fkey",
+        "from_resource": "reserve_ops.freezes",
+        "to_resource": "reserve_ops.portfolios",
+        "field_pairs": [
+          {
+            "local_field": "insurer_id",
+            "target_field": "insurer_id"
+          },
+          {
+            "local_field": "adjuster_id",
+            "target_field": "adjuster_id"
+          },
+          {
+            "local_field": "portfolio_id",
+            "target_field": "portfolio_id"
+          }
+        ],
+        "cardinality": "many_to_one",
+        "nullable": false,
+        "target_unique": true
+      }
+    ],
+    "supported_language": {
+      "comparisons": [
+        "eq",
+        "neq",
+        "lt",
+        "lte",
+        "gt",
+        "gte"
+      ],
+      "predicates": [
+        "all",
+        "any",
+        "not",
+        "null_check",
+        "in",
+        "exists"
+      ],
+      "aggregates": [
+        "count",
+        "sum",
+        "min",
+        "max"
+      ],
+      "arithmetic": [
+        "add",
+        "subtract",
+        "min",
+        "max",
+        "multiply",
+        "divide",
+        "clamp",
+        "add_duration",
+        "date_of"
+      ],
+      "effects": [
+        "single_row_update",
+        "single_row_insert"
+      ],
+      "atomic_updates": {
+        "maximum_records": 4,
+        "same_source": true,
+        "versioned_updates_only": true,
+        "all_or_nothing": true
+      },
+      "complete_collections": {
+        "strategy": "complete_locked",
+        "shape": "inverse_foreign_key_from_one_scoped_parent",
+        "visibility_and_phantoms_reverified": true
+      }
+    },
+    "diagnostics": []
+  },
+  "read_authoring_catalog": {
+    "schema_version": "synapsor.auto-boundary.v1",
+    "activation": "blocked_unreviewed",
+    "structured_actions": [],
+    "engine": "postgres",
+    "resources": [
+      {
+        "id": "reserve_ops.claims",
+        "status": "draft_read",
+        "blockers": [],
+        "primary_key": {
+          "alternatives_considered": [
+            {
+              "confidence": "high",
+              "evidence": [
+                "database: inspected primary key: claim_id",
+                "database: inspected single-column unique identifiers: claim_id, claim_ref"
+              ],
+              "selected": true,
+              "value": "claim_id"
+            },
+            {
+              "confidence": "high",
+              "evidence": [
+                "database: inspected primary key: claim_id",
+                "database: inspected single-column unique identifiers: claim_id, claim_ref"
+              ],
+              "selected": false,
+              "value": "claim_ref"
+            }
+          ],
+          "candidates": [
+            "claim_id",
+            "claim_ref"
+          ],
+          "confidence": "high",
+          "confirmation_required": true,
+          "evidence": [
+            {
+              "detail": "inspected primary key: claim_id",
+              "source": "database"
+            },
+            {
+              "detail": "inspected single-column unique identifiers: claim_id, claim_ref",
+              "source": "database"
+            }
+          ],
+          "safety_consequence": "The wrong identifier could select a different row or make one-row guarantees impossible.",
+          "selected": "claim_id"
+        },
+        "tenant_key": {
+          "alternatives_considered": [
+            {
+              "confidence": "high",
+              "evidence": [
+                "Human reviewed this inspected tenant-scope column."
+              ],
+              "selected": true,
+              "value": "insurer_id"
+            }
+          ],
+          "candidates": [
+            "insurer_id"
+          ],
+          "confidence": "high",
+          "confirmation_required": true,
+          "evidence": [
+            {
+              "detail": "human-reviewed tenant key override: insurer_id",
+              "source": "synapsor"
+            }
+          ],
+          "safety_consequence": "The wrong tenant key can cause cross-tenant reads; confirmation is mandatory.",
+          "selected": "insurer_id"
+        },
+        "principal_key": {
+          "alternatives_considered": [
+            {
+              "confidence": "high",
+              "evidence": [
+                "Human reviewed this inspected principal-scope column."
+              ],
+              "selected": true,
+              "value": "adjuster_id"
+            }
+          ],
+          "candidates": [
+            "adjuster_id"
+          ],
+          "confidence": "high",
+          "confirmation_required": true,
+          "evidence": [
+            {
+              "detail": "human-reviewed principal key override: adjuster_id",
+              "source": "synapsor"
+            }
+          ],
+          "safety_consequence": "An incorrect owner or assignee key can expose another principal's row.",
+          "selected": "adjuster_id"
+        },
+        "fields": [
+          {
+            "name": "claim_id",
+            "aggregate_measure_suggestion": false,
+            "count_distinct_suggestion": true,
+            "data_type": "uuid",
+            "evidence": [
+              "database column claim_id uuid",
+              "database classification: No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+            ],
+            "groupable_suggestion": false,
+            "nullable": false,
+            "primary_key": true,
+            "raw_visible_suggestion": true,
+            "sensitive_suggestion": false,
+            "sensitivity": {
+              "evidence_source": "database",
+              "reason_codes": [
+                "no_sensitive_structural_signal"
+              ],
+              "reasons": [
+                "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+              ],
+              "state": "structurally_low_risk"
+            },
+            "time_bucket_suggestion": false
+          },
+          {
+            "name": "insurer_id",
+            "aggregate_measure_suggestion": false,
+            "count_distinct_suggestion": true,
+            "data_type": "uuid",
+            "evidence": [
+              "database column insurer_id uuid",
+              "database classification: No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+            ],
+            "groupable_suggestion": false,
+            "nullable": false,
+            "primary_key": false,
+            "raw_visible_suggestion": true,
+            "sensitive_suggestion": false,
+            "sensitivity": {
+              "evidence_source": "database",
+              "reason_codes": [
+                "no_sensitive_structural_signal"
+              ],
+              "reasons": [
+                "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+              ],
+              "state": "structurally_low_risk"
+            },
+            "time_bucket_suggestion": false
+          },
+          {
+            "name": "adjuster_id",
+            "aggregate_measure_suggestion": false,
+            "count_distinct_suggestion": true,
+            "data_type": "uuid",
+            "evidence": [
+              "database column adjuster_id uuid",
+              "database classification: No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+            ],
+            "groupable_suggestion": false,
+            "nullable": false,
+            "primary_key": false,
+            "raw_visible_suggestion": true,
+            "sensitive_suggestion": false,
+            "sensitivity": {
+              "evidence_source": "database",
+              "reason_codes": [
+                "no_sensitive_structural_signal"
+              ],
+              "reasons": [
+                "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+              ],
+              "state": "structurally_low_risk"
+            },
+            "time_bucket_suggestion": false
+          },
+          {
+            "name": "portfolio_id",
+            "aggregate_measure_suggestion": false,
+            "count_distinct_suggestion": true,
+            "data_type": "uuid",
+            "evidence": [
+              "database column portfolio_id uuid",
+              "database classification: No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+            ],
+            "groupable_suggestion": false,
+            "nullable": false,
+            "primary_key": false,
+            "raw_visible_suggestion": true,
+            "sensitive_suggestion": false,
+            "sensitivity": {
+              "evidence_source": "database",
+              "reason_codes": [
+                "no_sensitive_structural_signal"
+              ],
+              "reasons": [
+                "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+              ],
+              "state": "structurally_low_risk"
+            },
+            "time_bucket_suggestion": false
+          },
+          {
+            "name": "claim_ref",
+            "aggregate_measure_suggestion": false,
+            "count_distinct_suggestion": false,
+            "data_type": "text",
+            "evidence": [
+              "database column claim_ref text",
+              "database classification: No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+            ],
+            "groupable_suggestion": true,
+            "nullable": false,
+            "primary_key": false,
+            "raw_visible_suggestion": true,
+            "sensitive_suggestion": false,
+            "sensitivity": {
+              "evidence_source": "database",
+              "reason_codes": [
+                "no_sensitive_structural_signal"
+              ],
+              "reasons": [
+                "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+              ],
+              "state": "structurally_low_risk"
+            },
+            "time_bucket_suggestion": false
+          },
+          {
+            "name": "status",
+            "aggregate_measure_suggestion": false,
+            "count_distinct_suggestion": false,
+            "data_type": "text",
+            "enum_values": [
+              "active",
+              "closed"
+            ],
+            "evidence": [
+              "database column status text",
+              "database classification: No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata.",
+              "database enum values: active, closed"
+            ],
+            "groupable_suggestion": true,
+            "nullable": false,
+            "primary_key": false,
+            "raw_visible_suggestion": true,
+            "sensitive_suggestion": false,
+            "sensitivity": {
+              "evidence_source": "database",
+              "reason_codes": [
+                "no_sensitive_structural_signal"
+              ],
+              "reasons": [
+                "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+              ],
+              "state": "structurally_low_risk"
+            },
+            "time_bucket_suggestion": false
+          },
+          {
+            "name": "reserve_cents",
+            "aggregate_measure_suggestion": true,
+            "count_distinct_suggestion": false,
+            "data_type": "integer",
+            "evidence": [
+              "database column reserve_cents integer",
+              "database classification: No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+            ],
+            "groupable_suggestion": false,
+            "nullable": false,
+            "primary_key": false,
+            "raw_visible_suggestion": true,
+            "sensitive_suggestion": false,
+            "sensitivity": {
+              "evidence_source": "database",
+              "reason_codes": [
+                "no_sensitive_structural_signal"
+              ],
+              "reasons": [
+                "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+              ],
+              "state": "structurally_low_risk"
+            },
+            "time_bucket_suggestion": false
+          },
+          {
+            "name": "service_label",
+            "aggregate_measure_suggestion": false,
+            "count_distinct_suggestion": false,
+            "data_type": "text",
+            "enum_values": [
+              "standard",
+              "review"
+            ],
+            "evidence": [
+              "database column service_label text",
+              "database classification: No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata.",
+              "database enum values: standard, review"
+            ],
+            "groupable_suggestion": true,
+            "nullable": false,
+            "primary_key": false,
+            "raw_visible_suggestion": true,
+            "sensitive_suggestion": false,
+            "sensitivity": {
+              "evidence_source": "database",
+              "reason_codes": [
+                "no_sensitive_structural_signal"
+              ],
+              "reasons": [
+                "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+              ],
+              "state": "structurally_low_risk"
+            },
+            "time_bucket_suggestion": false
+          },
+          {
+            "name": "version",
+            "aggregate_measure_suggestion": false,
+            "count_distinct_suggestion": false,
+            "data_type": "integer",
+            "evidence": [
+              "database column version integer",
+              "database classification: No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+            ],
+            "groupable_suggestion": false,
+            "nullable": false,
+            "primary_key": false,
+            "raw_visible_suggestion": true,
+            "sensitive_suggestion": false,
+            "sensitivity": {
+              "evidence_source": "database",
+              "reason_codes": [
+                "no_sensitive_structural_signal"
+              ],
+              "reasons": [
+                "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+              ],
+              "state": "structurally_low_risk"
+            },
+            "time_bucket_suggestion": false
+          }
+        ],
+        "relationships": [
+          {
+            "cardinality_proven": true,
+            "columns": [
+              "insurer_id",
+              "adjuster_id",
+              "portfolio_id"
+            ],
+            "name": "claims_insurer_id_adjuster_id_portfolio_id_fkey",
+            "nullable": false,
+            "referenced_columns": [
+              "insurer_id",
+              "adjuster_id",
+              "portfolio_id"
+            ],
+            "referenced_resource": "reserve_ops.portfolios",
+            "review_required": true,
+            "reviewed_cardinality": "many_to_one_candidate",
+            "target_uniqueness": {
+              "columns": [
+                "insurer_id",
+                "adjuster_id",
+                "portfolio_id"
+              ],
+              "kind": "unique_constraint",
+              "name": "portfolios_insurer_id_adjuster_id_portfolio_id_key"
+            }
+          }
+        ],
+        "rls": {
+          "effective_for_current_role": true,
+          "enabled": true,
+          "forced": true,
+          "policy_names": [
+            "claim_reader_scope",
+            "runner_scope_4bb36514e617aaa509",
+            "runner_scope_d2b53ca5b7e8e03567"
+          ],
+          "principal_setting_candidates": [
+            "app.adjuster_id",
+            "app.insurer_id"
+          ],
+          "using_expressions": [
+            "((insurer_id = (NULLIF(current_setting('app.insurer_id'::text, true), ''::text))::uuid) AND (adjuster_id = (NULLIF(current_setting('app.adjuster_id'::text, true), ''::text))::uuid))",
+            "((insurer_id = (NULLIF(current_setting('app.insurer_id'::text, true), ''::text))::uuid) AND (adjuster_id = (NULLIF(current_setting('app.adjuster_id'::text, true), ''::text))::uuid))",
+            "((insurer_id = (NULLIF(current_setting('app.insurer_id'::text, true), ''::text))::uuid) AND (adjuster_id = (NULLIF(current_setting('app.adjuster_id'::text, true), ''::text))::uuid))"
+          ]
+        },
+        "role_posture": {
+          "can_assume_owner": false,
+          "owner": false,
+          "read_only": true,
+          "verified": true,
+          "write_capable": false
+        },
+        "schema": "reserve_ops",
+        "table": "claims",
+        "type": "table"
+      },
+      {
+        "id": "reserve_ops.freezes",
+        "status": "draft_read",
+        "blockers": [],
+        "primary_key": {
+          "alternatives_considered": [
+            {
+              "confidence": "high",
+              "evidence": [
+                "database: inspected primary key: freeze_id",
+                "database: inspected single-column unique identifiers: freeze_id"
+              ],
+              "selected": true,
+              "value": "freeze_id"
+            }
+          ],
+          "candidates": [
+            "freeze_id"
+          ],
+          "confidence": "high",
+          "confirmation_required": true,
+          "evidence": [
+            {
+              "detail": "inspected primary key: freeze_id",
+              "source": "database"
+            },
+            {
+              "detail": "inspected single-column unique identifiers: freeze_id",
+              "source": "database"
+            }
+          ],
+          "safety_consequence": "The wrong identifier could select a different row or make one-row guarantees impossible.",
+          "selected": "freeze_id"
+        },
+        "tenant_key": {
+          "alternatives_considered": [
+            {
+              "confidence": "high",
+              "evidence": [
+                "Human reviewed this inspected tenant-scope column."
+              ],
+              "selected": true,
+              "value": "insurer_id"
+            }
+          ],
+          "candidates": [
+            "insurer_id"
+          ],
+          "confidence": "high",
+          "confirmation_required": true,
+          "evidence": [
+            {
+              "detail": "human-reviewed tenant key override: insurer_id",
+              "source": "synapsor"
+            }
+          ],
+          "safety_consequence": "The wrong tenant key can cause cross-tenant reads; confirmation is mandatory.",
+          "selected": "insurer_id"
+        },
+        "principal_key": {
+          "alternatives_considered": [
+            {
+              "confidence": "high",
+              "evidence": [
+                "Human reviewed this inspected principal-scope column."
+              ],
+              "selected": true,
+              "value": "adjuster_id"
+            }
+          ],
+          "candidates": [
+            "adjuster_id"
+          ],
+          "confidence": "high",
+          "confirmation_required": true,
+          "evidence": [
+            {
+              "detail": "human-reviewed principal key override: adjuster_id",
+              "source": "synapsor"
+            }
+          ],
+          "safety_consequence": "An incorrect owner or assignee key can expose another principal's row.",
+          "selected": "adjuster_id"
+        },
+        "fields": [
+          {
+            "name": "freeze_id",
+            "aggregate_measure_suggestion": false,
+            "count_distinct_suggestion": true,
+            "data_type": "uuid",
+            "evidence": [
+              "database column freeze_id uuid",
+              "database classification: No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+            ],
+            "groupable_suggestion": false,
+            "nullable": false,
+            "primary_key": true,
+            "raw_visible_suggestion": true,
+            "sensitive_suggestion": false,
+            "sensitivity": {
+              "evidence_source": "database",
+              "reason_codes": [
+                "no_sensitive_structural_signal"
+              ],
+              "reasons": [
+                "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+              ],
+              "state": "structurally_low_risk"
+            },
+            "time_bucket_suggestion": false
+          },
+          {
+            "name": "insurer_id",
+            "aggregate_measure_suggestion": false,
+            "count_distinct_suggestion": true,
+            "data_type": "uuid",
+            "evidence": [
+              "database column insurer_id uuid",
+              "database classification: No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+            ],
+            "groupable_suggestion": false,
+            "nullable": false,
+            "primary_key": false,
+            "raw_visible_suggestion": true,
+            "sensitive_suggestion": false,
+            "sensitivity": {
+              "evidence_source": "database",
+              "reason_codes": [
+                "no_sensitive_structural_signal"
+              ],
+              "reasons": [
+                "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+              ],
+              "state": "structurally_low_risk"
+            },
+            "time_bucket_suggestion": false
+          },
+          {
+            "name": "adjuster_id",
+            "aggregate_measure_suggestion": false,
+            "count_distinct_suggestion": true,
+            "data_type": "uuid",
+            "evidence": [
+              "database column adjuster_id uuid",
+              "database classification: No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+            ],
+            "groupable_suggestion": false,
+            "nullable": false,
+            "primary_key": false,
+            "raw_visible_suggestion": true,
+            "sensitive_suggestion": false,
+            "sensitivity": {
+              "evidence_source": "database",
+              "reason_codes": [
+                "no_sensitive_structural_signal"
+              ],
+              "reasons": [
+                "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+              ],
+              "state": "structurally_low_risk"
+            },
+            "time_bucket_suggestion": false
+          },
+          {
+            "name": "portfolio_id",
+            "aggregate_measure_suggestion": false,
+            "count_distinct_suggestion": true,
+            "data_type": "uuid",
+            "evidence": [
+              "database column portfolio_id uuid",
+              "database classification: No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+            ],
+            "groupable_suggestion": false,
+            "nullable": false,
+            "primary_key": false,
+            "raw_visible_suggestion": true,
+            "sensitive_suggestion": false,
+            "sensitivity": {
+              "evidence_source": "database",
+              "reason_codes": [
+                "no_sensitive_structural_signal"
+              ],
+              "reasons": [
+                "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+              ],
+              "state": "structurally_low_risk"
+            },
+            "time_bucket_suggestion": false
+          },
+          {
+            "name": "active",
+            "aggregate_measure_suggestion": false,
+            "count_distinct_suggestion": false,
+            "data_type": "boolean",
+            "evidence": [
+              "database column active boolean",
+              "database classification: No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+            ],
+            "groupable_suggestion": true,
+            "nullable": false,
+            "primary_key": false,
+            "raw_visible_suggestion": true,
+            "sensitive_suggestion": false,
+            "sensitivity": {
+              "evidence_source": "database",
+              "reason_codes": [
+                "no_sensitive_structural_signal"
+              ],
+              "reasons": [
+                "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+              ],
+              "state": "structurally_low_risk"
+            },
+            "time_bucket_suggestion": false
+          },
+          {
+            "name": "version",
+            "aggregate_measure_suggestion": false,
+            "count_distinct_suggestion": false,
+            "data_type": "integer",
+            "evidence": [
+              "database column version integer",
+              "database classification: No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+            ],
+            "groupable_suggestion": false,
+            "nullable": false,
+            "primary_key": false,
+            "raw_visible_suggestion": true,
+            "sensitive_suggestion": false,
+            "sensitivity": {
+              "evidence_source": "database",
+              "reason_codes": [
+                "no_sensitive_structural_signal"
+              ],
+              "reasons": [
+                "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+              ],
+              "state": "structurally_low_risk"
+            },
+            "time_bucket_suggestion": false
+          }
+        ],
+        "relationships": [
+          {
+            "cardinality_proven": true,
+            "columns": [
+              "insurer_id",
+              "adjuster_id",
+              "portfolio_id"
+            ],
+            "name": "freezes_insurer_id_adjuster_id_portfolio_id_fkey",
+            "nullable": false,
+            "referenced_columns": [
+              "insurer_id",
+              "adjuster_id",
+              "portfolio_id"
+            ],
+            "referenced_resource": "reserve_ops.portfolios",
+            "review_required": true,
+            "reviewed_cardinality": "many_to_one_candidate",
+            "target_uniqueness": {
+              "columns": [
+                "insurer_id",
+                "adjuster_id",
+                "portfolio_id"
+              ],
+              "kind": "unique_constraint",
+              "name": "portfolios_insurer_id_adjuster_id_portfolio_id_key"
+            }
+          }
+        ],
+        "rls": {
+          "effective_for_current_role": true,
+          "enabled": true,
+          "forced": true,
+          "policy_names": [
+            "freeze_reader_scope",
+            "runner_scope_3b8ce68579c7d323f2",
+            "runner_scope_656b5abcb1dabccb69"
+          ],
+          "principal_setting_candidates": [
+            "app.adjuster_id",
+            "app.insurer_id"
+          ],
+          "using_expressions": [
+            "((insurer_id = (NULLIF(current_setting('app.insurer_id'::text, true), ''::text))::uuid) AND (adjuster_id = (NULLIF(current_setting('app.adjuster_id'::text, true), ''::text))::uuid))",
+            "((insurer_id = (NULLIF(current_setting('app.insurer_id'::text, true), ''::text))::uuid) AND (adjuster_id = (NULLIF(current_setting('app.adjuster_id'::text, true), ''::text))::uuid))",
+            "((insurer_id = (NULLIF(current_setting('app.insurer_id'::text, true), ''::text))::uuid) AND (adjuster_id = (NULLIF(current_setting('app.adjuster_id'::text, true), ''::text))::uuid))"
+          ]
+        },
+        "role_posture": {
+          "can_assume_owner": false,
+          "owner": false,
+          "read_only": true,
+          "verified": true,
+          "write_capable": false
+        },
+        "schema": "reserve_ops",
+        "table": "freezes",
+        "type": "table"
+      },
+      {
+        "id": "reserve_ops.portfolios",
+        "status": "draft_read",
+        "blockers": [],
+        "primary_key": {
+          "alternatives_considered": [
+            {
+              "confidence": "high",
+              "evidence": [
+                "database: inspected primary key: portfolio_id",
+                "database: inspected single-column unique identifiers: portfolio_id, portfolio_ref"
+              ],
+              "selected": true,
+              "value": "portfolio_id"
+            },
+            {
+              "confidence": "high",
+              "evidence": [
+                "database: inspected primary key: portfolio_id",
+                "database: inspected single-column unique identifiers: portfolio_id, portfolio_ref"
+              ],
+              "selected": false,
+              "value": "portfolio_ref"
+            }
+          ],
+          "candidates": [
+            "portfolio_id",
+            "portfolio_ref"
+          ],
+          "confidence": "high",
+          "confirmation_required": true,
+          "evidence": [
+            {
+              "detail": "inspected primary key: portfolio_id",
+              "source": "database"
+            },
+            {
+              "detail": "inspected single-column unique identifiers: portfolio_id, portfolio_ref",
+              "source": "database"
+            }
+          ],
+          "safety_consequence": "The wrong identifier could select a different row or make one-row guarantees impossible.",
+          "selected": "portfolio_id"
+        },
+        "tenant_key": {
+          "alternatives_considered": [
+            {
+              "confidence": "high",
+              "evidence": [
+                "Human reviewed this inspected tenant-scope column."
+              ],
+              "selected": true,
+              "value": "insurer_id"
+            }
+          ],
+          "candidates": [
+            "insurer_id"
+          ],
+          "confidence": "high",
+          "confirmation_required": true,
+          "evidence": [
+            {
+              "detail": "human-reviewed tenant key override: insurer_id",
+              "source": "synapsor"
+            }
+          ],
+          "safety_consequence": "The wrong tenant key can cause cross-tenant reads; confirmation is mandatory.",
+          "selected": "insurer_id"
+        },
+        "principal_key": {
+          "alternatives_considered": [
+            {
+              "confidence": "high",
+              "evidence": [
+                "Human reviewed this inspected principal-scope column."
+              ],
+              "selected": true,
+              "value": "adjuster_id"
+            }
+          ],
+          "candidates": [
+            "adjuster_id"
+          ],
+          "confidence": "high",
+          "confirmation_required": true,
+          "evidence": [
+            {
+              "detail": "human-reviewed principal key override: adjuster_id",
+              "source": "synapsor"
+            }
+          ],
+          "safety_consequence": "An incorrect owner or assignee key can expose another principal's row.",
+          "selected": "adjuster_id"
+        },
+        "fields": [
+          {
+            "name": "portfolio_id",
+            "aggregate_measure_suggestion": false,
+            "count_distinct_suggestion": true,
+            "data_type": "uuid",
+            "evidence": [
+              "database column portfolio_id uuid",
+              "database classification: No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+            ],
+            "groupable_suggestion": false,
+            "nullable": false,
+            "primary_key": true,
+            "raw_visible_suggestion": true,
+            "sensitive_suggestion": false,
+            "sensitivity": {
+              "evidence_source": "database",
+              "reason_codes": [
+                "no_sensitive_structural_signal"
+              ],
+              "reasons": [
+                "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+              ],
+              "state": "structurally_low_risk"
+            },
+            "time_bucket_suggestion": false
+          },
+          {
+            "name": "insurer_id",
+            "aggregate_measure_suggestion": false,
+            "count_distinct_suggestion": true,
+            "data_type": "uuid",
+            "evidence": [
+              "database column insurer_id uuid",
+              "database classification: No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+            ],
+            "groupable_suggestion": false,
+            "nullable": false,
+            "primary_key": false,
+            "raw_visible_suggestion": true,
+            "sensitive_suggestion": false,
+            "sensitivity": {
+              "evidence_source": "database",
+              "reason_codes": [
+                "no_sensitive_structural_signal"
+              ],
+              "reasons": [
+                "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+              ],
+              "state": "structurally_low_risk"
+            },
+            "time_bucket_suggestion": false
+          },
+          {
+            "name": "adjuster_id",
+            "aggregate_measure_suggestion": false,
+            "count_distinct_suggestion": true,
+            "data_type": "uuid",
+            "evidence": [
+              "database column adjuster_id uuid",
+              "database classification: No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+            ],
+            "groupable_suggestion": false,
+            "nullable": false,
+            "primary_key": false,
+            "raw_visible_suggestion": true,
+            "sensitive_suggestion": false,
+            "sensitivity": {
+              "evidence_source": "database",
+              "reason_codes": [
+                "no_sensitive_structural_signal"
+              ],
+              "reasons": [
+                "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+              ],
+              "state": "structurally_low_risk"
+            },
+            "time_bucket_suggestion": false
+          },
+          {
+            "name": "portfolio_ref",
+            "aggregate_measure_suggestion": false,
+            "count_distinct_suggestion": false,
+            "data_type": "text",
+            "evidence": [
+              "database column portfolio_ref text",
+              "database classification: No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+            ],
+            "groupable_suggestion": true,
+            "nullable": false,
+            "primary_key": false,
+            "raw_visible_suggestion": true,
+            "sensitive_suggestion": false,
+            "sensitivity": {
+              "evidence_source": "database",
+              "reason_codes": [
+                "no_sensitive_structural_signal"
+              ],
+              "reasons": [
+                "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+              ],
+              "state": "structurally_low_risk"
+            },
+            "time_bucket_suggestion": false
+          },
+          {
+            "name": "status",
+            "aggregate_measure_suggestion": false,
+            "count_distinct_suggestion": false,
+            "data_type": "text",
+            "enum_values": [
+              "active",
+              "closed"
+            ],
+            "evidence": [
+              "database column status text",
+              "database classification: No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata.",
+              "database enum values: active, closed"
+            ],
+            "groupable_suggestion": true,
+            "nullable": false,
+            "primary_key": false,
+            "raw_visible_suggestion": true,
+            "sensitive_suggestion": false,
+            "sensitivity": {
+              "evidence_source": "database",
+              "reason_codes": [
+                "no_sensitive_structural_signal"
+              ],
+              "reasons": [
+                "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+              ],
+              "state": "structurally_low_risk"
+            },
+            "time_bucket_suggestion": false
+          },
+          {
+            "name": "reserve_cap_cents",
+            "aggregate_measure_suggestion": true,
+            "count_distinct_suggestion": false,
+            "data_type": "integer",
+            "evidence": [
+              "database column reserve_cap_cents integer",
+              "database classification: No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+            ],
+            "groupable_suggestion": false,
+            "nullable": false,
+            "primary_key": false,
+            "raw_visible_suggestion": true,
+            "sensitive_suggestion": false,
+            "sensitivity": {
+              "evidence_source": "database",
+              "reason_codes": [
+                "no_sensitive_structural_signal"
+              ],
+              "reasons": [
+                "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+              ],
+              "state": "structurally_low_risk"
+            },
+            "time_bucket_suggestion": false
+          },
+          {
+            "name": "per_claim_ceiling_cents",
+            "aggregate_measure_suggestion": true,
+            "count_distinct_suggestion": false,
+            "data_type": "integer",
+            "evidence": [
+              "database column per_claim_ceiling_cents integer",
+              "database classification: No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+            ],
+            "groupable_suggestion": false,
+            "nullable": false,
+            "primary_key": false,
+            "raw_visible_suggestion": true,
+            "sensitive_suggestion": false,
+            "sensitivity": {
+              "evidence_source": "database",
+              "reason_codes": [
+                "no_sensitive_structural_signal"
+              ],
+              "reasons": [
+                "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+              ],
+              "state": "structurally_low_risk"
+            },
+            "time_bucket_suggestion": false
+          },
+          {
+            "name": "routine_ceiling_cents",
+            "aggregate_measure_suggestion": true,
+            "count_distinct_suggestion": false,
+            "data_type": "integer",
+            "evidence": [
+              "database column routine_ceiling_cents integer",
+              "database classification: No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+            ],
+            "groupable_suggestion": false,
+            "nullable": false,
+            "primary_key": false,
+            "raw_visible_suggestion": true,
+            "sensitive_suggestion": false,
+            "sensitivity": {
+              "evidence_source": "database",
+              "reason_codes": [
+                "no_sensitive_structural_signal"
+              ],
+              "reasons": [
+                "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+              ],
+              "state": "structurally_low_risk"
+            },
+            "time_bucket_suggestion": false
+          },
+          {
+            "name": "version",
+            "aggregate_measure_suggestion": false,
+            "count_distinct_suggestion": false,
+            "data_type": "integer",
+            "evidence": [
+              "database column version integer",
+              "database classification: No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+            ],
+            "groupable_suggestion": false,
+            "nullable": false,
+            "primary_key": false,
+            "raw_visible_suggestion": true,
+            "sensitive_suggestion": false,
+            "sensitivity": {
+              "evidence_source": "database",
+              "reason_codes": [
+                "no_sensitive_structural_signal"
+              ],
+              "reasons": [
+                "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+              ],
+              "state": "structurally_low_risk"
+            },
+            "time_bucket_suggestion": false
+          }
+        ],
+        "relationships": [],
+        "rls": {
+          "effective_for_current_role": true,
+          "enabled": true,
+          "forced": true,
+          "policy_names": [
+            "portfolio_reader_scope",
+            "runner_scope_3d3c03bdd51cff4879",
+            "runner_scope_52a670bc6cc0ed6a52"
+          ],
+          "principal_setting_candidates": [
+            "app.adjuster_id",
+            "app.insurer_id"
+          ],
+          "using_expressions": [
+            "((insurer_id = (NULLIF(current_setting('app.insurer_id'::text, true), ''::text))::uuid) AND (adjuster_id = (NULLIF(current_setting('app.adjuster_id'::text, true), ''::text))::uuid))",
+            "((insurer_id = (NULLIF(current_setting('app.insurer_id'::text, true), ''::text))::uuid) AND (adjuster_id = (NULLIF(current_setting('app.adjuster_id'::text, true), ''::text))::uuid))",
+            "((insurer_id = (NULLIF(current_setting('app.insurer_id'::text, true), ''::text))::uuid) AND (adjuster_id = (NULLIF(current_setting('app.adjuster_id'::text, true), ''::text))::uuid))"
+          ]
+        },
+        "role_posture": {
+          "can_assume_owner": false,
+          "owner": false,
+          "read_only": true,
+          "verified": true,
+          "write_capable": false
+        },
+        "schema": "reserve_ops",
+        "table": "portfolios",
+        "type": "table"
+      }
+    ],
+    "database_role": {
+      "bypass_rls": false,
+      "fingerprint": "sha256:b0012bf6b9bd0be9f8801f5c0e9c13fd2cf7db64d982270b1132667895a0d3b9",
+      "name": "insurance_reader",
+      "read_only": true,
+      "superuser": false,
+      "verified": true
+    },
+    "summary": {
+      "blocked_objects": 0,
+      "draft_reads": 3,
+      "objects": 3,
+      "rls_policies": 9,
+      "sensitive_fields_kept_out": 0,
+      "structured_write_candidates": 0
+    },
+    "unresolved_decisions": [
+      "deployment profile: confirm development or staging authoring-only use",
+      "reserve_ops.claims: confirm filter/sort/group/aggregate-only field permissions",
+      "reserve_ops.claims: confirm minimum cohort and extraction/differencing budgets",
+      "reserve_ops.claims: confirm principal scope adjuster_id",
+      "reserve_ops.claims: confirm tenant key insurer_id",
+      "reserve_ops.claims: confirm visible and kept-out fields",
+      "reserve_ops.claims: review relationship claims_insurer_id_adjuster_id_portfolio_id_fkey cardinality and scope on reserve_ops.portfolios",
+      "reserve_ops.freezes: confirm filter/sort/group/aggregate-only field permissions",
+      "reserve_ops.freezes: confirm minimum cohort and extraction/differencing budgets",
+      "reserve_ops.freezes: confirm principal scope adjuster_id",
+      "reserve_ops.freezes: confirm tenant key insurer_id",
+      "reserve_ops.freezes: confirm visible and kept-out fields",
+      "reserve_ops.freezes: review relationship freezes_insurer_id_adjuster_id_portfolio_id_fkey cardinality and scope on reserve_ops.portfolios",
+      "reserve_ops.portfolios: confirm filter/sort/group/aggregate-only field permissions",
+      "reserve_ops.portfolios: confirm minimum cohort and extraction/differencing budgets",
+      "reserve_ops.portfolios: confirm principal scope adjuster_id",
+      "reserve_ops.portfolios: confirm tenant key insurer_id",
+      "reserve_ops.portfolios: confirm visible and kept-out fields",
+      "trusted context: confirm tenant scope comes from the verified PostgreSQL credential setting app.insurer_id and principal scope remains outside model arguments"
+    ],
+    "warnings": [
+      "Names and comments are untrusted naming evidence only; they never grant authority.",
+      "Tenant, principal, field exposure, aggregate permissions, relationships, privacy limits, and activation require human review."
+    ]
+  },
+  "notes": {
+    "state": "template_only",
+    "provenance": "external_draft",
+    "activation": "not_available_from_this_input",
+    "instructions": "Edit typed read.resources and actions only. action_skeletons are view-only incomplete context, not ready actions; Runner ignores them on submission. The export contains no identity values, confirmations, activation authority, credentials, source rows, or runtime grants. A submission must request at least one real Read or Action change; all saved revisions remain disabled for separate human review."
+  }
+}

@@ -1,0 +1,197 @@
+(node:1638695) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{
+  "case": "A2 final insurer slot; same-principal safety subcase",
+  "status": "pass_same_principal_only",
+  "cross_principal_exercised": false,
+  "first_held_host": [
+    {
+      "pid": 844,
+      "usename": "insurance_reader",
+      "application_name": "",
+      "state": "idle",
+      "wait_event_type": "Client",
+      "wait_event": "ClientRead",
+      "xact_start": null,
+      "query_start": "2026-09-13T03:44:05.663Z",
+      "blockers": []
+    },
+    {
+      "pid": 847,
+      "usename": "insurance_reader",
+      "application_name": "",
+      "state": "idle in transaction",
+      "wait_event_type": "Client",
+      "wait_event": "ClientRead",
+      "xact_start": "2026-09-13T03:44:06.771Z",
+      "query_start": "2026-09-13T03:44:06.835Z",
+      "blockers": []
+    }
+  ],
+  "second": {
+    "ok": true,
+    "outcome": "reserve_ops.adjust_claim_reserve",
+    "status": "approved_pending_execution",
+    "request_disposition": "created",
+    "status_check": {
+      "tool": "app.request_change",
+      "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+      "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+    },
+    "result_summary": {
+      "description": "Adjust claim reserve",
+      "change": "Update one reviewed reserve_ops.claims record using only the exact Runner-derived effect.",
+      "fields": [
+        "reserve_cents"
+      ],
+      "values_disclosed": false
+    },
+    "authorization": {
+      "eligibility": "verified",
+      "approval": "automatic",
+      "execution": "queued"
+    },
+    "proposal": {
+      "status": "approved",
+      "approval": "automatically approved; apply remains a separate authority"
+    },
+    "execution": "queued",
+    "eligibility": "verified from current authoritative facts",
+    "exact_effect": "Runner-derived and sealed in the operator proposal record",
+    "source_database_changed": false,
+    "model_authority": {
+      "supplied_outcome_and_opaque_subjects_only": false,
+      "supplied_only_reviewed_business_inputs": true,
+      "supplied_patch": false,
+      "approval": false,
+      "apply": false
+    }
+  },
+  "second_completed_while_first_held": true,
+  "overlap_host": [
+    {
+      "pid": 844,
+      "usename": "insurance_reader",
+      "application_name": "",
+      "state": "idle",
+      "wait_event_type": "Client",
+      "wait_event": "ClientRead",
+      "xact_start": null,
+      "query_start": "2026-09-13T03:44:05.663Z",
+      "blockers": []
+    },
+    {
+      "pid": 847,
+      "usename": "insurance_reader",
+      "application_name": "",
+      "state": "idle in transaction",
+      "wait_event_type": "Client",
+      "wait_event": "ClientRead",
+      "xact_start": "2026-09-13T03:44:06.771Z",
+      "query_start": "2026-09-13T03:44:06.835Z",
+      "blockers": []
+    }
+  ],
+  "count_after_second": 3,
+  "first": {
+    "ok": true,
+    "outcome": "reserve_ops.adjust_claim_reserve",
+    "status": "pending_human_review",
+    "request_disposition": "created",
+    "status_check": {
+      "tool": "app.request_change",
+      "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+      "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+    },
+    "result_summary": {
+      "description": "Adjust claim reserve",
+      "change": "Update one reviewed reserve_ops.claims record using only the exact Runner-derived effect.",
+      "fields": [
+        "reserve_cents"
+      ],
+      "values_disclosed": false
+    },
+    "authorization": {
+      "eligibility": "verified",
+      "approval": "pending_human_review",
+      "execution": "human_review"
+    },
+    "proposal": {
+      "status": "pending_review",
+      "approval": "pending human review because an automatic-approval limit did not pass"
+    },
+    "execution": "human_review",
+    "eligibility": "verified from current authoritative facts",
+    "exact_effect": "Runner-derived and sealed in the operator proposal record",
+    "source_database_changed": false,
+    "model_authority": {
+      "supplied_outcome_and_opaque_subjects_only": false,
+      "supplied_only_reviewed_business_inputs": true,
+      "supplied_patch": false,
+      "approval": false,
+      "apply": false
+    }
+  },
+  "count_after_both": 3,
+  "boundaries": [
+    {
+      "point": "subject_wait",
+      "line": 30730,
+      "function": "withSubjectRequestTurn",
+      "locals": {
+        "key": "sha256:9ad1b7a258fe118e4111ea77a0221389dd630237a1a9d4a6da836a39b8355ba2",
+        "waiting": false,
+        "size": 1
+      }
+    },
+    {
+      "point": "subject_recheck",
+      "line": 30731,
+      "function": "withSubjectRequestTurn",
+      "locals": {
+        "key": "sha256:9ad1b7a258fe118e4111ea77a0221389dd630237a1a9d4a6da836a39b8355ba2",
+        "waited": false,
+        "size": 1
+      }
+    },
+    {
+      "point": "subject_wait",
+      "line": 30730,
+      "function": "withSubjectRequestTurn",
+      "locals": {
+        "key": "sha256:2ba51f48a3d3b231a7d105d83231d1887f2eba967033d7303ddd0045720fb4ac",
+        "waiting": false,
+        "size": 2
+      }
+    },
+    {
+      "point": "subject_recheck",
+      "line": 30731,
+      "function": "withSubjectRequestTurn",
+      "locals": {
+        "key": "sha256:2ba51f48a3d3b231a7d105d83231d1887f2eba967033d7303ddd0045720fb4ac",
+        "waited": false,
+        "size": 2
+      }
+    }
+  ],
+  "new_approvals": [
+    {
+      "approval_id": 3,
+      "proposal_id": "wrp_rule_27344b573a2ab950e2e468511180587e",
+      "proposal_version": 1,
+      "proposal_hash": "sha256:0ad97893702897bc25982b3c8eae15fe9df4a175fd217b59727a0dd652129f8f",
+      "approver": "policy:reserve_ops.adjust_claim_reserve.approval",
+      "status": "approved",
+      "reason": "Exact semantic Action Rule and reviewed automatic-approval policy matched current authoritative facts.",
+      "identity_json": null,
+      "decision_hash": null,
+      "signature": null,
+      "integrity_hash": null,
+      "freshness_proof_digest": null,
+      "action_boundary_name": "reviewed_staging_actions",
+      "action_boundary_digest": "sha256:2715065852b5d680241ddebb725860421c65e94fec0634814e44bb7b45be7440",
+      "created_at": "2026-09-13T03:44:07.263Z"
+    }
+  ]
+}

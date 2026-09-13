@@ -1,0 +1,26 @@
+{
+  "name": "installed-edit-read-review",
+  "args": [
+    "node",
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/invoke-interactive.mjs",
+    "boundary",
+    "review",
+    "--project-root",
+    ".",
+    "--access"
+  ],
+  "started_at": "2026-09-13T03:45:15.804250+00:00",
+  "environment_names": [
+    "COLUMNS",
+    "HOME",
+    "LANG",
+    "LINES",
+    "NO_COLOR",
+    "PATH",
+    "SYNAPSOR_CASE",
+    "TERM"
+  ],
+  "pid": 1641970,
+  "exit_code": 1,
+  "completed_at": "2026-09-13T03:45:57.550431+00:00"
+}

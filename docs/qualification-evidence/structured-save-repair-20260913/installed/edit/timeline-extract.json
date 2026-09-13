@@ -1,0 +1,10 @@
+{
+  "edit_failure": [
+    {
+      "at": "2026-09-13T03:45:45.670Z",
+      "host_pid": 1640917,
+      "event": "edit_failure",
+      "message": "database is locked"
+    }
+  ]
+}

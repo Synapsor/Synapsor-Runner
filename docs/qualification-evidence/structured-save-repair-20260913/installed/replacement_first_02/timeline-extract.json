@@ -1,0 +1,165 @@
+{
+  "pg_hold": [
+    {
+      "at": "2026-09-13T04:04:57.909Z",
+      "host_pid": 1680643,
+      "event": "pg_hold",
+      "connection": 4,
+      "backend_pid": 1225
+    }
+  ],
+  "pg_release": [
+    {
+      "at": "2026-09-13T04:05:00.503Z",
+      "host_pid": 1680643,
+      "event": "pg_release",
+      "connection": 4,
+      "backend_pid": 1225,
+      "bytes_released": 466
+    }
+  ],
+  "installed_publication_observed": [
+    {
+      "at": "2026-09-13T04:05:00.499Z",
+      "host_pid": 1680643,
+      "event": "installed_publication_observed",
+      "before": "policy:82b07f1a89ac5811ac2f2dc7405424aadb987359c5deb745709999c6810c60c5",
+      "after": "policy:022ac9a0102d982586a523215fb29443dfc31f9cdf03caddf802afc062b51f1b"
+    }
+  ],
+  "observer_sqlite_busy": [
+    {
+      "at": "2026-09-13T04:04:58.065Z",
+      "host_pid": 1680643,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T04:04:58.219Z",
+      "host_pid": 1680643,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T04:04:58.321Z",
+      "host_pid": 1680643,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T04:04:58.371Z",
+      "host_pid": 1680643,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T04:04:58.422Z",
+      "host_pid": 1680643,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T04:04:58.473Z",
+      "host_pid": 1680643,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T04:04:58.523Z",
+      "host_pid": 1680643,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T04:04:58.574Z",
+      "host_pid": 1680643,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T04:04:58.626Z",
+      "host_pid": 1680643,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T04:04:58.677Z",
+      "host_pid": 1680643,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T04:04:58.728Z",
+      "host_pid": 1680643,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T04:04:58.779Z",
+      "host_pid": 1680643,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T04:04:58.830Z",
+      "host_pid": 1680643,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T04:04:58.881Z",
+      "host_pid": 1680643,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T04:04:58.931Z",
+      "host_pid": 1680643,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T04:04:58.982Z",
+      "host_pid": 1680643,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T04:04:59.032Z",
+      "host_pid": 1680643,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T04:04:59.083Z",
+      "host_pid": 1680643,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T04:04:59.134Z",
+      "host_pid": 1680643,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    }
+  ]
+}

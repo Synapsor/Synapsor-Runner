@@ -1,0 +1,191 @@
+{
+  "saved_at": "2026-09-13T04:11:03.453555+00:00",
+  "dumps": [
+    {
+      "database": "synapsor_structured_save",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/cleanup/synapsor_structured_save.dump",
+      "bytes": 957,
+      "sha256": "7074bc8bcd2b920b62e789b3ee49ca03debfe321b360baadc03303210bdd61b9",
+      "pg_restore_list_exit": 0
+    },
+    {
+      "database": "insurance_stagea_admission_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/cleanup/insurance_stagea_admission_first.dump",
+      "bytes": 19064,
+      "sha256": "beef8f83cf1d86287a2ea110664a9246232773b697a7b57afd0f88bac3f19b98",
+      "pg_restore_list_exit": 0
+    },
+    {
+      "database": "insurance_stagea_before_onboard",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/cleanup/insurance_stagea_before_onboard.dump",
+      "bytes": 19058,
+      "sha256": "2a0fe84c89dd7bcacd5d72505008c1618727b1df05a2492d0f738f603c8b5f0c",
+      "pg_restore_list_exit": 0
+    },
+    {
+      "database": "insurance_stagea_before_start",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/cleanup/insurance_stagea_before_start.dump",
+      "bytes": 19046,
+      "sha256": "9d8d9b9949b86ade469a11915940adb28b2e9ad5c21117e36b48b1b459de98c4",
+      "pg_restore_list_exit": 0
+    },
+    {
+      "database": "insurance_stagea_edit",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/cleanup/insurance_stagea_edit.dump",
+      "bytes": 18998,
+      "sha256": "123b7a4f3ff24d20ba1f2bf8d8b02ca57333aa565d012c42e5c9c4d5d3c68987",
+      "pg_restore_list_exit": 0
+    },
+    {
+      "database": "insurance_stagea_edit_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/cleanup/insurance_stagea_edit_02.dump",
+      "bytes": 19016,
+      "sha256": "36d5ba438a18805e1ddb3b205ca1853db8709be2071db87ee54a70f6ddece4a4",
+      "pg_restore_list_exit": 0
+    },
+    {
+      "database": "insurance_stagea_main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/cleanup/insurance_stagea_main.dump",
+      "bytes": 19001,
+      "sha256": "9a20d784a3b210674cb1542a4a19bc7679d51d6c7b56c2a30e1ef407dbce563e",
+      "pg_restore_list_exit": 0
+    },
+    {
+      "database": "insurance_stagea_replacement_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/cleanup/insurance_stagea_replacement_first.dump",
+      "bytes": 19076,
+      "sha256": "d285b91f090dc11d70f0b2549fd6a828f826f30fd336fa8ba04025dabe2ba0c8",
+      "pg_restore_list_exit": 0
+    },
+    {
+      "database": "insurance_stagea_replacement_first_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/cleanup/insurance_stagea_replacement_first_02.dump",
+      "bytes": 19094,
+      "sha256": "8e208dfe1f459a7bdfe2fde1799005885da072ec7ee6074860b69ff7e14c9b77",
+      "pg_restore_list_exit": 0
+    }
+  ],
+  "sqlite_files_retained_in_owned_directories": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/reproduction/before_start/project/.synapsor/authority-write-lock.sqlite",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/reproduction/before_start/project/.synapsor/local.db",
+      "bytes": 2232320,
+      "sha256": "9ec71bd26607bb827b8e2052f83517655b2b035960328fa2b334cbc3b1fca1a7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/reproduction/before_start/project/.synapsor/runtime-admission.sqlite",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/reproduction/before_onboard/project/.synapsor/authority-write-lock.sqlite",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/reproduction/before_onboard/project/.synapsor/local.db",
+      "bytes": 2232320,
+      "sha256": "9ec71bd26607bb827b8e2052f83517655b2b035960328fa2b334cbc3b1fca1a7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/reproduction/before_onboard/project/.synapsor/runtime-admission.sqlite",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02/project/.synapsor/authority-write-lock.sqlite",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02/project/.synapsor/local.db",
+      "bytes": 2695168,
+      "sha256": "e1b12fab4db344b3bd9a1513a171726078971e9af98fa4eab5f8ff52f68022ff"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02/project/.synapsor/runtime-admission.sqlite",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/admission_first/project/.synapsor/authority-write-lock.sqlite",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/admission_first/project/.synapsor/local.db",
+      "bytes": 2691072,
+      "sha256": "a8062b0bff777e12de0c06e1fecce0f424bd269bd017637da00c681d591a3435"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/admission_first/project/.synapsor/runtime-admission.sqlite",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/project/.synapsor/authority-write-lock.sqlite",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/project/.synapsor/local.db",
+      "bytes": 2531328,
+      "sha256": "9078c11217a9871b9506d670040cc60707a87feb9c66c23d5a16e3ed9ee244ac"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/project/.synapsor/runtime-admission.sqlite",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit/project/.synapsor/authority-write-lock.sqlite",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit/project/.synapsor/local.db",
+      "bytes": 2609152,
+      "sha256": "e84e821eee20a575589d3bb8631fcd8b6d728b8a637e619fc012dc773845c2c6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit/project/.synapsor/runtime-admission.sqlite",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first/project/.synapsor/authority-write-lock.sqlite",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first/project/.synapsor/local.db",
+      "bytes": 2674688,
+      "sha256": "24ac3d3905ea157756b9800938490d2bac5e84a5b03c154581dfd5eb6be50d13"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first/project/.synapsor/runtime-admission.sqlite",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first_02/project/.synapsor/authority-write-lock.sqlite",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first_02/project/.synapsor/local.db",
+      "bytes": 2695168,
+      "sha256": "4c8a643a71bb84c2e30c4f91adfc93469c83efb14d2dfc0a476354486aa8f04f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first_02/project/.synapsor/runtime-admission.sqlite",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ],
+  "role_passwords_exported": false
+}

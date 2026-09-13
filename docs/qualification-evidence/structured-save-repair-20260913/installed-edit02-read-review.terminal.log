@@ -1,0 +1,241 @@
+Script started on 2026-09-12 20:54:11-07:00 [COMMAND="node '/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/invoke-interactive.mjs' boundary review --project-root . --access" TERM="xterm-256color" TTY="/dev/pts/1" COLUMNS="140" LINES="42"]
+(node:1660610) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+[?1049h[H[2J[?25l[2K  EDIT ACCESS - reviewed_staging
+[2K  ACTIVE + DRAFT EDITS  2 tables  FINAL REVIEW PENDING
+[2K  Reviewed database grammar: PostgreSQL 17.10 (Debian 17.10-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19)
+[2K  14.2.0, 64-bit uses the full grammar; reviewed release line 17.
+[2K  Local Ask plan check: BALANCED
+[2K  Model output [SEMANTIC] - exact hashes stay operator-only
+[2K  W Model chat can create or edit Read + Action authority anytime.
+[2K  Describe the business rule; Runner validates it; only you activate it. Manual controls stay available.
+[2K  1 PENDING BOUNDARY CHANGE IS NOT ACTIVE
+[2K  C reviews and activates the exact disabled update.
+[2K  TABLES IN THIS BOUNDARY
+[2K  Enter edits columns. A shows tables with proven paths into this boundary.
+[2K  C reviews and activates this whole boundary once. No separate table sign-off.
+[2K
+[2K  > reserve_ops.claims  [active + reviewed; more operations optional]
+[2K    reserve_ops.portfolios  [active + reviewed; more operations optional]
+[2K
+[2K  SELECTED TABLE
+[2K  Up/Down Select   Enter Edit columns   R Remove from draft [AVAILABLE]   J Relationship paths [1 REVIEWED]
+[2K  P Privacy - withhold small groups [MIN 5]   G Metrics and numeric bands [AVAILABLE]   I Table label and description [AVAILABLE]
+[2K  S Table sign-off - use C for the whole boundary [BOUNDARY LEVEL]
+[2K  BOUNDARY
+[2K  B/Esc Boundary overview   A Add related tables   M Map   N Rename   L Limits   W Model chat - create/edit Read + Action
+[2K  Y Safe actions - prepare proposal [AVAILABLE]   T Ask plan check   O Model output [SEMANTIC: hashes operator-only]   C Review + activate
+[2K  Q Quit
+[2K  Edits stay disabled until separate activation.[25F[0J[?25h[0m[?25h[?1049l
+REVIEW EXACT BOUNDARY
+Boundary: reviewed_staging
+This confirmation grants Read authority only. Runner rechecks the schema and read-only role before activation; Action and execution reviews
+stay separate.
+
+Access: Model + Runner may return reviewed values to the model; Runner only keeps raw output local or tokenized but does not hide
+inferences from reviewed operations; Kept out is unavailable.
+Reviewed operations are listed by name. Any operation omitted from a field is unavailable.
+
+READ TABLE 1/2
+Resource: reserve_ops.claims
+Field access: 7 Model + Runner | 0 Runner only | 2 Kept out
+REVIEW BEFORE ACTIVATION: claim_id, portfolio_id, version are model-facing internal or policy control data.
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | Field                  | Database type | Access         | Reviewed operations                                                          |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | claim_id               | uuid          | Model + Runner | None                                                                         |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | portfolio_id           | uuid          | Model + Runner | None                                                                         |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | version                | integer       | Model + Runner | None                                                                         |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | adjuster_id            | uuid          | Kept out       | None                                                                         |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | claim_ref              | text          | Model + Runner | Return value                                                                 |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | insurer_id             | uuid          | Kept out       | None                                                                         |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | reserve_cents          | integer       | Model + Runner | Return value                                                                 |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | service_label          | text          | Model + Runner | Return value                                                                 |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | status                 | text          | Model + Runner | Return value                                                                 |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  Reviewer notes
+  +------------------------+---------------------------------------------------------------------------------------------------------------+
+  | Field                  | Review note                                                                                                   |
+  +------------------------+---------------------------------------------------------------------------------------------------------------+
+  | claim_id               | REVIEW: model-facing record identity; prefer Runner only unless raw values are intentionally required by the  |
+  |                        | agent                                                                                                         |
+  +------------------------+---------------------------------------------------------------------------------------------------------------+
+  | portfolio_id           | REVIEW: model-facing possible internal identifier, relationship key; prefer Runner only unless raw values are |
+  |                        | intentionally required by the agent                                                                           |
+  +------------------------+---------------------------------------------------------------------------------------------------------------+
+  | version                | REVIEW: model-facing possible conflict/version guard; prefer Runner only unless raw values are intentionally  |
+  |                        | required by the agent                                                                                         |
+  +------------------------+---------------------------------------------------------------------------------------------------------------+
+  | adjuster_id            | Kept out trusted scope, possible internal identifier, relationship key; unavailable to model and Runner reads |
+  +------------------------+---------------------------------------------------------------------------------------------------------------+
+  | insurer_id             | Kept out trusted scope, possible internal identifier, relationship key; unavailable to model and Runner reads |
+  +------------------------+---------------------------------------------------------------------------------------------------------------+
+  +----------------------+-----------------------------------------------------------------------------------------------------------------+
+  | REVIEWED SETTING     | VALUE                                                                                                           |
+  +----------------------+-----------------------------------------------------------------------------------------------------------------+
+  | Value allowlists     | service_label: standard | review; status: active | closed                                                       |
+  | Model vocabulary     | 0/4 field labels; 0/4 field descriptions; no opaque or coded model-facing vocabulary gaps                       |
+  | Numeric grouping     | None                                                                                                            |
+  | Reviewed links       | claims_insurer_id_adjuster_id_portfolio_id_fkey: claims -> portfolios via insurer_id, adjuster_id,              |
+  |                      | portfolio_id; many-to-one; unmatched rows exclude                                                               |
+  +----------------------+-----------------------------------------------------------------------------------------------------------------+
+
+READ TABLE 2/2
+Resource: reserve_ops.portfolios
+Field access: 7 Model + Runner | 0 Runner only | 2 Kept out
+REVIEW BEFORE ACTIVATION: portfolio_id, version are model-facing internal or policy control data.
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | Field                  | Database type | Access         | Reviewed operations                                                          |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | portfolio_id           | uuid          | Model + Runner | None                                                                         |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | version                | integer       | Model + Runner | None                                                                         |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | adjuster_id            | uuid          | Kept out       | None                                                                         |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | insurer_id             | uuid          | Kept out       | None                                                                         |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | per_claim_ceiling_     | integer       | Model + Runner | None                                                                         |
+  | cents                  |               |                |                                                                              |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | portfolio_ref          | text          | Model + Runner | Return value                                                                 |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | reserve_cap_cents      | integer       | Model + Runner | None                                                                         |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | routine_ceiling_cents  | integer       | Model + Runner | None                                                                         |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  | status                 | text          | Model + Runner | Return value                                                                 |
+  +------------------------+---------------+----------------+------------------------------------------------------------------------------+
+  Reviewer notes
+  +------------------------+---------------------------------------------------------------------------------------------------------------+
+  | Field                  | Review note                                                                                                   |
+  +------------------------+---------------------------------------------------------------------------------------------------------------+
+  | portfolio_id           | REVIEW: model-facing record identity; prefer Runner only unless raw values are intentionally required by the  |
+  |                        | agent                                                                                                         |
+  +------------------------+---------------------------------------------------------------------------------------------------------------+
+  | version                | REVIEW: model-facing possible conflict/version guard; prefer Runner only unless raw values are intentionally  |
+  |                        | required by the agent                                                                                         |
+  +------------------------+---------------------------------------------------------------------------------------------------------------+
+  | adjuster_id            | Kept out trusted scope, possible internal identifier; unavailable to model and Runner reads                   |
+  +------------------------+---------------------------------------------------------------------------------------------------------------+
+  | insurer_id             | Kept out trusted scope, possible internal identifier; unavailable to model and Runner reads                   |
+  +------------------------+---------------------------------------------------------------------------------------------------------------+
+  +----------------------+-----------------------------------------------------------------------------------------------------------------+
+  | REVIEWED SETTING     | VALUE                                                                                                           |
+  +----------------------+-----------------------------------------------------------------------------------------------------------------+
+  | Value allowlists     | status: active | closed                                                                                         |
+  | Model vocabulary     | 0/2 field labels; 0/2 field descriptions; no opaque or coded model-facing vocabulary gaps                       |
+  | Numeric grouping     | None                                                                                                            |
+  | Reviewed links       | None                                                                                                            |
+  +----------------------+-----------------------------------------------------------------------------------------------------------------+
+
+BOUNDARY-WIDE CONTROLS
++------------------------+-----------------------------------------------------------------------------------------------------------------+
+| LIMIT                  | REVIEWED VALUE                                                                                                  |
++------------------------+-----------------------------------------------------------------------------------------------------------------+
+| Tenant scope           | insurer_id on every table via database role app.insurer_id                                                      |
+| Principal scope        | Row filtering required for reserve_ops.claims.adjuster_id, reserve_ops.portfolios.adjuster_id via               |
+|                        | SYNAPSOR_PRINCIPAL                                                                                              |
+| Small-group privacy    | Minimum group sizes: reserve_ops.claims=5, reserve_ops.portfolios=5                                             |
+| Ranked aggregates      | Validate at most 500 candidate groups, suppress small cohorts, then return at most top 25                       |
+| Query volume           | 1000 queries per trusted scope in a rolling 24-hour window; 120 requests per minute                             |
+| Disclosure controls    | 4000 extracted cells and 16 differencing variants per rolling 24-hour window                                    |
+| Writes                 | None - this boundary is local read-only Explore                                                                 |
++------------------------+-----------------------------------------------------------------------------------------------------------------+
+
+Exact fingerprint: sha256:a1465f6f38499a7711fc4e171a6d233da85063fec9a69c3b02e07e933ebe1ae2
+Source database changed: no. The model cannot perform this confirmation.
+[?1049h[H[2J[?25l[2K
+[2K  REVIEW EXACT BOUNDARY
+[2K  Boundary: reviewed_staging
+[2K  This confirmation grants Read authority only. Runner rechecks the schema and read-only role before activation; Action and execution
+[2K  reviews
+[2K  stay separate.
+[2K
+[2K  Access: Model + Runner may return reviewed values to the model; Runner only keeps raw output local or tokenized but does not hide
+[2K  inferences from reviewed operations; Kept out is unavailable.
+[2K  Reviewed operations are listed by name. Any operation omitted from a field is unavailable.
+[2K
+[2K  READ TABLE 1/2
+[2K  Resource: reserve_ops.claims
+[2K  Field access: 7 Model + Runner | 0 Runner only | 2 Kept out
+[2K  REVIEW BEFORE ACTIVATION: claim_id, portfolio_id, version are model-facing internal or policy control data.
+[2K    +------------------------+---------------+----------------+---------------------------------------------------------------------------
+[2K    ---+
+[2K    | Field                  | Database type | Access         | Reviewed operations
+[2K                                |
+[2K    +------------------------+---------------+----------------+---------------------------------------------------------------------------
+[2K    ---+
+[2K    | claim_id               | uuid          | Model + Runner | None
+[2K                                |
+[2K    +------------------------+---------------+----------------+---------------------------------------------------------------------------
+[2K    ---+
+[2K    | portfolio_id           | uuid          | Model + Runner | None
+[2K                                |
+[2K    +------------------------+---------------+----------------+---------------------------------------------------------------------------
+[2K    ---+
+[2K    | version                | integer       | Model + Runner | None
+[2K                                |
+[2K    +------------------------+---------------+----------------+---------------------------------------------------------------------------
+[2K    ---+
+[2K    | adjuster_id            | uuid          | Kept out       | None
+[2K                                |
+[2K    +------------------------+---------------+----------------+---------------------------------------------------------------------------
+[2K  ... 200 rows hidden ...
+[2K
+[2K  Activate "reviewed_staging" exactly as shown now? You will stay in /access. [y/N] [Esc Back]:
+[2K
+[2K    Y Yes   N No   Esc Back
+[2K    PgUp/PgDn Scroll hidden details[41F[0J[?25h[0m[?25h[?1049lBOUNDARY REVIEW
+
+NAME              STATUS             TABLES  REVIEW
+----------------  -----------------  ------  --------
+reviewed_staging  REPLACEMENT DRAFT  2       Complete
+
+13/13 exact digest-bound decisions are recorded.
+Authority active: yes, earlier revision; this replacement is disabled
+Source database changed: no
+Exact reviewed fingerprint: sha256:a1465f6f38499a7711fc4e171a6d233da85063fec9a69c3b02e07e933ebe1ae2
+Activation adds this reviewed boundary to local read-only Explore. Each query remains inside exactly one active boundary.
+💐 ACTIVATION SUCCEEDED
+Reviewed boundary "reviewed_staging" is active for local read-only Explore.
+Exact fingerprint: sha256:a1465f6f38499a7711fc4e171a6d233da85063fec9a69c3b02e07e933ebe1ae2
+Source database changed: no
+/access is still open.
+Continue setting up this boundary, switch boundaries, or press Q/Esc when finished to return to Ask.
+[?1049h[H[2J[?25l[2K  EDIT ACCESS - reviewed_staging
+[2K  ACTIVE  2 tables  Complete
+[2K  Reviewed database grammar: PostgreSQL 17.10 (Debian 17.10-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19)
+[2K  14.2.0, 64-bit uses the full grammar; reviewed release line 17.
+[2K  Local Ask plan check: BALANCED
+[2K  Model output [SEMANTIC] - exact hashes stay operator-only
+[2K  W Model chat can create or edit Read + Action authority anytime.
+[2K  Describe the business rule; Runner validates it; only you activate it. Manual controls stay available.
+[2K  TABLES IN THIS BOUNDARY
+[2K  Enter edits columns. A shows tables with proven paths into this boundary.
+[2K  C reviews and activates this whole boundary once. No separate table sign-off.
+[2K
+[2K  > reserve_ops.claims  [active + reviewed; more operations optional]
+[2K    reserve_ops.portfolios  [active + reviewed; more operations optional]
+[2K
+[2K  SELECTED TABLE
+[2K  Up/Down Select   Enter Edit columns   R Remove from draft [AVAILABLE]   J Relationship paths [1 REVIEWED]
+[2K  P Privacy - withhold small groups [MIN 5]   G Metrics and numeric bands [AVAILABLE]   I Table label and description [AVAILABLE]
+[2K  S Table sign-off - use C for the whole boundary [BOUNDARY LEVEL]
+[2K  BOUNDARY
+[2K  B/Esc Boundary overview   A Add related tables   M Map   N Rename   L Limits   W Model chat - create/edit Read + Action
+[2K  Y Safe actions - prepare proposal [AVAILABLE]   T Ask plan check   O Model output [SEMANTIC: hashes operator-only]   C Review + activate
+[2K  Q Quit
+[2K  Edits stay disabled until separate activation.[23F[0J[?25h[0m[?25h[?1049lAccess editor closed. Reviewed authority is unchanged.
+Saved authority needs review: ACTION_RULE_READ_AUTHORITY_STALE: Action Rule outcome reserve_ops.adjust_claim_reserve is not bound to its exact active Read Boundary revision.
+The saved authority is unchanged; no source query or write ran.
+
+Script done on 2026-09-12 20:54:26-07:00 [COMMAND_EXIT_CODE="1"]

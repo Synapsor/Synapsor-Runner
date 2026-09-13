@@ -1,0 +1,36 @@
+{
+  "pg_hold": [
+    {
+      "at": "2026-09-13T03:43:42.916Z",
+      "host_pid": 1637641,
+      "event": "pg_hold",
+      "connection": 4,
+      "backend_pid": 826
+    },
+    {
+      "at": "2026-09-13T03:44:06.834Z",
+      "host_pid": 1638695,
+      "event": "pg_hold",
+      "connection": 4,
+      "backend_pid": 847
+    }
+  ],
+  "pg_release": [
+    {
+      "at": "2026-09-13T03:43:42.991Z",
+      "host_pid": 1637641,
+      "event": "pg_release",
+      "connection": 4,
+      "backend_pid": 826,
+      "bytes_released": 466
+    },
+    {
+      "at": "2026-09-13T03:44:07.377Z",
+      "host_pid": 1638695,
+      "event": "pg_release",
+      "connection": 4,
+      "backend_pid": 847,
+      "bytes_released": 465
+    }
+  ]
+}

@@ -1,7 +1,7 @@
 {
-  "at": "2026-09-13T03:41:48.045912+00:00",
-  "phase": "Offline passed; coherent evidence commit and immutable freeze",
-  "next": "Freeze new complete tested installation, record manifest and entrypoint identities; prepare four fresh original40-row runtime copies and check reviewed identities before installed schedules.",
+  "at": "2026-09-13T04:14:24.823333+00:00",
+  "phase": "Verified and cleaned; private backup delivery ready",
+  "next": "Commit only current intended evidence/harness/report changes, push only verified private backup, record exact delivered ref in owned delivery.json and both trackers, then STOP.",
   "completed": {
     "before_onboard": "preview exit0/save exit2 POLICY_EXECUTION_CONTEXT_REQUIRED; all persisted state unchanged",
     "before_start": "same; separate owned copy",
@@ -18,7 +18,15 @@
     "types04": "full referenced build exit0",
     "stable_full02": "6134 passed/461 skipped;296 files passed/21 skipped; actual exit0",
     "offline": "all10 checks exit0, first attempt",
-    "preservation_pre_install": "91404 entries unchanged"
+    "preservation_pre_install": "91404 entries unchanged",
+    "installed_a1": "one canonical result/receipt/effect; replay/restart unchanged, exit0",
+    "installed_insurer_a2": "same principal only; real held-facts contention;2->exact3/history/human review, exit0",
+    "installed_contexts": "main/edit/edit02/replacement_first/admission_first doctor+own scoped read pass",
+    "installed_edit_normal": "first attempt observer SQLite busy failure preserved, no worker; fresh edit02 passes disabledsave/Read+Action+separateexecutionreview/sameclient/humanreview/history2/oldunstarted no lease or effect",
+    "installed_admission_first": "PASS installed start save/publication/history2/fresh human-review",
+    "installed_replacement_first": "PASS corrected separate subject control on second copy; stale/no additional approvals/history1; original duplicate failure and inaccurate no-proposal wording preserved",
+    "cleanup": "9 owned dumps verified;95 recorded PIDs gone; only owned container stopped, not removed",
+    "preservation_final": "91404 originals and7569-entry new installation unchanged"
   },
   "budgets_used": {
     "focused_runs": 9,
@@ -27,17 +35,23 @@
     "stable_full_runs": 2,
     "offline": 1,
     "freeze": 1,
-    "types_runs": 4
+    "types_runs": 4,
+    "runtime_operations": 92,
+    "workers": 2
   },
   "stage_a": "NOT PASSED",
   "stage_b": "NOT STARTED",
   "running": {},
   "prepared_not_executed": [
-    "new artifact",
-    "installed A1/insurer-A2",
-    "same-client edit",
-    "installed replacement/admission orderings"
+    "A3 on this artifact intentionally not rerun in narrowed task",
+    "overall/shared-principal A2 and A4 blocked by shared-context prerequisite"
   ],
   "product_commit": "318f1fb170c300fc533f0dea9ab873f3eef9a5cd",
-  "new_named_failure": "docs/qualification-evidence/structured-save-repair-20260913/full-suite-save-preflight-finding.md"
+  "new_named_failure": "docs/qualification-evidence/structured-save-repair-20260913/full-suite-save-preflight-finding.md",
+  "delivery": {
+    "remote": "backup",
+    "private_verified": true,
+    "receipt_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/delivery.json",
+    "state": "ready; actual push/ref recorded after final commit"
+  }
 }

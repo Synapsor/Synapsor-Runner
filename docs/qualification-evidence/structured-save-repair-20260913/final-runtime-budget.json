@@ -1,0 +1,27 @@
+{
+  "runtime": {
+    "started_at": "2026-09-13T03:42:38.655931+00:00",
+    "deadline": "2026-09-13T05:12:38.655931+00:00",
+    "operations": 85,
+    "maximum_operations": 393,
+    "worker_invocations": 2,
+    "schedules": {
+      "A1 identical and replay": 1,
+      "A2 final insurer slot": 1,
+      "installed edit exact automatic limit edit": 2,
+      "installed admission_first exact automatic limit edit": 1,
+      "installed replacement_first exact automatic limit edit": 2
+    },
+    "prior_reproduction_operations_counted_against_assignment_limit": 7
+  },
+  "before_reproduction": {
+    "started_at": "2026-09-13T02:17:42.015Z",
+    "deadline": "2026-09-13T03:47:42.015Z",
+    "operations": 7,
+    "maximum_operations": 400,
+    "worker_invocations": 0,
+    "schedules": {}
+  },
+  "total_operations": 92,
+  "total_workers": 2
+}

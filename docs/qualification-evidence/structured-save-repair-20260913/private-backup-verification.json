@@ -1,0 +1,11 @@
+{
+  "isPrivate": true,
+  "nameWithOwner": "Synapsor/Synapsor-Runner-Backup",
+  "url": "https://github.com/Synapsor/Synapsor-Runner-Backup",
+  "viewerPermission": "ADMIN",
+  "verified_at": "2026-09-13T04:12:27.058947+00:00",
+  "effective_push_urls": [
+    "https://github.com/Synapsor/Synapsor-Runner-Backup.git"
+  ],
+  "authorized_remote": "backup"
+}

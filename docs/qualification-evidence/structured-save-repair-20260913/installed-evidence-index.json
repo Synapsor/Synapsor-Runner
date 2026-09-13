@@ -1,0 +1,826 @@
+{
+  "at": "2026-09-13T04:07:30.624981+00:00",
+  "records": [
+    {
+      "case": "admission_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/admission_first/deterministic/draft-export-before.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/admission_first/draft-export-before.json",
+      "sha256": "79241d03e822d5d387675c75411e727cd545c80f2b38c3f47a3fda8a796abbdf",
+      "bytes": 146676
+    },
+    {
+      "case": "admission_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/admission_first/deterministic/draft-preview-after-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/admission_first/draft-preview-after-ledger.json",
+      "sha256": "5e3ca1746704365734dc43d460eaf2d2d7511106e45ace974184b587d1e78188",
+      "bytes": 1769277
+    },
+    {
+      "case": "admission_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/admission_first/deterministic/draft-save-after-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/admission_first/draft-save-after-ledger.json",
+      "sha256": "f050fa4fe064edf643789dce32c1a1a8258088c88766261f62011a442cd193f7",
+      "bytes": 1874013
+    },
+    {
+      "case": "admission_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/admission_first/deterministic/draft-save-after-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/admission_first/draft-save-after-source.json",
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "bytes": 15565
+    },
+    {
+      "case": "admission_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/admission_first/deterministic/draft-save-before-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/admission_first/draft-save-before-ledger.json",
+      "sha256": "5e3ca1746704365734dc43d460eaf2d2d7511106e45ace974184b587d1e78188",
+      "bytes": 1769277
+    },
+    {
+      "case": "admission_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/admission_first/deterministic/draft-save-before-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/admission_first/draft-save-before-source.json",
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "bytes": 15565
+    },
+    {
+      "case": "admission_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/admission_first/deterministic/edit-before-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/admission_first/edit-before-ledger.json",
+      "sha256": "5e3ca1746704365734dc43d460eaf2d2d7511106e45ace974184b587d1e78188",
+      "bytes": 1769277
+    },
+    {
+      "case": "admission_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/admission_first/deterministic/edit-before-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/admission_first/edit-before-source.json",
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "bytes": 15565
+    },
+    {
+      "case": "admission_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/admission_first/deterministic/edit-final-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/admission_first/edit-final-ledger.json",
+      "sha256": "accd3e024898a513211a7feccfdb29ecb5a35bcab28e3cf609c32abbc7265d15",
+      "bytes": 2094859
+    },
+    {
+      "case": "admission_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/admission_first/deterministic/edit-final-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/admission_first/edit-final-source.json",
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "bytes": 15565
+    },
+    {
+      "case": "admission_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/admission_first/deterministic/edit-pre-publication-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/admission_first/edit-pre-publication-ledger.json",
+      "sha256": "9c14970af56af7cb1138acf0f3bf2556c1cef8e5cdc2ef57fafb7b8ba2686c36",
+      "bytes": 1893140
+    },
+    {
+      "case": "admission_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/admission_first/deterministic/edit-result.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/admission_first/edit-result.json",
+      "sha256": "cb407d02dbaafd3d43ccfcb774018be93d2566774b77ab3237a85a504875f669",
+      "bytes": 34064
+    },
+    {
+      "case": "admission_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/admission_first/deterministic/events.jsonl",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/admission_first/events.jsonl",
+      "sha256": "b77ab47d07a0b12805effdb1114be83fd0a0249651a896212068a75b82280808",
+      "bytes": 162383
+    },
+    {
+      "case": "admission_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/admission_first/deterministic/identity-prerequisite.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/admission_first/identity-prerequisite.json",
+      "sha256": "c43a3c5484607391be01d4de613a88a01ac8c7f4ed57d4b112b85e82a1d843f7",
+      "bytes": 18734
+    },
+    {
+      "case": "admission_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/admission_first/deterministic/mcp-stderr.log",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/admission_first/mcp-stderr.log",
+      "sha256": "a5b3a0188edd8db44268e62bb890602b205437facd93a869282312d507f841e7",
+      "bytes": 542
+    },
+    {
+      "case": "admission_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/admission_first/deterministic/operator-review-ready.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/admission_first/operator-review-ready.json",
+      "sha256": "c523044756d5fb44a37cba9f60a536eaae34e65d833eab8956cfe839913a2843",
+      "bytes": 207
+    },
+    {
+      "case": "admission_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/admission_first/deterministic/packed-structured-save-result.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/admission_first/packed-structured-save-result.json",
+      "sha256": "f873a33ce1d0c2c270df9c3618f25edd24a460c8190522b46c78dfbf02956aaa",
+      "bytes": 26551
+    },
+    {
+      "case": "admission_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/admission_first/deterministic/replacement-observed.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/admission_first/replacement-observed.json",
+      "sha256": "da7fffdc6e6a51465b498d49d92e48fcd43bd4a43578242367102e0019c5b099",
+      "bytes": 247
+    },
+    {
+      "case": "edit",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit/deterministic/draft-export-before.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit/draft-export-before.json",
+      "sha256": "79241d03e822d5d387675c75411e727cd545c80f2b38c3f47a3fda8a796abbdf",
+      "bytes": 146676
+    },
+    {
+      "case": "edit",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit/deterministic/draft-preview-after-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit/draft-preview-after-ledger.json",
+      "sha256": "40fb42e59e930c7e7ac92e78c523f7f6ade4ec84ed205e8924f2145d9de46173",
+      "bytes": 1790222
+    },
+    {
+      "case": "edit",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit/deterministic/draft-save-after-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit/draft-save-after-ledger.json",
+      "sha256": "79f247980866746dfe78ab3a368ebbd31168baf41411e2ac99ae12b91233eecb",
+      "bytes": 1894958
+    },
+    {
+      "case": "edit",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit/deterministic/draft-save-after-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit/draft-save-after-source.json",
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "bytes": 15565
+    },
+    {
+      "case": "edit",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit/deterministic/draft-save-before-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit/draft-save-before-ledger.json",
+      "sha256": "40fb42e59e930c7e7ac92e78c523f7f6ade4ec84ed205e8924f2145d9de46173",
+      "bytes": 1790222
+    },
+    {
+      "case": "edit",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit/deterministic/draft-save-before-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit/draft-save-before-source.json",
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "bytes": 15565
+    },
+    {
+      "case": "edit",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit/deterministic/edit-before-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit/edit-before-ledger.json",
+      "sha256": "c4f24e0c46e7d786ff691d7916e32a75a071c81f74b3ae0486f04fbf0c61b346",
+      "bytes": 1769277
+    },
+    {
+      "case": "edit",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit/deterministic/edit-before-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit/edit-before-source.json",
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "bytes": 15565
+    },
+    {
+      "case": "edit",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit/deterministic/edit-pre-publication-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit/edit-pre-publication-ledger.json",
+      "sha256": "79f247980866746dfe78ab3a368ebbd31168baf41411e2ac99ae12b91233eecb",
+      "bytes": 1894958
+    },
+    {
+      "case": "edit",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit/deterministic/edit-result.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit/edit-result.json",
+      "sha256": "6f9d6df56ac50ebd6d66f116e7cffc11c5e392c0eaa8d757f503f0dacfae0cc5",
+      "bytes": 29255
+    },
+    {
+      "case": "edit",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit/deterministic/events.jsonl",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit/events.jsonl",
+      "sha256": "d52197d98d2ac5509b4700cb8ea55db9d8217a8d2180422857bd1f11935c71f3",
+      "bytes": 117688
+    },
+    {
+      "case": "edit",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit/deterministic/identity-prerequisite.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit/identity-prerequisite.json",
+      "sha256": "e9778dc88d928d17eb525f4281b337e9498feea27e9b4084531b684d104780a2",
+      "bytes": 18734
+    },
+    {
+      "case": "edit",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit/deterministic/mcp-stderr.log",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit/mcp-stderr.log",
+      "sha256": "a5b3a0188edd8db44268e62bb890602b205437facd93a869282312d507f841e7",
+      "bytes": 542
+    },
+    {
+      "case": "edit",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit/deterministic/operator-review-ready.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit/operator-review-ready.json",
+      "sha256": "febe1cc504b54a3218e4a14a2a3614c036e3058b43fd3d017340a4cac9158f7c",
+      "bytes": 196
+    },
+    {
+      "case": "edit",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit/deterministic/packed-structured-save-result.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit/packed-structured-save-result.json",
+      "sha256": "85b0397c79a9afdf1d8760beeb0b7f1c29dda142ac16e7da04830246f14d84fc",
+      "bytes": 26542
+    },
+    {
+      "case": "edit_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02/deterministic/draft-export-before.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit_02/draft-export-before.json",
+      "sha256": "79241d03e822d5d387675c75411e727cd545c80f2b38c3f47a3fda8a796abbdf",
+      "bytes": 146676
+    },
+    {
+      "case": "edit_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02/deterministic/draft-preview-after-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit_02/draft-preview-after-ledger.json",
+      "sha256": "654a3d1725a25eb250f73d65613c3cb7450e7fd3e5d51c17b1864a5ca7cc62dd",
+      "bytes": 1790222
+    },
+    {
+      "case": "edit_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02/deterministic/draft-save-after-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit_02/draft-save-after-ledger.json",
+      "sha256": "e1bde94b1ee9062e435d52d06d028041fa6293c00fef591f06b34ba43f8d2ce3",
+      "bytes": 1894958
+    },
+    {
+      "case": "edit_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02/deterministic/draft-save-after-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit_02/draft-save-after-source.json",
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "bytes": 15565
+    },
+    {
+      "case": "edit_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02/deterministic/draft-save-before-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit_02/draft-save-before-ledger.json",
+      "sha256": "654a3d1725a25eb250f73d65613c3cb7450e7fd3e5d51c17b1864a5ca7cc62dd",
+      "bytes": 1790222
+    },
+    {
+      "case": "edit_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02/deterministic/draft-save-before-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit_02/draft-save-before-source.json",
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "bytes": 15565
+    },
+    {
+      "case": "edit_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02/deterministic/edit-after-worker-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit_02/edit-after-worker-ledger.json",
+      "sha256": "ab49b5c0ab2d514376fb976b93a686070553ce426fbdec6b6d5925266bae55ba",
+      "bytes": 2098905
+    },
+    {
+      "case": "edit_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02/deterministic/edit-before-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit_02/edit-before-ledger.json",
+      "sha256": "02b26231a6d77147e84d9556d5a4aa8218e7625fd0c0d076fcdf04b8ff797b98",
+      "bytes": 1769277
+    },
+    {
+      "case": "edit_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02/deterministic/edit-before-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit_02/edit-before-source.json",
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "bytes": 15565
+    },
+    {
+      "case": "edit_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02/deterministic/edit-before-worker-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit_02/edit-before-worker-ledger.json",
+      "sha256": "ca7bff0468bd79cbc329fbb0fcbaa7f111a2fe90088af4c0325b7b1505c7a4ab",
+      "bytes": 2096827
+    },
+    {
+      "case": "edit_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02/deterministic/edit-final-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit_02/edit-final-ledger.json",
+      "sha256": "ab49b5c0ab2d514376fb976b93a686070553ce426fbdec6b6d5925266bae55ba",
+      "bytes": 2098905
+    },
+    {
+      "case": "edit_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02/deterministic/edit-final-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit_02/edit-final-source.json",
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "bytes": 15565
+    },
+    {
+      "case": "edit_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02/deterministic/edit-pre-publication-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit_02/edit-pre-publication-ledger.json",
+      "sha256": "e1bde94b1ee9062e435d52d06d028041fa6293c00fef591f06b34ba43f8d2ce3",
+      "bytes": 1894958
+    },
+    {
+      "case": "edit_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02/deterministic/edit-result.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit_02/edit-result.json",
+      "sha256": "8552f32f942afd7375a3287389267d882ecb5a881f444d93d03dcab3999c2f5e",
+      "bytes": 34900
+    },
+    {
+      "case": "edit_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02/deterministic/events.jsonl",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit_02/events.jsonl",
+      "sha256": "d143022133abca87e3bb29e2af9118c641ca24e7547463c2388051bba29746ec",
+      "bytes": 166374
+    },
+    {
+      "case": "edit_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02/deterministic/identity-prerequisite.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit_02/identity-prerequisite.json",
+      "sha256": "70279bfd5f27054baf53eddd73459912d614d2f89f1a9a8e222a33e21396b81b",
+      "bytes": 18734
+    },
+    {
+      "case": "edit_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02/deterministic/mcp-stderr.log",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit_02/mcp-stderr.log",
+      "sha256": "a5b3a0188edd8db44268e62bb890602b205437facd93a869282312d507f841e7",
+      "bytes": 542
+    },
+    {
+      "case": "edit_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02/deterministic/operator-review-ready.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit_02/operator-review-ready.json",
+      "sha256": "8223179eab8509b81ebd4cb82a624d206253c2ae2c58d43eeec62470e3e12e95",
+      "bytes": 196
+    },
+    {
+      "case": "edit_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02/deterministic/packed-structured-save-result.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit_02/packed-structured-save-result.json",
+      "sha256": "3347e9a90197107385244ca731a43f114c51ec195d245b484dc4a3cf08006003",
+      "bytes": 26542
+    },
+    {
+      "case": "edit_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/edit_02/deterministic/replacement-observed.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/edit_02/replacement-observed.json",
+      "sha256": "cde78b687276ce00d5a7d121fe8beea706a76eb4c5837d66e1262a13b80dfd15",
+      "bytes": 246
+    },
+    {
+      "case": "main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/deterministic/a1-admitted-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/main/a1-admitted-ledger.json",
+      "sha256": "651f0237530edf411a8caafc1e38b076f4e0d43af5ea3c4dfb0167d92a220667",
+      "bytes": 1788404
+    },
+    {
+      "case": "main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/deterministic/a1-before-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/main/a1-before-ledger.json",
+      "sha256": "2d89e012aa9b8bead31faaaa07edcd438dcc7332466116a01c8c06947d56c810",
+      "bytes": 1769277
+    },
+    {
+      "case": "main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/deterministic/a1-before-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/main/a1-before-source.json",
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "bytes": 15565
+    },
+    {
+      "case": "main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/deterministic/a1-before-worker-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/main/a1-before-worker-source.json",
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "bytes": 15565
+    },
+    {
+      "case": "main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/deterministic/a1-during-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/main/a1-during-ledger.json",
+      "sha256": "bfa9a5427b948320da0b8cfcbf02de99120a852aa88e7ef911d0ff74a48568dd",
+      "bytes": 1769371
+    },
+    {
+      "case": "main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/deterministic/a1-executed-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/main/a1-executed-ledger.json",
+      "sha256": "33def790c1ec2413cc082af335e3482c4662fac4962ddc96611a57d93a906cb2",
+      "bytes": 1819026
+    },
+    {
+      "case": "main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/deterministic/a1-executed-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/main/a1-executed-source.json",
+      "sha256": "d5812e9af0e1301e104ea5f85a89f260ce0fc3a71cb71e13433c8a793715d7c2",
+      "bytes": 15565
+    },
+    {
+      "case": "main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/deterministic/a1-replay-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/main/a1-replay-ledger.json",
+      "sha256": "33def790c1ec2413cc082af335e3482c4662fac4962ddc96611a57d93a906cb2",
+      "bytes": 1819026
+    },
+    {
+      "case": "main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/deterministic/a1-replay-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/main/a1-replay-source.json",
+      "sha256": "d5812e9af0e1301e104ea5f85a89f260ce0fc3a71cb71e13433c8a793715d7c2",
+      "bytes": 15565
+    },
+    {
+      "case": "main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/deterministic/a1-restart-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/main/a1-restart-ledger.json",
+      "sha256": "33def790c1ec2413cc082af335e3482c4662fac4962ddc96611a57d93a906cb2",
+      "bytes": 1819026
+    },
+    {
+      "case": "main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/deterministic/a1-restart-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/main/a1-restart-source.json",
+      "sha256": "d5812e9af0e1301e104ea5f85a89f260ce0fc3a71cb71e13433c8a793715d7c2",
+      "bytes": 15565
+    },
+    {
+      "case": "main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/deterministic/a1-result.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/main/a1-result.json",
+      "sha256": "0f8729f55edd99e13b33dfbf8854dc6c9551915d479b5181c57c6f8b5ccfbd9b",
+      "bytes": 10677
+    },
+    {
+      "case": "main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/deterministic/a2-insurer-after-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/main/a2-insurer-after-ledger.json",
+      "sha256": "c4d9e4908ba5d1ff6caf7efe13b6e0fd7da0eb766b8068c1de085d8fc92ee7e9",
+      "bytes": 1928660
+    },
+    {
+      "case": "main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/deterministic/a2-insurer-after-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/main/a2-insurer-after-source.json",
+      "sha256": "d5812e9af0e1301e104ea5f85a89f260ce0fc3a71cb71e13433c8a793715d7c2",
+      "bytes": 15565
+    },
+    {
+      "case": "main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/deterministic/a2-insurer-before-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/main/a2-insurer-before-ledger.json",
+      "sha256": "65bca8784bc2a80f5524291818c8211ec847683898b6cb9131dc47f848c90ecd",
+      "bytes": 1887743
+    },
+    {
+      "case": "main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/deterministic/a2-insurer-before-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/main/a2-insurer-before-source.json",
+      "sha256": "d5812e9af0e1301e104ea5f85a89f260ce0fc3a71cb71e13433c8a793715d7c2",
+      "bytes": 15565
+    },
+    {
+      "case": "main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/deterministic/a2-insurer-final-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/main/a2-insurer-final-ledger.json",
+      "sha256": "c4d9e4908ba5d1ff6caf7efe13b6e0fd7da0eb766b8068c1de085d8fc92ee7e9",
+      "bytes": 1928660
+    },
+    {
+      "case": "main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/deterministic/a2-insurer-final-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/main/a2-insurer-final-source.json",
+      "sha256": "d5812e9af0e1301e104ea5f85a89f260ce0fc3a71cb71e13433c8a793715d7c2",
+      "bytes": 15565
+    },
+    {
+      "case": "main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/deterministic/a2-insurer-held-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/main/a2-insurer-held-ledger.json",
+      "sha256": "521244accef1cd7c10e690b5325ce145998736d9eccdf5243d5fc9f83192e66a",
+      "bytes": 1887837
+    },
+    {
+      "case": "main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/deterministic/a2-insurer-result.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/main/a2-insurer-result.json",
+      "sha256": "a8d0f08401aa1d1625a52f084219b856d85ce1b41e4a17c8c1cdd8e26ced0e9e",
+      "bytes": 6726
+    },
+    {
+      "case": "main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/deterministic/a2-insurer-second-completed-first-held-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/main/a2-insurer-second-completed-first-held-ledger.json",
+      "sha256": "1ba397558d8358b7ee13515f207c186d398badf646626c6618a37c00fb1b50eb",
+      "bytes": 1909467
+    },
+    {
+      "case": "main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/deterministic/events.jsonl",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/main/events.jsonl",
+      "sha256": "92d78554b55c9d975bc2259e62e36b03526ea2f6fdc1d419388cc1bcab4d0c9c",
+      "bytes": 211757
+    },
+    {
+      "case": "main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/deterministic/identity-prerequisite.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/main/identity-prerequisite.json",
+      "sha256": "07236abba3d2424a7f63d746d69b8a5844301bff41ac08d7df854046b6312703",
+      "bytes": 18734
+    },
+    {
+      "case": "main",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/main/deterministic/mcp-stderr.log",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/main/mcp-stderr.log",
+      "sha256": "b55a194d88d2e83c8e6db2ecb5dc6916f2db057d1e1fddecf59114f6ebeedb85",
+      "bytes": 1644
+    },
+    {
+      "case": "replacement_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first/deterministic/begin-order.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first/begin-order.json",
+      "sha256": "f6606de215bca516fbb84ba4a0d6c5674c46899c4459c28386b70c6b8a576bea",
+      "bytes": 152
+    },
+    {
+      "case": "replacement_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first/deterministic/draft-export-before.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first/draft-export-before.json",
+      "sha256": "79241d03e822d5d387675c75411e727cd545c80f2b38c3f47a3fda8a796abbdf",
+      "bytes": 146676
+    },
+    {
+      "case": "replacement_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first/deterministic/draft-preview-after-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first/draft-preview-after-ledger.json",
+      "sha256": "c1e7447a7df9272d42b6c0d61d4ebc46e02cdcc85ab5938d4498c0bf0300a32a",
+      "bytes": 1769277
+    },
+    {
+      "case": "replacement_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first/deterministic/draft-save-after-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first/draft-save-after-ledger.json",
+      "sha256": "78d37a1e9aab83824e70c660d572596b15f584760b4ff32cbce1a0a1b8b92cff",
+      "bytes": 1874013
+    },
+    {
+      "case": "replacement_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first/deterministic/draft-save-after-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first/draft-save-after-source.json",
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "bytes": 15565
+    },
+    {
+      "case": "replacement_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first/deterministic/draft-save-before-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first/draft-save-before-ledger.json",
+      "sha256": "c1e7447a7df9272d42b6c0d61d4ebc46e02cdcc85ab5938d4498c0bf0300a32a",
+      "bytes": 1769277
+    },
+    {
+      "case": "replacement_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first/deterministic/draft-save-before-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first/draft-save-before-source.json",
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "bytes": 15565
+    },
+    {
+      "case": "replacement_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first/deterministic/edit-before-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first/edit-before-ledger.json",
+      "sha256": "c1e7447a7df9272d42b6c0d61d4ebc46e02cdcc85ab5938d4498c0bf0300a32a",
+      "bytes": 1769277
+    },
+    {
+      "case": "replacement_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first/deterministic/edit-before-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first/edit-before-source.json",
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "bytes": 15565
+    },
+    {
+      "case": "replacement_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first/deterministic/edit-pre-publication-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first/edit-pre-publication-ledger.json",
+      "sha256": "78d37a1e9aab83824e70c660d572596b15f584760b4ff32cbce1a0a1b8b92cff",
+      "bytes": 1874013
+    },
+    {
+      "case": "replacement_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first/deterministic/edit-result.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first/edit-result.json",
+      "sha256": "9d037c1eb2d64ae452cd17387e9c729065e427053f6e6bb4ddb1fb0c33ce87a7",
+      "bytes": 31871
+    },
+    {
+      "case": "replacement_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first/deterministic/edit-stale-refused-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first/edit-stale-refused-ledger.json",
+      "sha256": "2f120bce2c24014f29f3f3392537cf071d96fd348e3ce37578e207e17d0bc8e2",
+      "bytes": 2001726
+    },
+    {
+      "case": "replacement_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first/deterministic/events.jsonl",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first/events.jsonl",
+      "sha256": "a6e239338bc147943c4a8d2a38419bdb060dd4a66c3123285fb7c510d91d641e",
+      "bytes": 155973
+    },
+    {
+      "case": "replacement_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first/deterministic/identity-prerequisite.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first/identity-prerequisite.json",
+      "sha256": "a4a8b47e65af996013caeda7c76282d91c1f6fef43c0af7b78dd4e4d0fd8f2f5",
+      "bytes": 18734
+    },
+    {
+      "case": "replacement_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first/deterministic/mcp-stderr.log",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first/mcp-stderr.log",
+      "sha256": "a5b3a0188edd8db44268e62bb890602b205437facd93a869282312d507f841e7",
+      "bytes": 542
+    },
+    {
+      "case": "replacement_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first/deterministic/operator-review-ready.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first/operator-review-ready.json",
+      "sha256": "b6624e4f0073c3826d6812d5f5aeecfa6bcbb975c1daede7a7226a6aac9af75e",
+      "bytes": 209
+    },
+    {
+      "case": "replacement_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first/deterministic/packed-structured-save-result.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first/packed-structured-save-result.json",
+      "sha256": "b7a0b6ff936a94c7ccbdf7c493caa22e73d7698e83e313b2315480e34d805cfe",
+      "bytes": 26555
+    },
+    {
+      "case": "replacement_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first/deterministic/publication-ready.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first/publication-ready.json",
+      "sha256": "fc96e579b6e4637560effe63ceb1eb95d40613757bc0a0d4c47f9bd84e48685f",
+      "bytes": 147
+    },
+    {
+      "case": "replacement_first",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first/deterministic/replacement-observed.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first/replacement-observed.json",
+      "sha256": "ecad83109b4e4bdd3d85d89ed9e17f9e3f766a1ee9d0dfc7844cdd2733cff493",
+      "bytes": 247
+    },
+    {
+      "case": "replacement_first_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first_02/deterministic/begin-order.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first_02/begin-order.json",
+      "sha256": "87a9384a50745a8f0b3d511be851f65796221ee456929e53f3efbf00c5cf1e08",
+      "bytes": 140
+    },
+    {
+      "case": "replacement_first_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first_02/deterministic/draft-export-before.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first_02/draft-export-before.json",
+      "sha256": "79241d03e822d5d387675c75411e727cd545c80f2b38c3f47a3fda8a796abbdf",
+      "bytes": 146676
+    },
+    {
+      "case": "replacement_first_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first_02/deterministic/draft-preview-after-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first_02/draft-preview-after-ledger.json",
+      "sha256": "8311273a63b418302723d210f0df0810f1462854393cece9d709d6d33bf378bd",
+      "bytes": 1769277
+    },
+    {
+      "case": "replacement_first_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first_02/deterministic/draft-save-after-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first_02/draft-save-after-ledger.json",
+      "sha256": "2367d80dcd69d51c847af2ecac61cb7ebd0dc15b73d16f57ad9b0ac3eb49793d",
+      "bytes": 1874013
+    },
+    {
+      "case": "replacement_first_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first_02/deterministic/draft-save-after-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first_02/draft-save-after-source.json",
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "bytes": 15565
+    },
+    {
+      "case": "replacement_first_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first_02/deterministic/draft-save-before-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first_02/draft-save-before-ledger.json",
+      "sha256": "8311273a63b418302723d210f0df0810f1462854393cece9d709d6d33bf378bd",
+      "bytes": 1769277
+    },
+    {
+      "case": "replacement_first_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first_02/deterministic/draft-save-before-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first_02/draft-save-before-source.json",
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "bytes": 15565
+    },
+    {
+      "case": "replacement_first_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first_02/deterministic/edit-before-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first_02/edit-before-ledger.json",
+      "sha256": "8311273a63b418302723d210f0df0810f1462854393cece9d709d6d33bf378bd",
+      "bytes": 1769277
+    },
+    {
+      "case": "replacement_first_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first_02/deterministic/edit-before-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first_02/edit-before-source.json",
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "bytes": 15565
+    },
+    {
+      "case": "replacement_first_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first_02/deterministic/edit-final-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first_02/edit-final-ledger.json",
+      "sha256": "6faa4751f2b23b544ac198bd2169a0bc60202aa54ca43551ef3f4cad83c14811",
+      "bytes": 2089824
+    },
+    {
+      "case": "replacement_first_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first_02/deterministic/edit-final-source.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first_02/edit-final-source.json",
+      "sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "bytes": 15565
+    },
+    {
+      "case": "replacement_first_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first_02/deterministic/edit-pre-publication-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first_02/edit-pre-publication-ledger.json",
+      "sha256": "2367d80dcd69d51c847af2ecac61cb7ebd0dc15b73d16f57ad9b0ac3eb49793d",
+      "bytes": 1874013
+    },
+    {
+      "case": "replacement_first_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first_02/deterministic/edit-result.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first_02/edit-result.json",
+      "sha256": "a362636edae084ca7df12fe95136561a58a976513d1d12dffe664291f4d82c99",
+      "bytes": 33283
+    },
+    {
+      "case": "replacement_first_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first_02/deterministic/edit-stale-refused-ledger.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first_02/edit-stale-refused-ledger.json",
+      "sha256": "c97e900f7285dba0441880da333258e43e91aea33b68c9a5e9a6012a8c2dd415",
+      "bytes": 2001726
+    },
+    {
+      "case": "replacement_first_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first_02/deterministic/events.jsonl",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first_02/events.jsonl",
+      "sha256": "8be0a4a8aa5a226d68c772295dd905bd14142f052719c7573c950a597548680e",
+      "bytes": 166917
+    },
+    {
+      "case": "replacement_first_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first_02/deterministic/identity-prerequisite.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first_02/identity-prerequisite.json",
+      "sha256": "90ddefffd5380fe133084aaeaf0cfd744eb1c335a2c41392672cf80d9a95ce8d",
+      "bytes": 18734
+    },
+    {
+      "case": "replacement_first_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first_02/deterministic/mcp-stderr.log",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first_02/mcp-stderr.log",
+      "sha256": "a5b3a0188edd8db44268e62bb890602b205437facd93a869282312d507f841e7",
+      "bytes": 542
+    },
+    {
+      "case": "replacement_first_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first_02/deterministic/operator-review-ready.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first_02/operator-review-ready.json",
+      "sha256": "2b96682c55ec172943999af665c9325ab9e066f4fc526093af205bef42800fec",
+      "bytes": 209
+    },
+    {
+      "case": "replacement_first_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first_02/deterministic/packed-structured-save-result.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first_02/packed-structured-save-result.json",
+      "sha256": "58c778d380737a75b6c45bd579fa76c593df51cbbc5bcb7c283852e37113936d",
+      "bytes": 26555
+    },
+    {
+      "case": "replacement_first_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first_02/deterministic/publication-ready.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first_02/publication-ready.json",
+      "sha256": "d9f5ad85c668e4876f77e1343ba09874329b3efea2692c63ef2d8d6aa3c1a413",
+      "bytes": 147
+    },
+    {
+      "case": "replacement_first_02",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/runtime/replacement_first_02/deterministic/replacement-observed.json",
+      "repository_copy": "docs/qualification-evidence/structured-save-repair-20260913/installed/replacement_first_02/replacement-observed.json",
+      "sha256": "7782cf71b059d72407da2fa646bdfaaad7aa438fb3cce8437c266fbab08cd9f2",
+      "bytes": 247
+    }
+  ],
+  "raw_stores": "retained only in owned root; pg_dump before cleanup",
+  "historical_artifacts_unchanged": true
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-13T04:14:24.823333+00:00",
+  "frozen_product_unchanged": true,
+  "unchanged_request_delivery_and_operator_regions": {
+    "export class PgRelay": "5a12cce62c63da9309357e48dbc9cc8fe35c7c71c034e9bbc2caf94d6755da63",
+    "export class PublicMcp": "0cb6ed08708f13547e53f306701e5b9c634aeab586e9b4d8427691ce8986afb5",
+    "export async function operator": "c468c241ab1287c53991920d0ccc3ee46b644da6f2c2f4a6ece10a432fdbc090"
+  },
+  "normal_first_harness_sha256": "3714c5f6eded266546a923f5a6b37c024ed557edbf52228200ebb7a6e23fe004",
+  "normal_second_and_admission_first_harness_sha256": "efe0608391df26c796311d77fa01de09b50e34f859dc02bcfe3aa0911fee2f23",
+  "replacement_second_harness_sha256": "187db2c00a4ac98b3b6336df3bdb861d4d3006eca68efb52671df8d145a0b35c",
+  "driver_case_allowlist": "Only new owned retry aliases added; request serialization, PG relay, environment/identity, and installed application paths unchanged."
+}

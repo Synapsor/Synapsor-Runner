@@ -1,0 +1,166 @@
+{
+  "pg_hold": [
+    {
+      "at": "2026-09-13T03:59:51.399Z",
+      "host_pid": 1670513,
+      "event": "pg_hold",
+      "connection": 4,
+      "backend_pid": 1124
+    }
+  ],
+  "pg_release": [
+    {
+      "at": "2026-09-13T03:59:53.997Z",
+      "host_pid": 1670513,
+      "event": "pg_release",
+      "connection": 4,
+      "backend_pid": 1124,
+      "bytes_released": 466
+    }
+  ],
+  "installed_publication_observed": [
+    {
+      "at": "2026-09-13T03:59:53.990Z",
+      "host_pid": 1670513,
+      "event": "installed_publication_observed",
+      "before": "policy:82b07f1a89ac5811ac2f2dc7405424aadb987359c5deb745709999c6810c60c5",
+      "after": "policy:d75b086a9ebe0774d2dce92b446517cf26cea93d6cd29dd7092b618efca6fccc"
+    }
+  ],
+  "observer_sqlite_busy": [
+    {
+      "at": "2026-09-13T03:59:51.502Z",
+      "host_pid": 1670513,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T03:59:51.706Z",
+      "host_pid": 1670513,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T03:59:51.758Z",
+      "host_pid": 1670513,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T03:59:51.808Z",
+      "host_pid": 1670513,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T03:59:51.859Z",
+      "host_pid": 1670513,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T03:59:51.910Z",
+      "host_pid": 1670513,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T03:59:51.960Z",
+      "host_pid": 1670513,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T03:59:52.011Z",
+      "host_pid": 1670513,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T03:59:52.065Z",
+      "host_pid": 1670513,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T03:59:52.116Z",
+      "host_pid": 1670513,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T03:59:52.166Z",
+      "host_pid": 1670513,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T03:59:52.217Z",
+      "host_pid": 1670513,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T03:59:52.267Z",
+      "host_pid": 1670513,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T03:59:52.318Z",
+      "host_pid": 1670513,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T03:59:52.369Z",
+      "host_pid": 1670513,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T03:59:52.420Z",
+      "host_pid": 1670513,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T03:59:52.471Z",
+      "host_pid": 1670513,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    },
+    {
+      "at": "2026-09-13T03:59:53.936Z",
+      "host_pid": 1670513,
+      "event": "observer_sqlite_busy",
+      "code": "ERR_SQLITE_ERROR",
+      "errcode": 5
+    }
+  ],
+  "edit_failure": [
+    {
+      "at": "2026-09-13T03:59:55.218Z",
+      "host_pid": 1670513,
+      "event": "edit_failure",
+      "message": "The expression evaluated to a falsy value:\n\n  assert(result.fresh.ok)\n"
+    }
+  ]
+}

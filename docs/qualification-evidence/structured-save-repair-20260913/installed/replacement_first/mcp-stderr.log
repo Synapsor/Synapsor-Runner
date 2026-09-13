@@ -1,0 +1,6 @@
+(node:2) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Synapsor local authoring MCP ready. Scoped Explore is digest-bound, read-only, and unavailable over HTTP.
+(node:2) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Synapsor local authoring MCP ready. Scoped Explore is digest-bound, read-only, and unavailable over HTTP.

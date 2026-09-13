@@ -1,0 +1,86 @@
+{
+  "read": [
+    {
+      "path": "/boundary/activation/activated_at",
+      "before": "2026-09-12T18:06:17.365Z",
+      "after": "2026-09-13T03:45:45.787Z"
+    },
+    {
+      "path": "/boundary/activation/actor",
+      "before": "local-developer",
+      "after": "local_operator"
+    },
+    {
+      "path": "/boundary/activation/digest",
+      "before": "sha256:b049393ecc158fa60fc9be86aa810fc1498403af5eecdcf15ab99628fc7aca42",
+      "after": "sha256:a1465f6f38499a7711fc4e171a6d233da85063fec9a69c3b02e07e933ebe1ae2"
+    },
+    {
+      "path": "/boundary/pack/resources/0/kept_out_fields/0",
+      "before": "adjuster_id",
+      "after": "insurer_id"
+    },
+    {
+      "path": "/boundary/pack/resources/0/kept_out_fields/1",
+      "before": "insurer_id",
+      "after": "adjuster_id"
+    },
+    {
+      "path": "/boundary/pack/resources/1/kept_out_fields/0",
+      "before": "adjuster_id",
+      "after": "insurer_id"
+    },
+    {
+      "path": "/boundary/pack/resources/1/kept_out_fields/1",
+      "before": "insurer_id",
+      "after": "adjuster_id"
+    }
+  ],
+  "action": [
+    {
+      "path": "/authority/activated_at",
+      "before": "2026-09-12T18:06:23.320Z",
+      "after": "2026-09-13T03:47:32.811Z"
+    },
+    {
+      "path": "/authority/actor",
+      "before": "local-developer",
+      "after": "local_operator"
+    },
+    {
+      "path": "/authority/authority/action_boundary/digest",
+      "before": "sha256:2715065852b5d680241ddebb725860421c65e94fec0634814e44bb7b45be7440",
+      "after": "sha256:47d4e809bb9f7b9c17354ba314418123557c539e23d3d5384ebd58969f9abfa9"
+    },
+    {
+      "path": "/authority/authority/action_boundary/rules/0/approval_policy_digest",
+      "before": "sha256:67c303209959a298f20278238032e82250675e93c93fbfef20939fc1cf31c519",
+      "after": "sha256:160d7dba5d31b4f86473b35eb9502e9589938a80b3246de60ec0335a6746c34f"
+    },
+    {
+      "path": "/authority/authority/approval_classes/0/shared_limits/1/maximum",
+      "before": 3,
+      "after": 1
+    },
+    {
+      "path": "/authority/authority/digest",
+      "before": "sha256:541ee4e99dd8c20c02929f3c6ca82daa003a705c9be69a03e73eadc46b015ed3",
+      "after": "sha256:1c27d0e8967d4ebe0f2e6db38b5b29d6278f58b65c7142a577f4bfbc567da44e"
+    },
+    {
+      "path": "/authority/authority/rules/0/activated_at",
+      "before": "2026-09-12T05:43:53.389Z",
+      "after": "2026-09-13T03:44:58.707Z"
+    },
+    {
+      "path": "/authority/authority/rules/0/read_boundary_digest",
+      "before": "sha256:b049393ecc158fa60fc9be86aa810fc1498403af5eecdcf15ab99628fc7aca42",
+      "after": "sha256:a1465f6f38499a7711fc4e171a6d233da85063fec9a69c3b02e07e933ebe1ae2"
+    },
+    {
+      "path": "/authority/digest",
+      "before": "sha256:541ee4e99dd8c20c02929f3c6ca82daa003a705c9be69a03e73eadc46b015ed3",
+      "after": "sha256:1c27d0e8967d4ebe0f2e6db38b5b29d6278f58b65c7142a577f4bfbc567da44e"
+    }
+  ]
+}
