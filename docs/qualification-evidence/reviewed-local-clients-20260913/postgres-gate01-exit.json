@@ -1,0 +1,18 @@
+{
+  "name": "postgres-gate01",
+  "args": [
+    "bash",
+    "scripts/verify-publication-accounting-postgres.sh"
+  ],
+  "pg_control_store_fixture": true,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T05:13:28.224158+00:00",
+  "source_head": "8d642704f8a96e87bba9a3338b96621cf213843d",
+  "source_diff_sha256": "0384517292ec24462e43ebe02a2ccc311a68e4701afd5ef01bd6b5baff5fccd8",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/test-environments/postgres-gate01",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/postgres-gate01",
+  "source_manifest_sha256": "21665c05eecc2f2a0659434718d4c2fc82dd528ed0446d8b99697e4636c16e4a",
+  "pid": 1827209,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T05:14:59.759899+00:00"
+}

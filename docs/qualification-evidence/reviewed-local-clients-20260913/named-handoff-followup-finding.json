@@ -1,0 +1,11 @@
+{
+  "at": "2026-09-13T05:41:29.271328+00:00",
+  "classification": "named feature handoff wording/diagnostic selection correction; no authority failure",
+  "source": "6ebc4d6ce1ebfd92aa9b7ab0550a0b6d0d505981",
+  "observed_development_terminal": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/setup_dev/setup-evidence/client-one.terminal.log",
+  "terminal_sha256": "c6f39aba3d7887cdfbcb4b73ce092244d8dfdbd6e75d2aa9b7409079771c5e3c",
+  "observed": "The managed client and reviewed worker load this fixed local reference",
+  "actual_named_contract": "Only selected client launcher uses named reference; worker remains separately configured",
+  "source_trace": "post-activation-ask.ts failure guidance omits --local-client, so its suggested status command checks the default entry instead of selected named entry",
+  "next": "After current stable full completes, narrowly correct named handoff worker wording and exact selected-reference diagnostic guidance; regressions/final second full suite. Do not edit source during running suite."
+}

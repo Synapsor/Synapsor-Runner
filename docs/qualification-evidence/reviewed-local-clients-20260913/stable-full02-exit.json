@@ -1,0 +1,26 @@
+{
+  "name": "stable-full02",
+  "args": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--maxWorkers=4",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000",
+    "--reporter=default",
+    "--reporter=json",
+    "--outputFile.json=docs/qualification-evidence/reviewed-local-clients-20260913/stable-full02.json"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T05:50:30.634586+00:00",
+  "source_head": "23e51b1e17c5ec22492518be6d3f6bb0d752bfe7",
+  "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/test-environments/stable-full02",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/stable-full02",
+  "source_manifest_sha256": "18209ba1efcd836cd964894290dfe366506b218b69a826eb2d17e8074a36e57c",
+  "pid": 1919039,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T06:11:00.170188+00:00"
+}

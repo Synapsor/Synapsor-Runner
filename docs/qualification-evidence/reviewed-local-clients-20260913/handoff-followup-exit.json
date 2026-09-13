@@ -1,0 +1,25 @@
+{
+  "name": "handoff-followup",
+  "args": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "apps/runner/src/post-activation-ask.test.ts",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000",
+    "--reporter=default"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T05:49:32.947491+00:00",
+  "source_head": "6ebc4d6ce1ebfd92aa9b7ab0550a0b6d0d505981",
+  "source_diff_sha256": "cf4b6536880dacf8ed1a2566592244fefbd7649213b1e46f709af3397fae5f68",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/test-environments/handoff-followup",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/handoff-followup",
+  "source_manifest_sha256": "3c4e248c21ff01ddd5cbf17778c394c1321e8ee6752823cb36ca9be509e8de42",
+  "pid": 1916655,
+  "exit_code": 1,
+  "completed_at": "2026-09-13T05:49:39.345714+00:00"
+}

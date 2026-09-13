@@ -1,0 +1,21 @@
+{
+  "name": "types03",
+  "args": [
+    "node",
+    "node_modules/typescript/bin/tsc",
+    "-b",
+    "--pretty",
+    "false"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T04:56:20.939890+00:00",
+  "source_head": "8d642704f8a96e87bba9a3338b96621cf213843d",
+  "source_diff_sha256": "5820b06e7145f48c6fe0976f3c7184ed8aed429664a146fb90b6711623401d88",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/test-environments/types03",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/types03",
+  "source_manifest_sha256": "11ac0d387e518b4e22b7410bf39399ef4a552d978d332211ef9a3a3d73308acf",
+  "pid": 1790449,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T04:56:25.423528+00:00"
+}

@@ -1,0 +1,30 @@
+[
+  {
+    "name": "storage-preflight.mjs",
+    "sha256": "f41c22b65c92ac9629a1236a8a189bd46100edd7516dbfc40639b7ed047ebab2",
+    "preserved_owned_copy": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/storage-preflight.mjs",
+    "existing_tracked_source": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/structured-save-repair-20260913/storage-preflight.mjs",
+    "usage": "effective-store preflight"
+  },
+  {
+    "name": "a5-publication-edit.mjs",
+    "sha256": "277b540d3a8f25ce113252dae73104e80cd48f317491ef30b10117d80d9c2eb8",
+    "preserved_owned_copy": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/a5-publication-edit.mjs",
+    "existing_tracked_source": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/structured-save-repair-20260913/a5-publication-edit.mjs",
+    "usage": "legacy unexecuted copy; final checks use named current harnesses"
+  },
+  {
+    "name": "a2-insurer.mjs",
+    "sha256": "e840bf095ad6772d9d6ab69cbce1ceb70bb15a82ad3412ab1f142cbd9c5a4828",
+    "preserved_owned_copy": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/a2-insurer.mjs",
+    "existing_tracked_source": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/structured-save-repair-20260913/a2-insurer.mjs",
+    "usage": "legacy unexecuted copy; final checks use named current harnesses"
+  },
+  {
+    "name": "prepare-edit.mjs",
+    "sha256": "ec5930af8812729aed36c81161d7caff0c48bd6420a1fbc83f644e7fb558194d",
+    "preserved_owned_copy": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/prepare-edit.mjs",
+    "existing_tracked_source": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/structured-save-repair-20260913/prepare-edit.mjs",
+    "usage": "legacy unexecuted copy; final checks use named current harnesses"
+  }
+]

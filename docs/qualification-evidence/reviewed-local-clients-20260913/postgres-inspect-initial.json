@@ -1,0 +1,251 @@
+[
+    {
+        "Id": "900f2180a810e03cc9b4e165c2f2c33a224604a115727add4d6e1aa55eb8baaa",
+        "Created": "2026-09-13T04:56:48.796773877Z",
+        "Path": "docker-entrypoint.sh",
+        "Args": [
+            "-c",
+            "listen_addresses="
+        ],
+        "State": {
+            "Status": "running",
+            "Running": true,
+            "Paused": false,
+            "Restarting": false,
+            "OOMKilled": false,
+            "Dead": false,
+            "Pid": 1791630,
+            "ExitCode": 0,
+            "Error": "",
+            "StartedAt": "2026-09-13T04:56:48.963396927Z",
+            "FinishedAt": "0001-01-01T00:00:00Z"
+        },
+        "Image": "sha256:1edc8e87e53194e0cc8006c4e9df9b626c6c72cb43ad3385f0f34af7922065b1",
+        "ResolvConfPath": "/var/lib/docker/containers/900f2180a810e03cc9b4e165c2f2c33a224604a115727add4d6e1aa55eb8baaa/resolv.conf",
+        "HostnamePath": "/var/lib/docker/containers/900f2180a810e03cc9b4e165c2f2c33a224604a115727add4d6e1aa55eb8baaa/hostname",
+        "HostsPath": "/var/lib/docker/containers/900f2180a810e03cc9b4e165c2f2c33a224604a115727add4d6e1aa55eb8baaa/hosts",
+        "LogPath": "/var/lib/docker/containers/900f2180a810e03cc9b4e165c2f2c33a224604a115727add4d6e1aa55eb8baaa/900f2180a810e03cc9b4e165c2f2c33a224604a115727add4d6e1aa55eb8baaa-json.log",
+        "Name": "/synapsor-reviewed-clients-36250d48",
+        "RestartCount": 0,
+        "Driver": "overlay2",
+        "Platform": "linux",
+        "MountLabel": "",
+        "ProcessLabel": "",
+        "AppArmorProfile": "docker-default",
+        "ExecIDs": null,
+        "HostConfig": {
+            "Binds": null,
+            "ContainerIDFile": "",
+            "LogConfig": {
+                "Type": "json-file",
+                "Config": {}
+            },
+            "NetworkMode": "none",
+            "PortBindings": {},
+            "RestartPolicy": {
+                "Name": "no",
+                "MaximumRetryCount": 0
+            },
+            "AutoRemove": false,
+            "VolumeDriver": "",
+            "VolumesFrom": null,
+            "ConsoleSize": [
+                0,
+                0
+            ],
+            "CapAdd": null,
+            "CapDrop": null,
+            "CgroupnsMode": "private",
+            "Dns": null,
+            "DnsOptions": [],
+            "DnsSearch": [],
+            "ExtraHosts": null,
+            "GroupAdd": null,
+            "IpcMode": "private",
+            "Cgroup": "",
+            "Links": null,
+            "OomScoreAdj": 0,
+            "PidMode": "",
+            "Privileged": false,
+            "PublishAllPorts": false,
+            "ReadonlyRootfs": false,
+            "SecurityOpt": null,
+            "UTSMode": "",
+            "UsernsMode": "",
+            "ShmSize": 67108864,
+            "Runtime": "runc",
+            "Isolation": "",
+            "CpuShares": 0,
+            "Memory": 0,
+            "NanoCpus": 0,
+            "CgroupParent": "",
+            "BlkioWeight": 0,
+            "BlkioWeightDevice": [],
+            "BlkioDeviceReadBps": [],
+            "BlkioDeviceWriteBps": [],
+            "BlkioDeviceReadIOps": [],
+            "BlkioDeviceWriteIOps": [],
+            "CpuPeriod": 0,
+            "CpuQuota": 0,
+            "CpuRealtimePeriod": 0,
+            "CpuRealtimeRuntime": 0,
+            "CpusetCpus": "",
+            "CpusetMems": "",
+            "Devices": [],
+            "DeviceCgroupRules": null,
+            "DeviceRequests": null,
+            "MemoryReservation": 0,
+            "MemorySwap": 0,
+            "MemorySwappiness": null,
+            "OomKillDisable": null,
+            "PidsLimit": null,
+            "Ulimits": [],
+            "CpuCount": 0,
+            "CpuPercent": 0,
+            "IOMaximumIOps": 0,
+            "IOMaximumBandwidth": 0,
+            "Mounts": [
+                {
+                    "Type": "bind",
+                    "Source": "/tmp/synapsor-reviewed-clients-pg-REWB3Y/socket",
+                    "Target": "/var/run/postgresql"
+                }
+            ],
+            "MaskedPaths": [
+                "/proc/acpi",
+                "/proc/asound",
+                "/proc/interrupts",
+                "/proc/kcore",
+                "/proc/keys",
+                "/proc/latency_stats",
+                "/proc/sched_debug",
+                "/proc/scsi",
+                "/proc/timer_list",
+                "/proc/timer_stats",
+                "/sys/devices/virtual/powercap",
+                "/sys/firmware",
+                "/sys/devices/system/cpu/cpu0/thermal_throttle",
+                "/sys/devices/system/cpu/cpu1/thermal_throttle",
+                "/sys/devices/system/cpu/cpu2/thermal_throttle",
+                "/sys/devices/system/cpu/cpu3/thermal_throttle",
+                "/sys/devices/system/cpu/cpu4/thermal_throttle",
+                "/sys/devices/system/cpu/cpu5/thermal_throttle",
+                "/sys/devices/system/cpu/cpu6/thermal_throttle",
+                "/sys/devices/system/cpu/cpu7/thermal_throttle",
+                "/sys/devices/system/cpu/cpu8/thermal_throttle",
+                "/sys/devices/system/cpu/cpu9/thermal_throttle",
+                "/sys/devices/system/cpu/cpu10/thermal_throttle",
+                "/sys/devices/system/cpu/cpu11/thermal_throttle",
+                "/sys/devices/system/cpu/cpu12/thermal_throttle",
+                "/sys/devices/system/cpu/cpu13/thermal_throttle",
+                "/sys/devices/system/cpu/cpu14/thermal_throttle",
+                "/sys/devices/system/cpu/cpu15/thermal_throttle",
+                "/sys/devices/system/cpu/cpu16/thermal_throttle",
+                "/sys/devices/system/cpu/cpu17/thermal_throttle",
+                "/sys/devices/system/cpu/cpu18/thermal_throttle",
+                "/sys/devices/system/cpu/cpu19/thermal_throttle"
+            ],
+            "ReadonlyPaths": [
+                "/proc/bus",
+                "/proc/fs",
+                "/proc/irq",
+                "/proc/sys",
+                "/proc/sysrq-trigger"
+            ]
+        },
+        "GraphDriver": {
+            "Data": {
+                "ID": "900f2180a810e03cc9b4e165c2f2c33a224604a115727add4d6e1aa55eb8baaa",
+                "LowerDir": "/var/lib/docker/overlay2/9d716bc6018d473d9aed3b28810aca1168fcf597ea0d19d8e3caa178cae9ad10-init/diff:/var/lib/docker/overlay2/4ebcc3af032710c6e452fc231544ef728c96219be18921768674bec5814bb0b1/diff:/var/lib/docker/overlay2/e5b11d54e820d7199005a7880bb5c772c797b997a238e3e19df12671bd9bb4a2/diff:/var/lib/docker/overlay2/c2f6126d67d5f73f56e7d27854cbe3d197e1b5a1fca9f8529593a0ec61cee787/diff:/var/lib/docker/overlay2/7f0c0547b43ed4f6423ae14a27dd470f51a339a7ded280ceb8454ea81b74751b/diff:/var/lib/docker/overlay2/7f0a4c54e3bf33007a2fdd3bc30f6934c9683669b11f9122eab1be680e650cb1/diff:/var/lib/docker/overlay2/d895f327811ba9f019a118d5ab09c7fb799a24ed17f49c3f06867117f5c7def9/diff:/var/lib/docker/overlay2/cad65a902be989e2541423c73ae5ee2346a9d1310fb482d6e2b8eb3bd306aebe/diff:/var/lib/docker/overlay2/f6981ca4ec0e36c59664d14d3fcce298dc6d95439887d240e2a9440ab88bf691/diff:/var/lib/docker/overlay2/a342bf5852c05649dda129b086e46c7e1b9b377a2ec28d8004026dade311ac7d/diff:/var/lib/docker/overlay2/8bc9ef07d89b0284e4187f5962eb7fa8add2b3654ce151aaaf1e92f381b75899/diff:/var/lib/docker/overlay2/6bef92deae1cf1864bf0be287b9c58ed1495849ddbcdb96ba5cab61599a92c1f/diff:/var/lib/docker/overlay2/1b0fe0a1a9326984adcadf1d8864e2e6a2185f30002443e090f4cf166be9816a/diff:/var/lib/docker/overlay2/9322a34b1518f2ec98af5b9abcdb4276c4011287e0411a1137fa7e236b392080/diff:/var/lib/docker/overlay2/1963e7fcae38600e9b07a2853a9c0552f050272b7fef56654c958f4534b3b6e7/diff",
+                "MergedDir": "/var/lib/docker/overlay2/9d716bc6018d473d9aed3b28810aca1168fcf597ea0d19d8e3caa178cae9ad10/merged",
+                "UpperDir": "/var/lib/docker/overlay2/9d716bc6018d473d9aed3b28810aca1168fcf597ea0d19d8e3caa178cae9ad10/diff",
+                "WorkDir": "/var/lib/docker/overlay2/9d716bc6018d473d9aed3b28810aca1168fcf597ea0d19d8e3caa178cae9ad10/work"
+            },
+            "Name": "overlay2"
+        },
+        "Mounts": [
+            {
+                "Type": "bind",
+                "Source": "/tmp/synapsor-reviewed-clients-pg-REWB3Y/socket",
+                "Destination": "/var/run/postgresql",
+                "Mode": "",
+                "RW": true,
+                "Propagation": "rprivate"
+            },
+            {
+                "Type": "volume",
+                "Name": "4a7624ac10d554213cf3bbfc556cf3fe7bae61516b9779e039a62bb5f5c25544",
+                "Source": "/var/lib/docker/volumes/4a7624ac10d554213cf3bbfc556cf3fe7bae61516b9779e039a62bb5f5c25544/_data",
+                "Destination": "/var/lib/postgresql/data",
+                "Driver": "local",
+                "Mode": "",
+                "RW": true,
+                "Propagation": ""
+            }
+        ],
+        "Config": {
+            "Hostname": "900f2180a810",
+            "Domainname": "",
+            "User": "",
+            "AttachStdin": false,
+            "AttachStdout": false,
+            "AttachStderr": false,
+            "ExposedPorts": {
+                "5432/tcp": {}
+            },
+            "Tty": false,
+            "OpenStdin": false,
+            "StdinOnce": false,
+            "Env": [
+                "POSTGRES_DB=synapsor_reviewed_clients",
+                "POSTGRES_HOST_AUTH_METHOD=trust",
+                "PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin:/usr/lib/postgresql/17/bin",
+                "GOSU_VERSION=1.19",
+                "LANG=en_US.utf8",
+                "PG_MAJOR=17",
+                "PG_VERSION=17.10-1.pgdg13+1",
+                "PGDATA=/var/lib/postgresql/data"
+            ],
+            "Cmd": [
+                "-c",
+                "listen_addresses="
+            ],
+            "Image": "postgres:17",
+            "Volumes": {
+                "/var/lib/postgresql/data": {}
+            },
+            "WorkingDir": "",
+            "Entrypoint": [
+                "docker-entrypoint.sh"
+            ],
+            "Labels": {
+                "synapsor.qualification": "reviewed-clients-repair-20260913"
+            },
+            "StopSignal": "SIGINT"
+        },
+        "NetworkSettings": {
+            "SandboxID": "2193b883600e206f58cd881fa84004bfa814b887fcbd4de6e42df59681a0ccc2",
+            "SandboxKey": "/var/run/docker/netns/2193b883600e",
+            "Ports": {},
+            "Networks": {
+                "none": {
+                    "IPAMConfig": null,
+                    "Links": null,
+                    "Aliases": null,
+                    "DriverOpts": null,
+                    "GwPriority": 0,
+                    "NetworkID": "c469d12636704640102db8b2335fc93e81647487e800b5627ff2bb9ca897b528",
+                    "EndpointID": "5072c782bdff3721728056819a0b88bbd213d5f9a741c9fa5deae25b11be013f",
+                    "Gateway": "",
+                    "IPAddress": "",
+                    "MacAddress": "",
+                    "IPPrefixLen": 0,
+                    "IPv6Gateway": "",
+                    "GlobalIPv6Address": "",
+                    "GlobalIPv6PrefixLen": 0,
+                    "DNSNames": null
+                }
+            }
+        }
+    }
+]

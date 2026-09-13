@@ -1,0 +1,26 @@
+{
+  "name": "identity-final",
+  "args": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "apps/runner/src/local-test-runtime-identity.test.ts",
+    "apps/runner/src/post-activation-ask.test.ts",
+    "--maxWorkers=4",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000",
+    "--reporter=default"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T05:27:21.515432+00:00",
+  "source_head": "05d40e2de94b00cd66d54c7fd86ac1f018d610d3",
+  "source_diff_sha256": "79fd0433e6d903cc62cc5edf0a181a757e64cf28699bb5537bdf4672eb468c05",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/test-environments/identity-final",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/identity-final",
+  "source_manifest_sha256": "de59c3ce784329369fc422aa8833b57bec2a4cb636e26138184716c2a1a928f6",
+  "pid": 1859153,
+  "exit_code": 1,
+  "completed_at": "2026-09-13T05:27:27.395563+00:00"
+}

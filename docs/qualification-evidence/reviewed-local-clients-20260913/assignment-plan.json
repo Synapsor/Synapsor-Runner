@@ -1,0 +1,68 @@
+{
+  "assignment": "Reviewed named local clients, truthful late refusal, final installed Stage A matrix",
+  "started_at": "2026-09-13T04:39:41.401219+00:00",
+  "overall_deadline": "2026-09-13T11:39:41.401219+00:00",
+  "baseline": "8d642704f8a96e87bba9a3338b96621cf213843d",
+  "branch": "codex/tui-safe-action-control-plane",
+  "owned_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913",
+  "evidence_root": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913",
+  "previous_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913",
+  "verified_ancestors": [
+    "318f1fb170c300fc533f0dea9ab873f3eef9a5cd",
+    "c82b01420a1aca785c4567af709242424ce5d809",
+    "a2b6b5f",
+    "b16f92a"
+  ],
+  "prior_installation": {
+    "frozen_at": "2026-09-13T03:41:52.448Z",
+    "purpose": "structured execution-context draft-save repair and named installed edit/order verification",
+    "cases": [
+      "owned insurance A1/insurer-A2, exact edit and both publication orders; shared contexts blocked"
+    ],
+    "product_commit": "318f1fb170c300fc533f0dea9ab873f3eef9a5cd",
+    "test_commit": "1c4c22a007ed5d7bea758e85e03e01507ada6780",
+    "report_commit": "recorded separately after verification",
+    "source_commit": "c82b01420a1aca785c4567af709242424ce5d809",
+    "source_status": "?? .claude/",
+    "unpackaged_unrelated_directory": ".claude/ (preserved, no contents read)",
+    "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/structured-save-repair-d422ca5-20260913/frozen/installed",
+    "installed_tree_sha256": "ee313994a4a542915f5ad9efca04ed29a027b5b86f8b6c717df7a451a786266f",
+    "node": {
+      "version": "v22.22.2",
+      "executable": "/usr/bin/node",
+      "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+    },
+    "runner_version": "1.8.0",
+    "spec_version": "1.11.0",
+    "package_lock_sha256": "85477733ab314a02c52ca9b0ab37b630689653a542ff28dc4a5fae74fd69a8a0",
+    "tarballs": [
+      {
+        "name": "synapsor-runner-1.8.0.tgz",
+        "sha256": "3c7b6ba3ce0e02c22ed61bd889d25be387ff07d36dd988213f1adb0a93b3b3c6"
+      },
+      {
+        "name": "synapsor-spec-1.11.0.tgz",
+        "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+      }
+    ],
+    "entries": 7569,
+    "manifest_sha256": "7f7925ea7a6073d48cbdc268e4c6f46c61200668d3c227aaf56e5891b90b025d"
+  },
+  "budgets": {
+    "development_minutes": 180,
+    "fixture_preparation_minutes": 60,
+    "verification_reserved_minutes": 180,
+    "focused_runs": 30,
+    "stable_full_runs": 2,
+    "stable_full_timeout_minutes": 60,
+    "postgres_gate_runs": 2,
+    "offline_attempts": 2,
+    "freeze_attempts": 2,
+    "installed_minutes": 120,
+    "installed_operations": 600,
+    "worker_invocations": 24,
+    "schedules_per_case": 2
+  },
+  "stage_a": "NOT PASSED",
+  "stage_b": "NOT STARTED"
+}

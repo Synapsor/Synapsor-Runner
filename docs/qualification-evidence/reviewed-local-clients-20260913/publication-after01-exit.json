@@ -1,0 +1,23 @@
+{
+  "name": "publication-after01",
+  "args": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "apps/runner/src/semantic-admission-publication.test.ts",
+    "packages/mcp-server/src/semantic-actions.test.ts",
+    "--maxWorkers=2",
+    "--reporter=default"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T04:49:48.862749+00:00",
+  "source_head": "8d642704f8a96e87bba9a3338b96621cf213843d",
+  "source_diff_sha256": "77800db05ef29e1cd3785bc952df83b12ec0b83de4fd2b53774dab5ebcced43b",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/test-environments/publication-after01",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/publication-after01",
+  "source_manifest_sha256": "6eb20d7e235929120619c7dadb328e6b97f21c4d873874113fb92addb94d9e9e",
+  "pid": 1776247,
+  "exit_code": 1,
+  "completed_at": "2026-09-13T04:50:59.528869+00:00"
+}

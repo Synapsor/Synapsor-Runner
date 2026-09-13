@@ -1,0 +1,25 @@
+{
+  "name": "identity-focus01",
+  "args": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "apps/runner/src/local-test-runtime-identity.test.ts",
+    "apps/runner/src/managed-mcp-project.test.ts",
+    "apps/runner/src/post-activation-ask.test.ts",
+    "apps/runner/src/semantic-admission-publication.test.ts",
+    "--maxWorkers=2",
+    "--reporter=default"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T04:46:41.468392+00:00",
+  "source_head": "8d642704f8a96e87bba9a3338b96621cf213843d",
+  "source_diff_sha256": "2f4d06cb0a0c207083b40a1f7d883cbb696c37258aab996b4e24a9e25740d02e",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/test-environments/identity-focus01",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/identity-focus01",
+  "source_manifest_sha256": "a5901c7b93237ec06d51e14e68085f4d2d816907760a0d860ac03502df5abf16",
+  "pid": 1768580,
+  "exit_code": 1,
+  "completed_at": "2026-09-13T04:47:35.897105+00:00"
+}

@@ -1,0 +1,5 @@
+# Keep raw test state and local identity-bearing observations on the owned host.
+# Commit only top-level harnesses, source manifests and reviewed result summaries.
+/*/
+*.log
+*.terminal.log

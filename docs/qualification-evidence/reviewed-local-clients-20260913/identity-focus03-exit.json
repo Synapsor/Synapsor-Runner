@@ -1,0 +1,28 @@
+{
+  "name": "identity-focus03",
+  "args": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "apps/runner/src/local-test-runtime-identity.test.ts",
+    "apps/runner/src/managed-mcp-project.test.ts",
+    "apps/runner/src/post-activation-ask.test.ts",
+    "apps/runner/src/mcp-runtime-execution-config.test.ts",
+    "packages/mcp-server/src/semantic-actions.test.ts",
+    "--maxWorkers=2",
+    "--testTimeout=20000",
+    "--hookTimeout=20000",
+    "--reporter=default"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T04:57:57.241853+00:00",
+  "source_head": "8d642704f8a96e87bba9a3338b96621cf213843d",
+  "source_diff_sha256": "9a80210667419ba23711463f7acc3a78870dcc7c3205bd9ca6d3b5b9ff9c8221",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/test-environments/identity-focus03",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/identity-focus03",
+  "source_manifest_sha256": "63648a46e87b73ce3d283e1a96cec5cd8f40dababa9096ca2ebd608a03d5a8e9",
+  "pid": 1794263,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T04:58:41.533345+00:00"
+}

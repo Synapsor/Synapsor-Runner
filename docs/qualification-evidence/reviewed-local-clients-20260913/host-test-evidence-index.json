@@ -1,0 +1,1443 @@
+{
+  "at": "2026-09-13T06:13:03.543098+00:00",
+  "private_raw_state": "Ignored local directories and exact owned copies; identity-bearing ledgers are not committed",
+  "records": [
+    {
+      "name": "combined01",
+      "original_path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/combined01",
+      "saved_owned_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/host-test-evidence/combined01",
+      "files": [
+        {
+          "path": "midnight-mechanisms.json",
+          "bytes": 4163,
+          "sha256": "41856e645e39b55be170901b4570910878d3af337b42a5e4b2d3d9a5bf7e01b3"
+        },
+        {
+          "path": "publication-file_authority_sqlite-admission_first-timeline.json",
+          "bytes": 47845,
+          "sha256": "490c027eb6037daabe534c9b5a060e11fdfc4fe8a1c114deb41ad72cb79833de"
+        },
+        {
+          "path": "publication-file_authority_sqlite-admission_first.json",
+          "bytes": 47871,
+          "sha256": "daff5660f26af7e358732583bb1d1c6b590e7e5b86c3cb530b6a4ec2f35445f1"
+        },
+        {
+          "path": "publication-file_authority_sqlite-disabled_draft-timeline.json",
+          "bytes": 46552,
+          "sha256": "47fddf432f128d74ed46f48111c580c87cedb2e58f1a98757277ff058bae75f4"
+        },
+        {
+          "path": "publication-file_authority_sqlite-disabled_draft.json",
+          "bytes": 46578,
+          "sha256": "e6831b55892277b8f01c30ab4dc00425b158b2c448a2ccfdfa643b1073a3c55a"
+        },
+        {
+          "path": "publication-file_authority_sqlite-failed_confirmation-timeline.json",
+          "bytes": 46667,
+          "sha256": "daa55651ebd28fa30b00f2b7f800a9741f942f890723e345b14086bed5c369e9"
+        },
+        {
+          "path": "publication-file_authority_sqlite-failed_confirmation.json",
+          "bytes": 46693,
+          "sha256": "781914aacb44599121b72a8653aaf7951c0f4366955e947887fe796c915589f6"
+        },
+        {
+          "path": "publication-file_authority_sqlite-inactive_first-timeline.json",
+          "bytes": 21169,
+          "sha256": "110c0635fd1886a22c84786e97fca0c518625fbed54448b2bd23292caff80213"
+        },
+        {
+          "path": "publication-file_authority_sqlite-inactive_first.json",
+          "bytes": 21195,
+          "sha256": "a3a8e9d2caaa92d77a535dcb9b6b129fd8eac1bbee74c9a1be843b5162e6f3b3"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_first-timeline.json",
+          "bytes": 34023,
+          "sha256": "6a224ae51c46263a1f0fa5899365c525e4293612ddf94023b0c85bf0da5a288d"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_first.json",
+          "bytes": 34049,
+          "sha256": "03cedd8be3183e9856586287d04ffe29ed02afcf94d4e9bee22667b535f97cca"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_process-timeline.json",
+          "bytes": 34009,
+          "sha256": "90451cf4bfe1739bfc534d54bc17381614435e74bbc7fb4d10100e4486724800"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_process.json",
+          "bytes": 34035,
+          "sha256": "0821171729e416c2db8057139b95b197bd0ee16ed9e3564683a96a4c6f45596c"
+        },
+        {
+          "path": "publication-file_authority_sqlite-unchanged-timeline.json",
+          "bytes": 46337,
+          "sha256": "3e829414f559aa605c93a65b67b54924906ffbf787bc45f03d629ada9b2b2132"
+        },
+        {
+          "path": "publication-file_authority_sqlite-unchanged.json",
+          "bytes": 46363,
+          "sha256": "55081e697d720f0d0464e371b70bb5f42c1ec9251475af6a61543da588602822"
+        },
+        {
+          "path": "publication-sqlite-admission_first-timeline.json",
+          "bytes": 48204,
+          "sha256": "2da3d3dcb080ba2a75c5844ea9a1b27d8a3e6d63d7f2ae1948109f568232828f"
+        },
+        {
+          "path": "publication-sqlite-admission_first.json",
+          "bytes": 48234,
+          "sha256": "9e385d1ba4e0e9a54f733c5d6b1745bfb02f23326f6041449acdbc06f9061d57"
+        },
+        {
+          "path": "publication-sqlite-disabled_draft-timeline.json",
+          "bytes": 46663,
+          "sha256": "f7f64d7d05f66990c2fa9e886930903a7d72e790a3e21f0c3f6e56cde5686e50"
+        },
+        {
+          "path": "publication-sqlite-disabled_draft.json",
+          "bytes": 46693,
+          "sha256": "c6faad06c5b81545a79bdc88709f840231eb185ef5be1490c6cb4b909049821b"
+        },
+        {
+          "path": "publication-sqlite-failed_confirmation-timeline.json",
+          "bytes": 46778,
+          "sha256": "e0ab7c83aa42b6974d86c4d9d8757d00a81b56e1a19c2bee09f0148772caaa4c"
+        },
+        {
+          "path": "publication-sqlite-failed_confirmation.json",
+          "bytes": 46808,
+          "sha256": "a47a16e173c05f7e1eda42d0581c18e82ed76ee52d1202940e644d6ad28af933"
+        },
+        {
+          "path": "publication-sqlite-inactive_first-timeline.json",
+          "bytes": 21483,
+          "sha256": "7735a823fac1ab844e0bfbd9dc581c5bc81dd8b23b465ca8046b8d00e418f38a"
+        },
+        {
+          "path": "publication-sqlite-inactive_first.json",
+          "bytes": 21513,
+          "sha256": "292330222c11f760740a5607c99e7a01f87f8525f31fb87f67b251dce1646381"
+        },
+        {
+          "path": "publication-sqlite-replacement_first-timeline.json",
+          "bytes": 34382,
+          "sha256": "9b8a9c693c8e60584e81f88eb7d36a1d583dd71bcc9b682c851e25fc96807928"
+        },
+        {
+          "path": "publication-sqlite-replacement_first.json",
+          "bytes": 34412,
+          "sha256": "6f05958a54e9732ea73598d854cbffbfb2207a20b6f64e1711ca499be75d319e"
+        },
+        {
+          "path": "publication-sqlite-replacement_process-timeline.json",
+          "bytes": 34368,
+          "sha256": "2ffde2a6039adcbb4f77fb53b5a5e546766f0a281eb626177accf17d157eb98f"
+        },
+        {
+          "path": "publication-sqlite-replacement_process.json",
+          "bytes": 34398,
+          "sha256": "12de0a37b7d306b7b41dc6a595d48c41ca44463e43be18dd4a60ca1c527a0525"
+        },
+        {
+          "path": "publication-sqlite-unchanged-timeline.json",
+          "bytes": 47010,
+          "sha256": "9a53030f61d7322f51fbfa967d66c894b6177b09790e8ec26c4e7fa3948e86f6"
+        },
+        {
+          "path": "publication-sqlite-unchanged.json",
+          "bytes": 47040,
+          "sha256": "ecbf91619dbdf3aa11ba1ca8c4b433f1b1a7e0be127ed226d5b227d067849ef1"
+        }
+      ]
+    },
+    {
+      "name": "stable-full",
+      "original_path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/stable-full",
+      "saved_owned_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/host-test-evidence/stable-full",
+      "files": [
+        {
+          "path": "midnight-mechanisms.json",
+          "bytes": 4163,
+          "sha256": "41856e645e39b55be170901b4570910878d3af337b42a5e4b2d3d9a5bf7e01b3"
+        },
+        {
+          "path": "old-unstarted-work.json",
+          "bytes": 1299,
+          "sha256": "bde85f233007505c3038d5ed13cd914393e46b224405e164bf54d3076c53e119"
+        },
+        {
+          "path": "publication-file_authority_sqlite-admission_first-timeline.json",
+          "bytes": 47845,
+          "sha256": "d4c3523f32098d050006fa7717cc9c9463db1e2ecf1a9d4dd8be3503240309e5"
+        },
+        {
+          "path": "publication-file_authority_sqlite-admission_first.json",
+          "bytes": 47871,
+          "sha256": "da887e2616a2c876a0b27881670f339cacb8cf8f2cdddea0bb544f2b591e7147"
+        },
+        {
+          "path": "publication-file_authority_sqlite-disabled_draft-timeline.json",
+          "bytes": 46552,
+          "sha256": "6e99d69b8c55efb6244009e4f2acf1f815f9e908cd9e7118b983c4e9aa240665"
+        },
+        {
+          "path": "publication-file_authority_sqlite-disabled_draft.json",
+          "bytes": 46578,
+          "sha256": "dc890803c8f28810b44201fc11007c8a08748ecb0a0157d7c22a4e28bfe69f61"
+        },
+        {
+          "path": "publication-file_authority_sqlite-failed_confirmation-timeline.json",
+          "bytes": 46667,
+          "sha256": "c76437cad021f8f31840018ce8891d0bf9f11a947f5b1748a16d9587f806cea2"
+        },
+        {
+          "path": "publication-file_authority_sqlite-failed_confirmation.json",
+          "bytes": 46693,
+          "sha256": "a3c2b1a0faad4cb21f6fd8e18926e16bf64d76d1f0f51bb6feec26bcf9ff4c98"
+        },
+        {
+          "path": "publication-file_authority_sqlite-inactive_first-timeline.json",
+          "bytes": 21169,
+          "sha256": "07eef351d35e2c3aebde61eb75965ae3fadb24b0bd6303f738c90a41cbd126bc"
+        },
+        {
+          "path": "publication-file_authority_sqlite-inactive_first.json",
+          "bytes": 21195,
+          "sha256": "5534d7ca49c342b5f54fbf7d8f8d4b3ce80fdf31f3c2e38fc6affb12a6d4655c"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_first-timeline.json",
+          "bytes": 34023,
+          "sha256": "69459385d61f337f8c9e8e3a8ad124de78c2a2a4953c3b040de015429c077294"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_first.json",
+          "bytes": 34049,
+          "sha256": "a55f73b20f268ad2b79372316170a56d4d6969accb15d6f5fc8ed17aa60e3f7a"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_process-timeline.json",
+          "bytes": 34009,
+          "sha256": "a9a2e9a129487dabf45dab95aef48f41d097e2005c35a73b41d64ad78f3e3f16"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_process.json",
+          "bytes": 34035,
+          "sha256": "e13ed9ab3b76d9c4667c69c3d924f30fc02093d95dacd7bdd31494c859e11796"
+        },
+        {
+          "path": "publication-file_authority_sqlite-unchanged-timeline.json",
+          "bytes": 46337,
+          "sha256": "8678f323364a7561ffc8999fce45f0f4962c5c8c36418560660ca7392eae6d80"
+        },
+        {
+          "path": "publication-file_authority_sqlite-unchanged.json",
+          "bytes": 46363,
+          "sha256": "f5253d22518d6270f80713990048192bc2e98ee129454e99eb0fe8b1cd511a13"
+        },
+        {
+          "path": "publication-sqlite-admission_first-timeline.json",
+          "bytes": 48204,
+          "sha256": "b12517451f64e1ae2ae7aedf71d15f6d5c5dc86b02319cc50f5bc7c9dc820096"
+        },
+        {
+          "path": "publication-sqlite-admission_first.json",
+          "bytes": 48234,
+          "sha256": "309be3d16409f5b02bfd8bdbec09038bb21930e3c2dbaec4a887d14b22f0a38a"
+        },
+        {
+          "path": "publication-sqlite-disabled_draft-timeline.json",
+          "bytes": 46663,
+          "sha256": "0bb9552b8b2474089a7e54f894c0554879a130974303f3bdba336ff3c94f3f1a"
+        },
+        {
+          "path": "publication-sqlite-disabled_draft.json",
+          "bytes": 46693,
+          "sha256": "a33d44d42b102a61a2dfb0acc022cf9b791acaa8cec1278fd9e2a8f43904feca"
+        },
+        {
+          "path": "publication-sqlite-failed_confirmation-timeline.json",
+          "bytes": 46778,
+          "sha256": "4f5dca14a4cd5b52779fbc9601bf15f252cc7effeb05e1833a609574c7e7e475"
+        },
+        {
+          "path": "publication-sqlite-failed_confirmation.json",
+          "bytes": 46808,
+          "sha256": "44104710fbe211e0eb43a6546b65bcba5721bcf3c5f63f2dd7248835601c8c81"
+        },
+        {
+          "path": "publication-sqlite-inactive_first-timeline.json",
+          "bytes": 21483,
+          "sha256": "6e3d947caa2f4748bad2f5485e7bb63720858e05a5ead2ded891d55526b21a1d"
+        },
+        {
+          "path": "publication-sqlite-inactive_first.json",
+          "bytes": 21513,
+          "sha256": "983a003cc730e5e8e2a89719d0f294332c029faad43aec8e38c2e4705949b5a6"
+        },
+        {
+          "path": "publication-sqlite-replacement_first-timeline.json",
+          "bytes": 34382,
+          "sha256": "fc6ef545e40e4f5fe0d1efdba6049450025a608e935729531baa4b134b3400e3"
+        },
+        {
+          "path": "publication-sqlite-replacement_first.json",
+          "bytes": 34412,
+          "sha256": "a480721dceba66b30c3827ec02ed7cae19efc527ac5c425cd427089db774bb7f"
+        },
+        {
+          "path": "publication-sqlite-replacement_process-timeline.json",
+          "bytes": 34368,
+          "sha256": "00d5baf4e6c1b39d989305e07e954dc2e14605ff89a6a93f1760c000a53e1ac9"
+        },
+        {
+          "path": "publication-sqlite-replacement_process.json",
+          "bytes": 34398,
+          "sha256": "ef7b03e7ca661631e717d9970acc69e38124fada6ef002ae281ba93e798c9ef4"
+        },
+        {
+          "path": "publication-sqlite-unchanged-timeline.json",
+          "bytes": 47010,
+          "sha256": "b4f5ddd1c9faa73a9b96b43e230a09f8cef991a7e054fe9ffb3bb4cfa19f828d"
+        },
+        {
+          "path": "publication-sqlite-unchanged.json",
+          "bytes": 47040,
+          "sha256": "e2e18938e5a038caad3f14adb1fd5f2d866166f9376cc166a705c11c750ecb98"
+        }
+      ]
+    },
+    {
+      "name": "publication-after01",
+      "original_path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/publication-after01",
+      "saved_owned_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/host-test-evidence/publication-after01",
+      "files": [
+        {
+          "path": "publication-file_authority_sqlite-admission_first-timeline.json",
+          "bytes": 47845,
+          "sha256": "7875e4261468f83019653be169c5ff266cf8b554eab4924c0f7fecc0ca816e49"
+        },
+        {
+          "path": "publication-file_authority_sqlite-admission_first.json",
+          "bytes": 47871,
+          "sha256": "06e4e413a862d3f36d2c9a03bcf31e9fe3ad42f60a3ba7d057449f1bd2eae06b"
+        },
+        {
+          "path": "publication-file_authority_sqlite-disabled_draft-timeline.json",
+          "bytes": 46552,
+          "sha256": "60166e14643da583bbe363c9ad30ba841bb03fb0bc9980aa30db3f83618ddf4b"
+        },
+        {
+          "path": "publication-file_authority_sqlite-disabled_draft.json",
+          "bytes": 46578,
+          "sha256": "7075b9acd0ef4a75505e4ba616a9c936cc3a6acbcb4dd83f059104f299a2a7c9"
+        },
+        {
+          "path": "publication-file_authority_sqlite-failed_confirmation-timeline.json",
+          "bytes": 46667,
+          "sha256": "c1f066b45547ba1e51983fbaa177cd067086fde8b9b3edbdd5058be17d29563b"
+        },
+        {
+          "path": "publication-file_authority_sqlite-failed_confirmation.json",
+          "bytes": 46693,
+          "sha256": "0b2fdd28bb4d78cc1350fd8ade0e71e5e2affc91b74c926d4be83d18d12bde32"
+        },
+        {
+          "path": "publication-file_authority_sqlite-inactive_first-timeline.json",
+          "bytes": 21169,
+          "sha256": "5feb466d766bb711115272b2a7e028345d28d5c4623b00dc0ccc9c5af728d6e4"
+        },
+        {
+          "path": "publication-file_authority_sqlite-inactive_first.json",
+          "bytes": 21195,
+          "sha256": "120dd4e370bc0f20743e0b50c87b89d1ddced55e2e3502d0ab837b8d4af742a7"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_first-timeline.json",
+          "bytes": 34023,
+          "sha256": "92186206850cf2a942b7c9f5e3660b6208b8e379a6fc236f4a11180d13307f9b"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_first.json",
+          "bytes": 34049,
+          "sha256": "796df9c18034d1055747016e714ac5121910722cb9fb2a94c628a664fa32e1e2"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_process-timeline.json",
+          "bytes": 34009,
+          "sha256": "1871da1499859a89d98e9f7c5547f3b33d6b74b15e5df235d9ddedc173e71e88"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_process.json",
+          "bytes": 34035,
+          "sha256": "b814d2dab510d04ce1db1836573754f8ace18a4e0c41e90823a3686982fcad01"
+        },
+        {
+          "path": "publication-file_authority_sqlite-unchanged-timeline.json",
+          "bytes": 46337,
+          "sha256": "7d4beb9a8ee1a8d20e7384b9034caaea89f2a328e3e38cdea31a6303e6fd6daf"
+        },
+        {
+          "path": "publication-file_authority_sqlite-unchanged.json",
+          "bytes": 46363,
+          "sha256": "870ad9dce562f843f08f8477e8ac2b16b7ca5e110f43ea3e9c204aa72be758aa"
+        },
+        {
+          "path": "publication-sqlite-admission_first-timeline.json",
+          "bytes": 48204,
+          "sha256": "6fe9c4f350d37e9b2a14151164e7e3b1c1d00937f8073c96b48f6a235ba334e7"
+        },
+        {
+          "path": "publication-sqlite-admission_first.json",
+          "bytes": 48234,
+          "sha256": "52a2df61649e2f595241d8c73b6769e4122d609b11e1e5a2c5d4c4e6fa991067"
+        },
+        {
+          "path": "publication-sqlite-disabled_draft-timeline.json",
+          "bytes": 46663,
+          "sha256": "17fb1b5c5187ef672e83427c6bfb871517f1d97e4ccefee9e011739f0f0fea12"
+        },
+        {
+          "path": "publication-sqlite-disabled_draft.json",
+          "bytes": 46693,
+          "sha256": "eee35b990cff6d84df599eff1ed4c080b7010fbb8b0b00ab4d67fe88b745d643"
+        },
+        {
+          "path": "publication-sqlite-failed_confirmation-timeline.json",
+          "bytes": 46778,
+          "sha256": "09e36fa7434c9e08c735a8a51f8642a55fa8d506979084a3386c3525b239c50c"
+        },
+        {
+          "path": "publication-sqlite-failed_confirmation.json",
+          "bytes": 46808,
+          "sha256": "01da01f76ca026fa399c3acc0add228478277e26eb361d8c7f2c27911d149063"
+        },
+        {
+          "path": "publication-sqlite-inactive_first-timeline.json",
+          "bytes": 21483,
+          "sha256": "2e99e13517fe9128cfef9108d710e84291f958e1be0e0292e445c6840dc427e1"
+        },
+        {
+          "path": "publication-sqlite-inactive_first.json",
+          "bytes": 21513,
+          "sha256": "f4d77fc0eb0d8d644d9cf97433cc96640d9c82869b37e50060ae8008c7fe131c"
+        },
+        {
+          "path": "publication-sqlite-replacement_first-timeline.json",
+          "bytes": 34382,
+          "sha256": "c69d5a5b0f7b25cbb9d863226a2d8ccf2677fdff29132f02937abd4aa5f408ea"
+        },
+        {
+          "path": "publication-sqlite-replacement_first.json",
+          "bytes": 34412,
+          "sha256": "ada4db74a1a8404862d87b63fc8dce03fdb03843f1a57dafb24596352e954b82"
+        },
+        {
+          "path": "publication-sqlite-replacement_process-timeline.json",
+          "bytes": 34368,
+          "sha256": "44d1e61d7300d11cd17c525a87936e4bad1f952999e83e1708c185d2698a5139"
+        },
+        {
+          "path": "publication-sqlite-replacement_process.json",
+          "bytes": 34398,
+          "sha256": "0d0a55e6e7cd2fb58a474cd1e8886f02b1795e09f2136d61f32cbfde8db4d69f"
+        },
+        {
+          "path": "publication-sqlite-unchanged-timeline.json",
+          "bytes": 47010,
+          "sha256": "e09256e70622b04d0c0fadd20cb21095a7a6628a367467ee71c565a6e14328b4"
+        },
+        {
+          "path": "publication-sqlite-unchanged.json",
+          "bytes": 47040,
+          "sha256": "369241b0775866569e5998e8d1d3d1a3839ef78f6adb1026d44a6e5ba636918e"
+        }
+      ]
+    },
+    {
+      "name": "types01",
+      "original_path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/types01",
+      "saved_owned_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/host-test-evidence/types01",
+      "files": []
+    },
+    {
+      "name": "handoff-followup",
+      "original_path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/handoff-followup",
+      "saved_owned_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/host-test-evidence/handoff-followup",
+      "files": []
+    },
+    {
+      "name": "identity-final02",
+      "original_path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/identity-final02",
+      "saved_owned_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/host-test-evidence/identity-final02",
+      "files": []
+    },
+    {
+      "name": "types03",
+      "original_path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/types03",
+      "saved_owned_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/host-test-evidence/types03",
+      "files": []
+    },
+    {
+      "name": "identity-focus03",
+      "original_path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/identity-focus03",
+      "saved_owned_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/host-test-evidence/identity-focus03",
+      "files": []
+    },
+    {
+      "name": "dev-bundle01",
+      "original_path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/dev-bundle01",
+      "saved_owned_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/host-test-evidence/dev-bundle01",
+      "files": []
+    },
+    {
+      "name": "stable-types",
+      "original_path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/stable-types",
+      "saved_owned_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/host-test-evidence/stable-types",
+      "files": []
+    },
+    {
+      "name": "types04",
+      "original_path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/types04",
+      "saved_owned_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/host-test-evidence/types04",
+      "files": []
+    },
+    {
+      "name": "identity-focus01",
+      "original_path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/identity-focus01",
+      "saved_owned_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/host-test-evidence/identity-focus01",
+      "files": [
+        {
+          "path": "publication-file_authority_sqlite-admission_first-timeline.json",
+          "bytes": 47845,
+          "sha256": "a888a78ff43236e258aa014cfba104de55c2288bc9547f0ba9fb7e37b4f6f48c"
+        },
+        {
+          "path": "publication-file_authority_sqlite-admission_first.json",
+          "bytes": 47871,
+          "sha256": "48817d9a1b5fec8a3569ed019e001b08017bc69dd3c1600c17dd41f43873a3d4"
+        },
+        {
+          "path": "publication-file_authority_sqlite-disabled_draft-timeline.json",
+          "bytes": 46552,
+          "sha256": "84ae918fc7b81c99fa40cbb913be3a3a29a2bf9f137ce43ee6dbcbbe1419cab8"
+        },
+        {
+          "path": "publication-file_authority_sqlite-disabled_draft.json",
+          "bytes": 46578,
+          "sha256": "f3888c2c4eaa360d64b15e83f0fb63b71ed24c12441ce5d7021591fd8a5fcb20"
+        },
+        {
+          "path": "publication-file_authority_sqlite-failed_confirmation-timeline.json",
+          "bytes": 46667,
+          "sha256": "186d81eee6308997156974090c2b769f7f021d1ddaa53407fb4ff1b4ebaccce9"
+        },
+        {
+          "path": "publication-file_authority_sqlite-failed_confirmation.json",
+          "bytes": 46693,
+          "sha256": "578719ecc57bdb3e9edc5e9c76635190c1d0b2f7656c13217dac879107b7cc26"
+        },
+        {
+          "path": "publication-file_authority_sqlite-inactive_first-timeline.json",
+          "bytes": 21082,
+          "sha256": "11f9fb69e7a30d8d5e76a328e20e40170a00adde78a5ff85aefd0e7446ac3d5f"
+        },
+        {
+          "path": "publication-file_authority_sqlite-inactive_first.json",
+          "bytes": 21108,
+          "sha256": "9a98780ac550704a82b2f8f59dd94b0dabe9fb399f92255337113cfbf95fb018"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_first-timeline.json",
+          "bytes": 33936,
+          "sha256": "41e387727180372172f145fe0105adbfa9c07b80fe1b95bbc907da392e8a3d71"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_first.json",
+          "bytes": 33962,
+          "sha256": "f37a600004e80a6510c631e9bd07e3d6bf405b0b5ccc890da1f25ddee15908e1"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_process-timeline.json",
+          "bytes": 33922,
+          "sha256": "dd86e4d1b32ea1b3e0fc0532f0e63c76e27f209796ea88d6151c5245fb3cbc5c"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_process.json",
+          "bytes": 33948,
+          "sha256": "5697bbbf6d56bd392ddf3e58091d1182b11a9f4d8559032fed0d2e8bd5efb328"
+        },
+        {
+          "path": "publication-file_authority_sqlite-unchanged-timeline.json",
+          "bytes": 46337,
+          "sha256": "38e61f1b4ce11204bab3c95d98911d85ed3e9eb016cd0ff2d092b656f176fae6"
+        },
+        {
+          "path": "publication-file_authority_sqlite-unchanged.json",
+          "bytes": 46363,
+          "sha256": "82c8048277dcf3cc2ab8013ea3351d34b9c68a7232f097127c77b4b7d0414af0"
+        },
+        {
+          "path": "publication-sqlite-admission_first-timeline.json",
+          "bytes": 48204,
+          "sha256": "0ecbf56aabee3eb7a5608cd0754e16b1c781eb4058e936b3ade888797cf39a08"
+        },
+        {
+          "path": "publication-sqlite-admission_first.json",
+          "bytes": 48234,
+          "sha256": "505d2f7f506b04a51d303ed366b950aaad37f10915f9a12a693f2445578a2b78"
+        },
+        {
+          "path": "publication-sqlite-disabled_draft-timeline.json",
+          "bytes": 46663,
+          "sha256": "7d59f16c001be3a8e4ee9e263cbdd32b56afb828269b4e1d3bbe0a2685be0996"
+        },
+        {
+          "path": "publication-sqlite-disabled_draft.json",
+          "bytes": 46693,
+          "sha256": "98988b83a0da1df6b33b5d81da812ef303731a17604c5a7bdaccfb8d6713926c"
+        },
+        {
+          "path": "publication-sqlite-failed_confirmation-timeline.json",
+          "bytes": 46778,
+          "sha256": "cf953672d585dc4ba19dbb55de1c108b75d8ed307320280b0bbb40b1bd291681"
+        },
+        {
+          "path": "publication-sqlite-failed_confirmation.json",
+          "bytes": 46808,
+          "sha256": "2809dbec874ce0624dddc8997a6cc75657b26769fe7b4c629bccf0f146ae0b8d"
+        },
+        {
+          "path": "publication-sqlite-inactive_first-timeline.json",
+          "bytes": 21396,
+          "sha256": "921042b25b5e2cf1350c8aa7b409d8c42ad2bae1eebde022721f6f3b5b09b0e2"
+        },
+        {
+          "path": "publication-sqlite-inactive_first.json",
+          "bytes": 21426,
+          "sha256": "6e99a1cc1eb55591a16ba45f625166410858065d4db06e4b3faf9e08b94a6ede"
+        },
+        {
+          "path": "publication-sqlite-replacement_first-timeline.json",
+          "bytes": 34295,
+          "sha256": "21b5f235ef41749ef4ff6cd8026ef4abd6eb5abb32c403b4e518f40cec2f6652"
+        },
+        {
+          "path": "publication-sqlite-replacement_first.json",
+          "bytes": 34325,
+          "sha256": "4a8aa72921eca5c80de31075f9eb094bbbede4b958754766f67b4c6a1569323f"
+        },
+        {
+          "path": "publication-sqlite-replacement_process-timeline.json",
+          "bytes": 34281,
+          "sha256": "b3faf7d6984aa3fe83c9e19bb56cd9593bc275c6758b3489ccb9f20962910271"
+        },
+        {
+          "path": "publication-sqlite-replacement_process.json",
+          "bytes": 34311,
+          "sha256": "8616e4ecf8dea971b2ae6e145f048b38d61896379ca3063b2a1b593c42d4ad8b"
+        },
+        {
+          "path": "publication-sqlite-unchanged-timeline.json",
+          "bytes": 47010,
+          "sha256": "09b73e7fb52b37fc8530c691c4ac3b1a0c39191474fa4ccbdf48e5a2f681c795"
+        },
+        {
+          "path": "publication-sqlite-unchanged.json",
+          "bytes": 47040,
+          "sha256": "ace3bfc21a4e888c18b2cfe707a758c66c3b99bd87fc902478bcc37ed9249ddd"
+        }
+      ]
+    },
+    {
+      "name": "refusal-before",
+      "original_path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/refusal-before",
+      "saved_owned_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/host-test-evidence/refusal-before",
+      "files": [
+        {
+          "path": "publication-file_authority_sqlite-replacement_first-timeline.json",
+          "bytes": 33936,
+          "sha256": "c5ad795e774dca849a954d513b83cbcb5adb2c79b81ad8190eb2605f5f9e019d"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_first.json",
+          "bytes": 33962,
+          "sha256": "8717c0112b17d71a84a90c847fbf747cb9863197c0b9028884348f11d5e366d9"
+        },
+        {
+          "path": "publication-sqlite-replacement_first-timeline.json",
+          "bytes": 34295,
+          "sha256": "f48b08a685141939173c69b91a8f4e57a0dd113a91c861669d9e71f07ca26760"
+        },
+        {
+          "path": "publication-sqlite-replacement_first.json",
+          "bytes": 34325,
+          "sha256": "88e2d21a6669ec22f627aab1324950e72ca4e1ae391ce3d62bab79fe446e6cf0"
+        }
+      ]
+    },
+    {
+      "name": "handoff-followup02",
+      "original_path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/handoff-followup02",
+      "saved_owned_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/host-test-evidence/handoff-followup02",
+      "files": []
+    },
+    {
+      "name": "types07",
+      "original_path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/types07",
+      "saved_owned_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/host-test-evidence/types07",
+      "files": []
+    },
+    {
+      "name": "final-types",
+      "original_path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/final-types",
+      "saved_owned_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/host-test-evidence/final-types",
+      "files": []
+    },
+    {
+      "name": "identity-final",
+      "original_path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/identity-final",
+      "saved_owned_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/host-test-evidence/identity-final",
+      "files": []
+    },
+    {
+      "name": "types02",
+      "original_path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/types02",
+      "saved_owned_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/host-test-evidence/types02",
+      "files": []
+    },
+    {
+      "name": "types06",
+      "original_path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/types06",
+      "saved_owned_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/host-test-evidence/types06",
+      "files": []
+    },
+    {
+      "name": "stable-full02",
+      "original_path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/stable-full02",
+      "saved_owned_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/host-test-evidence/stable-full02",
+      "files": [
+        {
+          "path": "midnight-mechanisms.json",
+          "bytes": 4163,
+          "sha256": "41856e645e39b55be170901b4570910878d3af337b42a5e4b2d3d9a5bf7e01b3"
+        },
+        {
+          "path": "old-unstarted-work.json",
+          "bytes": 1299,
+          "sha256": "a4a1f4477927ee6b99e82be4759ebd3240c7ae42278c85877b97ba49f4cb07bb"
+        },
+        {
+          "path": "publication-file_authority_sqlite-admission_first-timeline.json",
+          "bytes": 47845,
+          "sha256": "2ded5379c611f8a42a1379235c9ad643fdd1cbb03edb8337d25e3b833ab180cc"
+        },
+        {
+          "path": "publication-file_authority_sqlite-admission_first.json",
+          "bytes": 47871,
+          "sha256": "b0baa99935c8854772054502e3d4faf4be8f8d3b5d873a62e66c20ae6fa07da4"
+        },
+        {
+          "path": "publication-file_authority_sqlite-disabled_draft-timeline.json",
+          "bytes": 46552,
+          "sha256": "b0f6d5ea9b154422f82fa948f23f76e7221311a7f66552a37e3789f859dbe6d7"
+        },
+        {
+          "path": "publication-file_authority_sqlite-disabled_draft.json",
+          "bytes": 46578,
+          "sha256": "7cbc9842bd9606ba7585e4dee40d830b53dab60952a78dc2fcad363fc78b6851"
+        },
+        {
+          "path": "publication-file_authority_sqlite-failed_confirmation-timeline.json",
+          "bytes": 46667,
+          "sha256": "94f5a660c74f04d24ba1445cf5cd8540a29790440e7e75f44a9ef144cf22fc59"
+        },
+        {
+          "path": "publication-file_authority_sqlite-failed_confirmation.json",
+          "bytes": 46693,
+          "sha256": "4f110181e5b331e88bbb70ae5d9089af36027d2dec5fc90dc5e60907c7da18a6"
+        },
+        {
+          "path": "publication-file_authority_sqlite-inactive_first-timeline.json",
+          "bytes": 21169,
+          "sha256": "15bd4216b16cdf5656041d803370143349c0054a42fe699b4158dc93e722886f"
+        },
+        {
+          "path": "publication-file_authority_sqlite-inactive_first.json",
+          "bytes": 21195,
+          "sha256": "490b158c1a85b1fb33cb935978782ca1f4bfa32ecb3bc0518c9aded90dc2cbdd"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_first-timeline.json",
+          "bytes": 34023,
+          "sha256": "6230c1165e8ef9f591e1b19a792b62268ef9f0fb86bfc896ac525116569478eb"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_first.json",
+          "bytes": 34049,
+          "sha256": "eac7e22ca6322341e5b206e428e8eb14304f73d8be6959d6f7ba19713fc8f60c"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_process-timeline.json",
+          "bytes": 34009,
+          "sha256": "5e8a68b9728cc5fdcbf5cb79b89ed4dd12e15d35fccc5d6d6e8e1bc1d0e3c32a"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_process.json",
+          "bytes": 34035,
+          "sha256": "88fbf11aedbf924d0675d0837ce714a30108c47971c029f68b692ea37ca45477"
+        },
+        {
+          "path": "publication-file_authority_sqlite-unchanged-timeline.json",
+          "bytes": 46337,
+          "sha256": "c936ec278f2d10e4714ac775f208eedbb9b353d067bf9757582b3741f3c5117f"
+        },
+        {
+          "path": "publication-file_authority_sqlite-unchanged.json",
+          "bytes": 46363,
+          "sha256": "d8981decc7bf499034d19faf3738e96ac130ff5b022b97363d7dc911b2652afb"
+        },
+        {
+          "path": "publication-sqlite-admission_first-timeline.json",
+          "bytes": 48204,
+          "sha256": "5c8fe20c9de877cb66fd6061439ca14c1f5349693cbfe444978c2d5a27914b48"
+        },
+        {
+          "path": "publication-sqlite-admission_first.json",
+          "bytes": 48234,
+          "sha256": "af16eb560222875aa8d3aee01c9b32199b9d52fdf283d32af99ce9d88c670ea7"
+        },
+        {
+          "path": "publication-sqlite-disabled_draft-timeline.json",
+          "bytes": 46663,
+          "sha256": "d50a13ab2a852efc0b2dde184a70049771790b372a51b8e4afb33d0ff8d9940a"
+        },
+        {
+          "path": "publication-sqlite-disabled_draft.json",
+          "bytes": 46693,
+          "sha256": "418d3aadcfb6f9a5806f15eb4ddd8dca6c5d20a9f4868d22753f1de291af8115"
+        },
+        {
+          "path": "publication-sqlite-failed_confirmation-timeline.json",
+          "bytes": 46778,
+          "sha256": "b32874d2a094e9c79a120d2b1e861e4b8f1fa95daeae83242df5dee3724f7125"
+        },
+        {
+          "path": "publication-sqlite-failed_confirmation.json",
+          "bytes": 46808,
+          "sha256": "c95fe656d0670ba8fcbc8ed15e3d0f7e6894061247408d70a1da2929d4681702"
+        },
+        {
+          "path": "publication-sqlite-inactive_first-timeline.json",
+          "bytes": 21483,
+          "sha256": "d13609feab73fb8b0f929896a75dbd5fb6bdd94c4e8baf71ad7da872aa6c41be"
+        },
+        {
+          "path": "publication-sqlite-inactive_first.json",
+          "bytes": 21513,
+          "sha256": "45b4f7c589b7a22e90df735eebfe1b70e6641227e230583f16e9cb38783b7446"
+        },
+        {
+          "path": "publication-sqlite-replacement_first-timeline.json",
+          "bytes": 34382,
+          "sha256": "45067e7aa54aaede92109dfda7a989187189b085a606df4d76a828a7b72bfe02"
+        },
+        {
+          "path": "publication-sqlite-replacement_first.json",
+          "bytes": 34412,
+          "sha256": "123eadf66404cc2dcab7b2c49e65817eafcb9030eb7e917910e26fd0e237bb8a"
+        },
+        {
+          "path": "publication-sqlite-replacement_process-timeline.json",
+          "bytes": 34368,
+          "sha256": "98f1fb60a207cf4ef90ab52a49f1eca7ffbbc6fcb4ee944bded6dc931fd4446c"
+        },
+        {
+          "path": "publication-sqlite-replacement_process.json",
+          "bytes": 34398,
+          "sha256": "28bec7de5636c941fcfaea3c24bd8e5b092351b868f1172bbe24d4f9f040ce12"
+        },
+        {
+          "path": "publication-sqlite-unchanged-timeline.json",
+          "bytes": 47010,
+          "sha256": "5ad736be572a3d9e4a86c1b63a8599a43ec545002c49a652ce8aae17c5ec7656"
+        },
+        {
+          "path": "publication-sqlite-unchanged.json",
+          "bytes": 47040,
+          "sha256": "85e1fc2c64050a90285f99c831b0acbe60faee281fdcbe31010e44aee4a2acfa"
+        }
+      ]
+    },
+    {
+      "name": "identity-focus02",
+      "original_path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/identity-focus02",
+      "saved_owned_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/host-test-evidence/identity-focus02",
+      "files": []
+    },
+    {
+      "name": "types05",
+      "original_path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/types05",
+      "saved_owned_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/host-test-evidence/types05",
+      "files": []
+    },
+    {
+      "name": "postgres-gate01",
+      "original_path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/postgres-gate01",
+      "saved_owned_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/host-test-evidence/postgres-gate01",
+      "files": [
+        {
+          "path": "midnight-mechanisms.json",
+          "bytes": 4163,
+          "sha256": "41856e645e39b55be170901b4570910878d3af337b42a5e4b2d3d9a5bf7e01b3"
+        },
+        {
+          "path": "pg-controls.json",
+          "bytes": 15719,
+          "sha256": "42b0443a72b9291cac71ce87be861392da3f43f381d41e301de80853aa670508"
+        },
+        {
+          "path": "pg-last-insurer.json",
+          "bytes": 10354,
+          "sha256": "f05cac8e2e9d6e8c7ee3463f6a6582fb775b79ec29002437260bb087dab85330"
+        },
+        {
+          "path": "pg-last-overall.json",
+          "bytes": 13198,
+          "sha256": "04c0f69ee0c98a130d7b2611869fe3d1c9954ec62b50addded49fc7fea57d6f1"
+        },
+        {
+          "path": "publication-file_authority_sqlite-admission_first-timeline.json",
+          "bytes": 47845,
+          "sha256": "ca90628a9ad129fb1341a615fde71ce88269898d3a6c3ac3b3a04f108790dadd"
+        },
+        {
+          "path": "publication-file_authority_sqlite-admission_first.json",
+          "bytes": 47871,
+          "sha256": "42fe6c22e07c531c0a5fc918f7a9a9974337d228ea83fa8e4c77bdf423e654fb"
+        },
+        {
+          "path": "publication-file_authority_sqlite-disabled_draft-timeline.json",
+          "bytes": 46552,
+          "sha256": "bd6288a39459d95acbb1ec19db7666fb460d687bef3b89a24d3f2c663489c2d1"
+        },
+        {
+          "path": "publication-file_authority_sqlite-disabled_draft.json",
+          "bytes": 46578,
+          "sha256": "54229b3604dc8398f2bccbef71c58d7b217b418b29de51c322cf06b7e509beae"
+        },
+        {
+          "path": "publication-file_authority_sqlite-failed_confirmation-timeline.json",
+          "bytes": 46667,
+          "sha256": "dc2cc4b0d5907b67f68e3f0a16a7140754d859278f1fa34c29ba31dba71adac4"
+        },
+        {
+          "path": "publication-file_authority_sqlite-failed_confirmation.json",
+          "bytes": 46693,
+          "sha256": "ee20cbffc72c67fad7d2e9b454f8ef4402027134f8494a8ba6f8c0f49b6846b5"
+        },
+        {
+          "path": "publication-file_authority_sqlite-inactive_first-timeline.json",
+          "bytes": 21169,
+          "sha256": "08044c9f475a578d94d8d907119b4225cc80ee81deef4c65547c7f80e7abdd61"
+        },
+        {
+          "path": "publication-file_authority_sqlite-inactive_first.json",
+          "bytes": 21195,
+          "sha256": "c37d41656fd634f653d5b2db0b0fcbd6e51b6215adaca4966848cdea593e3b71"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_first-timeline.json",
+          "bytes": 34023,
+          "sha256": "8de26aecee4cb6b3c8bb212fc1bd101edca21d7399e0c43cd9da5137a5e5708c"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_first.json",
+          "bytes": 34049,
+          "sha256": "e080114cc082e25c0bbb11f47ed6d9193594f2065f1382faaec1e53520c35a5b"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_process-timeline.json",
+          "bytes": 34009,
+          "sha256": "a7ddb56a54ddb53c72b4861d7a7aa7886350830abbb64d51daafd1803c093fb8"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_process.json",
+          "bytes": 34035,
+          "sha256": "c7444013ae1c21d9bec7f06ef0ac38346544f257cac59ab94b978ceb39be24b0"
+        },
+        {
+          "path": "publication-file_authority_sqlite-unchanged-timeline.json",
+          "bytes": 46337,
+          "sha256": "46e2eff2602e66d41bf15b427a863f11715e7559e616e1e504b8c04348890e95"
+        },
+        {
+          "path": "publication-file_authority_sqlite-unchanged.json",
+          "bytes": 46363,
+          "sha256": "3d46f7e84a60a9a66e5fa9b5e62681e8dc780b1ac2403267397eb8d26099c1d3"
+        },
+        {
+          "path": "publication-postgres-admission_busy-timeline.json",
+          "bytes": 34881,
+          "sha256": "f70b3a13e97b954e0a9d8b04d6efcafe3bfaafbb9099fdbac13f481891b47ea1"
+        },
+        {
+          "path": "publication-postgres-admission_busy.json",
+          "bytes": 34911,
+          "sha256": "d9d19d4df49126a8c89039a9e430375e44153cf7ed0ae12ced9fe3f69ff44d35"
+        },
+        {
+          "path": "publication-postgres-admission_first-timeline.json",
+          "bytes": 48206,
+          "sha256": "050793e358559683ade7b9af4a5185c1ae3f4370fc0eb8c86c145eeac9acba2b"
+        },
+        {
+          "path": "publication-postgres-admission_first.json",
+          "bytes": 48236,
+          "sha256": "2c0217479af842a22f73e9e8c834233062f5c5da12501f9bc120e208fa6fcac1"
+        },
+        {
+          "path": "publication-postgres-admission_holds_publication-timeline.json",
+          "bytes": 46962,
+          "sha256": "74aa05dac9eaf3c14753ba88f7db1badac490d713303ea4a3e7ee4e2bb379ce0"
+        },
+        {
+          "path": "publication-postgres-admission_holds_publication.json",
+          "bytes": 46992,
+          "sha256": "99c6a50852e80ea22e7a7fe9d7ca866481a8c4b23208799166b7a73975a83991"
+        },
+        {
+          "path": "publication-postgres-admission_rollback-timeline.json",
+          "bytes": 34896,
+          "sha256": "3cdffa2c93ac4fc535ec6ca3365c46a262c057dc70977d1ca1700027680bcba5"
+        },
+        {
+          "path": "publication-postgres-admission_rollback.json",
+          "bytes": 34926,
+          "sha256": "1f432c5ca8a2938293f441e54cdb2729fb3a066c78d8706423f52a61b683655c"
+        },
+        {
+          "path": "publication-postgres-disabled_draft-timeline.json",
+          "bytes": 46665,
+          "sha256": "86b55fbbceaf39007ef14158b5fa2617302ac28587e85c347a6ac9399713f667"
+        },
+        {
+          "path": "publication-postgres-disabled_draft.json",
+          "bytes": 46695,
+          "sha256": "7594625a8937dfc1dfebdfc47b3f1a55b0138ff2328855a2f52fb2494d346b20"
+        },
+        {
+          "path": "publication-postgres-failed_confirmation-timeline.json",
+          "bytes": 46780,
+          "sha256": "2f9777d69694e91220654d222d66c253980a6a61311d7e3b16cb75086de08d30"
+        },
+        {
+          "path": "publication-postgres-failed_confirmation.json",
+          "bytes": 46810,
+          "sha256": "7296476434877868aa89bcf5f0a5c99ec950d3318b23e9aadc5843ce6b19e852"
+        },
+        {
+          "path": "publication-postgres-inactive_first-timeline.json",
+          "bytes": 21485,
+          "sha256": "8b0e4ae262df90c5a33a22db7f668e4b5e2e449fcef0907d69a871ca8d74b998"
+        },
+        {
+          "path": "publication-postgres-inactive_first.json",
+          "bytes": 21515,
+          "sha256": "3de52433e8d26b643d5ca197d34c3ca64e6ac48e4d2cd244d9e1c509e1a9508f"
+        },
+        {
+          "path": "publication-postgres-publication_busy-timeline.json",
+          "bytes": 47560,
+          "sha256": "c08ed2fabd6fc9ff274f43d332ecb6a63dd08a745e58afd3645854ef49cda081"
+        },
+        {
+          "path": "publication-postgres-publication_busy.json",
+          "bytes": 47590,
+          "sha256": "767ffa02b7cc3d972336cb03870bc2b7e1bc31a67f3cf4364b5ed12a62ff777d"
+        },
+        {
+          "path": "publication-postgres-replacement_first-timeline.json",
+          "bytes": 34631,
+          "sha256": "7d5bebf9a4a1b4f94a2094821cff62edca983d0286aedcd654af5f1a346c835f"
+        },
+        {
+          "path": "publication-postgres-replacement_first.json",
+          "bytes": 34661,
+          "sha256": "dd2cfdafe130fde9b3bbe727ae1299d62f40bb2615c38925398388ad69a9887a"
+        },
+        {
+          "path": "publication-postgres-replacement_process-timeline.json",
+          "bytes": 34617,
+          "sha256": "470dbe714293045680d67b0ed7fbec97ad40aa34a77cc13ed607b9323969e26c"
+        },
+        {
+          "path": "publication-postgres-replacement_process.json",
+          "bytes": 34647,
+          "sha256": "fbc073b15c33c52ac88461b2f337364887f6c1e966bb63d050625470548ecb37"
+        },
+        {
+          "path": "publication-postgres-unchanged-timeline.json",
+          "bytes": 46450,
+          "sha256": "722b24ce6ec48f2e440da2b1a97acd7be408249f0df4d8c0e693a634ad17737d"
+        },
+        {
+          "path": "publication-postgres-unchanged.json",
+          "bytes": 46480,
+          "sha256": "03eb7b910b9b857fe7ae58a818987228347115d62412a340e91c98f5b7c2ece8"
+        },
+        {
+          "path": "publication-sqlite-admission_first-timeline.json",
+          "bytes": 48204,
+          "sha256": "02a4cd9019d84cb6222d295305b7bbe47c0eda10189acd37b604daa024843948"
+        },
+        {
+          "path": "publication-sqlite-admission_first.json",
+          "bytes": 48234,
+          "sha256": "0bc3bfa90f410938dc570e027b644da24696b38f75cadae59d8b9a2aab0910c2"
+        },
+        {
+          "path": "publication-sqlite-disabled_draft-timeline.json",
+          "bytes": 46663,
+          "sha256": "7edeb2c48b8896059a469032e46d3b928a0732463a36665f8a4c46258a8f4233"
+        },
+        {
+          "path": "publication-sqlite-disabled_draft.json",
+          "bytes": 46693,
+          "sha256": "41a07604785551d90db04d7d3b250372e4f548d33c61bad1ca4cf1211e9d2a61"
+        },
+        {
+          "path": "publication-sqlite-failed_confirmation-timeline.json",
+          "bytes": 46778,
+          "sha256": "d3143d29c71baf2f42bc0adbfef98a3befb668910fed57b0fac98617c888ca2f"
+        },
+        {
+          "path": "publication-sqlite-failed_confirmation.json",
+          "bytes": 46808,
+          "sha256": "803f4467f48cbb1919a792536db62e42e1653bcb40e54358efdb776c621d2318"
+        },
+        {
+          "path": "publication-sqlite-inactive_first-timeline.json",
+          "bytes": 21483,
+          "sha256": "362aa6956307d4be26fd0b7a350648cb163a1fb595b51b34514ea454a15f7e26"
+        },
+        {
+          "path": "publication-sqlite-inactive_first.json",
+          "bytes": 21513,
+          "sha256": "3cbdbb116a371e33f4766a36a0eedfced951146dadfc6fcdf3e26c9f72226d8f"
+        },
+        {
+          "path": "publication-sqlite-replacement_first-timeline.json",
+          "bytes": 34382,
+          "sha256": "2f21d370b6f5d380d58a8ee2163f1c22095b58fb9155621f8691baca678ca435"
+        },
+        {
+          "path": "publication-sqlite-replacement_first.json",
+          "bytes": 34412,
+          "sha256": "635da983536b78aa325457472fa4721c8dadddc19d71172ce59b6581c7fe85ee"
+        },
+        {
+          "path": "publication-sqlite-replacement_process-timeline.json",
+          "bytes": 34368,
+          "sha256": "886b253caf69141b31ae2f2e3d38ee55da3cae10e96d39af9aa917abedcae5ec"
+        },
+        {
+          "path": "publication-sqlite-replacement_process.json",
+          "bytes": 34398,
+          "sha256": "ca0737a2a11a3eaf713bbd2f297ae01593b276d3132875d35e7bf936b7340561"
+        },
+        {
+          "path": "publication-sqlite-unchanged-timeline.json",
+          "bytes": 47010,
+          "sha256": "37c60d85308e3cd951f4f767b5ec66bef341b995eca91973ee2b838ad4f049f1"
+        },
+        {
+          "path": "publication-sqlite-unchanged.json",
+          "bytes": 47040,
+          "sha256": "4e4ec83982721e8ce43e84317bbfd9b38a6f746d7de5c1ad8a0428769dbe0475"
+        }
+      ]
+    },
+    {
+      "name": "postgres-gate02",
+      "original_path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/postgres-gate02",
+      "saved_owned_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/host-test-evidence/postgres-gate02",
+      "files": [
+        {
+          "path": "midnight-mechanisms.json",
+          "bytes": 4163,
+          "sha256": "41856e645e39b55be170901b4570910878d3af337b42a5e4b2d3d9a5bf7e01b3"
+        },
+        {
+          "path": "pg-controls.json",
+          "bytes": 15719,
+          "sha256": "39f67d5db76b8db56608c205e3be1da4ba048630638a47368bcf324b3dc012d3"
+        },
+        {
+          "path": "pg-last-insurer.json",
+          "bytes": 10354,
+          "sha256": "5b4db05b98c0d74f605dd279912315e230c9a09688f22b6915e4077262b1b42e"
+        },
+        {
+          "path": "pg-last-overall.json",
+          "bytes": 13198,
+          "sha256": "18af8b0644d8a8d0b6a07ebcd0d429410b762eb72173b101a46b7740e6a79043"
+        },
+        {
+          "path": "publication-file_authority_sqlite-admission_first-timeline.json",
+          "bytes": 47845,
+          "sha256": "b1474a8eae36ae8dcc9790fd41f5e6bd35b8cf76bb4391545f9e6b54d3f4e0ee"
+        },
+        {
+          "path": "publication-file_authority_sqlite-admission_first.json",
+          "bytes": 47871,
+          "sha256": "728a6abf1c0d146f444e47305ed6d3573d781196a090805e60aa3ceb84513930"
+        },
+        {
+          "path": "publication-file_authority_sqlite-disabled_draft-timeline.json",
+          "bytes": 46552,
+          "sha256": "ef53232d52215b74cf5ba2e82d63f1a51c97c456d728593fa1c6ce200242ee53"
+        },
+        {
+          "path": "publication-file_authority_sqlite-disabled_draft.json",
+          "bytes": 46578,
+          "sha256": "6b53b06e9804eaa7be01025c5f4747239d51735c99c7a2dcaf831587962b8f3c"
+        },
+        {
+          "path": "publication-file_authority_sqlite-failed_confirmation-timeline.json",
+          "bytes": 46667,
+          "sha256": "9928039d0ed43c56bdf3f4ec41afb8ad2c4db4656a4d3a45f85d4c2bd140f4a2"
+        },
+        {
+          "path": "publication-file_authority_sqlite-failed_confirmation.json",
+          "bytes": 46693,
+          "sha256": "c7e88de2c86b68e75e4c96de154c2a20f704afb99534c79fddd75aebb81231dd"
+        },
+        {
+          "path": "publication-file_authority_sqlite-inactive_first-timeline.json",
+          "bytes": 21169,
+          "sha256": "8676c7856a45efce5b687b9be672736afdfa29e5579961d75a0b2202f064ac6d"
+        },
+        {
+          "path": "publication-file_authority_sqlite-inactive_first.json",
+          "bytes": 21195,
+          "sha256": "102da897e95779aed38f0e5a5ca43db1fb0bd8b6029b9586df0ed79a461da9b6"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_first-timeline.json",
+          "bytes": 34023,
+          "sha256": "f18946df04488779615d80c3a78fcd9bad5e4b1d2ac0bbcfce6b013b87f722ca"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_first.json",
+          "bytes": 34049,
+          "sha256": "ca05e39241cce52d7b08b4b1484617175f428472090401012d27c397db7102fb"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_process-timeline.json",
+          "bytes": 34009,
+          "sha256": "9e5a12d56bb747aa364b9c401ccc60863b6aad2570ac1a89bc669026bd37340c"
+        },
+        {
+          "path": "publication-file_authority_sqlite-replacement_process.json",
+          "bytes": 34035,
+          "sha256": "cf66f67a4743c0e90065eaa66562d199a4c3dfcba329f0b2efed1725392e7f04"
+        },
+        {
+          "path": "publication-file_authority_sqlite-unchanged-timeline.json",
+          "bytes": 46337,
+          "sha256": "cda2e5b935824b930f474ab83224da9e4cfc32c9bc86189324f3367cc1320732"
+        },
+        {
+          "path": "publication-file_authority_sqlite-unchanged.json",
+          "bytes": 46363,
+          "sha256": "6023372786e88962d8dd3ef619b06b6f7921f0e62b454c94ac6f940fd6940231"
+        },
+        {
+          "path": "publication-postgres-admission_busy-timeline.json",
+          "bytes": 34881,
+          "sha256": "f973f5f9359cb0a487c5acf7baf4f88e8e7f15ebf8e25dbb99c17631698a4a69"
+        },
+        {
+          "path": "publication-postgres-admission_busy.json",
+          "bytes": 34911,
+          "sha256": "c5fa4796a7657ed4ffb8fbd7dc9324185648b79adc5162326b31f114dad51e26"
+        },
+        {
+          "path": "publication-postgres-admission_first-timeline.json",
+          "bytes": 48206,
+          "sha256": "146145c8ea6fa74470528209755615ae0ea8881b951ae72148ba3c0a52275619"
+        },
+        {
+          "path": "publication-postgres-admission_first.json",
+          "bytes": 48236,
+          "sha256": "17a1e3e700a60e625e59fdf3c1643c32cf103d3477599c63cad27323f82b0a09"
+        },
+        {
+          "path": "publication-postgres-admission_holds_publication-timeline.json",
+          "bytes": 46962,
+          "sha256": "c8c89312281bf03aa78a90a83b258ca3f2a90bdc36d86e2084c6d035841d8de2"
+        },
+        {
+          "path": "publication-postgres-admission_holds_publication.json",
+          "bytes": 46992,
+          "sha256": "2960d08c0b9c98ce8d67a1562996fec21651bbf1091d8a9116905e86c99ce50f"
+        },
+        {
+          "path": "publication-postgres-admission_rollback-timeline.json",
+          "bytes": 34896,
+          "sha256": "30d5475d9e45402591291b56eb9ccc15a75345eb760e69d27fc6d72d29ee41cd"
+        },
+        {
+          "path": "publication-postgres-admission_rollback.json",
+          "bytes": 34926,
+          "sha256": "cf04598ec18fee3d496482bfa385e085e1b856f7d9a421fe70a0fe3145e48588"
+        },
+        {
+          "path": "publication-postgres-disabled_draft-timeline.json",
+          "bytes": 46665,
+          "sha256": "7d00137191e5a300e6682912bb047b3f08aeba17cf3d39cd30e528d72878fa5c"
+        },
+        {
+          "path": "publication-postgres-disabled_draft.json",
+          "bytes": 46695,
+          "sha256": "64b23e4600f7672a14d75239b9c6c25e39627e9491df841dea92ac41fa0541c0"
+        },
+        {
+          "path": "publication-postgres-failed_confirmation-timeline.json",
+          "bytes": 46780,
+          "sha256": "d042b38c6b012846410230d75f673c3cb176e7a3d3cff5e953b61977f6b76287"
+        },
+        {
+          "path": "publication-postgres-failed_confirmation.json",
+          "bytes": 46810,
+          "sha256": "6775b0a8d3e0ef1b625481f6c8bb11481bc84113bf83291fc83a9231ccf2d20b"
+        },
+        {
+          "path": "publication-postgres-inactive_first-timeline.json",
+          "bytes": 21485,
+          "sha256": "0dfd59c92b2287537cd96e7705a10dbb5ffdb4d963a8cc689f4dfba71b9f8d35"
+        },
+        {
+          "path": "publication-postgres-inactive_first.json",
+          "bytes": 21515,
+          "sha256": "9416cb317dd461cbc49d97235c30e852bb8b4270c34bfc5d0fc259d4ae4b1f6d"
+        },
+        {
+          "path": "publication-postgres-publication_busy-timeline.json",
+          "bytes": 47559,
+          "sha256": "98c6d1007370c4f0b6acf4181a930c731309ea47717ae7b75db59d1b18813f6b"
+        },
+        {
+          "path": "publication-postgres-publication_busy.json",
+          "bytes": 47589,
+          "sha256": "912e2caa015d03dca400a226988877b7980f3fe012f821c73c405d0aeb7453fc"
+        },
+        {
+          "path": "publication-postgres-replacement_first-timeline.json",
+          "bytes": 34631,
+          "sha256": "30c528f4cdd331eeaf0248784b89e71de7eb33672874ab99bee0eefc8ac08463"
+        },
+        {
+          "path": "publication-postgres-replacement_first.json",
+          "bytes": 34661,
+          "sha256": "2d742f4e2f78175d51fb4d5874f11d43b6bca7bf518a8b3f0147fac41de79b3b"
+        },
+        {
+          "path": "publication-postgres-replacement_process-timeline.json",
+          "bytes": 34617,
+          "sha256": "9a622237b01b9d08c8e74ceb345945d8ebcc6530f56f715280bca4fa95a6c115"
+        },
+        {
+          "path": "publication-postgres-replacement_process.json",
+          "bytes": 34647,
+          "sha256": "ce378d2618bcb823cb736921806399f92693e0ca91844dc8056bef092099b867"
+        },
+        {
+          "path": "publication-postgres-unchanged-timeline.json",
+          "bytes": 46450,
+          "sha256": "5e6f8ca06493ccfc29d61f053a2f35de0959b813c69d31e90a2f1d17dd495c42"
+        },
+        {
+          "path": "publication-postgres-unchanged.json",
+          "bytes": 46480,
+          "sha256": "32b003e8b9ff418dca1ab12e00ef10d3edaf645c4d4f763a984c5a577f1a1e5c"
+        },
+        {
+          "path": "publication-sqlite-admission_first-timeline.json",
+          "bytes": 48204,
+          "sha256": "a431bac6117ae4a1085fd63b9b26676a4b5bc0cdacbff4fbbdd79b2a9db19aec"
+        },
+        {
+          "path": "publication-sqlite-admission_first.json",
+          "bytes": 48234,
+          "sha256": "2d6743811aef205fb2f4420b8340671aab0a4b64671b65a406e0c9b7cbc45d97"
+        },
+        {
+          "path": "publication-sqlite-disabled_draft-timeline.json",
+          "bytes": 46663,
+          "sha256": "20633d8d8f073244783d75f2b11c123ebbba76ec641eeca3dc34373457073bbc"
+        },
+        {
+          "path": "publication-sqlite-disabled_draft.json",
+          "bytes": 46693,
+          "sha256": "5fa8c080d98f7779316d4d8f4e0ae3b7f003bafa63c39f8ec0ba6cfa7e8fbd15"
+        },
+        {
+          "path": "publication-sqlite-failed_confirmation-timeline.json",
+          "bytes": 46778,
+          "sha256": "f0b9986741711ff7616fc7a73ddca52ea754afe7782a7118df8efc397f73edeb"
+        },
+        {
+          "path": "publication-sqlite-failed_confirmation.json",
+          "bytes": 46808,
+          "sha256": "3bf3d8d94a9e60c710b45c0029c813c8ee7b0bd1c5272e1a927c905502c996cb"
+        },
+        {
+          "path": "publication-sqlite-inactive_first-timeline.json",
+          "bytes": 21483,
+          "sha256": "2e4b5ce7e98afa96ec8721c9f051c458ecabdfb42fe5b249be42d1f995a2d3c8"
+        },
+        {
+          "path": "publication-sqlite-inactive_first.json",
+          "bytes": 21513,
+          "sha256": "abb4f7a757fdb2d04486d950452b355bc95a11c4f0eb8443df995660ebef9d0c"
+        },
+        {
+          "path": "publication-sqlite-replacement_first-timeline.json",
+          "bytes": 34382,
+          "sha256": "eca03982a715998a3b5e71eac82c820a50edfe1f82e6a5e1d7b98f1cba1ad584"
+        },
+        {
+          "path": "publication-sqlite-replacement_first.json",
+          "bytes": 34412,
+          "sha256": "026e08e0ae902b88526f7579fe8abd0b6234dd7fafa26b5e70273f4c41134854"
+        },
+        {
+          "path": "publication-sqlite-replacement_process-timeline.json",
+          "bytes": 34368,
+          "sha256": "501c66f4b411cfa5faa3c675a9ddbbea3f81c565dad2f08a01f1d70e3156a243"
+        },
+        {
+          "path": "publication-sqlite-replacement_process.json",
+          "bytes": 34398,
+          "sha256": "856588f02b4c9fac8ab15b98336e24fff425936415a68e62df135d13db895086"
+        },
+        {
+          "path": "publication-sqlite-unchanged-timeline.json",
+          "bytes": 47010,
+          "sha256": "5cb81bb9ef6e8605388cfef8b75c49d21a7900cbfb5dffdd6071c24ad305a235"
+        },
+        {
+          "path": "publication-sqlite-unchanged.json",
+          "bytes": 47040,
+          "sha256": "7bd8c8880f522639a293b1bacbe1809895bd734616d30e9ca9c566ff3fe550cd"
+        }
+      ]
+    }
+  ]
+}

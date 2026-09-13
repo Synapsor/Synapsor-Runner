@@ -1,0 +1,18 @@
+{
+  "name": "dev-bundle01",
+  "args": [
+    "node",
+    "scripts/build-runner-package.mjs"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T05:03:26.901644+00:00",
+  "source_head": "8d642704f8a96e87bba9a3338b96621cf213843d",
+  "source_diff_sha256": "0384517292ec24462e43ebe02a2ccc311a68e4701afd5ef01bd6b5baff5fccd8",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/test-environments/dev-bundle01",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/dev-bundle01",
+  "source_manifest_sha256": "21665c05eecc2f2a0659434718d4c2fc82dd528ed0446d8b99697e4636c16e4a",
+  "pid": 1805687,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T05:03:46.274662+00:00"
+}

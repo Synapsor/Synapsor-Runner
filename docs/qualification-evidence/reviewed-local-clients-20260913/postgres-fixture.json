@@ -1,0 +1,34 @@
+{
+  "name": "synapsor-reviewed-clients-36250d48",
+  "owned": "/tmp/synapsor-reviewed-clients-pg-REWB3Y",
+  "socket": "/tmp/synapsor-reviewed-clients-pg-REWB3Y/socket",
+  "created_at": "2026-09-13T04:56:48.769Z",
+  "network": "none",
+  "auto_remove": false,
+  "fixture_database": "synapsor_reviewed_clients",
+  "authentication": "New isolated synthetic fixture, trusted Unix socket inside private task-owned parent; no pre-existing credentials.",
+  "image": "sha256:1edc8e87e53194e0cc8006c4e9df9b626c6c72cb43ad3385f0f34af7922065b1",
+  "id": "900f2180a810e03cc9b4e165c2f2c33a224604a115727add4d6e1aa55eb8baaa",
+  "query": {
+    "database": "synapsor_reviewed_clients",
+    "role": "postgres",
+    "version": "PostgreSQL 17.10 (Debian 17.10-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit"
+  },
+  "ready_at": "2026-09-13T04:56:50.934Z",
+  "required_schema_table_transaction_lock_permissions": true,
+  "connectionString": "postgresql:///synapsor_reviewed_clients?host=%2Ftmp%2Fsynapsor-reviewed-clients-pg-REWB3Y%2Fsocket&user=postgres",
+  "readiness_attempts": [
+    {
+      "at": "2026-09-13T04:56:49.164Z",
+      "message": "Waiting for final server after initialization"
+    },
+    {
+      "at": "2026-09-13T04:56:49.763Z",
+      "message": "Waiting for final server after initialization"
+    },
+    {
+      "at": "2026-09-13T04:56:50.323Z",
+      "message": "Waiting for final server after initialization"
+    }
+  ]
+}
