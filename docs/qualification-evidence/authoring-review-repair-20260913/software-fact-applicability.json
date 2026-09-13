@@ -1,0 +1,20 @@
+{
+  "origin": "saved original catalog and exact request41 context, not new live observations",
+  "authority_file_sha256": "f406c35aeae0beaabf2838fb939d50cb3edd7d3e6b86a88f06562a87d618f79e",
+  "schema_sha256": "049c69b138bebdb3efd547cfa23d9474d81fece4ba62cd748c65bd0facd0bcb7",
+  "resource": "release_ops.build_checks",
+  "field": {
+    "name": "elapsed_seconds",
+    "nullable": false,
+    "type": {
+      "kind": "integer",
+      "unit": "seconds"
+    }
+  },
+  "generation_lock_fingerprint": "sha256:bb3b22228b4520dc1633e4524684d096a6dfecaa236c2c9117f5804a6700d08b",
+  "binding": "checks",
+  "loader": "inverse composite foreign key, complete_locked collection; candidate/tenant/principal relationship",
+  "scope": "Base-column NOT NULL applies to each loaded row. It does not prove a nonempty collection or optional/derived expression. Original count bounds and complete collection checks remain required.",
+  "extra_guard": "The saved explicit count-of-non-null check is redundant for the exact NOT NULL base column with existing nonempty count bounds, but is not removed automatically; no AST preference is used as a pass condition. Changed nullable/derived source shapes require recheck.",
+  "host_review_gap": "Original indexed source constraints omit this non-key column flag, and scoped binding fields omit compiled nullable; request41 explicitly refuses operator assertion as unindexed metadata."
+}

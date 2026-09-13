@@ -1,0 +1,4027 @@
+{
+  "classification": "original captured calls, no replay or new provider requests",
+  "total": 50,
+  "final": "initial budget exhausted before final required recheck; no activation or runtime",
+  "calls": [
+    {
+      "call": 1,
+      "purpose": "narration / business question",
+      "tools": [],
+      "input_sha256": "fd177cbe94a622cbe0422ddd31c30d1ee3855086f70a3e661d80faae704a4fda",
+      "response_sha256": "f875b03902667c4bca890373d78474cb63dd3cf4f8fb40f33dcb41d32d5090ad",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Planning/narration/drafting step; no independent source effect or approval established.",
+      "observed_results": []
+    },
+    {
+      "call": 2,
+      "purpose": "job planning",
+      "tools": [
+        "runner__plan_boundary_job"
+      ],
+      "input_sha256": "d0e669d2ef4ebfcabc782539aa995de418078f033c34bbefc4419287daee532f",
+      "response_sha256": "a6ad0e2bee6f007dea7013a0b47dae3b6653d2efe510bcf66bf2f44b2f25738a",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Planning/narration/drafting step; no independent source effect or approval established.",
+      "observed_results": [
+        {
+          "tool": "runner__plan_boundary_job",
+          "host_result_observed_in_later_input": false
+        }
+      ]
+    },
+    {
+      "call": 3,
+      "purpose": "Read drafting",
+      "tools": [
+        "runner__submit_read_workloads"
+      ],
+      "input_sha256": "8316d1de36cbfc50d2533640782b2df3b588ae9268418a87e0bd6b28fa24dc9e",
+      "response_sha256": "008004c42d79380ea6f6965134657175cfcb5d528b91c93a0c490082e063a4c3",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Planning/narration/drafting step; no independent source effect or approval established.",
+      "observed_results": [
+        {
+          "tool": "runner__submit_read_workloads",
+          "host_result_observed_in_later_input": false
+        }
+      ]
+    },
+    {
+      "call": 4,
+      "purpose": "Action drafting",
+      "tools": [
+        "runner__inspect_action_relationships"
+      ],
+      "input_sha256": "0daa2596d6b1d95f411b1599024a1d93b2d8de4eb53ab3854b38b27c486bdaa7",
+      "response_sha256": "67e68f56b88e11e7adec11141c12e2c48e75de31b1195971e004e7b29d5b488c",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Metadata relationship preparation or inspection; no source mutation or activation.",
+      "observed_results": [
+        {
+          "tool": "runner__inspect_action_relationships",
+          "host_result_observed_in_later_input": true,
+          "status": "available_unreviewed"
+        }
+      ]
+    },
+    {
+      "call": 5,
+      "purpose": "Action drafting",
+      "tools": [
+        "runner__review_action_relationship"
+      ],
+      "input_sha256": "4699b52842c354db55618f9b038a36ed43772ca82addf73b0e05457f208d5dc7",
+      "response_sha256": "601e134dfbabc8c684ce6d821941da89a786f3899d8cf815913ade36cf743093",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Metadata relationship preparation or inspection; no source mutation or activation.",
+      "observed_results": [
+        {
+          "tool": "runner__review_action_relationship",
+          "host_result_observed_in_later_input": true,
+          "status": "already_reviewed"
+        }
+      ]
+    },
+    {
+      "call": 6,
+      "purpose": "Action drafting",
+      "tools": [
+        "runner__inspect_action_relationships"
+      ],
+      "input_sha256": "e0cc5ffd329058e45ac366099fc7999dfc80a79a42b3b87de20ae06265d1b21b",
+      "response_sha256": "9e037dc5a16236121c5dae967500a8546dc7f5547e7968a1adb97274c9773fda",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Metadata relationship preparation or inspection; no source mutation or activation.",
+      "observed_results": [
+        {
+          "tool": "runner__inspect_action_relationships",
+          "host_result_observed_in_later_input": true,
+          "status": "available_unreviewed"
+        }
+      ]
+    },
+    {
+      "call": 7,
+      "purpose": "Action drafting",
+      "tools": [
+        "runner__review_action_relationship"
+      ],
+      "input_sha256": "7b7868f637e39c91ba25be5bb5483a07ca9ea3753d02759de75080d90c5e2ef4",
+      "response_sha256": "ac9242c899766270934f683eaf87dccc10373bfe7cd3f62e352e194076c88a79",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Metadata relationship preparation or inspection; no source mutation or activation.",
+      "observed_results": [
+        {
+          "tool": "runner__review_action_relationship",
+          "host_result_observed_in_later_input": true,
+          "status": "already_reviewed"
+        }
+      ]
+    },
+    {
+      "call": 8,
+      "purpose": "Action drafting",
+      "tools": [
+        "runner__submit_verification_boundary_draft"
+      ],
+      "input_sha256": "e5efc8ba6255d368fc4d28ff735689c354f52436053e259b590cc0d8c1512c84",
+      "response_sha256": "febd24f77e2f7ee57ee0db367b2c1a6f3dec0c41651ed6aace41915b01adeb21",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Disabled component checkpoint saved; not yet a complete authority or runtime deployment.",
+      "observed_results": [
+        {
+          "tool": "runner__submit_verification_boundary_draft",
+          "host_result_observed_in_later_input": true,
+          "status": "disabled_component_saved"
+        }
+      ]
+    },
+    {
+      "call": 9,
+      "purpose": "Action drafting",
+      "tools": [
+        "runner__submit_effect_envelope_draft"
+      ],
+      "input_sha256": "2b6965bf1f5ab04f782da579d9c0b9709beae97cb459fee1e8c49e2c787c2b92",
+      "response_sha256": "0ae52dfd9e9b074bdbd3f1883926910276714ecab8b4a974621e64e7cf07c655",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Disabled component checkpoint saved; not yet a complete authority or runtime deployment.",
+      "observed_results": [
+        {
+          "tool": "runner__submit_effect_envelope_draft",
+          "host_result_observed_in_later_input": true,
+          "status": "disabled_component_saved"
+        }
+      ]
+    },
+    {
+      "call": 10,
+      "purpose": "Action drafting",
+      "tools": [
+        "runner__submit_action_rule_draft"
+      ],
+      "input_sha256": "153ddf63f7ed45f6081db13ffa7ab0d3ae0eb916736ed984400b496a12ffa11d",
+      "response_sha256": "02e72756289e8fd3e6aa970da65d3001d4030b72c5877ec69de82c5aedc32129",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Disabled component checkpoint saved; not yet a complete authority or runtime deployment.",
+      "observed_results": [
+        {
+          "tool": "runner__submit_action_rule_draft",
+          "host_result_observed_in_later_input": true,
+          "status": "disabled_component_saved"
+        }
+      ]
+    },
+    {
+      "call": 11,
+      "purpose": "Action drafting",
+      "tools": [
+        "runner__submit_approval_policy_draft"
+      ],
+      "input_sha256": "0062433cae9646ccea62b3230bf5ac0ee27749806fc7577e791f65311e8ac776",
+      "response_sha256": "0b62ae9167bfac13bb1fba547e0fba96a0febfbacdcbbb2d0d77bf57b9aeb37a",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Disabled component checkpoint saved; not yet a complete authority or runtime deployment.",
+      "observed_results": [
+        {
+          "tool": "runner__submit_approval_policy_draft",
+          "host_result_observed_in_later_input": true,
+          "status": "disabled_component_saved"
+        }
+      ]
+    },
+    {
+      "call": 12,
+      "purpose": "Action drafting",
+      "tools": [
+        "runner__validate_action_draft"
+      ],
+      "input_sha256": "5ee5d343d977047d7a1d68c3f9d42c56540fe53d2c19654a9659873ecd24e90a",
+      "response_sha256": "0d31b16aafa92c9df0e47298bbeaf693dc082a6a6d44e35e0d8536dbe13fade9",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Host compiled first disabled candidate; no activation. Includes guarded two-target effect, private complete checks and limits.",
+      "observed_results": [
+        {
+          "tool": "runner__validate_action_draft",
+          "host_result_observed_in_later_input": true,
+          "status": "ready_for_review",
+          "draft_changed": true
+        }
+      ]
+    },
+    {
+      "call": 13,
+      "purpose": "Action drafting",
+      "tools": [],
+      "input_sha256": "2a8275090f5555b799524790f1f141e14c5228d6c07d919b135afacb2ed0506d",
+      "response_sha256": "9b0a9284f4db3bc0be7a32c6a3daf9192483c81e601ec75dc2757d483a87b0f8",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Planning/narration/drafting step; no independent source effect or approval established.",
+      "observed_results": []
+    },
+    {
+      "call": 14,
+      "purpose": "policy review / structural or mechanical recheck",
+      "tools": [
+        "runner__review_policy_coverage"
+      ],
+      "input_sha256": "debeed57cad7220b0a35d635c06115a22dce6406e22cc89a987074dd2c33d03f",
+      "response_sha256": "4bec7a5017ea472f34d9883cf5d53e50fa87181af9207ee7ad2f138f3e29b169",
+      "complete_response": true,
+      "coverage_records": [
+        {
+          "lines": [
+            1,
+            1
+          ],
+          "disposition": "background",
+          "topic": "Document heading",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Coordinator scope and public records",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Private operational facts",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "unsupported",
+          "topic": "Synthetic-record limitation",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Seal eligibility and complete checks",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Check time integrity",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "Atomic seal and slot consumption",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "unsupported",
+          "topic": "Atomic source receipt and readback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "conflict",
+          "topic": "Automatic-seal counter membership",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Approval threshold and human fallback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Supervised execution handoff",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Claude Code connection",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Authenticated coordinator identity",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        }
+      ],
+      "authority_change": false,
+      "semantic_progress": "Coverage interpretation/recheck only; no business rule mutation. See exact passage dispositions and next feedback; not an additional operator decision.",
+      "observed_results": [
+        {
+          "tool": "runner__review_policy_coverage",
+          "host_result_observed_in_later_input": false
+        }
+      ],
+      "next_review_feedback": "invalid deployment evidence links"
+    },
+    {
+      "call": 15,
+      "purpose": "policy review / structural or mechanical recheck",
+      "tools": [
+        "runner__review_policy_coverage"
+      ],
+      "input_sha256": "ab47efdeaabc4443689a142174296bd3e85eae3f8d476672fed7bf4fcc733ba2",
+      "response_sha256": "2053785a364140cad14f771b5b8fe18d7f853eb1e2eafd8d075917e8c18481b9",
+      "complete_response": true,
+      "coverage_records": [
+        {
+          "lines": [
+            1,
+            1
+          ],
+          "disposition": "background",
+          "topic": "Document heading",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Public and private operational information",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Coordinator assigned-record scope",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "unsupported",
+          "topic": "Synthetic-record limitation",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "No external release operations",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Seal eligibility and complete checks",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Check-time integrity",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "Atomic seal and slot consumption",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "unsupported",
+          "topic": "Atomic source receipt and readback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "conflict",
+          "topic": "Automatic-seal counter membership",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Approval threshold and human fallback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Supervised execution handoff",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Claude Code connection",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Authenticated coordinator identity",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        }
+      ],
+      "authority_change": false,
+      "semantic_progress": "Coverage interpretation/recheck only; no business rule mutation. See exact passage dispositions and next feedback; not an additional operator decision.",
+      "observed_results": [
+        {
+          "tool": "runner__review_policy_coverage",
+          "host_result_observed_in_later_input": false
+        }
+      ]
+    },
+    {
+      "call": 16,
+      "purpose": "policy review / structural or mechanical recheck",
+      "tools": [
+        "runner__review_policy_coverage"
+      ],
+      "input_sha256": "0f78a1906abed8fbcea3de42a2890aed08812df3d7d85021f4cff5eb02fbbfe2",
+      "response_sha256": "8043ff0f1cf184f445d0a9d800ee80dd7f006717cd15df896091fded2f2233c5",
+      "complete_response": true,
+      "coverage_records": [
+        {
+          "lines": [
+            1,
+            1
+          ],
+          "disposition": "background",
+          "topic": "Document heading",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Database-only sealing",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "unsupported",
+          "topic": "Synthetic-record limitation",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Coordinator record scope",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "needs_decision",
+          "topic": "Authenticated coordinator identity",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Public fields and private verification",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Seal eligibility and complete checks",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Nonnegative check seconds",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "Atomic state change and conflict counters",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "One-slot relationship",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "unsupported",
+          "topic": "Atomic source receipt and readback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "conflict",
+          "topic": "Automatic-seal counter membership",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Approval eligibility and supervisor fallback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Supervised execution behavior",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Supervised execution handoff",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Claude Code connection",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        }
+      ],
+      "authority_change": false,
+      "semantic_progress": "Coverage interpretation/recheck only; no business rule mutation. See exact passage dispositions and next feedback; not an additional operator decision.",
+      "observed_results": [
+        {
+          "tool": "runner__review_policy_coverage",
+          "host_result_observed_in_later_input": false
+        }
+      ],
+      "next_review_feedback": "bounded mechanical coverage reconciliation against current evidence"
+    },
+    {
+      "call": 17,
+      "purpose": "policy review / structural or mechanical recheck",
+      "tools": [
+        "runner__review_policy_coverage"
+      ],
+      "input_sha256": "a190fd8f0a7e41b78c4198b925978d736825bf08234e63062bfcefd1eff6b106",
+      "response_sha256": "9ad76244ff805b0a0afe6a6fef76fa4057fcb68afb64ceb4993bd8edfb9bdfb2",
+      "complete_response": true,
+      "coverage_records": [
+        {
+          "lines": [
+            1,
+            1
+          ],
+          "disposition": "background",
+          "topic": "Document heading",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Database-only sealing",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "unsupported",
+          "topic": "Synthetic-record limitation",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Coordinator record scope",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "needs_decision",
+          "topic": "Authenticated coordinator identity",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Public fields and private verification",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Seal eligibility and complete checks",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Nonnegative check seconds",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "Atomic state change and conflict counters",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "One-slot relationship",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "unsupported",
+          "topic": "Atomic source receipt and readback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "conflict",
+          "topic": "Automatic-seal counter membership",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Approval eligibility and supervisor fallback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Supervised execution behavior",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Supervised execution handoff",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Claude Code connection",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        }
+      ],
+      "authority_change": false,
+      "semantic_progress": "Coverage interpretation/recheck only; no business rule mutation. See exact passage dispositions and next feedback; not an additional operator decision.",
+      "observed_results": [
+        {
+          "tool": "runner__review_policy_coverage",
+          "host_result_observed_in_later_input": false
+        }
+      ]
+    },
+    {
+      "call": 18,
+      "purpose": "Action correction: outcome history selector",
+      "tools": [
+        "runner__submit_approval_policy_draft"
+      ],
+      "input_sha256": "367a1996ce0acb3ba3cc934edcd4c279b71017b08901462b22a700a5086dbcec",
+      "response_sha256": "26de23f1bb845a2837c6ba77dd540c9957c37ea6fa6742a15554b2cc12ead7cf",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Disabled component checkpoint saved; not yet a complete authority or runtime deployment.",
+      "observed_results": [
+        {
+          "tool": "runner__submit_approval_policy_draft",
+          "host_result_observed_in_later_input": true,
+          "status": "disabled_component_saved"
+        }
+      ]
+    },
+    {
+      "call": 19,
+      "purpose": "Action correction: outcome history selector",
+      "tools": [
+        "runner__validate_action_draft"
+      ],
+      "input_sha256": "40ab76d87b31d822cebf6a20acc90f635a943f2279c550a9d8fd2a048178ce06",
+      "response_sha256": "d0a1042ffcb30979bc1428eb3d6a97256b6cd279ece6b8d01c57d8dedf54395f",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Host compiled changed draft: history capability selector now names the intended outcome.",
+      "observed_results": [
+        {
+          "tool": "runner__validate_action_draft",
+          "host_result_observed_in_later_input": true,
+          "status": "ready_for_review",
+          "draft_changed": true
+        }
+      ]
+    },
+    {
+      "call": 20,
+      "purpose": "Action correction: outcome history selector",
+      "tools": [],
+      "input_sha256": "86c6b4974c45c9f3cd648b96927e06c7ac15fac15fea71c56a53e65651569aa3",
+      "response_sha256": "cea7100fc9b916a3fc569d7b6b03683b2021438906f207d825bb603203ef1973",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Planning/narration/drafting step; no independent source effect or approval established.",
+      "observed_results": []
+    },
+    {
+      "call": 21,
+      "purpose": "policy review / structural or mechanical recheck",
+      "tools": [
+        "runner__review_policy_coverage"
+      ],
+      "input_sha256": "9ab470df0c4b890a144b879851e6aa71799cb42390dd5776e2c57c818c308290",
+      "response_sha256": "df8994cbc136e00ed617f1e1791cca6ec1ad3eb4b67adda0e2e62fe6305c639c",
+      "complete_response": true,
+      "coverage_records": [
+        {
+          "lines": [
+            1,
+            1
+          ],
+          "disposition": "background",
+          "topic": "Document heading",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Database-only sealing",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "unsupported",
+          "topic": "Synthetic-record limitation",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Coordinator record scope",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "needs_decision",
+          "topic": "Authenticated coordinator identity",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Public fields and private verification",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Seal eligibility and complete checks",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Elapsed-check-time integrity",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "Atomic candidate and slot transition",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "unsupported",
+          "topic": "Atomic source receipt and readback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Automatic-seal thresholds and shared caps",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Human-review fallback and invalidity",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Prepared supervised execution",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Supervised execution handoff",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Claude Code connection",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        }
+      ],
+      "authority_change": false,
+      "semantic_progress": "Coverage interpretation/recheck only; no business rule mutation. See exact passage dispositions and next feedback; not an additional operator decision.",
+      "observed_results": [
+        {
+          "tool": "runner__review_policy_coverage",
+          "host_result_observed_in_later_input": false
+        }
+      ],
+      "next_review_feedback": "bounded mechanical coverage reconciliation against current evidence"
+    },
+    {
+      "call": 22,
+      "purpose": "policy review / structural or mechanical recheck",
+      "tools": [
+        "runner__review_policy_coverage"
+      ],
+      "input_sha256": "ecaa0c72b96c748df9096667eeddd70f7810176220fb25d3a9e902d939e63024",
+      "response_sha256": "ee8e5bec02a0b23db0ea8a1a568007f6c2aa1a85dda29b4b84b17eeb9836dc10",
+      "complete_response": true,
+      "coverage_records": [
+        {
+          "lines": [
+            1,
+            1
+          ],
+          "disposition": "background",
+          "topic": "Document heading",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Database-only sealing",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "unsupported",
+          "topic": "Synthetic-record limitation",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Coordinator record scope",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "needs_decision",
+          "topic": "Authenticated coordinator identity",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Public fields and private verification",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Seal eligibility and complete checks",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Elapsed-check-time integrity",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "Atomic candidate and slot transition",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "unsupported",
+          "topic": "Atomic source receipt and readback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Automatic-seal thresholds and shared caps",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Human-review fallback and invalidity",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Prepared supervised execution",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Supervised execution handoff",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Claude Code connection",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        }
+      ],
+      "authority_change": false,
+      "semantic_progress": "Coverage interpretation/recheck only; no business rule mutation. See exact passage dispositions and next feedback; not an additional operator decision.",
+      "observed_results": [
+        {
+          "tool": "runner__review_policy_coverage",
+          "host_result_observed_in_later_input": false
+        }
+      ]
+    },
+    {
+      "call": 23,
+      "purpose": "policy review / structural or mechanical recheck",
+      "tools": [
+        "runner__review_policy_coverage"
+      ],
+      "input_sha256": "ac93e291135c8829a7d7748e079bc92fd3b425466852665930e61709c74ff8ce",
+      "response_sha256": "1cd5afd6567d13724350515a30599a6ae1ce8bb1e244ccc4c3e1b1503983c044",
+      "complete_response": true,
+      "coverage_records": [
+        {
+          "lines": [
+            1,
+            1
+          ],
+          "disposition": "background",
+          "topic": "Document heading",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "unsupported",
+          "topic": "Synthetic-record limitation",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "No external operations",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Coordinator record scope",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "needs_decision",
+          "topic": "Authenticated coordinator identity",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Permitted public build information",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Private verification facts",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Seal eligibility and exact relationship",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Complete check-set validation",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Nonnegative check durations",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "Atomic seal and slot consumption",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "One candidate per scoped slot",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "unsupported",
+          "topic": "Atomic source receipt and readback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Automatic approval limits",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Supervisor review fallback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Prepared supervised execution",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Supervised execution handoff",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Claude Code connection",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        }
+      ],
+      "authority_change": false,
+      "semantic_progress": "Coverage interpretation/recheck only; no business rule mutation. See exact passage dispositions and next feedback; not an additional operator decision.",
+      "observed_results": [
+        {
+          "tool": "runner__review_policy_coverage",
+          "host_result_observed_in_later_input": false
+        }
+      ],
+      "next_review_feedback": "bounded mechanical coverage reconciliation against current evidence"
+    },
+    {
+      "call": 24,
+      "purpose": "policy review / structural or mechanical recheck",
+      "tools": [
+        "runner__review_policy_coverage"
+      ],
+      "input_sha256": "b261c91f3b6617a23b804d3d1f4d726a5147d2402213a2824a686f9e943fffc9",
+      "response_sha256": "d594d52fb84cf3c7b726aa5e3f6e1bf2356fced81aa0d22002e8220ed2904467",
+      "complete_response": true,
+      "coverage_records": [
+        {
+          "lines": [
+            1,
+            1
+          ],
+          "disposition": "background",
+          "topic": "Document heading",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "unsupported",
+          "topic": "Synthetic-record limitation",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "No external operations",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Coordinator record scope",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "needs_decision",
+          "topic": "Authenticated coordinator identity",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Permitted public build information",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Private verification facts",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Seal eligibility and exact relationship",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Complete check-set validation",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Nonnegative check durations",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "Atomic seal and slot consumption",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "One candidate per scoped slot",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "unsupported",
+          "topic": "Atomic source receipt and readback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Automatic approval limits",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Supervisor review fallback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Prepared supervised execution",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Supervised execution handoff",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Claude Code connection",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        }
+      ],
+      "authority_change": false,
+      "semantic_progress": "Coverage interpretation/recheck only; no business rule mutation. See exact passage dispositions and next feedback; not an additional operator decision.",
+      "observed_results": [
+        {
+          "tool": "runner__review_policy_coverage",
+          "host_result_observed_in_later_input": false
+        }
+      ]
+    },
+    {
+      "call": 25,
+      "purpose": "policy review / structural or mechanical recheck",
+      "tools": [
+        "runner__review_policy_coverage"
+      ],
+      "input_sha256": "9c6c9d778d239057a4d4b1fa765f4d9342e2c7648a2e9fa6854245ff1d9fda28",
+      "response_sha256": "ca17189cb4ef2395fa7f2a3e2f7b0dbada4c78fadc60ace310093dd1018afa7b",
+      "complete_response": true,
+      "coverage_records": [
+        {
+          "lines": [
+            1,
+            1
+          ],
+          "disposition": "background",
+          "topic": "Document heading",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Scoped database-only sealing",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "unsupported",
+          "topic": "Synthetic-record limitation",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Coordinator visibility and private verification",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "needs_decision",
+          "topic": "Authenticated coordinator identity",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Seal eligibility and complete checks",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "Atomic candidate and slot transition",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "unsupported",
+          "topic": "Atomic source receipt and readback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Automatic seals and human fallback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Supervised execution and stale refusal",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Supervised execution handoff",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Claude Code connection",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        }
+      ],
+      "authority_change": false,
+      "semantic_progress": "Coverage interpretation/recheck only; no business rule mutation. See exact passage dispositions and next feedback; not an additional operator decision.",
+      "observed_results": [
+        {
+          "tool": "runner__review_policy_coverage",
+          "host_result_observed_in_later_input": false
+        }
+      ],
+      "next_review_feedback": "bounded mechanical coverage reconciliation against current evidence"
+    },
+    {
+      "call": 26,
+      "purpose": "policy review / structural or mechanical recheck",
+      "tools": [
+        "runner__review_policy_coverage"
+      ],
+      "input_sha256": "100ecd5c3b5d801238c36a08222afc1050ebafa86b5b8cc38f063e4da6504d22",
+      "response_sha256": "a30b9b9e1d961c069da5541d45a57e9f99a00c86620229465cad480ca8773a95",
+      "complete_response": true,
+      "coverage_records": [
+        {
+          "lines": [
+            1,
+            1
+          ],
+          "disposition": "background",
+          "topic": "Document heading",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Scoped database-only sealing",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "unsupported",
+          "topic": "Synthetic-record limitation",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Coordinator visibility and private verification",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "needs_decision",
+          "topic": "Authenticated coordinator identity",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "needs_decision",
+          "topic": "Claude Code connection",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Seal eligibility and complete checks",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "Atomic candidate and slot transition",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "unsupported",
+          "topic": "Atomic source receipt",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Automatic seals and human fallback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Supervised execution and stale refusal",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "unsupported",
+          "topic": "Independent changed-row readback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Supervised execution handoff",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        }
+      ],
+      "authority_change": false,
+      "semantic_progress": "Coverage interpretation/recheck only; no business rule mutation. See exact passage dispositions and next feedback; not an additional operator decision.",
+      "observed_results": [
+        {
+          "tool": "runner__review_policy_coverage",
+          "host_result_observed_in_later_input": false
+        }
+      ]
+    },
+    {
+      "call": 27,
+      "purpose": "policy review / structural or mechanical recheck",
+      "tools": [
+        "runner__review_policy_coverage"
+      ],
+      "input_sha256": "56ecf938b0559a75948715d56e93fa00e40291def3e0355d2db20099eb62c836",
+      "response_sha256": "e7c1db20c4c736760cd5f4d5b3d55f2eb2e5d7bbfaf3803deb1201a22f738be4",
+      "complete_response": true,
+      "coverage_records": [
+        {
+          "lines": [
+            1,
+            1
+          ],
+          "disposition": "background",
+          "topic": "Policy heading",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Database-only sealing",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "unsupported",
+          "topic": "Synthetic-record limitation",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Assigned coordinator records",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "needs_decision",
+          "topic": "Authenticated coordinator identity",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Public fields and private verification",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Seal eligibility and complete checks",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Nonnegative check timing",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "Atomic candidate and slot consumption",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "unsupported",
+          "topic": "Atomic source receipt",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Automatic approval caps",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Human review without invalidity override",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Prepared supervised execution",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Supervised execution handoff",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "unsupported",
+          "topic": "Independent changed-row readback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "needs_decision",
+          "topic": "Claude Code connection",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        }
+      ],
+      "authority_change": false,
+      "semantic_progress": "Coverage interpretation/recheck only; no business rule mutation. See exact passage dispositions and next feedback; not an additional operator decision.",
+      "observed_results": [
+        {
+          "tool": "runner__review_policy_coverage",
+          "host_result_observed_in_later_input": false
+        }
+      ],
+      "next_review_feedback": "bounded mechanical coverage reconciliation against current evidence"
+    },
+    {
+      "call": 28,
+      "purpose": "policy review / structural or mechanical recheck",
+      "tools": [
+        "runner__review_policy_coverage"
+      ],
+      "input_sha256": "81d84f80db7e9f257bdbffa7f85a9905b9c37e1364f63c0cc8bfdb953fdf8789",
+      "response_sha256": "2547e67b85662621eba17f2c0f708e53570a4c184ecdb9ceb83ddbfddc11f765",
+      "complete_response": true,
+      "coverage_records": [
+        {
+          "lines": [
+            1,
+            1
+          ],
+          "disposition": "background",
+          "topic": "Policy heading",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Database-only sealing",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "unsupported",
+          "topic": "Synthetic-record limitation",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Assigned coordinator records",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "needs_decision",
+          "topic": "Authenticated coordinator identity",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Public fields and private verification",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "needs_decision",
+          "topic": "Claude Code connection",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Seal eligibility and complete checks",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Nonnegative check timing",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "Atomic candidate and slot consumption",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "unsupported",
+          "topic": "Atomic source receipt",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Automatic approval caps",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Human review without invalidity override",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Prepared supervised execution",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Supervised execution handoff",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "unsupported",
+          "topic": "Independent changed-row readback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        }
+      ],
+      "authority_change": false,
+      "semantic_progress": "Coverage interpretation/recheck only; no business rule mutation. See exact passage dispositions and next feedback; not an additional operator decision.",
+      "observed_results": [
+        {
+          "tool": "runner__review_policy_coverage",
+          "host_result_observed_in_later_input": false
+        }
+      ]
+    },
+    {
+      "call": 29,
+      "purpose": "policy review / structural or mechanical recheck",
+      "tools": [
+        "runner__review_policy_coverage"
+      ],
+      "input_sha256": "e825ec9eab13bcb770a6ecab50b87e8e607162cff7b5890e751acac61142c192",
+      "response_sha256": "3531bd9d38cf2c2bdff571d0e935ebe6dfb8090ef62de97ce701ab1bf9455612",
+      "complete_response": true,
+      "coverage_records": [
+        {
+          "lines": [
+            1,
+            1
+          ],
+          "disposition": "background",
+          "topic": "Document heading",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "unsupported",
+          "topic": "Synthetic-record limitation",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Coordinator record scope",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "needs_decision",
+          "topic": "Authenticated coordinator identity",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Public and private information",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Private sealing eligibility",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Check elapsed-time range",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "Atomic seal, slot consumption, and conflicts",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "unsupported",
+          "topic": "Atomic source receipt",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Automatic caps and human fallback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Supervised database-only execution",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Supervised execution handoff",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "unsupported",
+          "topic": "Independent changed-row readback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        }
+      ],
+      "authority_change": false,
+      "semantic_progress": "Coverage interpretation/recheck only; no business rule mutation. See exact passage dispositions and next feedback; not an additional operator decision.",
+      "observed_results": [
+        {
+          "tool": "runner__review_policy_coverage",
+          "host_result_observed_in_later_input": false
+        }
+      ],
+      "next_review_feedback": "bounded mechanical coverage reconciliation against current evidence"
+    },
+    {
+      "call": 30,
+      "purpose": "policy review / structural or mechanical recheck",
+      "tools": [
+        "runner__review_policy_coverage"
+      ],
+      "input_sha256": "daa03a74149866def95ccca0b82586a405ea1aee77f502076ffa1c522d5aadda",
+      "response_sha256": "7a4f598d2c4129ea70b831b5415dbfc0c05f899b9ce3b66e48092dc3602735b9",
+      "complete_response": true,
+      "coverage_records": [
+        {
+          "lines": [
+            1,
+            1
+          ],
+          "disposition": "background",
+          "topic": "Document heading",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "unsupported",
+          "topic": "Synthetic-record limitation",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Coordinator record scope",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "needs_decision",
+          "topic": "Authenticated coordinator identity",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Public and private information",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Database-only operation",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Private sealing eligibility",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Check elapsed-time range",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "Atomic seal, slot consumption, and conflicts",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "unsupported",
+          "topic": "Atomic source receipt",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Automatic caps and human fallback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Supervised execution",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Supervised execution handoff",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "unsupported",
+          "topic": "Independent changed-row readback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        }
+      ],
+      "authority_change": false,
+      "semantic_progress": "Coverage interpretation/recheck only; no business rule mutation. See exact passage dispositions and next feedback; not an additional operator decision.",
+      "observed_results": [
+        {
+          "tool": "runner__review_policy_coverage",
+          "host_result_observed_in_later_input": false
+        }
+      ]
+    },
+    {
+      "call": 31,
+      "purpose": "Action reconciliation / clarification",
+      "tools": [],
+      "input_sha256": "585eee1294e534ea7c36cf00e4dc12b7d8f9b30915d97a2a0c9c434e12df2a1e",
+      "response_sha256": "baeb3a575c80c7d51e5f8c9608cd9ebb0aeec1718229ef36048bc4f5b7b58e74",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Planning/narration/drafting step; no independent source effect or approval established.",
+      "observed_results": []
+    },
+    {
+      "call": 32,
+      "purpose": "Action reconciliation / clarification",
+      "tools": [
+        "runner__validate_action_draft"
+      ],
+      "input_sha256": "684c4d387611f29401432013e49cde196ab22cbd6941e9c1e422349efd59a97b",
+      "response_sha256": "45e2448bafcd77c1964a968f78042a01a674628719971d655677ffdfeacb1e03",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Host validates unchanged Action draft (draft_changed=false); no business rule change.",
+      "observed_results": [
+        {
+          "tool": "runner__validate_action_draft",
+          "host_result_observed_in_later_input": true,
+          "status": "ready_for_review",
+          "draft_changed": false
+        }
+      ]
+    },
+    {
+      "call": 33,
+      "purpose": "Action reconciliation / clarification",
+      "tools": [],
+      "input_sha256": "c9795fdeea9a9d6b7427d8eaa278900e0ddea1eb3115e819560b5eb88de2869d",
+      "response_sha256": "6c8d30b67bd08d5ee235f85798771315f8a7ee874c73c9ed52a5ef32caab1601",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Planning/narration/drafting step; no independent source effect or approval established.",
+      "observed_results": []
+    },
+    {
+      "call": 34,
+      "purpose": "policy review / structural or mechanical recheck",
+      "tools": [
+        "runner__review_policy_coverage"
+      ],
+      "input_sha256": "a6208f953c74d53548ec321d6cf68e2f31881aa56019f69f8697b21e877eeca1",
+      "response_sha256": "427ad1278d3df1c162c7922b07e79657ca908d9ac31a523c4e643ee24d9b28e5",
+      "complete_response": true,
+      "coverage_records": [
+        {
+          "lines": [
+            1,
+            1
+          ],
+          "disposition": "background",
+          "topic": "Document heading",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "overridden",
+          "topic": "Synthetic-fixture scope",
+          "responsibility": "operator",
+          "operator_message_id": 2
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Coordinator organization scope and local effect",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "needs_decision",
+          "topic": "Authenticated coordinator identity",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Public information and private verification",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Seal eligibility and complete checks",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "conflict",
+          "topic": "Known elapsed check times",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "Atomic seal, consumption, and counters",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "unsupported",
+          "topic": "Atomic source receipt",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Automatic caps and supervisor fallback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Supervised execution handoff",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "unsupported",
+          "topic": "Post-execution receipt and readback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        }
+      ],
+      "authority_change": false,
+      "semantic_progress": "Coverage interpretation/recheck only; no business rule mutation. See exact passage dispositions and next feedback; not an additional operator decision.",
+      "observed_results": [
+        {
+          "tool": "runner__review_policy_coverage",
+          "host_result_observed_in_later_input": false
+        }
+      ],
+      "next_review_feedback": "invalid deployment evidence links"
+    },
+    {
+      "call": 35,
+      "purpose": "policy review / structural or mechanical recheck",
+      "tools": [
+        "runner__review_policy_coverage"
+      ],
+      "input_sha256": "e6c6ccb678ef19cfa83e581332a87d6eca85cdce9bb53f8c2ae897260e53ff28",
+      "response_sha256": "14d2353390102fc2ba50d33107f5171cb0bfa4235241d9ec7ad5caf818515b37",
+      "complete_response": true,
+      "coverage_records": [
+        {
+          "lines": [
+            1,
+            1
+          ],
+          "disposition": "background",
+          "topic": "Document heading",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "overridden",
+          "topic": "Synthetic-fixture scope",
+          "responsibility": "operator",
+          "operator_message_id": 2
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Coordinator organization scope and local effect",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "needs_decision",
+          "topic": "Authenticated coordinator identity",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Public information and private verification",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Seal eligibility and complete checks",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "conflict",
+          "topic": "Known elapsed check times",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "Atomic seal, consumption, and counters",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "unsupported",
+          "topic": "Atomic source receipt",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Automatic caps and supervisor fallback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Prepared supervised execution",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Supervised execution handoff",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "unsupported",
+          "topic": "Post-execution receipt and readback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        }
+      ],
+      "authority_change": false,
+      "semantic_progress": "Coverage interpretation/recheck only; no business rule mutation. See exact passage dispositions and next feedback; not an additional operator decision.",
+      "observed_results": [
+        {
+          "tool": "runner__review_policy_coverage",
+          "host_result_observed_in_later_input": false
+        }
+      ]
+    },
+    {
+      "call": 36,
+      "purpose": "policy review / structural or mechanical recheck",
+      "tools": [
+        "runner__review_policy_coverage"
+      ],
+      "input_sha256": "4834827c86982ce0e9c919ea1774f0a0c808c95f984cac1f6e33ac925167b03e",
+      "response_sha256": "30d40179678d83a299b41c6f15001bc9604b766ad06a85eac6de09cf8176b23e",
+      "complete_response": true,
+      "coverage_records": [
+        {
+          "lines": [
+            1,
+            1
+          ],
+          "disposition": "background",
+          "topic": "Policy heading",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Coordinator record scope",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "needs_decision",
+          "topic": "Authenticated coordinator identity",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "overridden",
+          "topic": "Synthetic fixture scope",
+          "responsibility": "operator",
+          "operator_message_id": 2
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "No external release effects",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Public and private build information",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Seal eligibility and complete checks",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "conflict",
+          "topic": "Known elapsed check times",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "Atomic seal and slot consumption",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "unsupported",
+          "topic": "Atomic source receipt",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "One scoped slot per candidate",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Automatic seal approval caps",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Human review and invalid requests",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Prepared supervised execution",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Supervised execution handoff",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "unsupported",
+          "topic": "Post-execution receipt and readback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        }
+      ],
+      "authority_change": false,
+      "semantic_progress": "Coverage interpretation/recheck only; no business rule mutation. See exact passage dispositions and next feedback; not an additional operator decision.",
+      "observed_results": [
+        {
+          "tool": "runner__review_policy_coverage",
+          "host_result_observed_in_later_input": false
+        }
+      ],
+      "next_review_feedback": "bounded mechanical coverage reconciliation against current evidence"
+    },
+    {
+      "call": 37,
+      "purpose": "policy review / structural or mechanical recheck",
+      "tools": [
+        "runner__review_policy_coverage"
+      ],
+      "input_sha256": "4d43d0503eaf94ddcc7f20e695d225ffe946be2578dbcd2b1a27f863818a2916",
+      "response_sha256": "93c48963503908fee74058ed2be87836253aba9288bf0c41fad1e5b77692bcfc",
+      "complete_response": true,
+      "coverage_records": [
+        {
+          "lines": [
+            1,
+            1
+          ],
+          "disposition": "background",
+          "topic": "Policy heading",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Coordinator record scope",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "needs_decision",
+          "topic": "Authenticated coordinator identity",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "overridden",
+          "topic": "Synthetic fixture scope",
+          "responsibility": "operator",
+          "operator_message_id": 2
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "No external release effects",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Public and private build information",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Seal eligibility and complete checks",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "conflict",
+          "topic": "Known elapsed check times",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "Atomic seal and slot consumption",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "unsupported",
+          "topic": "Atomic source receipt",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "One scoped slot per candidate",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Automatic seal approval caps",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Human review and invalid requests",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Prepared supervised execution",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Supervised execution handoff",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "unsupported",
+          "topic": "Post-execution receipt and readback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        }
+      ],
+      "authority_change": false,
+      "semantic_progress": "Coverage interpretation/recheck only; no business rule mutation. See exact passage dispositions and next feedback; not an additional operator decision.",
+      "observed_results": [
+        {
+          "tool": "runner__review_policy_coverage",
+          "host_result_observed_in_later_input": false
+        }
+      ]
+    },
+    {
+      "call": 38,
+      "purpose": "Action reconciliation / clarification",
+      "tools": [
+        "runner__validate_action_draft"
+      ],
+      "input_sha256": "77ce03c3ef50d8e847c23e12bbffe92f8547c76743a76a7b243c2af5d18f47c5",
+      "response_sha256": "28c18c3769e2494410029daee60b174d824034b24ce261dab93a8a9deab43a0a",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Host validates unchanged Action draft (draft_changed=false); no business rule change.",
+      "observed_results": [
+        {
+          "tool": "runner__validate_action_draft",
+          "host_result_observed_in_later_input": true,
+          "status": "ready_for_review",
+          "draft_changed": false
+        }
+      ]
+    },
+    {
+      "call": 39,
+      "purpose": "Action reconciliation / clarification",
+      "tools": [],
+      "input_sha256": "dc5afa49c89cb4d73d1b1da576413b7e59df9a5208952bba703f54215dd9873f",
+      "response_sha256": "05b4f6022a7912ea472d24043a9f9cd2443ce8c5c573c2c4bfe75cbeac5f2693",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Planning/narration/drafting step; no independent source effect or approval established.",
+      "observed_results": []
+    },
+    {
+      "call": 40,
+      "purpose": "narration / business question",
+      "tools": [],
+      "input_sha256": "a290285bd6656798313bb7496ce77e63c5b53204ae4980188713a9272469424f",
+      "response_sha256": "a404a7548bf196d3fc299d02eaaf53f2ce0f2843c0d7d605a0b1c00efdabe9a2",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Narrates one pending nullability question; user response is distinct from this model call.",
+      "observed_results": []
+    },
+    {
+      "call": 41,
+      "purpose": "policy review / structural or mechanical recheck",
+      "tools": [
+        "runner__review_policy_coverage"
+      ],
+      "input_sha256": "71f52d7255ab611c6c67b3a4ede343cc79a56c29786f6bd8a4409e2cf3624b08",
+      "response_sha256": "47bde698ce36c5e72567c166a0c5798d71356fc2c700cf61265dc13755b21d9e",
+      "complete_response": true,
+      "coverage_records": [
+        {
+          "lines": [
+            1,
+            1
+          ],
+          "disposition": "background",
+          "topic": "Document heading",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Fixture-only build sealing",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "overridden",
+          "topic": "Synthetic fixture scope",
+          "responsibility": "operator",
+          "operator_message_id": 2
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Coordinator record scope",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "needs_decision",
+          "topic": "Authenticated coordinator identity",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Public fields and private verification",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Seal eligibility and complete checks",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "conflict",
+          "topic": "Known elapsed check times",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "Atomic sealing and consumption",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "unsupported",
+          "topic": "Atomic source receipt",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Automatic seals and human review",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Supervised execution handoff",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "unsupported",
+          "topic": "Post-execution receipt and readback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        }
+      ],
+      "authority_change": false,
+      "semantic_progress": "Coverage interpretation/recheck only; no business rule mutation. See exact passage dispositions and next feedback; not an additional operator decision.",
+      "observed_results": [
+        {
+          "tool": "runner__review_policy_coverage",
+          "host_result_observed_in_later_input": false
+        }
+      ],
+      "next_review_feedback": "bounded mechanical coverage reconciliation against current evidence"
+    },
+    {
+      "call": 42,
+      "purpose": "policy review / structural or mechanical recheck",
+      "tools": [
+        "runner__review_policy_coverage"
+      ],
+      "input_sha256": "2e9540afa81ec40847f07a38a91276c3b6d23a053bd16a711424cd02223c3eb7",
+      "response_sha256": "26fe54a842cdfc23e62588c037917f6f55540b4153085f7d188b7052aa240205",
+      "complete_response": true,
+      "coverage_records": [
+        {
+          "lines": [
+            1,
+            1
+          ],
+          "disposition": "background",
+          "topic": "Document heading",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Fixture-only build sealing",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "overridden",
+          "topic": "Synthetic fixture scope",
+          "responsibility": "operator",
+          "operator_message_id": 2
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Coordinator record scope",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "needs_decision",
+          "topic": "Authenticated coordinator identity",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Public fields and private verification",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Seal eligibility and complete checks",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "conflict",
+          "topic": "Known elapsed check times",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "Atomic sealing and consumption",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "unsupported",
+          "topic": "Atomic source receipt",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Automatic seals and human review",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Supervised execution handoff",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "unsupported",
+          "topic": "Post-execution readback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        }
+      ],
+      "authority_change": false,
+      "semantic_progress": "Coverage interpretation/recheck only; no business rule mutation. See exact passage dispositions and next feedback; not an additional operator decision.",
+      "observed_results": [
+        {
+          "tool": "runner__review_policy_coverage",
+          "host_result_observed_in_later_input": false
+        }
+      ]
+    },
+    {
+      "call": 43,
+      "purpose": "Action correction: explicit non-null collection guard",
+      "tools": [
+        "runner__inspect_action_relationships"
+      ],
+      "input_sha256": "316754090dea9b333794259e638c1ea7d0d118589025a4a7811a17b1aeed2d9b",
+      "response_sha256": "4c9dd08ce726587ed4969d750e84b197d8b91efac09dbb222dc3d9d828a47296",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Metadata relationship preparation or inspection; no source mutation or activation.",
+      "observed_results": [
+        {
+          "tool": "runner__inspect_action_relationships",
+          "host_result_observed_in_later_input": true,
+          "status": "available_unreviewed"
+        }
+      ]
+    },
+    {
+      "call": 44,
+      "purpose": "Action correction: explicit non-null collection guard",
+      "tools": [
+        "runner__review_action_relationship"
+      ],
+      "input_sha256": "173f2d1cf7092dff32b832d4301043938f844efc7de6a97b88324887796c73b5",
+      "response_sha256": "791428426b385b94f44017baeabbedd0b61798d32d21d8ca5a1c8e2654fa078a",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Metadata relationship preparation or inspection; no source mutation or activation.",
+      "observed_results": [
+        {
+          "tool": "runner__review_action_relationship",
+          "host_result_observed_in_later_input": true,
+          "status": "already_reviewed"
+        }
+      ]
+    },
+    {
+      "call": 45,
+      "purpose": "Action correction: explicit non-null collection guard",
+      "tools": [
+        "runner__inspect_action_relationships"
+      ],
+      "input_sha256": "bd2223cf65a8c158cf0bb2b95c33877072374bdd5aef65a335138264fd49ec1f",
+      "response_sha256": "495d645fd9ecab8ff56c53b2bfab3f16a394c89ea5405a8c0293e3e5e3dc9bf8",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Metadata relationship preparation or inspection; no source mutation or activation.",
+      "observed_results": [
+        {
+          "tool": "runner__inspect_action_relationships",
+          "host_result_observed_in_later_input": true,
+          "status": "available_unreviewed"
+        }
+      ]
+    },
+    {
+      "call": 46,
+      "purpose": "Action correction: explicit non-null collection guard",
+      "tools": [
+        "runner__review_action_relationship"
+      ],
+      "input_sha256": "4408bc43d4ee6828303ede92fb4b74a3f8b9eee16b76a8d59eac0d6d19057674",
+      "response_sha256": "8945a1b1ad481fbf59a90922793298834f98a6ea4f69eafc2ca15b04b1e5e983",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Metadata relationship preparation or inspection; no source mutation or activation.",
+      "observed_results": [
+        {
+          "tool": "runner__review_action_relationship",
+          "host_result_observed_in_later_input": true,
+          "status": "already_reviewed"
+        }
+      ]
+    },
+    {
+      "call": 47,
+      "purpose": "Action correction: explicit non-null collection guard",
+      "tools": [
+        "runner__submit_action_rule_draft"
+      ],
+      "input_sha256": "8fa70e20c4eae6079f0c5a8ebc8d7f4098fed34d829910a5439ff300f6db8b9e",
+      "response_sha256": "5e3361b170225647c9600ac3001447abff50060ff429f827c1233a0c9f030be2",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Disabled component checkpoint saved; not yet a complete authority or runtime deployment.",
+      "observed_results": [
+        {
+          "tool": "runner__submit_action_rule_draft",
+          "host_result_observed_in_later_input": true,
+          "status": "disabled_component_saved"
+        }
+      ]
+    },
+    {
+      "call": 48,
+      "purpose": "Action correction: explicit non-null collection guard",
+      "tools": [
+        "runner__validate_action_draft"
+      ],
+      "input_sha256": "f6f971c93f55335218642a1f38c858e3aa935462c1fb47eeebfe43645b866e79",
+      "response_sha256": "cc38cef6d01ab9085f2d94c66c936d52a9e702efdff052964683b6cca2cf55c9",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Host compiled changed draft: adds explicit non-null collection-count guard; original DDL remains unchanged.",
+      "observed_results": [
+        {
+          "tool": "runner__validate_action_draft",
+          "host_result_observed_in_later_input": true,
+          "status": "ready_for_review",
+          "draft_changed": true
+        }
+      ]
+    },
+    {
+      "call": 49,
+      "purpose": "Action correction: explicit non-null collection guard",
+      "tools": [],
+      "input_sha256": "027112ae126593c057bfaeea9e0e0efe384a548bfe52a21b21591c3a8d9a8428",
+      "response_sha256": "a19dacdb26b39187b3fe05542cc016dafbe66b6f588572fc4c8aedfbeb21f5a3",
+      "complete_response": true,
+      "coverage_records": [],
+      "authority_change": false,
+      "semantic_progress": "Planning/narration/drafting step; no independent source effect or approval established.",
+      "observed_results": []
+    },
+    {
+      "call": 50,
+      "purpose": "policy review / structural or mechanical recheck",
+      "tools": [
+        "runner__review_policy_coverage"
+      ],
+      "input_sha256": "0420c46d6797f0e89f4ae0ad67e579bb332ad3f565e3952a315b04d046db19ef",
+      "response_sha256": "14ef3aaf36205c0bdfead64ed11f1c391602a08d056697cafbccce41d70a96f5",
+      "complete_response": true,
+      "coverage_records": [
+        {
+          "lines": [
+            1,
+            1
+          ],
+          "disposition": "background",
+          "topic": "Policy heading",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Sealing-only database job",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "overridden",
+          "topic": "Synthetic fixture scope",
+          "responsibility": "operator",
+          "operator_message_id": 2
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Coordinator record scope",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "needs_decision",
+          "topic": "Authenticated coordinator identity",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            3,
+            3
+          ],
+          "disposition": "implemented",
+          "topic": "Public fields and private verification",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            5,
+            5
+          ],
+          "disposition": "implemented",
+          "topic": "Complete tested-check eligibility",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            7
+          ],
+          "disposition": "implemented",
+          "topic": "Atomic candidate and slot consumption",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            7,
+            9
+          ],
+          "disposition": "unsupported",
+          "topic": "Atomic source receipt",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Eligibility-gated approval limits",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Software organization approval scope",
+          "responsibility": "operator",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "implemented",
+          "topic": "Prepared supervised execution",
+          "responsibility": "runner",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "needs_decision",
+          "topic": "Supervised execution handoff",
+          "responsibility": "deployment",
+          "operator_message_id": null
+        },
+        {
+          "lines": [
+            9,
+            9
+          ],
+          "disposition": "unsupported",
+          "topic": "Post-execution readback",
+          "responsibility": "runner",
+          "operator_message_id": null
+        }
+      ],
+      "authority_change": false,
+      "semantic_progress": "Coverage interpretation/recheck only; no business rule mutation. See exact passage dispositions and next feedback; not an additional operator decision.",
+      "observed_results": [
+        {
+          "tool": "runner__review_policy_coverage",
+          "host_result_observed_in_later_input": false
+        }
+      ]
+    }
+  ],
+  "call_groups": {
+    "narration / business question": 2,
+    "job planning": 1,
+    "Read drafting": 1,
+    "Action drafting": 10,
+    "policy review / structural or mechanical recheck": 21,
+    "Action correction: outcome history selector": 3,
+    "Action reconciliation / clarification": 5,
+    "Action correction: explicit non-null collection guard": 7
+  },
+  "limits": "Fifty completed HTTP responses are not fifty user decisions. No infinite-loop or provider-failure inference; final required review exhausted the initial ceiling."
+}

@@ -1,0 +1,21 @@
+{
+  "recorded_at": "2026-09-13T16:18:03.324458+00:00",
+  "classification": "user-reported independent manual retest update, not a repair-session write",
+  "message": "FOLLOW-UP ONLY: Finding8 freight scope/Read closed; Finding9 reviewed-counter route remains separate",
+  "original": {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/manual-mode-test-20260911/FINDINGS.md",
+    "mode": 436,
+    "type": 32768,
+    "size": 41374,
+    "sha256": "ff922ecca4c7b00737b2f8faa521705379f14d21ea75102c357af0268745c983"
+  },
+  "external_update": {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/manual-mode-test-20260911/FINDINGS.md",
+    "mode": 436,
+    "type": 32768,
+    "size": 44750,
+    "sha256": "38027874840663a860dc294c48de8a6b4e001bf17e45d3bc1a55c1bcb1ab0633"
+  },
+  "first_strict_check": "preservation-before-freeze.json",
+  "all_other_entries_unchanged": 132284
+}

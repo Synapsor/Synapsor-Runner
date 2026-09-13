@@ -1,0 +1,29 @@
+{
+  "product_commit": "dba1800d069406e6d1e45ce3ef4e19721ef76617",
+  "scope": "authoring checkpoint and policy evidence consumers only",
+  "consumers": [
+    "apps/runner/src/action-rule-authoring.ts",
+    "apps/runner/src/action-rule-draft.test.ts",
+    "apps/runner/src/action-rule-source-evidence.test.ts",
+    "apps/runner/src/action-rule-source-evidence.ts",
+    "apps/runner/src/authoring-policy-context.test.ts",
+    "apps/runner/src/authoring-policy-coverage.test.ts",
+    "apps/runner/src/authoring-policy-coverage.ts",
+    "apps/runner/src/authoring-policy-evidence.ts",
+    "apps/runner/src/authoring-policy-source-ui.ts",
+    "apps/runner/src/authoring-policy-source.test.ts",
+    "apps/runner/src/authoring-review-readiness.test.ts",
+    "apps/runner/src/authoring-rls-evidence.test.ts",
+    "apps/runner/src/boundary-commands.ts",
+    "apps/runner/src/boundary-structured-authoring.integration.test.ts",
+    "apps/runner/src/composite-read-privacy.test.ts",
+    "apps/runner/src/counter-maintenance-evidence.test.ts",
+    "apps/runner/src/read-boundary-privacy-review.test.ts",
+    "apps/runner/src/read-boundary-privacy-review.ts",
+    "apps/runner/src/read-boundary-review-view.test.ts",
+    "apps/runner/src/read-prerequisite-revision.test.ts"
+  ],
+  "verification": "combined576pass1skip; finalfocused215pass2skip; full6165pass461skip includes normal accounting/publication/identity/structured-save/receipt regressions",
+  "postgres_control": "opt-in not run anew; no control-store/adapter/runtime-core source changed",
+  "installed_sources": "two original PostgreSQL business fixtures with project SQLite control store if public setup reaches runtime; never relabel as PostgreSQL control-store evidence"
+}

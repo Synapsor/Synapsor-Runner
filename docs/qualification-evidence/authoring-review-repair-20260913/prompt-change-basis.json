@@ -1,0 +1,38 @@
+{
+  "baseline": "9c7219d617d5347ae9ee5c2f5587a947347abbb4",
+  "before_sources": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/prompt-before",
+  "observations": [
+    {
+      "calls": [
+        34,
+        41,
+        42
+      ],
+      "change": "exact non-key column nullability and binding applicability in authoring evidence",
+      "basis": "review explicitly reports NOT NULL absent from current indexed generation-lock-bound evidence"
+    },
+    {
+      "calls": [
+        34,
+        37,
+        41,
+        42,
+        50
+      ],
+      "change": "retain supporting operator statements separately from actual overrides",
+      "basis": "whole-source assertion interpreted as replacement of per-row restriction; non-override supporting reference dropped during parse"
+    },
+    {
+      "calls": [
+        14,
+        21,
+        30,
+        34,
+        50
+      ],
+      "change": "existing source receipt mode/setup described alongside control-ledger receipt",
+      "basis": "review cites ledger-only runtime contract to declare source-atomic receipt unsupported"
+    }
+  ],
+  "no_new_provider_calls": true
+}

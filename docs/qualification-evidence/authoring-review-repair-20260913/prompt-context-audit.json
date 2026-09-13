@@ -1,0 +1,17 @@
+{
+  "at": "2026-09-13T15:50:56.591646+00:00",
+  "baseline": "9c7219d617d5347ae9ee5c2f5587a947347abbb4",
+  "exact_static_before_after": "prompt-context-before-after.patch",
+  "diff_sha256": "9150e5eaf01fba1f87da986521be7950456d62ad9a92a46e3718ff0ec066151b",
+  "changed_sources": [
+    "apps/runner/src/action-rule-source-evidence.ts",
+    "apps/runner/src/authoring-policy-evidence.ts",
+    "apps/runner/src/authoring-policy-coverage.ts"
+  ],
+  "traced_call_hashes": "software-call-classification.json",
+  "justification": "prompt-change-basis.json",
+  "fixture_terms_in_added_product_context": [],
+  "case_specific_rescue_sentences_added": false,
+  "new_context_captures": "owned prompt-after: deterministic known-case metadata replay; not original missing responses or a live model verdict",
+  "runtime_authority_changed": false
+}

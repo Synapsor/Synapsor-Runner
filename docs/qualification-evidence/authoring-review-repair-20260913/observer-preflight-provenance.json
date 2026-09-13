@@ -1,0 +1,19 @@
+{
+  "prepared_not_executed": true,
+  "helpers": [
+    {
+      "name": "provider-meter.mjs",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/trial-harness/provider-meter.mjs",
+      "sha256": "fbd332d903a96d807890ace30f556267909241e05490d5ce8020665a5b080df4",
+      "changes": false
+    },
+    {
+      "name": "storage-preflight.mjs",
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/trial-harness/storage-preflight.mjs",
+      "sha256": "f41c22b65c92ac9629a1236a8a189bd46100edd7516dbfc40639b7ed047ebab2",
+      "changes": false
+    }
+  ],
+  "dependency_source": "new final frozen installation after creation; no patched package",
+  "public_schedules": "prepare-known-run.mjs and run-public-known.mjs reuse whole-case isolation, exact source inputs and existing observer"
+}

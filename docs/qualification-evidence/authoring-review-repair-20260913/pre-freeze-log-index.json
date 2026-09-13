@@ -1,0 +1,125 @@
+{
+  "recorded_at": "2026-09-13T16:20:13.986992+00:00",
+  "logs": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/answer-recorder-before.log",
+      "bytes": 5324,
+      "sha256": "47acecb4bffc7618ddac37f3d857c0603466e17f51e5556e490eb5852969b1d7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/bundle-freshness.log",
+      "bytes": 182,
+      "sha256": "4534215e15034b5b5391ab51d71121ebc119c68a2226f6194462a8558e9489b7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/column-before-corrected.log",
+      "bytes": 4418,
+      "sha256": "66a1522642393f76fa7d7ac11e77c689fa3d783d803f1a9fe95b8463ca80cb74"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/combined-authoring.log",
+      "bytes": 245007,
+      "sha256": "7b055db24fec33608eeb71a0835ce942c3a1e11e869fcecf51e16d946962ec54"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/cursor-plugin.log",
+      "bytes": 391,
+      "sha256": "cc12e22d29ebd660345c60ee249826505ffccb62bb45e1b39590202b7ee7135f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/dsl-sources.log",
+      "bytes": 89,
+      "sha256": "3bd663b10b211bb9dbfa01117dd164a3a851d9936e4be1568a6bd5f9ccf7d50a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/final-types.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/focused-after01.log",
+      "bytes": 1224,
+      "sha256": "7ac08a676b0b51a1fa015ffadcea1b34b06108d8e8a7755dcb620af1edf412ee"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/focused-after02.log",
+      "bytes": 1492,
+      "sha256": "e9c41c1bf9b5f34f17860d092adcf224d262bad5375a712bdb41e5b13bbdf6e2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/focused-before.log",
+      "bytes": 18967,
+      "sha256": "6abd223bd73e5ce986dc7dbc8621d4cf2b7fa01f888db77e404381df77badfb3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/focused-final.log",
+      "bytes": 1011,
+      "sha256": "e595bae0c5ceb48414aac6d1f22cfca676a2d2371980eace7b8fa82308a5a055"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/human-commands.log",
+      "bytes": 43,
+      "sha256": "4ca02cff1d23604455f2707b16fc58bea2d0beb7f6adff085887cbdae1379222"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/licenses.log",
+      "bytes": 30,
+      "sha256": "81c81f063c5391a1e9f237b114a7ba197da9b6cece450fa3fd851f6fcac80bac"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/local-package.log",
+      "bytes": 293,
+      "sha256": "83fd87a060a254a66b99ea123d9103a6c55d2fa5b6e7c631030d95a9452ec79c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/mcp-client-configs.log",
+      "bytes": 1601,
+      "sha256": "920c4b33567d749855dd49afce218c5a635ea6404e8128a5fc297f5ed6a4bf3f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/packed-offline.log",
+      "bytes": 2193,
+      "sha256": "2564b3a7089446f02cf3105251e2763fbe8ce448dc0b45a615a2861450ae38b6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/public-before-isolated.log",
+      "bytes": 39798,
+      "sha256": "bdace54d3b305aa3748fe4949c3b20eee352599357baedf14045e2dc804ac9dc"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/public-commands.log",
+      "bytes": 803,
+      "sha256": "2121e7f079daf2f2826853340dcdbf7349aeb7e7ed01ffc464e8202cec41e559"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/public-sequence-after01.log",
+      "bytes": 1027,
+      "sha256": "896222007e851a347eba78550d72cfee4eed8fa40a7e007dd716bc265f711dc3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/public-sequence-before-diagnostic.log",
+      "bytes": 38387,
+      "sha256": "fdc83d27da559068e2d8c0e196dc83c908330d99fdc5af076f9cf6570ae79644"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/public-sequence-before.log",
+      "bytes": 38057,
+      "sha256": "3f6338537b8d4d94d0ce80d54e52943a6f8a8a4956e9c1374bd506cec0eae084"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/stable-full.log",
+      "bytes": 479714,
+      "sha256": "297ca25d3b2c446c918973640435ff3eb771e2b7fd066bbcd1563f8d5b1c29c8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/trusted-core.log",
+      "bytes": 73,
+      "sha256": "624a988aa1ba3fbf3a54eea7db90613a449a95f2ddce218db1f4b0cca0e5b262"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/types-development01.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

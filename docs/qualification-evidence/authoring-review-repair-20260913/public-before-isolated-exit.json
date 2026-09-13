@@ -1,0 +1,24 @@
+{
+  "name": "public-before-isolated",
+  "args": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--config",
+    "docs/qualification-evidence/authoring-review-repair-20260913/public-before.config.mjs",
+    "-t",
+    "resumes disabled Read and saves a semantic"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T15:41:44.515766+00:00",
+  "source_head": "9c7219d617d5347ae9ee5c2f5587a947347abbb4",
+  "source_diff_sha256": "933c9512336b9652520343ce7dcb4640f0a737bc4177058b4c2378c8154ee8d0",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/test-environments/public-before-isolated",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-review-repair-20260913/public-before-isolated",
+  "source_manifest_sha256": "d5dfefbd459c1d983db645302bbc8f187d2c4092099a357e5544375b78f76102",
+  "pid": 3114649,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-13T15:42:07.079336+00:00"
+}

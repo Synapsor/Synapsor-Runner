@@ -1,0 +1,17 @@
+{
+  "requested_at": "2026-09-13T15:56:14.530455+00:00",
+  "status": "QUEUED_FOR_SEPARATE_TASK_AFTER_CURRENT_REPAIR",
+  "create_task_after_current_closure": true,
+  "not_current_implementation_scope": true,
+  "evidence": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/manual-mode-test-20260911/FINDINGS.md",
+  "evidence_sha256": "38027874840663a860dc294c48de8a6b4e001bf17e45d3bc1a55c1bcb1ab0633",
+  "section": "Manual-mode re-test on the accepted Stage A artifact",
+  "finding_8": "Independent manual retest closes freight scope/read path on accepted278b66c: tenant carrier_id on both resources; correct five rows; other carrier excluded. No writer/worker/effects tested.",
+  "finding_9": "Expose existing reviewed conflict-counter selection without a model; rev_no and weight_kg are both candidates, so explicit operator selection and source-owner maintenance confirmation remain required.",
+  "scope": [
+    "Reuse existing counter review, current inspected metadata validation, disabled mapping save, separate activation.",
+    "No second counter mechanism, expanded column recognition, rename requirement or general manual-editor parity.",
+    "One demonstrated blocker only; verify remaining model-free Action journey after route exists, without implying all downstream issues solved.",
+    "No new Stage A acceptance condition. Finish current clarification/review repair first."
+  ]
+}

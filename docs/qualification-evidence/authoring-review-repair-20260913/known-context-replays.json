@@ -1,0 +1,22 @@
+[
+  {
+    "case": "tournament-ratification",
+    "result": "compiled field evidence/unchanged inputs checked; review prompt captured with deterministic stub",
+    "provider_calls": 0,
+    "inspection_evidence": "NOT_SUPPLIED: prior captured inspection is not recreated",
+    "authority_changed": false,
+    "source_queried": false,
+    "request_sha256": "1085eb888128eaffa41d16d3808d475a6c1e44d5dba9f6bfb736e78421b66206",
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/prompt-after/tournament-ratification-request.json"
+  },
+  {
+    "case": "software-release-sealing",
+    "result": "compiled field evidence/unchanged inputs checked; review prompt captured with deterministic stub",
+    "provider_calls": 0,
+    "inspection_evidence": "NOT_SUPPLIED: prior captured inspection is not recreated",
+    "authority_changed": false,
+    "source_queried": false,
+    "request_sha256": "46190c34bd355321a2fdc3f12f3fa67093b6b972ec95a1425d28c49efb58e2b0",
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/prompt-after/software-release-sealing-request.json"
+  }
+]

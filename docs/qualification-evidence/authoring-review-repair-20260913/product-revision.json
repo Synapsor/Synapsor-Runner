@@ -1,0 +1,12 @@
+{
+  "commit": "dba1800d069406e6d1e45ce3ef4e19721ef76617",
+  "test_revision": "dba1800d069406e6d1e45ce3ef4e19721ef76617",
+  "baseline": "9c7219d617d5347ae9ee5c2f5587a947347abbb4",
+  "stable_full": {
+    "exit": 0,
+    "passed": 6165,
+    "skipped": 461,
+    "source_unchanged": true
+  },
+  "final_types": 0
+}

@@ -1,0 +1,26 @@
+{
+  "focused-before": {
+    "exit": 1,
+    "pass": 82,
+    "product_failures": 4,
+    "fixture_error": 1
+  },
+  "column-before-corrected": {
+    "exit": 1,
+    "failure": "Exact non-key nullable pointer absent",
+    "fixture_correction": "Use existing complete column metadata helper; original attempt preserved"
+  },
+  "focused-after01": {
+    "exit": 0,
+    "pass": 109
+  },
+  "public-sequence-after01": {
+    "exit": 0,
+    "pass": 2,
+    "filtered_out": 271
+  },
+  "answer-recorder-before": {
+    "exit": 1,
+    "failure": "Prohibited concrete answer saved separately before checkpoint guard"
+  }
+}

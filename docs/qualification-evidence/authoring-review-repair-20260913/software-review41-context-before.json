@@ -1,0 +1,577 @@
+{
+  "origin": "exact original captured request41, host-generated review context",
+  "source_constraints": {
+    "generation_lock_fingerprint": "sha256:bb3b22228b4520dc1633e4524684d096a6dfecaa236c2c9117f5804a6700d08b",
+    "schema_fingerprint": "sha256:a112652e6ad88972c319932a4aea38fddf9a4988a47112ca433dbb2d2480f92f",
+    "resources": {
+      "release_ops.build_candidates": {
+        "resource": "release_ops.build_candidates",
+        "primary_key": {
+          "columns": [
+            "candidate_id"
+          ],
+          "column_count": 1,
+          "non_null_columns": [
+            "candidate_id"
+          ],
+          "all_columns_non_null": true,
+          "unconditional": true
+        },
+        "unique_constraints": {
+          "build_candidates_candidate_id_tenant_id_principal_id_key": {
+            "columns": [
+              "candidate_id",
+              "tenant_id",
+              "principal_id"
+            ],
+            "column_count": 3,
+            "non_null_columns": [
+              "candidate_id",
+              "tenant_id",
+              "principal_id"
+            ],
+            "all_columns_non_null": true,
+            "unconditional": true
+          },
+          "build_candidates_candidate_ref_key": {
+            "columns": [
+              "candidate_ref"
+            ],
+            "column_count": 1,
+            "non_null_columns": [
+              "candidate_ref"
+            ],
+            "all_columns_non_null": true,
+            "unconditional": true
+          },
+          "build_candidates_slot_id_key": {
+            "columns": [
+              "slot_id"
+            ],
+            "column_count": 1,
+            "non_null_columns": [
+              "slot_id"
+            ],
+            "all_columns_non_null": true,
+            "unconditional": true
+          }
+        },
+        "check_constraints": {
+          "build_candidates_candidate_state_check": {
+            "definition": "CHECK (candidate_state = ANY (ARRAY['staged'::text, 'sealed'::text]))",
+            "enforced": true
+          },
+          "build_candidates_version_check": {
+            "definition": "CHECK (version > 0)",
+            "enforced": true
+          }
+        }
+      },
+      "release_ops.build_checks": {
+        "resource": "release_ops.build_checks",
+        "primary_key": {
+          "columns": [
+            "check_id"
+          ],
+          "column_count": 1,
+          "non_null_columns": [
+            "check_id"
+          ],
+          "all_columns_non_null": true,
+          "unconditional": true
+        },
+        "unique_constraints": {},
+        "check_constraints": {
+          "build_checks_check_state_check": {
+            "definition": "CHECK (check_state = ANY (ARRAY['passed'::text, 'failed'::text, 'pending'::text]))",
+            "enforced": true
+          },
+          "build_checks_elapsed_seconds_check": {
+            "definition": "CHECK (elapsed_seconds >= 0)",
+            "enforced": true
+          },
+          "build_checks_version_check": {
+            "definition": "CHECK (version > 0)",
+            "enforced": true
+          }
+        }
+      },
+      "release_ops.release_slots": {
+        "resource": "release_ops.release_slots",
+        "primary_key": {
+          "columns": [
+            "slot_id"
+          ],
+          "column_count": 1,
+          "non_null_columns": [
+            "slot_id"
+          ],
+          "all_columns_non_null": true,
+          "unconditional": true
+        },
+        "unique_constraints": {
+          "release_slots_slot_id_tenant_id_principal_id_key": {
+            "columns": [
+              "slot_id",
+              "tenant_id",
+              "principal_id"
+            ],
+            "column_count": 3,
+            "non_null_columns": [
+              "slot_id",
+              "tenant_id",
+              "principal_id"
+            ],
+            "all_columns_non_null": true,
+            "unconditional": true
+          },
+          "release_slots_slot_ref_key": {
+            "columns": [
+              "slot_ref"
+            ],
+            "column_count": 1,
+            "non_null_columns": [
+              "slot_ref"
+            ],
+            "all_columns_non_null": true,
+            "unconditional": true
+          }
+        },
+        "check_constraints": {
+          "release_slots_slot_state_check": {
+            "definition": "CHECK (slot_state = ANY (ARRAY['ready'::text, 'consumed'::text, 'retired'::text]))",
+            "enforced": true
+          },
+          "release_slots_version_check": {
+            "definition": "CHECK (version > 0)",
+            "enforced": true
+          }
+        }
+      }
+    }
+  },
+  "bindings": {
+    "release_ops.seal_build_candidate": {
+      "candidate": {
+        "binding": "candidate",
+        "resource": "release_ops.build_candidates",
+        "scope": {
+          "mode": "columns",
+          "principal_field": "principal_id",
+          "tenant_field": "tenant_id"
+        },
+        "source": {
+          "kind": "subject_ref"
+        },
+        "database_scope_proof": {
+          "resource": "release_ops.build_candidates",
+          "source": "local_postgres",
+          "schema": "release_ops",
+          "table": "build_candidates",
+          "operation": "SELECT",
+          "tenant": {
+            "field": "tenant_id",
+            "setting": "app.tenant_id"
+          },
+          "principal": {
+            "field": "principal_id",
+            "setting": "app.principal_id"
+          },
+          "policy_fingerprint": "sha256:e8c0bc29ef44e26af13b49c6dbea02a55527cc4370bc5699e87ccf3c8cdd398d",
+          "generation_lock_fingerprint": "sha256:bb3b22228b4520dc1633e4524684d096a6dfecaa236c2c9117f5804a6700d08b",
+          "schema_fingerprint": "sha256:a112652e6ad88972c319932a4aea38fddf9a4988a47112ca433dbb2d2480f92f",
+          "role_posture_fingerprint": "sha256:6436af072232447a9b734c4f130a77110a3ca4e9c04e43a3be1722ca3e053462",
+          "policy_count": 1,
+          "enforcement": "inspected_postgres_rls",
+          "meaning": "Exact current-reader RLS restricts this source to these distinct trusted session identities. The principal field need not be repeated in the compiled SQL column scope or projected for Action verification. This proves record scope only, not an additional business predicate, public field access, authenticated-client wiring, writer readiness, activation or execution. Policy SQL and source rows are not included."
+        },
+        "row_identity": "candidate_id",
+        "conflict_field": "version",
+        "fields": {
+          "candidate_id": {
+            "name": "candidate_id",
+            "type": {
+              "comparison": "exact",
+              "kind": "string",
+              "max_length": 36
+            },
+            "model_visible": false,
+            "read_access_present": true,
+            "actual_values_returned": false,
+            "model_analysis": [],
+            "private_read_selection": false,
+            "private_action_verification": true
+          },
+          "candidate_state": {
+            "name": "candidate_state",
+            "type": {
+              "comparison": "exact",
+              "enum": [
+                "sealed",
+                "staged"
+              ],
+              "kind": "string",
+              "max_length": 6
+            },
+            "model_visible": true,
+            "read_access_present": true,
+            "actual_values_returned": true,
+            "model_analysis": [],
+            "private_read_selection": false,
+            "private_action_verification": false
+          },
+          "principal_id": {
+            "name": "principal_id",
+            "type": {
+              "comparison": "exact",
+              "kind": "string",
+              "max_length": 36
+            },
+            "model_visible": false,
+            "read_access_present": true,
+            "actual_values_returned": false,
+            "model_analysis": [],
+            "private_read_selection": false,
+            "private_action_verification": true
+          },
+          "security_hold": {
+            "name": "security_hold",
+            "type": {
+              "kind": "boolean"
+            },
+            "model_visible": false,
+            "read_access_present": true,
+            "actual_values_returned": false,
+            "model_analysis": [],
+            "private_read_selection": false,
+            "private_action_verification": true
+          },
+          "slot_id": {
+            "name": "slot_id",
+            "type": {
+              "comparison": "exact",
+              "kind": "string",
+              "max_length": 36
+            },
+            "model_visible": false,
+            "read_access_present": true,
+            "actual_values_returned": false,
+            "model_analysis": [],
+            "private_read_selection": false,
+            "private_action_verification": true
+          },
+          "tenant_id": {
+            "name": "tenant_id",
+            "type": {
+              "comparison": "exact",
+              "kind": "string",
+              "max_length": 36
+            },
+            "model_visible": false,
+            "read_access_present": true,
+            "actual_values_returned": false,
+            "model_analysis": [],
+            "private_read_selection": false,
+            "private_action_verification": true
+          },
+          "version": {
+            "name": "version",
+            "type": {
+              "kind": "integer"
+            },
+            "model_visible": false,
+            "read_access_present": true,
+            "actual_values_returned": false,
+            "model_analysis": [],
+            "private_read_selection": false,
+            "private_action_verification": true
+          }
+        }
+      },
+      "checks": {
+        "binding": "checks",
+        "resource": "release_ops.build_checks",
+        "scope": {
+          "mode": "columns",
+          "principal_field": "principal_id",
+          "tenant_field": "tenant_id"
+        },
+        "source": {
+          "direction": "inverse",
+          "field_pairs": [
+            {
+              "local_field": "candidate_id",
+              "target_field": "candidate_id"
+            },
+            {
+              "local_field": "tenant_id",
+              "target_field": "tenant_id"
+            },
+            {
+              "local_field": "principal_id",
+              "target_field": "principal_id"
+            }
+          ],
+          "from_binding": "candidate",
+          "kind": "relationship",
+          "relationship": "build_checks_candidate_id_tenant_id_principal_id_fkey"
+        },
+        "database_scope_proof": {
+          "resource": "release_ops.build_checks",
+          "source": "local_postgres",
+          "schema": "release_ops",
+          "table": "build_checks",
+          "operation": "SELECT",
+          "tenant": {
+            "field": "tenant_id",
+            "setting": "app.tenant_id"
+          },
+          "principal": {
+            "field": "principal_id",
+            "setting": "app.principal_id"
+          },
+          "policy_fingerprint": "sha256:743e51ebe78040faee87e48ca54f412c0c0ceeb70c2f165a91d2f0d8ee130ade",
+          "generation_lock_fingerprint": "sha256:bb3b22228b4520dc1633e4524684d096a6dfecaa236c2c9117f5804a6700d08b",
+          "schema_fingerprint": "sha256:a112652e6ad88972c319932a4aea38fddf9a4988a47112ca433dbb2d2480f92f",
+          "role_posture_fingerprint": "sha256:6436af072232447a9b734c4f130a77110a3ca4e9c04e43a3be1722ca3e053462",
+          "policy_count": 1,
+          "enforcement": "inspected_postgres_rls",
+          "meaning": "Exact current-reader RLS restricts this source to these distinct trusted session identities. The principal field need not be repeated in the compiled SQL column scope or projected for Action verification. This proves record scope only, not an additional business predicate, public field access, authenticated-client wiring, writer readiness, activation or execution. Policy SQL and source rows are not included."
+        },
+        "row_identity": "check_id",
+        "conflict_field": "version",
+        "fields": {
+          "candidate_id": {
+            "name": "candidate_id",
+            "type": {
+              "comparison": "exact",
+              "kind": "string",
+              "max_length": 36
+            },
+            "model_visible": false,
+            "read_access_present": false,
+            "actual_values_returned": false,
+            "model_analysis": [],
+            "private_read_selection": false,
+            "private_action_verification": true
+          },
+          "check_id": {
+            "name": "check_id",
+            "type": {
+              "comparison": "exact",
+              "kind": "string",
+              "max_length": 36
+            },
+            "model_visible": false,
+            "read_access_present": false,
+            "actual_values_returned": false,
+            "model_analysis": [],
+            "private_read_selection": false,
+            "private_action_verification": true
+          },
+          "check_state": {
+            "name": "check_state",
+            "type": {
+              "comparison": "exact",
+              "enum": [
+                "failed",
+                "passed",
+                "pending"
+              ],
+              "kind": "string",
+              "max_length": 7
+            },
+            "model_visible": false,
+            "read_access_present": false,
+            "actual_values_returned": false,
+            "model_analysis": [],
+            "private_read_selection": false,
+            "private_action_verification": true
+          },
+          "elapsed_seconds": {
+            "name": "elapsed_seconds",
+            "type": {
+              "kind": "integer",
+              "unit": "seconds"
+            },
+            "model_visible": false,
+            "read_access_present": false,
+            "actual_values_returned": false,
+            "model_analysis": [],
+            "private_read_selection": false,
+            "private_action_verification": true
+          },
+          "principal_id": {
+            "name": "principal_id",
+            "type": {
+              "comparison": "exact",
+              "kind": "string",
+              "max_length": 36
+            },
+            "model_visible": false,
+            "read_access_present": false,
+            "actual_values_returned": false,
+            "model_analysis": [],
+            "private_read_selection": false,
+            "private_action_verification": true
+          },
+          "tenant_id": {
+            "name": "tenant_id",
+            "type": {
+              "comparison": "exact",
+              "kind": "string",
+              "max_length": 36
+            },
+            "model_visible": false,
+            "read_access_present": false,
+            "actual_values_returned": false,
+            "model_analysis": [],
+            "private_read_selection": false,
+            "private_action_verification": true
+          },
+          "version": {
+            "name": "version",
+            "type": {
+              "kind": "integer"
+            },
+            "model_visible": false,
+            "read_access_present": false,
+            "actual_values_returned": false,
+            "model_analysis": [],
+            "private_read_selection": false,
+            "private_action_verification": true
+          }
+        }
+      },
+      "slot": {
+        "binding": "slot",
+        "resource": "release_ops.release_slots",
+        "scope": {
+          "mode": "columns",
+          "principal_field": "principal_id",
+          "tenant_field": "tenant_id"
+        },
+        "source": {
+          "direction": "forward",
+          "field_pairs": [
+            {
+              "local_field": "slot_id",
+              "target_field": "slot_id"
+            },
+            {
+              "local_field": "tenant_id",
+              "target_field": "tenant_id"
+            },
+            {
+              "local_field": "principal_id",
+              "target_field": "principal_id"
+            }
+          ],
+          "from_binding": "candidate",
+          "kind": "relationship",
+          "relationship": "build_candidates_slot_id_tenant_id_principal_id_fkey"
+        },
+        "database_scope_proof": {
+          "resource": "release_ops.release_slots",
+          "source": "local_postgres",
+          "schema": "release_ops",
+          "table": "release_slots",
+          "operation": "SELECT",
+          "tenant": {
+            "field": "tenant_id",
+            "setting": "app.tenant_id"
+          },
+          "principal": {
+            "field": "principal_id",
+            "setting": "app.principal_id"
+          },
+          "policy_fingerprint": "sha256:cf81fec4d1515ebcd94f078182c575d07b97a10fe6f1cbd5dacfdd1a9996f4a9",
+          "generation_lock_fingerprint": "sha256:bb3b22228b4520dc1633e4524684d096a6dfecaa236c2c9117f5804a6700d08b",
+          "schema_fingerprint": "sha256:a112652e6ad88972c319932a4aea38fddf9a4988a47112ca433dbb2d2480f92f",
+          "role_posture_fingerprint": "sha256:6436af072232447a9b734c4f130a77110a3ca4e9c04e43a3be1722ca3e053462",
+          "policy_count": 1,
+          "enforcement": "inspected_postgres_rls",
+          "meaning": "Exact current-reader RLS restricts this source to these distinct trusted session identities. The principal field need not be repeated in the compiled SQL column scope or projected for Action verification. This proves record scope only, not an additional business predicate, public field access, authenticated-client wiring, writer readiness, activation or execution. Policy SQL and source rows are not included."
+        },
+        "row_identity": "slot_id",
+        "conflict_field": "version",
+        "fields": {
+          "principal_id": {
+            "name": "principal_id",
+            "type": {
+              "comparison": "exact",
+              "kind": "string",
+              "max_length": 36
+            },
+            "model_visible": false,
+            "read_access_present": true,
+            "actual_values_returned": false,
+            "model_analysis": [],
+            "private_read_selection": false,
+            "private_action_verification": true
+          },
+          "slot_id": {
+            "name": "slot_id",
+            "type": {
+              "comparison": "exact",
+              "kind": "string",
+              "max_length": 36
+            },
+            "model_visible": false,
+            "read_access_present": true,
+            "actual_values_returned": false,
+            "model_analysis": [],
+            "private_read_selection": false,
+            "private_action_verification": true
+          },
+          "slot_state": {
+            "name": "slot_state",
+            "type": {
+              "comparison": "exact",
+              "enum": [
+                "consumed",
+                "ready",
+                "retired"
+              ],
+              "kind": "string",
+              "max_length": 8
+            },
+            "model_visible": true,
+            "read_access_present": true,
+            "actual_values_returned": true,
+            "model_analysis": [],
+            "private_read_selection": false,
+            "private_action_verification": false
+          },
+          "tenant_id": {
+            "name": "tenant_id",
+            "type": {
+              "comparison": "exact",
+              "kind": "string",
+              "max_length": 36
+            },
+            "model_visible": false,
+            "read_access_present": true,
+            "actual_values_returned": false,
+            "model_analysis": [],
+            "private_read_selection": false,
+            "private_action_verification": true
+          },
+          "version": {
+            "name": "version",
+            "type": {
+              "kind": "integer"
+            },
+            "model_visible": false,
+            "read_access_present": true,
+            "actual_values_returned": false,
+            "model_analysis": [],
+            "private_read_selection": false,
+            "private_action_verification": true
+          }
+        }
+      }
+    }
+  },
+  "receipts": "Runner's control ledger records processing and execution receipts, separately from source effects. A second source-table audit INSERT is not required. request_change distinguishes queued/human_review/not_enabled/completed; completed requires applied state. Pending/failed is not completed."
+}

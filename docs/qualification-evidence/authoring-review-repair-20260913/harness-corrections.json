@@ -1,0 +1,10 @@
+[
+  {
+    "kind": "local reproduction module format",
+    "original_exit": 1,
+    "error": "tsx treated .ts under repository CommonJS scope; top-level await transform refused before any fixture open",
+    "correction": "use .mts for this local ESM harness",
+    "corrected_exit": 0,
+    "product_changed": false
+  }
+]
