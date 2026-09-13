@@ -1,3 +1,4 @@
+import { assertBoundaryAuthoringResumeMaterial } from "./boundary-authoring-resume.js";
 import type { BoundaryAuthoringChat } from "./boundary-authoring-chat.js";
 import type { ModelAuthoringConversation } from "./model-authoring-conversation.js";
 import { policyCoverageSection } from "./authoring-policy-coverage.js";
@@ -16,6 +17,10 @@ export function installPolicySourceCommands(input: {
     const sources = conversation.policySources;
     if (!activePolicySource(sources) || !sources) return;
     if (answer.length > 4_000 || (sources.operator_messages?.length ?? 0) >= 64) throw new Error("Source-related history is full (64 messages, 4000 characters each). /rules can remove retained context; nothing was truncated or sent.");
+    // Validate before the separate source-history write. Otherwise a refused
+    // checkpoint's answer would be reintroduced on every resumed Action edit.
+    // The chat's existing answer-refusal path lets the operator correct it.
+    assertBoundaryAuthoringResumeMaterial(answer);
     const next = { ...sources, operator_messages: [...(sources.operator_messages ?? []), answer] };
     await savePolicySources(input.root, next);
     Object.assign(sources, next);

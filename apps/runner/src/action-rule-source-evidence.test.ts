@@ -26,6 +26,29 @@ const passage = { start: 1, end: 1, disposition: "implemented", responsibility: 
     { path: `${checkPath}/definition`, equals: "CHECK (sequence_no >= 1 AND sequence_no <= 16)" }] };
 
 describe("exact inspected Action source constraints", () => {
+  it("carries exact non-key column nullability through review and rejects changed or missing inspection", () => {
+    const f = fixture(), table = f.inspection.tables[1]!;
+    // This separately labelled metadata variant is not either original known-case fixture.
+    table.columns.push(column("duration", "integer"));
+    const fresh = build(f.inspection), read = { ...f.read, generation_lock_fingerprint: canonicalJsonDigest(fresh.lock) };
+    const input = { read, decisions: [], actions: [compile(fixture())], source: { inspection: f.inspection, generationLock: fresh.lock } };
+    const path = `/runner_evidence/source_constraints/resources/${resource}/columns/duration/nullable`;
+    const sourcePolicy = policyTextSnapshot(Buffer.from("Every stored duration is non-null."), "metadata-policy.txt");
+    const submission = { passages: [{ start: 1, end: 1, disposition: "implemented", interpretation: "The exact current base column is NOT NULL.",
+      draft_paths: [path], evidence_checks: [{ path, equals: false }] }] };
+    const draft = policyCoverageDraft(input), before = structuredClone(draft);
+    const first = parsePolicyCoverage(submission, sourcePolicy, draft, []);
+    expect(parsePolicyCoverage({ passages: first.passages }, sourcePolicy, draft, [])).toEqual(first);
+    expect(draft).toEqual(before);
+    table.columns.find(column => column.name === "duration")!.nullable = true;
+    expect(() => policyCoverageDraft(input)).toThrow("POLICY_SOURCE_EVIDENCE_STALE");
+    const next = build(f.inspection);
+    const changed = policyCoverageDraft({ ...input, read: { ...read, generation_lock_fingerprint: canonicalJsonDigest(next.lock) },
+      source: { inspection: f.inspection, generationLock: next.lock } });
+    expect(() => parsePolicyCoverage(submission, sourcePolicy, changed, [])).toThrow("Mechanical evidence mismatch");
+    expect(() => parsePolicyCoverage(submission, sourcePolicy, policyCoverageDraft({ read, decisions: [], actions: [] }), [])).toThrow("Draft pointer");
+  });
+
   it("exports complete keys and enforced checks for private-only sources without changing canonical authority", () => {
     const f = fixture(), before = structuredClone(f);
     const evidence = f.built.authoring.resources.find(entry => entry.name === resource)!.source_constraints!;
@@ -46,6 +69,31 @@ describe("exact inspected Action source constraints", () => {
     expect(draft.runner_evidence.source_constraints!.resources[resource]!.unique_constraints[uniqueName]!.columns).toEqual(columns);
     expect(parsePolicyCoverage({ passages: [passage] }, policy, draft, []).passages[0]!.disposition).toBe("implemented");
     expect(input).toEqual(before);
+  });
+
+  it("keeps exact bound field nullability and receipt modes separate from deployment readiness", () => {
+    const f = fixture(), compiled = compile(f);
+    const draft = policyCoverageDraft({ read: f.read, decisions: [], actions: [compiled], source: source(f) });
+    const action = draft.runner_evidence.actions[outcome]!;
+    for (const binding of compiled.verification_boundary.resources) for (const field of binding.fields) {
+      expect(action.scoped_bindings[binding.binding]!.fields[field.name]!.nullable).toBe(field.nullable);
+      expect(action.scoped_bindings[binding.binding]!.source).toEqual(binding.source);
+    }
+    const contract = draft.runner_evidence.runtime_contract;
+    expect(contract.receipts).toContain("runner_ledger");
+    expect(contract.receipts).toContain("it is not a source-atomic receipt");
+    expect(contract.receipts).toContain("source_db records the applied receipt in the same source transaction");
+    expect(contract.deployment_prerequisites.runner_execution_setup).toMatchObject({ supported: true,
+      receipt_modes_supported: ["runner_ledger", "source_db"], receipt_mode_checked: false, configuration_checked: false, verified: false });
+    const path = "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup";
+    const receiptPolicy = policyTextSnapshot(Buffer.from("A source-atomic receipt requires a separately reviewed receipt table and writer."), "receipt-policy.txt");
+    const requirement = { start: 1, end: 1, disposition: "needs_decision", responsibility: "deployment", issue_kind: "missing_configuration",
+      deployment_prerequisite: "runner_execution_setup", draft_paths: [path],
+      interpretation: "Review and verify the source_db receipt object and writer separately; disabled compilation does not configure them." };
+    expect(parsePolicyCoverage({ passages: [requirement] }, receiptPolicy, draft, []).passages[0]!.disposition).toBe("needs_decision");
+    const missing = policyCoverageDraft({ read: f.read, decisions: [], actions: [], source: source(f) });
+    expect(missing.runner_evidence.runtime_contract.deployment_prerequisites.runner_execution_setup.receipt_modes_supported).toEqual([]);
+    expect(() => parsePolicyCoverage({ passages: [requirement] }, receiptPolicy, missing, [])).toThrow("Execution setup can remain pending only");
   });
 
   it("excludes unrelated inspected sources from the current Read and Action evidence bundle", () => {
@@ -186,6 +234,8 @@ describe("exact inspected Action source constraints", () => {
     expect(requests).toHaveLength(2);
     expect(requests[0]).toContain(keyPath);
     expect(requests[0]).toContain(checkPath);
+    expect(requests[0]).toContain(`/runner_evidence/source_constraints/resources/${resource}/columns/sequence_no/nullable`);
+    expect(requests[0]).toContain("does not prove a derived expression or optional relationship result is non-null");
     expect(requests[0]).toContain(ACTION_RULE_SOURCE_CONSTRAINT_GUIDANCE);
     expect(requests[1]).toContain("Previous untrusted coverage submission");
     expect(report.passages[0]!.disposition).toBe("implemented");

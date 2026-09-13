@@ -8481,6 +8481,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           if (answer?.trim()) {
             rememberModelAuthoringClarification(authoringConversation, question, answer);
             await persistAuthoringResume("authority_review");
+            if (resumePersistenceBlocked) throw checkpointSaveFailure("The business clarification");
           }
           return answer;
         },

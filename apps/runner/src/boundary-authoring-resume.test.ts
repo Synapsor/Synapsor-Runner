@@ -540,6 +540,9 @@ describe("Boundary authoring resume state", () => {
   });
 
   it.each([
+    "Yes. Each tenant is exactly one league, and each principal is an assigned referee within that league. Referees in the same league share the limit of two automatic ratifications in the rolling 24 hours; all leagues share the overall limit of six.",
+    "Each tenant is one organization. Each principal is a member of that organization; allow four approvals per day across members.",
+    "A tenant is exactly one department, and a principal is an assigned reviewer. The allowance is seven per department and twenty overall.",
     "Before fixing the validation error, answer one question exactly. In the reviewed scope right now, which column is bound as the tenant - carrier_id or account_id? And is that 10-per-24-hours cap counted per carrier organisation or per customer account? If the tenant is bound to account_id then the cap is per account, which is not what I required.",
     "Which column is bound as the tenant - scope_a or scope_b? If the tenant is bound to scope_b then the cap has the wrong scope.",
     "Yes. app.person is the authenticated patron's trusted identity and filters c01. app.tenant is the trusted library/account identity and filters c02. They are distinct even though both source columns are UUID. Keep these bindings private and outside model arguments.",
@@ -564,6 +567,8 @@ describe("Boundary authoring resume state", () => {
 
   it.each(["tenant is acme-corp", "app.tenant = acme-corp", "principal_id: user-123", "tenant is the-account-123",
     "tenant is bound to customer123",
+    "tenant = exactly one organization", "tenant: one organization", "tenant is exactly one customer123",
+    "Each tenant is exactly one organization. principal_id = user-123",
     "Which column is bound as the tenant - scope_a or scope_b? tenant is bound to acme-corp",
     "Which column is bound as the tenant - scope_a or scope_b? tenant is bound to scope_b. principal_id = user-123",
     "Which column is bound as the tenant - scope_a or scope_b? tenant = bound",

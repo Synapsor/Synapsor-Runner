@@ -24,6 +24,28 @@ function approved(text?: string) {
 }
 
 describe("complete operator-selected policy text", () => {
+
+  it("retains supporting source assertions through saved coverage without turning them into overrides", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-source-assertion-"));
+    try {
+      const source = policyTextSnapshot(Buffer.from("Only synthetic records may be processed."), "rules.txt");
+      const answer = "The entire disposable source contains synthetic records; it is not a mixed source.";
+      const draft = { runner_evidence: { reviewed_source: "records" } };
+      const session = newPolicySourceSession(); session.snapshots = [source]; session.active = 1; session.operator_messages = [answer];
+      const report = parsePolicyCoverage({ passages: [{ start: 1, end: 1, disposition: "implemented", responsibility: "operator",
+        interpretation: "The owner asserts a source-level restriction; this is not independent database proof.",
+        draft_paths: ["/runner_evidence/reviewed_source"], operator_message_id: 1 }] }, source, draft, session.operator_messages);
+      expect(report.passages[0]).toMatchObject({ operator_clarification: answer });
+      expect(report.passages[0]).not.toHaveProperty("operator_override");
+      session.coverage = report;
+      await savePolicySources(root, session);
+      const loaded = await loadPolicySources(root, session.id);
+      expect(loaded?.coverage).toEqual(report);
+      expect(parsePolicyCoverage({ passages: loaded!.coverage!.passages }, source, draft, [answer])).toEqual(report);
+      expect(() => parsePolicyCoverage({ passages: report.passages }, source, draft, ["A mixed source needs row eligibility."])).toThrow("recorded operator message");
+      expect(() => parsePolicyCoverage({ passages: [{ ...report.passages[0], disposition: "overridden" }] }, source, draft, [answer])).toThrow("override");
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
   it("binds OpenRouter rules transfer to its actual service, not the local provider default", () => {
     const remote = { provider: "openrouter", model: "openai/gpt-5.6-terra" };
     expect(authoringDestination(remote)).toBe("openrouter[openai/gpt-5.6-terra] at https://openrouter.ai/api/v1");
@@ -109,6 +131,26 @@ describe("complete operator-selected policy text", () => {
     expect(activePolicySource(await loadPolicySources(root, restored.id))).toBeUndefined();
     expect(conversation.policySources.operator_messages).toBeUndefined();
     expect(conversation.policySources.snapshots).toEqual([]);
+  });
+
+  it("rejects an unsaveable answer before carrying it into another revision and accepts a corrected answer", async () => {
+    const root = await directory(), conversation = createModelAuthoringConversation();
+    conversation.policySources = approved();
+    await savePolicySources(root, conversation.policySources);
+    const before = structuredClone(conversation.policySources);
+    let record!: (answer: string) => Promise<void>;
+    const changed = vi.fn(async () => undefined);
+    const chat = { session: {}, setSourceAnswerRecorder: (value: typeof record) => { record = value; },
+      setSourceCommandHandler: () => undefined } as unknown as BoundaryAuthoringChat;
+    installPolicySourceCommands({ root, chat, conversation, destination: () => destination, onChange: changed });
+    await expect(record("Each tenant is exactly one organization; principal_id: user-123")).rejects.toThrow("TRUSTED_IDENTITY_BLOCKED");
+    expect(conversation.policySources).toEqual(before);
+    expect(await loadPolicySources(root, before.id)).toEqual(before);
+    expect(changed).not.toHaveBeenCalled();
+    const answer = "Each tenant is exactly one organization; each principal is an assigned reviewer. Three approvals are shared within the organization.";
+    await record(answer);
+    expect((await loadPolicySources(root, before.id)).operator_messages).toEqual([answer]);
+    expect(changed).toHaveBeenCalledOnce();
   });
 
   it("drops corrupt optional coverage without losing an intact source snapshot", async () => {
@@ -357,6 +399,34 @@ describe("complete operator-selected policy text", () => {
     expect(report.passages[0]!.evidence_checks![0]!.equals).toBe("account_id");
     expect(report.passages[1]!.disposition).toBe("conflict");
     expect(JSON.stringify(draft)).toBe(before);
+  });
+
+  it("keeps a clarified source meaning in a no-op resumed review, and drops it when dependencies change", async () => {
+    const root = await directory(), source = snapshot("Only synthetic records may be processed."), sources = approved(source.text);
+    const answer = "The whole disposable source is synthetic; no mixed population is present.";
+    sources.operator_messages = [answer];
+    const draft = { runner_evidence: { source_scope: "reviewed-source", nullable: false } };
+    const entry = { start: 1, end: 1, disposition: "implemented", responsibility: "operator", operator_message_id: 1,
+      interpretation: "Source-level assertion by the owner, not independent row proof; unrelated enforcement remains required.",
+      draft_paths: ["/runner_evidence/source_scope"] };
+    sources.coverage = parsePolicyCoverage({ passages: [entry] }, source, draft, [answer]);
+    await savePolicySources(root, sources);
+    const restored = await loadPolicySources(root, sources.id), requests: string[] = [];
+    const conversation = createModelAuthoringConversation(); conversation.policySources = restored;
+    const session = { ...destination, conversation, dependencies: { requestJson: async (request: { body: unknown }) => {
+      requests.push(JSON.stringify(request.body));
+      return { status: 200, body: { output: [{ type: "function_call", name: "runner__review_policy_coverage", call_id: "coverage",
+        arguments: JSON.stringify({ passages: [entry] }) }] } };
+    } } };
+    const report = await reviewPolicyCoverage({ session, source, draft, previousReport: restored.coverage, env: { OPENAI_API_KEY: "test-key" } });
+    expect(report).toEqual(restored.coverage);
+    expect(requests[0]).toContain("Previous supporting interpretations for this unchanged source and draft");
+    expect(requests[0]).toContain("not independent database proof or a per-row classifier");
+    expect(requests[0]).not.toContain("operator_clarification"); // Saved provenance is projected through the existing indexed tool field.
+    await reviewPolicyCoverage({ session, source, draft: { ...draft, changed_source_facts: true }, previousReport: report, env: { OPENAI_API_KEY: "test-key" } });
+    expect(requests[1]).not.toContain("Previous supporting interpretations for this unchanged source and draft");
+    expect(requests).toHaveLength(2);
+    expect(draft).toEqual({ runner_evidence: { source_scope: "reviewed-source", nullable: false } });
   });
 
   it("corrects one prose-only coverage response without changing the draft", async () => {

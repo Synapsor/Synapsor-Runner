@@ -5602,7 +5602,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 25_000);
 
-  it("resumes a saved disabled Read mapping after Action drafting stops without remapping reads", async () => {
+  it.each([false, true])("resumes disabled Read and saves a semantic clarification without remapping (pause before answer: %s)", async (pauseBeforeAnswer) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-action-resume-"));
     const inspection = principalScopeInspection();
     const build = buildAutoBoundary({
@@ -5636,15 +5636,19 @@ describe("boundary operator-plane CLI", () => {
         source_database_changed: false,
       };
     });
+    const scopeAnswer = "Yes. Each tenant is exactly one league, and each principal is an assigned referee within that league. Referees in the same league share the limit of two automatic ratifications in the rolling 24 hours; all leagues share the overall limit of six.";
     let actionDraftAttempt = 0;
     let resumedMessages: string[] | undefined;
     const modelActionRuleGenerator = vi.fn(async (input: Parameters<typeof generateModelActionRuleDraft>[0]) => {
       actionDraftAttempt += 1;
-      if (actionDraftAttempt === 1) {
+      if (pauseBeforeAnswer && actionDraftAttempt === 1) {
+        throw new AskError("ASK_CANCELLED", "Operator pauses before answering the pending business question.", 499);
+      }
+      if (actionDraftAttempt === (pauseBeforeAnswer ? 2 : 1)) {
         const answer = await input.askClarification?.(
           "What is the maximum number of automatically approved follow-ups in a rolling 24-hour window?",
         );
-        expect(answer).toBe("At most three per customer each rolling 24 hours.");
+        expect(answer).toBe(scopeAnswer);
         const refused = actionRuleAuthoringCheckpoint({
           intent_digest: canonicalJsonDigest(input.intent),
           context_digest: canonicalJsonDigest({ catalog: input.builtCatalog.catalog, read: input.readBoundaryDigest, baseline: null }),
@@ -5686,15 +5690,15 @@ describe("boundary operator-plane CLI", () => {
       editFieldTiers: async () => undefined,
       promptText: async (prompt) => {
         if (!resume && prompt.includes("What job are you giving this agent?")) return operatorJob;
-        if (!resume && prompt.includes("maximum number of automatically approved follow-ups")) {
-          return "At most three per customer each rolling 24 hours.";
+        if (prompt.includes("maximum number of automatically approved follow-ups")) {
+          return scopeAnswer;
         }
         throw new Error(`Unexpected resumable Action text prompt: ${prompt}`);
       },
-      chooseOption: async (title) => {
+      chooseOption: async (title, _options, details) => {
         if (title === "START BOUNDARY DRAFTING") return resume ? "resume" : "model";
         if (title === "ACTION BOUNDARY MODEL DRAFT FAILED") return "back";
-        throw new Error(`Unexpected resumable Action choice: ${title}`);
+        throw new Error(`Unexpected resumable Action choice: ${title}: ${details?.context?.join(" ") ?? ""}`);
       },
       confirm: async (prompt) => {
         if (prompt.startsWith("Send this Boundary-authoring conversation")) {
@@ -5705,6 +5709,34 @@ describe("boundary operator-plane CLI", () => {
       confirmActivation: async () => false,
       confirmReviewedDisabled: async () => true,
     });
+    const resumeJob = async () => {
+      const resumedPlanner = vi.fn(async () => {
+        throw new Error("The saved job route must not be planned again.");
+      });
+      const resumedSession = makeSession(true);
+      await expect(boundaryReviewCommandInternal(
+        ["--project-root", root, "--access", "--job-first"],
+        async () => inspection,
+        resumedSession,
+        undefined,
+        {
+          startWithAgentJob: true,
+          modelAuthoringSession: {
+            provider: "openai",
+            model: "gpt-test",
+            apiKey: "session-secret",
+          },
+          modelBoundaryJobPlanner: resumedPlanner,
+          modelReadWorkloadGenerator,
+          modelActionRuleGenerator,
+          modelAuthoringNarrator: async () => "I retained the exact mapped reads and resumed the Action step.",
+          actionProjectInspector: async () => inspection,
+          boundaryAuthoringChatFactory: () => testBoundaryAuthoringChat(resumedSession),
+        },
+      )).resolves.toBe(0);
+
+      expect(resumedPlanner).not.toHaveBeenCalled();
+    };
     try {
       await writeAutoBoundaryArtifacts({ projectRoot: root, build });
       const firstSession = makeSession(false);
@@ -5749,12 +5781,13 @@ describe("boundary operator-plane CLI", () => {
       expect(savedAfterFailure).toHaveLength(1);
       expect(savedAfterFailure[0]).toMatchObject({ state: "ready" });
       expect(savedAfterFailure[0]?.review).toBeUndefined();
+      if (pauseBeforeAnswer) await resumeJob();
       const savedResume = await fs.readFile(
         path.join(root, ".synapsor/boundary-authoring/resume.json"),
         "utf8",
       );
       expect(savedResume).toContain(operatorJob);
-      expect(savedResume).toContain("At most three per customer each rolling 24 hours.");
+      expect(savedResume).toContain(scopeAnswer);
       expect(savedResume).not.toContain("session-secret");
       const resumeContext = await loadBoundaryReviewContext(root);
       const storedResumeState = await readBoundaryAuthoringResumeState(root, {
@@ -5774,36 +5807,12 @@ describe("boundary operator-plane CLI", () => {
           strategy: "rule_derived",
         },
       });
-      const resumedPlanner = vi.fn(async () => {
-        throw new Error("The saved job route must not be planned again.");
-      });
-      const resumedSession = makeSession(true);
-      await expect(boundaryReviewCommandInternal(
-        ["--project-root", root, "--access", "--job-first"],
-        async () => inspection,
-        resumedSession,
-        undefined,
-        {
-          startWithAgentJob: true,
-          modelAuthoringSession: {
-            provider: "openai",
-            model: "gpt-test",
-            apiKey: "session-secret",
-          },
-          modelBoundaryJobPlanner: resumedPlanner,
-          modelReadWorkloadGenerator,
-          modelActionRuleGenerator,
-          modelAuthoringNarrator: async () => "I retained the exact mapped reads and resumed the Action step.",
-          actionProjectInspector: async () => inspection,
-          boundaryAuthoringChatFactory: () => testBoundaryAuthoringChat(resumedSession),
-        },
-      )).resolves.toBe(0);
+      await resumeJob();
 
       expect(modelReadWorkloadGenerator).toHaveBeenCalledOnce();
-      expect(modelActionRuleGenerator).toHaveBeenCalledTimes(2);
-      expect(resumedPlanner).not.toHaveBeenCalled();
+      expect(modelActionRuleGenerator).toHaveBeenCalledTimes(pauseBeforeAnswer ? 3 : 2);
       expect(metadataEgressPrompts).toHaveLength(1);
-      expect(resumedMessages).toEqual(["At most three per customer each rolling 24 hours.",
+      expect(resumedMessages).toEqual([scopeAnswer,
         "The tenant is the trusted account context; the principal is the reviewed authenticated person."]);
     } finally {
       await fs.rm(root, { recursive: true, force: true });

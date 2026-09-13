@@ -244,7 +244,7 @@ export function buildBoundaryAuthoringResumeState(input: {
     source_query_executed: false as const,
     source_database_changed: false as const,
   };
-  assertNoPrivateRuntimeMaterial(core);
+  assertBoundaryAuthoringResumeMaterial(core);
   return {
     ...core,
     revision_digest: canonicalJsonDigest(core),
@@ -472,7 +472,7 @@ export function assertBoundaryAuthoringResumeState(
   if (value.pending_action_addition !== undefined) normalizeActionAddition(value.pending_action_addition);
   if (value.stage === "client_setup" && value.client_handoff === undefined) throw new Error("Client continuation requires its exact reviewed authority.");
   if (value.client_handoff !== undefined) normalizeClientHandoff(value.client_handoff as BoundaryAuthoringClientHandoff);
-  assertNoPrivateRuntimeMaterial(value);
+  assertBoundaryAuthoringResumeMaterial(value);
   const unsigned = { ...value } as Record<string, unknown>;
   delete unsigned.revision_digest;
   if (canonicalJsonDigest(unsigned) !== value.revision_digest) {
@@ -640,7 +640,7 @@ function reviewedText(value: string, label: string, maximum: number): string {
   return normalized;
 }
 
-function assertNoPrivateRuntimeMaterial(value: unknown): void {
+export function assertBoundaryAuthoringResumeMaterial(value: unknown): void {
   const serialized = JSON.stringify(value);
   if (/(?:postgres|mysql):\/\/|https?:\/\/(?!127\.0\.0\.1(?::\d+)?(?:\/|"))|BEGIN [A-Z ]*PRIVATE KEY|api[_-]?key\s*[:=]|bearer\s+[A-Za-z0-9._-]+/iu.test(serialized)) {
     throw new Error(
@@ -651,6 +651,14 @@ function assertNoPrivateRuntimeMaterial(value: unknown): void {
     /\b(?:tenant|principal)(?:[_ -]?id)?\s*(=|:|is)\s*["']?([A-Za-z0-9_-]{3,})/giu,
   )].some((match) => {
     if (/^(?:runner(?:-injected)?|trusted|runtime|environment|injected|symbolic|reviewed|unknown|unset|required|outside)$/iu.test(match[2]!)) return false;
+    // A quantified role definition describes cardinality, not a runtime value.
+    // Limit this to the bare role and natural-language copula; literal id/value
+    // assignments and every other match in the composed checkpoint still fail.
+    if (/^(?:tenant|principal)\s+is\s+(?:exactly|one)$/iu.test(match[0])) {
+      const tail = serialized.slice(match.index! + match[0].length);
+      if ((match[2]!.toLowerCase() === "exactly" ? /^\s+one\s+[A-Za-z]+(?=\s|[.,;!?\\"])/u
+        : /^\s+[A-Za-z]+(?=\s|[.,;!?\\"])/u).test(tail)) return false;
+    }
     // In a column-choice question, "is bound to <one of those columns>" names
     // a schema binding, not an identity value. Only that explicit reference is
     // exempt; assignments, unlisted values and other identities still fail.

@@ -14,6 +14,8 @@ export type ReadInterpretationRecord = {
 export type PolicyPassage = { start: number; end: number;
   disposition: "implemented" | "needs_decision" | "conflict" | "unsupported" | "background" | "overridden";
   interpretation: string; draft_paths: string[]; operator_override?: string;
+  /** Exact supporting operator statement; not independently proven and not a policy override. */
+  operator_clarification?: string;
   topic?: string;
   responsibility?: "operator" | "runner" | "deployment" | "application";
   issue_kind?: "business_choice" | "schema_meaning" | "missing_configuration" | "unsupported_requirement" | "contradiction" | "coverage_link";
@@ -265,6 +267,7 @@ function validStoredCoverage(report: PolicyCoverage, sources: PolicyTextSnapshot
           && check.path.length <= 500 && [check.current_capability, check.required_capability].every((value) => value === null || typeof value === "string" && value.length <= 256)))
       && (passage.application_obligations === undefined || validApplicationObligations(passage.application_obligations))
       && (passage.deployment_prerequisite === undefined || isDeferredPolicyDeployment(passage))
+      && (passage.operator_clarification === undefined || typeof passage.operator_clarification === "string" && passage.operator_clarification.length <= 4_000)
       && (passage.operator_override === undefined || typeof passage.operator_override === "string" && passage.operator_override.length <= 4_000)));
 }
 
