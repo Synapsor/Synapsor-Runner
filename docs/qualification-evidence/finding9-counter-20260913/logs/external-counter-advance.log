@@ -1,0 +1,8 @@
+BEGIN
+ slot_code |  status  | rev_no
+-----------+----------+--------
+ DOCK-A5   | reserved |      2
+(1 row)
+
+UPDATE 1
+COMMIT

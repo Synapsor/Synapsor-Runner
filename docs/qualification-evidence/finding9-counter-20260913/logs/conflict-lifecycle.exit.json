@@ -1,0 +1,11 @@
+{
+  "args": [
+    "lifecycle",
+    "show",
+    "wrp_rule_8cbba2a704ca24b285ab6d55548e2d34",
+    "--json",
+    "--config",
+    "./synapsor.actions.runner.json"
+  ],
+  "exit_code": 0
+}

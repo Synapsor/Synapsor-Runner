@@ -1,0 +1,10 @@
+{
+  "frozen_at": "2026-09-13T17:53:36.989655+00:00",
+  "source_commit": "811ed6a33a00d113c5c35d5f3a10c4fa9363dc66",
+  "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/finding9-counter-454a0d2-20260913/frozen/installed",
+  "node": "v22.22.2",
+  "entries": 7569,
+  "tree_sha256": "6556061d821319bb3184a70b8efb4116a5acb7db4df17ff873688ad97094c10b",
+  "package_lock_sha256": "6dd8020b20ac381b8dea3cb088045b3bc10340323764ab6d07c669d82dffa519",
+  "manifest_sha256": "7c72d2943133c3c32f4092c5db6bb58ef1772f7baf45c2936ff403330d3f060e"
+}

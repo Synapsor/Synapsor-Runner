@@ -1,0 +1,66 @@
+{
+  "declared_at": "2026-09-13T17:53:23.748912+00:00",
+  "classification": "Implementer-owned synthetic freight known-case verification; not independent acceptance",
+  "policy": {
+    "action": "freight.dispatch",
+    "scope": "tenant=carrier_id; principal=account_id from existing reader RLS",
+    "eligible": "shipment.status=ready and related dock slot.status=reserved",
+    "effect": "atomic shipment.status=dispatched and slot.status=consumed; both rev_no guards compare/increment",
+    "automatic": "weight_kg <=1000, at most10 automatic dispatches per tenant/carrier per rolling86400seconds",
+    "fallback": "one dispatcher approves other eligible requests",
+    "receipt": "existing Runner-ledger completion mode; no source_db requirement added"
+  },
+  "expected": {
+    "NW-1001": "eligible automatic if execution separately enabled",
+    "NW-1002": "eligible human review",
+    "NW-1003": "refuse consumed slot",
+    "NW-1004": "refuse cancelled shipment",
+    "NW-1005": "eligible human review",
+    "SL-9001": "excluded by trusted carrier/principal"
+  },
+  "steps": [
+    "initialize owned project",
+    "reviewed typed Read draft",
+    "public terminal counter cancellation/refusal and metadata drift",
+    "save exact atomic Action disabled with both counters",
+    "separate Read and Action review/activation",
+    "writer setup and execution only if supported prerequisites pass",
+    "record every unreached step and stop at next blocker"
+  ],
+  "max_fixture_attempts": 2,
+  "provider_calls": 0,
+  "verification_minutes": 45,
+  "status": "installed attempt1 running",
+  "started_at": "2026-09-13T17:54:18.777093+00:00",
+  "deadline": "2026-09-13T18:39:18.777093+00:00",
+  "artifact": {
+    "frozen_at": "2026-09-13T17:53:36.989655+00:00",
+    "source_commit": "811ed6a33a00d113c5c35d5f3a10c4fa9363dc66",
+    "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/finding9-counter-454a0d2-20260913/frozen/installed",
+    "node": "v22.22.2",
+    "entries": 7569,
+    "tree_sha256": "6556061d821319bb3184a70b8efb4116a5acb7db4df17ff873688ad97094c10b",
+    "package_lock_sha256": "6dd8020b20ac381b8dea3cb088045b3bc10340323764ab6d07c669d82dffa519",
+    "manifest_sha256": "7c72d2943133c3c32f4092c5db6bb58ef1772f7baf45c2936ff403330d3f060e"
+  },
+  "authoring_corrections": [
+    {
+      "at": "2026-09-13T17:59:43.113545+00:00",
+      "code": "ACTION_RULE_INVALID",
+      "cause": "Initial synthetic policy omitted mandatory overall/action accounting count. No counter mapping or draft was saved.",
+      "explicit_fixture_policy_correction": "Add overall capability20 per86400seconds while retaining tenant/carrier10 per86400seconds. No substitution; no product change.",
+      "limitation": "This fixture now demonstrates that exact pair of declared limits, not acceptance of the original single-count request."
+    }
+  ],
+  "counter_conflict_extension": {
+    "declared_at": "2026-09-13T18:13:19.970944+00:00",
+    "purpose": "Directly verify the reviewed secondary counter is enforced at execution, preserving primary atomic target",
+    "steps": [
+      "request NW-1005 using prior public Explore reference",
+      "approve through existing development operator CLI",
+      "external owner increments only owned DOCK-A5 rev_no, preserving status",
+      "finite worker must refuse conflict and apply neither business effect"
+    ],
+    "identity_limitation": "Default existing dev_env operator mode, verified=false; no signed identity or production identity qualification"
+  }
+}

@@ -1,0 +1,30 @@
+{
+  "checked_at": "2026-09-13T18:16:42.152079+00:00",
+  "entries": 15601,
+  "sha256": "1fbdf83e2ca9836ca88ba6b4185a482d0369d6ead807395f39b6248593734d78",
+  "changes": [
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/assignment-plan.json",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/design-note.md",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/fixture-baselines.json",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/preservation-start.json",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/preserve.py",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/receipt-before.json",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/run-local.py",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/scope-after01-exit.json",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/scope-after01-source-after.json",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/scope-after01-source.json",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/scope-after01.log",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/scope-after02-exit.json",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/scope-after02-source-after.json",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/scope-after02-source.json",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/scope-after02.log",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/scope-before-exit.json",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/scope-before-source-after.json",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/scope-before-source.json",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/scope-before.log",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/scope-decisions-before-exit.json",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/scope-decisions-before-source-after.json",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/scope-decisions-before-source.json",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913/scope-decisions-before.log"
+  ]
+}

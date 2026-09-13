@@ -1,0 +1,10 @@
+Ledger: local SQLite /tmp/finding9-project/.synapsor/local.db
+2026-09-13T18:14:55.861Z  receipt 3  failed
+  proposal: wrp_rule_8cbba2a704ca24b285ab6d55548e2d34  job: wbj_wrp_rule_8cbba2a704ca24b285ab6d55548e2d34
+  idempotency: semantic:wrp_rule_8cbba2a704ca24b285ab6d55548e2d34  source changed: no
+2026-09-13T18:13:32.501Z  receipt 2  applied
+  proposal: wrp_rule_29ee164e8f8bff539ae2f80df1a86d03  job: wbj_wrp_rule_29ee164e8f8bff539ae2f80df1a86d03
+  idempotency: semantic:wrp_rule_29ee164e8f8bff539ae2f80df1a86d03  source changed: yes
+2026-09-13T18:12:02.528Z  receipt 1  applied
+  proposal: wrp_rule_cb57f9c1733f75a6f69f143c074e72c0  job: wbj_wrp_rule_cb57f9c1733f75a6f69f143c074e72c0
+  idempotency: semantic:wrp_rule_cb57f9c1733f75a6f69f143c074e72c0  source changed: yes

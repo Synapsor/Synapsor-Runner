@@ -1,0 +1,101 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/.codex/worktrees/9997/synapsor-runner
+
+(node:3373755) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/manual-counter-review.integration.test.ts (9 tests | 7 failed) 28281ms
+   × model-free maintained-counter operator review > explicitly selects one ambiguous counter and saves it through the normal disabled Action compiler and store 4201ms
+     → expected { name: 'warehouse.items', …(10) } to match object { …(2) }
+(14 matching properties omitted from actual)
+   × model-free maintained-counter operator review > preserves an existing saved authority on pending 2636ms
+     → Unexpected menu: SELECT UPDATE TARGET
+   × model-free maintained-counter operator review > preserves an existing saved authority on cancel 2567ms
+     → Unexpected menu: SELECT UPDATE TARGET
+   × model-free maintained-counter operator review > preserves an existing saved authority on confirmed_then_cancel 4162ms
+     → Unexpected menu: SELECT UPDATE TARGET
+   × model-free maintained-counter operator review > preserves an existing saved authority on resource_back 2666ms
+     → Unexpected menu: SELECT UPDATE TARGET
+   × model-free maintained-counter operator review > preserves an existing saved authority on field_back 2567ms
+     → Unexpected menu: SELECT UPDATE TARGET
+   ✓ model-free maintained-counter operator review > rejects stale inspected metadata before_review  3807ms
+   ✓ model-free maintained-counter operator review > rejects stale inspected metadata during_confirmation  2999ms
+   × model-free maintained-counter operator review > rejects stale inspected metadata before_save 2675ms
+     → Unexpected menu: SELECT UPDATE TARGET
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 7 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/manual-counter-review.integration.test.ts > model-free maintained-counter operator review > explicitly selects one ambiguous counter and saves it through the normal disabled Action compiler and store
+AssertionError: expected { name: 'warehouse.items', …(10) } to match object { …(2) }
+(14 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "operations": {
+      "update": false,
+    },
+    "version_field_options": [
++     "c09",
+      "q_av",
+      "reorder_point",
+-     "c09",
+    ],
+  }
+
+ ❯ apps/runner/src/manual-counter-review.integration.test.ts:92:58
+     90|     expect(await f.structured(["--export-draft", "before.json"])).toBe…
+     91|     const before = JSON.parse(await fs.readFile(path.join(f.root, "bef…
+     92|     expect(before.action_authoring_catalog.resources[0]).toMatchObject…
+       |                                                          ^
+     93|     const session = reviewSession();
+     94|     const result = await runManualSemanticActionEditor({ projectRoot: …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/7]⎯
+
+ FAIL  apps/runner/src/manual-counter-review.integration.test.ts > model-free maintained-counter operator review > preserves an existing saved authority on pending
+ FAIL  apps/runner/src/manual-counter-review.integration.test.ts > model-free maintained-counter operator review > preserves an existing saved authority on cancel
+ FAIL  apps/runner/src/manual-counter-review.integration.test.ts > model-free maintained-counter operator review > preserves an existing saved authority on confirmed_then_cancel
+ FAIL  apps/runner/src/manual-counter-review.integration.test.ts > model-free maintained-counter operator review > preserves an existing saved authority on resource_back
+ FAIL  apps/runner/src/manual-counter-review.integration.test.ts > model-free maintained-counter operator review > preserves an existing saved authority on field_back
+Error: Unexpected menu: SELECT UPDATE TARGET
+ ❯ Object.<anonymous> apps/runner/src/manual-counter-review.integration.test.ts:62:38
+     60|     choose: vi.fn(async (title, choices, _context, initial) => {
+     61|       const value = title === "MANUAL SEMANTIC ACTIONRULE" ? modes.shi…
+     62|       if (value === undefined) throw new Error(`Unexpected menu: ${tit…
+       |                                      ^
+     63|       expect(choices.some(choice => choice.value === value)).toBe(true…
+     64|       if (title.startsWith("SELECT COUNTER") || title === "SELECT MAIN…
+ ❯ chooseExactValue apps/runner/src/manual-semantic-action-editor.ts:738:35
+ ❯ chooseResource apps/runner/src/manual-semantic-action-editor.ts:662:10
+ ❯ collectManualActionValues apps/runner/src/manual-semantic-action-editor.ts:602:30
+ ❯ collectManualActionEdit apps/runner/src/manual-semantic-action-editor.ts:555:18
+ ❯ runManualSemanticActionEditor apps/runner/src/manual-semantic-action-editor.ts:331:14
+ ❯ apps/runner/src/manual-counter-review.integration.test.ts:116:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/7]⎯
+
+ FAIL  apps/runner/src/manual-counter-review.integration.test.ts > model-free maintained-counter operator review > rejects stale inspected metadata before_save
+Error: Unexpected menu: SELECT UPDATE TARGET
+ ❯ apps/runner/src/manual-counter-review.integration.test.ts:62:38
+     60|     choose: vi.fn(async (title, choices, _context, initial) => {
+     61|       const value = title === "MANUAL SEMANTIC ACTIONRULE" ? modes.shi…
+     62|       if (value === undefined) throw new Error(`Unexpected menu: ${tit…
+       |                                      ^
+     63|       expect(choices.some(choice => choice.value === value)).toBe(true…
+     64|       if (title.startsWith("SELECT COUNTER") || title === "SELECT MAIN…
+ ❯ Object.prompter.choose apps/runner/src/manual-counter-review.integration.test.ts:150:100
+ ❯ chooseExactValue apps/runner/src/manual-semantic-action-editor.ts:738:35
+ ❯ chooseResource apps/runner/src/manual-semantic-action-editor.ts:662:10
+ ❯ collectManualActionValues apps/runner/src/manual-semantic-action-editor.ts:602:30
+ ❯ collectManualActionEdit apps/runner/src/manual-semantic-action-editor.ts:555:18
+ ❯ runManualSemanticActionEditor apps/runner/src/manual-semantic-action-editor.ts:331:14
+ ❯ apps/runner/src/manual-counter-review.integration.test.ts:154:41
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/7]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  7 failed | 2 passed (9)
+   Start at  10:38:12
+   Duration  37.44s (transform 6.11s, setup 0ms, collect 8.92s, tests 28.28s, environment 0ms, prepare 56ms)

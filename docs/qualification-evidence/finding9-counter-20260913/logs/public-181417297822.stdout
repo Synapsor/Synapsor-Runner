@@ -1,0 +1,23 @@
+Proposal details: wrp_rule_8cbba2a704ca24b285ab6d55548e2d34
+
+Review details:
+principal: a1111111-1111-4111-8111-111111111111 (environment)
+tenant: c1111111-1111-4111-8111-111111111111
+target: external_postgres:local_postgres/public.shipments/f0000000-0000-4000-8000-000000000005
+primary key: id=f0000000-0000-4000-8000-000000000005
+status: pending_review
+action: freight.dispatch
+approval: pending required role dispatcher
+proposal hash: sha256:7c2b01065aceb8db8d79ce8d0f0f926b09e078ddf37b199c95ab1e1a26f0d9c3
+proposal version: 1
+allowed columns: status
+conflict guard: rev_no=1
+evidence: ev_rule_8cbba2a704ca24b285ab6d55548e2d34  query sha256:733f023aef6a0041e8a3310a8100fe41fbcec30096fed92b2d71c859c596faca  items 1
+writeback: not_applied via trusted_worker_required
+source database changed: no
+
+Diff:
+  status: not observed (not read) -> dispatched
+Freshness: not required (legacy target guard remains enforced at apply).
+approved wrp_rule_8cbba2a704ca24b285ab6d55548e2d34 (1/1)
+queued for separately trusted supervised execution under sha256:7922fc764140ef616ec1337616df97d3496bd2e39b41e9955af4628c0544391e

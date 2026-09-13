@@ -1,0 +1,379 @@
+Script started on 2026-09-13 11:00:43-07:00 [COMMAND="stty cols 140 rows 48 && python3 docs/qualification-evidence/finding9-counter-20260913/launch-installed.py action review --project-root ." TERM="dumb" TTY="/dev/pts/6" COLUMNS="80" LINES="24"]
+    ACTION BOUNDARY
+    The Action Boundary is the reviewed set of changes an agent may propose. Approval and apply stay outside the agent.
+    Verified Action Boundary DISABLED DRAFT (1 outcome) | fixed app.describe_actions + app.request_change surface.
+    Caller-supplied Action Boundary OFF | no caller-supplied proposal authority.
+    Caller-supplied actions: active 0 | drafts 0 | proposal-only by default.
+    Targets with at least one proposal operation 0 | Fully blocked 2.
+
+    > Verified Action Boundary [DISABLED DRAFT]
+        reviewed_staging_actions | 1 reviewed outcome behind app.request_change
+      Change a verified outcome with a model [recommended]
+        Describe the business-policy change. Runner retains the exact baseline and saves only a disabled replacement.
+      Edit business rules manually
+        Create or edit one supported proposal-only rule. Changes stay disabled until separate review; unsupported rules remain unchanged.
+      Caller-supplied Action Boundary [OFF]
+        No agent change authority is active or drafted.
+      Create a proposal action (recommended)
+        Describe the effect. Runner prepares one proposal-only action card and rehearses it without source writes.
+      Advanced action design
+        Choose fixed values, transitions, approval policy, execution posture, receipts, and every low-level field decision.
+      Ask a model for a bounded suggestion
+        Sends structural candidate metadata only; the result remains untrusted and non-authoritative.
+      Readiness and blocked targets
+        0 have at least one proposal operation; 2 need direct write-scope or schema remediation.
+      Proposal inbox and lifecycle
+        Review proposals, approvals, apply posture, receipts, replay, and evidence.
+      Quit
+
+    Up/Down Navigate   Enter Select   Esc Back   Q Quit    VERIFIED ACTION BOUNDARY
+    DISABLED DRAFT  reviewed_staging_actions
+    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+    | Outcome                           | Derived effect                      | Approval                      | Apply                    |
+    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+    | freight.dispatch                  | UPDATE public.shipments             | Policy + fallback             | Eligible, off            |
+    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+    The agent supplies an outcome and opaque subject reference only. Runner reloads facts and derives the effect.
+    Disabled revision is ready for its separate proposal-authority confirmation.
+
+    > Activate this exact proposal authority
+        Agents may nominate these outcomes; approval and apply remain separate.
+      View exact draft rules and examples
+        Shows private fields, refusals, examples, and digests for the disabled revision.
+      Edit business rules manually
+        The current draft and live permissions stay unchanged until a separate review activates a disabled replacement.
+      Describe a verified outcome change with a model
+        Retains the exact current Read and Action baseline; any replacement remains disabled until separate review.
+      Back
+
+    Up/Down Navigate   Enter Select   Esc Back    VERIFIED ACTION BOUNDARY
+    DISABLED DRAFT  reviewed_staging_actions
+    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+    | Outcome                           | Derived effect                      | Approval                      | Apply                    |
+    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+    | freight.dispatch                  | UPDATE public.shipments             | Policy + fallback             | Eligible, off            |
+    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+    The agent supplies an outcome and opaque subject reference only. Runner reloads facts and derives the effect.
+    Disabled revision is ready for its separate proposal-authority confirmation.
+
+      Activate this exact proposal authority
+        Agents may nominate these outcomes; approval and apply remain separate.
+    > View exact draft rules and examples
+        Shows private fields, refusals, examples, and digests for the disabled revision.
+      Edit business rules manually
+        The current draft and live permissions stay unchanged until a separate review activates a disabled replacement.
+      Describe a verified outcome change with a model
+        Retains the exact current Read and Action baseline; any replacement remains disabled until separate review.
+      Back
+
+    Up/Down Navigate   Enter Select   Esc Back    EXACT VERIFIED ACTION DETAILS
+    OUTCOME  freight.dispatch
+    WHEN     The shipment is ready and its dock slot is reserved under the same trusted carrier and customer account.
+    THEN     Atomically dispatch the shipment and consume its dock slot, checking and incrementing both maintained counters.
+    REFUSE   A cancelled or already dispatched shipment. A slot that is not reserved. Any request outside the trusted carrier and account.
+    REVIEW   1 distinct dispatcher approval
+    APPLY    Separately supervised; never model authority
+    PRIVATE  shipment: account_id, carrier_id, id, rev_no, slot_id; slot: account_id, carrier_id, id, rev_no
+    EXAMPLES
+    +--------------+-------------------------------------------------------+-------------------------------------------------------------+
+    | Case         | Scenario                                              | Result                                                      |
+    +--------------+-------------------------------------------------------+-------------------------------------------------------------+
+    | eligible     | Ready800kg shipment with reserved slot and available  | Automatic approval within10 per carrier per                 |
+    |              | carrier allowance.                                    | rolling86400seconds.                                        |
+    | human_review | Ready1500kg shipment with reserved slot.              | One dispatcher must approve.                                |
+    | ineligible   | Ready shipment whose slot is consumed.                | Refuse; neither row changes.                                |
+    +--------------+-------------------------------------------------------+-------------------------------------------------------------+
+    Rule digest: sha256:0b2048dc14688c765b58b3f37726c46620172322075ac7e83ba52e50b8c428f1
+    Compiled plan digest: sha256:0cabc8ef46d25939a9cb3040c8132c481aa79235635174fb52698e15030f7065
+    Action Boundary digest: sha256:6005f2dcdf6b5384decc3fcb927b648cd03b4e3ff17a6ae0386e99f557621650
+
+    EXACT AUTHORITY (OPERATOR ONLY)
+    Authority digest: sha256:717c24efc6fba6cf61e0e4a50d19944088d5008bdd718629b979fa5b45155794
+    The complete reviewed predicates, effects, private verification, approval limits and dependencies follow.
+    ```json
+    {
+      "schema_version": "synapsor.action-rule-authority.v1",
+      "name": "reviewed_staging_rules",
+      "catalog": {
+        "generation_lock_fingerprint": "sha256:75af426efa50939958e6aa7ea8367fd56ee1ffffb438086610c828b0636a87d6",
+        "relationships": [
+          {
+            "cardinality": "many_to_one",
+            "from_resource": "public.shipments",
+            "local_field": "slot_id",
+            "name": "shipments_slot_id_fkey",
+            "nullable": false,
+            "target_field": "id",
+            "target_unique": true,
+            "to_resource": "public.dock_slots"
+          }
+        ],
+  ... 618 rows hidden ...
+
+    > Back to Action Boundary
+
+    Up/Down Navigate   Enter Select   Esc Back
+    PgUp/PgDn Scroll hidden details    VERIFIED ACTION BOUNDARY
+    DISABLED DRAFT  reviewed_staging_actions
+    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+    | Outcome                           | Derived effect                      | Approval                      | Apply                    |
+    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+    | freight.dispatch                  | UPDATE public.shipments             | Policy + fallback             | Eligible, off            |
+    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+    The agent supplies an outcome and opaque subject reference only. Runner reloads facts and derives the effect.
+    Disabled revision is ready for its separate proposal-authority confirmation.
+
+    > Activate this exact proposal authority
+        Agents may nominate these outcomes; approval and apply remain separate.
+      View exact draft rules and examples
+        Shows private fields, refusals, examples, and digests for the disabled revision.
+      Edit business rules manually
+        The current draft and live permissions stay unchanged until a separate review activates a disabled replacement.
+      Describe a verified outcome change with a model
+        Retains the exact current Read and Action baseline; any replacement remains disabled until separate review.
+      Back
+
+    Up/Down Navigate   Enter Select   Esc Back    CONFIRM REVIEWED DECISION
+    Default: no
+
+      Yes
+        Activate verified Action Boundary "reviewed_staging_actions"?
+    > No
+        Leave this decision unchanged or return.
+
+    Up/Down Navigate   Enter Select   Esc Back    CONFIRM REVIEWED DECISION
+    Default: no
+
+    > Yes
+        Activate verified Action Boundary "reviewed_staging_actions"?
+      No
+        Leave this decision unchanged or return.
+
+    Up/Down Navigate   Enter Select   Esc Back    ACTION BOUNDARY
+    The Action Boundary is the reviewed set of changes an agent may propose. Approval and apply stay outside the agent.
+    Verified Action Boundary ACTIVE (1 outcome) | fixed app.describe_actions + app.request_change surface.
+    Caller-supplied Action Boundary OFF | no caller-supplied proposal authority.
+    Caller-supplied actions: active 0 | drafts 0 | proposal-only by default.
+    Targets with at least one proposal operation 0 | Fully blocked 2.
+    Verified Action Boundary active.
+    reviewed_staging_actions: 1 verified outcome.
+    Agents may nominate an outcome and opaque subjects; Runner verifies and derives the exact proposal.
+    Action MCP config: ./synapsor.actions.runner.json
+    Approval and apply remain separate. Source database changed: no.
+
+    > Change a verified outcome with a model [recommended]
+        Describe the business-policy change. Runner retains the exact baseline and saves only a disabled replacement.
+      Verified Action Boundary [ACTIVE]
+        reviewed_staging_actions | 1 reviewed outcome behind app.request_change
+      Edit business rules manually
+        Create or edit one supported proposal-only rule. Changes stay disabled until separate review; unsupported rules remain unchanged.
+      Caller-supplied Action Boundary [OFF]
+        No agent change authority is active or drafted.
+      Create a proposal action (recommended)
+        Describe the effect. Runner prepares one proposal-only action card and rehearses it without source writes.
+      Advanced action design
+        Choose fixed values, transitions, approval policy, execution posture, receipts, and every low-level field decision.
+      Ask a model for a bounded suggestion
+        Sends structural candidate metadata only; the result remains untrusted and non-authoritative.
+      Readiness and blocked targets
+        0 have at least one proposal operation; 2 need direct write-scope or schema remediation.
+      Proposal inbox and lifecycle
+        Review proposals, approvals, apply posture, receipts, replay, and evidence.
+      Quit
+
+    Up/Down Navigate   Enter Select   Esc Back   Q Quit    ACTION BOUNDARY
+    The Action Boundary is the reviewed set of changes an agent may propose. Approval and apply stay outside the agent.
+    Verified Action Boundary ACTIVE (1 outcome) | fixed app.describe_actions + app.request_change surface.
+    Caller-supplied Action Boundary OFF | no caller-supplied proposal authority.
+    Caller-supplied actions: active 0 | drafts 0 | proposal-only by default.
+    Targets with at least one proposal operation 0 | Fully blocked 2.
+    Verified Action Boundary active.
+    reviewed_staging_actions: 1 verified outcome.
+    Agents may nominate an outcome and opaque subjects; Runner verifies and derives the exact proposal.
+    Action MCP config: ./synapsor.actions.runner.json
+    Approval and apply remain separate. Source database changed: no.
+
+      Change a verified outcome with a model [recommended]
+        Describe the business-policy change. Runner retains the exact baseline and saves only a disabled replacement.
+    > Verified Action Boundary [ACTIVE]
+        reviewed_staging_actions | 1 reviewed outcome behind app.request_change
+      Edit business rules manually
+        Create or edit one supported proposal-only rule. Changes stay disabled until separate review; unsupported rules remain unchanged.
+      Caller-supplied Action Boundary [OFF]
+        No agent change authority is active or drafted.
+      Create a proposal action (recommended)
+        Describe the effect. Runner prepares one proposal-only action card and rehearses it without source writes.
+      Advanced action design
+        Choose fixed values, transitions, approval policy, execution posture, receipts, and every low-level field decision.
+      Ask a model for a bounded suggestion
+        Sends structural candidate metadata only; the result remains untrusted and non-authoritative.
+      Readiness and blocked targets
+        0 have at least one proposal operation; 2 need direct write-scope or schema remediation.
+      Proposal inbox and lifecycle
+        Review proposals, approvals, apply posture, receipts, replay, and evidence.
+      Quit
+
+    Up/Down Navigate   Enter Select   Esc Back   Q Quit    VERIFIED ACTION BOUNDARY
+    ACTIVE AUTHORITY  reviewed_staging_actions
+    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+    | Outcome                           | Derived effect                      | Approval                      | Apply                    |
+    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+    | freight.dispatch                  | UPDATE public.shipments             | Policy + fallback             | Eligible, off            |
+    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+    The agent supplies an outcome and opaque subject reference only. Runner reloads facts and derives the effect.
+    This verified Action Boundary is active. Approval and apply remain separate.
+
+      View active authority details
+        Shows the exact saved rules; current Read dependencies still determine availability.
+      Continue client setup
+        Connect Claude Code, Cursor or VS Code, review trusted identity and worker startup. Pending drafts stay saved; this choice grants
+        no authority.
+      Edit business rules manually
+        The current draft and live permissions stay unchanged until a separate review activates a disabled replacement.
+    > Describe a verified outcome change with a model
+        Retains the exact current Read and Action baseline; any replacement remains disabled until separate review.
+      Review supervised execution for freight.dispatch
+        Separately inspect and bind one least-privilege writer. No write runs during setup.
+      Deactivate verified proposal authority
+        Stops app.request_change for these outcomes; source data is unchanged.
+      Back
+
+    Up/Down Navigate   Enter Select   Esc Back    VERIFIED ACTION BOUNDARY
+    ACTIVE AUTHORITY  reviewed_staging_actions
+    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+    | Outcome                           | Derived effect                      | Approval                      | Apply                    |
+    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+    | freight.dispatch                  | UPDATE public.shipments             | Policy + fallback             | Eligible, off            |
+    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+    The agent supplies an outcome and opaque subject reference only. Runner reloads facts and derives the effect.
+    This verified Action Boundary is active. Approval and apply remain separate.
+
+      View active authority details
+        Shows the exact saved rules; current Read dependencies still determine availability.
+      Continue client setup
+        Connect Claude Code, Cursor or VS Code, review trusted identity and worker startup. Pending drafts stay saved; this choice grants
+        no authority.
+      Edit business rules manually
+        The current draft and live permissions stay unchanged until a separate review activates a disabled replacement.
+      Describe a verified outcome change with a model
+        Retains the exact current Read and Action baseline; any replacement remains disabled until separate review.
+    > Review supervised execution for freight.dispatch
+        Separately inspect and bind one least-privilege writer. No write runs during setup.
+      Deactivate verified proposal authority
+        Stops app.request_change for these outcomes; source data is unchanged.
+      Back
+
+    Up/Down Navigate   Enter Select   Esc Back    Set up database changes
+    Result            A write connection still needs to be selected and checked.
+    Runner confirmed  The saved action freight.dispatch has reached execution review.
+    What changes now  No database permissions or source records changed.
+    Not checked       Write grants, scoped policies and worker readiness.
+    Next step         Choose an existing connection, or prepare instructions for your database administrator.
+
+    > Choose a write connection
+        Select its environment variable; Runner checks the actual permissions before asking to enable execution.
+      Prepare administrator instructions
+        Inspect metadata through the read connection and export exact requirements for this saved action. No database grants are changed.
+      Save and continue later
+        Keep this job, its rules and active permissions. No execution is enabled by this setup.
+
+    Up/Down Navigate   Enter Select   Esc Back    Set up database changes
+    Result            A write connection still needs to be selected and checked.
+    Runner confirmed  The saved action freight.dispatch has reached execution review.
+    What changes now  No database permissions or source records changed.
+    Not checked       Write grants, scoped policies and worker readiness.
+    Next step         Choose an existing connection, or prepare instructions for your database administrator.
+
+      Choose a write connection
+        Select its environment variable; Runner checks the actual permissions before asking to enable execution.
+    > Prepare administrator instructions
+        Inspect metadata through the read connection and export exact requirements for this saved action. No database grants are changed.
+      Save and continue later
+        Keep this job, its rules and active permissions. No execution is enabled by this setup.
+
+    Up/Down Navigate   Enter Select   Esc Back    Administrator instructions prepared
+    Administrator handoff: /tmp/finding9-project/.synapsor/writer-handoffs/review-kvG9vN
+    Read README.md, requirements.json and grants.sql.
+    Scoped filter repair: review scoped-policies.sql after grants.sql. It adds only missing policies for the dedicated writer, using the
+    exact reviewed identity filters.
+    Existing policies stay unchanged. An administrator must apply the repair; then rescan and revalidate this saved job before rechecking
+    execution.
+    Inspected metadata using DATABASE_URL; writer access has NOT been verified.
+    Keep DATABASE_URL unchanged. Configure the new writer ONLY in SYNAPSOR_WRITE_FREIGHT_DISPATCH_EA9D396C.
+    Requirements include version advances, verification reads and row-lock privileges, not just business fields.
+    After administrator setup, select the write connection here for live verification. If schema/RLS changes, resume the same start
+    command with --rescan and revalidate the saved job.
+    No source rows, grants, activation records or rules changed.
+
+    > Return to pending review
+
+    Up/Down Navigate   Enter Select   Esc Back    Set up database changes
+    Result            A write connection still needs to be selected and checked.
+    Runner confirmed  The saved action freight.dispatch has reached execution review.
+    What changes now  No database permissions or source records changed.
+    Not checked       Write grants, scoped policies and worker readiness.
+    Next step         Choose an existing connection, or prepare instructions for your database administrator.
+
+    > Choose a write connection
+        Select its environment variable; Runner checks the actual permissions before asking to enable execution.
+      Prepare administrator instructions
+        Inspect metadata through the read connection and export exact requirements for this saved action. No database grants are changed.
+      Save and continue later
+        Keep this job, its rules and active permissions. No execution is enabled by this setup.
+
+    Up/Down Navigate   Enter Select   Esc Back    VERIFIED ACTION BOUNDARY
+    ACTIVE AUTHORITY  reviewed_staging_actions
+    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+    | Outcome                           | Derived effect                      | Approval                      | Apply                    |
+    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+    | freight.dispatch                  | UPDATE public.shipments             | Policy + fallback             | Eligible, off            |
+    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+
+    The agent supplies an outcome and opaque subject reference only. Runner reloads facts and derives the effect.
+    This verified Action Boundary is active. Approval and apply remain separate.
+
+      View active authority details
+        Shows the exact saved rules; current Read dependencies still determine availability.
+      Continue client setup
+        Connect Claude Code, Cursor or VS Code, review trusted identity and worker startup. Pending drafts stay saved; this choice grants
+        no authority.
+      Edit business rules manually
+        The current draft and live permissions stay unchanged until a separate review activates a disabled replacement.
+    > Describe a verified outcome change with a model
+        Retains the exact current Read and Action baseline; any replacement remains disabled until separate review.
+      Review supervised execution for freight.dispatch
+        Separately inspect and bind one least-privilege writer. No write runs during setup.
+      Deactivate verified proposal authority
+        Stops app.request_change for these outcomes; source data is unchanged.
+      Back
+
+    Up/Down Navigate   Enter Select   Esc Back    ACTION BOUNDARY
+    The Action Boundary is the reviewed set of changes an agent may propose. Approval and apply stay outside the agent.
+    Verified Action Boundary ACTIVE (1 outcome) | fixed app.describe_actions + app.request_change surface.
+    Caller-supplied Action Boundary OFF | no caller-supplied proposal authority.
+    Caller-supplied actions: active 0 | drafts 0 | proposal-only by default.
+    Targets with at least one proposal operation 0 | Fully blocked 2.
+    Verified Action Boundary remains active.
+    No authority or source data changed.
+
+    > Change a verified outcome with a model [recommended]
+        Describe the business-policy change. Runner retains the exact baseline and saves only a disabled replacement.
+      Verified Action Boundary [ACTIVE]
+        reviewed_staging_actions | 1 reviewed outcome behind app.request_change
+      Edit business rules manually
+        Create or edit one supported proposal-only rule. Changes stay disabled until separate review; unsupported rules remain unchanged.
+      Caller-supplied Action Boundary [OFF]
+        No agent change authority is active or drafted.
+      Create a proposal action (recommended)
+        Describe the effect. Runner prepares one proposal-only action card and rehearses it without source writes.
+      Advanced action design
+        Choose fixed values, transitions, approval policy, execution posture, receipts, and every low-level field decision.
+      Ask a model for a bounded suggestion
+        Sends structural candidate metadata only; the result remains untrusted and non-authoritative.
+      Readiness and blocked targets
+        0 have at least one proposal operation; 2 need direct write-scope or schema remediation.
+      Proposal inbox and lifecycle
+        Review proposals, approvals, apply posture, receipts, replay, and evidence.
+      Quit
+
+    Up/Down Navigate   Enter Select   Esc Back   Q Quit
+Script done on 2026-09-13 11:06:00-07:00 [COMMAND_EXIT_CODE="0"]

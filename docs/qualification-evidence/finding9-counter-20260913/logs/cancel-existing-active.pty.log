@@ -1,0 +1,16 @@
+    SELECT MAINTAINED CONFLICT COUNTER
+    UPDATE target: public.dock_slots. Select the exact counter identified by the source owner.
+    Structurally suitable integers are not evidence of maintenance. No field is selected automatically.
+    Confirm each counter's maintenance next. All mappings save only with the validated disabled draft; activation remains separate.
+
+      Cancel this draft submission
+      rev_no
+
+    Up/Down Navigate   Enter Select   Esc Back{
+  "ok": false,
+  "code": "ACTION_VERSION_REVIEW_CANCELLED",
+  "message": "ACTION_VERSION_REVIEW_CANCELLED: counter review cancelled. No Read or Action draft was saved.",
+  "source_database_changed": false,
+  "active_authority_changed": false,
+  "disabled_authority_changed": false
+}

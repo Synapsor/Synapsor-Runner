@@ -1,0 +1,15 @@
+{
+  "command": [
+    "node",
+    "node_modules/typescript/bin/tsc",
+    "-b",
+    "--pretty",
+    "false"
+  ],
+  "started_at": "2026-09-13T17:50:16.055035+00:00",
+  "network": "unshared namespace",
+  "originals": "read-only root; worktree and owned evidence writable",
+  "timeout_seconds": 1800,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T17:50:16.219843+00:00"
+}

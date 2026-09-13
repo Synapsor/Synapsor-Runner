@@ -1,0 +1,150 @@
+{
+  "operation": "Git copies only: remove ANSI CSI terminal controls, carriage returns, trailing whitespace and surplus blank EOF lines; original raw owned logs unchanged",
+  "files": [
+    {
+      "path": "logs/action-activation.pty.log",
+      "raw_owned_sha256": "6d525e42b075fd2ea973586c614b5b3083ac27098a5c4dbe193213f5067f94a4",
+      "readable_copy_sha256": "2184f7fcb6a120a28c95cadc278951fb134433a9e482240cdfc06348bf5d1507"
+    },
+    {
+      "path": "logs/apply-grants.sql.log",
+      "raw_owned_sha256": "2d581dc7113731d130449f8e0ecdf7b8a7e4bbf626a42b949d39e6f8135e45a8",
+      "readable_copy_sha256": "2d581dc7113731d130449f8e0ecdf7b8a7e4bbf626a42b949d39e6f8135e45a8"
+    },
+    {
+      "path": "logs/apply-scoped-policies.sql.log",
+      "raw_owned_sha256": "7c0519b5aea9165d9e201b54e2b75c12fe0917cf1a5805e4b6d0cd8927024a97",
+      "readable_copy_sha256": "7c0519b5aea9165d9e201b54e2b75c12fe0917cf1a5805e4b6d0cd8927024a97"
+    },
+    {
+      "path": "logs/build-package-01.log",
+      "raw_owned_sha256": "5d8426136bb4c8d101a25baafd64a03d83d0b59cbc2c73001c95f44c68425470",
+      "readable_copy_sha256": "5d8426136bb4c8d101a25baafd64a03d83d0b59cbc2c73001c95f44c68425470"
+    },
+    {
+      "path": "logs/cancel-existing-active.pty.log",
+      "raw_owned_sha256": "d26d00ec721993c4046fd26f418c2c9f847ea5c407a2f0fa14ff2c191769335c",
+      "readable_copy_sha256": "860f3382a69749401a8923356bf682c1f649df7eca95ea652505f8033ca1e49d"
+    },
+    {
+      "path": "logs/container-final.log",
+      "raw_owned_sha256": "492791721c1227ea495dbc9c6d091f8027255c4fb42817dcda64d7902d6eae3a",
+      "readable_copy_sha256": "492791721c1227ea495dbc9c6d091f8027255c4fb42817dcda64d7902d6eae3a"
+    },
+    {
+      "path": "logs/counter-cancel.pty.log",
+      "raw_owned_sha256": "6591598c9c0291f27acc597db4378c4f12c74ab2195f597ebb9cf47f02277e05",
+      "readable_copy_sha256": "ce0efbcbd7150666038eff207f3f08648bcdd987e875b1d6bb1e170bb55efc8f"
+    },
+    {
+      "path": "logs/counter-refuse.pty.log",
+      "raw_owned_sha256": "772a813d17bea127f3056e4dd00f6c9e1b4102b3d1c2cda8fe96441f635399ed",
+      "readable_copy_sha256": "205262bd27fb7693922306ad61f6e994936407a783de8a7b50a4ec30d86aae4b"
+    },
+    {
+      "path": "logs/counter-save-with-required-budget.pty.log",
+      "raw_owned_sha256": "46825ad8bb902168374a76e5597929ffdae159a01f29c0d560a8429ae5d95c14",
+      "readable_copy_sha256": "4d89427638a7efc1bfac53af5f7a86fb985349789190e783d45920b01c736ce3"
+    },
+    {
+      "path": "logs/counter-save.pty.log",
+      "raw_owned_sha256": "2b937cbd70e0721f22cfec07a456b26846d7f43affd41cf3a560997f58653ef7",
+      "readable_copy_sha256": "01fb0d75ec334c4f3b7aed22e5cf0a670f69b020a5d6d698e704d7ff3f55d8b5"
+    },
+    {
+      "path": "logs/counter-stale.pty.log",
+      "raw_owned_sha256": "0980eceaf708f4f1d72e795c261c3919b8c50264a10584ae1af04f59ea5c21f4",
+      "readable_copy_sha256": "cc46803474cc78a906029971d677e47d312d8ea989231ad534f3c493353af587"
+    },
+    {
+      "path": "logs/editor-placement-focused-second.log",
+      "raw_owned_sha256": "d46def5253aef3580bb9953d465df3343cf3b50e5e8b71a8ae4d52605b312824",
+      "readable_copy_sha256": "d153c33c169c0c8a65a9fe97dc1c50aa7703abe625693ee5135d3ea80ceabb24"
+    },
+    {
+      "path": "logs/external-counter-advance.log",
+      "raw_owned_sha256": "7cf136c317e5579cce5a52cbdef3ebe9d839f91e34b910adb44582b37d573dc4",
+      "readable_copy_sha256": "5ce112581f4691ec8d3112ae857c4c5e0eae25a45b92aa65e40e5b7368b57cb8"
+    },
+    {
+      "path": "logs/final-types-01.log",
+      "raw_owned_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "readable_copy_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "logs/finding9-focused-first.log",
+      "raw_owned_sha256": "0a310ba3bd3f08807cb31dde6136e28643ac4a6e1c1e6300aa399c9a70c3d605",
+      "readable_copy_sha256": "926b421bbef2c93b5cf697ac3081119f9cd2c16a6c9f5cbb14e5d5473e2b2f3c"
+    },
+    {
+      "path": "logs/finding9-initial-types.log",
+      "raw_owned_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "readable_copy_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "logs/fixture-01_schema.sql.log",
+      "raw_owned_sha256": "3ee011b3d64d7c04c1d068f8934e5bcff5d3008339fce344d67c4f99f51fccfa",
+      "readable_copy_sha256": "3ee011b3d64d7c04c1d068f8934e5bcff5d3008339fce344d67c4f99f51fccfa"
+    },
+    {
+      "path": "logs/fixture-02_roles_rls.sql.log",
+      "raw_owned_sha256": "bed89ccb98d7f577e4d4136cccfe4dec04eb511f0c8531cc2775e7e48c132857",
+      "readable_copy_sha256": "bed89ccb98d7f577e4d4136cccfe4dec04eb511f0c8531cc2775e7e48c132857"
+    },
+    {
+      "path": "logs/fixture-03_seed.sql.log",
+      "raw_owned_sha256": "a2519ee050cd5a6e2e38049cb9c9f7b9dc8b3f84e643d914e5441cfdac11695f",
+      "readable_copy_sha256": "a2519ee050cd5a6e2e38049cb9c9f7b9dc8b3f84e643d914e5441cfdac11695f"
+    },
+    {
+      "path": "logs/freeze-01.log",
+      "raw_owned_sha256": "eb0886b49fdcd2571e248e97a769e7cfe8b0dbbd520f1b0156fbf0e6fbd36993",
+      "readable_copy_sha256": "eb0886b49fdcd2571e248e97a769e7cfe8b0dbbd520f1b0156fbf0e6fbd36993"
+    },
+    {
+      "path": "logs/integrated-01.log",
+      "raw_owned_sha256": "be21a6d39fc8223bd3c3738b2caf2194f0406402a48f3a22a1a5c0601f4b10b1",
+      "readable_copy_sha256": "2f37691fae9d05d4792d57505eae013d90e566dbb0549bd7b168ad647b15b1f4"
+    },
+    {
+      "path": "logs/offline-checks-01.log",
+      "raw_owned_sha256": "377ff29b1b33e52ff2080981a6ab9265e0ee6d9c4d71eec8f5465b0441aa3950",
+      "readable_copy_sha256": "377ff29b1b33e52ff2080981a6ab9265e0ee6d9c4d71eec8f5465b0441aa3950"
+    },
+    {
+      "path": "logs/post-writer-action-review.pty.log",
+      "raw_owned_sha256": "e2f1b815b85a14cb7da74be76ca728eb7b6b0e953e1e1337e51a0d2d809f5a99",
+      "readable_copy_sha256": "074239f0b48b0dbefe22a05af82fdf3f4e8870f3bebf73530e5be1c84f8746b1"
+    },
+    {
+      "path": "logs/read-activation.pty.log",
+      "raw_owned_sha256": "abc98dbd2dc6a2ff059b209f8779e3a28cc8e570bba9281041616e2f79e45f72",
+      "readable_copy_sha256": "f0ee1d9f798a4fb60f5144bc13eff84e0da83d4a5289d10265193b6a4b356c71"
+    },
+    {
+      "path": "logs/rescan-writer.pty.log",
+      "raw_owned_sha256": "31791fc9ee3b9ece8f10405efff6f1705d7cd15f76592322875409109124276d",
+      "readable_copy_sha256": "d201d2e86fe2990622332c408f19204073d6f8d4111b62442d65c5009f33bb95"
+    },
+    {
+      "path": "logs/stale-metadata-injection.log",
+      "raw_owned_sha256": "fdac1d272fc268ffe81f82e51d6e867cfdb3d5dc7c79512f66c6386e9a115747",
+      "readable_copy_sha256": "fdac1d272fc268ffe81f82e51d6e867cfdb3d5dc7c79512f66c6386e9a115747"
+    },
+    {
+      "path": "logs/stale-metadata-restoration.log",
+      "raw_owned_sha256": "32251f688962c50a063bf2779079daef438fa5a4f6c4c71bedfb146a0ac2b7f9",
+      "readable_copy_sha256": "32251f688962c50a063bf2779079daef438fa5a4f6c4c71bedfb146a0ac2b7f9"
+    },
+    {
+      "path": "logs/structured-focused-01.log",
+      "raw_owned_sha256": "6f181ee75956101b11e22ca7a75d502b0eaa32560d50a83eb684863418798c83",
+      "readable_copy_sha256": "33b8b4d8ee29ac59d45a0fdc069a9fb2abd30e830a247d7c955b8c7584571923"
+    },
+    {
+      "path": "logs/types-01.log",
+      "raw_owned_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "readable_copy_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    }
+  ]
+}

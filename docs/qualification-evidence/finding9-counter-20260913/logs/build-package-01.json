@@ -1,0 +1,13 @@
+{
+  "command": [
+    "corepack",
+    "pnpm",
+    "build:runner-package"
+  ],
+  "started_at": "2026-09-13T17:47:57.643449+00:00",
+  "network": "unshared namespace",
+  "originals": "read-only root; worktree and owned evidence writable",
+  "timeout_seconds": 1800,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T17:48:23.622175+00:00"
+}
