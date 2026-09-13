@@ -1,0 +1,14 @@
+{
+  "focused": {
+    "passed": 32,
+    "files": 2
+  },
+  "integrated": {
+    "passed": 244,
+    "files": 9
+  },
+  "types": "passed (final-types-01)",
+  "full_suite": "not rerun; scoped authoring/compiler tests selected for this route-only change",
+  "prototype": "Retained obsolete editor-placement attempts: first 7 failures were test menu/ordering errors; second 67 passed/1 failed on ordering. Prototype discarded for route scope, not shipped.",
+  "network": "all final route tests unshared network; fetch explicitly refused and unused"
+}

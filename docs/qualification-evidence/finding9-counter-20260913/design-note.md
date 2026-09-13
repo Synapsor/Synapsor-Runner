@@ -1,0 +1,11 @@
+# Finding 9: model-free maintained-counter review
+
+Base: delivered repair `454a0d29c0c2f5fbaec9b883a54ee0df2cff3a60`, checked out only in the isolated worktree. The shared checkout is preserved. This task does not reopen Finding 8, Stage A acceptance, original Stage B, or the separate scope-intent and source-receipt setup blockers.
+
+`start --draft <file> --review-counters` (also `onboard db`) is an operator-terminal route into the existing `reviewActionVersionField`. The typed file supplies business rules, never confirmation. Runner lists each submitted UPDATE target including atomic companions, and requires an explicit choice among inspected fields. Cancellation is the default; the original owner confirmation remains pending by default and requires the all-writers-increment contract. Names and integer shape do not establish maintenance.
+
+The prepared catalog remains transient until the ordinary complete compiler and guarded disabled-draft transaction succeed. Cancellation or refusal saves nothing. The saved Action catalog carries the selected counter using the existing representation. No extra counter store, runtime mechanism, name recognition, model call, identity change or activation shortcut is introduced. The output retains the reviewed field/proof/maintenance result for operator evidence. A dry run grants no saved consent to a later submission.
+
+Current source metadata and the exact governed review bindings are checked around selection and confirmation; fresh metadata is checked again under project mutation exclusion before save. Existing policy epoch and revision checks, runtime admission, compiler, privacy, scope, approval/accounting, transaction and execution checks remain enabled. All draft changes remain disabled until separate human review and activation.
+
+An initial uncommitted prototype placed review in the integer manual editor. It was discarded because that would couple counter review to the form's limited Action shapes. Its patch and failed/intermediate test attempts are preserved in owned checkpoints/logs. The final route uses typed authoring's existing Action grammar and does not expand manual-editor parity. Original freight dispatch and downstream writer/execution/receipt coverage must be reported only to the actual installed steps reached.

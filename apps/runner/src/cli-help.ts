@@ -426,11 +426,12 @@ Options:
   ${cmd} start --from-env DATABASE_URL --rescan
   ${cmd} start --from-env DATABASE_URL --cli --single-tenant --organization-id internal-finance
 
-  # Metadata-only initialization and typed disabled drafts; no TTY/model API
+  # Metadata-only initialization and typed disabled drafts; no model API
   ${cmd} start --project-root . --from-env DATABASE_URL --json
   ${cmd} start --project-root . --export-draft ./boundary-authoring.json --json
   ${cmd} start --project-root . --draft ./boundary-authoring.json --dry-run --json
   ${cmd} start --project-root . --draft ./boundary-authoring.json --json
+  ${cmd} start --project-root . --draft ./boundary-authoring.json --review-counters
   ${cmd} start --project-root . --cli
 
   # Explicit legacy capability/code-first compatibility
@@ -450,7 +451,12 @@ boundary draft. --json emits one JSON result; --no-open also defers review.
 database environment or prompts for a hidden URL in a terminal; it is not a
 worker command. Existing manual artifacts are preserved, not silently migrated.
 
---export-draft and --draft operate on existing metadata with no TTY or provider.
+--export-draft and ordinary --draft operate on existing metadata without a provider.
+Add --review-counters to --draft in a real operator terminal to select each
+UPDATE target's maintained conflict counter and confirm its source-owner contract.
+This reuses the existing review without a model; --json or a file cannot confirm
+maintenance. Cancellation saves nothing; mappings save only with the validated
+disabled draft. --dry-run requires fresh confirmation on a later submission.
 Edit the exported typed Read/Action input; prose is not automatically parsed.
 --dry-run validates without publishing. Submission saves disabled drafts only.
 Read and Action authority need separate trusted human review; execution is a
@@ -1193,6 +1199,7 @@ The template receives an approved proposal writeback request and must return an 
   ${cmd} onboard db --project-root . --export-draft ./boundary-authoring.json --json
   ${cmd} onboard db --project-root . --draft ./boundary-authoring.json --dry-run --json
   ${cmd} onboard db --project-root . --draft ./boundary-authoring.json --json
+  ${cmd} onboard db --project-root . --draft ./boundary-authoring.json --review-counters
   ${cmd} onboard db --project-root . --cli
 
 TTY defaults to job-first model/manual chat; --cli makes that requirement
@@ -1202,6 +1209,12 @@ Auto Boundary artifacts. No model API or source-row query is needed.
 changes, not prose parsing. --dry-run publishes nothing; --yes never activates.
 Separate trusted human Read and Action review is required. Headless semantic
 activation is not implemented; legacy action activate is not a substitute.
+For UPDATE targets without a reviewed maintained counter, submit the typed draft
+with --review-counters in a real operator terminal. Select each exact inspected
+field and confirm that every source writer increments it on each update. The
+existing counter review needs no model. Integer structure is not maintenance
+proof; cancellation saves nothing. Mappings save only with the validated disabled
+draft. --dry-run saves nothing and a later submission requires fresh confirmation.
 For saved drafts use boundary review --project-root . --access, then
 action review --project-root . and choose Verified Action Boundary. No provider
 or new job conversation is required for these separate exact reviews.

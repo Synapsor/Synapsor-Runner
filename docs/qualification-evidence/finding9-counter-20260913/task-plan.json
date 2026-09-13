@@ -1,0 +1,21 @@
+{
+  "started_at": "2026-09-13T17:30:30Z",
+  "baseline": "454a0d29c0c2f5fbaec9b883a54ee0df2cff3a60",
+  "isolated_worktree": "/home/sandesh-tiwari/.codex/worktrees/9997/synapsor-runner",
+  "owned_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/finding9-counter-454a0d2-20260913",
+  "implementation_minutes": 90,
+  "verification_minutes": 45,
+  "max_installed_fixture_attempts": 2,
+  "max_provider_calls": 0,
+  "fixture": "Owned synthetic freight schema from read-only original DDL/seed copies; no historical queues",
+  "current_step": "Implement existing maintained-counter review in explicit action review --manual route; focused regressions then offline package and installed terminal exercise",
+  "stage_a": "Historical acceptance on exact278b66c only; Finding8 freight Read closed independently",
+  "stage_b": "NOT PASSED",
+  "excluded_repairs": [
+    "tournament scope-intent",
+    "software source-receipt setup",
+    "manual-editor parity",
+    "identity/authentication",
+    "counter name recognition"
+  ]
+}

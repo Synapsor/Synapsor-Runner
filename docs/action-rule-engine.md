@@ -483,3 +483,30 @@ that atomic.
 See [Safe Action Human Control Plane](safe-action-control-plane.md),
 [Proposal And Evidence Freshness](proposal-evidence-freshness.md), and the
 [Threat Model](../THREAT_MODEL.md).
+
+### Review a maintained counter without a model
+
+An unconventional counter name is not selected automatically. When the inspected
+`version_field_options` lists multiple integers, the source owner must identify
+which field is maintained by every writer on every update.
+
+After exporting and editing the typed Read/Action draft, submit it in an operator
+terminal:
+
+```sh
+synapsor-runner start --project-root . --draft boundary-authoring.json --review-counters
+```
+
+Runner shows each submitted UPDATE target, including atomic companion targets.
+Select its exact inspected field, then confirm the existing all-writers-increment
+contract. The selector defaults to cancellation and the maintenance review to
+pending. This uses no model or provider. A JSON file, `--json`, or `--yes` cannot
+supply that confirmation.
+
+Counter mappings are saved only when the complete draft validates and saves as
+disabled. Cancelling any counter review saves neither Read nor Action changes.
+`--dry-run` previews without saving; a later submission asks again. Current
+metadata and saved review bindings are checked throughout. Read visibility stays
+under its own review, and Action activation and execution remain separate
+operator decisions. This route does not prove how external writers behave or
+remove any other Action prerequisite.
