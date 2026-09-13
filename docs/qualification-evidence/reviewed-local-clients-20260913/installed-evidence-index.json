@@ -1,0 +1,67 @@
+{
+  "saved_at": "2026-09-13T06:58:53.716369+00:00",
+  "raw_private_records": [
+    {
+      "case": "admission_first",
+      "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/admission_first/completed-evidence-manifest.json",
+      "files": 28,
+      "sha256": "be570cc77f80f749926bb629166d2f4a17efeaf171db76733653d69b07d1161d"
+    },
+    {
+      "case": "collection",
+      "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/collection/completed-evidence-manifest.json",
+      "files": 13,
+      "sha256": "7529c98c98ea93c80e3f65fe915e41abd3762c49e09cb19fffd73ea9aa183eb4"
+    },
+    {
+      "case": "edit",
+      "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/edit/completed-evidence-manifest.json",
+      "files": 30,
+      "sha256": "56871b37e296b780276ccc445e8a166679567e9b91d69a71ce3b91bc2e05933a"
+    },
+    {
+      "case": "identity_lifecycle",
+      "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/identity_lifecycle/completed-evidence-manifest.json",
+      "files": 17,
+      "sha256": "a801e2c69ef41d462da2094d2128d5c1c56612e62ae71119c7f7569de455b2b8"
+    },
+    {
+      "case": "identity_lifecycle_02",
+      "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/identity_lifecycle_02/completed-evidence-manifest.json",
+      "files": 19,
+      "sha256": "8618a2ffd49f002eed9c1385855b354766ce8f8851d5c6eb3ec6dde93e4faa0f"
+    },
+    {
+      "case": "replacement_first",
+      "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/replacement_first/completed-evidence-manifest.json",
+      "files": 34,
+      "sha256": "3e45a43324e91c69c050247c9c7e5045ccc02460277587ec893f3f5803f3d7ed"
+    },
+    {
+      "case": "same_principal",
+      "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/same_principal/completed-evidence-manifest.json",
+      "files": 13,
+      "sha256": "9a8e9a9bb984dbc3c45b742e289cbf61f20d557ed7e04e04674b2f4e61f671de"
+    },
+    {
+      "case": "setup_dev",
+      "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/setup_dev/completed-evidence-manifest.json",
+      "files": 33,
+      "sha256": "124de926fb355c6ebb8f8d2c2ea4ed9e1ed1d036ca43c780700bdc53cdbacf13"
+    },
+    {
+      "case": "shared",
+      "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/shared/completed-evidence-manifest.json",
+      "files": 38,
+      "sha256": "98b4e9cd6b056665f8f8e868ed6f3f47c76af677a0e7f979379fc78bfd161e85"
+    },
+    {
+      "case": "shared_02",
+      "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/shared_02/completed-evidence-manifest.json",
+      "files": 47,
+      "sha256": "dbd814142a68aa148e7dd0c40f5d8fb5b5f78b84c4bdfce6fb445828ef8dcdc8"
+    }
+  ],
+  "historical_failure_stores": "preserved; no in-place rerun",
+  "source_dumps": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/cleanup/saved-state.json"
+}

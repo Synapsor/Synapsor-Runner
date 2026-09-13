@@ -1,0 +1,167 @@
+{
+  "source": "23e51b1e17c5ec22492518be6d3f6bb0d752bfe7",
+  "full_suite_skipped": 461,
+  "by_file": [
+    {
+      "file": "apps/runner/src/action-rule-model.test.ts",
+      "skipped_tests": 1
+    },
+    {
+      "file": "apps/runner/src/authoring-policy-coverage.test.ts",
+      "skipped_tests": 1
+    },
+    {
+      "file": "apps/runner/src/boundary-writer-rescan-postgres.integration.test.ts",
+      "skipped_tests": 1
+    },
+    {
+      "file": "apps/runner/src/control-policy-authority-codec.test.ts",
+      "skipped_tests": 174
+    },
+    {
+      "file": "apps/runner/src/control-policy-store.test.ts",
+      "skipped_tests": 1
+    },
+    {
+      "file": "apps/runner/src/delegated-writeback.test.ts",
+      "skipped_tests": 14
+    },
+    {
+      "file": "apps/runner/src/guided-atomic-live.test.ts",
+      "skipped_tests": 1
+    },
+    {
+      "file": "apps/runner/src/guided-composite-live.test.ts",
+      "skipped_tests": 1
+    },
+    {
+      "file": "apps/runner/src/ledger-runtime-config-postgres.test.ts",
+      "skipped_tests": 1
+    },
+    {
+      "file": "apps/runner/src/owner-delegation-journey.test.ts",
+      "skipped_tests": 2
+    },
+    {
+      "file": "apps/runner/src/owner-policy-connection.test.ts",
+      "skipped_tests": 28
+    },
+    {
+      "file": "apps/runner/src/read-discovery-compatibility.test.ts",
+      "skipped_tests": 1
+    },
+    {
+      "file": "apps/runner/src/read-prerequisite-mysql.live.test.ts",
+      "skipped_tests": 1
+    },
+    {
+      "file": "apps/runner/src/read-prerequisite-postgres.live.test.ts",
+      "skipped_tests": 1
+    },
+    {
+      "file": "apps/runner/src/runtime-bridge-admission.test.ts",
+      "skipped_tests": 3
+    },
+    {
+      "file": "apps/runner/src/scoped-explore-composite-postgres.test.ts",
+      "skipped_tests": 1
+    },
+    {
+      "file": "apps/runner/src/semantic-admission-publication.test.ts",
+      "skipped_tests": 11
+    },
+    {
+      "file": "apps/runner/src/semantic-atomic-mysql.live.test.ts",
+      "skipped_tests": 3
+    },
+    {
+      "file": "apps/runner/src/semantic-atomic-postgres.test.ts",
+      "skipped_tests": 10
+    },
+    {
+      "file": "apps/runner/src/semantic-collections-postgres.test.ts",
+      "skipped_tests": 19
+    },
+    {
+      "file": "apps/runner/src/semantic-writeback-authority.test.ts",
+      "skipped_tests": 6
+    },
+    {
+      "file": "apps/runner/src/writer-rls-repair.live.test.ts",
+      "skipped_tests": 14
+    },
+    {
+      "file": "packages/mysql/src/complete-collections.live.test.ts",
+      "skipped_tests": 7
+    },
+    {
+      "file": "packages/postgres/src/action-rule-rls-scope.live.test.ts",
+      "skipped_tests": 7
+    },
+    {
+      "file": "packages/postgres/src/complete-collections.live.test.ts",
+      "skipped_tests": 14
+    },
+    {
+      "file": "packages/proposal-store/src/automatic-approval-admission.test.ts",
+      "skipped_tests": 3
+    },
+    {
+      "file": "packages/proposal-store/src/control-effect-admissions.test.ts",
+      "skipped_tests": 19
+    },
+    {
+      "file": "packages/proposal-store/src/control-hard-budgets.test.ts",
+      "skipped_tests": 11
+    },
+    {
+      "file": "packages/proposal-store/src/control-policy-postgres.test.ts",
+      "skipped_tests": 9
+    },
+    {
+      "file": "packages/proposal-store/src/control-policy-reviews.test.ts",
+      "skipped_tests": 20
+    },
+    {
+      "file": "packages/proposal-store/src/control-runtime-proofs.test.ts",
+      "skipped_tests": 4
+    },
+    {
+      "file": "packages/proposal-store/src/production-explore-postgres.test.ts",
+      "skipped_tests": 10
+    },
+    {
+      "file": "packages/proposal-store/src/worker-cancellation-role.test.ts",
+      "skipped_tests": 1
+    },
+    {
+      "file": "packages/mcp-server/src/delegated-semantic-runtime.test.ts",
+      "skipped_tests": 22
+    },
+    {
+      "file": "packages/mcp-server/src/effective-owner-policy.test.ts",
+      "skipped_tests": 10
+    },
+    {
+      "file": "packages/mcp-server/src/policy-management-tools.test.ts",
+      "skipped_tests": 10
+    },
+    {
+      "file": "packages/mcp-server/src/policy-management.test.ts",
+      "skipped_tests": 11
+    },
+    {
+      "file": "packages/mcp-server/src/policy-review-continuation.test.ts",
+      "skipped_tests": 3
+    },
+    {
+      "file": "packages/schema-inspector/src/postgres-column-privileges.test.ts",
+      "skipped_tests": 3
+    },
+    {
+      "file": "packages/schema-inspector/src/postgres-native-enum.test.ts",
+      "skipped_tests": 2
+    }
+  ],
+  "explicit_postgres_control_gate": "Separately executed41 tests exit0; not folded into full-suite totals"
+}

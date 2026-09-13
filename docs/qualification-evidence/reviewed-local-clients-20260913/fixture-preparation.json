@@ -1,0 +1,51 @@
+[
+  {
+    "case": "shared",
+    "exit_code": 0,
+    "stdout": "{\"prepared\":\"shared\",\"database\":\"insurance_clients_shared\",\"rows\":{\"portfolios\":10,\"claims\":32,\"freezes\":2},\"original_rows_preserved\":40,\"artifact_tree\":\"278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2\"}\n",
+    "stderr": "",
+    "at": "2026-09-13T06:24:09.649651+00:00"
+  },
+  {
+    "case": "same_principal",
+    "exit_code": 0,
+    "stdout": "{\"prepared\":\"same_principal\",\"database\":\"insurance_clients_same_principal\",\"rows\":{\"portfolios\":9,\"claims\":29,\"freezes\":2},\"original_rows_preserved\":40,\"artifact_tree\":\"278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2\"}\n",
+    "stderr": "",
+    "at": "2026-09-13T06:24:13.164723+00:00"
+  },
+  {
+    "case": "collection",
+    "exit_code": 0,
+    "stdout": "{\"prepared\":\"collection\",\"database\":\"insurance_clients_collection\",\"rows\":{\"portfolios\":9,\"claims\":29,\"freezes\":2},\"original_rows_preserved\":40,\"artifact_tree\":\"278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2\"}\n",
+    "stderr": "",
+    "at": "2026-09-13T06:24:17.005927+00:00"
+  },
+  {
+    "case": "edit",
+    "exit_code": 0,
+    "stdout": "{\"prepared\":\"edit\",\"database\":\"insurance_clients_edit\",\"rows\":{\"portfolios\":9,\"claims\":29,\"freezes\":2},\"original_rows_preserved\":40,\"artifact_tree\":\"278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2\"}\n",
+    "stderr": "",
+    "at": "2026-09-13T06:24:20.266794+00:00"
+  },
+  {
+    "case": "replacement_first",
+    "exit_code": 0,
+    "stdout": "{\"prepared\":\"replacement_first\",\"database\":\"insurance_clients_replacement_first\",\"rows\":{\"portfolios\":9,\"claims\":29,\"freezes\":2},\"original_rows_preserved\":40,\"artifact_tree\":\"278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2\"}\n",
+    "stderr": "",
+    "at": "2026-09-13T06:24:23.209931+00:00"
+  },
+  {
+    "case": "admission_first",
+    "exit_code": 0,
+    "stdout": "{\"prepared\":\"admission_first\",\"database\":\"insurance_clients_admission_first\",\"rows\":{\"portfolios\":9,\"claims\":29,\"freezes\":2},\"original_rows_preserved\":40,\"artifact_tree\":\"278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2\"}\n",
+    "stderr": "",
+    "at": "2026-09-13T06:24:27.023030+00:00"
+  },
+  {
+    "case": "identity_lifecycle",
+    "exit_code": 0,
+    "stdout": "{\"prepared\":\"identity_lifecycle\",\"database\":\"insurance_clients_identity_lifecycle\",\"rows\":{\"portfolios\":9,\"claims\":29,\"freezes\":2},\"original_rows_preserved\":40,\"artifact_tree\":\"278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2\"}\n",
+    "stderr": "",
+    "at": "2026-09-13T06:24:30.046023+00:00"
+  }
+]

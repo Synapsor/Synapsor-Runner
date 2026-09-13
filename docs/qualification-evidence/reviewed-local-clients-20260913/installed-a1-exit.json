@@ -1,0 +1,49 @@
+{
+  "name": "installed-a1",
+  "args": [
+    "node",
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/a1-identical.mjs"
+  ],
+  "case": "shared",
+  "environment_names": [
+    "COLUMNS",
+    "HOME",
+    "LANG",
+    "LINES",
+    "NO_COLOR",
+    "PATH",
+    "SYNAPSOR_CASE",
+    "TERM"
+  ],
+  "started_at": "2026-09-13T06:43:21.573417+00:00",
+  "artifact_tree": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+  "source_commit": "66adb954d5a2cdf7419d727f7c551740e6da7b5d",
+  "product_commit": "23e51b1e17c5ec22492518be6d3f6bb0d752bfe7",
+  "test_commit": "23e51b1e17c5ec22492518be6d3f6bb0d752bfe7",
+  "harness_snapshot": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/harness-snapshots/installed-a1",
+  "harness_sha256": {
+    "a5-publication-edit.mjs": "277b540d3a8f25ce113252dae73104e80cd48f317491ef30b10117d80d9c2eb8",
+    "invoke-client-setup.mjs": "6bca057c7d686b5c2c791d252caf8ced637b5d6e4c76af1868be14e4306c043b",
+    "accounting-contention.mjs": "f24794ea107c913ee9b533f40c200336e9fa0e2cf193f8d0ce0ab04a1d1d772f",
+    "installed-edit-check.mjs": "ed465fc96375b85c0818871714437af204857ede69a549f64314af499ef27a10",
+    "dev-contention.mjs": "07c98312e803739d6618e545c45cee4a90cd40306640a5f784bef9a51602bdd9",
+    "shared-accounting-contexts.mjs": "ad4c6081d2149434e2f0f0eea2fa25061903a3c2cbc465362e8510ceba2dae6a",
+    "prepare-default-client.mjs": "a20022adca8c498ef518dd9082d445a6ce18d656d05a85c473850716e3bfe637",
+    "storage-preflight.mjs": "f41c22b65c92ac9629a1236a8a189bd46100edd7516dbfc40639b7ed047ebab2",
+    "check-reviewed-contexts.mjs": "79462b53d0cb0b676c4936ea8cdce2f64b8da563f62f2c028bec35d844e640ad",
+    "dev-cancel-followup.mjs": "abd97860b26046eba1d42216c3d6ee58b29c6869c57a3c07764d3a760b7a5221",
+    "a3-collections.mjs": "d131964ed275773cc937a52daf0b48ff502b59ab6c6584ac66b0e0370d7ac290",
+    "same-principal-control.mjs": "e48c88e15163d0ef0eb722505d06d4238e73eb651537b7a2518090ffb8503294",
+    "a1-identical.mjs": "ffa9401a977a02570cd86c6fd775f3a8c3256224c8a7b6070cc610698ef26195",
+    "invoke-interactive.mjs": "e737f27b307da55ab7fc12167e10a462a6426ca1f087b1f8af2f7114f02dc82d",
+    "dev-cancel-history.mjs": "c2e6c15f7ee2cc72a3b64a9cacfb139d9bbe733f341bc18ca3a525ff8a5a4f77",
+    "runtime-driver.mjs": "a7f1c505da6d1dccbe6418cb4048390564ec74de7342be4ae28da1e9cfbc0c53",
+    "check-installed-context.mjs": "9e53bba9a59a1a54b913658d04189e7bc7eb003692e455b300c1ec4cc8e07fed",
+    "installed-identity-lifecycle.mjs": "210fb7b508a94c9fbc859050092fffd44c5778f39e65eecc7c7e5eb05dd47ac2",
+    "prepare-edit.mjs": "ec5930af8812729aed36c81161d7caff0c48bd6420a1fbc83f644e7fb558194d",
+    "a2-insurer.mjs": "e840bf095ad6772d9d6ab69cbce1ceb70bb15a82ad3412ab1f142cbd9c5a4828"
+  },
+  "pid": 2043429,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T06:43:41.394638+00:00"
+}

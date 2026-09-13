@@ -1,0 +1,181 @@
+{
+  "shared": {
+    "status": "passed_configured_clients_before_schedules",
+    "artifact": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+    "common_store": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/isolation-final-5e3e78b/insurance-fresh/project/.synapsor/local.db",
+    "contexts": {
+      "primary": {
+        "reference": "client-one.2e5e706185ce2f68f62b4d959dfaed8fc875e652547c22beec9fb47f71a205f8",
+        "diagnostic_exit": 0,
+        "tools": [
+          "app.describe_data",
+          "app.explore_data",
+          "app.describe_actions",
+          "app.request_change"
+        ],
+        "identity_sha256": "95e646a46857e2073f441b1f2002afde8e633cae617ed1f2f3dd834835e39af1",
+        "identity_contract": "sha256:ebb3f312b7a7baeb18397b2eebe91208042932ee59748962479baef43d20aff4",
+        "initial_scoped_rows": 27,
+        "restart_scoped_rows": 27,
+        "own_context_positive": true,
+        "unauthorized_rows_absent": true
+      },
+      "colleague": {
+        "reference": "client-two.d63e8acd1e74757dab31b23654174ba54094aa3a13f3d5b15e8204bc386cb282",
+        "diagnostic_exit": 0,
+        "tools": [
+          "app.describe_data",
+          "app.explore_data",
+          "app.describe_actions",
+          "app.request_change"
+        ],
+        "identity_sha256": "072b2b36ccae4434925a4155de0d33019506a5668860ce4d67701ae336407327",
+        "identity_contract": "sha256:ebb3f312b7a7baeb18397b2eebe91208042932ee59748962479baef43d20aff4",
+        "initial_scoped_rows": 1,
+        "restart_scoped_rows": 1,
+        "own_context_positive": true,
+        "unauthorized_rows_absent": true
+      },
+      "second-insurer": {
+        "reference": "client-three.e83fabdd23681995b29229d90cbd59418e92b0bd929dfc9ad4f80ef2a51055bf",
+        "diagnostic_exit": 0,
+        "tools": [
+          "app.describe_data",
+          "app.explore_data",
+          "app.describe_actions",
+          "app.request_change"
+        ],
+        "identity_sha256": "1e9aef49a2be3359ad9f1a9012cdd19220a6008a58c53c7dcbb33a1a322969a5",
+        "identity_contract": "sha256:ebb3f312b7a7baeb18397b2eebe91208042932ee59748962479baef43d20aff4",
+        "initial_scoped_rows": 1,
+        "restart_scoped_rows": 1,
+        "own_context_positive": true,
+        "unauthorized_rows_absent": true
+      },
+      "third-insurer": {
+        "reference": "client-four.8027345949ede96ae8a47cbea27c879a16ad717dc7c7fcb457b08900e8f052e1",
+        "diagnostic_exit": 0,
+        "tools": [
+          "app.describe_data",
+          "app.explore_data",
+          "app.describe_actions",
+          "app.request_change"
+        ],
+        "identity_sha256": "a9d8d07bbc4b6414eb616e064c89273fd6faaaee4e8f901e32a676f38ff8bf21",
+        "identity_contract": "sha256:ebb3f312b7a7baeb18397b2eebe91208042932ee59748962479baef43d20aff4",
+        "initial_scoped_rows": 3,
+        "restart_scoped_rows": 3,
+        "own_context_positive": true,
+        "unauthorized_rows_absent": true
+      }
+    }
+  },
+  "identity_lifecycle": {
+    "status": "passed_configured_clients_before_schedules",
+    "artifact": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+    "common_store": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/isolation-final-5e3e78b/insurance-fresh/project/.synapsor/local.db",
+    "contexts": {
+      "primary": {
+        "reference": "rotation.afaf2cd1229d116a0ce361e9615b200f2c6723b3bfa961547ec90b9f0aa918c0",
+        "diagnostic_exit": 0,
+        "tools": [
+          "app.describe_data",
+          "app.explore_data",
+          "app.describe_actions",
+          "app.request_change"
+        ],
+        "identity_sha256": "a485de43b98dc11a2894c0d8c215594e0816bd40a683659464c383facc79d726",
+        "identity_contract": "sha256:ebb3f312b7a7baeb18397b2eebe91208042932ee59748962479baef43d20aff4",
+        "initial_scoped_rows": 27,
+        "restart_scoped_rows": 27,
+        "own_context_positive": true,
+        "unauthorized_rows_absent": true
+      },
+      "colleague": {
+        "reference": "rotation.6cec4d51c828b09b079ddd9a93a696f11b3e89a1d4e76d8ae05e08cd1bbefafa",
+        "diagnostic_exit": 0,
+        "tools": [
+          "app.describe_data",
+          "app.explore_data",
+          "app.describe_actions",
+          "app.request_change"
+        ],
+        "identity_sha256": "9503c59c545141598c0e543d7d14250347f43b07e1a52df374c70fcfbee22c60",
+        "identity_contract": "sha256:ebb3f312b7a7baeb18397b2eebe91208042932ee59748962479baef43d20aff4",
+        "initial_scoped_rows": 1,
+        "restart_scoped_rows": 1,
+        "own_context_positive": true,
+        "unauthorized_rows_absent": true
+      }
+    }
+  },
+  "edit": {
+    "status": "passed_configured_clients_before_schedules",
+    "artifact": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+    "common_store": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/isolation-final-5e3e78b/insurance-fresh/project/.synapsor/local.db",
+    "contexts": {
+      "primary": {
+        "reference": "client-one.0e48e7924825bf4775c9b78cfd03078289cb06491424da24761c2aac522e8e23",
+        "diagnostic_exit": 0,
+        "tools": [
+          "app.describe_data",
+          "app.explore_data",
+          "app.describe_actions",
+          "app.request_change"
+        ],
+        "identity_sha256": "3c58a1883859805c00e7102c84cde5fc44b8e0a36e3297fef1b259919945cc66",
+        "identity_contract": "sha256:ebb3f312b7a7baeb18397b2eebe91208042932ee59748962479baef43d20aff4",
+        "initial_scoped_rows": 27,
+        "restart_scoped_rows": 27,
+        "own_context_positive": true,
+        "unauthorized_rows_absent": true
+      }
+    }
+  },
+  "replacement_first": {
+    "status": "passed_configured_clients_before_schedules",
+    "artifact": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+    "common_store": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/isolation-final-5e3e78b/insurance-fresh/project/.synapsor/local.db",
+    "contexts": {
+      "primary": {
+        "reference": "client-one.6d55d416daeafa970f8aa152fa1446625d4a94fe37a185f54cd7ccbb10a2247a",
+        "diagnostic_exit": 0,
+        "tools": [
+          "app.describe_data",
+          "app.explore_data",
+          "app.describe_actions",
+          "app.request_change"
+        ],
+        "identity_sha256": "db4687dbf67d3db1af5bd521cdd56e481dec9e98f2e6e17f8f02084a22e187bc",
+        "identity_contract": "sha256:ebb3f312b7a7baeb18397b2eebe91208042932ee59748962479baef43d20aff4",
+        "initial_scoped_rows": 27,
+        "restart_scoped_rows": 27,
+        "own_context_positive": true,
+        "unauthorized_rows_absent": true
+      }
+    }
+  },
+  "admission_first": {
+    "status": "passed_configured_clients_before_schedules",
+    "artifact": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+    "common_store": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/isolation-final-5e3e78b/insurance-fresh/project/.synapsor/local.db",
+    "contexts": {
+      "primary": {
+        "reference": "client-one.eacc165b7ecf184094fa81fcb4a7eab94611125f358b386e55bdf7d39305e6c0",
+        "diagnostic_exit": 0,
+        "tools": [
+          "app.describe_data",
+          "app.explore_data",
+          "app.describe_actions",
+          "app.request_change"
+        ],
+        "identity_sha256": "9b18f8043915306fa83531cb4f3412667ac835dbd9dc29d6d4a78050961685f9",
+        "identity_contract": "sha256:ebb3f312b7a7baeb18397b2eebe91208042932ee59748962479baef43d20aff4",
+        "initial_scoped_rows": 27,
+        "restart_scoped_rows": 27,
+        "own_context_positive": true,
+        "unauthorized_rows_absent": true
+      }
+    }
+  }
+}

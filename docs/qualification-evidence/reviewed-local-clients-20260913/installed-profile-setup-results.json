@@ -1,0 +1,839 @@
+[
+  {
+    "command": [
+      "python3",
+      "docs/qualification-evidence/reviewed-local-clients-20260913/drive-client-setup.py",
+      "shared",
+      "client-one",
+      "primary"
+    ],
+    "exit_code": 0,
+    "at": "2026-09-13T06:27:04.278351+00:00",
+    "result": {
+      "started_at": "2026-09-13T06:26:59.839720+00:00",
+      "case": "shared",
+      "label": "client-one",
+      "context_alias": "primary",
+      "entrypoint": "action review --project-root . -> Continue client setup",
+      "controller_sha256": "b9ddc8ef9f49425d76694a6507e16e0b3faf5a39c07d7e76862475e18d21b98e",
+      "runtime_driver_sha256": "2e33d55261d0f6c9d20bd79ec9d2f673369df232551e19f33763e4246b67ab66",
+      "profile_values_in_report": false,
+      "steps": [
+        {
+          "at": "2026-09-13T06:27:01.018646+00:00",
+          "observed": "Q Quit"
+        },
+        {
+          "at": "2026-09-13T06:27:01.118295+00:00",
+          "observed": "Continue client setup"
+        },
+        {
+          "at": "2026-09-13T06:27:01.243527+00:00",
+          "observed": "CONNECT YOUR CLIENT"
+        },
+        {
+          "at": "2026-09-13T06:27:01.295117+00:00",
+          "observed": "CONNECT A LOCAL MCP CLIENT"
+        },
+        {
+          "at": "2026-09-13T06:27:01.373075+00:00",
+          "observed": "Local development client identity"
+        },
+        {
+          "at": "2026-09-13T06:27:01.434059+00:00",
+          "observed": "Local client label"
+        },
+        {
+          "at": "2026-09-13T06:27:01.492501+00:00",
+          "observed": "Review private fixture identity values for this local client?"
+        },
+        {
+          "at": "2026-09-13T06:27:01.593922+00:00",
+          "hidden_value_entered_for": "principal"
+        },
+        {
+          "at": "2026-09-13T06:27:01.645743+00:00",
+          "hidden_value_entered_for": "tenant"
+        },
+        {
+          "at": "2026-09-13T06:27:01.649364+00:00",
+          "observed": "Save this exact reviewed identity as a new local client revision?"
+        },
+        {
+          "at": "2026-09-13T06:27:01.774158+00:00",
+          "observed": "Type yes to continue:"
+        },
+        {
+          "at": "2026-09-13T06:27:01.864600+00:00",
+          "observed": "Verify this configured client connection now?"
+        },
+        {
+          "at": "2026-09-13T06:27:03.444046+00:00",
+          "observed": "verified MCP handshake and tool catalog; test connection closed"
+        },
+        {
+          "at": "2026-09-13T06:27:03.491503+00:00",
+          "observed": "VERIFIED ACTION BOUNDARY"
+        },
+        {
+          "at": "2026-09-13T06:27:04.068681+00:00",
+          "observed": "Q Quit"
+        }
+      ],
+      "status": "passed_operator_create_install_launch",
+      "controller_pid": 2005760,
+      "child_pid": 2005762,
+      "exit_code": 0,
+      "reference": "client-one.2e5e706185ce2f68f62b4d959dfaed8fc875e652547c22beec9fb47f71a205f8",
+      "existing_entries_preserved": 1,
+      "existing_identity_files_preserved": 1,
+      "authority_history_unchanged": true,
+      "completed_at": "2026-09-13T06:27:04.266547+00:00",
+      "identity_values_absent_from_terminal": true
+    }
+  },
+  {
+    "command": [
+      "python3",
+      "docs/qualification-evidence/reviewed-local-clients-20260913/drive-client-setup.py",
+      "shared",
+      "client-two",
+      "colleague"
+    ],
+    "exit_code": 0,
+    "at": "2026-09-13T06:27:08.547966+00:00",
+    "result": {
+      "started_at": "2026-09-13T06:27:04.330766+00:00",
+      "case": "shared",
+      "label": "client-two",
+      "context_alias": "colleague",
+      "entrypoint": "action review --project-root . -> Continue client setup",
+      "controller_sha256": "b9ddc8ef9f49425d76694a6507e16e0b3faf5a39c07d7e76862475e18d21b98e",
+      "runtime_driver_sha256": "2e33d55261d0f6c9d20bd79ec9d2f673369df232551e19f33763e4246b67ab66",
+      "profile_values_in_report": false,
+      "steps": [
+        {
+          "at": "2026-09-13T06:27:05.488929+00:00",
+          "observed": "Q Quit"
+        },
+        {
+          "at": "2026-09-13T06:27:05.598677+00:00",
+          "observed": "Continue client setup"
+        },
+        {
+          "at": "2026-09-13T06:27:05.726059+00:00",
+          "observed": "CONNECT YOUR CLIENT"
+        },
+        {
+          "at": "2026-09-13T06:27:05.777371+00:00",
+          "observed": "CONNECT A LOCAL MCP CLIENT"
+        },
+        {
+          "at": "2026-09-13T06:27:05.852076+00:00",
+          "observed": "Local development client identity"
+        },
+        {
+          "at": "2026-09-13T06:27:05.913688+00:00",
+          "observed": "Local client label"
+        },
+        {
+          "at": "2026-09-13T06:27:05.972953+00:00",
+          "observed": "Review private fixture identity values for this local client?"
+        },
+        {
+          "at": "2026-09-13T06:27:06.075265+00:00",
+          "hidden_value_entered_for": "principal"
+        },
+        {
+          "at": "2026-09-13T06:27:06.126588+00:00",
+          "hidden_value_entered_for": "tenant"
+        },
+        {
+          "at": "2026-09-13T06:27:06.128295+00:00",
+          "observed": "Save this exact reviewed identity as a new local client revision?"
+        },
+        {
+          "at": "2026-09-13T06:27:06.272194+00:00",
+          "observed": "Type yes to continue:"
+        },
+        {
+          "at": "2026-09-13T06:27:06.385309+00:00",
+          "observed": "Verify this configured client connection now?"
+        },
+        {
+          "at": "2026-09-13T06:27:07.680346+00:00",
+          "observed": "verified MCP handshake and tool catalog; test connection closed"
+        },
+        {
+          "at": "2026-09-13T06:27:07.741016+00:00",
+          "observed": "VERIFIED ACTION BOUNDARY"
+        },
+        {
+          "at": "2026-09-13T06:27:08.328999+00:00",
+          "observed": "Q Quit"
+        }
+      ],
+      "status": "passed_operator_create_install_launch",
+      "controller_pid": 2006021,
+      "child_pid": 2006025,
+      "exit_code": 0,
+      "reference": "client-two.d63e8acd1e74757dab31b23654174ba54094aa3a13f3d5b15e8204bc386cb282",
+      "existing_entries_preserved": 2,
+      "existing_identity_files_preserved": 2,
+      "authority_history_unchanged": true,
+      "completed_at": "2026-09-13T06:27:08.542382+00:00",
+      "identity_values_absent_from_terminal": true
+    }
+  },
+  {
+    "command": [
+      "python3",
+      "docs/qualification-evidence/reviewed-local-clients-20260913/drive-client-setup.py",
+      "shared",
+      "client-three",
+      "second-insurer"
+    ],
+    "exit_code": 0,
+    "at": "2026-09-13T06:27:12.978843+00:00",
+    "result": {
+      "started_at": "2026-09-13T06:27:08.582383+00:00",
+      "case": "shared",
+      "label": "client-three",
+      "context_alias": "second-insurer",
+      "entrypoint": "action review --project-root . -> Continue client setup",
+      "controller_sha256": "b9ddc8ef9f49425d76694a6507e16e0b3faf5a39c07d7e76862475e18d21b98e",
+      "runtime_driver_sha256": "2e33d55261d0f6c9d20bd79ec9d2f673369df232551e19f33763e4246b67ab66",
+      "profile_values_in_report": false,
+      "steps": [
+        {
+          "at": "2026-09-13T06:27:09.782592+00:00",
+          "observed": "Q Quit"
+        },
+        {
+          "at": "2026-09-13T06:27:09.895373+00:00",
+          "observed": "Continue client setup"
+        },
+        {
+          "at": "2026-09-13T06:27:10.016432+00:00",
+          "observed": "CONNECT YOUR CLIENT"
+        },
+        {
+          "at": "2026-09-13T06:27:10.067891+00:00",
+          "observed": "CONNECT A LOCAL MCP CLIENT"
+        },
+        {
+          "at": "2026-09-13T06:27:10.144514+00:00",
+          "observed": "Local development client identity"
+        },
+        {
+          "at": "2026-09-13T06:27:10.205109+00:00",
+          "observed": "Local client label"
+        },
+        {
+          "at": "2026-09-13T06:27:10.259598+00:00",
+          "observed": "Review private fixture identity values for this local client?"
+        },
+        {
+          "at": "2026-09-13T06:27:10.361539+00:00",
+          "hidden_value_entered_for": "principal"
+        },
+        {
+          "at": "2026-09-13T06:27:10.413356+00:00",
+          "hidden_value_entered_for": "tenant"
+        },
+        {
+          "at": "2026-09-13T06:27:10.414543+00:00",
+          "observed": "Save this exact reviewed identity as a new local client revision?"
+        },
+        {
+          "at": "2026-09-13T06:27:10.508121+00:00",
+          "observed": "Type yes to continue:"
+        },
+        {
+          "at": "2026-09-13T06:27:10.574550+00:00",
+          "observed": "Verify this configured client connection now?"
+        },
+        {
+          "at": "2026-09-13T06:27:12.149816+00:00",
+          "observed": "verified MCP handshake and tool catalog; test connection closed"
+        },
+        {
+          "at": "2026-09-13T06:27:12.194604+00:00",
+          "observed": "VERIFIED ACTION BOUNDARY"
+        },
+        {
+          "at": "2026-09-13T06:27:12.783086+00:00",
+          "observed": "Q Quit"
+        }
+      ],
+      "status": "passed_operator_create_install_launch",
+      "controller_pid": 2006257,
+      "child_pid": 2006258,
+      "exit_code": 0,
+      "reference": "client-three.e83fabdd23681995b29229d90cbd59418e92b0bd929dfc9ad4f80ef2a51055bf",
+      "existing_entries_preserved": 3,
+      "existing_identity_files_preserved": 3,
+      "authority_history_unchanged": true,
+      "completed_at": "2026-09-13T06:27:12.972816+00:00",
+      "identity_values_absent_from_terminal": true
+    }
+  },
+  {
+    "command": [
+      "python3",
+      "docs/qualification-evidence/reviewed-local-clients-20260913/drive-client-setup.py",
+      "shared",
+      "client-four",
+      "third-insurer"
+    ],
+    "exit_code": 0,
+    "at": "2026-09-13T06:27:17.170465+00:00",
+    "result": {
+      "started_at": "2026-09-13T06:27:13.014999+00:00",
+      "case": "shared",
+      "label": "client-four",
+      "context_alias": "third-insurer",
+      "entrypoint": "action review --project-root . -> Continue client setup",
+      "controller_sha256": "b9ddc8ef9f49425d76694a6507e16e0b3faf5a39c07d7e76862475e18d21b98e",
+      "runtime_driver_sha256": "2e33d55261d0f6c9d20bd79ec9d2f673369df232551e19f33763e4246b67ab66",
+      "profile_values_in_report": false,
+      "steps": [
+        {
+          "at": "2026-09-13T06:27:14.159544+00:00",
+          "observed": "Q Quit"
+        },
+        {
+          "at": "2026-09-13T06:27:14.266215+00:00",
+          "observed": "Continue client setup"
+        },
+        {
+          "at": "2026-09-13T06:27:14.380449+00:00",
+          "observed": "CONNECT YOUR CLIENT"
+        },
+        {
+          "at": "2026-09-13T06:27:14.431788+00:00",
+          "observed": "CONNECT A LOCAL MCP CLIENT"
+        },
+        {
+          "at": "2026-09-13T06:27:14.507040+00:00",
+          "observed": "Local development client identity"
+        },
+        {
+          "at": "2026-09-13T06:27:14.566959+00:00",
+          "observed": "Local client label"
+        },
+        {
+          "at": "2026-09-13T06:27:14.622587+00:00",
+          "observed": "Review private fixture identity values for this local client?"
+        },
+        {
+          "at": "2026-09-13T06:27:14.723949+00:00",
+          "hidden_value_entered_for": "principal"
+        },
+        {
+          "at": "2026-09-13T06:27:14.776358+00:00",
+          "hidden_value_entered_for": "tenant"
+        },
+        {
+          "at": "2026-09-13T06:27:14.780551+00:00",
+          "observed": "Save this exact reviewed identity as a new local client revision?"
+        },
+        {
+          "at": "2026-09-13T06:27:14.898759+00:00",
+          "observed": "Type yes to continue:"
+        },
+        {
+          "at": "2026-09-13T06:27:14.980252+00:00",
+          "observed": "Verify this configured client connection now?"
+        },
+        {
+          "at": "2026-09-13T06:27:16.354798+00:00",
+          "observed": "verified MCP handshake and tool catalog; test connection closed"
+        },
+        {
+          "at": "2026-09-13T06:27:16.400895+00:00",
+          "observed": "VERIFIED ACTION BOUNDARY"
+        },
+        {
+          "at": "2026-09-13T06:27:16.979423+00:00",
+          "observed": "Q Quit"
+        }
+      ],
+      "status": "passed_operator_create_install_launch",
+      "controller_pid": 2006475,
+      "child_pid": 2006478,
+      "exit_code": 0,
+      "reference": "client-four.8027345949ede96ae8a47cbea27c879a16ad717dc7c7fcb457b08900e8f052e1",
+      "existing_entries_preserved": 4,
+      "existing_identity_files_preserved": 4,
+      "authority_history_unchanged": true,
+      "completed_at": "2026-09-13T06:27:17.163809+00:00",
+      "identity_values_absent_from_terminal": true
+    }
+  },
+  {
+    "command": [
+      "python3",
+      "docs/qualification-evidence/reviewed-local-clients-20260913/drive-client-setup.py",
+      "identity_lifecycle",
+      "rotation",
+      "primary"
+    ],
+    "exit_code": 0,
+    "at": "2026-09-13T06:27:21.751854+00:00",
+    "result": {
+      "started_at": "2026-09-13T06:27:17.209276+00:00",
+      "case": "identity_lifecycle",
+      "label": "rotation",
+      "context_alias": "primary",
+      "entrypoint": "action review --project-root . -> Continue client setup",
+      "controller_sha256": "b9ddc8ef9f49425d76694a6507e16e0b3faf5a39c07d7e76862475e18d21b98e",
+      "runtime_driver_sha256": "2e33d55261d0f6c9d20bd79ec9d2f673369df232551e19f33763e4246b67ab66",
+      "profile_values_in_report": false,
+      "steps": [
+        {
+          "at": "2026-09-13T06:27:18.425129+00:00",
+          "observed": "Q Quit"
+        },
+        {
+          "at": "2026-09-13T06:27:18.528016+00:00",
+          "observed": "Continue client setup"
+        },
+        {
+          "at": "2026-09-13T06:27:18.644469+00:00",
+          "observed": "CONNECT YOUR CLIENT"
+        },
+        {
+          "at": "2026-09-13T06:27:18.695821+00:00",
+          "observed": "CONNECT A LOCAL MCP CLIENT"
+        },
+        {
+          "at": "2026-09-13T06:27:18.772643+00:00",
+          "observed": "Local development client identity"
+        },
+        {
+          "at": "2026-09-13T06:27:18.838167+00:00",
+          "observed": "Local client label"
+        },
+        {
+          "at": "2026-09-13T06:27:18.893996+00:00",
+          "observed": "Review private fixture identity values for this local client?"
+        },
+        {
+          "at": "2026-09-13T06:27:18.995501+00:00",
+          "hidden_value_entered_for": "principal"
+        },
+        {
+          "at": "2026-09-13T06:27:19.047597+00:00",
+          "hidden_value_entered_for": "tenant"
+        },
+        {
+          "at": "2026-09-13T06:27:19.051384+00:00",
+          "observed": "Save this exact reviewed identity as a new local client revision?"
+        },
+        {
+          "at": "2026-09-13T06:27:19.165014+00:00",
+          "observed": "Type yes to continue:"
+        },
+        {
+          "at": "2026-09-13T06:27:19.262049+00:00",
+          "observed": "Verify this configured client connection now?"
+        },
+        {
+          "at": "2026-09-13T06:27:20.892192+00:00",
+          "observed": "verified MCP handshake and tool catalog; test connection closed"
+        },
+        {
+          "at": "2026-09-13T06:27:20.940904+00:00",
+          "observed": "VERIFIED ACTION BOUNDARY"
+        },
+        {
+          "at": "2026-09-13T06:27:21.535586+00:00",
+          "observed": "Q Quit"
+        }
+      ],
+      "status": "passed_operator_create_install_launch",
+      "controller_pid": 2006713,
+      "child_pid": 2006714,
+      "exit_code": 0,
+      "reference": "rotation.afaf2cd1229d116a0ce361e9615b200f2c6723b3bfa961547ec90b9f0aa918c0",
+      "existing_entries_preserved": 1,
+      "existing_identity_files_preserved": 1,
+      "authority_history_unchanged": true,
+      "completed_at": "2026-09-13T06:27:21.746101+00:00",
+      "identity_values_absent_from_terminal": true
+    }
+  },
+  {
+    "command": [
+      "python3",
+      "docs/qualification-evidence/reviewed-local-clients-20260913/drive-client-setup.py",
+      "identity_lifecycle",
+      "rotation",
+      "colleague"
+    ],
+    "exit_code": 0,
+    "at": "2026-09-13T06:27:26.038163+00:00",
+    "result": {
+      "started_at": "2026-09-13T06:27:21.814690+00:00",
+      "case": "identity_lifecycle",
+      "label": "rotation",
+      "context_alias": "colleague",
+      "entrypoint": "action review --project-root . -> Continue client setup",
+      "controller_sha256": "b9ddc8ef9f49425d76694a6507e16e0b3faf5a39c07d7e76862475e18d21b98e",
+      "runtime_driver_sha256": "2e33d55261d0f6c9d20bd79ec9d2f673369df232551e19f33763e4246b67ab66",
+      "profile_values_in_report": false,
+      "steps": [
+        {
+          "at": "2026-09-13T06:27:23.001500+00:00",
+          "observed": "Q Quit"
+        },
+        {
+          "at": "2026-09-13T06:27:23.108350+00:00",
+          "observed": "Continue client setup"
+        },
+        {
+          "at": "2026-09-13T06:27:23.223547+00:00",
+          "observed": "CONNECT YOUR CLIENT"
+        },
+        {
+          "at": "2026-09-13T06:27:23.274901+00:00",
+          "observed": "CONNECT A LOCAL MCP CLIENT"
+        },
+        {
+          "at": "2026-09-13T06:27:23.353535+00:00",
+          "observed": "Local development client identity"
+        },
+        {
+          "at": "2026-09-13T06:27:23.415543+00:00",
+          "observed": "Local client label"
+        },
+        {
+          "at": "2026-09-13T06:27:23.468695+00:00",
+          "observed": "Review private fixture identity values for this local client?"
+        },
+        {
+          "at": "2026-09-13T06:27:23.569735+00:00",
+          "hidden_value_entered_for": "principal"
+        },
+        {
+          "at": "2026-09-13T06:27:23.620941+00:00",
+          "hidden_value_entered_for": "tenant"
+        },
+        {
+          "at": "2026-09-13T06:27:23.622263+00:00",
+          "observed": "Save this exact reviewed identity as a new local client revision?"
+        },
+        {
+          "at": "2026-09-13T06:27:23.718273+00:00",
+          "observed": "Type yes to continue:"
+        },
+        {
+          "at": "2026-09-13T06:27:23.804334+00:00",
+          "observed": "Verify this configured client connection now?"
+        },
+        {
+          "at": "2026-09-13T06:27:25.176708+00:00",
+          "observed": "verified MCP handshake and tool catalog; test connection closed"
+        },
+        {
+          "at": "2026-09-13T06:27:25.223460+00:00",
+          "observed": "VERIFIED ACTION BOUNDARY"
+        },
+        {
+          "at": "2026-09-13T06:27:25.821045+00:00",
+          "observed": "Q Quit"
+        }
+      ],
+      "status": "passed_operator_create_install_launch",
+      "controller_pid": 2006938,
+      "child_pid": 2006941,
+      "exit_code": 0,
+      "reference": "rotation.6cec4d51c828b09b079ddd9a93a696f11b3e89a1d4e76d8ae05e08cd1bbefafa",
+      "existing_entries_preserved": 2,
+      "existing_identity_files_preserved": 2,
+      "authority_history_unchanged": true,
+      "completed_at": "2026-09-13T06:27:26.031944+00:00",
+      "identity_values_absent_from_terminal": true
+    }
+  },
+  {
+    "command": [
+      "python3",
+      "docs/qualification-evidence/reviewed-local-clients-20260913/drive-client-setup.py",
+      "edit",
+      "client-one",
+      "primary"
+    ],
+    "exit_code": 0,
+    "at": "2026-09-13T06:27:30.697239+00:00",
+    "result": {
+      "started_at": "2026-09-13T06:27:26.102836+00:00",
+      "case": "edit",
+      "label": "client-one",
+      "context_alias": "primary",
+      "entrypoint": "action review --project-root . -> Continue client setup",
+      "controller_sha256": "b9ddc8ef9f49425d76694a6507e16e0b3faf5a39c07d7e76862475e18d21b98e",
+      "runtime_driver_sha256": "2e33d55261d0f6c9d20bd79ec9d2f673369df232551e19f33763e4246b67ab66",
+      "profile_values_in_report": false,
+      "steps": [
+        {
+          "at": "2026-09-13T06:27:27.306865+00:00",
+          "observed": "Q Quit"
+        },
+        {
+          "at": "2026-09-13T06:27:27.408943+00:00",
+          "observed": "Continue client setup"
+        },
+        {
+          "at": "2026-09-13T06:27:27.530796+00:00",
+          "observed": "CONNECT YOUR CLIENT"
+        },
+        {
+          "at": "2026-09-13T06:27:27.582126+00:00",
+          "observed": "CONNECT A LOCAL MCP CLIENT"
+        },
+        {
+          "at": "2026-09-13T06:27:27.665928+00:00",
+          "observed": "Local development client identity"
+        },
+        {
+          "at": "2026-09-13T06:27:27.738675+00:00",
+          "observed": "Local client label"
+        },
+        {
+          "at": "2026-09-13T06:27:27.793553+00:00",
+          "observed": "Review private fixture identity values for this local client?"
+        },
+        {
+          "at": "2026-09-13T06:27:27.894718+00:00",
+          "hidden_value_entered_for": "principal"
+        },
+        {
+          "at": "2026-09-13T06:27:27.945817+00:00",
+          "hidden_value_entered_for": "tenant"
+        },
+        {
+          "at": "2026-09-13T06:27:27.948383+00:00",
+          "observed": "Save this exact reviewed identity as a new local client revision?"
+        },
+        {
+          "at": "2026-09-13T06:27:28.090766+00:00",
+          "observed": "Type yes to continue:"
+        },
+        {
+          "at": "2026-09-13T06:27:28.187764+00:00",
+          "observed": "Verify this configured client connection now?"
+        },
+        {
+          "at": "2026-09-13T06:27:29.837513+00:00",
+          "observed": "verified MCP handshake and tool catalog; test connection closed"
+        },
+        {
+          "at": "2026-09-13T06:27:29.887653+00:00",
+          "observed": "VERIFIED ACTION BOUNDARY"
+        },
+        {
+          "at": "2026-09-13T06:27:30.484775+00:00",
+          "observed": "Q Quit"
+        }
+      ],
+      "status": "passed_operator_create_install_launch",
+      "controller_pid": 2007119,
+      "child_pid": 2007153,
+      "exit_code": 0,
+      "reference": "client-one.0e48e7924825bf4775c9b78cfd03078289cb06491424da24761c2aac522e8e23",
+      "existing_entries_preserved": 1,
+      "existing_identity_files_preserved": 1,
+      "authority_history_unchanged": true,
+      "completed_at": "2026-09-13T06:27:30.689182+00:00",
+      "identity_values_absent_from_terminal": true
+    }
+  },
+  {
+    "command": [
+      "python3",
+      "docs/qualification-evidence/reviewed-local-clients-20260913/drive-client-setup.py",
+      "replacement_first",
+      "client-one",
+      "primary"
+    ],
+    "exit_code": 0,
+    "at": "2026-09-13T06:27:35.140107+00:00",
+    "result": {
+      "started_at": "2026-09-13T06:27:30.745339+00:00",
+      "case": "replacement_first",
+      "label": "client-one",
+      "context_alias": "primary",
+      "entrypoint": "action review --project-root . -> Continue client setup",
+      "controller_sha256": "b9ddc8ef9f49425d76694a6507e16e0b3faf5a39c07d7e76862475e18d21b98e",
+      "runtime_driver_sha256": "2e33d55261d0f6c9d20bd79ec9d2f673369df232551e19f33763e4246b67ab66",
+      "profile_values_in_report": false,
+      "steps": [
+        {
+          "at": "2026-09-13T06:27:31.975494+00:00",
+          "observed": "Q Quit"
+        },
+        {
+          "at": "2026-09-13T06:27:32.077516+00:00",
+          "observed": "Continue client setup"
+        },
+        {
+          "at": "2026-09-13T06:27:32.198765+00:00",
+          "observed": "CONNECT YOUR CLIENT"
+        },
+        {
+          "at": "2026-09-13T06:27:32.249923+00:00",
+          "observed": "CONNECT A LOCAL MCP CLIENT"
+        },
+        {
+          "at": "2026-09-13T06:27:32.333576+00:00",
+          "observed": "Local development client identity"
+        },
+        {
+          "at": "2026-09-13T06:27:32.399360+00:00",
+          "observed": "Local client label"
+        },
+        {
+          "at": "2026-09-13T06:27:32.456420+00:00",
+          "observed": "Review private fixture identity values for this local client?"
+        },
+        {
+          "at": "2026-09-13T06:27:32.558321+00:00",
+          "hidden_value_entered_for": "principal"
+        },
+        {
+          "at": "2026-09-13T06:27:32.609725+00:00",
+          "hidden_value_entered_for": "tenant"
+        },
+        {
+          "at": "2026-09-13T06:27:32.612689+00:00",
+          "observed": "Save this exact reviewed identity as a new local client revision?"
+        },
+        {
+          "at": "2026-09-13T06:27:32.799079+00:00",
+          "observed": "Type yes to continue:"
+        },
+        {
+          "at": "2026-09-13T06:27:32.888084+00:00",
+          "observed": "Verify this configured client connection now?"
+        },
+        {
+          "at": "2026-09-13T06:27:34.248036+00:00",
+          "observed": "verified MCP handshake and tool catalog; test connection closed"
+        },
+        {
+          "at": "2026-09-13T06:27:34.310774+00:00",
+          "observed": "VERIFIED ACTION BOUNDARY"
+        },
+        {
+          "at": "2026-09-13T06:27:34.913220+00:00",
+          "observed": "Q Quit"
+        }
+      ],
+      "status": "passed_operator_create_install_launch",
+      "controller_pid": 2007377,
+      "child_pid": 2007380,
+      "exit_code": 0,
+      "reference": "client-one.6d55d416daeafa970f8aa152fa1446625d4a94fe37a185f54cd7ccbb10a2247a",
+      "existing_entries_preserved": 1,
+      "existing_identity_files_preserved": 1,
+      "authority_history_unchanged": true,
+      "completed_at": "2026-09-13T06:27:35.133577+00:00",
+      "identity_values_absent_from_terminal": true
+    }
+  },
+  {
+    "command": [
+      "python3",
+      "docs/qualification-evidence/reviewed-local-clients-20260913/drive-client-setup.py",
+      "admission_first",
+      "client-one",
+      "primary"
+    ],
+    "exit_code": 0,
+    "at": "2026-09-13T06:27:39.524677+00:00",
+    "result": {
+      "started_at": "2026-09-13T06:27:35.189965+00:00",
+      "case": "admission_first",
+      "label": "client-one",
+      "context_alias": "primary",
+      "entrypoint": "action review --project-root . -> Continue client setup",
+      "controller_sha256": "b9ddc8ef9f49425d76694a6507e16e0b3faf5a39c07d7e76862475e18d21b98e",
+      "runtime_driver_sha256": "2e33d55261d0f6c9d20bd79ec9d2f673369df232551e19f33763e4246b67ab66",
+      "profile_values_in_report": false,
+      "steps": [
+        {
+          "at": "2026-09-13T06:27:36.387389+00:00",
+          "observed": "Q Quit"
+        },
+        {
+          "at": "2026-09-13T06:27:36.490173+00:00",
+          "observed": "Continue client setup"
+        },
+        {
+          "at": "2026-09-13T06:27:36.606997+00:00",
+          "observed": "CONNECT YOUR CLIENT"
+        },
+        {
+          "at": "2026-09-13T06:27:36.658489+00:00",
+          "observed": "CONNECT A LOCAL MCP CLIENT"
+        },
+        {
+          "at": "2026-09-13T06:27:36.733892+00:00",
+          "observed": "Local development client identity"
+        },
+        {
+          "at": "2026-09-13T06:27:36.805103+00:00",
+          "observed": "Local client label"
+        },
+        {
+          "at": "2026-09-13T06:27:36.866580+00:00",
+          "observed": "Review private fixture identity values for this local client?"
+        },
+        {
+          "at": "2026-09-13T06:27:36.968019+00:00",
+          "hidden_value_entered_for": "principal"
+        },
+        {
+          "at": "2026-09-13T06:27:37.021525+00:00",
+          "hidden_value_entered_for": "tenant"
+        },
+        {
+          "at": "2026-09-13T06:27:37.026029+00:00",
+          "observed": "Save this exact reviewed identity as a new local client revision?"
+        },
+        {
+          "at": "2026-09-13T06:27:37.147895+00:00",
+          "observed": "Type yes to continue:"
+        },
+        {
+          "at": "2026-09-13T06:27:37.230036+00:00",
+          "observed": "Verify this configured client connection now?"
+        },
+        {
+          "at": "2026-09-13T06:27:38.653895+00:00",
+          "observed": "verified MCP handshake and tool catalog; test connection closed"
+        },
+        {
+          "at": "2026-09-13T06:27:38.704102+00:00",
+          "observed": "VERIFIED ACTION BOUNDARY"
+        },
+        {
+          "at": "2026-09-13T06:27:39.303084+00:00",
+          "observed": "Q Quit"
+        }
+      ],
+      "status": "passed_operator_create_install_launch",
+      "controller_pid": 2007689,
+      "child_pid": 2007690,
+      "exit_code": 0,
+      "reference": "client-one.eacc165b7ecf184094fa81fcb4a7eab94611125f358b386e55bdf7d39305e6c0",
+      "existing_entries_preserved": 1,
+      "existing_identity_files_preserved": 1,
+      "authority_history_unchanged": true,
+      "completed_at": "2026-09-13T06:27:39.514593+00:00",
+      "identity_values_absent_from_terminal": true
+    }
+  }
+]

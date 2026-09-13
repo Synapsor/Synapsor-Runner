@@ -9,7 +9,7 @@ process.umask(0o077);
 const evidence=path.dirname(fileURLToPath(import.meta.url));
 const taskRoot='/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913';
 const prior='/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/proposal-receipt-scope-961d98c/insurance-recovery';
-const caseName=process.argv[2];assert(['setup_dev','identity_lifecycle','shared','same_principal','collection','edit','edit_02','replacement_first','replacement_first_02','admission_first','recovery'].includes(caseName));
+const caseName=process.argv[2];assert(['setup_dev','identity_lifecycle','identity_lifecycle_02','shared','shared_02','same_principal','collection','edit','edit_02','replacement_first','replacement_first_02','admission_first','recovery'].includes(caseName));
 const artifactRoot=path.join(taskRoot,caseName==='setup_dev'?'development':'frozen');
 const artifact=JSON.parse(await fs.readFile(path.join(artifactRoot,'installed-artifact-manifest.json')));
 execFileSync(process.execPath,[path.join(artifactRoot,'freeze-repair.mjs'),'--verify'],{stdio:'pipe'});
@@ -38,7 +38,7 @@ const insert=async(table,row)=>{const fields=Object.keys(row);await client.query
 const additions={portfolios:[],claims:[]};
 try {
  await client.query('BEGIN');for(const table of ['portfolios','claims','freezes'])for(const row of baseline[table])await insert(table,row);
- if(caseName==='shared') {
+ if(['shared','shared_02'].includes(caseName)) {
   // The original two insurers can consume at most six slots. Extend only this
   // owned fixture with a third insurer and distinct claims; never seed approvals.
   const id=n=>`b0000000-0000-4000-8000-${String(n).padStart(12,'0')}`;
@@ -58,7 +58,7 @@ try {
  const source={};for(const table of ['portfolios','claims','freezes'])source[table]=(await client.query(`SELECT * FROM reserve_ops.${table} ORDER BY 1`)).rows;
  for(const table of Object.keys(baseline))for(const old of baseline[table])assert.deepEqual(source[table].find(x=>x[Object.keys(old)[0]]===old[Object.keys(old)[0]]),old);
  await fs.writeFile(path.join(owned,'owner-source-baseline.json'),JSON.stringify(source,null,2)+'\n',{flag:'wx'});
- const owner={created_at:new Date().toISOString(),case:({'edit_02':'edit','replacement_first_02':'replacement_first'}[caseName]??caseName),fixture:caseName,owned,project,logical,database,container:fixture.name,artifact_root:artifactRoot,artifact_tree:artifact.installed_tree_sha256,
+ const owner={created_at:new Date().toISOString(),case:({'shared_02':'shared','edit_02':'edit','replacement_first_02':'replacement_first'}[caseName]??caseName),fixture:caseName,owned,project,logical,database,container:fixture.name,artifact_root:artifactRoot,artifact_tree:artifact.installed_tree_sha256,
   original_hashes:hashes,original_rows_preserved:40,source_baseline_sha256:createHash('sha256').update(JSON.stringify(source,null,2)+'\n').digest('hex'),fixture_rows:Object.fromEntries(Object.entries(source).map(([t,r])=>[t,r.length])),additions,writer_handoff:grants,role_creation_omitted_because_task_fixture_role_already_exists:roleAlreadyCreated};
  await fs.writeFile(path.join(owned,'ownership.json'),JSON.stringify(owner,null,2)+'\n',{flag:'wx'});
  await fs.writeFile(path.join(owned,'private.json'),JSON.stringify({database,container:fixture.name,socket:fixture.socket,adminUrl:uri('postgres'),env:{DATABASE_URL:uri('insurance_reader'),[requirements.writer_env]:uri(requirements.suggested_role)}},null,2)+'\n',{flag:'wx',mode:0o600});

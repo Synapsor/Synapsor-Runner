@@ -1,0 +1,37 @@
+{
+  "frozen_at": "2026-09-13T06:21:23.221Z",
+  "purpose": "reviewed local clients, late refusal reporting and complete named local Stage A verification",
+  "cases": [
+    "owned insurance A1, shared-principal/overall A2, both portfolio A3, reviewed-context A4, exact edit and both publication orders"
+  ],
+  "product_commit": "23e51b1e17c5ec22492518be6d3f6bb0d752bfe7",
+  "test_commit": "23e51b1e17c5ec22492518be6d3f6bb0d752bfe7",
+  "report_commit": "recorded separately after verification",
+  "source_commit": "66adb954d5a2cdf7419d727f7c551740e6da7b5d",
+  "source_status": "?? .claude/",
+  "unpackaged_unrelated_directory": ".claude/ (preserved, no contents read)",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/frozen/installed",
+  "installed_tree_sha256": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+  "node": {
+    "version": "v22.22.2",
+    "executable": "/usr/bin/node",
+    "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+  },
+  "runner_version": "1.8.0",
+  "spec_version": "1.11.0",
+  "package_lock_sha256": "842f9b3e4026839ff3cf03204249abea8e0b3e86d72d10a2b28625c71b6830f7",
+  "tarballs": [
+    {
+      "name": "synapsor-runner-1.8.0.tgz",
+      "sha256": "b17154dba6a2e1e1d1bbfa5f80bb438fc8fbd69acf2501fa6170ba7e210a45fe"
+    },
+    {
+      "name": "synapsor-spec-1.11.0.tgz",
+      "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+    }
+  ],
+  "entries": 7569,
+  "manifest_sha256": "d3defd6057ab46150736339a2f08a47ca20864eb86a1d293d4d308ceb7625103",
+  "archive_sha256": "b363f9ea100ef3da9ee1cd71a12d3835ee0a297d7973507f7402036888e4fdf0",
+  "freeze_exit_code": 0
+}

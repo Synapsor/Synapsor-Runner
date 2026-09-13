@@ -1,0 +1,24 @@
+{
+  "at": "2026-09-13T06:46:07.701470+00:00",
+  "classification": "harness prerequisite error after passing shared-insurer and joint controls",
+  "actual_error": "SUBJECT_REFERENCE_UNAVAILABLE",
+  "cause": "The second different-input history request reused the reference already consumed by the first request. Public worker cancellation retains that consumed reference; the earlier development follow-up obtained a fresh reference.",
+  "correction": "Re-explore through the normal MCP Read before each distinct history request and the final second-insurer contender; keep cancellation, accounting and reference guards unchanged.",
+  "preserved_result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/shared/deterministic/shared-matrix-result.json",
+  "sha256": "d09892e9e2b6128c07dd5d6a4cedd8f05d02769351116a4a5a39f7567e3056b8",
+  "rerun": "fresh whole-directory shared_02 44-row fixture; second and final shared-insurer schedule. No in-place repair.",
+  "corroboration": {
+    "request_inputs": [
+      {
+        "desired_cents": 15000
+      },
+      {
+        "desired_cents": 16000
+      }
+    ],
+    "same_reference_sha256": "75d56a419d26f4bfd6f680a4182f6c39297f68ed637d93cb8c09070885ca9a36",
+    "stored_state_before_second_request": "consumed",
+    "consumed_at": "2026-09-13T06:44:17.457Z",
+    "claim_id": "request_c5b2ca8ca8079853c1f285f2a198322471ba410b377134143acee03cf26f21e5"
+  }
+}

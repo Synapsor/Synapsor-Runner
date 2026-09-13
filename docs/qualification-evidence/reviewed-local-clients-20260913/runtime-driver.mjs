@@ -12,7 +12,7 @@ import assert from 'node:assert/strict';
 import {qualificationSandboxArguments,qualificationEnvironment} from '/home/sandesh-tiwari/Desktop/C++/synapsor-runner/scripts/qualification-sandbox.mjs';
 process.umask(0o077);
 export const root=path.dirname(fileURLToPath(import.meta.url));
-assert(['setup_dev','identity_lifecycle','shared','same_principal','collection','edit','edit_02','replacement_first','replacement_first_02','admission_first','recovery'].includes(process.env.SYNAPSOR_CASE));
+assert(['setup_dev','identity_lifecycle','identity_lifecycle_02','shared','shared_02','same_principal','collection','edit','edit_02','replacement_first','replacement_first_02','admission_first','recovery'].includes(process.env.SYNAPSOR_CASE));
 export const owned=path.join(root,process.env.SYNAPSOR_CASE);
 export const owner=JSON.parse(fs.readFileSync(path.join(owned,'ownership.json')));
 const secrets=JSON.parse(fs.readFileSync(path.join(owned,'private.json')));

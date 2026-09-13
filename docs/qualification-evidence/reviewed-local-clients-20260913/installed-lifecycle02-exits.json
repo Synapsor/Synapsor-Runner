@@ -1,0 +1,231 @@
+[
+  {
+    "command": [
+      "python3",
+      "docs/qualification-evidence/reviewed-local-clients-20260913/drive-client-setup.py",
+      "identity_lifecycle_02",
+      "rotation",
+      "primary"
+    ],
+    "exit_code": 0,
+    "result": {
+      "started_at": "2026-09-13T06:36:35.716787+00:00",
+      "case": "identity_lifecycle_02",
+      "label": "rotation",
+      "context_alias": "primary",
+      "entrypoint": "action review --project-root . -> Continue client setup",
+      "controller_sha256": "b9ddc8ef9f49425d76694a6507e16e0b3faf5a39c07d7e76862475e18d21b98e",
+      "runtime_driver_sha256": "a7f1c505da6d1dccbe6418cb4048390564ec74de7342be4ae28da1e9cfbc0c53",
+      "profile_values_in_report": false,
+      "steps": [
+        {
+          "at": "2026-09-13T06:36:36.993081+00:00",
+          "observed": "Q Quit"
+        },
+        {
+          "at": "2026-09-13T06:36:37.095583+00:00",
+          "observed": "Continue client setup"
+        },
+        {
+          "at": "2026-09-13T06:36:37.255226+00:00",
+          "observed": "CONNECT YOUR CLIENT"
+        },
+        {
+          "at": "2026-09-13T06:36:37.306528+00:00",
+          "observed": "CONNECT A LOCAL MCP CLIENT"
+        },
+        {
+          "at": "2026-09-13T06:36:37.397127+00:00",
+          "observed": "Local development client identity"
+        },
+        {
+          "at": "2026-09-13T06:36:37.472851+00:00",
+          "observed": "Local client label"
+        },
+        {
+          "at": "2026-09-13T06:36:37.533228+00:00",
+          "observed": "Review private fixture identity values for this local client?"
+        },
+        {
+          "at": "2026-09-13T06:36:37.635179+00:00",
+          "hidden_value_entered_for": "principal"
+        },
+        {
+          "at": "2026-09-13T06:36:37.687263+00:00",
+          "hidden_value_entered_for": "tenant"
+        },
+        {
+          "at": "2026-09-13T06:36:37.690906+00:00",
+          "observed": "Save this exact reviewed identity as a new local client revision?"
+        },
+        {
+          "at": "2026-09-13T06:36:37.802416+00:00",
+          "observed": "Type yes to continue:"
+        },
+        {
+          "at": "2026-09-13T06:36:37.897731+00:00",
+          "observed": "Verify this configured client connection now?"
+        },
+        {
+          "at": "2026-09-13T06:36:39.257917+00:00",
+          "observed": "verified MCP handshake and tool catalog; test connection closed"
+        },
+        {
+          "at": "2026-09-13T06:36:39.319656+00:00",
+          "observed": "VERIFIED ACTION BOUNDARY"
+        },
+        {
+          "at": "2026-09-13T06:36:39.896870+00:00",
+          "observed": "Q Quit"
+        }
+      ],
+      "status": "passed_operator_create_install_launch",
+      "controller_pid": 2028742,
+      "child_pid": 2028747,
+      "exit_code": 0,
+      "reference": "rotation.00f3c07578ec32491306e1ce919bcea005b62f8fc9b32ac2f985675f4523cbc6",
+      "existing_entries_preserved": 1,
+      "existing_identity_files_preserved": 1,
+      "authority_history_unchanged": true,
+      "completed_at": "2026-09-13T06:36:40.085341+00:00",
+      "identity_values_absent_from_terminal": true
+    }
+  },
+  {
+    "command": [
+      "python3",
+      "docs/qualification-evidence/reviewed-local-clients-20260913/drive-client-setup.py",
+      "identity_lifecycle_02",
+      "rotation",
+      "colleague"
+    ],
+    "exit_code": 0,
+    "result": {
+      "started_at": "2026-09-13T06:36:40.143155+00:00",
+      "case": "identity_lifecycle_02",
+      "label": "rotation",
+      "context_alias": "colleague",
+      "entrypoint": "action review --project-root . -> Continue client setup",
+      "controller_sha256": "b9ddc8ef9f49425d76694a6507e16e0b3faf5a39c07d7e76862475e18d21b98e",
+      "runtime_driver_sha256": "a7f1c505da6d1dccbe6418cb4048390564ec74de7342be4ae28da1e9cfbc0c53",
+      "profile_values_in_report": false,
+      "steps": [
+        {
+          "at": "2026-09-13T06:36:41.363425+00:00",
+          "observed": "Q Quit"
+        },
+        {
+          "at": "2026-09-13T06:36:41.467456+00:00",
+          "observed": "Continue client setup"
+        },
+        {
+          "at": "2026-09-13T06:36:41.590023+00:00",
+          "observed": "CONNECT YOUR CLIENT"
+        },
+        {
+          "at": "2026-09-13T06:36:41.641576+00:00",
+          "observed": "CONNECT A LOCAL MCP CLIENT"
+        },
+        {
+          "at": "2026-09-13T06:36:41.717558+00:00",
+          "observed": "Local development client identity"
+        },
+        {
+          "at": "2026-09-13T06:36:41.780592+00:00",
+          "observed": "Local client label"
+        },
+        {
+          "at": "2026-09-13T06:36:41.835180+00:00",
+          "observed": "Review private fixture identity values for this local client?"
+        },
+        {
+          "at": "2026-09-13T06:36:41.936776+00:00",
+          "hidden_value_entered_for": "principal"
+        },
+        {
+          "at": "2026-09-13T06:36:41.988660+00:00",
+          "hidden_value_entered_for": "tenant"
+        },
+        {
+          "at": "2026-09-13T06:36:41.990908+00:00",
+          "observed": "Save this exact reviewed identity as a new local client revision?"
+        },
+        {
+          "at": "2026-09-13T06:36:42.122529+00:00",
+          "observed": "Type yes to continue:"
+        },
+        {
+          "at": "2026-09-13T06:36:42.200076+00:00",
+          "observed": "Verify this configured client connection now?"
+        },
+        {
+          "at": "2026-09-13T06:36:43.752600+00:00",
+          "observed": "verified MCP handshake and tool catalog; test connection closed"
+        },
+        {
+          "at": "2026-09-13T06:36:43.797773+00:00",
+          "observed": "VERIFIED ACTION BOUNDARY"
+        },
+        {
+          "at": "2026-09-13T06:36:44.388478+00:00",
+          "observed": "Q Quit"
+        }
+      ],
+      "status": "passed_operator_create_install_launch",
+      "controller_pid": 2029076,
+      "child_pid": 2029079,
+      "exit_code": 0,
+      "reference": "rotation.eb5b855e4b8c8caa187cf60a4fb1ac47e87767c4be11fcb7b9c0333c5ec940d0",
+      "existing_entries_preserved": 2,
+      "existing_identity_files_preserved": 2,
+      "authority_history_unchanged": true,
+      "completed_at": "2026-09-13T06:36:44.590547+00:00",
+      "identity_values_absent_from_terminal": true
+    }
+  },
+  {
+    "command": [
+      "python3",
+      "docs/qualification-evidence/reviewed-local-clients-20260913/run-owned.py",
+      "installed-identity-lifecycle02-doctor",
+      "--case",
+      "identity_lifecycle_02",
+      "node",
+      "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/check-installed-context.mjs"
+    ],
+    "exit_code": 0,
+    "stdout": "{\"name\": \"installed-identity-lifecycle02-doctor\", \"args\": [\"node\", \"/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/check-installed-context.mjs\"], \"case\": \"identity_lifecycle_02\", \"environment_names\": [\"COLUMNS\", \"HOME\", \"LANG\", \"LINES\", \"NO_COLOR\", \"PATH\", \"SYNAPSOR_CASE\", \"TERM\"], \"started_at\": \"2026-09-13T06:36:44.630832+00:00\", \"artifact_tree\": \"278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2\", \"source_commit\": \"66adb954d5a2cdf7419d727f7c551740e6da7b5d\", \"product_commit\": \"23e51b1e17c5ec22492518be6d3f6bb0d752bfe7\", \"test_commit\": \"23e51b1e17c5ec22492518be6d3f6bb0d752bfe7\", \"harness_snapshot\": \"/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/harness-snapshots/installed-identity-lifecycle02-doctor\", \"harness_sha256\": {\"a5-publication-edit.mjs\": \"277b540d3a8f25ce113252dae73104e80cd48f317491ef30b10117d80d9c2eb8\", \"invoke-client-setup.mjs\": \"6bca057c7d686b5c2c791d252caf8ced637b5d6e4c76af1868be14e4306c043b\", \"accounting-contention.mjs\": \"f24794ea107c913ee9b533f40c200336e9fa0e2cf193f8d0ce0ab04a1d1d772f\", \"installed-edit-check.mjs\": \"ed465fc96375b85c0818871714437af204857ede69a549f64314af499ef27a10\", \"dev-contention.mjs\": \"07c98312e803739d6618e545c45cee4a90cd40306640a5f784bef9a51602bdd9\", \"shared-accounting-contexts.mjs\": \"bd96b18348eb36f20ded04ff118973a8a3d9ac158e1cbf536a3680c149e31269\", \"prepare-default-client.mjs\": \"a20022adca8c498ef518dd9082d445a6ce18d656d05a85c473850716e3bfe637\", \"storage-preflight.mjs\": \"f41c22b65c92ac9629a1236a8a189bd46100edd7516dbfc40639b7ed047ebab2\", \"check-reviewed-contexts.mjs\": \"79462b53d0cb0b676c4936ea8cdce2f64b8da563f62f2c028bec35d844e640ad\", \"dev-cancel-followup.mjs\": \"abd97860b26046eba1d42216c3d6ee58b29c6869c57a3c07764d3a760b7a5221\", \"a3-collections.mjs\": \"d131964ed275773cc937a52daf0b48ff502b59ab6c6584ac66b0e0370d7ac290\", \"same-principal-control.mjs\": \"e48c88e15163d0ef0eb722505d06d4238e73eb651537b7a2518090ffb8503294\", \"a1-identical.mjs\": \"ffa9401a977a02570cd86c6fd775f3a8c3256224c8a7b6070cc610698ef26195\", \"invoke-interactive.mjs\": \"e737f27b307da55ab7fc12167e10a462a6426ca1f087b1f8af2f7114f02dc82d\", \"dev-cancel-history.mjs\": \"c2e6c15f7ee2cc72a3b64a9cacfb139d9bbe733f341bc18ca3a525ff8a5a4f77\", \"runtime-driver.mjs\": \"a7f1c505da6d1dccbe6418cb4048390564ec74de7342be4ae28da1e9cfbc0c53\", \"check-installed-context.mjs\": \"9e53bba9a59a1a54b913658d04189e7bc7eb003692e455b300c1ec4cc8e07fed\", \"installed-identity-lifecycle.mjs\": \"210fb7b508a94c9fbc859050092fffd44c5778f39e65eecc7c7e5eb05dd47ac2\", \"prepare-edit.mjs\": \"ec5930af8812729aed36c81161d7caff0c48bd6420a1fbc83f644e7fb558194d\", \"a2-insurer.mjs\": \"e840bf095ad6772d9d6ab69cbce1ceb70bb15a82ad3412ab1f142cbd9c5a4828\"}, \"pid\": 2029321, \"exit_code\": 0, \"completed_at\": \"2026-09-13T06:36:49.459207+00:00\"}\n",
+    "stderr": "",
+    "at": "2026-09-13T06:36:49.465995+00:00"
+  },
+  {
+    "command": [
+      "python3",
+      "docs/qualification-evidence/reviewed-local-clients-20260913/run-owned.py",
+      "installed-identity-lifecycle02-contexts",
+      "--case",
+      "identity_lifecycle_02",
+      "node",
+      "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/check-reviewed-contexts.mjs"
+    ],
+    "exit_code": 0,
+    "stdout": "{\"name\": \"installed-identity-lifecycle02-contexts\", \"args\": [\"node\", \"/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/check-reviewed-contexts.mjs\"], \"case\": \"identity_lifecycle_02\", \"environment_names\": [\"COLUMNS\", \"HOME\", \"LANG\", \"LINES\", \"NO_COLOR\", \"PATH\", \"SYNAPSOR_CASE\", \"TERM\"], \"started_at\": \"2026-09-13T06:36:49.501750+00:00\", \"artifact_tree\": \"278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2\", \"source_commit\": \"66adb954d5a2cdf7419d727f7c551740e6da7b5d\", \"product_commit\": \"23e51b1e17c5ec22492518be6d3f6bb0d752bfe7\", \"test_commit\": \"23e51b1e17c5ec22492518be6d3f6bb0d752bfe7\", \"harness_snapshot\": \"/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/harness-snapshots/installed-identity-lifecycle02-contexts\", \"harness_sha256\": {\"a5-publication-edit.mjs\": \"277b540d3a8f25ce113252dae73104e80cd48f317491ef30b10117d80d9c2eb8\", \"invoke-client-setup.mjs\": \"6bca057c7d686b5c2c791d252caf8ced637b5d6e4c76af1868be14e4306c043b\", \"accounting-contention.mjs\": \"f24794ea107c913ee9b533f40c200336e9fa0e2cf193f8d0ce0ab04a1d1d772f\", \"installed-edit-check.mjs\": \"ed465fc96375b85c0818871714437af204857ede69a549f64314af499ef27a10\", \"dev-contention.mjs\": \"07c98312e803739d6618e545c45cee4a90cd40306640a5f784bef9a51602bdd9\", \"shared-accounting-contexts.mjs\": \"bd96b18348eb36f20ded04ff118973a8a3d9ac158e1cbf536a3680c149e31269\", \"prepare-default-client.mjs\": \"a20022adca8c498ef518dd9082d445a6ce18d656d05a85c473850716e3bfe637\", \"storage-preflight.mjs\": \"f41c22b65c92ac9629a1236a8a189bd46100edd7516dbfc40639b7ed047ebab2\", \"check-reviewed-contexts.mjs\": \"79462b53d0cb0b676c4936ea8cdce2f64b8da563f62f2c028bec35d844e640ad\", \"dev-cancel-followup.mjs\": \"abd97860b26046eba1d42216c3d6ee58b29c6869c57a3c07764d3a760b7a5221\", \"a3-collections.mjs\": \"d131964ed275773cc937a52daf0b48ff502b59ab6c6584ac66b0e0370d7ac290\", \"same-principal-control.mjs\": \"e48c88e15163d0ef0eb722505d06d4238e73eb651537b7a2518090ffb8503294\", \"a1-identical.mjs\": \"ffa9401a977a02570cd86c6fd775f3a8c3256224c8a7b6070cc610698ef26195\", \"invoke-interactive.mjs\": \"e737f27b307da55ab7fc12167e10a462a6426ca1f087b1f8af2f7114f02dc82d\", \"dev-cancel-history.mjs\": \"c2e6c15f7ee2cc72a3b64a9cacfb139d9bbe733f341bc18ca3a525ff8a5a4f77\", \"runtime-driver.mjs\": \"a7f1c505da6d1dccbe6418cb4048390564ec74de7342be4ae28da1e9cfbc0c53\", \"check-installed-context.mjs\": \"9e53bba9a59a1a54b913658d04189e7bc7eb003692e455b300c1ec4cc8e07fed\", \"installed-identity-lifecycle.mjs\": \"210fb7b508a94c9fbc859050092fffd44c5778f39e65eecc7c7e5eb05dd47ac2\", \"prepare-edit.mjs\": \"ec5930af8812729aed36c81161d7caff0c48bd6420a1fbc83f644e7fb558194d\", \"a2-insurer.mjs\": \"e840bf095ad6772d9d6ab69cbce1ceb70bb15a82ad3412ab1f142cbd9c5a4828\"}, \"pid\": 2029603, \"exit_code\": 0, \"completed_at\": \"2026-09-13T06:37:07.063934+00:00\"}\n",
+    "stderr": "",
+    "at": "2026-09-13T06:37:07.072115+00:00"
+  },
+  {
+    "command": [
+      "python3",
+      "docs/qualification-evidence/reviewed-local-clients-20260913/run-owned.py",
+      "installed-identity-lifecycle02-lifecycle",
+      "--case",
+      "identity_lifecycle_02",
+      "node",
+      "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/installed-identity-lifecycle.mjs"
+    ],
+    "exit_code": 0,
+    "stdout": "{\"name\": \"installed-identity-lifecycle02-lifecycle\", \"args\": [\"node\", \"/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/installed-identity-lifecycle.mjs\"], \"case\": \"identity_lifecycle_02\", \"environment_names\": [\"COLUMNS\", \"HOME\", \"LANG\", \"LINES\", \"NO_COLOR\", \"PATH\", \"SYNAPSOR_CASE\", \"TERM\"], \"started_at\": \"2026-09-13T06:37:07.127114+00:00\", \"artifact_tree\": \"278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2\", \"source_commit\": \"66adb954d5a2cdf7419d727f7c551740e6da7b5d\", \"product_commit\": \"23e51b1e17c5ec22492518be6d3f6bb0d752bfe7\", \"test_commit\": \"23e51b1e17c5ec22492518be6d3f6bb0d752bfe7\", \"harness_snapshot\": \"/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/harness-snapshots/installed-identity-lifecycle02-lifecycle\", \"harness_sha256\": {\"a5-publication-edit.mjs\": \"277b540d3a8f25ce113252dae73104e80cd48f317491ef30b10117d80d9c2eb8\", \"invoke-client-setup.mjs\": \"6bca057c7d686b5c2c791d252caf8ced637b5d6e4c76af1868be14e4306c043b\", \"accounting-contention.mjs\": \"f24794ea107c913ee9b533f40c200336e9fa0e2cf193f8d0ce0ab04a1d1d772f\", \"installed-edit-check.mjs\": \"ed465fc96375b85c0818871714437af204857ede69a549f64314af499ef27a10\", \"dev-contention.mjs\": \"07c98312e803739d6618e545c45cee4a90cd40306640a5f784bef9a51602bdd9\", \"shared-accounting-contexts.mjs\": \"bd96b18348eb36f20ded04ff118973a8a3d9ac158e1cbf536a3680c149e31269\", \"prepare-default-client.mjs\": \"a20022adca8c498ef518dd9082d445a6ce18d656d05a85c473850716e3bfe637\", \"storage-preflight.mjs\": \"f41c22b65c92ac9629a1236a8a189bd46100edd7516dbfc40639b7ed047ebab2\", \"check-reviewed-contexts.mjs\": \"79462b53d0cb0b676c4936ea8cdce2f64b8da563f62f2c028bec35d844e640ad\", \"dev-cancel-followup.mjs\": \"abd97860b26046eba1d42216c3d6ee58b29c6869c57a3c07764d3a760b7a5221\", \"a3-collections.mjs\": \"d131964ed275773cc937a52daf0b48ff502b59ab6c6584ac66b0e0370d7ac290\", \"same-principal-control.mjs\": \"e48c88e15163d0ef0eb722505d06d4238e73eb651537b7a2518090ffb8503294\", \"a1-identical.mjs\": \"ffa9401a977a02570cd86c6fd775f3a8c3256224c8a7b6070cc610698ef26195\", \"invoke-interactive.mjs\": \"e737f27b307da55ab7fc12167e10a462a6426ca1f087b1f8af2f7114f02dc82d\", \"dev-cancel-history.mjs\": \"c2e6c15f7ee2cc72a3b64a9cacfb139d9bbe733f341bc18ca3a525ff8a5a4f77\", \"runtime-driver.mjs\": \"a7f1c505da6d1dccbe6418cb4048390564ec74de7342be4ae28da1e9cfbc0c53\", \"check-installed-context.mjs\": \"9e53bba9a59a1a54b913658d04189e7bc7eb003692e455b300c1ec4cc8e07fed\", \"installed-identity-lifecycle.mjs\": \"210fb7b508a94c9fbc859050092fffd44c5778f39e65eecc7c7e5eb05dd47ac2\", \"prepare-edit.mjs\": \"ec5930af8812729aed36c81161d7caff0c48bd6420a1fbc83f644e7fb558194d\", \"a2-insurer.mjs\": \"e840bf095ad6772d9d6ab69cbce1ceb70bb15a82ad3412ab1f142cbd9c5a4828\"}, \"pid\": 2030507, \"exit_code\": 0, \"completed_at\": \"2026-09-13T06:37:21.028794+00:00\"}\n",
+    "stderr": "",
+    "at": "2026-09-13T06:37:21.036826+00:00"
+  }
+]

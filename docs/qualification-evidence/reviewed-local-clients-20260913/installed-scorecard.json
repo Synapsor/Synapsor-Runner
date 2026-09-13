@@ -1,0 +1,729 @@
+{
+  "generated_at": "2026-09-13T07:04:16.362396+00:00",
+  "artifact": {
+    "frozen_at": "2026-09-13T06:21:23.221Z",
+    "purpose": "reviewed local clients, late refusal reporting and complete named local Stage A verification",
+    "cases": [
+      "owned insurance A1, shared-principal/overall A2, both portfolio A3, reviewed-context A4, exact edit and both publication orders"
+    ],
+    "product_commit": "23e51b1e17c5ec22492518be6d3f6bb0d752bfe7",
+    "test_commit": "23e51b1e17c5ec22492518be6d3f6bb0d752bfe7",
+    "report_commit": "recorded separately after verification",
+    "source_commit": "66adb954d5a2cdf7419d727f7c551740e6da7b5d",
+    "source_status": "?? .claude/",
+    "unpackaged_unrelated_directory": ".claude/ (preserved, no contents read)",
+    "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/frozen/installed",
+    "installed_tree_sha256": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+    "node": {
+      "version": "v22.22.2",
+      "executable": "/usr/bin/node",
+      "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+    },
+    "runner_version": "1.8.0",
+    "spec_version": "1.11.0",
+    "package_lock_sha256": "842f9b3e4026839ff3cf03204249abea8e0b3e86d72d10a2b28625c71b6830f7",
+    "tarballs": [
+      {
+        "name": "synapsor-runner-1.8.0.tgz",
+        "sha256": "b17154dba6a2e1e1d1bbfa5f80bb438fc8fbd69acf2501fa6170ba7e210a45fe"
+      },
+      {
+        "name": "synapsor-spec-1.11.0.tgz",
+        "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+      }
+    ],
+    "entries": 7569,
+    "manifest_sha256": "d3defd6057ab46150736339a2f08a47ca20864eb86a1d293d4d308ceb7625103",
+    "archive_sha256": "b363f9ea100ef3da9ee1cd71a12d3835ee0a297d7973507f7402036888e4fdf0",
+    "freeze_exit_code": 0
+  },
+  "topology": "installed PostgreSQL business source / shared SQLite control store, local stdio processes",
+  "new_setup_dependency": "Shared-context rows depend on setup code written during this assignment; feature regressions are separate evidence and the setup has not been independently exercised outside this task.",
+  "checks": {
+    "reviewed_setup": {
+      "status": "passed_configured_clients_before_schedules",
+      "contexts": {
+        "primary": {
+          "reference": "client-one.f10a2c0e255a2a94719b4e514a4fbdc057ecbf061c7b225797077e2e2503c61e",
+          "diagnostic_exit": 0,
+          "tools": [
+            "app.describe_data",
+            "app.explore_data",
+            "app.describe_actions",
+            "app.request_change"
+          ],
+          "identity_sha256": "19323d4d98fd1002fbf63ed23617bd591fbc5e7cac0348355ba92b493295cf7f",
+          "identity_contract": "sha256:ebb3f312b7a7baeb18397b2eebe91208042932ee59748962479baef43d20aff4",
+          "initial_scoped_rows": 27,
+          "restart_scoped_rows": 27,
+          "own_context_positive": true,
+          "unauthorized_rows_absent": true
+        },
+        "colleague": {
+          "reference": "client-two.5193b1d5007f7abc1206ff620cb6307514208f03785576712fc2336c16d5bd14",
+          "diagnostic_exit": 0,
+          "tools": [
+            "app.describe_data",
+            "app.explore_data",
+            "app.describe_actions",
+            "app.request_change"
+          ],
+          "identity_sha256": "899e596ca812833547c40f32339c24261d3a28259e6ece0808fe1fec1c665dcc",
+          "identity_contract": "sha256:ebb3f312b7a7baeb18397b2eebe91208042932ee59748962479baef43d20aff4",
+          "initial_scoped_rows": 1,
+          "restart_scoped_rows": 1,
+          "own_context_positive": true,
+          "unauthorized_rows_absent": true
+        },
+        "second-insurer": {
+          "reference": "client-three.dd93324de4b5372712cbd7253f8b81d028769ba2ac426948e93e7206db843195",
+          "diagnostic_exit": 0,
+          "tools": [
+            "app.describe_data",
+            "app.explore_data",
+            "app.describe_actions",
+            "app.request_change"
+          ],
+          "identity_sha256": "3814b92b521595a77d54f065e2c818b94655472a4abc4d9a899ef460065d83ef",
+          "identity_contract": "sha256:ebb3f312b7a7baeb18397b2eebe91208042932ee59748962479baef43d20aff4",
+          "initial_scoped_rows": 1,
+          "restart_scoped_rows": 1,
+          "own_context_positive": true,
+          "unauthorized_rows_absent": true
+        },
+        "third-insurer": {
+          "reference": "client-four.39c0203699302907d74c26486c540e78d460c53060c6093e3c62a0803c3c4359",
+          "diagnostic_exit": 0,
+          "tools": [
+            "app.describe_data",
+            "app.explore_data",
+            "app.describe_actions",
+            "app.request_change"
+          ],
+          "identity_sha256": "d97f3a148552c102ecabf2759b060720e8cd571be51c7d79c5f4e86b4faeb491",
+          "identity_contract": "sha256:ebb3f312b7a7baeb18397b2eebe91208042932ee59748962479baef43d20aff4",
+          "initial_scoped_rows": 3,
+          "restart_scoped_rows": 3,
+          "own_context_positive": true,
+          "unauthorized_rows_absent": true
+        }
+      },
+      "common_store": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/isolation-final-5e3e78b/insurance-fresh/project/.synapsor/local.db",
+      "operator_route": "action review --project-root . -> Continue client setup; four separate hidden-value reviews and explicit installations",
+      "project_doctor_exit": 0
+    },
+    "A1": {
+      "status": "pass_single_process",
+      "counts": {
+        "new_proposals": 1,
+        "new_approvals": 1,
+        "new_queue": 1,
+        "new_receipts": 1,
+        "new_source_effects": 1
+      },
+      "receipt": {
+        "canonical_bytes_sha256": "7d04d489a6223f3fe723be0074862066d17ebdbbe409fcbae228affc489ee175",
+        "receipt_id": 2,
+        "receipt_hash": "sha256:64d13a5fb4f9ebfad4c45ef00385462d52e25725bd1b8b6e35db39438d0e8d51",
+        "status": "applied",
+        "rows_affected": 1
+      },
+      "replay": "completed",
+      "restart_replay": "completed",
+      "topology": "two identical calls within one MCP process, followed by one supervised worker and a restarted MCP process",
+      "actual_subject_mutex_wait": true,
+      "source_readback": "exact one-row reserve/version effect; all other rows unchanged"
+    },
+    "A2_shared_principal": {
+      "status": "passed",
+      "before": {
+        "overall": 2,
+        "per_insurer_counts_sorted": [
+          2
+        ]
+      },
+      "after": {
+        "overall": 3,
+        "per_insurer_counts_sorted": [
+          3
+        ]
+      },
+      "contention": {
+        "topology": "two installed stdio processes; one shared SQLite control store; actual BEGIN IMMEDIATE wait; observer pauses only",
+        "independent_writer_probe": "SQLITE_BUSY",
+        "exact_revision": {
+          "deployment_id": "f07ebc67-e21d-4d79-9382-0b181b46118a",
+          "action_name": "reviewed_staging_rules",
+          "revision_id": "policy:82b07f1a89ac5811ac2f2dc7405424aadb987359c5deb745709999c6810c60c5"
+        },
+        "release_requested_at": "2026-09-13T06:48:46.888Z",
+        "boundaries": [
+          [
+            {
+              "point": "approval_entry",
+              "observed_at": "2026-09-13T06:48:46.128Z"
+            },
+            {
+              "point": "writer_attempt",
+              "observed_at": "2026-09-13T06:48:46.359Z"
+            },
+            {
+              "point": "writer_acquired",
+              "observed_at": "2026-09-13T06:48:46.441Z"
+            },
+            {
+              "point": "admission_clock_selected",
+              "observed_at": "2026-09-13T06:48:47.083Z",
+              "admission_time": "2026-09-13T06:48:46.889Z"
+            }
+          ],
+          [
+            {
+              "point": "approval_entry",
+              "observed_at": "2026-09-13T06:48:46.082Z"
+            },
+            {
+              "point": "writer_attempt",
+              "observed_at": "2026-09-13T06:48:46.638Z"
+            },
+            {
+              "point": "writer_acquired",
+              "observed_at": "2026-09-13T06:48:47.315Z"
+            },
+            {
+              "point": "admission_clock_selected",
+              "observed_at": "2026-09-13T06:48:47.538Z",
+              "admission_time": "2026-09-13T06:48:47.315Z"
+            }
+          ]
+        ],
+        "responses": [
+          "approved",
+          "pending_review"
+        ]
+      },
+      "persisted_human_review_without_approval_or_queue": 1
+    },
+    "A2_ample_capacity": {
+      "status": "passed",
+      "before": {
+        "overall": 5,
+        "per_insurer_counts_sorted": [
+          2,
+          3
+        ]
+      },
+      "after": {
+        "overall": 7,
+        "per_insurer_counts_sorted": [
+          2,
+          2,
+          3
+        ]
+      },
+      "contention": {
+        "topology": "two installed stdio processes; one shared SQLite control store; actual BEGIN IMMEDIATE wait; observer pauses only",
+        "independent_writer_probe": "SQLITE_BUSY",
+        "exact_revision": {
+          "deployment_id": "f07ebc67-e21d-4d79-9382-0b181b46118a",
+          "action_name": "reviewed_staging_rules",
+          "revision_id": "policy:82b07f1a89ac5811ac2f2dc7405424aadb987359c5deb745709999c6810c60c5"
+        },
+        "release_requested_at": "2026-09-13T06:49:04.156Z",
+        "boundaries": [
+          [
+            {
+              "point": "approval_entry",
+              "observed_at": "2026-09-13T06:49:03.304Z"
+            },
+            {
+              "point": "writer_attempt",
+              "observed_at": "2026-09-13T06:49:03.600Z"
+            },
+            {
+              "point": "writer_acquired",
+              "observed_at": "2026-09-13T06:49:03.683Z"
+            },
+            {
+              "point": "admission_clock_selected",
+              "observed_at": "2026-09-13T06:49:04.352Z",
+              "admission_time": "2026-09-13T06:49:04.157Z"
+            }
+          ],
+          [
+            {
+              "point": "approval_entry",
+              "observed_at": "2026-09-13T06:49:03.343Z"
+            },
+            {
+              "point": "writer_attempt",
+              "observed_at": "2026-09-13T06:49:03.906Z"
+            },
+            {
+              "point": "writer_acquired",
+              "observed_at": "2026-09-13T06:49:04.586Z"
+            },
+            {
+              "point": "admission_clock_selected",
+              "observed_at": "2026-09-13T06:49:04.807Z",
+              "admission_time": "2026-09-13T06:49:04.586Z"
+            }
+          ]
+        ],
+        "responses": [
+          "approved",
+          "approved"
+        ]
+      },
+      "persisted_human_review_without_approval_or_queue": 0
+    },
+    "A2_overall": {
+      "status": "passed",
+      "before": {
+        "overall": 7,
+        "per_insurer_counts_sorted": [
+          2,
+          2,
+          3
+        ]
+      },
+      "after": {
+        "overall": 8,
+        "per_insurer_counts_sorted": [
+          2,
+          3,
+          3
+        ]
+      },
+      "contention": {
+        "topology": "two installed stdio processes; one shared SQLite control store; actual BEGIN IMMEDIATE wait; observer pauses only",
+        "independent_writer_probe": "SQLITE_BUSY",
+        "exact_revision": {
+          "deployment_id": "f07ebc67-e21d-4d79-9382-0b181b46118a",
+          "action_name": "reviewed_staging_rules",
+          "revision_id": "policy:82b07f1a89ac5811ac2f2dc7405424aadb987359c5deb745709999c6810c60c5"
+        },
+        "release_requested_at": "2026-09-13T06:49:06.565Z",
+        "boundaries": [
+          [
+            {
+              "point": "approval_entry",
+              "observed_at": "2026-09-13T06:49:06.100Z"
+            },
+            {
+              "point": "writer_attempt",
+              "observed_at": "2026-09-13T06:49:06.182Z"
+            },
+            {
+              "point": "writer_acquired",
+              "observed_at": "2026-09-13T06:49:06.266Z"
+            },
+            {
+              "point": "admission_clock_selected",
+              "observed_at": "2026-09-13T06:49:06.617Z",
+              "admission_time": "2026-09-13T06:49:06.565Z"
+            }
+          ],
+          [
+            {
+              "point": "approval_entry",
+              "observed_at": "2026-09-13T06:49:05.970Z"
+            },
+            {
+              "point": "writer_attempt",
+              "observed_at": "2026-09-13T06:49:06.314Z"
+            },
+            {
+              "point": "writer_acquired",
+              "observed_at": "2026-09-13T06:49:06.792Z"
+            },
+            {
+              "point": "admission_clock_selected",
+              "observed_at": "2026-09-13T06:49:06.876Z",
+              "admission_time": "2026-09-13T06:49:06.792Z"
+            }
+          ]
+        ],
+        "responses": [
+          "approved",
+          "pending_review"
+        ]
+      },
+      "persisted_human_review_without_approval_or_queue": 1
+    },
+    "A2_joint": {
+      "status": "passed",
+      "response": "pending_review",
+      "overall_remaining": 5
+    },
+    "A2_history": {
+      "status": "passed",
+      "normal_request_approvals_retained_after_public_cancellation": 2,
+      "all_cancel_exits": [
+        0,
+        0
+      ],
+      "shared_admission_revision": {
+        "deployment_id": "f07ebc67-e21d-4d79-9382-0b181b46118a",
+        "action_name": "reviewed_staging_rules",
+        "revision_id": "policy:82b07f1a89ac5811ac2f2dc7405424aadb987359c5deb745709999c6810c60c5"
+      },
+      "canonical_history_selectors": {
+        "inclusive_start_and_end": true,
+        "capability": "COALESCE(proposal.capability, proposal.action)",
+        "approval_actor": "policy:reserve_ops.adjust_claim_reserve.approval",
+        "action_boundary_name": "reviewed_staging_actions",
+        "tenant_source": "proposal.tenant_id; derived from trusted tenant binding",
+        "window_seconds": 86400,
+        "profile_namespace": false,
+        "actor_note": "policy actor corroborates automatic origin; boundary rolling SQL selects approved status, boundary name, inclusive time, optional capability and trusted tenant, not profile reference"
+      }
+    },
+    "A2_same_principal": {
+      "status": "passed_legacy_default_shared_same_principal",
+      "raw_result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/same_principal/deterministic/same-principal-result.json"
+    },
+    "A4": {
+      "status": "passed_observed_rejection_layer",
+      "cross_context": [
+        {
+          "issuer_alias": "primary",
+          "recipient_alias": "colleague",
+          "error_code": "SUBJECT_REFERENCE_UNAVAILABLE"
+        },
+        {
+          "issuer_alias": "colleague",
+          "recipient_alias": "primary",
+          "error_code": "SUBJECT_REFERENCE_UNAVAILABLE"
+        },
+        {
+          "issuer_alias": "primary",
+          "recipient_alias": "second-insurer",
+          "error_code": "SUBJECT_REFERENCE_UNAVAILABLE"
+        },
+        {
+          "issuer_alias": "second-insurer",
+          "recipient_alias": "primary",
+          "error_code": "SUBJECT_REFERENCE_UNAVAILABLE"
+        },
+        {
+          "issuer_alias": "third-insurer",
+          "recipient_alias": "second-insurer",
+          "error_code": "SUBJECT_REFERENCE_UNAVAILABLE"
+        }
+      ],
+      "own_exact_request_replays": {
+        "primary": true,
+        "colleague": true,
+        "second-insurer": true,
+        "third-insurer": true
+      },
+      "no_unauthorized_durable_records": true,
+      "source_unchanged": true,
+      "layer": "observed-reference issuer/context/claim validation; no claim that each deeper row-scope check was reached",
+      "all_ledger_tables_unchanged": 42,
+      "stored_context_comparisons": [
+        {
+          "pair": [
+            "primary",
+            "colleague"
+          ],
+          "same": {
+            "read_boundary_digest": true,
+            "generation_lock_fingerprint": true,
+            "tenant_scope_fingerprint": true,
+            "principal_scope_fingerprint": false,
+            "workflow_session_id": true
+          }
+        },
+        {
+          "pair": [
+            "colleague",
+            "primary"
+          ],
+          "same": {
+            "read_boundary_digest": true,
+            "generation_lock_fingerprint": true,
+            "tenant_scope_fingerprint": true,
+            "principal_scope_fingerprint": false,
+            "workflow_session_id": true
+          }
+        },
+        {
+          "pair": [
+            "primary",
+            "second-insurer"
+          ],
+          "same": {
+            "read_boundary_digest": true,
+            "generation_lock_fingerprint": true,
+            "tenant_scope_fingerprint": false,
+            "principal_scope_fingerprint": true,
+            "workflow_session_id": true
+          }
+        },
+        {
+          "pair": [
+            "second-insurer",
+            "primary"
+          ],
+          "same": {
+            "read_boundary_digest": true,
+            "generation_lock_fingerprint": true,
+            "tenant_scope_fingerprint": false,
+            "principal_scope_fingerprint": true,
+            "workflow_session_id": true
+          }
+        },
+        {
+          "pair": [
+            "third-insurer",
+            "second-insurer"
+          ],
+          "same": {
+            "read_boundary_digest": true,
+            "generation_lock_fingerprint": true,
+            "tenant_scope_fingerprint": false,
+            "principal_scope_fingerprint": true,
+            "workflow_session_id": true
+          }
+        }
+      ],
+      "source_trace": "assertObservedSubjectMatchesClaim rejects the recorded principal fingerprint mismatch for same-insurer clients, or tenant fingerprint mismatch for cross-insurer clients, before source facts/eligibility. This attribution combines the public reference error, stored metadata, successful own replays and current source ordering; it does not instrument each individual predicate or establish deeper row-scope coverage."
+    },
+    "A3_collection": {
+      "status": "passed_exact_receipts_and_source",
+      "receipts": [
+        {
+          "status": "applied",
+          "rows_affected": 1,
+          "semantic_verification": "reverified",
+          "canonical_bytes_sha256": "de01ced3683a99bdc07a8544f8407d0604fdb6eaf1a32332a52cd7b96f362864",
+          "receipt_hash": "sha256:5c2cd721069e6b4fe81dfcc19011eb5e11965e910b471e9ab783920c32d1fd88"
+        },
+        {
+          "status": "failed",
+          "rows_affected": 0,
+          "semantic_verification": "refused",
+          "canonical_bytes_sha256": "e665a5b4c22ebecfb1e29ea2bd6bd1d06480daa41c3e373813c26a3a5dbb470b",
+          "receipt_hash": "sha256:8866c130138ff27d194ba6f7c79281fcbbfc2976afbbc2f41c3bf38a7c6433e6"
+        }
+      ],
+      "source_wait": [
+        {
+          "state": "active",
+          "wait_event_type": "Lock",
+          "wait_event": "transactionid"
+        }
+      ],
+      "source_readback": "exactly one claim 60000/version2, one 30000/version1; portfolio total90000; all unrelated rows unchanged",
+      "concurrency": "First effect transaction observed waiting; second process launched before release. Concurrency limit remains one; this observation does not establish overlapping effect transactions."
+    },
+    "A3_owned_source_update": {
+      "status": "passed_exact_refusal_receipt_and_source",
+      "receipts": [
+        {
+          "status": "failed",
+          "rows_affected": 0,
+          "semantic_verification": "refused",
+          "canonical_bytes_sha256": "35cc2f56ac24e7008a3c1a3074da7f3ff6295204e4c60bde20f2dd7b348ca3c4",
+          "receipt_hash": "sha256:2b5174799a179de3edb715e7450f3b3fd6772faf6d689bcce2b68858f783ba09"
+        }
+      ],
+      "source_wait": [
+        {
+          "state": "active",
+          "wait_event_type": "Lock",
+          "wait_event": "transactionid"
+        }
+      ],
+      "source_readback": "only reviewed owned portfolio close/version increment; worker effect refused with zero rows"
+    },
+    "identity_lifecycle": {
+      "status": "passed_installed_local_lifecycle",
+      "running_cached_context": "unchanged until explicit stop; no immediate revocation claimed",
+      "future_launch": "refused; existing public diagnostic wraps as COMMAND_REJECTED / MCP_LAUNCH_CHECK_FAILED",
+      "new_revision_and_other_entry": "unchanged own-context controls; old entry separately uninstalled through existing operator command"
+    },
+    "edit": {
+      "status": "passed_installed_edit",
+      "publication_status": "passed_installed_edit",
+      "revisions": {
+        "before": "policy:82b07f1a89ac5811ac2f2dc7405424aadb987359c5deb745709999c6810c60c5",
+        "after": "policy:c95b97e33872ad3137f49ca50456cadb48772d1cce715d584f37aaaaceb0d728"
+      },
+      "exact_edit": {
+        "tenant_maximum": [
+          3,
+          1
+        ],
+        "unchanged_catalog": true,
+        "unchanged_rule_verification_effect": true,
+        "unchanged_other_approval_semantics": true
+      },
+      "retained_automatic_history": 2,
+      "fresh_current_request": "pending_review",
+      "same_client_process": true,
+      "already_dispatched": "not exercised by this old-unstarted-work check",
+      "execution_review_revision": "policy:386804f0dd5d4467227c34aea6bebd95f23340c909f7aa55ed9b4f3ad2908a65",
+      "worker_exit": 0,
+      "old_unstarted_queue": {
+        "status": "queued",
+        "attempts": 0,
+        "lease_id": null
+      }
+    },
+    "admission_first": {
+      "status": "passed_installed_admission_first",
+      "publication_status": "passed_installed_admission_first",
+      "revisions": {
+        "before": "policy:82b07f1a89ac5811ac2f2dc7405424aadb987359c5deb745709999c6810c60c5",
+        "after": "policy:b1c9062b76168402e0501930486a6cc1ca5b812013b16a831802f0ae01a5c458"
+      },
+      "exact_edit": {
+        "tenant_maximum": [
+          3,
+          1
+        ],
+        "unchanged_catalog": true,
+        "unchanged_rule_verification_effect": true,
+        "unchanged_other_approval_semantics": true
+      },
+      "retained_automatic_history": 2,
+      "fresh_current_request": "pending_review",
+      "same_client_process": true,
+      "already_dispatched": "not exercised by this old-unstarted-work check"
+    },
+    "replacement_first": {
+      "status": "passed_installed_replacement_first",
+      "publication_status": "passed_installed_replacement_first",
+      "revisions": {
+        "before": "policy:82b07f1a89ac5811ac2f2dc7405424aadb987359c5deb745709999c6810c60c5",
+        "after": "policy:412116e9f9b39cd4baaf6f3521488d7b7ea77f8022f3077c3f787605a06d5bd7"
+      },
+      "exact_edit": {
+        "tenant_maximum": [
+          3,
+          1
+        ],
+        "unchanged_catalog": true,
+        "unchanged_rule_verification_effect": true,
+        "unchanged_other_approval_semantics": true
+      },
+      "retained_automatic_history": 1,
+      "fresh_current_request": "pending_review",
+      "same_client_process": true,
+      "already_dispatched": "not exercised by this old-unstarted-work check"
+    },
+    "late_refusal": {
+      "status": "passed_stored_pending_no_approval_duplicate_and_distinct_subject_controls",
+      "public_error_code": "SEMANTIC_ACTION_UNAVAILABLE",
+      "public_message": "Runner could not prove this reviewed outcome from current authoritative facts. No source change was executed. An unapproved proposal may remain; ask the operator to inspect existing requests before retrying.",
+      "retained_unapproved": 1,
+      "automatic_approvals_added": 0,
+      "same_subject_fresh_ref_error": "PROPOSAL_ALREADY_EXISTS",
+      "distinct_subject_current_rule": "pending_review"
+    },
+    "existing_recovery": {
+      "status": "verified_existing_operator_rejection_then_current_rule_human_review",
+      "operator_rejection_exit": 0,
+      "fresh_same_subject_after_rejection": "pending_review",
+      "route": "proposals reject <exact-unapproved-proposal-id> --yes --reason <reviewed-reason> --config synapsor.actions.runner.json --json"
+    }
+  },
+  "raw_evidence": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/shared_02/deterministic/reviewed-contexts-result.json",
+      "sha256": "6368e8b79c7c8840694fcb5f302504f18e35cdc5fd45320989bf72e1d3bf7ad2",
+      "bytes": 2910
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/shared_02/deterministic/a1-result.json",
+      "sha256": "d2c4160c1b55a2e2e30c3f769ba8556b3aef076a804efa4df36bb80e59a31cb7",
+      "bytes": 12138
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/shared_02/deterministic/shared-matrix-result.json",
+      "sha256": "471b4fd5ff16d846fab7d67f08d8dd8f6623c045801e0201a0deda1a1d1852d3",
+      "bytes": 107738
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/same_principal/deterministic/same-principal-result.json",
+      "sha256": "0389bd2c3f3315d38190ba7075b9bf766ce6adca809932f93e876f22905f82f6",
+      "bytes": 11031
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/shared_02/deterministic/shared-cross-before-ledger.json",
+      "sha256": "f93b29eaffcdf73e2cb3fdf21f11a23d3d8121c1b7cd40b574a59e6b6f3f2c01",
+      "bytes": 2338441
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/shared_02/deterministic/shared-cross-after-ledger.json",
+      "sha256": "f93b29eaffcdf73e2cb3fdf21f11a23d3d8121c1b7cd40b574a59e6b6f3f2c01",
+      "bytes": 2338441
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/collection/deterministic/a3-result.json",
+      "sha256": "cc6aa1298487dae2fc33a1cffd689c8515273e907384f7031d679f9c12c9458e",
+      "bytes": 20996
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/identity_lifecycle_02/deterministic/identity-lifecycle-result.json",
+      "sha256": "629670157ecae81f44d6c13c6e42623e8799e6947648fa7bea4b901a4c82b38c",
+      "bytes": 1984
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/edit/deterministic/edit-result.json",
+      "sha256": "5de6cd1f29575c29312a26b46020a94119c3cab6055c59a581bb89d11e096046",
+      "bytes": 34946
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/admission_first/deterministic/edit-result.json",
+      "sha256": "3efe7d916b682dd8eb604b33fbb20383e9ab13d82611b5e59c5a8517c6537461",
+      "bytes": 34124
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/replacement_first/deterministic/edit-result.json",
+      "sha256": "365c3bf55f913378519abd59f4b19dcf1c1660a4b4938995f384152316344920",
+      "bytes": 48179
+    }
+  ],
+  "runtime_budget": {
+    "started_at": "2026-09-13T05:07:24.081Z",
+    "deadline": "2026-09-13T08:43:27.613Z",
+    "timed_schedule_started_at": "2026-09-13T06:43:27.613Z",
+    "operations": 241,
+    "maximum_operations": 600,
+    "worker_invocations": 6,
+    "schedules": {
+      "A1 identical and replay": 2,
+      "A2 different principals shared insurer last slot": 2,
+      "A2 same principal last slot": 1,
+      "A3 portfolio constraint": 1,
+      "A3 owned source update": 1,
+      "A2 ample capacity": 1,
+      "A2 last overall slot": 1,
+      "A4 configured context references": 1,
+      "installed edit exact automatic limit edit": 1,
+      "installed admission_first exact automatic limit edit": 1,
+      "installed replacement_first exact automatic limit edit": 1
+    }
+  },
+  "completed_exit_codes": {
+    "stable-full02": 0,
+    "final-types": 0,
+    "postgres-gate02": 0,
+    "installed-shared02-doctor": 0,
+    "installed-shared02-contexts": 0,
+    "installed-identity-lifecycle02-lifecycle": 0,
+    "installed-a1-02": 0,
+    "installed-shared-matrix02": 0,
+    "installed-same-principal": 0,
+    "installed-a3": 0,
+    "installed-edit-edit": 0,
+    "installed-edit-admission_first": 0,
+    "installed-edit-replacement_first": 0
+  },
+  "stage_a": "PASSED_NAMED_LOCAL_MATRIX",
+  "stage_b": "NOT_STARTED"
+}

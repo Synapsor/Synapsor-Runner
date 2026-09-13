@@ -12,7 +12,8 @@ before=inspect();assert before['State']['Running'];(out/'container-before.json')
 pids={}
 for p in list(e.glob('*-exit.json')) + list((owned/'runtime').glob('*/setup-evidence/*-result.json')) + list((owned/'runtime').glob('*/deterministic/publication-operator-result.json')):
  d=json.loads(p.read_text())
- if isinstance(d.get('pid'),int):pids[d['pid']]=str(p)
+ for field in ['pid','controller_pid','child_pid']:
+  if isinstance(d.get(field),int):pids[d[field]]=str(p)
 for p in list((owned/'runtime').glob('*/deterministic/events.jsonl'))+list((owned/'reproduction').glob('*/deterministic/events.jsonl')):
  for line in p.read_text().splitlines():
   d=json.loads(line)

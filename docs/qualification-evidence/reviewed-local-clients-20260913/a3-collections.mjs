@@ -47,6 +47,7 @@ try {
  assert.equal(claims.filter(c=>c.reserve_cents===60000&&c.version===2).length,1);assert.equal(claims.filter(c=>c.reserve_cents===30000&&c.version===1).length,1);
  assert(applied.some(r=>r.status==='applied'));assert.equal(applied.filter(r=>r.status==='applied').length,1);
  const expected=structuredClone(source);const changed=claims.find(c=>c.reserve_cents===60000);Object.assign(expected.claims.find(c=>c.claim_ref===changed.claim_ref),changed);assert.deepEqual(sourceAfter,expected);
+ result.collection_status='passed_exact_receipts_and_source';
  // Separate owned competing UPDATE with the required version increment. The
  // worker must encounter the actual row lock before the owner commits.
  schedule('A3 owned source update');const externalBefore=ledgerSnapshot('a3-external-before');result.external_request=await client.call('app.request_change',args('CL-501',25000));assert(result.external_request.ok);
@@ -61,6 +62,6 @@ try {
  result.external_receipts=final.writeback_receipts.filter(r=>r.proposal_id===result.external_proposal_id);
  assert(result.external_receipts.length>0);assert(result.external_receipts.every(r=>r.status!=='applied'));
  assert.equal(result.external_receipts.length,1);const externalReceipt=JSON.parse(result.external_receipts[0].receipt_json);assert.equal(externalReceipt.proposal_id,result.external_proposal_id);assert.equal(externalReceipt.rows_affected,0);assert.equal(externalReceipt.semantic_verification.status,'refused');result.canonical_receipt_bytes.push({proposal_id:result.external_proposal_id,sha256:createHash('sha256').update(result.external_receipts[0].receipt_json).digest('hex')});
- result.status='pass_observed_source_coordination';
+ result.external_status='passed_exact_refusal_receipt_and_source';result.status='pass_observed_source_coordination';
 }catch(e){result.status='failed_or_incomplete';result.error=e.stack;process.exitCode=1;log('a3_failure',{message:e.message});}
 finally{if(blocker){await blocker.query('ROLLBACK').catch(()=>{});await blocker.end();}await Promise.allSettled(workers);await client.close();await fs.writeFile(path.join(runtime,'a3-result.json'),JSON.stringify(result,null,2)+'\n',{flag:'wx'});console.log(JSON.stringify(result));}

@@ -1,6 +1,6 @@
 {
-  "at": "2026-09-13T06:21:08.165106+00:00",
-  "phase": "Stable gates passed; freeze checkpoint",
+  "at": "2026-09-13T07:05:29.630142+00:00",
+  "phase": "Completed named local Stage A; STOP for independent review after private backup delivery",
   "completed": {
     "combined01": "248 passed /16 skipped exit0",
     "postgres-gate01": "41 passed exit0 real PG CONTROL",
@@ -10,24 +10,87 @@
     "handoff-followup02": "110 passed exit0; exact named diagnostic and truthful separate-worker guidance",
     "final-types": "exit0",
     "postgres-gate02": "41 passed exit0 on final product23e51b1; real PG CONTROL",
-    "offline": "10 checks exit0, including packed offline with local Spec"
+    "offline": "10 checks exit0, including packed offline with local Spec",
+    "installed_lifecycle": "Corrected public-error-layer measurement rerun in fresh identity_lifecycle_02 passed exit0; original attempt preserved",
+    "A1": "pass actual0: receipt/readback/replay/restart single process plus restart",
+    "same_principal": "pass actual0: real writer contention and exact last-slot grant",
+    "A3": "both portfolio and owner-update pass actual0: canonical receipts/source readback and actual source waits"
   },
-  "next": "Freeze/hash complete new installation, prepare final owned fixtures and reviewed clients, then execute all named installed rows. No timed schedules yet.",
-  "budgets": "Full2/2 pass, PG2/2 pass, offline1/2 pass(all10), freeze0/2. Overall11:39:41Z unchanged; installed120min/600ops/24workers not reset.",
-  "stage_a": "NOT PASSED",
-  "stage_b": "NOT STARTED",
-  "prepared_harnesses": [
-    "real SQLite writer contention observer (development passed)",
-    "shared-principal/joint/ample/overall/A4 matrix (prepared, not run)",
-    "both original A3 cases (prepared, not run)",
-    "installed immutable identity lifecycle (prepared, not run)",
-    "installed exact edit/order plus stranded-proposal rejection recovery (prepared, not run)"
-  ],
+  "next": "No further implementation or schedules authorized. Independent reviewer checks verification-report.md and installed-scorecard.json, especially the new setup dependency. Delivery commit/ref receipt is saved separately in the owned root; Stage B is not started.",
+  "budgets": "Full2/2 andPG2/2 used;offline1/2 freeze1/2 pass;241/600 operations6/24 workers; schedules<=2; original deadlines retained. All application work complete.",
+  "stage_a": "PASSED_NAMED_LOCAL_MATRIX",
+  "stage_b": "NOT_STARTED",
   "current_full_run": "stable-full02 completed6152pass/461skip exit0;947source files unchanged",
   "feature_commit": "23e51b1e17c5ec22492518be6d3f6bb0d752bfe7",
   "development_prerequisites": {
     "writer_contention": "dev-contention01 exit0; two actual writer attempts, independent SQLITE_BUSY probe, waiting, both approve with ample capacity",
     "cancellation": "dev-cancel01 state-spelling assertion error after successful public cancel; dev-cancel-followup exit0 proves normal next request and retained consumption",
     "operator": "primary, colleague, second insurer reviewed via actual public setup on development bundle only"
-  }
+  },
+  "artifact_tree": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+  "artifact_source": "66adb954d5a2cdf7419d727f7c551740e6da7b5d",
+  "historical_checkpoint_fields": {
+    "prepared_harnesses": [
+      "real SQLite writer contention observer (development passed)",
+      "shared-principal/joint/ample/overall/A4 matrix (prepared, not run)",
+      "both original A3 cases (prepared, not run)",
+      "installed immutable identity lifecycle (prepared, not run)",
+      "installed exact edit/order plus stranded-proposal rejection recovery (prepared, not run)"
+    ],
+    "shared_attempt01": "different-principal and joint pass; history setup incorrectly reused consumed reference (SUBJECT_REFERENCE_UNAVAILABLE); original store preserved, fresh shared_02 correction running"
+  },
+  "product_revision": "23e51b1e17c5ec22492518be6d3f6bb0d752bfe7",
+  "source_checkpoint": "66adb954d5a2cdf7419d727f7c551740e6da7b5d",
+  "final_installed_checks": {
+    "reviewed_setup": "passed_configured_clients_before_schedules",
+    "A1": "pass_single_process",
+    "A2_shared_principal": "passed",
+    "A2_ample_capacity": "passed",
+    "A2_overall": "passed",
+    "A2_joint": "passed",
+    "A2_history": "passed",
+    "A2_same_principal": "passed_legacy_default_shared_same_principal",
+    "A4": "passed_observed_rejection_layer",
+    "A3_collection": "passed_exact_receipts_and_source",
+    "A3_owned_source_update": "passed_exact_refusal_receipt_and_source",
+    "identity_lifecycle": "passed_installed_local_lifecycle",
+    "edit": "passed_installed_edit",
+    "admission_first": "passed_installed_admission_first",
+    "replacement_first": "passed_installed_replacement_first",
+    "late_refusal": "passed_stored_pending_no_approval_duplicate_and_distinct_subject_controls",
+    "existing_recovery": "verified_existing_operator_rejection_then_current_rule_human_review"
+  },
+  "runtime_budget": {
+    "started_at": "2026-09-13T05:07:24.081Z",
+    "deadline": "2026-09-13T08:43:27.613Z",
+    "timed_schedule_started_at": "2026-09-13T06:43:27.613Z",
+    "operations": 241,
+    "maximum_operations": 600,
+    "worker_invocations": 6,
+    "schedules": {
+      "A1 identical and replay": 2,
+      "A2 different principals shared insurer last slot": 2,
+      "A2 same principal last slot": 1,
+      "A3 portfolio constraint": 1,
+      "A3 owned source update": 1,
+      "A2 ample capacity": 1,
+      "A2 last overall slot": 1,
+      "A4 configured context references": 1,
+      "installed edit exact automatic limit edit": 1,
+      "installed admission_first exact automatic limit edit": 1,
+      "installed replacement_first exact automatic limit edit": 1
+    }
+  },
+  "cleanup": {
+    "stopped_owned_container": "synapsor-reviewed-clients-36250d48",
+    "container_id": "900f2180a810e03cc9b4e165c2f2c33a224604a115727add4d6e1aa55eb8baaa",
+    "actual_exit_code": 0,
+    "database_dumps": 11,
+    "recorded_processes_gone": 250
+  },
+  "preservation": "All106690 protected entries unchanged after cleanup; all7569 candidate entries unchanged",
+  "report": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/verification-report.md",
+  "scorecard": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/installed-scorecard.json",
+  "delivery_receipt": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/delivery.json",
+  "new_setup_dependency": "Shared-context rows depend on setup code written during this assignment; feature regressions are separate evidence and the setup has not been independently exercised outside this task."
 }

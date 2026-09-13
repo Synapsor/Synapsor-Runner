@@ -66,3 +66,99 @@ Installed prerequisites: prepare-runtime.mjs creates a whole owned project/sourc
 Installed schedules: a1-identical.mjs; shared-accounting-contexts.mjs (A2/A4); same-principal-control.mjs; a3-collections.mjs (both source cases); installed-edit-check.mjs with drive-publication.py (edit/admission-first/replacement-first); installed-identity-lifecycle.mjs with drive-retirement.py. Exact executed commands, exits, controller hashes and saved harness byte snapshots will accompany each result.
 
 The reused effective-store preflight is hash-linked in reused-harness-provenance.json; its full existing source and owned copy are preserved. The observer reads the unmodified installed bundle, pauses at real writer boundaries and proves a real SQLite wait. It is labeled instrumentation, not a new product path.
+
+## Executed final installed matrix
+
+These are recorded executions, not commands to repeat in the preserved stores. All final calls use the complete tree in final-artifact.json. Source/fixtures are stopped and saved. A future verifier must use a new whole owned restore and an explicit budget; never run saved incorrect queues.
+
+installed-identity-lifecycle02-lifecycle: actual exit 0.
+
+```bash
+python3 docs/qualification-evidence/reviewed-local-clients-20260913/run-owned.py installed-identity-lifecycle02-lifecycle --case identity_lifecycle_02 node '/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/installed-identity-lifecycle.mjs'
+```
+
+installed-a1: actual exit 0.
+
+```bash
+python3 docs/qualification-evidence/reviewed-local-clients-20260913/run-owned.py installed-a1 --case shared node '/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/a1-identical.mjs'
+```
+
+installed-a1-02: actual exit 0.
+
+```bash
+python3 docs/qualification-evidence/reviewed-local-clients-20260913/run-owned.py installed-a1-02 --case shared_02 node '/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/a1-identical.mjs'
+```
+
+installed-shared-matrix: actual exit 1.
+
+```bash
+python3 docs/qualification-evidence/reviewed-local-clients-20260913/run-owned.py installed-shared-matrix --case shared node '/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/shared-accounting-contexts.mjs'
+```
+
+installed-shared-matrix02: actual exit 0.
+
+```bash
+python3 docs/qualification-evidence/reviewed-local-clients-20260913/run-owned.py installed-shared-matrix02 --case shared_02 node '/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/shared-accounting-contexts.mjs'
+```
+
+installed-same-principal: actual exit 0.
+
+```bash
+python3 docs/qualification-evidence/reviewed-local-clients-20260913/run-owned.py installed-same-principal --case same_principal node '/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/same-principal-control.mjs'
+```
+
+installed-a3: actual exit 0.
+
+```bash
+python3 docs/qualification-evidence/reviewed-local-clients-20260913/run-owned.py installed-a3 --case collection node '/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/a3-collections.mjs'
+```
+
+installed-edit-edit: actual exit 0.
+
+```bash
+python3 docs/qualification-evidence/reviewed-local-clients-20260913/run-owned.py installed-edit-edit --case edit node '/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/installed-edit-check.mjs'
+```
+
+installed-edit-admission_first: actual exit 0.
+
+```bash
+python3 docs/qualification-evidence/reviewed-local-clients-20260913/run-owned.py installed-edit-admission_first --case admission_first node '/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/installed-edit-check.mjs'
+```
+
+installed-edit-replacement_first: actual exit 0.
+
+```bash
+python3 docs/qualification-evidence/reviewed-local-clients-20260913/run-owned.py installed-edit-replacement_first --case replacement_first node '/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/installed-edit-check.mjs'
+```
+
+Each edit runtime was paired with the existing public operator controller, before waiting for both exits:
+
+```bash
+python3 docs/qualification-evidence/reviewed-local-clients-20260913/drive-publication.py edit
+python3 docs/qualification-evidence/reviewed-local-clients-20260913/drive-publication.py admission_first
+python3 docs/qualification-evidence/reviewed-local-clients-20260913/drive-publication.py replacement_first
+```
+
+Operator setup exact final shared fixture commands (all exit0):
+
+```bash
+python3 docs/qualification-evidence/reviewed-local-clients-20260913/drive-client-setup.py shared_02 client-one primary
+python3 docs/qualification-evidence/reviewed-local-clients-20260913/drive-client-setup.py shared_02 client-two colleague
+python3 docs/qualification-evidence/reviewed-local-clients-20260913/drive-client-setup.py shared_02 client-three second-insurer
+python3 docs/qualification-evidence/reviewed-local-clients-20260913/drive-client-setup.py shared_02 client-four third-insurer
+```
+
+Before scheduling, check-installed-context.mjs and check-reviewed-contexts.mjs ran through run-owned.py for the owned fixture, with exact per-client generated launcher selection, normal own reads and restarts. installed-shared02-exits.json records these commands and actual exits. Lifecycle uses the fresh identity_lifecycle_02 fixture; its own operator retirement transcript and public future-launch refusal are retained.
+
+Recovery executed the existing public `proposals reject <exact ID> --yes --reason <reviewed reason> --config synapsor.actions.runner.json --json` against the stranded unapproved record; the private result records its exact ID and command. No new recovery mechanism was implemented.
+
+Final artifact verification, preservation and save/stop commands:
+
+```bash
+node '/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/frozen/freeze-repair.mjs' --verify
+python3 docs/qualification-evidence/reviewed-local-clients-20260913/verify-preserved.py preservation-final
+python3 docs/qualification-evidence/reviewed-local-clients-20260913/save-and-stop-owned.py
+python3 docs/qualification-evidence/reviewed-local-clients-20260913/verify-preserved.py preservation-after-cleanup
+```
+
+Logs and owned database state were saved before stop. Cleanup verifies exact container ID, ownership label, network-none and recorded processes; it stops only that owned resource. Full/private manifests and failed attempt stores remain under the owned root.

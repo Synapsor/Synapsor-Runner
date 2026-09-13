@@ -1,0 +1,13 @@
+{
+  "verified_at": "2026-09-13T07:03:31.136694+00:00",
+  "remote": "backup",
+  "push_url": "https://github.com/Synapsor/Synapsor-Runner-Backup.git",
+  "nameWithOwner": "Synapsor/Synapsor-Runner-Backup",
+  "isPrivate": true,
+  "verification_commands": [
+    "git remote get-url --push backup",
+    "gh repo view Synapsor/Synapsor-Runner-Backup --json nameWithOwner,isPrivate,url"
+  ],
+  "branch": "codex/tui-safe-action-control-plane",
+  "public_release_or_deployment": false
+}

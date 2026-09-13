@@ -1,0 +1,53 @@
+[
+  {
+    "case": "edit",
+    "runtime_command": [
+      "python3",
+      "docs/qualification-evidence/reviewed-local-clients-20260913/run-owned.py",
+      "installed-edit-edit",
+      "--case",
+      "edit",
+      "node",
+      "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/installed-edit-check.mjs"
+    ],
+    "runtime_exit": 0,
+    "operator_exit": 0,
+    "operator_stdout": "{\"case\": \"edit\", \"started_at\": \"2026-09-13T06:49:41.373835+00:00\", \"status\": \"passed_exact_publication_operator\", \"steps\": [{\"at\": \"2026-09-13T06:49:51.696025+00:00\", \"observed\": \"Q Quit\"}, {\"at\": \"2026-09-13T06:49:52.894466+00:00\", \"observed\": \"Review saved read access\"}, {\"at\": \"2026-09-13T06:49:53.003880+00:00\", \"observed\": \"Keep current active Read Boundary and finish\"}, {\"at\": \"2026-09-13T06:49:53.272389+00:00\", \"observed\": \"ACTIVATION SUCCEEDED\"}, {\"at\": \"2026-09-13T06:49:54.238496+00:00\", \"observed\": \"Activate this exact proposal authority\"}, {\"at\": \"2026-09-13T06:49:54.289628+00:00\", \"observed\": \"Activate verified Action Boundary \\\"reviewed_staging_actions\\\"?\"}, {\"at\": \"2026-09-13T06:49:54.484085+00:00\", \"observed\": \"Q Quit\"}, {\"at\": \"2026-09-13T06:49:54.573943+00:00\", \"observed\": \"Review supervised execution for reserve_ops.adjust_claim_reserve\"}, {\"at\": \"2026-09-13T06:49:54.628766+00:00\", \"observed\": \"Check the configured write connection\"}, {\"at\": \"2026-09-13T06:49:54.768211+00:00\", \"observed\": \"Enable supervised source execution for reserve_ops.adjust_claim_reserve?\"}, {\"at\": \"2026-09-13T06:49:55.030208+00:00\", \"observed\": \"Supervised execution enabled for this outcome.\"}, {\"at\": \"2026-09-13T06:49:55.030445+00:00\", \"observed\": \"Q Quit\"}], \"controller_sha256\": \"721430e8c352684e9727eab05711b0a56340e0648303e34773372af96e7e3853\", \"pid\": 2060368, \"exit_code\": 0, \"completed_at\": \"2026-09-13T06:49:55.205894+00:00\"}\n",
+    "operator_stderr": "",
+    "completed_at": "2026-09-13T06:49:59.689117+00:00"
+  },
+  {
+    "case": "admission_first",
+    "runtime_command": [
+      "python3",
+      "docs/qualification-evidence/reviewed-local-clients-20260913/run-owned.py",
+      "installed-edit-admission_first",
+      "--case",
+      "admission_first",
+      "node",
+      "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/installed-edit-check.mjs"
+    ],
+    "runtime_exit": 0,
+    "operator_exit": 0,
+    "operator_stdout": "{\"case\": \"admission_first\", \"started_at\": \"2026-09-13T06:49:59.730978+00:00\", \"status\": \"passed_exact_publication_operator\", \"steps\": [{\"at\": \"2026-09-13T06:50:10.006592+00:00\", \"observed\": \"Q Quit\"}, {\"at\": \"2026-09-13T06:50:11.408990+00:00\", \"observed\": \"Review saved read access\"}, {\"at\": \"2026-09-13T06:50:11.520478+00:00\", \"observed\": \"Keep current active Read Boundary and finish\"}, {\"at\": \"2026-09-13T06:50:11.781109+00:00\", \"observed\": \"ACTIVATION SUCCEEDED\"}, {\"at\": \"2026-09-13T06:50:13.055539+00:00\", \"observed\": \"Activate this exact proposal authority\"}, {\"at\": \"2026-09-13T06:50:13.107706+00:00\", \"observed\": \"Activate verified Action Boundary \\\"reviewed_staging_actions\\\"?\"}, {\"at\": \"2026-09-13T06:50:13.359209+00:00\", \"observed\": \"Q Quit\"}], \"controller_sha256\": \"721430e8c352684e9727eab05711b0a56340e0648303e34773372af96e7e3853\", \"pid\": 2061474, \"exit_code\": 0, \"completed_at\": \"2026-09-13T06:50:13.528027+00:00\"}\n",
+    "operator_stderr": "",
+    "completed_at": "2026-09-13T06:50:14.952723+00:00"
+  },
+  {
+    "case": "replacement_first",
+    "runtime_command": [
+      "python3",
+      "docs/qualification-evidence/reviewed-local-clients-20260913/run-owned.py",
+      "installed-edit-replacement_first",
+      "--case",
+      "replacement_first",
+      "node",
+      "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/runtime/installed-edit-check.mjs"
+    ],
+    "runtime_exit": 0,
+    "operator_exit": 0,
+    "operator_stdout": "{\"case\": \"replacement_first\", \"started_at\": \"2026-09-13T06:50:14.982955+00:00\", \"status\": \"passed_exact_publication_operator\", \"steps\": [{\"at\": \"2026-09-13T06:50:25.044778+00:00\", \"observed\": \"Q Quit\"}, {\"at\": \"2026-09-13T06:50:25.819704+00:00\", \"observed\": \"Review saved read access\"}, {\"at\": \"2026-09-13T06:50:25.942451+00:00\", \"observed\": \"Keep current active Read Boundary and finish\"}, {\"at\": \"2026-09-13T06:50:26.330394+00:00\", \"observed\": \"ACTIVATION SUCCEEDED\"}, {\"at\": \"2026-09-13T06:50:27.269710+00:00\", \"observed\": \"Activate this exact proposal authority\"}, {\"at\": \"2026-09-13T06:50:27.320688+00:00\", \"observed\": \"Activate verified Action Boundary \\\"reviewed_staging_actions\\\"?\"}, {\"at\": \"2026-09-13T06:50:27.522727+00:00\", \"observed\": \"Q Quit\"}], \"controller_sha256\": \"721430e8c352684e9727eab05711b0a56340e0648303e34773372af96e7e3853\", \"pid\": 2062339, \"exit_code\": 0, \"completed_at\": \"2026-09-13T06:50:27.704286+00:00\"}\n",
+    "operator_stderr": "",
+    "completed_at": "2026-09-13T06:50:32.788776+00:00"
+  }
+]

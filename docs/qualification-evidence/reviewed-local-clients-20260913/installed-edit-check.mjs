@@ -105,7 +105,9 @@ try {
  }
  const final=ledgerSnapshot('edit-final');assert.deepEqual(final.approvals,admitted.approvals);
  assert.deepEqual(await sourceSnapshot('edit-final'),source);assert.equal(client.child.pid,result.client_pid);
+ result.publication_status='passed_installed_'+owner.case;
  if(owner.case==='replacement_first'){
+  result.late_refusal_status='passed_stored_pending_no_approval_duplicate_and_distinct_subject_controls';
   const rejection=await operator(['proposals','reject',result.stranded_proposal_id,'--yes','--reason','Reviewed rejection of owned stranded unapproved proposal after rule publication','--config','synapsor.actions.runner.json','--json']);
   result.recovery={rejection};assert.equal(rejection.code,0);const rejected=ledgerSnapshot('edit-recovery-rejected');assert.equal(rejected.proposals.find(p=>p.proposal_id===result.stranded_proposal_id).state,'rejected');assert(!rejected.approvals.some(a=>a.proposal_id===result.stranded_proposal_id&&a.status==='approved'));assert.deepEqual(rejected.worker_queue,final.worker_queue);
   const recoveredRows=await client.call('app.explore_data',{plan:{kind:'rows',resource:'reserve_ops.claims',select:['claim_ref','reserve_cents']}});assert(recoveredRows.ok);const index=recoveredRows.data.findIndex(r=>r.claim_ref==='CL-103');assert(index>=0);

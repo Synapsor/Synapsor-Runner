@@ -1,0 +1,23 @@
+{
+  "at": "2026-09-13T07:05:29.630142+00:00",
+  "stage_a": "PASSED_NAMED_LOCAL_MATRIX",
+  "stage_b": "NOT_STARTED",
+  "next_decision": "Independent review/acceptance of this exact local Stage A artifact and new operator setup dependency; no remaining named implementation defect or required unrun row. No Stage B authorization.",
+  "new_setup_not_independently_exercised": true,
+  "required_local_rows_failed_blocked_unrun": [],
+  "preserved_harness_findings": [
+    "shared-matrix-attempt01-finding.json",
+    "test-attempt-notes.md"
+  ],
+  "remaining_limitations": [
+    "local operator identity, not production authentication",
+    "future-launch retirement, not immediate cached-session revocation",
+    "mixed-version/clock-skew and multi-host guarantees not established",
+    "A1 one-process duplicate plus restart; no universal exactly-once",
+    "A3 worker effect concurrency remainsone; actual source waits measured",
+    "old-unstarted publication control does not exercise already-dispatched work"
+  ],
+  "report": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/verification-report.md",
+  "scorecard": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/installed-scorecard.json",
+  "delivery_receipt": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/delivery.json"
+}

@@ -39,13 +39,13 @@ try{
  const sourceAfter=await sourceSnapshot('a1-executed');
  const expected=structuredClone(source);const claim=expected.claims.find(x=>x.claim_ref==='CL-103');claim.reserve_cents=25000;claim.version++;
  assert.deepEqual(sourceAfter,expected);
- result.replay=await client.call('app.request_change',args);
+ result.replay=await client.call('app.request_change',args);assert.equal(result.replay.status,'completed');assert.equal(result.replay.execution_receipt?.verified,true);assert.equal(result.replay.execution_receipt.status,'applied');
  const replay=ledgerSnapshot('a1-replay');for(const table of ['proposals','approvals','worker_queue','writeback_receipts','writeback_jobs','control_policy_effect_admissions','control_policy_budget_requests']){assert(Array.isArray(executed[table]),table);assert.deepEqual(replay[table],executed[table],`Replay preserves ${table}`);}
  assert.deepEqual(await sourceSnapshot('a1-replay'),sourceAfter);
  result.boundaries=client.inspector.boundaries;
  await client.close();const restarted=new PublicMcp();
  try {await restarted.start({inspector:false,localClient:profile});result.restart_replay=await restarted.call('app.request_change',args);
- assert(result.restart_replay.ok);const afterRestart=ledgerSnapshot('a1-restart');
+ assert(result.restart_replay.ok);assert.equal(result.restart_replay.status,'completed');assert.deepEqual(result.restart_replay.execution_receipt,result.replay.execution_receipt);const afterRestart=ledgerSnapshot('a1-restart');
  for(const table of ['proposals','approvals','worker_queue','writeback_receipts','writeback_jobs'])assert.deepEqual(afterRestart[table],executed[table]);
  assert.deepEqual(await sourceSnapshot('a1-restart'),sourceAfter);
  }finally{await restarted.close();}

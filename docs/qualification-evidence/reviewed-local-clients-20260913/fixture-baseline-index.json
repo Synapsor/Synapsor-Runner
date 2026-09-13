@@ -1,0 +1,142 @@
+{
+  "fixtures": [
+    {
+      "fixture": "admission_first",
+      "case": "admission_first",
+      "database": "insurance_clients_admission_first",
+      "artifact_tree": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+      "original_rows_preserved": 40,
+      "fixture_rows": {
+        "portfolios": 9,
+        "claims": 29,
+        "freezes": 2
+      },
+      "source_baseline_sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "qualification_candidate": true
+    },
+    {
+      "fixture": "collection",
+      "case": "collection",
+      "database": "insurance_clients_collection",
+      "artifact_tree": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+      "original_rows_preserved": 40,
+      "fixture_rows": {
+        "portfolios": 9,
+        "claims": 29,
+        "freezes": 2
+      },
+      "source_baseline_sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "qualification_candidate": true
+    },
+    {
+      "fixture": "edit",
+      "case": "edit",
+      "database": "insurance_clients_edit",
+      "artifact_tree": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+      "original_rows_preserved": 40,
+      "fixture_rows": {
+        "portfolios": 9,
+        "claims": 29,
+        "freezes": 2
+      },
+      "source_baseline_sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "qualification_candidate": true
+    },
+    {
+      "fixture": "identity_lifecycle",
+      "case": "identity_lifecycle",
+      "database": "insurance_clients_identity_lifecycle",
+      "artifact_tree": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+      "original_rows_preserved": 40,
+      "fixture_rows": {
+        "portfolios": 9,
+        "claims": 29,
+        "freezes": 2
+      },
+      "source_baseline_sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "qualification_candidate": true
+    },
+    {
+      "fixture": "identity_lifecycle_02",
+      "case": "identity_lifecycle_02",
+      "database": "insurance_clients_identity_lifecycle_02",
+      "artifact_tree": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+      "original_rows_preserved": 40,
+      "fixture_rows": {
+        "portfolios": 9,
+        "claims": 29,
+        "freezes": 2
+      },
+      "source_baseline_sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "qualification_candidate": true
+    },
+    {
+      "fixture": "replacement_first",
+      "case": "replacement_first",
+      "database": "insurance_clients_replacement_first",
+      "artifact_tree": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+      "original_rows_preserved": 40,
+      "fixture_rows": {
+        "portfolios": 9,
+        "claims": 29,
+        "freezes": 2
+      },
+      "source_baseline_sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "qualification_candidate": true
+    },
+    {
+      "fixture": "same_principal",
+      "case": "same_principal",
+      "database": "insurance_clients_same_principal",
+      "artifact_tree": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+      "original_rows_preserved": 40,
+      "fixture_rows": {
+        "portfolios": 9,
+        "claims": 29,
+        "freezes": 2
+      },
+      "source_baseline_sha256": "1574fc89b6f4453dbcfe885155128a0e035368a44c3838764f126cd4c7d05c96",
+      "qualification_candidate": true
+    },
+    {
+      "fixture": "setup_dev",
+      "case": "setup_dev",
+      "database": "insurance_clients_setup_dev",
+      "artifact_tree": "5243116fa662c206cc90c4a3d441a12b4beb33761d5b57e5f645a2727e95c8e3",
+      "original_rows_preserved": 40,
+      "fixture_rows": null,
+      "source_baseline_sha256": null,
+      "qualification_candidate": false
+    },
+    {
+      "fixture": "shared",
+      "case": "shared",
+      "database": "insurance_clients_shared",
+      "artifact_tree": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+      "original_rows_preserved": 40,
+      "fixture_rows": {
+        "portfolios": 10,
+        "claims": 32,
+        "freezes": 2
+      },
+      "source_baseline_sha256": "16831887f34122739a6f53865be7cc8b57a74ec1dea148eea8249fc9d6eca0e5",
+      "qualification_candidate": true
+    },
+    {
+      "fixture": "shared_02",
+      "case": "shared",
+      "database": "insurance_clients_shared_02",
+      "artifact_tree": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+      "original_rows_preserved": 40,
+      "fixture_rows": {
+        "portfolios": 10,
+        "claims": 32,
+        "freezes": 2
+      },
+      "source_baseline_sha256": "16831887f34122739a6f53865be7cc8b57a74ec1dea148eea8249fc9d6eca0e5",
+      "qualification_candidate": true
+    }
+  ],
+  "extension": "Only shared and its fresh corrected shared_02 restore add PF-OVERALL-THIRD and CL-1001/1002/1003; original40 rows, schema and8/3 policy remain unchanged. No additional subjects needed.",
+  "identity_values_omitted": true
+}
