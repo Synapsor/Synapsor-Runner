@@ -104,16 +104,18 @@ export function explicitTrustedPolicyScope(value: string): ExplicitTrustedPolicy
   return tenantMatch ? { scope: "tenant", phrase: JSON.stringify(tenantMatch[0]) } : undefined;
 }
 
-export function explicitTrustedPolicyScopes(value: string): ExplicitTrustedPolicyScope[] {
+type LocatedPolicyScope = ExplicitTrustedPolicyScope & { start: number; end: number };
+
+function locatedTrustedPolicyScopes(value: string): LocatedPolicyScope[] {
   let answer = value.replace(
     /\b(?:not|instead\s+of|rather\s+than)\s+(?:per\s+)?(?:(?:trusted|customer)\s+)?(?:target\s+)?(?:account|tenant|org|organization|organisation|agent|operator|principal|user|customer|row|record|object)\b/gi,
-    " ",
+    (phrase) => " ".repeat(phrase.length),
   );
-  const found = new Map<ExplicitTrustedPolicyScope["scope"], string>();
+  const found: LocatedPolicyScope[] = [];
   const tenantPrincipalPattern = /\b(?:per|for\s+(?:each|every|a|an|the)|each|every)\s+(?:(?:trusted|customer)\s+)?(?:tenant|account)\s*(?:\/|\+|plus|and)\s*(?:trusted\s+)?(?:principal|agent|operator|user|customer)(?:\s+(?:pair|combination))?\b/gi;
-  answer = answer.replace(tenantPrincipalPattern, (phrase) => {
-    if (!found.has("tenant_principal")) {
-      found.set("tenant_principal", JSON.stringify(phrase));
+  answer = answer.replace(tenantPrincipalPattern, (phrase, start: number) => {
+    if (accountingScopeClause(value, start, start + phrase.length)) {
+      found.push({ scope: "tenant_principal", phrase: JSON.stringify(phrase), start, end: start + phrase.length });
     }
     // Do not let the tenant-only pass below reclassify one compound limit.
     return " ".repeat(phrase.length);
@@ -128,8 +130,45 @@ export function explicitTrustedPolicyScopes(value: string): ExplicitTrustedPolic
   ];
   for (const [scope, pattern] of patterns) {
     for (const match of answer.matchAll(pattern)) {
-      if (!found.has(scope)) found.set(scope, JSON.stringify(match[0]));
+      const start = match.index!;
+      if (scope === "capability" && found.some(entry => entry.scope === "boundary"
+        && start >= entry.start && start < entry.end)) continue;
+      if (accountingScopeClause(value, start, start + match[0].length)) {
+        found.push({ scope, phrase: JSON.stringify(match[0]), start, end: start + match[0].length });
+      }
     }
+  }
+  return found.sort((left, right) => left.start - right.start);
+}
+
+
+/** A role mention is not itself a budget. Keep the local limiting clause rather
+ * than borrowing a different actor's quota from the rest of the paragraph. */
+function accountingScopeClause(value: string, start: number, end: number): boolean {
+  const before = value.slice(0, start);
+  const after = value.slice(end);
+  const left = Math.max(before.lastIndexOf("."), before.lastIndexOf(";"), before.lastIndexOf("\n"), before.lastIndexOf(",")) + 1;
+  const right = after.search(/[.;,\n]/u);
+  const clause = value.slice(left, right < 0 ? value.length : end + right);
+  const tail = value.slice(end, right < 0 ? value.length : end + right);
+  if (/\b(?:no|without)\s+(?:(?:separate|additional|automatic)\s+)?(?:quota|limit|cap|allowance|budget)\s*$/iu.test(value.slice(left, start))) return false;
+  const definition = /^\s+(?:is|are|means?|represents?|refers?\s+to)\b/iu.test(tail);
+  const quantitative = explicitCountMaximums(clause, value.slice(start, end)).length > 0;
+  const accounting = /\b(?:limits?|quotas?|allowances?|budgets?|caps?|maximums?|counters?)\b/iu.test(clause);
+  const definitionLimitsThisActor = /^\s+(?:is|are)\s+(?:only\s+)?(?:limited|allowed|entitled|permitted|subject\s+to\s+(?:a\s+)?(?:limit|quota|cap))\b/iu.test(tail)
+    || /\b(?:who|and)\s+(?:(?:is|are)\s+)?(?:may|can|must|limited|allowed|entitled|permitted)\b/iu.test(tail);
+  if (definition && !definitionLimitsThisActor) return false;
+  if (quantitative || accounting) return true;
+  // Distribution can follow a stated quantity/window in the preceding clause.
+  // A bare actor definition above is never promoted by this shared context.
+  return /\bper\b/iu.test(value.slice(start, end))
+    && /\b(?:limits?|quotas?|allowances?|budgets?|caps?|maximums?|at\s+most|no\s+more\s+than|approvals?)\b/iu.test(value);
+}
+
+export function explicitTrustedPolicyScopes(value: string): ExplicitTrustedPolicyScope[] {
+  const found = new Map<ExplicitTrustedPolicyScope["scope"], string>();
+  for (const { scope, phrase } of locatedTrustedPolicyScopes(value)) {
+    if (!found.has(scope)) found.set(scope, phrase);
   }
   return [...found].map(([scope, phrase]) => ({ scope, phrase }));
 }
@@ -143,15 +182,9 @@ export function explicitPolicyDurations(value: string): ExplicitPolicyDuration[]
 }
 
 export function explicitPolicyLimits(value: string): ExplicitPolicyLimit[] {
-  const lower = value.toLowerCase();
-  const scopes = explicitTrustedPolicyScopes(value)
-    .map((scope) => {
-      const phrase = parseMatchedPhrase(scope.phrase);
-      const start = lower.indexOf(phrase.toLowerCase());
-      return start < 0 ? undefined : { ...scope, matchedPhrase: phrase, start, end: start + phrase.length };
-    })
-    .filter((scope): scope is NonNullable<typeof scope> => scope !== undefined)
-    .sort((left, right) => left.start - right.start);
+  const scopes = locatedTrustedPolicyScopes(value).map(scope => ({
+    ...scope, matchedPhrase: parseMatchedPhrase(scope.phrase),
+  }));
   const durations = locatedPolicyDurations(value);
   const limits: ExplicitPolicyLimit[] = [];
 
@@ -171,16 +204,64 @@ export function explicitPolicyLimits(value: string): ExplicitPolicyLimit[] {
     const segment = value.slice(start, end);
     const segmentDurations = durations.filter((duration) => duration.start >= start && duration.end <= end);
     const maximums = explicitCountMaximums(segment, scope.matchedPhrase);
-    if (segmentDurations.length !== 1 || maximums.length !== 1) continue;
+    const sharedDurations = [...new Map(durations.map(duration => [duration.seconds, duration])).values()];
+    const applicableDurations = segmentDurations.length ? segmentDurations : sharedDurations;
+    if (applicableDurations.length !== 1 || maximums.length !== 1) continue;
     limits.push({
       kind: "count",
       scope: scope.scope,
       maximum: maximums[0]!,
-      window_seconds: segmentDurations[0]!.seconds,
+      window_seconds: applicableDurations[0]!.seconds,
       phrase: JSON.stringify(segment.trim()),
     });
   }
   return limits;
+}
+
+/** Ordered operator statements only. Callers exclude generated repair prose
+ * and disabled model drafts; a question is not an accepted replacement. */
+export function explicitApprovalPolicyRequirements(messages: readonly string[]): {
+  scopes: ExplicitTrustedPolicyScope[]; durations: ExplicitPolicyDuration[]; limits: ExplicitPolicyLimit[]; ambiguous: string[];
+} {
+  const scopes = new Map<ExplicitTrustedPolicyScope["scope"], ExplicitTrustedPolicyScope>();
+  const durations = new Map<number, ExplicitPolicyDuration>();
+  let limits: ExplicitPolicyLimit[] = [];
+  let ambiguous: Array<{ message: string; choices: Set<ExplicitTrustedPolicyScope["scope"]> }> = [];
+  for (const message of messages) {
+    const located = locatedTrustedPolicyScopes(message);
+    if (located.some((entry, index) => index > 0 && entry.scope !== located[index - 1]!.scope
+      && /^\s+or\s+$/iu.test(message.slice(located[index - 1]!.end, entry.start)))) {
+      ambiguous.push({ message, choices: new Set(located.map(entry => entry.scope)) });
+      continue;
+    }
+    const proposed = explicitPolicyLimits(message);
+    if (!/\?/u.test(message) && proposed.length) {
+      ambiguous = ambiguous.filter(entry => proposed.filter(limit => entry.choices.has(limit.scope)).length !== 1);
+    }
+    const replacement = !/\?/u.test(message)
+      && /\b(?:change|replace|reduce|lower|increase|raise|remove|drop|instead\s+of|rather\s+than)\b/iu.test(message);
+    if (replacement) {
+      for (const match of message.matchAll(/\b(?:not|instead\s+of|rather\s+than|remove|drop)\s+((?:per|for\s+each|for\s+every)\s+(?:(?:trusted|customer)\s+)?(?:tenant|account|organization|organisation|principal|agent|operator|user|person))\b/giu)) {
+        const scope = explicitTrustedPolicyScope(match[1]!)?.scope;
+        if (scope) {
+          scopes.delete(scope);
+          limits = limits.filter(limit => limit.scope !== scope);
+        }
+      }
+      // Only a concrete replacement for this scope retires its earlier value.
+      // A glossary or an unresolved question cannot erase an existing limit.
+      const replaced = new Set(proposed.map(limit => limit.scope));
+      const retired = limits.filter(limit => replaced.has(limit.scope));
+      limits = limits.filter(limit => !replaced.has(limit.scope));
+      for (const prior of retired) {
+        if (!limits.some(limit => limit.window_seconds === prior.window_seconds)) durations.delete(prior.window_seconds);
+      }
+    }
+    for (const scope of located) scopes.set(scope.scope, { scope: scope.scope, phrase: scope.phrase });
+    for (const duration of explicitPolicyDurations(message)) durations.set(duration.seconds, duration);
+    limits.push(...proposed);
+  }
+  return { scopes: [...scopes.values()], durations: [...durations.values()], limits, ambiguous: ambiguous.map(entry => entry.message) };
 }
 
 function locatedPolicyDurations(value: string): LocatedPolicyDuration[] {

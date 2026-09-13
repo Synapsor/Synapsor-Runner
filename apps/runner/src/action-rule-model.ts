@@ -43,11 +43,9 @@ import {
   type CompiledActionRuleModelDraftV1,
 } from "./action-rule-draft.js";
 import {
-  explicitPolicyLimits,
+  explicitApprovalPolicyRequirements,
   assertJointApprovalLimitsPreserved,
   explicitJointApprovalLimits,
-  explicitPolicyDurations,
-  explicitTrustedPolicyScopes,
   formatPolicyDuration,
 } from "./action-policy-scope.js";
 
@@ -584,7 +582,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
           const statements = [...originalStatements, ...operatorMessages];
           const joint = explicitJointApprovalLimits([operatorJob, ...statements]).length > 0;
           assertJointApprovalLimitsPreserved([operatorJob, ...statements], draft.approval);
-          for (const statement of statements) assertExplicitApprovalIntentPreserved(statement, draft.approval, joint);
+          assertExplicitApprovalIntentPreserved(statements, draft.approval, joint);
           if (input.approvalLimitsOnly) assertOnlyApprovalLimitsChanged(baseline, draft);
           assertActionExecutionIntentPreserved(statements, draft.effect.writeback);
           const result = compileActionRuleModelDraft({ draft, ...context });
@@ -859,7 +857,7 @@ export async function generateFocusedModelActionRuleDraft(input: ModelActionRule
     try {
       const statements = [input.operatorJob ?? "", ...originalStatements];
       assertJointApprovalLimitsPreserved(statements, draft.approval);
-      for (const statement of originalStatements) assertExplicitApprovalIntentPreserved(statement, draft.approval, explicitJointApprovalLimits(statements).length > 0);
+      assertExplicitApprovalIntentPreserved(originalStatements, draft.approval, explicitJointApprovalLimits(statements).length > 0);
       if (input.approvalLimitsOnly) assertOnlyApprovalLimitsChanged(existingDraft, draft);
       assertActionExecutionIntentPreserved(originalStatements, draft.effect.writeback);
       compiled = compileActionRuleModelDraft({
@@ -978,27 +976,31 @@ function actionOperatorStatements(input: ModelActionRuleDraftInput): string[] {
 }
 
 function assertExplicitApprovalIntentPreserved(
-  intent: string,
+  statements: readonly string[],
   approval: ApprovalSubmission,
   joint = false,
 ): void {
   if (approval.mode !== "policy") return;
   const limits = approval.shared_limits;
-  const missingScope = explicitTrustedPolicyScopes(intent).find((required) =>
+  const required = explicitApprovalPolicyRequirements(statements);
+  if (required.ambiguous.length) {
+    throw new Error("ACTION_RULE_DRAFT_INVALID: the operator's approval scope contains unresolved alternatives. Ask the existing bounded clarification question about which scope applies; do not invent both quotas or discard the original requirement.");
+  }
+  const missingScope = required.scopes.find((required) =>
     !limits.some((limit) => limit.scope === required.scope || joint && required.scope === "capability" && limit.scope === "boundary"));
   if (missingScope) {
     throw new Error(
       `ACTION_RULE_DRAFT_INVALID: approval.shared_limits must preserve the operator's explicit ${missingScope.scope} accounting (${missingScope.phrase}); repair the model draft from the existing intent without asking the operator to repeat it.`,
     );
   }
-  const missingDuration = explicitPolicyDurations(intent).find((required) =>
+  const missingDuration = required.durations.find((required) =>
     !limits.some((limit) => limit.window_seconds === required.seconds));
   if (missingDuration) {
     throw new Error(
       `ACTION_RULE_DRAFT_INVALID: approval.shared_limits must preserve the operator's explicit rolling ${formatPolicyDuration(missingDuration.seconds)} window (${JSON.stringify(missingDuration.phrase)}); repair the model draft from the existing intent without asking the operator to repeat it.`,
     );
   }
-  const missingLimit = explicitPolicyLimits(intent).find((required) =>
+  const missingLimit = required.limits.find((required) =>
     !limits.some((limit) => limit.kind === required.kind
       && (limit.scope === required.scope || joint && required.scope === "capability" && limit.scope === "boundary")
       && limit.maximum === required.maximum

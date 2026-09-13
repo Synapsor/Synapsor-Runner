@@ -2,12 +2,78 @@ import { describe, expect, it } from "vitest";
 import {
   assertJointApprovalLimitsPreserved,
   explicitJointApprovalLimits,
+  explicitApprovalPolicyRequirements,
   explicitPolicyLimits,
   explicitTrustedPolicyScope,
   explicitTrustedPolicyScopes,
 } from "./action-policy-scope.js";
 
 describe("Action approval policy scope wording", () => {
+  it.each([
+    "Yes. Each tenant is exactly one league, and each principal is an assigned referee within that league. Referees in the same league share the limit of two automatic ratifications in the rolling 24 hours; all leagues share the overall limit of six.",
+    "Each principal represents an assigned coordinator. Each tenant means one organization.",
+    "Each tenant is an organization; every principal is a person in that organization.",
+    "Every principal refers to an assigned person. Across the Action Boundary allow at most six automatic approvals per day.",
+  ])("does not derive a principal quota from a role glossary: %s", (text) => {
+    expect(explicitTrustedPolicyScopes(text).some(scope => scope.scope === "tenant_principal")).toBe(false);
+  });
+
+  it("retains actual independent limits after role definitions, including a shared later window", () => {
+    const text = "Each principal is a person. Each tenant is an organization. Allow at most 8 automatic approvals per tenant and 2 per principal. Both limits use a rolling 24-hour window.";
+    expect(explicitTrustedPolicyScopes(text).map(scope => scope.scope).sort()).toEqual(["tenant", "tenant_principal"]);
+    expect(explicitPolicyLimits(text)).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: "tenant", maximum: 8, window_seconds: 86400 }),
+      expect.objectContaining({ scope: "tenant_principal", maximum: 2, window_seconds: 86400 }),
+    ]));
+  });
+
+  it.each([
+    "Each principal is one assigned operator. Allow at most 8 automatic approvals per tenant and 2 per principal in a rolling 24-hour window.",
+    "Allow at most 8 automatic approvals per tenant and 2 per principal in a rolling 24-hour window. Every principal represents a person; each tenant means an organization.",
+    "Each tenant means an organization. In a rolling 24-hour window, each principal is allowed at most 2 automatic approvals; allow at most 8 per tenant.",
+  ])("keeps the real quota set when definitions are reordered: %s", text => {
+    expect(explicitPolicyLimits(text).map(limit => [limit.scope, limit.maximum, limit.window_seconds]).sort())
+      .toEqual([["tenant", 8, 86400], ["tenant_principal", 2, 86400]]);
+  });
+
+  it("does not borrow a tenant quota from the remainder of a principal definition", () => {
+    expect(explicitTrustedPolicyScopes("Each principal is an assigned person in a tenant that is allowed at most 2 automatic approvals per tenant in a rolling 24-hour window.")
+      .map(entry => entry.scope)).toEqual(["tenant"]);
+  });
+
+  it("keeps a real principal quota despite later glossary and unanswered scope-change questions", () => {
+    const policy = "At most 8 automatic approvals per tenant and 2 per principal in a rolling 24-hour window.";
+    const result = explicitApprovalPolicyRequirements([policy, "Each principal is one assigned operator.", "Should we change to 3 per tenant rather than per principal?"]);
+    expect(result.limits).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: "tenant", maximum: 8 }), expect.objectContaining({ scope: "tenant_principal", maximum: 2 }),
+    ]));
+  });
+
+  it("retains the exact unresolved scope alternative until a concrete operator clarification", () => {
+    const question = "Allow at most 2 automatic approvals per tenant or per principal in a rolling 24-hour window.";
+    expect(explicitApprovalPolicyRequirements([question]).ambiguous).toEqual([question]);
+    const resolved = explicitApprovalPolicyRequirements([question, "Use at most 2 automatic approvals per tenant in the rolling 24-hour window."]);
+    expect(resolved.ambiguous).toEqual([]);
+    expect(resolved.scopes.map(entry => entry.scope)).toEqual(["tenant"]);
+  });
+
+  it("honors an exact scoped window replacement while retaining another scope's window", () => {
+    const result = explicitApprovalPolicyRequirements([
+      "At most 8 automatic approvals per tenant in a rolling 24-hour window and 2 per principal in a rolling 12-hour window.",
+      "Change the limit to 1 per principal in a rolling 6-hour window.",
+    ]);
+    expect(result.limits).toEqual(expect.arrayContaining([
+      expect.objectContaining({ scope: "tenant", maximum: 8, window_seconds: 86400 }),
+      expect.objectContaining({ scope: "tenant_principal", maximum: 1, window_seconds: 21600 }),
+    ]));
+    expect(result.durations.map(entry => entry.seconds).sort()).toEqual([21600, 86400]);
+  });
+
+  it("does not turn explicitly negated principal accounting into a quota", () => {
+    expect(explicitTrustedPolicyScopes("There is no quota per principal. Allow at most 2 automatic approvals per tenant in a rolling 24-hour window.")
+      .map(entry => entry.scope)).toEqual(["tenant"]);
+  });
+
   it("honors an explicit later replacement of joint counters without changing unrelated limits", () => {
     const original = "Across both actions allow at most 10 automatic approvals overall and 3 per account in a rolling 24-hour period.";
     expect(explicitJointApprovalLimits([original, "Correction: do not share automatic approvals across both actions. Give each action its own 10 overall and 3 per account in a rolling 24-hour period."])).toEqual([]);

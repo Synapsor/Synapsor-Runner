@@ -1,3 +1,7 @@
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
+import { buildActionRuleAuthorityDraft, writeActionRuleAuthorityDraft, readActionRuleAuthorityDraft, readActionRuleAuthorityRevisionBaseline, writeActionRuleAuthorityDraftIfCurrent } from "./action-rule-authority.js";
 import type { ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
 import type {
   ActionRuleBooleanExpressionV1,
@@ -341,6 +345,114 @@ describe("conversational Action authoring tools", () => {
     expect(result.compiled.draft.approval).toEqual(baseline.approval);
     expect(requests.join("\n")).toContain("Generated repair context (not operator intent)");
     expect(requests.join("\n")).toContain(diagnostic);
+  });
+
+  it("preserves the saved role explanation without demanding an unrequested principal quota during revision", async () => {
+    const explanation = "Yes. Each tenant is exactly one league, and each principal is an assigned referee within that league. Referees in the same league share the limit of two automatic ratifications in the rolling 24 hours; all leagues share the overall limit of six.";
+    const baseline = policyModelDraft();
+    baseline.approval.shared_limits = [
+      { id: "overall", kind: "count", scope: "boundary", maximum: 6, window_seconds: 86400, capability: baseline.outcome },
+      { id: "organization", kind: "count", scope: "tenant", maximum: 2, window_seconds: 86400, capability: baseline.outcome },
+    ];
+    const steps = [call("runner.validate_action_draft", {}), say("The original shared limits validate unchanged.")];
+    const result = await converseActionRuleDraft({ ...requestInput(async () => {
+      if (!steps.length) throw new Error("Role glossary incorrectly requested an extra quota");
+      return steps.shift()!;
+    }), existingDraft: baseline, intent: "Recheck the saved policy using its original explanation.",
+    operatorStatements: [explanation], approvalLimitsOnly: true });
+    expect(result.compiled.draft.approval).toEqual(baseline.approval);
+    expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false);
+    expect(steps).toEqual([]);
+  });
+
+  it("corrects an unaccepted extra quota through disabled revision, with restart and stale-save protection", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-role-quota-revision-"));
+    try {
+      const original = policyModelDraft();
+      original.approval.shared_limits = [
+        { id: "overall", kind: "count", scope: "boundary", maximum: 6, window_seconds: 86400, capability: original.outcome },
+        { id: "tenant", kind: "count", scope: "tenant", maximum: 2, window_seconds: 86400, capability: original.outcome },
+        { id: "unrequested", kind: "count", scope: "tenant_principal", maximum: 2, window_seconds: 86400, capability: original.outcome },
+      ];
+      const toStored = (compiled: ReturnType<typeof compileActionRuleModelDraft>) => buildActionRuleAuthorityDraft({
+        name: "saved_rules", action_boundary_name: "saved_actions", catalog: compiled.loaded.authority.catalog,
+        rules: [{ read_boundary_name: boundary().pack.name, read_boundary_digest: readDigest,
+          verification_boundary: compiled.verification_boundary, effect_envelope: compiled.effect_envelope, rule: compiled.rule }],
+        approval_classes: [compiled.approval_class], reviews: [{ ...compiled.review, outcome: compiled.draft.outcome }],
+      });
+      const initial = toStored(compileActionRuleModelDraft({ draft: original, builtCatalog: builtCatalog(), readBoundary: boundary(), readBoundaryDigest: readDigest }));
+      const initialPath = await writeActionRuleAuthorityDraft(root, initial);
+      // Legacy disabled files are a current draft, not immutable activation history.
+      // Preserve the actual pre-repair bytes in an owned evidence copy.
+      await fs.copyFile(path.join(root, initialPath), path.join(root, "initial-disabled.json"));
+      const baseline = await readActionRuleAuthorityRevisionBaseline(root);
+      const requested = { ...original.approval, shared_limits: original.approval.shared_limits.slice(0, 2) };
+      const steps = [call("runner.submit_approval_policy_draft", { status: "draft", ...requested, changed_fields: ["shared_limits"] }),
+        call("runner.validate_action_draft", {}), say("The original quotas are ready for review.")];
+      const result = await converseActionRuleDraft({ ...requestInput(async () => {
+        if (!steps.length) throw new Error("The disabled model-generated cap was incorrectly promoted to operator policy");
+        return steps.shift()!;
+      }), existingDraft: original, approvalLimitsOnly: true,
+        intent: "Remove only the unrequested principal quota from this disabled draft. Keep the original limits and all other rules.",
+        operatorStatements: ["At most 6 automatic approvals across the Action Boundary and 2 per tenant in a rolling 24-hour window.",
+          "Each tenant is exactly one league, and each principal is an assigned referee within that league."] });
+      expect(result.compiled.draft.approval).toEqual(requested);
+      expect(result.compiled.draft.require).toEqual(original.require);
+      expect(result.compiled.draft.effect).toEqual(original.effect);
+      const corrected = toStored(result.compiled);
+      await writeActionRuleAuthorityDraftIfCurrent(root, corrected, baseline);
+      const restarted = await readActionRuleAuthorityDraft(root, corrected.authority.name);
+      expect(restarted!.authority.approval_classes[0]!.shared_limits).toEqual(corrected.authority.approval_classes[0]!.shared_limits);
+      expect(restarted!.state).toBe("disabled");
+      await expect(writeActionRuleAuthorityDraftIfCurrent(root, initial, baseline)).rejects.toThrow("changed while this job");
+      expect(await readActionRuleAuthorityDraft(root, corrected.authority.name)).toEqual(restarted);
+      const oldRevision = JSON.parse(await fs.readFile(path.join(root, "initial-disabled.json"), "utf8"));
+      expect(oldRevision.authority.approval_classes[0].shared_limits).toHaveLength(3);
+      await expect(fs.stat(path.join(root, ".synapsor/action-rules/active.json"))).rejects.toHaveProperty("code", "ENOENT");
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
+  it("honors an explicit later scope replacement without carrying the old principal quota forward", async () => {
+    const baseline = policyModelDraft();
+    const approval = { ...baseline.approval, shared_limits: [baseline.approval.shared_limits[0]!,
+      { id: "account", kind: "count", scope: "tenant", maximum: 2, window_seconds: 86400, capability: baseline.outcome }] };
+    const steps = [call("runner.submit_approval_policy_draft", { status: "draft", ...approval, changed_fields: ["shared_limits"] }),
+      call("runner.validate_action_draft", {}), say("The accepted replacement is ready for review.")];
+    const result = await converseActionRuleDraft({ ...requestInput(async () => {
+      if (!steps.length) throw new Error("Old scope was incorrectly preserved after its explicit replacement");
+      return steps.shift()!;
+    }), existingDraft: baseline, intent: "Apply the operator's accepted accounting change.", approvalLimitsOnly: true,
+    operatorStatements: ["Allow at most 100 automatic approvals for this action and 1 per principal in a rolling 24-hour period.",
+      "Change the scoped limit to 2 per tenant rather than per principal in the same rolling 24-hour period. Keep the overall action limit unchanged."] });
+    expect(result.compiled.draft.approval.shared_limits).toEqual(approval.shared_limits);
+    expect(result.authority_granted).toBe(false);
+  });
+
+  it("saves and reloads a fresh clarification without converting its role definition into accounting", async () => {
+    const explanation = "Yes. Each tenant is exactly one league, and each principal is an assigned referee within that league. Referees in the same league share the limit of two automatic ratifications in the rolling 24 hours; all leagues share the overall limit of six.";
+    const approval = { ...policyModelDraft().approval, shared_limits: [
+      { id: "overall", kind: "count", scope: "boundary", maximum: 6, window_seconds: 86400, capability: modelDraft().outcome },
+      { id: "organization", kind: "count", scope: "tenant", maximum: 2, window_seconds: 86400, capability: modelDraft().outcome },
+    ] };
+    let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
+    const steps = [call("runner.submit_verification_boundary_draft"), call("runner.submit_effect_envelope_draft"),
+      call("runner.submit_action_rule_draft"), call("runner.submit_approval_policy_draft", { status: "draft", ...approval }),
+      say("What does the organization and person scope mean?"), say("Continue this saved review?")];
+    const input = { ...requestInput(async () => steps.shift()!), intent: "Allow at most six automatic approvals across the Action Boundary and two per tenant in the rolling 24-hour window." };
+    await expect(converseActionRuleDraft({ ...input,
+      askClarification: vi.fn().mockResolvedValueOnce(explanation).mockResolvedValueOnce(undefined),
+      onCheckpoint: async value => { checkpoint = JSON.parse(JSON.stringify(value)); },
+    })).rejects.toThrow("CANCELLED");
+    expect(checkpoint?.operator_messages).toContain(explanation);
+    const saved = structuredClone(checkpoint!);
+    const resumed = [call("runner.validate_action_draft", {}), say("The original shared limits are ready for review.")];
+    const result = await converseActionRuleDraft({ ...input, checkpoint: saved,
+      session: { ...input.session, dependencies: { requestJson: async () => resumed.shift()! } },
+    });
+    expect(result.compiled.draft.approval.shared_limits).toEqual(approval.shared_limits);
+    expect(checkpoint).toEqual(saved);
+    expect(result.authority_granted).toBe(false);
   });
 
   it("still enforces original scope and accepted operator decisions during a generated repair", async () => {
