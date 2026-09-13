@@ -114,8 +114,12 @@ async function structuredBoundaryAuthoringCommandInner(
     throw new Error("--dry-run applies only to --draft validation; export does not change authority.");
   }
   const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
+  // Reject malformed input before coordination can create local gate files.
+  const input = draftPath
+    ? parseStructuredDraftInput(await readBoundedJson(projectFile(projectRoot, draftPath, "--draft"), MAX_DRAFT_BYTES))
+    : undefined;
   // Export/preview must not advertise a saveable execution-backed project
-  // whose reviewed runtime binding is already unavailable. This is read-only;
+  // whose reviewed runtime binding is already unavailable. No authority changes;
   // persistence repeats the check after preparation and under writer exclusion.
   await withProjectRuntimeAdmission(projectRoot, async (root) => {
     const binding = await openBoundProjectControlPolicies(root);
@@ -137,8 +141,7 @@ async function structuredBoundaryAuthoringCommandInner(
     return 0;
   }
 
-  const input = parseStructuredDraftInput(await readBoundedJson(projectFile(projectRoot, draftPath!, "--draft"), MAX_DRAFT_BYTES));
-  const prepared = await prepareStructuredDraft(projectRoot, input, schemaInspector);
+  const prepared = await prepareStructuredDraft(projectRoot, input!, schemaInspector);
   if (args.includes("--dry-run")) {
     write(args, { ok: true, state: "validated_disabled_preview", ...prepared.summary, source_database_changed: false });
     return 0;
