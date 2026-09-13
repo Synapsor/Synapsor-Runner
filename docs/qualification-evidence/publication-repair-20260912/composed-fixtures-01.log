@@ -1,0 +1,228 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1291484) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1291485) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"timestamp":"2026-09-13T01:13:35.497Z","level":"warn","event":"semantic_action_execution_held","code":"SEMANTIC_ACTION_QUEUE_UNAVAILABLE","next_action":"Review saved execution and runtime configuration; then retry the same approved request. Do not edit stored policy hashes.","source_database_changed":false}
+ ❯ apps/runner/src/semantic-action-runtime.test.ts (41 tests | 17 failed) 2548ms
+   × composed semantic Action runtime > queues a third separately reviewed writer on the same held client without changing its read or trust context 235ms
+     → POLICY_NORMALIZATION_REQUIRED: saved operator authority cannot be transferred unchanged.
+   × composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: unreviewed_alias 82ms
+     → POLICY_NORMALIZATION_REQUIRED: saved operator authority cannot be transferred unchanged.
+   × composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: reviewed_trust 65ms
+     → POLICY_NORMALIZATION_REQUIRED: saved operator authority cannot be transferred unchanged.
+   × composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: reviewed_read 55ms
+     → POLICY_NORMALIZATION_REQUIRED: saved operator authority cannot be transferred unchanged.
+   × composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: reviewed_alias_scope 84ms
+     → POLICY_NORMALIZATION_REQUIRED: saved operator authority cannot be transferred unchanged.
+   × composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: pending 77ms
+     → POLICY_NORMALIZATION_REQUIRED: saved operator authority cannot be transferred unchanged.
+   × composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: queue_failure 64ms
+     → POLICY_NORMALIZATION_REQUIRED: saved operator authority cannot be transferred unchanged.
+   × composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: policy_changed_after_read 58ms
+     → POLICY_NORMALIZATION_REQUIRED: saved operator authority cannot be transferred unchanged.
+   × composed semantic Action runtime > does not reuse the held client's execution export after governed execution is revoked 27ms
+     → POLICY_NORMALIZATION_REQUIRED: saved operator authority cannot be transferred unchanged.
+   × composed semantic Action runtime > refreshes only the selected nested configuration using its own relative-path base 27ms
+     → POLICY_NORMALIZATION_REQUIRED: saved operator authority cannot be transferred unchanged.
+   × composed semantic Action runtime > fails closed for the selected custom publication: missing 32ms
+     → POLICY_NORMALIZATION_REQUIRED: saved operator authority cannot be transferred unchanged.
+   × composed semantic Action runtime > fails closed for the selected custom publication: pending 28ms
+     → POLICY_NORMALIZATION_REQUIRED: saved operator authority cannot be transferred unchanged.
+   × composed semantic Action runtime > fails closed for the selected custom publication: stale 50ms
+     → POLICY_NORMALIZATION_REQUIRED: saved operator authority cannot be transferred unchanged.
+   × composed semantic Action runtime > fails closed for the selected custom publication: revoked 32ms
+     → POLICY_NORMALIZATION_REQUIRED: saved operator authority cannot be transferred unchanged.
+   × composed semantic Action runtime > does not guess a publication file for a config-only caller: unchanged 25ms
+     → POLICY_NORMALIZATION_REQUIRED: saved operator authority cannot be transferred unchanged.
+   × composed semantic Action runtime > does not guess a publication file for a config-only caller: binding_changed 22ms
+     → POLICY_NORMALIZATION_REQUIRED: saved operator authority cannot be transferred unchanged.
+   × composed semantic Action runtime > does not guess a publication file for a config-only caller: revoked 24ms
+     → POLICY_NORMALIZATION_REQUIRED: saved operator authority cannot be transferred unchanged.
+   ✓ composed semantic Action runtime > holds active discovery through its final authority checks 107ms
+   ✓ composed semantic Action runtime > holds initially_inactive discovery through its final authority checks 100ms
+   ✓ composed semantic Action runtime > waits before constructor authority loading during a cutover 72ms
+   ✓ composed semantic Action runtime > keeps a connected active client usable through deactivation and reactivation 67ms
+   ✓ composed semantic Action runtime > keeps a connected inactive client usable through deactivation and reactivation 58ms
+   ✓ composed semantic Action runtime > discovers the first activated outcome without reconnecting the read-only client 52ms
+   ✓ composed semantic Action runtime > redeems one shared Explore subject under the same identity and workflow 94ms
+   ✓ composed semantic Action runtime > refuses a subject minted for another authenticated workflow 30ms
+   ✓ composed semantic Action runtime > reloads authority and refuses a subject tied to the superseded rule 41ms
+   ✓ composed semantic Action runtime > shares Action Boundary automatic-approval limits across outcomes and tenants  378ms
+   ✓ composed semantic Action runtime > uses the configured production key and deployment namespace 17ms
+   ✓ composed semantic Action runtime > uses reviewed single-organization authority without a tenant environment value 33ms
+   ✓ composed semantic Action runtime > rejects invalid semantic authority without downgrading it to optional Read service 36ms
+   ✓ composed semantic Action runtime > refuses persisted active authority with corrupt_json without source access or authority replacement 40ms
+   ✓ composed semantic Action runtime > refuses persisted active authority with invalid_state without source access or authority replacement 42ms
+   ✓ composed semantic Action runtime > refuses persisted active authority with invalid_digest without source access or authority replacement 30ms
+   ✓ composed semantic Action runtime > refuses persisted active authority with missing_immutable without source access or authority replacement 33ms
+   ✓ composed semantic Action runtime > refuses persisted active authority with missing_read without source access or authority replacement 55ms
+   ✓ composed semantic Action runtime > keeps genuine missing activation as inactive services with empty discovery and no proposal 37ms
+   ✓ composed semantic Action runtime > uses legacy execution settings without a migration: true/true -> 'queued' 57ms
+   ✓ composed semantic Action runtime > uses legacy execution settings without a migration: false/true -> 'not_enabled' 46ms
+   ✓ composed semantic Action runtime > uses legacy execution settings without a migration: false/false -> 'not_enabled' 46ms
+   ✓ composed semantic Action runtime > uses legacy execution settings without a migration: true/false -> 'held' 47ms
+   ✓ composed semantic Action runtime > uses legacy execution settings without a migration: undefined/false -> 'not_enabled' 39ms
+(node:1291831) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Active local Read authority selected from /tmp/synapsor-selected-execution-config-Lsw463/synapsor.runner.json; fixed Read and Action tools are available. Only activated outcomes permit proposals.
+Active local Read authority selected from /tmp/synapsor-selected-execution-config-nNrWBT/synapsor.runner.json; fixed Read and Action tools are available. Only activated outcomes permit proposals.
+ ❯ apps/runner/src/mcp-runtime-execution-config.test.ts (10 tests | 2 failed) 16010ms
+   × selected execution configuration through public MCP callers > queues through stdio after public connection and execution confirmations on a copied config 51ms
+     → ACTION_RULE_AUTHORITY_STALE: The active Action Rule authority failed its integrity check.
+   × selected execution configuration through public MCP callers > queues through streamable-http after public connection and execution confirmations on a copied config 13ms
+     → ACTION_RULE_AUTHORITY_STALE: The active Action Rule authority failed its integrity check.
+   ✓ selected execution configuration through public MCP callers > passes the actual managed companion selection, not the launch filename  3932ms
+   ✓ selected execution configuration through public MCP callers > passes the actual managed primary selection, not the launch filename  3649ms
+   ✓ selected execution configuration through public MCP callers > default local launch uses the reviewed identity and preserves read-only override: false  3990ms
+   ✓ selected execution configuration through public MCP callers > default local launch uses the reviewed identity and preserves read-only override: true  4267ms
+   ✓ selected execution configuration through public MCP callers > refuses a local identity option on an explicit action-only service 25ms
+   ✓ selected execution configuration through public MCP callers > starts an empty authoring project with the optional local runtime reference 30ms
+   ✓ selected execution configuration through public MCP callers > propagates production factory path provenance only when supplied: true 31ms
+   ✓ selected execution configuration through public MCP callers > propagates production factory path provenance only when supplied: false 19ms
+ ✓ apps/runner/src/semantic-action-delegation.test.ts (4 tests) 18764ms
+   ✓ delegated semantic Action runtime composition > discovers only current delegated outcomes, binds opaque subjects to the authenticated run, and creates no source write  4946ms
+   ✓ delegated semantic Action runtime composition > refuses workload/trusted-context mismatches, expired or missing workload credentials before opening a fact session  4340ms
+   ✓ delegated semantic Action runtime composition > refuses old references after a current owner change and refuses an existing proposal after revocation  4662ms
+   ✓ delegated semantic Action runtime composition > keeps non-delegated Action requests working while a configured delegated runtime refuses a missing governed repository  4811ms
+ ✓ apps/runner/src/model-output-config.test.ts (3 tests) 30ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 19 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/mcp-runtime-execution-config.test.ts > selected execution configuration through public MCP callers > queues through stdio after public connection and execution confirmations on a copied config
+ FAIL  apps/runner/src/mcp-runtime-execution-config.test.ts > selected execution configuration through public MCP callers > queues through streamable-http after public connection and execution confirmations on a copied config
+Error: ACTION_RULE_AUTHORITY_STALE: The active Action Rule authority failed its integrity check.
+ ❯ authorityError apps/runner/src/action-rule-authority.ts:867:24
+    865| 
+    866| function authorityError(code: string, message: string): Error {
+    867|   return Object.assign(new Error(`${code}: ${message}`), { code });
+       |                        ^
+    868| }
+    869| 
+ ❯ invalidActivation apps/runner/src/action-rule-authority.ts:863:10
+ ❯ normalizeReviews apps/runner/src/action-rule-authority.ts:835:11
+ ❯ parseActivationSnapshot apps/runner/src/action-rule-authority.ts:781:19
+ ❯ parseActivation apps/runner/src/action-rule-authority.ts:764:10
+ ❯ parseStoredActionRuleAuthority apps/runner/src/action-rule-authority.ts:85:62
+ ❯ parseDocument apps/runner/src/control-policy-authority-codec.ts:134:23
+ ❯ Module.encodeOperatorAuthority apps/runner/src/control-policy-authority-codec.ts:40:18
+ ❯ delegatedExecutionFixture apps/runner/src/mcp-runtime-execution-config.test.ts:276:24
+ ❯ apps/runner/src/mcp-runtime-execution-config.test.ts:50:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/19]⎯
+
+ FAIL  apps/runner/src/semantic-action-runtime.test.ts > composed semantic Action runtime > queues a third separately reviewed writer on the same held client without changing its read or trust context
+Error: POLICY_NORMALIZATION_REQUIRED: saved operator authority cannot be transferred unchanged.
+ ❯ fail apps/runner/src/control-policy-authority-codec.ts:160:23
+    158| 
+    159| function fail(code: string): never {
+    160|   throw Object.assign(new Error(`${code}: saved operator authority can…
+       |                       ^
+    161| }
+    162| 
+ ❯ parseDocument apps/runner/src/control-policy-authority-codec.ts:135:83
+ ❯ encodeOperatorAuthority apps/runner/src/control-policy-authority-codec.ts:40:18
+ ❯ heldExecutionFixture apps/runner/src/semantic-action-runtime.test.ts:950:5
+ ❯ apps/runner/src/semantic-action-runtime.test.ts:67:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/19]⎯
+
+ FAIL  apps/runner/src/semantic-action-runtime.test.ts > composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: unreviewed_alias
+ FAIL  apps/runner/src/semantic-action-runtime.test.ts > composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: reviewed_trust
+ FAIL  apps/runner/src/semantic-action-runtime.test.ts > composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: reviewed_read
+ FAIL  apps/runner/src/semantic-action-runtime.test.ts > composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: reviewed_alias_scope
+ FAIL  apps/runner/src/semantic-action-runtime.test.ts > composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: pending
+ FAIL  apps/runner/src/semantic-action-runtime.test.ts > composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: queue_failure
+ FAIL  apps/runner/src/semantic-action-runtime.test.ts > composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: policy_changed_after_read
+Error: POLICY_NORMALIZATION_REQUIRED: saved operator authority cannot be transferred unchanged.
+ ❯ fail apps/runner/src/control-policy-authority-codec.ts:160:23
+    158| 
+    159| function fail(code: string): never {
+    160|   throw Object.assign(new Error(`${code}: saved operator authority can…
+       |                       ^
+    161| }
+    162| 
+ ❯ parseDocument apps/runner/src/control-policy-authority-codec.ts:135:83
+ ❯ encodeOperatorAuthority apps/runner/src/control-policy-authority-codec.ts:40:18
+ ❯ heldExecutionFixture apps/runner/src/semantic-action-runtime.test.ts:950:5
+ ❯ apps/runner/src/semantic-action-runtime.test.ts:94:17
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/19]⎯
+
+ FAIL  apps/runner/src/semantic-action-runtime.test.ts > composed semantic Action runtime > does not reuse the held client's execution export after governed execution is revoked
+Error: POLICY_NORMALIZATION_REQUIRED: saved operator authority cannot be transferred unchanged.
+ ❯ fail apps/runner/src/control-policy-authority-codec.ts:160:23
+    158| 
+    159| function fail(code: string): never {
+    160|   throw Object.assign(new Error(`${code}: saved operator authority can…
+       |                       ^
+    161| }
+    162| 
+ ❯ parseDocument apps/runner/src/control-policy-authority-codec.ts:135:83
+ ❯ encodeOperatorAuthority apps/runner/src/control-policy-authority-codec.ts:40:18
+ ❯ heldExecutionFixture apps/runner/src/semantic-action-runtime.test.ts:950:5
+ ❯ apps/runner/src/semantic-action-runtime.test.ts:145:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/19]⎯
+
+ FAIL  apps/runner/src/semantic-action-runtime.test.ts > composed semantic Action runtime > refreshes only the selected nested configuration using its own relative-path base
+Error: POLICY_NORMALIZATION_REQUIRED: saved operator authority cannot be transferred unchanged.
+ ❯ fail apps/runner/src/control-policy-authority-codec.ts:160:23
+    158| 
+    159| function fail(code: string): never {
+    160|   throw Object.assign(new Error(`${code}: saved operator authority can…
+       |                       ^
+    161| }
+    162| 
+ ❯ parseDocument apps/runner/src/control-policy-authority-codec.ts:135:83
+ ❯ encodeOperatorAuthority apps/runner/src/control-policy-authority-codec.ts:40:18
+ ❯ heldExecutionFixture apps/runner/src/semantic-action-runtime.test.ts:950:5
+ ❯ apps/runner/src/semantic-action-runtime.test.ts:157:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/19]⎯
+
+ FAIL  apps/runner/src/semantic-action-runtime.test.ts > composed semantic Action runtime > fails closed for the selected custom publication: missing
+ FAIL  apps/runner/src/semantic-action-runtime.test.ts > composed semantic Action runtime > fails closed for the selected custom publication: pending
+ FAIL  apps/runner/src/semantic-action-runtime.test.ts > composed semantic Action runtime > fails closed for the selected custom publication: stale
+ FAIL  apps/runner/src/semantic-action-runtime.test.ts > composed semantic Action runtime > fails closed for the selected custom publication: revoked
+Error: POLICY_NORMALIZATION_REQUIRED: saved operator authority cannot be transferred unchanged.
+ ❯ fail apps/runner/src/control-policy-authority-codec.ts:160:23
+    158| 
+    159| function fail(code: string): never {
+    160|   throw Object.assign(new Error(`${code}: saved operator authority can…
+       |                       ^
+    161| }
+    162| 
+ ❯ parseDocument apps/runner/src/control-policy-authority-codec.ts:135:83
+ ❯ encodeOperatorAuthority apps/runner/src/control-policy-authority-codec.ts:40:18
+ ❯ heldExecutionFixture apps/runner/src/semantic-action-runtime.test.ts:950:5
+ ❯ apps/runner/src/semantic-action-runtime.test.ts:173:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/19]⎯
+
+ FAIL  apps/runner/src/semantic-action-runtime.test.ts > composed semantic Action runtime > does not guess a publication file for a config-only caller: unchanged
+ FAIL  apps/runner/src/semantic-action-runtime.test.ts > composed semantic Action runtime > does not guess a publication file for a config-only caller: binding_changed
+ FAIL  apps/runner/src/semantic-action-runtime.test.ts > composed semantic Action runtime > does not guess a publication file for a config-only caller: revoked
+Error: POLICY_NORMALIZATION_REQUIRED: saved operator authority cannot be transferred unchanged.
+ ❯ fail apps/runner/src/control-policy-authority-codec.ts:160:23
+    158| 
+    159| function fail(code: string): never {
+    160|   throw Object.assign(new Error(`${code}: saved operator authority can…
+       |                       ^
+    161| }
+    162| 
+ ❯ parseDocument apps/runner/src/control-policy-authority-codec.ts:135:83
+ ❯ encodeOperatorAuthority apps/runner/src/control-policy-authority-codec.ts:40:18
+ ❯ heldExecutionFixture apps/runner/src/semantic-action-runtime.test.ts:950:5
+ ❯ apps/runner/src/semantic-action-runtime.test.ts:210:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[7/19]⎯
+
+
+ Test Files  2 failed | 2 passed (4)
+      Tests  19 failed | 39 passed (58)
+   Start at  18:13:28
+   Duration  28.68s (transform 4.10s, setup 0ms, collect 12.87s, tests 37.35s, environment 2ms, prepare 325ms)
+

@@ -1,0 +1,507 @@
+{
+  "migration-isolated-02": {
+    "concurrent_same_project_periods": [
+      [
+        {
+          "id": 1,
+          "pid": 1132421,
+          "file": "/tmp/synapsor-policy-migration-V1CtjS/.synapsor/runtime-admission.sqlite",
+          "held_ms": 2484.672267,
+          "start": "2026-09-13T00:05:31.524Z",
+          "end": "2026-09-13T00:05:34.009Z"
+        },
+        {
+          "id": 2,
+          "pid": 1132421,
+          "file": "/tmp/synapsor-policy-migration-V1CtjS/.synapsor/runtime-admission.sqlite",
+          "held_ms": 7.243517000000793,
+          "start": "2026-09-13T00:05:34.009Z",
+          "end": "2026-09-13T00:05:34.017Z"
+        }
+      ]
+    ],
+    "max_held_ms": 2484.672267,
+    "busy_observations": 0,
+    "longest_store_exec": [],
+    "longest_fsync": [
+      {
+        "at": "2026-09-13T00:05:33.951Z",
+        "monotonic_ms": 5297.272429,
+        "pid": 1132421,
+        "event": "fsync_end",
+        "file": "/tmp/synapsor-policy-migration-V1CtjS/.synapsor/control-policy/5fc34f34b5eb5e85e9973b5751369d54f5ca7bf1d19bd1b7aac4e87a2d74ab75.snapshot.json.5d92ee79-1649-46cc-885d-c1d250a29cb0.tmp",
+        "elapsed_ms": 7.243717000000288
+      },
+      {
+        "at": "2026-09-13T00:05:33.975Z",
+        "monotonic_ms": 5322.012366,
+        "pid": 1132421,
+        "event": "fsync_end",
+        "file": "/tmp/synapsor-policy-migration-V1CtjS/.synapsor/control-policy",
+        "elapsed_ms": 7.197027000000162
+      },
+      {
+        "at": "2026-09-13T00:05:33.967Z",
+        "monotonic_ms": 5314.113261,
+        "pid": 1132421,
+        "event": "fsync_end",
+        "file": "/tmp/synapsor-policy-migration-V1CtjS/.synapsor/control-policy/migration.json.0fced921-1591-49ae-8040-9690599c51d4.tmp",
+        "elapsed_ms": 6.877182000000175
+      },
+      {
+        "at": "2026-09-13T00:05:33.958Z",
+        "monotonic_ms": 5304.77689,
+        "pid": 1132421,
+        "event": "fsync_end",
+        "file": "/tmp/synapsor-policy-migration-V1CtjS/.synapsor/control-policy",
+        "elapsed_ms": 6.738593000000037
+      }
+    ],
+    "complete_exit": 0
+  },
+  "migration-load-01": {
+    "concurrent_same_project_periods": [
+      [
+        {
+          "id": 25,
+          "pid": 1134729,
+          "file": "/tmp/synapsor-policy-migration-gVqeo9/.synapsor/runtime-admission.sqlite",
+          "held_ms": 4565.992244000001,
+          "start": "2026-09-13T00:07:04.324Z",
+          "end": "2026-09-13T00:07:08.890Z"
+        },
+        {
+          "id": 29,
+          "pid": 1134729,
+          "file": "/tmp/synapsor-policy-migration-gVqeo9/.synapsor/runtime-admission.sqlite",
+          "held_ms": 60.22829900000215,
+          "start": "2026-09-13T00:07:08.899Z",
+          "end": "2026-09-13T00:07:08.960Z"
+        }
+      ],
+      [
+        {
+          "id": 32,
+          "pid": 1134729,
+          "file": "/tmp/synapsor-policy-migration-4jmp8u/.synapsor/runtime-admission.sqlite",
+          "held_ms": 4750.508045000002,
+          "start": "2026-09-13T00:07:08.973Z",
+          "end": "2026-09-13T00:07:13.723Z"
+        },
+        {
+          "id": 36,
+          "pid": 1134729,
+          "file": "/tmp/synapsor-policy-migration-4jmp8u/.synapsor/runtime-admission.sqlite",
+          "held_ms": 9.50874300000578,
+          "start": "2026-09-13T00:07:13.781Z",
+          "end": "2026-09-13T00:07:13.790Z"
+        }
+      ],
+      [
+        {
+          "id": 39,
+          "pid": 1134729,
+          "file": "/tmp/synapsor-policy-migration-dA73Pp/.synapsor/runtime-admission.sqlite",
+          "held_ms": 4538.077198999999,
+          "start": "2026-09-13T00:07:13.800Z",
+          "end": "2026-09-13T00:07:18.338Z"
+        },
+        {
+          "id": 43,
+          "pid": 1134729,
+          "file": "/tmp/synapsor-policy-migration-dA73Pp/.synapsor/runtime-admission.sqlite",
+          "held_ms": 8.105452000003424,
+          "start": "2026-09-13T00:07:18.348Z",
+          "end": "2026-09-13T00:07:18.356Z"
+        }
+      ],
+      [
+        {
+          "id": 46,
+          "pid": 1134729,
+          "file": "/tmp/synapsor-policy-migration-SAuoRQ/.synapsor/runtime-admission.sqlite",
+          "held_ms": 4250.565121,
+          "start": "2026-09-13T00:07:18.361Z",
+          "end": "2026-09-13T00:07:22.612Z"
+        },
+        {
+          "id": 49,
+          "pid": 1134729,
+          "file": "/tmp/synapsor-policy-migration-SAuoRQ/.synapsor/runtime-admission.sqlite",
+          "held_ms": 6.43607900000643,
+          "start": "2026-09-13T00:07:22.614Z",
+          "end": "2026-09-13T00:07:22.620Z"
+        }
+      ],
+      [
+        {
+          "id": 53,
+          "pid": 1134729,
+          "file": "/tmp/synapsor-policy-migration-t3BS1y/.synapsor/runtime-admission.sqlite",
+          "held_ms": 4453.896677999997,
+          "start": "2026-09-13T00:07:22.625Z",
+          "end": "2026-09-13T00:07:27.079Z"
+        },
+        {
+          "id": 56,
+          "pid": 1134729,
+          "file": "/tmp/synapsor-policy-migration-t3BS1y/.synapsor/runtime-admission.sqlite",
+          "held_ms": 2.093360999999277,
+          "start": "2026-09-13T00:07:27.082Z",
+          "end": "2026-09-13T00:07:27.084Z"
+        }
+      ],
+      [
+        {
+          "id": 58,
+          "pid": 1134729,
+          "file": "/tmp/synapsor-policy-migration-XjokxW/.synapsor/runtime-admission.sqlite",
+          "held_ms": 4521.157462000003,
+          "start": "2026-09-13T00:07:27.088Z",
+          "end": "2026-09-13T00:07:31.610Z"
+        },
+        {
+          "id": 61,
+          "pid": 1134729,
+          "file": "/tmp/synapsor-policy-migration-XjokxW/.synapsor/runtime-admission.sqlite",
+          "held_ms": 2.6462590000010096,
+          "start": "2026-09-13T00:07:31.612Z",
+          "end": "2026-09-13T00:07:31.615Z"
+        }
+      ],
+      [
+        {
+          "id": 65,
+          "pid": 1134729,
+          "file": "/tmp/synapsor-policy-migration-zWQmPG/.synapsor/runtime-admission.sqlite",
+          "held_ms": 4506.582241000004,
+          "start": "2026-09-13T00:07:35.971Z",
+          "end": "2026-09-13T00:07:40.477Z"
+        },
+        {
+          "id": 68,
+          "pid": 1134729,
+          "file": "/tmp/synapsor-policy-migration-zWQmPG/.synapsor/runtime-admission.sqlite",
+          "held_ms": 5.743490000008023,
+          "start": "2026-09-13T00:07:40.484Z",
+          "end": "2026-09-13T00:07:40.489Z"
+        }
+      ],
+      [
+        {
+          "id": 75,
+          "pid": 1134729,
+          "file": "/tmp/synapsor-policy-migration-ct2yRe/.synapsor/runtime-admission.sqlite",
+          "held_ms": 4690.45294599999,
+          "start": "2026-09-13T00:07:44.708Z",
+          "end": "2026-09-13T00:07:49.398Z"
+        },
+        {
+          "id": 76,
+          "pid": 1134729,
+          "file": "/tmp/synapsor-policy-migration-ct2yRe/.synapsor/runtime-admission.sqlite",
+          "held_ms": 9.984072999999626,
+          "start": "2026-09-13T00:07:49.399Z",
+          "end": "2026-09-13T00:07:49.409Z"
+        }
+      ]
+    ],
+    "max_held_ms": 4983.930348000009,
+    "busy_observations": 3,
+    "longest_store_exec": [],
+    "longest_fsync": [
+      {
+        "at": "2026-09-13T00:06:46.054Z",
+        "monotonic_ms": 12100.206329,
+        "pid": 1134729,
+        "event": "fsync_end",
+        "file": "/tmp/synapsor-policy-migration-boCz8y/.synapsor/control-policy",
+        "elapsed_ms": 24.28290399999969
+      },
+      {
+        "at": "2026-09-13T00:06:50.628Z",
+        "monotonic_ms": 16673.71314,
+        "pid": 1134729,
+        "event": "fsync_end",
+        "file": "/tmp/synapsor-policy-migration-Q8CgtH/.synapsor/control-policy/migration.json.5d481b50-56bd-4365-96ff-7c796d74d07a.tmp",
+        "elapsed_ms": 13.177793000002566
+      },
+      {
+        "at": "2026-09-13T00:07:40.405Z",
+        "monotonic_ms": 66450.973439,
+        "pid": 1134729,
+        "event": "fsync_end",
+        "file": "/tmp/synapsor-policy-migration-zWQmPG/.synapsor/control-policy",
+        "elapsed_ms": 12.884291000009398
+      },
+      {
+        "at": "2026-09-13T00:06:59.628Z",
+        "monotonic_ms": 25674.171753,
+        "pid": 1134729,
+        "event": "fsync_end",
+        "file": "/tmp/synapsor-policy-migration-2TUSQS/.synapsor/control-policy",
+        "elapsed_ms": 12.738443999998708
+      }
+    ],
+    "complete_exit": 0
+  },
+  "migration-load-02": {
+    "concurrent_same_project_periods": [
+      [
+        {
+          "id": 25,
+          "pid": 1164695,
+          "file": "/tmp/synapsor-policy-migration-VZ82da/.synapsor/runtime-admission.sqlite",
+          "held_ms": 4278.021593999998,
+          "start": "2026-09-13T00:19:32.560Z",
+          "end": "2026-09-13T00:19:36.838Z"
+        },
+        {
+          "id": 29,
+          "pid": 1164695,
+          "file": "/tmp/synapsor-policy-migration-VZ82da/.synapsor/runtime-admission.sqlite",
+          "held_ms": 53.668970999999146,
+          "start": "2026-09-13T00:19:36.841Z",
+          "end": "2026-09-13T00:19:36.895Z"
+        }
+      ],
+      [
+        {
+          "id": 32,
+          "pid": 1164695,
+          "file": "/tmp/synapsor-policy-migration-zkrhgM/.synapsor/runtime-admission.sqlite",
+          "held_ms": 5000.568145999998,
+          "start": "2026-09-13T00:19:36.901Z",
+          "end": "2026-09-13T00:19:41.901Z"
+        },
+        {
+          "id": 36,
+          "pid": 1164695,
+          "file": "/tmp/synapsor-policy-migration-zkrhgM/.synapsor/runtime-admission.sqlite",
+          "held_ms": 7.024154999999155,
+          "start": "2026-09-13T00:19:41.951Z",
+          "end": "2026-09-13T00:19:41.958Z"
+        }
+      ],
+      [
+        {
+          "id": 39,
+          "pid": 1164695,
+          "file": "/tmp/synapsor-policy-migration-9LNGdE/.synapsor/runtime-admission.sqlite",
+          "held_ms": 4899.491132999996,
+          "start": "2026-09-13T00:19:41.961Z",
+          "end": "2026-09-13T00:19:46.861Z"
+        },
+        {
+          "id": 43,
+          "pid": 1164695,
+          "file": "/tmp/synapsor-policy-migration-9LNGdE/.synapsor/runtime-admission.sqlite",
+          "held_ms": 6.590407000003324,
+          "start": "2026-09-13T00:19:46.867Z",
+          "end": "2026-09-13T00:19:46.873Z"
+        }
+      ],
+      [
+        {
+          "id": 46,
+          "pid": 1164695,
+          "file": "/tmp/synapsor-policy-migration-sU81xe/.synapsor/runtime-admission.sqlite",
+          "held_ms": 4824.5785319999995,
+          "start": "2026-09-13T00:19:46.877Z",
+          "end": "2026-09-13T00:19:51.702Z"
+        },
+        {
+          "id": 49,
+          "pid": 1164695,
+          "file": "/tmp/synapsor-policy-migration-sU81xe/.synapsor/runtime-admission.sqlite",
+          "held_ms": 4.374150000003283,
+          "start": "2026-09-13T00:19:51.703Z",
+          "end": "2026-09-13T00:19:51.707Z"
+        }
+      ],
+      [
+        {
+          "id": 53,
+          "pid": 1164695,
+          "file": "/tmp/synapsor-policy-migration-Sj7vUk/.synapsor/runtime-admission.sqlite",
+          "held_ms": 5022.724727000001,
+          "start": "2026-09-13T00:19:51.712Z",
+          "end": "2026-09-13T00:19:56.734Z"
+        },
+        {
+          "id": 56,
+          "pid": 1164695,
+          "file": "/tmp/synapsor-policy-migration-Sj7vUk/.synapsor/runtime-admission.sqlite",
+          "held_ms": 1.7854470000020228,
+          "start": "2026-09-13T00:19:56.736Z",
+          "end": "2026-09-13T00:19:56.737Z"
+        }
+      ],
+      [
+        {
+          "id": 58,
+          "pid": 1164695,
+          "file": "/tmp/synapsor-policy-migration-y8CLuG/.synapsor/runtime-admission.sqlite",
+          "held_ms": 5067.323714999999,
+          "start": "2026-09-13T00:19:56.740Z",
+          "end": "2026-09-13T00:20:01.808Z"
+        },
+        {
+          "id": 61,
+          "pid": 1164695,
+          "file": "/tmp/synapsor-policy-migration-y8CLuG/.synapsor/runtime-admission.sqlite",
+          "held_ms": 2.3669209999934537,
+          "start": "2026-09-13T00:20:01.810Z",
+          "end": "2026-09-13T00:20:01.812Z"
+        }
+      ],
+      [
+        {
+          "id": 65,
+          "pid": 1164695,
+          "file": "/tmp/synapsor-policy-migration-FsVjuR/.synapsor/runtime-admission.sqlite",
+          "held_ms": 4902.3823919999995,
+          "start": "2026-09-13T00:20:06.638Z",
+          "end": "2026-09-13T00:20:11.540Z"
+        },
+        {
+          "id": 68,
+          "pid": 1164695,
+          "file": "/tmp/synapsor-policy-migration-FsVjuR/.synapsor/runtime-admission.sqlite",
+          "held_ms": 1.9105689999996684,
+          "start": "2026-09-13T00:20:11.543Z",
+          "end": "2026-09-13T00:20:11.545Z"
+        }
+      ],
+      [
+        {
+          "id": 75,
+          "pid": 1164695,
+          "file": "/tmp/synapsor-policy-migration-CuIyVI/.synapsor/runtime-admission.sqlite",
+          "held_ms": 4889.945152,
+          "start": "2026-09-13T00:20:16.265Z",
+          "end": "2026-09-13T00:20:21.155Z"
+        },
+        {
+          "id": 76,
+          "pid": 1164695,
+          "file": "/tmp/synapsor-policy-migration-CuIyVI/.synapsor/runtime-admission.sqlite",
+          "held_ms": 3.9276600000011967,
+          "start": "2026-09-13T00:20:21.155Z",
+          "end": "2026-09-13T00:20:21.159Z"
+        }
+      ]
+    ],
+    "max_held_ms": 5317.884479,
+    "busy_observations": 3,
+    "longest_store_exec": [
+      {
+        "at": "2026-09-13T00:19:11.053Z",
+        "monotonic_ms": 10160.906621,
+        "pid": 1164695,
+        "event": "store_exec_end",
+        "id": 9,
+        "file": "/tmp/synapsor-policy-migration-KdpGRM/.synapsor/control.db",
+        "gate": false,
+        "sql": "\n        PRAGMA foreign_keys = ON;\n  \n        CREATE TABLE IF NOT EXISTS proposal_store_schema (\n          version INTEGER PRIMARY KEY,\n          applied_at TEX",
+        "elapsed_ms": 2700.8403610000005
+      },
+      {
+        "at": "2026-09-13T00:20:23.650Z",
+        "monotonic_ms": 82757.366024,
+        "pid": 1164695,
+        "event": "store_exec_end",
+        "id": 83,
+        "file": "/tmp/synapsor-policy-migration-l6dOKe/.synapsor/control.db",
+        "gate": false,
+        "sql": "\n        PRAGMA foreign_keys = ON;\n  \n        CREATE TABLE IF NOT EXISTS proposal_store_schema (\n          version INTEGER PRIMARY KEY,\n          applied_at TEX",
+        "elapsed_ms": 2486.594861000005
+      },
+      {
+        "at": "2026-09-13T00:19:44.395Z",
+        "monotonic_ms": 43502.94139,
+        "pid": 1164695,
+        "event": "store_exec_end",
+        "id": 41,
+        "file": "/tmp/synapsor-policy-migration-9LNGdE/.synapsor/control.db",
+        "gate": false,
+        "sql": "\n        PRAGMA foreign_keys = ON;\n  \n        CREATE TABLE IF NOT EXISTS proposal_store_schema (\n          version INTEGER PRIMARY KEY,\n          applied_at TEX",
+        "elapsed_ms": 2432.4202340000047
+      },
+      {
+        "at": "2026-09-13T00:19:39.308Z",
+        "monotonic_ms": 38415.96546,
+        "pid": 1164695,
+        "event": "store_exec_end",
+        "id": 34,
+        "file": "/tmp/synapsor-policy-migration-zkrhgM/.synapsor/control.db",
+        "gate": false,
+        "sql": "\n        PRAGMA foreign_keys = ON;\n  \n        CREATE TABLE IF NOT EXISTS proposal_store_schema (\n          version INTEGER PRIMARY KEY,\n          applied_at TEX",
+        "elapsed_ms": 2407.029472000002
+      },
+      {
+        "at": "2026-09-13T00:19:59.135Z",
+        "monotonic_ms": 58242.771204,
+        "pid": 1164695,
+        "event": "store_exec_end",
+        "id": 60,
+        "file": "/tmp/synapsor-policy-migration-y8CLuG/.synapsor/control.db",
+        "gate": false,
+        "sql": "\n        PRAGMA foreign_keys = ON;\n  \n        CREATE TABLE IF NOT EXISTS proposal_store_schema (\n          version INTEGER PRIMARY KEY,\n          applied_at TEX",
+        "elapsed_ms": 2393.491780000004
+      },
+      {
+        "at": "2026-09-13T00:19:54.096Z",
+        "monotonic_ms": 53203.102781,
+        "pid": 1164695,
+        "event": "store_exec_end",
+        "id": 55,
+        "file": "/tmp/synapsor-policy-migration-Sj7vUk/.synapsor/control.db",
+        "gate": false,
+        "sql": "\n        PRAGMA foreign_keys = ON;\n  \n        CREATE TABLE IF NOT EXISTS proposal_store_schema (\n          version INTEGER PRIMARY KEY,\n          applied_at TEX",
+        "elapsed_ms": 2382.967635000001
+      }
+    ],
+    "longest_fsync": [
+      {
+        "at": "2026-09-13T00:19:13.530Z",
+        "monotonic_ms": 12638.032969,
+        "pid": 1164695,
+        "event": "fsync_end",
+        "file": "/tmp/synapsor-policy-migration-KdpGRM/.synapsor/control-policy/5fc34f34b5eb5e85e9973b5751369d54f5ca7bf1d19bd1b7aac4e87a2d74ab75.snapshot.json.0a5a85f4-dfd4-4a90-8473-ff7969c0aaf3.tmp",
+        "elapsed_ms": 14.063575999998648
+      },
+      {
+        "at": "2026-09-13T00:19:18.517Z",
+        "monotonic_ms": 17624.374593,
+        "pid": 1164695,
+        "event": "fsync_end",
+        "file": "/tmp/synapsor-policy-migration-8wkxU0/.synapsor/control-policy",
+        "elapsed_ms": 13.836418999999296
+      },
+      {
+        "at": "2026-09-13T00:19:23.420Z",
+        "monotonic_ms": 22527.888386,
+        "pid": 1164695,
+        "event": "fsync_end",
+        "file": "/tmp/synapsor-policy-migration-IaqCAr/.synapsor/control-policy",
+        "elapsed_ms": 13.471070999999938
+      },
+      {
+        "at": "2026-09-13T00:19:46.814Z",
+        "monotonic_ms": 45921.681187,
+        "pid": 1164695,
+        "event": "fsync_end",
+        "file": "/tmp/synapsor-policy-migration-9LNGdE/.synapsor/control-policy",
+        "elapsed_ms": 13.201498999995238
+      }
+    ],
+    "complete_exit": null
+  },
+  "source_hashes": {
+    "apps/runner/src/control-policy-store.test.ts": "0f55605b33419fe425b7d04042443b2c9162212279008bb694d90ca4edd2aee1",
+    "apps/runner/src/project-runtime-admission.ts": "5fc4c2bd91946703a8dcfed20785d87a8c1c12853d4b962a7248cc33a1d19bcc",
+    "apps/runner/src/project-authority-mutation.ts": "7e79954f66965b38f1a7b876d58f2fd399d3fc8049d3363718dd7a81af8906f5",
+    "apps/runner/src/control-policy-store.ts": "948023022150f24dab4a16e0967305d37304a90479b7892786e0c980b7f884e5"
+  }
+}

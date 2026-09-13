@@ -1,0 +1,161 @@
+{
+  "exit_code": 1,
+  "test_files": {
+    "failed": 4,
+    "passed": 291,
+    "skipped": 21
+  },
+  "tests": {
+    "numPassedTests": 6097,
+    "numFailedTests": 21,
+    "numPendingTests": 461
+  },
+  "failures": [
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/mcp-runtime-execution-config.test.ts",
+      "tests": [
+        {
+          "name": "selected execution configuration through public MCP callers queues through stdio after public connection and execution confirmations on a copied config",
+          "messages": [
+            "McpRuntimeError: Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created.\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:239:31\n    at withSubjectRequestTurn (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:46:16)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.ts:450:20\n    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:71:12)\n    at request (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/mcp-runtime-execution-config.test.ts:88:16)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/mcp-runtime-execution-config.test.ts:102:11"
+          ]
+        },
+        {
+          "name": "selected execution configuration through public MCP callers queues through streamable-http after public connection and execution confirmations on a copied config",
+          "messages": [
+            "AssertionError: expected McpRuntimeError: Runner could not prove t\u2026 { \u2026(2) } to be Error: fixture transport callback complet\u2026 // Object.is equality\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+expect@3.2.6/node_modules/@vitest/expect/dist/index.js:1639:20\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/mcp-runtime-execution-config.test.ts:120:9\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/model-output-config.test.ts",
+      "tests": [
+        {
+          "name": "model output config preference updates only model presentation and preserves config permissions",
+          "messages": [
+            "AssertionError: expected 384 to be 416 // Object.is equality\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/model-output-config.test.ts:71:54\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-delegation.test.ts",
+      "tests": [
+        {
+          "name": "delegated semantic Action runtime composition refuses old references after a current owner change and refuses an existing proposal after revocation",
+          "messages": [
+            "Error: promise rejected \"McpRuntimeError: Runner could not prove t\u2026 { \u2026(2) }\" instead of resolving\n    at _Assertion.__VITEST_RESOLVES__ (file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+expect@3.2.6/node_modules/@vitest/expect/dist/index.js:1577:17)\n    at _Assertion.propertyGetter (file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/chai@5.3.3/node_modules/chai/index.js:1557:27)\n    at Reflect.get (<anonymous>)\n    at Object.proxyGetter [as get] (file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/chai@5.3.3/node_modules/chai/index.js:1645:22)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-delegation.test.ts:177:43\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+          ]
+        }
+      ]
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.test.ts",
+      "tests": [
+        {
+          "name": "composed semantic Action runtime queues a third separately reviewed writer on the same held client without changing its read or trust context",
+          "messages": [
+            "McpRuntimeError: Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created.\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:239:31\n    at withSubjectRequestTurn (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:46:16)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.ts:450:20\n    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:71:12)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.test.ts:66:60\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+          ]
+        },
+        {
+          "name": "composed semantic Action runtime holds an approved request safely with a sanitized actionable diagnostic: unreviewed_alias",
+          "messages": [
+            "McpRuntimeError: Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created.\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:239:31\n    at withSubjectRequestTurn (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:46:16)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.ts:450:20\n    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:71:12)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.test.ts:123:16\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+          ]
+        },
+        {
+          "name": "composed semantic Action runtime holds an approved request safely with a sanitized actionable diagnostic: reviewed_trust",
+          "messages": [
+            "McpRuntimeError: Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created.\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:239:31\n    at withSubjectRequestTurn (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:46:16)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.ts:450:20\n    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:71:12)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.test.ts:123:16\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+          ]
+        },
+        {
+          "name": "composed semantic Action runtime holds an approved request safely with a sanitized actionable diagnostic: reviewed_read",
+          "messages": [
+            "McpRuntimeError: Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created.\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:239:31\n    at withSubjectRequestTurn (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:46:16)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.ts:450:20\n    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:71:12)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.test.ts:123:16\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+          ]
+        },
+        {
+          "name": "composed semantic Action runtime holds an approved request safely with a sanitized actionable diagnostic: reviewed_alias_scope",
+          "messages": [
+            "McpRuntimeError: Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created.\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:239:31\n    at withSubjectRequestTurn (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:46:16)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.ts:450:20\n    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:71:12)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.test.ts:123:16\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+          ]
+        },
+        {
+          "name": "composed semantic Action runtime holds an approved request safely with a sanitized actionable diagnostic: pending",
+          "messages": [
+            "McpRuntimeError: Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created.\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:239:31\n    at withSubjectRequestTurn (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:46:16)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.ts:450:20\n    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:71:12)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.test.ts:123:16\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+          ]
+        },
+        {
+          "name": "composed semantic Action runtime holds an approved request safely with a sanitized actionable diagnostic: queue_failure",
+          "messages": [
+            "McpRuntimeError: Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created.\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:239:31\n    at withSubjectRequestTurn (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:46:16)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.ts:450:20\n    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:71:12)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.test.ts:123:16\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+          ]
+        },
+        {
+          "name": "composed semantic Action runtime holds an approved request safely with a sanitized actionable diagnostic: policy_changed_after_read",
+          "messages": [
+            "McpRuntimeError: Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created.\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:239:31\n    at withSubjectRequestTurn (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:46:16)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.ts:450:20\n    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:71:12)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.test.ts:123:16\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+          ]
+        },
+        {
+          "name": "composed semantic Action runtime does not reuse the held client's execution export after governed execution is revoked",
+          "messages": [
+            "McpRuntimeError: Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created.\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:239:31\n    at withSubjectRequestTurn (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:46:16)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.ts:450:20\n    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:71:12)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.test.ts:146:14\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+          ]
+        },
+        {
+          "name": "composed semantic Action runtime refreshes only the selected nested configuration using its own relative-path base",
+          "messages": [
+            "McpRuntimeError: Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created.\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:239:31\n    at withSubjectRequestTurn (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:46:16)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.ts:450:20\n    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:71:12)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.test.ts:161:14\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+          ]
+        },
+        {
+          "name": "composed semantic Action runtime fails closed for the selected custom publication: missing",
+          "messages": [
+            "McpRuntimeError: Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created.\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:239:31\n    at withSubjectRequestTurn (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:46:16)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.ts:450:20\n    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:71:12)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.test.ts:190:14\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+          ]
+        },
+        {
+          "name": "composed semantic Action runtime fails closed for the selected custom publication: pending",
+          "messages": [
+            "McpRuntimeError: Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created.\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:239:31\n    at withSubjectRequestTurn (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:46:16)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.ts:450:20\n    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:71:12)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.test.ts:190:14\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+          ]
+        },
+        {
+          "name": "composed semantic Action runtime fails closed for the selected custom publication: stale",
+          "messages": [
+            "McpRuntimeError: Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created.\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:239:31\n    at withSubjectRequestTurn (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:46:16)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.ts:450:20\n    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:71:12)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.test.ts:190:14\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+          ]
+        },
+        {
+          "name": "composed semantic Action runtime fails closed for the selected custom publication: revoked",
+          "messages": [
+            "McpRuntimeError: Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created.\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:239:31\n    at withSubjectRequestTurn (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:46:16)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.ts:450:20\n    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:71:12)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.test.ts:190:14\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+          ]
+        },
+        {
+          "name": "composed semantic Action runtime does not guess a publication file for a config-only caller: unchanged",
+          "messages": [
+            "McpRuntimeError: Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created.\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:239:31\n    at withSubjectRequestTurn (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:46:16)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.ts:450:20\n    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:71:12)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.test.ts:219:14\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+          ]
+        },
+        {
+          "name": "composed semantic Action runtime does not guess a publication file for a config-only caller: binding_changed",
+          "messages": [
+            "McpRuntimeError: Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created.\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:239:31\n    at withSubjectRequestTurn (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:46:16)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.ts:450:20\n    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:71:12)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.test.ts:219:14\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+          ]
+        },
+        {
+          "name": "composed semantic Action runtime does not guess a publication file for a config-only caller: revoked",
+          "messages": [
+            "McpRuntimeError: Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created.\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:239:31\n    at withSubjectRequestTurn (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/mcp-server/dist/semantic-actions.js:46:16)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.ts:450:20\n    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:71:12)\n    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/semantic-action-runtime.test.ts:219:14\n    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+          ]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,27 @@
+{
+  "name": "composed-fixtures-01",
+  "args": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "apps/runner/src/semantic-action-runtime.test.ts",
+    "apps/runner/src/semantic-action-delegation.test.ts",
+    "apps/runner/src/mcp-runtime-execution-config.test.ts",
+    "apps/runner/src/model-output-config.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T01:13:27.582250+00:00",
+  "source_head": "3be534f828bbaf0ec655fb689abe60869bf59114",
+  "source_diff_sha256": "466c5583189c937a19a2fb54e8eb2d44e02ab40be9b155035dae763b01cc4915",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/test-environments/composed-fixtures-01",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/composed-fixtures-01",
+  "source_manifest_sha256": "bbba0d0b45718d57f7713b227e04e18a629676f826a735d82b93da6aba8862c7",
+  "pid": 1291437,
+  "exit_code": 1,
+  "completed_at": "2026-09-13T01:13:56.936435+00:00"
+}

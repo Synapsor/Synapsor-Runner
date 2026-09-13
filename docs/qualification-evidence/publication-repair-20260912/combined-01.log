@@ -1,0 +1,133 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1190289) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1190290) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1190279) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1190288) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ packages/mcp-server/src/semantic-actions.test.ts (42 tests) 52304ms
+   ✓ fixed semantic Action MCP > preserves competing different-request conflict and approval checks (separate stores=false)  5113ms
+   ✓ fixed semantic Action MCP > preserves competing different-request conflict and approval checks (separate stores=true)  5184ms
+   ✓ fixed semantic Action MCP > keeps the final automatic approval atomic for different subjects across separate store instances  5350ms
+   ✓ fixed semantic Action MCP > counts a later committed approval when an earlier claimed request resumes at the last insurer slot  5884ms
+   ✓ fixed semantic Action MCP > counts a later committed approval when an earlier claimed request resumes at the last overall slot  7244ms
+   ✓ fixed semantic Action MCP > grants exactly the available allowance under concurrent load (overall allowance=2)  5907ms
+   ✓ fixed semantic Action MCP > grants exactly the available allowance under concurrent load (overall allowance=8)  5648ms
+   ✓ fixed semantic Action MCP > retains a committed automatic decision across lost acknowledgement and restart before queue publication  5728ms
+   ✓ fixed semantic Action MCP > rolls back an aborted automatic decision without spending either allowance or reporting human-review success  5438ms
+(node:1192785) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/control-policy-store.test.ts (18 tests | 1 failed | 1 skipped) 86338ms
+   ✓ governed policy-store binding and recovery > drains runtime work before reading the migration snapshot or installing its locator  4921ms
+   ✓ governed policy-store binding and recovery > does not initialize authority from a read or accept an ephemeral store 7ms
+   ✓ governed policy-store binding and recovery > imports exact active and disabled revisions without changing their provenance  5070ms
+   ✓ governed policy-store binding and recovery > opens current policies without rerunning ledger migrations and can borrow the actual runtime store  5028ms
+   ✓ governed policy-store binding and recovery > refuses a borrowed runtime connected to a different repository  5236ms
+   ✓ governed policy-store binding and recovery > refuses a changed or missing store before runtime creation can leave an empty shadow file  5135ms
+   ✓ governed policy-store binding and recovery > validates only the required store selection before constructing an authoring ledger  5045ms
+   ✓ governed policy-store binding and recovery > resumes a frozen pending import rather than rereading changed legacy files  5291ms
+   ✓ governed policy-store binding and recovery > recovers an import committed before the process lost its response without replaying it  5113ms
+   ✓ governed policy-store binding and recovery > does not load or trust the snapshot export after repository authority is established  5085ms
+   ✓ governed policy-store binding and recovery > refuses tampered pending input before importing any authority  4945ms
+   ✓ governed policy-store binding and recovery > does not create a shadow control store when the selection changes  5101ms
+   ✓ governed policy-store binding and recovery > fails closed for a missing or replaced bound repository  10011ms
+   ✓ governed policy-store binding and recovery > never falls back to file authority if the migration binding disappears  5144ms
+   ✓ governed policy-store binding and recovery > rejects unvalidated input before creating a binding or initializing policy tables  5036ms
+   × governed policy-store binding and recovery > chooses one complete binding during concurrent migration 5040ms
+     → Runtime work is still in progress. Pause new requests and retry the migration; no cutover was performed.
+   ✓ governed policy-store binding and recovery > binds migration files, local store and the snapshot reader to the locked canonical project  5127ms
+   ↓ uses the configured PostgreSQL repository, not a local authority mirror
+ ✓ apps/runner/src/semantic-admission-publication.test.ts (25 tests | 11 skipped) 85449ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: replacement_first  6182ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: replacement_process  7192ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: admission_first  6207ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: inactive_first  5697ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: unchanged  6181ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: disabled_draft  6412ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: failed_confirmation  6337ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: replacement_first  5552ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: replacement_process  6531ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: admission_first  5717ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: inactive_first  5852ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: unchanged  5876ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: disabled_draft  5976ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: failed_confirmation  5727ms
+(node:1194198) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1194218) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/project-authority-mutation.test.ts (15 tests) 1127ms
+   ✓ project-local authority mutation exclusion > serializes independent processes and releases on return without recreating the inode  392ms
+   ✓ project-local authority mutation exclusion > serializes independent processes and releases on crash without recreating the inode  379ms
+ ✓ apps/runner/src/semantic-writeback-authority.test.ts (14 tests | 6 skipped) 36698ms
+   ✓ semantic writeback authority orchestration > resolves a real approved v5 job to its outcome writer without changing the compiled source  5201ms
+   ✓ semantic writeback authority orchestration > accepts one exact approved v5 job and reloads active authority for transaction verification  5281ms
+   ✓ semantic writeback authority orchestration > accepts one exact policy approval while retaining a two-human fallback quorum  5451ms
+   ✓ semantic writeback authority orchestration > rejects approval-set and immutable-proposal drift before source execution  5247ms
+   ✓ semantic writeback authority orchestration > queues and leases an approved semantic proposal only for its exact active outcome authority  5479ms
+   ✓ semantic writeback authority orchestration > retains automatic approval history but never dispatches old unstarted work after a lower-limit replacement  5130ms
+   ✓ semantic writeback authority orchestration > leaves semantic work unleased after Action authority is deactivated  4902ms
+(node:1194451) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/project-runtime-admission.test.ts (12 tests) 644ms
+ ✓ packages/proposal-store/src/automatic-approval-admission.test.ts (7 tests | 3 skipped) 15844ms
+   ✓ durable automatic approval admission > does not partially consume combined limits, merge insurers, count human decisions, or reset history on a stricter revision  5524ms
+   ✓ durable automatic approval admission > preserves the inclusive rolling-window boundary, then releases capacity only after expiry  4817ms
+   ✓ durable automatic approval admission > takes admission time after real cross-process SQLite writer exclusion  5460ms
+(node:1194901) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/post-activation-ask.test.ts (107 tests) 991ms
+   ✓ post-activation Ask handoff > keeps an explicit client-setup entry focused on clients even with a configured model  771ms
+ ✓ apps/runner/src/control-policy-publication-recovery.test.ts (23 tests) 118134ms
+   ✓ sqlite publication settlement > fences the original attempt without changing unrelated authority: committed  4842ms
+   ✓ sqlite publication settlement > fences the original attempt without changing unrelated authority: cancel  5111ms
+   ✓ sqlite publication settlement > fences the original attempt without changing unrelated authority: commit_race  5020ms
+   ✓ sqlite publication settlement > fences the original attempt without changing unrelated authority: cancellation_lost  5279ms
+   ✓ sqlite publication settlement > fences the original attempt without changing unrelated authority: unavailable  5090ms
+   ✓ sqlite publication settlement > fences the original attempt without changing unrelated authority: mismatch  5207ms
+   ✓ sqlite publication settlement > fences the original attempt without changing unrelated authority: concurrent  5259ms
+   ✓ sqlite publication settlement > fences the original attempt without changing unrelated authority: repeated  5209ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: before_replace  5256ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: before_commit  5270ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: unknown_commit  5112ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: journal_cleanup  5176ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: newer_config  5417ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: corrupt_record  5238ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: missing_config  5362ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: unavailable  5331ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: lost_cancellation  5229ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: restore_race  4582ms
+   ✓ sqlite publication settlement > rejects mismatched bindings and unsafe paths before saving any config intent  4721ms
+   ✓ sqlite publication settlement > enforces cancellation as a no-op fence in the actual repository  4832ms
+   ✓ sqlite publication settlement > recovers after a real process death: before_config  4920ms
+   ✓ sqlite publication settlement > recovers after a real process death: before_commit  5254ms
+   ✓ sqlite publication settlement > recovers after a real process death: after_commit  5409ms
+(node:1195512) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/local-test-runtime-identity.test.ts (6 tests) 95ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/control-policy-store.test.ts > governed policy-store binding and recovery > chooses one complete binding during concurrent migration
+RuntimeAdmissionError: Runtime work is still in progress. Pause new requests and retry the migration; no cutover was performed.
+ ❯ failure apps/runner/src/project-runtime-admission.ts:111:58
+    109|   return failure("POLICY_RUNTIME_GATE_INVALID", "Runtime admission req…
+    110| }
+    111| function failure(code: string, message: string) { return new RuntimeAd…
+       |                                                          ^
+    112| 
+ ❯ withAdmission apps/runner/src/project-runtime-admission.ts:62:17
+ ❯ apps/runner/src/control-policy-store.test.ts:236:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 9 passed (10)
+      Tests  1 failed | 247 passed | 21 skipped (269)
+   Start at  17:27:32
+   Duration  120.81s (transform 4.88s, setup 0ms, collect 13.15s, tests 397.62s, environment 1ms, prepare 471ms)
+

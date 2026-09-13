@@ -1,0 +1,77 @@
+{
+  "started_at": "2026-09-13T01:17:00.829311+00:00",
+  "network": "unshared network namespace; npm offline; writable disposable cache copy",
+  "home": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/offline-home",
+  "commands": [
+    {
+      "name": "trusted-core",
+      "args": [
+        "node",
+        "scripts/check-trusted-core-dependencies.mjs"
+      ],
+      "started_at": "2026-09-13T01:17:00.829382+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-13T01:17:03.402027+00:00"
+    },
+    {
+      "name": "licenses",
+      "args": [
+        "node",
+        "scripts/check-license-content.mjs"
+      ],
+      "started_at": "2026-09-13T01:17:03.402602+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-13T01:17:03.919058+00:00"
+    },
+    {
+      "name": "human-commands",
+      "args": [
+        "node",
+        "scripts/verify-human-command-surface.mjs"
+      ],
+      "started_at": "2026-09-13T01:17:03.919473+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-13T01:17:04.285123+00:00"
+    },
+    {
+      "name": "dsl-sources",
+      "args": [
+        "bash",
+        "scripts/verify-dsl-source-paths.sh"
+      ],
+      "started_at": "2026-09-13T01:17:04.285846+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-13T01:17:04.754029+00:00"
+    },
+    {
+      "name": "cursor-plugin",
+      "args": [
+        "node",
+        "scripts/verify-cursor-plugin.mjs"
+      ],
+      "started_at": "2026-09-13T01:17:04.754430+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-13T01:17:04.969623+00:00"
+    },
+    {
+      "name": "mcp-client-configs",
+      "args": [
+        "node",
+        "scripts/verify-mcp-client-configs.mjs"
+      ],
+      "started_at": "2026-09-13T01:17:04.970414+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-13T01:17:36.133337+00:00"
+    },
+    {
+      "name": "local-package",
+      "args": [
+        "bash",
+        "scripts/verify-local-runner.sh"
+      ],
+      "started_at": "2026-09-13T01:17:36.134371+00:00",
+      "exit_code": 1,
+      "completed_at": "2026-09-13T01:18:11.513930+00:00"
+    }
+  ]
+}

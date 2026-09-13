@@ -1,0 +1,20 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1298373) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Active local Read authority selected from /tmp/synapsor-selected-execution-config-f1Z6CI/synapsor.runner.json; fixed Read and Action tools are available. Only activated outcomes permit proposals.
+Active local Read authority selected from /tmp/synapsor-selected-execution-config-CxLmCc/synapsor.runner.json; fixed Read and Action tools are available. Only activated outcomes permit proposals.
+ ✓ apps/runner/src/mcp-runtime-execution-config.test.ts (10 tests) 18861ms
+   ✓ selected execution configuration through public MCP callers > queues through stdio after public connection and execution confirmations on a copied config  4750ms
+   ✓ selected execution configuration through public MCP callers > queues through streamable-http after public connection and execution confirmations on a copied config  3489ms
+   ✓ selected execution configuration through public MCP callers > passes the actual managed companion selection, not the launch filename  2409ms
+   ✓ selected execution configuration through public MCP callers > passes the actual managed primary selection, not the launch filename  3423ms
+   ✓ selected execution configuration through public MCP callers > default local launch uses the reviewed identity and preserves read-only override: false  2415ms
+   ✓ selected execution configuration through public MCP callers > default local launch uses the reviewed identity and preserves read-only override: true  2305ms
+
+ Test Files  1 passed (1)
+      Tests  10 passed (10)
+   Start at  18:16:37
+   Duration  26.06s (transform 3.81s, setup 0ms, collect 6.82s, tests 18.86s, environment 0ms, prepare 85ms)
+

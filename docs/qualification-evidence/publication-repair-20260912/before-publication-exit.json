@@ -1,0 +1,19 @@
+{
+  "name": "before-publication",
+  "args": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--config",
+    "docs/qualification-evidence/approval-time-stage-a-20260912/publication-vitest.config.mjs"
+  ],
+  "pg_control_store_fixture": true,
+  "started_at": "2026-09-12T23:54:43.796928+00:00",
+  "source_head": "779b2dc495a383871fb0311c5e70159872cee3dc",
+  "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/test-environments/before-publication",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/before-publication",
+  "pid": 1110759,
+  "exit_code": 1,
+  "completed_at": "2026-09-12T23:55:02.541958+00:00"
+}

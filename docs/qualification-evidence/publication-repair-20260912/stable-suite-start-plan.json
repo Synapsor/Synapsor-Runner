@@ -1,0 +1,18 @@
+{
+  "at": "2026-09-13T00:46:34.578544+00:00",
+  "product": {
+    "commit": "b16f92aa01d52d6b51e74e0e1574fac7de14635b",
+    "accounting_repair_retained": "a2b6b5f870f544ca608d7fb0e6bc834da1e27196",
+    "test_revision": "3be534f828bbaf0ec655fb689abe60869bf59114",
+    "evidence_revision": "will be recorded separately"
+  },
+  "maximum_runs": 1,
+  "maximum_minutes": 60,
+  "source_changes_during_run": false,
+  "pg_database_credentials": false,
+  "provider_credentials": false,
+  "private_var_tmp": true,
+  "NO_COLOR": "1",
+  "umask": "0077",
+  "StageB": "NOT STARTED"
+}

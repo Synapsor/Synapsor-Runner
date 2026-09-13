@@ -1,0 +1,1591 @@
+[
+  {
+    "at": "2026-09-13T00:33:31.920Z",
+    "monotonic_ms": 76756.371713,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_exec_start",
+    "id": 75,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+    "gate": true,
+    "sql": "PRAGMA busy_timeout = 0",
+    "held": [],
+    "stack": [
+      "    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:47:8)",
+      "    at async Promise.all (index 1)",
+      "    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/control-policy-store.test.ts:236:21",
+      "    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+    ]
+  },
+  {
+    "at": "2026-09-13T00:33:31.920Z",
+    "monotonic_ms": 76756.545566,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_exec_end",
+    "id": 75,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+    "gate": true,
+    "sql": "PRAGMA busy_timeout = 0",
+    "elapsed_ms": 0.527620000008028,
+    "transaction": false,
+    "held": []
+  },
+  {
+    "at": "2026-09-13T00:33:31.920Z",
+    "monotonic_ms": 76756.887365,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_read",
+    "id": 75,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+    "gate": true,
+    "sql": "PRAGMA journal_mode",
+    "elapsed_ms": 0.020417000007000752,
+    "held": []
+  },
+  {
+    "at": "2026-09-13T00:33:31.921Z",
+    "monotonic_ms": 76757.252346,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_exec_start",
+    "id": 75,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+    "gate": true,
+    "sql": "BEGIN EXCLUSIVE",
+    "held": [],
+    "stack": [
+      "    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:55:12)",
+      "    at async Promise.all (index 1)",
+      "    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/control-policy-store.test.ts:236:21",
+      "    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+    ]
+  },
+  {
+    "at": "2026-09-13T00:33:31.921Z",
+    "monotonic_ms": 76757.453167,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_exec_end",
+    "id": 75,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+    "gate": true,
+    "sql": "BEGIN EXCLUSIVE",
+    "elapsed_ms": 0.48425000000861473,
+    "transaction": true,
+    "held": [
+      {
+        "id": 75,
+        "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+        "gate": true,
+        "mode": "BEGIN EXCLUSIVE"
+      }
+    ]
+  },
+  {
+    "at": "2026-09-13T00:33:31.922Z",
+    "monotonic_ms": 76758.020981,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_exec_start",
+    "id": 76,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+    "gate": true,
+    "sql": "PRAGMA busy_timeout = 0",
+    "held": [
+      {
+        "id": 75,
+        "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+        "gate": true,
+        "mode": "BEGIN EXCLUSIVE"
+      }
+    ],
+    "stack": [
+      "    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:47:8)",
+      "    at async Promise.all (index 0)",
+      "    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/control-policy-store.test.ts:236:21",
+      "    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+    ]
+  },
+  {
+    "at": "2026-09-13T00:33:31.922Z",
+    "monotonic_ms": 76758.110581,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_exec_end",
+    "id": 76,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+    "gate": true,
+    "sql": "PRAGMA busy_timeout = 0",
+    "elapsed_ms": 0.3082250000006752,
+    "transaction": false,
+    "held": [
+      {
+        "id": 75,
+        "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+        "gate": true,
+        "mode": "BEGIN EXCLUSIVE"
+      }
+    ]
+  },
+  {
+    "at": "2026-09-13T00:33:31.924Z",
+    "monotonic_ms": 76760.677881,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_exec_start",
+    "id": 77,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/authority-write-lock.sqlite",
+    "gate": true,
+    "sql": "PRAGMA busy_timeout = 0",
+    "held": [
+      {
+        "id": 75,
+        "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+        "gate": true,
+        "mode": "BEGIN EXCLUSIVE"
+      }
+    ],
+    "stack": [
+      "    at withProjectAuthorityMutation (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-authority-mutation.ts:40:8)",
+      "    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:71:12)",
+      "    at async Promise.all (index 1)",
+      "    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/control-policy-store.test.ts:236:21",
+      "    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+    ]
+  },
+  {
+    "at": "2026-09-13T00:33:31.924Z",
+    "monotonic_ms": 76760.88499,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_exec_end",
+    "id": 77,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/authority-write-lock.sqlite",
+    "gate": true,
+    "sql": "PRAGMA busy_timeout = 0",
+    "elapsed_ms": 0.5493019999994431,
+    "transaction": false,
+    "held": [
+      {
+        "id": 75,
+        "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+        "gate": true,
+        "mode": "BEGIN EXCLUSIVE"
+      }
+    ]
+  },
+  {
+    "at": "2026-09-13T00:33:31.925Z",
+    "monotonic_ms": 76761.150046,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_exec_start",
+    "id": 77,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/authority-write-lock.sqlite",
+    "gate": true,
+    "sql": "BEGIN IMMEDIATE",
+    "held": [
+      {
+        "id": 75,
+        "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+        "gate": true,
+        "mode": "BEGIN EXCLUSIVE"
+      }
+    ],
+    "stack": [
+      "    at withProjectAuthorityMutation (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-authority-mutation.ts:44:16)",
+      "    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:71:12)",
+      "    at async Promise.all (index 1)",
+      "    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/control-policy-store.test.ts:236:21",
+      "    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+    ]
+  },
+  {
+    "at": "2026-09-13T00:33:31.925Z",
+    "monotonic_ms": 76761.297627,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_exec_end",
+    "id": 77,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/authority-write-lock.sqlite",
+    "gate": true,
+    "sql": "BEGIN IMMEDIATE",
+    "elapsed_ms": 0.3498039999976754,
+    "transaction": true,
+    "held": [
+      {
+        "id": 75,
+        "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+        "gate": true,
+        "mode": "BEGIN EXCLUSIVE"
+      },
+      {
+        "id": 77,
+        "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/authority-write-lock.sqlite",
+        "gate": true,
+        "mode": "BEGIN IMMEDIATE"
+      }
+    ]
+  },
+  {
+    "at": "2026-09-13T00:33:31.926Z",
+    "monotonic_ms": 76762.89628,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "PRAGMA busy_timeout = 5000"
+  },
+  {
+    "at": "2026-09-13T00:33:31.927Z",
+    "monotonic_ms": 76763.15525,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "PRAGMA busy_timeout = 5000",
+    "elapsed_ms": 0.2891740000050049
+  },
+  {
+    "at": "2026-09-13T00:33:31.927Z",
+    "monotonic_ms": 76763.343538,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "\n        PRAGMA foreign_keys = ON;\n  \n        CREATE TABLE IF NOT EXISTS proposal_store_schema (\n          version INTEGER PRIMARY KEY,\n          applied_at TEX"
+  },
+  {
+    "at": "2026-09-13T00:33:34.233Z",
+    "monotonic_ms": 79069.364223,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "\n        PRAGMA foreign_keys = ON;\n  \n        CREATE TABLE IF NOT EXISTS proposal_store_schema (\n          version INTEGER PRIMARY KEY,\n          applied_at TEX",
+    "elapsed_ms": 2305.988386000012
+  },
+  {
+    "at": "2026-09-13T00:33:34.233Z",
+    "monotonic_ms": 79069.934964,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE proposals ADD COLUMN principal TEXT"
+  },
+  {
+    "at": "2026-09-13T00:33:34.265Z",
+    "monotonic_ms": 79101.101743,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE proposals ADD COLUMN principal TEXT",
+    "elapsed_ms": 31.147265999999945
+  },
+  {
+    "at": "2026-09-13T00:33:34.265Z",
+    "monotonic_ms": 79101.646013,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE proposals ADD COLUMN capability TEXT"
+  },
+  {
+    "at": "2026-09-13T00:33:34.303Z",
+    "monotonic_ms": 79139.375745,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE proposals ADD COLUMN capability TEXT",
+    "elapsed_ms": 37.707840999995824
+  },
+  {
+    "at": "2026-09-13T00:33:34.304Z",
+    "monotonic_ms": 79139.992764,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE proposals ADD COLUMN interaction_id TEXT"
+  },
+  {
+    "at": "2026-09-13T00:33:34.340Z",
+    "monotonic_ms": 79176.928283,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE proposals ADD COLUMN interaction_id TEXT",
+    "elapsed_ms": 36.94498800000292
+  },
+  {
+    "at": "2026-09-13T00:33:34.341Z",
+    "monotonic_ms": 79177.15796,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE proposals ADD COLUMN tool_call_id TEXT"
+  },
+  {
+    "at": "2026-09-13T00:33:34.391Z",
+    "monotonic_ms": 79227.512074,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE proposals ADD COLUMN tool_call_id TEXT",
+    "elapsed_ms": 50.29239600000437
+  },
+  {
+    "at": "2026-09-13T00:33:34.392Z",
+    "monotonic_ms": 79228.068985,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE evidence_bundles ADD COLUMN principal TEXT"
+  },
+  {
+    "at": "2026-09-13T00:33:34.428Z",
+    "monotonic_ms": 79264.754193,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE evidence_bundles ADD COLUMN principal TEXT",
+    "elapsed_ms": 36.65959300000395
+  },
+  {
+    "at": "2026-09-13T00:33:34.429Z",
+    "monotonic_ms": 79265.055115,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE evidence_bundles ADD COLUMN capability TEXT"
+  },
+  {
+    "at": "2026-09-13T00:33:34.478Z",
+    "monotonic_ms": 79314.398945,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE evidence_bundles ADD COLUMN capability TEXT",
+    "elapsed_ms": 49.30669100000523
+  },
+  {
+    "at": "2026-09-13T00:33:34.478Z",
+    "monotonic_ms": 79314.855812,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE evidence_bundles ADD COLUMN source_id TEXT"
+  },
+  {
+    "at": "2026-09-13T00:33:34.522Z",
+    "monotonic_ms": 79358.115751,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE evidence_bundles ADD COLUMN source_id TEXT",
+    "elapsed_ms": 43.23037699999986
+  },
+  {
+    "at": "2026-09-13T00:33:34.522Z",
+    "monotonic_ms": 79358.539244,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE evidence_bundles ADD COLUMN source_table TEXT"
+  },
+  {
+    "at": "2026-09-13T00:33:34.566Z",
+    "monotonic_ms": 79402.536911,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE evidence_bundles ADD COLUMN source_table TEXT",
+    "elapsed_ms": 43.98950200001127
+  },
+  {
+    "at": "2026-09-13T00:33:34.566Z",
+    "monotonic_ms": 79402.762356,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE evidence_bundles ADD COLUMN business_object TEXT"
+  },
+  {
+    "at": "2026-09-13T00:33:34.610Z",
+    "monotonic_ms": 79446.294349,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE evidence_bundles ADD COLUMN business_object TEXT",
+    "elapsed_ms": 43.473927999992156
+  },
+  {
+    "at": "2026-09-13T00:33:34.610Z",
+    "monotonic_ms": 79446.760753,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE evidence_bundles ADD COLUMN object_id TEXT"
+  },
+  {
+    "at": "2026-09-13T00:33:34.655Z",
+    "monotonic_ms": 79491.049122,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE evidence_bundles ADD COLUMN object_id TEXT",
+    "elapsed_ms": 44.28228100000706
+  },
+  {
+    "at": "2026-09-13T00:33:34.655Z",
+    "monotonic_ms": 79491.231022,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE evidence_bundles ADD COLUMN query_fingerprint TEXT"
+  },
+  {
+    "at": "2026-09-13T00:33:34.698Z",
+    "monotonic_ms": 79534.337594,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE evidence_bundles ADD COLUMN query_fingerprint TEXT",
+    "elapsed_ms": 43.08714499999769
+  },
+  {
+    "at": "2026-09-13T00:33:34.698Z",
+    "monotonic_ms": 79534.504831,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE query_audit ADD COLUMN tenant_id TEXT"
+  },
+  {
+    "at": "2026-09-13T00:33:34.748Z",
+    "monotonic_ms": 79584.146232,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE query_audit ADD COLUMN tenant_id TEXT",
+    "elapsed_ms": 49.62534700000833
+  },
+  {
+    "at": "2026-09-13T00:33:34.748Z",
+    "monotonic_ms": 79584.292018,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE query_audit ADD COLUMN principal TEXT"
+  },
+  {
+    "at": "2026-09-13T00:33:34.791Z",
+    "monotonic_ms": 79627.752925,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE query_audit ADD COLUMN principal TEXT",
+    "elapsed_ms": 43.44398499999079
+  },
+  {
+    "at": "2026-09-13T00:33:34.791Z",
+    "monotonic_ms": 79627.912963,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE query_audit ADD COLUMN capability TEXT"
+  },
+  {
+    "at": "2026-09-13T00:33:34.840Z",
+    "monotonic_ms": 79676.238001,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE query_audit ADD COLUMN capability TEXT",
+    "elapsed_ms": 48.28738799999701
+  },
+  {
+    "at": "2026-09-13T00:33:34.840Z",
+    "monotonic_ms": 79676.55341,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE query_audit ADD COLUMN business_object TEXT"
+  },
+  {
+    "at": "2026-09-13T00:33:34.878Z",
+    "monotonic_ms": 79714.394999,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE query_audit ADD COLUMN business_object TEXT",
+    "elapsed_ms": 37.796587000004365
+  },
+  {
+    "at": "2026-09-13T00:33:34.878Z",
+    "monotonic_ms": 79714.957054,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE query_audit ADD COLUMN object_id TEXT"
+  },
+  {
+    "at": "2026-09-13T00:33:34.929Z",
+    "monotonic_ms": 79765.001633,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE query_audit ADD COLUMN object_id TEXT",
+    "elapsed_ms": 50.01549299999897
+  },
+  {
+    "at": "2026-09-13T00:33:34.929Z",
+    "monotonic_ms": 79765.626669,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE query_audit ADD COLUMN primary_key_value TEXT"
+  },
+  {
+    "at": "2026-09-13T00:33:34.980Z",
+    "monotonic_ms": 79816.424802,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "ALTER TABLE query_audit ADD COLUMN primary_key_value TEXT",
+    "elapsed_ms": 50.79537400000845
+  },
+  {
+    "at": "2026-09-13T00:33:34.983Z",
+    "monotonic_ms": 79819.256773,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "\n        CREATE INDEX IF NOT EXISTS idx_proposals_tenant_created ON proposals(tenant_id, created_at);\n        CREATE INDEX IF NOT EXISTS idx_proposals_action_cr"
+  },
+  {
+    "at": "2026-09-13T00:33:36.603Z",
+    "monotonic_ms": 81439.955537,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "\n        CREATE INDEX IF NOT EXISTS idx_proposals_tenant_created ON proposals(tenant_id, created_at);\n        CREATE INDEX IF NOT EXISTS idx_proposals_action_cr",
+    "elapsed_ms": 1620.7255719999957
+  },
+  {
+    "at": "2026-09-13T00:33:36.605Z",
+    "monotonic_ms": 81441.051579,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "BEGIN IMMEDIATE"
+  },
+  {
+    "at": "2026-09-13T00:33:36.605Z",
+    "monotonic_ms": 81441.115124,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "BEGIN IMMEDIATE",
+    "elapsed_ms": 0.07531600000220351
+  },
+  {
+    "at": "2026-09-13T00:33:36.606Z",
+    "monotonic_ms": 81442.097498,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "COMMIT"
+  },
+  {
+    "at": "2026-09-13T00:33:36.647Z",
+    "monotonic_ms": 81483.554712,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "COMMIT",
+    "elapsed_ms": 41.44310800000676
+  },
+  {
+    "at": "2026-09-13T00:33:36.648Z",
+    "monotonic_ms": 81484.406707,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "fsync_start",
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control-policy/5fc34f34b5eb5e85e9973b5751369d54f5ca7bf1d19bd1b7aac4e87a2d74ab75.snapshot.json.d35d2ba0-a849-4e8b-81f9-261dfa56b081.tmp"
+  },
+  {
+    "at": "2026-09-13T00:33:36.660Z",
+    "monotonic_ms": 81496.271228,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "fsync_end",
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control-policy/5fc34f34b5eb5e85e9973b5751369d54f5ca7bf1d19bd1b7aac4e87a2d74ab75.snapshot.json.d35d2ba0-a849-4e8b-81f9-261dfa56b081.tmp",
+    "elapsed_ms": 11.851741999998922
+  },
+  {
+    "at": "2026-09-13T00:33:36.660Z",
+    "monotonic_ms": 81496.66977,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "fsync_start",
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control-policy"
+  },
+  {
+    "at": "2026-09-13T00:33:36.672Z",
+    "monotonic_ms": 81508.913071,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "fsync_end",
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control-policy",
+    "elapsed_ms": 12.232386999996379
+  },
+  {
+    "at": "2026-09-13T00:33:36.673Z",
+    "monotonic_ms": 81509.887524,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "fsync_start",
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control-policy/migration.json.1293d4ad-5670-4a6d-b798-0325dd15c2dc.tmp"
+  },
+  {
+    "at": "2026-09-13T00:33:36.685Z",
+    "monotonic_ms": 81521.43386,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "fsync_end",
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control-policy/migration.json.1293d4ad-5670-4a6d-b798-0325dd15c2dc.tmp",
+    "elapsed_ms": 11.537474999990081
+  },
+  {
+    "at": "2026-09-13T00:33:36.686Z",
+    "monotonic_ms": 81522.064446,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "fsync_start",
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control-policy"
+  },
+  {
+    "at": "2026-09-13T00:33:36.697Z",
+    "monotonic_ms": 81533.852397,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "fsync_end",
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control-policy",
+    "elapsed_ms": 11.777956999998423
+  },
+  {
+    "at": "2026-09-13T00:33:36.698Z",
+    "monotonic_ms": 81534.47741,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "BEGIN"
+  },
+  {
+    "at": "2026-09-13T00:33:36.698Z",
+    "monotonic_ms": 81534.521008,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "BEGIN",
+    "elapsed_ms": 0.05245899999863468
+  },
+  {
+    "at": "2026-09-13T00:33:36.698Z",
+    "monotonic_ms": 81534.586786,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "COMMIT"
+  },
+  {
+    "at": "2026-09-13T00:33:36.698Z",
+    "monotonic_ms": 81534.601664,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "COMMIT",
+    "elapsed_ms": 0.016652000005706213
+  },
+  {
+    "at": "2026-09-13T00:33:36.698Z",
+    "monotonic_ms": 81534.625199,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "BEGIN"
+  },
+  {
+    "at": "2026-09-13T00:33:36.698Z",
+    "monotonic_ms": 81534.634672,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "BEGIN",
+    "elapsed_ms": 0.009991999992053024
+  },
+  {
+    "at": "2026-09-13T00:33:36.698Z",
+    "monotonic_ms": 81534.670713,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "COMMIT"
+  },
+  {
+    "at": "2026-09-13T00:33:36.698Z",
+    "monotonic_ms": 81534.681183,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "COMMIT",
+    "elapsed_ms": 0.011123999996925704
+  },
+  {
+    "at": "2026-09-13T00:33:36.699Z",
+    "monotonic_ms": 81535.209999,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "BEGIN"
+  },
+  {
+    "at": "2026-09-13T00:33:36.699Z",
+    "monotonic_ms": 81535.246437,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "BEGIN",
+    "elapsed_ms": 0.04252299999643583
+  },
+  {
+    "at": "2026-09-13T00:33:36.699Z",
+    "monotonic_ms": 81535.290182,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "COMMIT"
+  },
+  {
+    "at": "2026-09-13T00:33:36.699Z",
+    "monotonic_ms": 81535.304229,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "COMMIT",
+    "elapsed_ms": 0.015398000003187917
+  },
+  {
+    "at": "2026-09-13T00:33:36.699Z",
+    "monotonic_ms": 81535.388547,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "BEGIN IMMEDIATE"
+  },
+  {
+    "at": "2026-09-13T00:33:36.699Z",
+    "monotonic_ms": 81535.407784,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "BEGIN IMMEDIATE",
+    "elapsed_ms": 0.020218999998178333
+  },
+  {
+    "at": "2026-09-13T00:33:36.699Z",
+    "monotonic_ms": 81535.795592,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "COMMIT"
+  },
+  {
+    "at": "2026-09-13T00:33:36.734Z",
+    "monotonic_ms": 81570.394394,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 78,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "COMMIT",
+    "elapsed_ms": 34.58321500000602
+  },
+  {
+    "at": "2026-09-13T00:33:36.734Z",
+    "monotonic_ms": 81570.626961,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_exec_start",
+    "id": 77,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/authority-write-lock.sqlite",
+    "gate": true,
+    "sql": "ROLLBACK",
+    "held": [
+      {
+        "id": 75,
+        "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+        "gate": true,
+        "mode": "BEGIN EXCLUSIVE"
+      },
+      {
+        "id": 77,
+        "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/authority-write-lock.sqlite",
+        "gate": true,
+        "mode": "BEGIN IMMEDIATE"
+      }
+    ],
+    "stack": [
+      "    at withProjectAuthorityMutation (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-authority-mutation.ts:67:30)",
+      "    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:71:12)",
+      "    at async Promise.all (index 1)",
+      "    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/control-policy-store.test.ts:236:21",
+      "    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+    ]
+  },
+  {
+    "at": "2026-09-13T00:33:36.734Z",
+    "monotonic_ms": 81570.714476,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_exec_end",
+    "id": 77,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/authority-write-lock.sqlite",
+    "gate": true,
+    "sql": "ROLLBACK",
+    "elapsed_ms": 0.23180199999478646,
+    "transaction": false,
+    "held": [
+      {
+        "id": 75,
+        "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+        "gate": true,
+        "mode": "BEGIN EXCLUSIVE"
+      }
+    ]
+  },
+  {
+    "at": "2026-09-13T00:33:36.734Z",
+    "monotonic_ms": 81570.749998,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_close",
+    "id": 77,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/authority-write-lock.sqlite",
+    "gate": true,
+    "held": [
+      {
+        "id": 75,
+        "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+        "gate": true,
+        "mode": "BEGIN EXCLUSIVE"
+      }
+    ]
+  },
+  {
+    "at": "2026-09-13T00:33:36.734Z",
+    "monotonic_ms": 81570.838376,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_exec_start",
+    "id": 75,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+    "gate": true,
+    "sql": "ROLLBACK",
+    "held": [
+      {
+        "id": 75,
+        "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+        "gate": true,
+        "mode": "BEGIN EXCLUSIVE"
+      }
+    ],
+    "stack": [
+      "    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:73:36)",
+      "    at async Promise.all (index 1)",
+      "    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/control-policy-store.test.ts:236:21",
+      "    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+    ]
+  },
+  {
+    "at": "2026-09-13T00:33:36.734Z",
+    "monotonic_ms": 81570.88058,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_exec_end",
+    "id": 75,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+    "gate": true,
+    "sql": "ROLLBACK",
+    "elapsed_ms": 0.11273599999549333,
+    "transaction": false,
+    "held": []
+  },
+  {
+    "at": "2026-09-13T00:33:36.734Z",
+    "monotonic_ms": 81570.909264,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_close",
+    "id": 75,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+    "gate": true,
+    "held": []
+  },
+  {
+    "at": "2026-09-13T00:33:36.735Z",
+    "monotonic_ms": 81571.042896,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_read",
+    "id": 76,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+    "gate": true,
+    "sql": "PRAGMA journal_mode",
+    "elapsed_ms": 0.009473999991314486,
+    "held": []
+  },
+  {
+    "at": "2026-09-13T00:33:36.735Z",
+    "monotonic_ms": 81571.12375,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_exec_start",
+    "id": 76,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+    "gate": true,
+    "sql": "BEGIN EXCLUSIVE",
+    "held": [],
+    "stack": [
+      "    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:55:12)",
+      "    at async Promise.all (index 0)",
+      "    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/control-policy-store.test.ts:236:21",
+      "    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+    ]
+  },
+  {
+    "at": "2026-09-13T00:33:36.735Z",
+    "monotonic_ms": 81571.181452,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_exec_end",
+    "id": 76,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+    "gate": true,
+    "sql": "BEGIN EXCLUSIVE",
+    "elapsed_ms": 0.11942600000475068,
+    "transaction": true,
+    "held": [
+      {
+        "id": 76,
+        "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+        "gate": true,
+        "mode": "BEGIN EXCLUSIVE"
+      }
+    ]
+  },
+  {
+    "at": "2026-09-13T00:33:36.736Z",
+    "monotonic_ms": 81572.190012,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_exec_start",
+    "id": 79,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/authority-write-lock.sqlite",
+    "gate": true,
+    "sql": "PRAGMA busy_timeout = 0",
+    "held": [
+      {
+        "id": 76,
+        "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+        "gate": true,
+        "mode": "BEGIN EXCLUSIVE"
+      }
+    ],
+    "stack": [
+      "    at withProjectAuthorityMutation (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-authority-mutation.ts:40:8)",
+      "    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:71:12)",
+      "    at async Promise.all (index 0)",
+      "    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/control-policy-store.test.ts:236:21",
+      "    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+    ]
+  },
+  {
+    "at": "2026-09-13T00:33:36.736Z",
+    "monotonic_ms": 81572.233969,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_exec_end",
+    "id": 79,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/authority-write-lock.sqlite",
+    "gate": true,
+    "sql": "PRAGMA busy_timeout = 0",
+    "elapsed_ms": 0.13398000001325272,
+    "transaction": false,
+    "held": [
+      {
+        "id": 76,
+        "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+        "gate": true,
+        "mode": "BEGIN EXCLUSIVE"
+      }
+    ]
+  },
+  {
+    "at": "2026-09-13T00:33:36.736Z",
+    "monotonic_ms": 81572.30977,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_exec_start",
+    "id": 79,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/authority-write-lock.sqlite",
+    "gate": true,
+    "sql": "BEGIN IMMEDIATE",
+    "held": [
+      {
+        "id": 76,
+        "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+        "gate": true,
+        "mode": "BEGIN EXCLUSIVE"
+      }
+    ],
+    "stack": [
+      "    at withProjectAuthorityMutation (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-authority-mutation.ts:44:16)",
+      "    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:71:12)",
+      "    at async Promise.all (index 0)",
+      "    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/control-policy-store.test.ts:236:21",
+      "    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+    ]
+  },
+  {
+    "at": "2026-09-13T00:33:36.736Z",
+    "monotonic_ms": 81572.360577,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_exec_end",
+    "id": 79,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/authority-write-lock.sqlite",
+    "gate": true,
+    "sql": "BEGIN IMMEDIATE",
+    "elapsed_ms": 0.10850799999025185,
+    "transaction": true,
+    "held": [
+      {
+        "id": 76,
+        "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+        "gate": true,
+        "mode": "BEGIN EXCLUSIVE"
+      },
+      {
+        "id": 79,
+        "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/authority-write-lock.sqlite",
+        "gate": true,
+        "mode": "BEGIN IMMEDIATE"
+      }
+    ]
+  },
+  {
+    "at": "2026-09-13T00:33:36.736Z",
+    "monotonic_ms": 81572.81146,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 80,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "PRAGMA busy_timeout = 5000"
+  },
+  {
+    "at": "2026-09-13T00:33:36.736Z",
+    "monotonic_ms": 81572.851764,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 80,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "PRAGMA busy_timeout = 5000",
+    "elapsed_ms": 0.046757999996771105
+  },
+  {
+    "at": "2026-09-13T00:33:36.736Z",
+    "monotonic_ms": 81572.884241,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 80,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "\n        PRAGMA foreign_keys = ON;\n  \n        CREATE TABLE IF NOT EXISTS proposal_store_schema (\n          version INTEGER PRIMARY KEY,\n          applied_at TEX"
+  },
+  {
+    "at": "2026-09-13T00:33:36.738Z",
+    "monotonic_ms": 81574.341327,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 80,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "\n        PRAGMA foreign_keys = ON;\n  \n        CREATE TABLE IF NOT EXISTS proposal_store_schema (\n          version INTEGER PRIMARY KEY,\n          applied_at TEX",
+    "elapsed_ms": 1.4397619999945164
+  },
+  {
+    "at": "2026-09-13T00:33:36.740Z",
+    "monotonic_ms": 81575.980453,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 80,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "\n        CREATE INDEX IF NOT EXISTS idx_proposals_tenant_created ON proposals(tenant_id, created_at);\n        CREATE INDEX IF NOT EXISTS idx_proposals_action_cr"
+  },
+  {
+    "at": "2026-09-13T00:33:36.740Z",
+    "monotonic_ms": 81576.41979,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 80,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "\n        CREATE INDEX IF NOT EXISTS idx_proposals_tenant_created ON proposals(tenant_id, created_at);\n        CREATE INDEX IF NOT EXISTS idx_proposals_action_cr",
+    "elapsed_ms": 0.44765499999630265
+  },
+  {
+    "at": "2026-09-13T00:33:36.740Z",
+    "monotonic_ms": 81576.65363,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 80,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "BEGIN"
+  },
+  {
+    "at": "2026-09-13T00:33:36.740Z",
+    "monotonic_ms": 81576.726514,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 80,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "BEGIN",
+    "elapsed_ms": 0.06627600001229439
+  },
+  {
+    "at": "2026-09-13T00:33:36.740Z",
+    "monotonic_ms": 81576.836485,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 80,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "COMMIT"
+  },
+  {
+    "at": "2026-09-13T00:33:36.740Z",
+    "monotonic_ms": 81576.898691,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 80,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "COMMIT",
+    "elapsed_ms": 0.06731899999431334
+  },
+  {
+    "at": "2026-09-13T00:33:36.741Z",
+    "monotonic_ms": 81576.980046,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 80,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "BEGIN"
+  },
+  {
+    "at": "2026-09-13T00:33:36.741Z",
+    "monotonic_ms": 81577.021055,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 80,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "BEGIN",
+    "elapsed_ms": 0.04435100000409875
+  },
+  {
+    "at": "2026-09-13T00:33:36.741Z",
+    "monotonic_ms": 81577.154693,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 80,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "COMMIT"
+  },
+  {
+    "at": "2026-09-13T00:33:36.741Z",
+    "monotonic_ms": 81577.198632,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 80,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "COMMIT",
+    "elapsed_ms": 0.04786999999487307
+  },
+  {
+    "at": "2026-09-13T00:33:36.741Z",
+    "monotonic_ms": 81577.481568,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_exec_start",
+    "id": 79,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/authority-write-lock.sqlite",
+    "gate": true,
+    "sql": "ROLLBACK",
+    "held": [
+      {
+        "id": 76,
+        "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+        "gate": true,
+        "mode": "BEGIN EXCLUSIVE"
+      },
+      {
+        "id": 79,
+        "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/authority-write-lock.sqlite",
+        "gate": true,
+        "mode": "BEGIN IMMEDIATE"
+      }
+    ],
+    "stack": [
+      "    at withProjectAuthorityMutation (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-authority-mutation.ts:67:30)",
+      "    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:71:12)",
+      "    at async Promise.all (index 0)",
+      "    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/control-policy-store.test.ts:236:21",
+      "    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+    ]
+  },
+  {
+    "at": "2026-09-13T00:33:36.741Z",
+    "monotonic_ms": 81577.616409,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_exec_end",
+    "id": 79,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/authority-write-lock.sqlite",
+    "gate": true,
+    "sql": "ROLLBACK",
+    "elapsed_ms": 0.35798699999577366,
+    "transaction": false,
+    "held": [
+      {
+        "id": 76,
+        "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+        "gate": true,
+        "mode": "BEGIN EXCLUSIVE"
+      }
+    ]
+  },
+  {
+    "at": "2026-09-13T00:33:36.741Z",
+    "monotonic_ms": 81577.689034,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_close",
+    "id": 79,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/authority-write-lock.sqlite",
+    "gate": true,
+    "held": [
+      {
+        "id": 76,
+        "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+        "gate": true,
+        "mode": "BEGIN EXCLUSIVE"
+      }
+    ]
+  },
+  {
+    "at": "2026-09-13T00:33:36.741Z",
+    "monotonic_ms": 81577.858666,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_exec_start",
+    "id": 76,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+    "gate": true,
+    "sql": "ROLLBACK",
+    "held": [
+      {
+        "id": 76,
+        "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+        "gate": true,
+        "mode": "BEGIN EXCLUSIVE"
+      }
+    ],
+    "stack": [
+      "    at withAdmission (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/project-runtime-admission.ts:73:36)",
+      "    at async Promise.all (index 0)",
+      "    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/control-policy-store.test.ts:236:21",
+      "    at file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/@vitest+runner@3.2.6/node_modules/@vitest/runner/dist/chunk-hooks.js:752:20"
+    ]
+  },
+  {
+    "at": "2026-09-13T00:33:36.741Z",
+    "monotonic_ms": 81577.934787,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_exec_end",
+    "id": 76,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+    "gate": true,
+    "sql": "ROLLBACK",
+    "elapsed_ms": 0.17484300000069197,
+    "transaction": false,
+    "held": []
+  },
+  {
+    "at": "2026-09-13T00:33:36.742Z",
+    "monotonic_ms": 81577.970953,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "gate_close",
+    "id": 76,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/runtime-admission.sqlite",
+    "gate": true,
+    "held": []
+  },
+  {
+    "at": "2026-09-13T00:33:36.742Z",
+    "monotonic_ms": 81578.174128,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 80,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "BEGIN"
+  },
+  {
+    "at": "2026-09-13T00:33:36.742Z",
+    "monotonic_ms": 81578.195255,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 80,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "BEGIN",
+    "elapsed_ms": 0.024239999998826534
+  },
+  {
+    "at": "2026-09-13T00:33:36.742Z",
+    "monotonic_ms": 81578.244469,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_start",
+    "id": 80,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "COMMIT"
+  },
+  {
+    "at": "2026-09-13T00:33:36.742Z",
+    "monotonic_ms": 81578.256958,
+    "pid": 1201112,
+    "test": "governed policy-store binding and recovery > chooses one complete binding during concurrent migration",
+    "event": "store_exec_end",
+    "id": 80,
+    "file": "/tmp/synapsor-policy-migration-rFLZsn/.synapsor/control.db",
+    "gate": false,
+    "sql": "COMMIT",
+    "elapsed_ms": 0.01334099999803584
+  }
+]

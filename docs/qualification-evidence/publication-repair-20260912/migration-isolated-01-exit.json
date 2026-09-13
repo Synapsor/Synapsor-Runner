@@ -1,0 +1,25 @@
+{
+  "name": "migration-isolated-01",
+  "args": [
+    "node",
+    "--require",
+    "./docs/qualification-evidence/publication-repair-20260912/trace-gates.cjs",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "apps/runner/src/control-policy-store.test.ts",
+    "-t",
+    "chooses one complete binding during concurrent migration",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000"
+  ],
+  "pg_control_store_fixture": false,
+  "started_at": "2026-09-13T00:03:55.036775+00:00",
+  "source_head": "779b2dc495a383871fb0311c5e70159872cee3dc",
+  "source_diff_sha256": "3b8f19463cd1ceeec62e47dc847e19dda46a41bf467c7c499d37b01e387e7e21",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/test-environments/migration-isolated-01",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/migration-isolated-01",
+  "pid": 1129007,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T00:04:01.088637+00:00"
+}

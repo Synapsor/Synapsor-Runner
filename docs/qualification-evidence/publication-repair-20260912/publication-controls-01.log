@@ -1,0 +1,64 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1153971) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/semantic-admission-publication.test.ts (16 tests | 9 failed) 43308ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: replacement_first  5662ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: replacement_process  7195ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: admission_first  5724ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: inactive_first  4532ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: unchanged  5539ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: disabled_draft  4788ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: failed_confirmation  5541ms
+   × publication versus admission (postgres) > preserves exact current authority: replacement_first 582ms
+     → One or more observed subjects are unavailable for this request. Re-read the reviewed row and try again.
+   × publication versus admission (postgres) > preserves exact current authority: replacement_process 422ms
+     → One or more observed subjects are unavailable for this request. Re-read the reviewed row and try again.
+   × publication versus admission (postgres) > preserves exact current authority: admission_first 436ms
+     → One or more observed subjects are unavailable for this request. Re-read the reviewed row and try again.
+   × publication versus admission (postgres) > preserves exact current authority: inactive_first 394ms
+     → One or more observed subjects are unavailable for this request. Re-read the reviewed row and try again.
+   × publication versus admission (postgres) > preserves exact current authority: unchanged 477ms
+     → One or more observed subjects are unavailable for this request. Re-read the reviewed row and try again.
+   × publication versus admission (postgres) > preserves exact current authority: disabled_draft 506ms
+     → One or more observed subjects are unavailable for this request. Re-read the reviewed row and try again.
+   × publication versus admission (postgres) > preserves exact current authority: failed_confirmation 508ms
+     → One or more observed subjects are unavailable for this request. Re-read the reviewed row and try again.
+   × publication versus admission (postgres) > preserves exact current authority: admission_holds_publication 561ms
+     → One or more observed subjects are unavailable for this request. Re-read the reviewed row and try again.
+   × publication versus admission (postgres) > preserves exact current authority: admission_rollback 432ms
+     → One or more observed subjects are unavailable for this request. Re-read the reviewed row and try again.
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 9 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/semantic-admission-publication.test.ts > publication versus admission (postgres) > preserves exact current authority: replacement_first
+ FAIL  apps/runner/src/semantic-admission-publication.test.ts > publication versus admission (postgres) > preserves exact current authority: replacement_process
+ FAIL  apps/runner/src/semantic-admission-publication.test.ts > publication versus admission (postgres) > preserves exact current authority: admission_first
+ FAIL  apps/runner/src/semantic-admission-publication.test.ts > publication versus admission (postgres) > preserves exact current authority: inactive_first
+ FAIL  apps/runner/src/semantic-admission-publication.test.ts > publication versus admission (postgres) > preserves exact current authority: unchanged
+ FAIL  apps/runner/src/semantic-admission-publication.test.ts > publication versus admission (postgres) > preserves exact current authority: disabled_draft
+ FAIL  apps/runner/src/semantic-admission-publication.test.ts > publication versus admission (postgres) > preserves exact current authority: failed_confirmation
+ FAIL  apps/runner/src/semantic-admission-publication.test.ts > publication versus admission (postgres) > preserves exact current authority: admission_holds_publication
+ FAIL  apps/runner/src/semantic-admission-publication.test.ts > publication versus admission (postgres) > preserves exact current authority: admission_rollback
+McpRuntimeError: One or more observed subjects are unavailable for this request. Re-read the reviewed row and try again.
+ ❯ unavailable packages/mcp-server/dist/subject-references.js:32:12
+     30| }
+     31| function unavailable() {
+     32|     return new McpRuntimeError("SUBJECT_REFERENCE_UNAVAILABLE", "One o…
+       |            ^
+     33| }
+     34| function canonicalTimestamp(value) {
+ ❯ Object.issue packages/mcp-server/dist/subject-references.js:302:23
+ ❯ withAdmission apps/runner/src/project-runtime-admission.ts:71:12
+ ❯ request apps/runner/src/semantic-admission-publication.test.ts:119:27
+ ❯ apps/runner/src/semantic-admission-publication.test.ts:125:31
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/9]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  9 failed | 7 passed (16)
+   Start at  17:14:51
+   Duration  49.50s (transform 3.08s, setup 0ms, collect 5.81s, tests 43.31s, environment 0ms, prepare 125ms)
+

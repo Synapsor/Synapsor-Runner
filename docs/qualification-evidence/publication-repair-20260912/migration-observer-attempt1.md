@@ -1,0 +1,1 @@
+The unchanged isolated named migration test passed, but node --require only loaded the observer in the Vitest coordinator; the worker emitted no gate trace. This is an instrumentation setup failure, not a traced migration diagnosis. Preserve that result and use the declared second isolated run with a worker setup file. No product gate or test assertion changed.

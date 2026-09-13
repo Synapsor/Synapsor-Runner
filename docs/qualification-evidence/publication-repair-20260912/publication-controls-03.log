@@ -1,0 +1,127 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1163668) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/semantic-admission-publication.test.ts (18 tests) 55484ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: replacement_first  5106ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: replacement_process  5458ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: admission_first  5053ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: inactive_first  3089ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: unchanged  4365ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: disabled_draft  6235ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: failed_confirmation  5807ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: replacement_first  1080ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: replacement_process  2148ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: admission_first  922ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: inactive_first  559ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: unchanged  779ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: disabled_draft  870ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: failed_confirmation  843ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: admission_holds_publication  854ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: admission_rollback  759ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: publication_busy  5819ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: admission_busy  5734ms
+(node:1167811) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/semantic-writeback-authority.test.ts (14 tests | 5 failed) 66240ms
+   × connected semantic worker identity and trusted context > applies with generated defaults, persists one receipt and never repeats the effect 5404ms
+     → expected Error: LOCAL_TEST_RUNTIME_PERMISSIONS_INV… to match object { Object (code) }
+   × connected semantic worker identity and trusted context > blocks a different trusted TEST_WORKER_TENANT without source writes 4961ms
+     → LOCAL_TEST_RUNTIME_PERMISSIONS_INVALID: local test runtime directory must not be writable by group or other users.
+   × connected semantic worker identity and trusted context > blocks a different trusted TEST_WORKER_PRINCIPAL without source writes 5216ms
+     → LOCAL_TEST_RUNTIME_PERMISSIONS_INVALID: local test runtime directory must not be writable by group or other users.
+   × connected semantic worker identity and trusted context > preserves the exact missing-binding code in the worker queue instead of a generic execution error 5228ms
+     → LOCAL_TEST_RUNTIME_PERMISSIONS_INVALID: local test runtime directory must not be writable by group or other users.
+   ✓ connected semantic worker identity and trusted context > refuses a conflicting named session context before claiming, without top-level fallback  5234ms
+   × connected semantic worker identity and trusted context > refuses stale approved facts without an additional source change 5082ms
+     → LOCAL_TEST_RUNTIME_PERMISSIONS_INVALID: local test runtime directory must not be writable by group or other users.
+   ✓ semantic writeback authority orchestration > resolves a real approved v5 job to its outcome writer without changing the compiled source  5072ms
+   ✓ semantic writeback authority orchestration > accepts one exact approved v5 job and reloads active authority for transaction verification  4904ms
+   ✓ semantic writeback authority orchestration > accepts one exact policy approval while retaining a two-human fallback quorum  5279ms
+   ✓ semantic writeback authority orchestration > rejects approval-set and immutable-proposal drift before source execution  4706ms
+   ✓ semantic writeback authority orchestration > queues and leases an approved semantic proposal only for its exact active outcome authority  5228ms
+   ✓ semantic writeback authority orchestration > retains automatic approval history but never dispatches old unstarted work after a lower-limit replacement  5050ms
+   ✓ semantic writeback authority orchestration > leaves semantic work unleased after Action authority is deactivated  4865ms
+   ✓ semantic writeback authority orchestration > requires least-privilege access to the target and every private verification relation 10ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/semantic-writeback-authority.test.ts > connected semantic worker identity and trusted context > applies with generated defaults, persists one receipt and never repeats the effect
+AssertionError: expected Error: LOCAL_TEST_RUNTIME_PERMISSIONS_INV… to match object { Object (code) }
+
+- Expected
++ Received
+
+- {
+-   "code": "SUPERVISED_WORKER_IDENTITY_MISMATCH",
++ Error {
++   "message": "LOCAL_TEST_RUNTIME_PERMISSIONS_INVALID: local test runtime directory must not be writable by group or other users.",
+  }
+
+ ❯ apps/runner/src/semantic-writeback-authority.test.ts:135:5
+    133|     const before = await f.rows();
+    134|     expect(f.ledger().queue).toMatchObject({ status: "queued", attempt…
+    135|     await expect(f.runWorker(["--worker-id", "wrong_worker"])).rejects…
+       |     ^
+    136|     expect(f.ledger().queue).toMatchObject({ status: "queued", attempt…
+    137|     expect(await f.rows()).toEqual(before);
+ ❯ fixture apps/runner/src/semantic-writeback-authority.test.ts:114:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+ FAIL  apps/runner/src/semantic-writeback-authority.test.ts > connected semantic worker identity and trusted context > blocks a different trusted TEST_WORKER_TENANT without source writes
+ FAIL  apps/runner/src/semantic-writeback-authority.test.ts > connected semantic worker identity and trusted context > blocks a different trusted TEST_WORKER_PRINCIPAL without source writes
+Error: LOCAL_TEST_RUNTIME_PERMISSIONS_INVALID: local test runtime directory must not be writable by group or other users.
+ ❯ runtimeDirectory apps/runner/src/local-test-runtime-identity.ts:144:11
+    142|   const currentUid = process.getuid?.();
+    143|   if (process.platform !== "win32" && (state.mode & 0o022) !== 0) {
+    144|     throw new Error("LOCAL_TEST_RUNTIME_PERMISSIONS_INVALID: local tes…
+       |           ^
+    145|   }
+    146|   if (process.platform !== "win32" && currentUid !== undefined && stat…
+ ❯ loadLocalTestRuntimeIdentity apps/runner/src/local-test-runtime-identity.ts:197:19
+ ❯ withLocalTestRuntimeIdentity apps/runner/src/local-test-runtime-identity.ts:251:18
+ ❯ apps/runner/src/semantic-writeback-authority.test.ts:154:12
+ ❯ fixture apps/runner/src/semantic-writeback-authority.test.ts:114:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/5]⎯
+
+ FAIL  apps/runner/src/semantic-writeback-authority.test.ts > connected semantic worker identity and trusted context > preserves the exact missing-binding code in the worker queue instead of a generic execution error
+Error: LOCAL_TEST_RUNTIME_PERMISSIONS_INVALID: local test runtime directory must not be writable by group or other users.
+ ❯ runtimeDirectory apps/runner/src/local-test-runtime-identity.ts:144:11
+    142|   const currentUid = process.getuid?.();
+    143|   if (process.platform !== "win32" && (state.mode & 0o022) !== 0) {
+    144|     throw new Error("LOCAL_TEST_RUNTIME_PERMISSIONS_INVALID: local tes…
+       |           ^
+    145|   }
+    146|   if (process.platform !== "win32" && currentUid !== undefined && stat…
+ ❯ loadLocalTestRuntimeIdentity apps/runner/src/local-test-runtime-identity.ts:197:19
+ ❯ withLocalTestRuntimeIdentity apps/runner/src/local-test-runtime-identity.ts:251:18
+ ❯ apps/runner/src/semantic-writeback-authority.test.ts:163:12
+ ❯ fixture apps/runner/src/semantic-writeback-authority.test.ts:114:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/5]⎯
+
+ FAIL  apps/runner/src/semantic-writeback-authority.test.ts > connected semantic worker identity and trusted context > refuses stale approved facts without an additional source change
+Error: LOCAL_TEST_RUNTIME_PERMISSIONS_INVALID: local test runtime directory must not be writable by group or other users.
+ ❯ runtimeDirectory apps/runner/src/local-test-runtime-identity.ts:144:11
+    142|   const currentUid = process.getuid?.();
+    143|   if (process.platform !== "win32" && (state.mode & 0o022) !== 0) {
+    144|     throw new Error("LOCAL_TEST_RUNTIME_PERMISSIONS_INVALID: local tes…
+       |           ^
+    145|   }
+    146|   if (process.platform !== "win32" && currentUid !== undefined && stat…
+ ❯ loadLocalTestRuntimeIdentity apps/runner/src/local-test-runtime-identity.ts:197:19
+ ❯ withLocalTestRuntimeIdentity apps/runner/src/local-test-runtime-identity.ts:251:18
+ ❯ apps/runner/src/semantic-writeback-authority.test.ts:184:12
+ ❯ fixture apps/runner/src/semantic-writeback-authority.test.ts:114:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/5]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  5 failed | 27 passed (32)
+   Start at  17:18:37
+   Duration  128.38s (transform 2.84s, setup 0ms, collect 6.11s, tests 121.72s, environment 0ms, prepare 146ms)
+

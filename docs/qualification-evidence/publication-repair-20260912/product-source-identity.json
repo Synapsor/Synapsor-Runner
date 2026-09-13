@@ -1,0 +1,50 @@
+{
+  "product_revision": "b16f92aa01d52d6b51e74e0e1574fac7de14635b",
+  "files": [
+    {
+      "path": "apps/runner/src/action-rule-authority.ts",
+      "sha256": "847caf3c65e1ec449aa30e8fcce3bd4983f51ee0fe85c20396bb71ebcc4582d5"
+    },
+    {
+      "path": "apps/runner/src/semantic-action-runtime.ts",
+      "sha256": "d4b2d494ad068aa9f4312e7ca2bc128f08af775f62c9f05d580bcf83136aa7e9"
+    },
+    {
+      "path": "packages/mcp-server/src/runtime-types.ts",
+      "sha256": "785c59493427a69f77833e7579745aeaea994620a7b3d3dd2b80a578cc6a59d4"
+    },
+    {
+      "path": "packages/mcp-server/src/semantic-actions.ts",
+      "sha256": "26bf0395d42619de01ac1b2c3038c17b61af6d3621282db201b5dac80751164e"
+    },
+    {
+      "path": "packages/proposal-store/src/automatic-approval-authority.ts",
+      "sha256": "935fe30ff34568e7f5f2e09ba199ff25df7f777856633e3b888c43a2b7f87c2c"
+    },
+    {
+      "path": "packages/proposal-store/src/control-policy-repository.ts",
+      "sha256": "65359db2cf5e5f4f4b78a9b1f9869606bfef2f7bb11271316582a80e1c5eb7d4"
+    },
+    {
+      "path": "packages/proposal-store/src/domain-types.ts",
+      "sha256": "b2698398e1f0f02116b54d47289cdb87378d89caac0fdfb2795d68c412ab8366"
+    },
+    {
+      "path": "packages/proposal-store/src/index.ts",
+      "sha256": "019c6a8296acc840a9bae064d6b67c666bd1a585e7db34a0806673341579a916"
+    },
+    {
+      "path": "packages/proposal-store/src/postgres-runtime-store.ts",
+      "sha256": "24417c8361ba59a3c74ba404419b6ee64bb6ef3164dce080b388c1137df01004"
+    },
+    {
+      "path": "packages/proposal-store/src/sqlite-method-signatures.ts",
+      "sha256": "f0be550ac11f7dca205e88b0d0e252404dff2d89f1386a7d0646e5beb4b69714"
+    },
+    {
+      "path": "packages/proposal-store/src/sqlite-proposal-methods.ts",
+      "sha256": "7861466c7b7096c9294cf43855fb5263e8f6e65e288801b7e88a194db466b182"
+    }
+  ],
+  "unchanged_since_product_commit": true
+}

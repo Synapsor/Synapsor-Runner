@@ -1,0 +1,852 @@
+[
+  {
+    "artifact": "docs/qualification-evidence/publication-repair-20260912/before-publication/publication-sqlite-replacement_first.json",
+    "phase": "before-publication",
+    "backend": "sqlite",
+    "ordering": "replacement_first",
+    "publication_commits": [
+      {
+        "event": "publication_committed",
+        "at": "2026-09-12T23:54:53.818Z",
+        "detail": {
+          "maximum": 3,
+          "digest": "sha256:dfacc7261c86e9d3d29e902bdf5399301961cecca5a323f8a749c741f3e0f1a9"
+        }
+      },
+      {
+        "event": "publication_committed",
+        "at": "2026-09-12T23:54:54.661Z",
+        "detail": {
+          "maximum": 1,
+          "digest": "sha256:2f11c8af05ed25389b14def8f16def3008ae08f1c5ccd68a7aaf4dd91143e4c5"
+        }
+      }
+    ],
+    "database_wait_observed": false,
+    "old_request": {
+      "result": {
+        "ok": true,
+        "outcome": "billing.pause_notifications",
+        "status": "approved_pending_execution",
+        "request_disposition": "created",
+        "status_check": {
+          "tool": "app.request_change",
+          "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+          "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+        },
+        "result_summary": {
+          "description": "Pause notifications",
+          "change": "Update one reviewed billing.preferences record using only the exact Runner-derived effect.",
+          "fields": [
+            "status"
+          ],
+          "values_disclosed": false
+        },
+        "authorization": {
+          "eligibility": "verified",
+          "approval": "automatic",
+          "execution": "not_enabled"
+        },
+        "proposal": {
+          "status": "approved",
+          "approval": "automatically approved; apply remains a separate authority"
+        },
+        "execution": "not_enabled",
+        "eligibility": "verified from current authoritative facts",
+        "exact_effect": "Runner-derived and sealed in the operator proposal record",
+        "source_database_changed": false,
+        "model_authority": {
+          "supplied_outcome_and_opaque_subjects_only": true,
+          "supplied_only_reviewed_business_inputs": true,
+          "supplied_patch": false,
+          "approval": false,
+          "apply": false
+        }
+      }
+    },
+    "durable_counts_before_fresh": {
+      "proposals": 2,
+      "approvals": 2,
+      "queue": 0
+    },
+    "fresh_request": {
+      "ok": true,
+      "outcome": "billing.pause_notifications",
+      "status": "pending_human_review",
+      "request_disposition": "created",
+      "status_check": {
+        "tool": "app.request_change",
+        "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+        "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+      },
+      "result_summary": {
+        "description": "Pause notifications",
+        "change": "Update one reviewed billing.preferences record using only the exact Runner-derived effect.",
+        "fields": [
+          "status"
+        ],
+        "values_disclosed": false
+      },
+      "authorization": {
+        "eligibility": "verified",
+        "approval": "pending_human_review",
+        "execution": "human_review"
+      },
+      "proposal": {
+        "status": "pending_review",
+        "approval": "pending human review because an automatic-approval limit did not pass"
+      },
+      "execution": "human_review",
+      "eligibility": "verified from current authoritative facts",
+      "exact_effect": "Runner-derived and sealed in the operator proposal record",
+      "source_database_changed": false,
+      "model_authority": {
+        "supplied_outcome_and_opaque_subjects_only": true,
+        "supplied_only_reviewed_business_inputs": true,
+        "supplied_patch": false,
+        "approval": false,
+        "apply": false
+      }
+    },
+    "old_replay": {
+      "error": {
+        "code": "SUBJECT_REFERENCE_UNAVAILABLE"
+      }
+    }
+  },
+  {
+    "artifact": "docs/qualification-evidence/publication-repair-20260912/before-publication/publication-sqlite-admission_first.json",
+    "phase": "before-publication",
+    "backend": "sqlite",
+    "ordering": "admission_first",
+    "publication_commits": [
+      {
+        "event": "publication_committed",
+        "at": "2026-09-12T23:54:57.740Z",
+        "detail": {
+          "maximum": 3,
+          "digest": "sha256:bf92101d6ef4627bf050b1d32d2d6c35d68596bdd1a380d00f4c2685170cb821"
+        }
+      },
+      {
+        "event": "publication_committed",
+        "at": "2026-09-12T23:54:58.317Z",
+        "detail": {
+          "maximum": 1,
+          "digest": "sha256:1430b1b00f3111cbc0ca954e6046924400243aeead377183c340e08bda9d71c4"
+        }
+      }
+    ],
+    "database_wait_observed": false,
+    "old_request": {
+      "result": {
+        "ok": true,
+        "outcome": "billing.pause_notifications",
+        "status": "approved_pending_execution",
+        "request_disposition": "created",
+        "status_check": {
+          "tool": "app.request_change",
+          "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+          "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+        },
+        "result_summary": {
+          "description": "Pause notifications",
+          "change": "Update one reviewed billing.preferences record using only the exact Runner-derived effect.",
+          "fields": [
+            "status"
+          ],
+          "values_disclosed": false
+        },
+        "authorization": {
+          "eligibility": "verified",
+          "approval": "automatic",
+          "execution": "not_enabled"
+        },
+        "proposal": {
+          "status": "approved",
+          "approval": "automatically approved; apply remains a separate authority"
+        },
+        "execution": "not_enabled",
+        "eligibility": "verified from current authoritative facts",
+        "exact_effect": "Runner-derived and sealed in the operator proposal record",
+        "source_database_changed": false,
+        "model_authority": {
+          "supplied_outcome_and_opaque_subjects_only": true,
+          "supplied_only_reviewed_business_inputs": true,
+          "supplied_patch": false,
+          "approval": false,
+          "apply": false
+        }
+      }
+    },
+    "durable_counts_before_fresh": {
+      "proposals": 2,
+      "approvals": 2,
+      "queue": 0
+    },
+    "fresh_request": {
+      "ok": true,
+      "outcome": "billing.pause_notifications",
+      "status": "pending_human_review",
+      "request_disposition": "created",
+      "status_check": {
+        "tool": "app.request_change",
+        "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+        "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+      },
+      "result_summary": {
+        "description": "Pause notifications",
+        "change": "Update one reviewed billing.preferences record using only the exact Runner-derived effect.",
+        "fields": [
+          "status"
+        ],
+        "values_disclosed": false
+      },
+      "authorization": {
+        "eligibility": "verified",
+        "approval": "pending_human_review",
+        "execution": "human_review"
+      },
+      "proposal": {
+        "status": "pending_review",
+        "approval": "pending human review because an automatic-approval limit did not pass"
+      },
+      "execution": "human_review",
+      "eligibility": "verified from current authoritative facts",
+      "exact_effect": "Runner-derived and sealed in the operator proposal record",
+      "source_database_changed": false,
+      "model_authority": {
+        "supplied_outcome_and_opaque_subjects_only": true,
+        "supplied_only_reviewed_business_inputs": true,
+        "supplied_patch": false,
+        "approval": false,
+        "apply": false
+      }
+    },
+    "old_replay": {
+      "error": {
+        "code": "SUBJECT_REFERENCE_UNAVAILABLE"
+      }
+    }
+  },
+  {
+    "artifact": "docs/qualification-evidence/publication-repair-20260912/before-publication/publication-postgres-replacement_first.json",
+    "phase": "before-publication",
+    "backend": "postgres",
+    "ordering": "replacement_first",
+    "publication_commits": [
+      {
+        "event": "publication_committed",
+        "at": "2026-09-12T23:54:58.933Z",
+        "detail": {
+          "maximum": 3,
+          "digest": "sha256:a7abb3e86c926c1b1bb94b6ec9aeea31679ec60be45ccac0f90e8624093128e9"
+        }
+      },
+      {
+        "event": "publication_committed",
+        "at": "2026-09-12T23:54:59.706Z",
+        "detail": {
+          "maximum": 1,
+          "digest": "sha256:7999824019ee70e44f79193430be595aa763556b3fd992b1fd060c7926a5d4d7"
+        }
+      }
+    ],
+    "database_wait_observed": true,
+    "old_request": {
+      "result": {
+        "ok": true,
+        "outcome": "billing.pause_notifications",
+        "status": "approved_pending_execution",
+        "request_disposition": "created",
+        "status_check": {
+          "tool": "app.request_change",
+          "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+          "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+        },
+        "result_summary": {
+          "description": "Pause notifications",
+          "change": "Update one reviewed billing.preferences record using only the exact Runner-derived effect.",
+          "fields": [
+            "status"
+          ],
+          "values_disclosed": false
+        },
+        "authorization": {
+          "eligibility": "verified",
+          "approval": "automatic",
+          "execution": "not_enabled"
+        },
+        "proposal": {
+          "status": "approved",
+          "approval": "automatically approved; apply remains a separate authority"
+        },
+        "execution": "not_enabled",
+        "eligibility": "verified from current authoritative facts",
+        "exact_effect": "Runner-derived and sealed in the operator proposal record",
+        "source_database_changed": false,
+        "model_authority": {
+          "supplied_outcome_and_opaque_subjects_only": true,
+          "supplied_only_reviewed_business_inputs": true,
+          "supplied_patch": false,
+          "approval": false,
+          "apply": false
+        }
+      }
+    },
+    "durable_counts_before_fresh": {
+      "proposals": 2,
+      "approvals": 2,
+      "queue": 0
+    },
+    "fresh_request": {
+      "ok": true,
+      "outcome": "billing.pause_notifications",
+      "status": "pending_human_review",
+      "request_disposition": "created",
+      "status_check": {
+        "tool": "app.request_change",
+        "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+        "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+      },
+      "result_summary": {
+        "description": "Pause notifications",
+        "change": "Update one reviewed billing.preferences record using only the exact Runner-derived effect.",
+        "fields": [
+          "status"
+        ],
+        "values_disclosed": false
+      },
+      "authorization": {
+        "eligibility": "verified",
+        "approval": "pending_human_review",
+        "execution": "human_review"
+      },
+      "proposal": {
+        "status": "pending_review",
+        "approval": "pending human review because an automatic-approval limit did not pass"
+      },
+      "execution": "human_review",
+      "eligibility": "verified from current authoritative facts",
+      "exact_effect": "Runner-derived and sealed in the operator proposal record",
+      "source_database_changed": false,
+      "model_authority": {
+        "supplied_outcome_and_opaque_subjects_only": true,
+        "supplied_only_reviewed_business_inputs": true,
+        "supplied_patch": false,
+        "approval": false,
+        "apply": false
+      }
+    },
+    "old_replay": {
+      "error": {
+        "code": "SUBJECT_REFERENCE_UNAVAILABLE"
+      }
+    }
+  },
+  {
+    "artifact": "docs/qualification-evidence/publication-repair-20260912/before-publication/publication-postgres-admission_first.json",
+    "phase": "before-publication",
+    "backend": "postgres",
+    "ordering": "admission_first",
+    "publication_commits": [
+      {
+        "event": "publication_committed",
+        "at": "2026-09-12T23:55:00.834Z",
+        "detail": {
+          "maximum": 3,
+          "digest": "sha256:48224b97a3f5f2c1c941651fe171d192f4083d3764db1db8e1c65ee338b59f54"
+        }
+      },
+      {
+        "event": "publication_committed",
+        "at": "2026-09-12T23:55:01.715Z",
+        "detail": {
+          "maximum": 1,
+          "digest": "sha256:5ec7d6206751b83f96def6b25d37b30826dc14ba119eb9d540085485f5436ed8"
+        }
+      }
+    ],
+    "database_wait_observed": false,
+    "old_request": {
+      "result": {
+        "ok": true,
+        "outcome": "billing.pause_notifications",
+        "status": "approved_pending_execution",
+        "request_disposition": "created",
+        "status_check": {
+          "tool": "app.request_change",
+          "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+          "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+        },
+        "result_summary": {
+          "description": "Pause notifications",
+          "change": "Update one reviewed billing.preferences record using only the exact Runner-derived effect.",
+          "fields": [
+            "status"
+          ],
+          "values_disclosed": false
+        },
+        "authorization": {
+          "eligibility": "verified",
+          "approval": "automatic",
+          "execution": "not_enabled"
+        },
+        "proposal": {
+          "status": "approved",
+          "approval": "automatically approved; apply remains a separate authority"
+        },
+        "execution": "not_enabled",
+        "eligibility": "verified from current authoritative facts",
+        "exact_effect": "Runner-derived and sealed in the operator proposal record",
+        "source_database_changed": false,
+        "model_authority": {
+          "supplied_outcome_and_opaque_subjects_only": true,
+          "supplied_only_reviewed_business_inputs": true,
+          "supplied_patch": false,
+          "approval": false,
+          "apply": false
+        }
+      }
+    },
+    "durable_counts_before_fresh": {
+      "proposals": 2,
+      "approvals": 2,
+      "queue": 0
+    },
+    "fresh_request": {
+      "ok": true,
+      "outcome": "billing.pause_notifications",
+      "status": "pending_human_review",
+      "request_disposition": "created",
+      "status_check": {
+        "tool": "app.request_change",
+        "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+        "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+      },
+      "result_summary": {
+        "description": "Pause notifications",
+        "change": "Update one reviewed billing.preferences record using only the exact Runner-derived effect.",
+        "fields": [
+          "status"
+        ],
+        "values_disclosed": false
+      },
+      "authorization": {
+        "eligibility": "verified",
+        "approval": "pending_human_review",
+        "execution": "human_review"
+      },
+      "proposal": {
+        "status": "pending_review",
+        "approval": "pending human review because an automatic-approval limit did not pass"
+      },
+      "execution": "human_review",
+      "eligibility": "verified from current authoritative facts",
+      "exact_effect": "Runner-derived and sealed in the operator proposal record",
+      "source_database_changed": false,
+      "model_authority": {
+        "supplied_outcome_and_opaque_subjects_only": true,
+        "supplied_only_reviewed_business_inputs": true,
+        "supplied_patch": false,
+        "approval": false,
+        "apply": false
+      }
+    },
+    "old_replay": {
+      "error": {
+        "code": "SUBJECT_REFERENCE_UNAVAILABLE"
+      }
+    }
+  },
+  {
+    "artifact": "docs/qualification-evidence/publication-repair-20260912/after-publication-01/publication-sqlite-replacement_first.json",
+    "phase": "after-publication-01",
+    "backend": "sqlite",
+    "ordering": "replacement_first",
+    "publication_commits": [
+      {
+        "event": "publication_committed",
+        "at": "2026-09-13T00:04:42.369Z",
+        "detail": {
+          "maximum": 3,
+          "digest": "sha256:0be2f61c75eb57344731237539b04fdd665f5ebe70a3a8bfa89ca9daea81bce2"
+        }
+      },
+      {
+        "event": "publication_committed",
+        "at": "2026-09-13T00:04:43.003Z",
+        "detail": {
+          "maximum": 1,
+          "digest": "sha256:f3318a443855cc6b15b8080a27431e70fb44fcaf90aa404716e5f17b8424bcd0"
+        }
+      }
+    ],
+    "database_wait_observed": false,
+    "old_request": {
+      "error": {
+        "code": "SEMANTIC_ACTION_UNAVAILABLE",
+        "message": "Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created."
+      }
+    },
+    "durable_counts_before_fresh": {
+      "proposals": 2,
+      "approvals": 1,
+      "queue": 0
+    },
+    "fresh_request": {
+      "ok": true,
+      "outcome": "billing.pause_notifications",
+      "status": "pending_human_review",
+      "request_disposition": "created",
+      "status_check": {
+        "tool": "app.request_change",
+        "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+        "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+      },
+      "result_summary": {
+        "description": "Pause notifications",
+        "change": "Update one reviewed billing.preferences record using only the exact Runner-derived effect.",
+        "fields": [
+          "status"
+        ],
+        "values_disclosed": false
+      },
+      "authorization": {
+        "eligibility": "verified",
+        "approval": "pending_human_review",
+        "execution": "human_review"
+      },
+      "proposal": {
+        "status": "pending_review",
+        "approval": "pending human review because an automatic-approval limit did not pass"
+      },
+      "execution": "human_review",
+      "eligibility": "verified from current authoritative facts",
+      "exact_effect": "Runner-derived and sealed in the operator proposal record",
+      "source_database_changed": false,
+      "model_authority": {
+        "supplied_outcome_and_opaque_subjects_only": true,
+        "supplied_only_reviewed_business_inputs": true,
+        "supplied_patch": false,
+        "approval": false,
+        "apply": false
+      }
+    },
+    "old_replay": {
+      "error": {
+        "code": "SUBJECT_REFERENCE_UNAVAILABLE"
+      }
+    }
+  },
+  {
+    "artifact": "docs/qualification-evidence/publication-repair-20260912/after-publication-01/publication-sqlite-admission_first.json",
+    "phase": "after-publication-01",
+    "backend": "sqlite",
+    "ordering": "admission_first",
+    "publication_commits": [
+      {
+        "event": "publication_committed",
+        "at": "2026-09-13T00:04:46.003Z",
+        "detail": {
+          "maximum": 3,
+          "digest": "sha256:77e0fbfbf3b5c01d91e4d31ffd9c6bfeb814140af2b20c281eabce8dc111a69d"
+        }
+      },
+      {
+        "event": "publication_committed",
+        "at": "2026-09-13T00:04:46.590Z",
+        "detail": {
+          "maximum": 1,
+          "digest": "sha256:995232aef92764bad67b3577eed961140735135a515cbb88d371743a250fc4f6"
+        }
+      }
+    ],
+    "database_wait_observed": false,
+    "old_request": {
+      "result": {
+        "ok": true,
+        "outcome": "billing.pause_notifications",
+        "status": "approved_pending_execution",
+        "request_disposition": "created",
+        "status_check": {
+          "tool": "app.request_change",
+          "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+          "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+        },
+        "result_summary": {
+          "description": "Pause notifications",
+          "change": "Update one reviewed billing.preferences record using only the exact Runner-derived effect.",
+          "fields": [
+            "status"
+          ],
+          "values_disclosed": false
+        },
+        "authorization": {
+          "eligibility": "verified",
+          "approval": "automatic",
+          "execution": "not_enabled"
+        },
+        "proposal": {
+          "status": "approved",
+          "approval": "automatically approved; apply remains a separate authority"
+        },
+        "execution": "not_enabled",
+        "eligibility": "verified from current authoritative facts",
+        "exact_effect": "Runner-derived and sealed in the operator proposal record",
+        "source_database_changed": false,
+        "model_authority": {
+          "supplied_outcome_and_opaque_subjects_only": true,
+          "supplied_only_reviewed_business_inputs": true,
+          "supplied_patch": false,
+          "approval": false,
+          "apply": false
+        }
+      }
+    },
+    "durable_counts_before_fresh": {
+      "proposals": 2,
+      "approvals": 2,
+      "queue": 0
+    },
+    "fresh_request": {
+      "ok": true,
+      "outcome": "billing.pause_notifications",
+      "status": "pending_human_review",
+      "request_disposition": "created",
+      "status_check": {
+        "tool": "app.request_change",
+        "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+        "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+      },
+      "result_summary": {
+        "description": "Pause notifications",
+        "change": "Update one reviewed billing.preferences record using only the exact Runner-derived effect.",
+        "fields": [
+          "status"
+        ],
+        "values_disclosed": false
+      },
+      "authorization": {
+        "eligibility": "verified",
+        "approval": "pending_human_review",
+        "execution": "human_review"
+      },
+      "proposal": {
+        "status": "pending_review",
+        "approval": "pending human review because an automatic-approval limit did not pass"
+      },
+      "execution": "human_review",
+      "eligibility": "verified from current authoritative facts",
+      "exact_effect": "Runner-derived and sealed in the operator proposal record",
+      "source_database_changed": false,
+      "model_authority": {
+        "supplied_outcome_and_opaque_subjects_only": true,
+        "supplied_only_reviewed_business_inputs": true,
+        "supplied_patch": false,
+        "approval": false,
+        "apply": false
+      }
+    },
+    "old_replay": {
+      "error": {
+        "code": "SUBJECT_REFERENCE_UNAVAILABLE"
+      }
+    }
+  },
+  {
+    "artifact": "docs/qualification-evidence/publication-repair-20260912/after-publication-01/publication-postgres-replacement_first.json",
+    "phase": "after-publication-01",
+    "backend": "postgres",
+    "ordering": "replacement_first",
+    "publication_commits": [
+      {
+        "event": "publication_committed",
+        "at": "2026-09-13T00:04:47.153Z",
+        "detail": {
+          "maximum": 3,
+          "digest": "sha256:b71be9c10cbaf0b88769d5f01bc541f11419f077c5a48be70a7513fef6bfa257"
+        }
+      },
+      {
+        "event": "publication_committed",
+        "at": "2026-09-13T00:04:47.946Z",
+        "detail": {
+          "maximum": 1,
+          "digest": "sha256:4ac22ed3251aa622bef90272f2cfd1f10089e9c98d7e333a96c6d949d3021aff"
+        }
+      }
+    ],
+    "database_wait_observed": true,
+    "old_request": {
+      "error": {
+        "code": "SEMANTIC_ACTION_UNAVAILABLE",
+        "message": "Runner could not prove this reviewed outcome from current authoritative facts. No proposal or source change was created."
+      }
+    },
+    "durable_counts_before_fresh": {
+      "proposals": 2,
+      "approvals": 1,
+      "queue": 0
+    },
+    "fresh_request": {
+      "ok": true,
+      "outcome": "billing.pause_notifications",
+      "status": "pending_human_review",
+      "request_disposition": "created",
+      "status_check": {
+        "tool": "app.request_change",
+        "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+        "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+      },
+      "result_summary": {
+        "description": "Pause notifications",
+        "change": "Update one reviewed billing.preferences record using only the exact Runner-derived effect.",
+        "fields": [
+          "status"
+        ],
+        "values_disclosed": false
+      },
+      "authorization": {
+        "eligibility": "verified",
+        "approval": "pending_human_review",
+        "execution": "human_review"
+      },
+      "proposal": {
+        "status": "pending_review",
+        "approval": "pending human review because an automatic-approval limit did not pass"
+      },
+      "execution": "human_review",
+      "eligibility": "verified from current authoritative facts",
+      "exact_effect": "Runner-derived and sealed in the operator proposal record",
+      "source_database_changed": false,
+      "model_authority": {
+        "supplied_outcome_and_opaque_subjects_only": true,
+        "supplied_only_reviewed_business_inputs": true,
+        "supplied_patch": false,
+        "approval": false,
+        "apply": false
+      }
+    },
+    "old_replay": {
+      "error": {
+        "code": "SUBJECT_REFERENCE_UNAVAILABLE"
+      }
+    }
+  },
+  {
+    "artifact": "docs/qualification-evidence/publication-repair-20260912/after-publication-01/publication-postgres-admission_first.json",
+    "phase": "after-publication-01",
+    "backend": "postgres",
+    "ordering": "admission_first",
+    "publication_commits": [
+      {
+        "event": "publication_committed",
+        "at": "2026-09-13T00:04:48.874Z",
+        "detail": {
+          "maximum": 3,
+          "digest": "sha256:7b9fe7c05f2c0e845d619857bfa7905910dc6ce30bd7b4efba12f2c13df63963"
+        }
+      },
+      {
+        "event": "publication_committed",
+        "at": "2026-09-13T00:04:49.863Z",
+        "detail": {
+          "maximum": 1,
+          "digest": "sha256:187e8aad9847b38884283accd06d9edcc79c32343fafe1cd82300dc34d51abcc"
+        }
+      }
+    ],
+    "database_wait_observed": false,
+    "old_request": {
+      "result": {
+        "ok": true,
+        "outcome": "billing.pause_notifications",
+        "status": "approved_pending_execution",
+        "request_disposition": "created",
+        "status_check": {
+          "tool": "app.request_change",
+          "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+          "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+        },
+        "result_summary": {
+          "description": "Pause notifications",
+          "change": "Update one reviewed billing.preferences record using only the exact Runner-derived effect.",
+          "fields": [
+            "status"
+          ],
+          "values_disclosed": false
+        },
+        "authorization": {
+          "eligibility": "verified",
+          "approval": "automatic",
+          "execution": "not_enabled"
+        },
+        "proposal": {
+          "status": "approved",
+          "approval": "automatically approved; apply remains a separate authority"
+        },
+        "execution": "not_enabled",
+        "eligibility": "verified from current authoritative facts",
+        "exact_effect": "Runner-derived and sealed in the operator proposal record",
+        "source_database_changed": false,
+        "model_authority": {
+          "supplied_outcome_and_opaque_subjects_only": true,
+          "supplied_only_reviewed_business_inputs": true,
+          "supplied_patch": false,
+          "approval": false,
+          "apply": false
+        }
+      }
+    },
+    "durable_counts_before_fresh": {
+      "proposals": 2,
+      "approvals": 2,
+      "queue": 0
+    },
+    "fresh_request": {
+      "ok": true,
+      "outcome": "billing.pause_notifications",
+      "status": "pending_human_review",
+      "request_disposition": "created",
+      "status_check": {
+        "tool": "app.request_change",
+        "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+        "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+      },
+      "result_summary": {
+        "description": "Pause notifications",
+        "change": "Update one reviewed billing.preferences record using only the exact Runner-derived effect.",
+        "fields": [
+          "status"
+        ],
+        "values_disclosed": false
+      },
+      "authorization": {
+        "eligibility": "verified",
+        "approval": "pending_human_review",
+        "execution": "human_review"
+      },
+      "proposal": {
+        "status": "pending_review",
+        "approval": "pending human review because an automatic-approval limit did not pass"
+      },
+      "execution": "human_review",
+      "eligibility": "verified from current authoritative facts",
+      "exact_effect": "Runner-derived and sealed in the operator proposal record",
+      "source_database_changed": false,
+      "model_authority": {
+        "supplied_outcome_and_opaque_subjects_only": true,
+        "supplied_only_reviewed_business_inputs": true,
+        "supplied_patch": false,
+        "approval": false,
+        "apply": false
+      }
+    },
+    "old_replay": {
+      "error": {
+        "code": "SUBJECT_REFERENCE_UNAVAILABLE"
+      }
+    }
+  }
+]

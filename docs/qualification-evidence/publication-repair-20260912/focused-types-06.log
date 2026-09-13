@@ -1,0 +1,31 @@
+/usr/lib/node_modules/corepack/dist/lib/corepack.cjs:22089
+    throw new Error(
+          ^
+
+Error: Error when performing the request to https://registry.npmjs.org/pnpm/-/pnpm-10.14.0.tgz; for troubleshooting help, see https://github.com/nodejs/corepack#troubleshooting
+    at fetch (/usr/lib/node_modules/corepack/dist/lib/corepack.cjs:22089:11)
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async fetchUrlStream (/usr/lib/node_modules/corepack/dist/lib/corepack.cjs:22119:20)
+    ... 4 lines matching cause stack trace ...
+    at async Object.runMain (/usr/lib/node_modules/corepack/dist/lib/corepack.cjs:23710:7) {
+  [cause]: TypeError: fetch failed
+      at node:internal/deps/undici/undici:14976:13
+      at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+      at async fetch (/usr/lib/node_modules/corepack/dist/lib/corepack.cjs:22083:16)
+      at async fetchUrlStream (/usr/lib/node_modules/corepack/dist/lib/corepack.cjs:22119:20)
+      at async download (/usr/lib/node_modules/corepack/dist/lib/corepack.cjs:22290:18)
+      at async installVersion (/usr/lib/node_modules/corepack/dist/lib/corepack.cjs:22386:55)
+      at async Engine.ensurePackageManager (/usr/lib/node_modules/corepack/dist/lib/corepack.cjs:22899:32)
+      at async Engine.executePackageManagerRequest (/usr/lib/node_modules/corepack/dist/lib/corepack.cjs:23010:25)
+      at async Object.runMain (/usr/lib/node_modules/corepack/dist/lib/corepack.cjs:23710:7) {
+    [cause]: Error: getaddrinfo EAI_AGAIN registry.npmjs.org
+        at GetAddrInfoReqWrap.onlookupall [as oncomplete] (node:dns:122:26) {
+      errno: -3001,
+      code: 'EAI_AGAIN',
+      syscall: 'getaddrinfo',
+      hostname: 'registry.npmjs.org'
+    }
+  }
+}
+
+Node.js v22.22.2

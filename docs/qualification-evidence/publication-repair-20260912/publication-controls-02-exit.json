@@ -1,0 +1,22 @@
+{
+  "name": "publication-controls-02",
+  "args": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "apps/runner/src/semantic-admission-publication.test.ts",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=30000",
+    "--hookTimeout=20000"
+  ],
+  "pg_control_store_fixture": true,
+  "started_at": "2026-09-13T00:16:16.973342+00:00",
+  "source_head": "779b2dc495a383871fb0311c5e70159872cee3dc",
+  "source_diff_sha256": "34e001adc4103a7d3564e008fcbc5b5d19b02b20b98502f517f3b49056a39f2d",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/test-environments/publication-controls-02",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/publication-controls-02",
+  "pid": 1157590,
+  "exit_code": 1,
+  "completed_at": "2026-09-13T00:17:22.799562+00:00"
+}

@@ -1,0 +1,19 @@
+{
+  "name": "focused-types-06",
+  "args": [
+    "corepack",
+    "pnpm",
+    "typecheck"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T01:15:03.814509+00:00",
+  "source_head": "3be534f828bbaf0ec655fb689abe60869bf59114",
+  "source_diff_sha256": "2f62e880e638d4e5fc80d0dfc1d71b7380fc13384b49f553e1ca139ec556714a",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/test-environments/focused-types-06",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/focused-types-06",
+  "source_manifest_sha256": "2067773fedcf03b54214024a61c3c6b0e08a785b2a6684aa989723af997801b4",
+  "pid": 1294936,
+  "exit_code": 1,
+  "completed_at": "2026-09-13T01:15:04.223088+00:00"
+}

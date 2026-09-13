@@ -1,0 +1,65 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1176777) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/semantic-admission-publication.test.ts (25 tests) 70276ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: replacement_first  3123ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: replacement_process  5328ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: admission_first  3758ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: inactive_first  3663ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: unchanged  3587ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: disabled_draft  2893ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: failed_confirmation  4642ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: replacement_first  1081ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: replacement_process  2124ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: admission_first  719ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: inactive_first  486ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: unchanged  787ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: disabled_draft  801ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: failed_confirmation  816ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: admission_holds_publication  823ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: admission_rollback  764ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: publication_busy  5829ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: admission_busy  5763ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: replacement_first  2672ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: replacement_process  5050ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: admission_first  2817ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: inactive_first  2914ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: unchanged  4048ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: disabled_draft  2705ms
+   ✓ publication versus admission (file_authority_sqlite) > preserves exact current authority: failed_confirmation  3073ms
+(node:1180325) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"timestamp":"2026-09-13T00:23:18.258Z","level":"info","event":"operator_decision","action":"apply","proposal_id":"wrp_pause_pref_1","capability":"billing.pause_notifications","tenant":"acct_1","subject":"local_operator","identity_provider":"dev_env","identity_verified":false}
+{"timestamp":"2026-09-13T00:23:18.582Z","level":"info","event":"writeback_outcome","proposal_id":"wrp_pause_pref_1","capability":"billing.pause_notifications","tenant":"acct_1","runner_id":"semantic_action_worker","executor":"sql_update","status":"applied","rows_affected":1,"receipt_hash":"sha256:4859532bafee277e45dff5181ba4c5dc1529d8900dc4f9d58062729b554dedff","dry_run":false,"source_database_changed":true}
+{"timestamp":"2026-09-13T00:23:18.644Z","level":"info","event":"worker_item_completed","proposal_id":"wrp_pause_pref_1","worker_id":"semantic_action_worker","status":"applied","attempt":1}
+{"timestamp":"2026-09-13T00:23:21.616Z","level":"info","event":"operator_decision","action":"apply","proposal_id":"wrp_pause_pref_1","capability":"billing.pause_notifications","tenant":"acct_1","subject":"local_operator","identity_provider":"dev_env","identity_verified":false}
+{"timestamp":"2026-09-13T00:23:21.660Z","level":"warn","event":"worker_item_blocked","proposal_id":"wrp_pause_pref_1","worker_id":"semantic_action_worker","error_code":"WORKER_EXECUTION_ERROR","attempt":1}
+{"timestamp":"2026-09-13T00:23:26.096Z","level":"info","event":"operator_decision","action":"apply","proposal_id":"wrp_pause_pref_1","capability":"billing.pause_notifications","tenant":"acct_1","subject":"local_operator","identity_provider":"dev_env","identity_verified":false}
+{"timestamp":"2026-09-13T00:23:26.155Z","level":"warn","event":"worker_item_blocked","proposal_id":"wrp_pause_pref_1","worker_id":"semantic_action_worker","error_code":"WORKER_EXECUTION_ERROR","attempt":1}
+{"timestamp":"2026-09-13T00:23:28.941Z","level":"info","event":"operator_decision","action":"apply","proposal_id":"wrp_pause_pref_1","capability":"billing.pause_notifications","tenant":"acct_1","subject":"local_operator","identity_provider":"dev_env","identity_verified":false}
+{"timestamp":"2026-09-13T00:23:28.991Z","level":"warn","event":"worker_item_blocked","proposal_id":"wrp_pause_pref_1","worker_id":"semantic_action_worker","error_code":"TRUSTED_BINDING_MISSING","attempt":1}
+{"timestamp":"2026-09-13T00:23:35.820Z","level":"info","event":"operator_decision","action":"apply","proposal_id":"wrp_pause_pref_1","capability":"billing.pause_notifications","tenant":"acct_1","subject":"local_operator","identity_provider":"dev_env","identity_verified":false}
+{"timestamp":"2026-09-13T00:23:36.219Z","level":"error","event":"writeback_outcome","proposal_id":"wrp_pause_pref_1","capability":"billing.pause_notifications","tenant":"acct_1","runner_id":"semantic_action_worker","executor":"sql_update","status":"failed","rows_affected":0,"error_code":"SEMANTIC_AUTHORITY_STALE","receipt_hash":"sha256:aec708005fa2f002391acd981416bffd82bdc3746bedc54b6eef69cbc0627bf8","dry_run":false,"source_database_changed":false}
+{"timestamp":"2026-09-13T00:23:36.273Z","level":"warn","event":"worker_item_blocked","proposal_id":"wrp_pause_pref_1","worker_id":"semantic_action_worker","error_code":"SEMANTIC_AUTHORITY_STALE","attempt":1}
+ ✓ apps/runner/src/semantic-writeback-authority.test.ts (14 tests) 42550ms
+   ✓ connected semantic worker identity and trusted context > applies with generated defaults, persists one receipt and never repeats the effect  3847ms
+   ✓ connected semantic worker identity and trusted context > blocks a different trusted TEST_WORKER_TENANT without source writes  2856ms
+   ✓ connected semantic worker identity and trusted context > blocks a different trusted TEST_WORKER_PRINCIPAL without source writes  4516ms
+   ✓ connected semantic worker identity and trusted context > preserves the exact missing-binding code in the worker queue instead of a generic execution error  2838ms
+   ✓ connected semantic worker identity and trusted context > refuses a conflicting named session context before claiming, without top-level fallback  2480ms
+   ✓ connected semantic worker identity and trusted context > refuses stale approved facts without an additional source change  4775ms
+   ✓ semantic writeback authority orchestration > resolves a real approved v5 job to its outcome writer without changing the compiled source  2505ms
+   ✓ semantic writeback authority orchestration > accepts one exact approved v5 job and reloads active authority for transaction verification  2432ms
+   ✓ semantic writeback authority orchestration > accepts one exact policy approval while retaining a two-human fallback quorum  3867ms
+   ✓ semantic writeback authority orchestration > rejects approval-set and immutable-proposal drift before source execution  3011ms
+   ✓ semantic writeback authority orchestration > queues and leases an approved semantic proposal only for its exact active outcome authority  2611ms
+   ✓ semantic writeback authority orchestration > retains automatic approval history but never dispatches old unstarted work after a lower-limit replacement  3318ms
+   ✓ semantic writeback authority orchestration > leaves semantic work unleased after Action authority is deactivated  3485ms
+
+ Test Files  2 passed (2)
+      Tests  39 passed (39)
+   Start at  17:22:01
+   Duration  116.43s (transform 1.37s, setup 0ms, collect 3.26s, tests 112.83s, environment 0ms, prepare 80ms)
+

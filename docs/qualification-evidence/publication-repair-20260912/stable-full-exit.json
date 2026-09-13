@@ -1,0 +1,26 @@
+{
+  "name": "stable-full",
+  "args": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--maxWorkers=4",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000",
+    "--reporter=default",
+    "--reporter=json",
+    "--outputFile.json=/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/stable-full.json"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T00:46:34.623241+00:00",
+  "source_head": "3be534f828bbaf0ec655fb689abe60869bf59114",
+  "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/test-environments/stable-full",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/stable-full",
+  "source_manifest_sha256": "538256fb03392e55482fc308209d53b77bc2ba3623bfea0a94364318f605ab15",
+  "pid": 1232010,
+  "exit_code": 1,
+  "completed_at": "2026-09-13T01:06:26.944132+00:00"
+}

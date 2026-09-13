@@ -1,0 +1,27 @@
+{
+  "name": "migration-corrected-01",
+  "args": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--config",
+    "docs/qualification-evidence/publication-repair-20260912/migration-vitest.config.mjs",
+    "apps/runner/src/control-policy-store.test.ts",
+    "-t",
+    "chooses one complete binding during concurrent migration|returns bounded busy when another migration",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T00:37:30.576842+00:00",
+  "source_head": "779b2dc495a383871fb0311c5e70159872cee3dc",
+  "source_diff_sha256": "3ea4ce8ca31e967a130b2274572ba82aa55b5215ac6e2727f0fd0288a3a4448f",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/test-environments/migration-corrected-01",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/migration-corrected-01",
+  "source_manifest_sha256": "76ee4ddf7dcf7ab17e78e664f2622459b5246656fa7d6973b9f9474948cbcd6f",
+  "pid": 1212769,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T00:37:42.229938+00:00"
+}

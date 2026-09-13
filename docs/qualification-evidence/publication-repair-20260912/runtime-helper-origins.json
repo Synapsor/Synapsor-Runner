@@ -1,0 +1,50 @@
+{
+  "prepare-runtime.mjs": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/approval-time-stage-a-20260912/prepare-runtime.mjs",
+    "sha256": "6bc2f52a6fe3f3bb39204eed22b2cfd2fac0492092f1ba399684cc1bb3ca7566"
+  },
+  "runtime-driver.mjs": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/approval-time-stage-a-20260912/runtime-driver.mjs",
+    "sha256": "ee49a9198bea1832b32342cd51312a6b7c6a48873dc4c3caa8a4590bc9d8c322"
+  },
+  "a1-identical.mjs": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/approval-time-stage-a-20260912/a1-identical.mjs",
+    "sha256": "8d766856744c374c573e267fc50e2afbaa9ab63c97b0fe05f74260e8c140eeb7"
+  },
+  "a2-insurer.mjs": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/approval-time-stage-a-20260912/a2-insurer.mjs",
+    "sha256": "e840bf095ad6772d9d6ab69cbce1ceb70bb15a82ad3412ab1f142cbd9c5a4828"
+  },
+  "a2-overall.mjs": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/approval-time-stage-a-20260912/a2-overall.mjs",
+    "sha256": "7b435fb395865b08ae2455cae70730b0809ccc3705750e33a421ffa0529f6bda"
+  },
+  "a3-collections.mjs": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/approval-time-stage-a-20260912/a3-collections.mjs",
+    "sha256": "0cf6bc034da5ed3e1ed980bb3407b8b497eb1d66761df252e000adcc9bc32fca"
+  },
+  "a4-contexts.mjs": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/approval-time-stage-a-20260912/a4-contexts.mjs",
+    "sha256": "00682a2dbf9042c58ddd06aee1a133ea7aabca2b8abeffbd43988891dbaa8833"
+  },
+  "operator-cli.mjs": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/approval-time-stage-a-20260912/operator-cli.mjs",
+    "sha256": "a5b8af02910f128f4db198ef57088ca7b015eb6bcad710e068d3b7ae7bd4ae39"
+  },
+  "freeze-repair.mjs": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/approval-time-stage-a-20260912/freeze-repair.mjs",
+    "sha256": "bfbac4dd9ac9cf63cb0e0b0ffc2f9febcac5d78cc2a80d453a41228c01fc7f8c"
+  },
+  "run-freeze.py": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/approval-time-stage-a-20260912/run-freeze.py",
+    "sha256": "a8c6ce2d59a406c2e7d977c27268716222e07a75e56e1413a489f3bd6e85cf5c"
+  },
+  "run-offline-checks.py": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/approval-time-stage-a-20260912/run-offline-checks.py",
+    "sha256": "7fd54f76d993c6198303080b4617331fddb744732da914c2e73bf58d8ccf2564"
+  },
+  "copy-offline-cache.mjs": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/approval-time-stage-a-20260912/copy-offline-cache.mjs",
+    "sha256": "4482d5f89096892b16a039da71ab65d60518b8fe3679221cccb5149cf99c7a49"
+  }
+}

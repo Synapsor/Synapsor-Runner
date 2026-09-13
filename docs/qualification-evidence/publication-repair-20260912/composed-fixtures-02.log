@@ -1,0 +1,79 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1294862) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1294856) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+Active local Read authority selected from /tmp/synapsor-selected-execution-config-tDkYFc/synapsor.runner.json; fixed Read and Action tools are available. Only activated outcomes permit proposals.
+Active local Read authority selected from /tmp/synapsor-selected-execution-config-7jP7RU/synapsor.runner.json; fixed Read and Action tools are available. Only activated outcomes permit proposals.
+ ❯ apps/runner/src/mcp-runtime-execution-config.test.ts (10 tests | 2 failed) 16069ms
+   × selected execution configuration through public MCP callers > queues through stdio after public connection and execution confirmations on a copied config 52ms
+     → ACTION_RULE_AUTHORITY_STALE: The active Action Rule authority failed its integrity check.
+   × selected execution configuration through public MCP callers > queues through streamable-http after public connection and execution confirmations on a copied config 14ms
+     → ACTION_RULE_AUTHORITY_STALE: The active Action Rule authority failed its integrity check.
+   ✓ selected execution configuration through public MCP callers > passes the actual managed companion selection, not the launch filename  4115ms
+   ✓ selected execution configuration through public MCP callers > passes the actual managed primary selection, not the launch filename  3632ms
+   ✓ selected execution configuration through public MCP callers > default local launch uses the reviewed identity and preserves read-only override: false  3920ms
+   ✓ selected execution configuration through public MCP callers > default local launch uses the reviewed identity and preserves read-only override: true  4210ms
+   ✓ selected execution configuration through public MCP callers > refuses a local identity option on an explicit action-only service 19ms
+   ✓ selected execution configuration through public MCP callers > starts an empty authoring project with the optional local runtime reference 7ms
+   ✓ selected execution configuration through public MCP callers > propagates production factory path provenance only when supplied: true 70ms
+   ✓ selected execution configuration through public MCP callers > propagates production factory path provenance only when supplied: false 26ms
+(node:1295738) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/semantic-action-delegation.test.ts (4 tests) 21718ms
+   ✓ delegated semantic Action runtime composition > discovers only current delegated outcomes, binds opaque subjects to the authenticated run, and creates no source write  4904ms
+   ✓ delegated semantic Action runtime composition > refuses workload/trusted-context mismatches, expired or missing workload credentials before opening a fact session  4186ms
+   ✓ delegated semantic Action runtime composition > refuses old references after a current owner change and refuses an existing proposal after revocation  4586ms
+   ✓ delegated semantic Action runtime composition > keeps non-delegated Action requests working while a configured delegated runtime refuses a missing governed repository  8040ms
+{"timestamp":"2026-09-13T01:16:19.964Z","level":"warn","event":"semantic_action_execution_held","code":"SEMANTIC_ACTION_QUEUE_UNAVAILABLE","next_action":"Review saved execution and runtime configuration; then retry the same approved request. Do not edit stored policy hashes.","source_database_changed":false}
+ ✓ apps/runner/src/semantic-action-runtime.test.ts (41 tests) 72009ms
+   ✓ composed semantic Action runtime > queues a third separately reviewed writer on the same held client without changing its read or trust context  5495ms
+   ✓ composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: unreviewed_alias  4376ms
+   ✓ composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: reviewed_trust  4855ms
+   ✓ composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: reviewed_read  4161ms
+   ✓ composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: reviewed_alias_scope  4000ms
+   ✓ composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: pending  4913ms
+   ✓ composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: queue_failure  4836ms
+   ✓ composed semantic Action runtime > holds an approved request safely with a sanitized actionable diagnostic: policy_changed_after_read  4907ms
+   ✓ composed semantic Action runtime > does not reuse the held client's execution export after governed execution is revoked  4419ms
+   ✓ composed semantic Action runtime > refreshes only the selected nested configuration using its own relative-path base  3147ms
+   ✓ composed semantic Action runtime > fails closed for the selected custom publication: missing  4632ms
+   ✓ composed semantic Action runtime > fails closed for the selected custom publication: pending  2993ms
+   ✓ composed semantic Action runtime > fails closed for the selected custom publication: stale  2901ms
+   ✓ composed semantic Action runtime > fails closed for the selected custom publication: revoked  4798ms
+   ✓ composed semantic Action runtime > does not guess a publication file for a config-only caller: unchanged  2858ms
+   ✓ composed semantic Action runtime > does not guess a publication file for a config-only caller: binding_changed  2788ms
+   ✓ composed semantic Action runtime > does not guess a publication file for a config-only caller: revoked  4602ms
+   ✓ composed semantic Action runtime > shares Action Boundary automatic-approval limits across outcomes and tenants  318ms
+ ✓ apps/runner/src/model-output-config.test.ts (3 tests) 38ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/mcp-runtime-execution-config.test.ts > selected execution configuration through public MCP callers > queues through stdio after public connection and execution confirmations on a copied config
+ FAIL  apps/runner/src/mcp-runtime-execution-config.test.ts > selected execution configuration through public MCP callers > queues through streamable-http after public connection and execution confirmations on a copied config
+Error: ACTION_RULE_AUTHORITY_STALE: The active Action Rule authority failed its integrity check.
+ ❯ authorityError apps/runner/src/action-rule-authority.ts:867:24
+    865| 
+    866| function authorityError(code: string, message: string): Error {
+    867|   return Object.assign(new Error(`${code}: ${message}`), { code });
+       |                        ^
+    868| }
+    869| 
+ ❯ invalidActivation apps/runner/src/action-rule-authority.ts:863:10
+ ❯ normalizeReviews apps/runner/src/action-rule-authority.ts:835:11
+ ❯ parseActivationSnapshot apps/runner/src/action-rule-authority.ts:781:19
+ ❯ parseActivation apps/runner/src/action-rule-authority.ts:764:10
+ ❯ Module.parseStoredActionRuleAuthority apps/runner/src/action-rule-authority.ts:85:62
+ ❯ delegatedExecutionFixture apps/runner/src/mcp-runtime-execution-config.test.ts:276:93
+ ❯ apps/runner/src/mcp-runtime-execution-config.test.ts:50:15
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed | 3 passed (4)
+      Tests  2 failed | 56 passed (58)
+   Start at  18:15:03
+   Duration  77.29s (transform 3.90s, setup 0ms, collect 12.32s, tests 109.83s, environment 1ms, prepare 378ms)
+

@@ -1,0 +1,47 @@
+{
+  "started_at": "2026-09-13T01:19:36.170245+00:00",
+  "network": "unshared network namespace; npm offline; writable disposable cache copy",
+  "home": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/offline-home",
+  "commands": [
+    {
+      "name": "local-package",
+      "args": [
+        "bash",
+        "scripts/verify-local-runner.sh"
+      ],
+      "started_at": "2026-09-13T01:19:36.170312+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-13T01:20:34.718658+00:00"
+    },
+    {
+      "name": "bundle-freshness",
+      "args": [
+        "node",
+        "scripts/verify-local-runner-bundle-freshness.mjs"
+      ],
+      "started_at": "2026-09-13T01:20:34.719253+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-13T01:20:44.464542+00:00"
+    },
+    {
+      "name": "public-commands",
+      "args": [
+        "bash",
+        "scripts/verify-public-commands.sh"
+      ],
+      "started_at": "2026-09-13T01:20:44.465374+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-13T01:22:01.011332+00:00"
+    },
+    {
+      "name": "packed-offline",
+      "args": [
+        "bash",
+        "scripts/verify-packed-runner.sh"
+      ],
+      "started_at": "2026-09-13T01:22:01.012211+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-13T01:25:18.026567+00:00"
+    }
+  ]
+}

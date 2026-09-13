@@ -1,0 +1,51 @@
+{
+  "at": "2026-09-13T01:27:12.708707+00:00",
+  "phase": "Offline complete; commit evidence and freeze new installation",
+  "product_revision": "b16f92aa01d52d6b51e74e0e1574fac7de14635b",
+  "migration_test_revision": "3be534f828bbaf0ec655fb689abe60869bf59114",
+  "stable_pid": 1232010,
+  "stable_exec_session": 56581,
+  "stable_start": "2026-09-13T00:46:34.623241+00:00",
+  "stable_source_manifest_sha256": "538256fb03392e55482fc308209d53b77bc2ba3623bfea0a94364318f605ab15",
+  "completed": {
+    "strict_before": "2 fail/2 pass exit1",
+    "strict_after": "4 pass exit0",
+    "expanded_publication_worker": "39 pass exit0",
+    "postgres_gate": "41 pass exit0",
+    "combined01": "247 pass/1 migration failure/21 skip exit1",
+    "combined02": "248 pass/21 skip exit0, unchanged migration trace",
+    "migration_corrected01": "2 pass exit0",
+    "combined03": "249 pass/21 skip exit0",
+    "types05": "exit0",
+    "stable_full": "6097 pass / 21 fail / 461 skip; 4 failed files; exit 1",
+    "composed_fixtures02": "56 pass, 2 MCP review fixture failures; exit 1",
+    "composed_fixtures03": "10 MCP tests pass exit 0",
+    "types08": "exit 0; final source",
+    "offline01": "6 checks pass; package report-link failure preserved",
+    "offline02": "remaining 4 checks exit 0; all 10 completed",
+    "preservation_pre_install": "77559 unchanged"
+  },
+  "budgets": {
+    "combined_runs_used": 3,
+    "standalone_migration_isolated_used": 2,
+    "standalone_migration_load_used": 2,
+    "migration_corrected_runs_used": 1,
+    "stable_full_runs_launched": 1,
+    "installed_runs": 0,
+    "offline_runs": 2,
+    "freeze_attempts": 0,
+    "overall_deadline": "2026-09-13T07:51:08.979874+00:00",
+    "focused_fixture_correction_runs": 3
+  },
+  "remaining": "Freeze new immutable installation from coherent source, prepare owned fixtures and supported identity prerequisites, bounded installed checks, final report/private backup delivery/cleanup.",
+  "last_stable_observation": {
+    "at": "2026-09-13T01:06:29.396168+00:00",
+    "status": "running, interim17 failures in composed runtime fixture",
+    "fixture_source_sha256": "8be0d0f064fb63635073cdef842038793fa9358d780012b6af033976408eb155",
+    "next": "Await same full-suite exit before any source edit; correct demonstrated unbacked-authority test fixture only; focused verification, no duplicate full suite."
+  },
+  "stable_exit": 1,
+  "stable_completed": "2026-09-13T01:06:26.944132+00:00",
+  "test_revision": "03e3f447e1f79ffbc804b0e8b396bddb510e3e12",
+  "documentation_revision": "3aa8e0d2baf67281cceb74c5c26a2df994b3f0f5"
+}

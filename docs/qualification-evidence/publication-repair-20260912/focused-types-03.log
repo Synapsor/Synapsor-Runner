@@ -1,0 +1,7 @@
+apps/runner/src/semantic-admission-publication.test.ts(148,15): error TS2322: Type '(namedParameters: Record<string, SQLInputValue>, ...anonymousParameters: SQLInputValue[]) => Record<string, SQLOutputValue>[]' is not assignable to type '{ (...anonymousParameters: SQLInputValue[]): Record<string, SQLOutputValue>[]; (namedParameters: Record<string, SQLInputValue>, ...anonymousParameters: SQLInputValue[]): Record<...>[]; }'.
+  Types of parameters 'namedParameters' and 'anonymousParameters' are incompatible.
+    Type 'SQLInputValue' is not assignable to type 'Record<string, SQLInputValue>'.
+      Type 'null' is not assignable to type 'Record<string, SQLInputValue>'.
+apps/runner/src/semantic-admission-publication.test.ts(158,16): error TS2322: Type 'typeof ObservedDate' is not assignable to type 'DateConstructor'.
+  Type 'typeof ObservedDate' provides no match for the signature '(): string'.
+apps/runner/src/semantic-admission-publication.test.ts(193,33): error TS18047: 'child.stderr' is possibly 'null'.

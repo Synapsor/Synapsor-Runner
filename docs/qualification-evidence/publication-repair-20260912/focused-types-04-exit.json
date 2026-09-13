@@ -1,0 +1,21 @@
+{
+  "name": "focused-types-04",
+  "args": [
+    "node",
+    "node_modules/typescript/bin/tsc",
+    "-b",
+    "--pretty",
+    "false"
+  ],
+  "pg_control_store_fixture": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-13T00:26:53.248959+00:00",
+  "source_head": "779b2dc495a383871fb0311c5e70159872cee3dc",
+  "source_diff_sha256": "cf8169aa35a3cee143293c23222b7b1a2ef8c5d134322d6960937ba70e0fa0e5",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/test-environments/focused-types-04",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/focused-types-04",
+  "source_manifest_sha256": "15d07e6f91f5db0d9d499bf5446b2e9537d9cd5cfb762149210325f784eac5b1",
+  "pid": 1188516,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T00:26:56.825190+00:00"
+}

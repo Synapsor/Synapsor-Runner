@@ -1,0 +1,19 @@
+{
+  "backend": "postgres",
+  "ordering": "replacement_process",
+  "sequence": [
+    {
+      "event": "publication_committed",
+      "at": "2026-09-13T00:15:37.380Z",
+      "detail": {
+        "maximum": 3,
+        "digest": "sha256:666dab9d5f94f21604b04c5b48090a13394c54302d4fe78731a0ce5ee547b7bc",
+        "revision": {
+          "deployment_id": "587d850f-60b2-4eef-b282-570602dade3d",
+          "action_name": "billing_active_rules",
+          "revision_id": "policy:dbd7dda35f4c73a9f4cd19acd4071c1ec0dcb6007e8017cc4e9305f44fd70685"
+        }
+      }
+    }
+  ]
+}

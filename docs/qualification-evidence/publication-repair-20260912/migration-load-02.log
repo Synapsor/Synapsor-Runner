@@ -1,0 +1,100 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1164697) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1164689) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1164695) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1164688) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+stdout | apps/runner/src/action-rule-authority.test.ts > semantic Action Rule authority persistence > loads and searches a real 2000-outcome authority without recompiling warm requests
+{"benchmark":"production_action_discovery","outcomes":2000,"authorized":1000,"query_ms":281,"response_bytes":1279}
+{"benchmark":"real_action_authority","outcomes":2000,"total_ms":8084,"cold_ms":1043,"warm_ms":40}
+
+ ✓ apps/runner/src/action-rule-authority.test.ts (49 tests) 39900ms
+   ✓ semantic Action Rule authority persistence > retires only the exact reviewed active bundle under the writer permit (sqlite)  5312ms
+   ✓ semantic Action Rule authority persistence > checks the exact Action baseline under the publication permit ('sqlite', 'create')  5076ms
+   ✓ semantic Action Rule authority persistence > checks the exact Action baseline under the publication permit ('sqlite', 'review')  4916ms
+   ✓ semantic Action Rule authority persistence > checks the exact Action baseline under the publication permit ('sqlite', 'rules')  4820ms
+   ✓ semantic Action Rule authority persistence > checks the exact Action baseline under the publication permit ('sqlite', 'active')  4546ms
+   ✓ semantic Action Rule authority persistence > advances only its own Action baseline and preserves other active outcomes (sqlite)  4834ms
+   ✓ semantic Action Rule authority persistence > loads and searches a real 2000-outcome authority without recompiling warm requests  8088ms
+ ✓ apps/runner/src/control-policy-store.test.ts (18 tests | 1 skipped) 83049ms
+   ✓ governed policy-store binding and recovery > drains runtime work before reading the migration snapshot or installing its locator  4906ms
+   ✓ governed policy-store binding and recovery > imports exact active and disabled revisions without changing their provenance  5280ms
+   ✓ governed policy-store binding and recovery > opens current policies without rerunning ledger migrations and can borrow the actual runtime store  4966ms
+   ✓ governed policy-store binding and recovery > refuses a borrowed runtime connected to a different repository  4888ms
+   ✓ governed policy-store binding and recovery > refuses a changed or missing store before runtime creation can leave an empty shadow file  4698ms
+   ✓ governed policy-store binding and recovery > validates only the required store selection before constructing an authoring ledger  4378ms
+   ✓ governed policy-store binding and recovery > resumes a frozen pending import rather than rereading changed legacy files  4339ms
+   ✓ governed policy-store binding and recovery > recovers an import committed before the process lost its response without replaying it  5062ms
+   ✓ governed policy-store binding and recovery > does not load or trust the snapshot export after repository authority is established  4915ms
+   ✓ governed policy-store binding and recovery > refuses tampered pending input before importing any authority  4835ms
+   ✓ governed policy-store binding and recovery > does not create a shadow control store when the selection changes  5028ms
+   ✓ governed policy-store binding and recovery > fails closed for a missing or replaced bound repository  9898ms
+   ✓ governed policy-store binding and recovery > never falls back to file authority if the migration binding disappears  4914ms
+   ✓ governed policy-store binding and recovery > rejects unvalidated input before creating a binding or initializing policy tables  4713ms
+   ✓ governed policy-store binding and recovery > chooses one complete binding during concurrent migration  4898ms
+   ✓ governed policy-store binding and recovery > binds migration files, local store and the snapshot reader to the locked canonical project  5323ms
+ ✓ apps/runner/src/control-policy-publication-recovery.test.ts (23 tests) 115608ms
+   ✓ sqlite publication settlement > fences the original attempt without changing unrelated authority: committed  4818ms
+   ✓ sqlite publication settlement > fences the original attempt without changing unrelated authority: cancel  5352ms
+   ✓ sqlite publication settlement > fences the original attempt without changing unrelated authority: commit_race  4978ms
+   ✓ sqlite publication settlement > fences the original attempt without changing unrelated authority: cancellation_lost  4958ms
+   ✓ sqlite publication settlement > fences the original attempt without changing unrelated authority: unavailable  4782ms
+   ✓ sqlite publication settlement > fences the original attempt without changing unrelated authority: mismatch  4474ms
+   ✓ sqlite publication settlement > fences the original attempt without changing unrelated authority: concurrent  4411ms
+   ✓ sqlite publication settlement > fences the original attempt without changing unrelated authority: repeated  5082ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: before_replace  5118ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: before_commit  5054ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: unknown_commit  5211ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: journal_cleanup  5233ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: newer_config  5111ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: corrupt_record  5020ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: missing_config  5083ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: unavailable  5219ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: lost_cancellation  5262ms
+   ✓ sqlite publication settlement > recovers a durable private config intent without replay or lost edits: restore_race  4892ms
+   ✓ sqlite publication settlement > rejects mismatched bindings and unsafe paths before saving any config intent  4815ms
+   ✓ sqlite publication settlement > enforces cancellation as a no-op fence in the actual repository  4804ms
+   ✓ sqlite publication settlement > recovers after a real process death: before_config  5492ms
+   ✓ sqlite publication settlement > recovers after a real process death: before_commit  5050ms
+   ✓ sqlite publication settlement > recovers after a real process death: after_commit  5379ms
+ ✓ apps/runner/src/action-review-governed.test.ts (30 tests) 140218ms
+   ✓ public governed Action review > wires the public action command to client setup and returns without activating again  6056ms
+   ✓ public governed Action review > shows an already active Read revision truthfully and preserves it when repeated activation is declined  5477ms
+   ✓ public governed Action review > opens model-guided first-action setup before manual Read sign-off, without compatibility controls  5116ms
+   ✓ public governed Action review > starts the first action from saved Read authority without entering legacy proposal controls  5049ms
+   ✓ public governed Action review > routes the empty Action case from Boundary access into the manual semantic editor  4827ms
+   ✓ public governed Action review > uses the governed Read URL then the separately configured writer without consulting a legacy lock  4986ms
+   ✓ public governed Action review > opens the manual editor for an existing disabled outcome before Read activation  5476ms
+   ✓ public governed Action review > shows unfinished saved work and returns to the same disabled Action review without new egress or authority  5157ms
+   ✓ public governed Action review > returns directly from linked Read approval to the saved actions (accepted=true)  5586ms
+   ✓ public governed Action review > returns directly from linked Read approval to the saved actions (accepted=false)  5485ms
+   ✓ public governed Action review > returns directly from linked Read approval to the saved actions (accepted=inspection_failure)  5448ms
+   ✓ public governed Action review > wires standalone action review to the exact Read decision without restarting setup (accepted=true)  5470ms
+   ✓ public governed Action review > wires standalone action review to the exact Read decision without restarting setup (accepted=false)  5323ms
+   ✓ public governed Action review > does not start a model revision for a Read selection changed during linked Action review  5515ms
+   ✓ public governed Action review > keeps stale Read dependencies repairable without authorizing old rules (repair)  6042ms
+   ✓ public governed Action review > keeps stale Read dependencies repairable without authorizing old rules (repair_disabled)  6272ms
+   ✓ public governed Action review > keeps stale Read dependencies repairable without authorizing old rules (inspection_drift)  5909ms
+   ✓ public governed Action review > keeps stale Read dependencies repairable without authorizing old rules (structural_change)  5899ms
+   ✓ public governed Action review > keeps stale Read dependencies repairable without authorizing old rules (stale_selection)  5196ms
+   ✓ public governed Action review > keeps stale Read dependencies repairable without authorizing old rules (existing_edit)  5719ms
+   ✓ public governed Action review > keeps stale Read dependencies repairable without authorizing old rules (read_changed)  3156ms
+   ✓ public governed Action review > keeps stale Read dependencies repairable without authorizing old rules (read_pending)  3326ms
+   ✓ public governed Action review > keeps stale Read dependencies repairable without authorizing old rules (read_declined)  4155ms
+   ✓ public governed Action review > does not fall back to a legacy lock when the governed repository is unavailable  2559ms
+   ✓ public governed Action review > reaches the saved verified draft through action review at 52 columns without a legacy generation lock or new model job  3158ms
+   ✓ public governed Action review > reaches the saved verified draft through action review at 80 columns without a legacy generation lock or new model job  3884ms
+   ✓ public governed Action review > reaches the saved verified draft through action review at 120 columns without a legacy generation lock or new model job  2843ms
+   ✓ public governed Action review > reaches the saved verified draft through Read activation then Q at 80 columns without a legacy generation lock or new model job  3141ms
+   ✓ public governed Action review > pages exact writer requirements and the exported handoff through public Action review without changing pending authority  3981ms
+
+ Test Files  4 passed (4)
+      Tests  119 passed | 1 skipped (120)
+   Start at  17:19:00
+   Duration  148.78s (transform 5.96s, setup 141ms, collect 20.19s, tests 378.77s, environment 1ms, prepare 478ms)
+

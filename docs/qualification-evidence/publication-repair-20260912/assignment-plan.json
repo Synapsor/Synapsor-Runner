@@ -1,0 +1,41 @@
+{
+  "started_at": "2026-09-12T23:51:08.979874+00:00",
+  "overall_deadline": "2026-09-13T07:51:08.979874+00:00",
+  "baseline": "779b2dc495a383871fb0311c5e70159872cee3dc",
+  "branch": "codex/tui-safe-action-control-plane",
+  "authorized_scope": "Implement shared publication/admission ordering; bounded separate migration diagnosis/repair; supported reviewed local identity fixtures; named local verification and new installed artifact; private backup delivery only. Prior STOP superseded only for named replays in new fixtures; originals never reused for workers. Stage B NOT STARTED.",
+  "prior_commits": {
+    "a2b6b5f": "a2b6b5f870f544ca608d7fb0e6bc834da1e27196",
+    "a0942d1": "a0942d1bf6e45b21cae041cc4a6ff49823908678",
+    "b666202": "b666202056c2db137b2261409c413dc61846c426",
+    "c0b81b8": "c0b81b8e8a8c676a08fe495798414ca09260a6c6",
+    "779b2dc": "779b2dc495a383871fb0311c5e70159872cee3dc"
+  },
+  "budgets": {
+    "publication_implementation_minutes": 150,
+    "focused_publication_accounting_runs": 30,
+    "migration_diagnosis_minutes": 45,
+    "migration_isolated_runs": 2,
+    "migration_representative_load_runs": 2,
+    "migration_corrected_verification_runs": 2,
+    "fixture_minutes": 45,
+    "postgres_fixture_attempts": 3,
+    "identity_setup_attempts_per_context": 3,
+    "combined_verification_runs": 3,
+    "stable_full_runs": 1,
+    "stable_full_minutes": 60,
+    "offline_package_minutes": 30,
+    "offline_package_attempts": 2,
+    "artifact_freeze_minutes": 20,
+    "artifact_freeze_attempts": 2,
+    "installed_minutes": 90,
+    "installed_operations": 400,
+    "installed_workers": 32,
+    "installed_schedules_per_case": 3,
+    "delivery_minutes": 30
+  },
+  "prior_artifact_tree": "c4300519538be9cb2befd08b8d99b0b897a33801cbd57f48cf4f088ea417e10e",
+  "owned_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912",
+  "evidence_root": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912",
+  "current_step": "Preserve old artifacts, trace locks and prepare new local PG fixture; replay strict failures in fresh fixtures before product changes."
+}

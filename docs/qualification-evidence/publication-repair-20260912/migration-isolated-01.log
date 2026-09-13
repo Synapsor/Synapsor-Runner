@@ -1,0 +1,15 @@
+(node:1129008) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1129049) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/control-policy-store.test.ts (18 tests | 17 skipped) 2602ms
+   ✓ governed policy-store binding and recovery > chooses one complete binding during concurrent migration  2599ms
+
+ Test Files  1 passed (1)
+      Tests  1 passed | 17 skipped (18)
+   Start at  17:03:55
+   Duration  5.35s (transform 1.31s, setup 0ms, collect 2.35s, tests 2.60s, environment 0ms, prepare 70ms)
+

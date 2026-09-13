@@ -1,0 +1,27 @@
+{
+  "name": "migration-load-02",
+  "args": [
+    "node",
+    "node_modules/vitest/vitest.mjs",
+    "run",
+    "--config",
+    "docs/qualification-evidence/publication-repair-20260912/migration-vitest.config.mjs",
+    "apps/runner/src/control-policy-store.test.ts",
+    "apps/runner/src/action-review-governed.test.ts",
+    "apps/runner/src/action-rule-authority.test.ts",
+    "apps/runner/src/control-policy-publication-recovery.test.ts",
+    "--maxWorkers=4",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "pg_control_store_fixture": false,
+  "started_at": "2026-09-13T00:19:00.408252+00:00",
+  "source_head": "779b2dc495a383871fb0311c5e70159872cee3dc",
+  "source_diff_sha256": "cf8169aa35a3cee143293c23222b7b1a2ef8c5d134322d6960937ba70e0fa0e5",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/publication-repair-779b2dc-20260912/test-environments/migration-load-02",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/publication-repair-20260912/migration-load-02",
+  "pid": 1164621,
+  "exit_code": 0,
+  "completed_at": "2026-09-13T00:21:29.757405+00:00"
+}

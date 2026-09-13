@@ -1,0 +1,29 @@
+
+  apps/runner/dist/runner.mjs  10.9mb ⚠️
+
+⚡ Done in 440ms
+
+  apps/runner/dist/authoring.mjs  193.0kb
+
+⚡ Done in 19ms
+
+  apps/runner/dist/shadow.mjs  529.1kb
+
+⚡ Done in 31ms
+
+  apps/runner/dist/runtime.mjs  1.6mb ⚠️
+
+⚡ Done in 125ms
+file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/scripts/build-runner-package.mjs:414
+  if (missing.length) throw new Error(`packaged Markdown links reference omitted files:\n${missing.join("\n")}`);
+                            ^
+
+Error: packaged Markdown links reference omitted files:
+docs/action-capability-qualification.md -> qualification-evidence/approval-time-stage-a-20260912/verification-report.md
+docs/action-capability-qualification.md -> qualification-evidence/approval-time-stage-a-20260912/publication-finding.md
+docs/onboarding-domain-audit.md -> qualification-evidence/approval-time-stage-a-20260912/verification-report.md
+docs/onboarding-domain-audit.md -> qualification-evidence/approval-time-stage-a-20260912/publication-finding.md
+    at verifyPackagedMarkdownLinks (file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/scripts/build-runner-package.mjs:414:29)
+    at async file:///home/sandesh-tiwari/Desktop/C++/synapsor-runner/scripts/build-runner-package.mjs:387:1
+
+Node.js v22.22.2

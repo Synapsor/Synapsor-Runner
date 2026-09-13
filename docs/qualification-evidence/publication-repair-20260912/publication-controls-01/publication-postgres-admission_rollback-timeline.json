@@ -1,0 +1,19 @@
+{
+  "backend": "postgres",
+  "ordering": "admission_rollback",
+  "sequence": [
+    {
+      "event": "publication_committed",
+      "at": "2026-09-13T00:15:40.682Z",
+      "detail": {
+        "maximum": 3,
+        "digest": "sha256:ade7535fd210072513ecee0297d54f2b9af490a1b0851ff74efa08d87228a1dc",
+        "revision": {
+          "deployment_id": "8aaca3af-593f-4337-a12f-14510f2759a7",
+          "action_name": "billing_active_rules",
+          "revision_id": "policy:c7d9148a0cf242bcb6d23fe8bed1761cc945131fa75b968aa5068b371f45f4c2"
+        }
+      }
+    }
+  ]
+}

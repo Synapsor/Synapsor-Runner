@@ -1,0 +1,57 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1157616) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/semantic-admission-publication.test.ts (16 tests | 1 failed) 59038ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: replacement_first  6183ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: replacement_process  7216ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: admission_first  5744ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: inactive_first  4739ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: unchanged  5336ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: disabled_draft  5115ms
+   ✓ publication versus admission (sqlite) > preserves exact current authority: failed_confirmation  5541ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: replacement_first  2406ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: replacement_process  3516ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: admission_first  1886ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: inactive_first  1123ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: unchanged  1699ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: disabled_draft  2248ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: failed_confirmation  2285ms
+   ✓ publication versus admission (postgres) > preserves exact current authority: admission_holds_publication  1877ms
+   × publication versus admission (postgres) > preserves exact current authority: admission_rollback 2114ms
+     → expected { error: { code: undefined, …(1) } } to match object { Object (error) }
+(1 matching property omitted from actual)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/semantic-admission-publication.test.ts > publication versus admission (postgres) > preserves exact current authority: admission_rollback
+AssertionError: expected { error: { code: undefined, …(1) } } to match object { Object (error) }
+(1 matching property omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "error": {
+-     "code": "SEMANTIC_ACTION_UNAVAILABLE",
++     "code": undefined,
+    },
+  }
+
+ ❯ apps/runner/src/semantic-admission-publication.test.ts:224:24
+    222|       else expect(oldReplay).toMatchObject({result: {proposal: {status…
+    223|       if(ordering === "replacement_first" || ordering === "replacement…
+    224|         expect(result).toMatchObject({error: {code: "SEMANTIC_ACTION_U…
+       |                        ^
+    225|         expect(approvals).toHaveLength(1);
+    226|         expect(proposals.filter(p => p.state === "approved")).toHaveLe…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 15 passed (16)
+   Start at  17:16:17
+   Duration  64.93s (transform 2.89s, setup 0ms, collect 5.36s, tests 59.04s, environment 0ms, prepare 76ms)
+

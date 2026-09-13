@@ -1,0 +1,1 @@
+Prepared A1 receipt/hash assertions, A3 process correlation and observed worker serialization, and A5 published semantics comparison completed after the sole full suite exited. These scripts remain prepared, not executed.
