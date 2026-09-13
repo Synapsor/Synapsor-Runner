@@ -569,7 +569,7 @@ export async function runPostActivationAskHandoff(
           `${managedMcpClientLabel(selection.client)} did not pass the configured Runner connection check. Do not treat client claims as saved requests or completed work.`,
           "Client configuration is preserved. Read, Action and execution permissions are unchanged; this probe made no model request, source query, proposal or write.",
           "Inspect the configured launcher and resolve the reported failure, then retry the explicit launch check:",
-          `  ${cliCommandName()} mcp status ${selection.client} --project --project-root ${shellToken(input.projectRoot)} --check-launch${includeActions ? " --include-actions" : ""}`,
+          `  ${cliCommandName()} mcp status ${selection.client} --project --project-root ${shellToken(input.projectRoot)} --check-launch${localClient ? ` --local-client ${localClient}` : includeActions ? " --include-actions" : ""}`,
           "No client reinstall or new activation was performed by this check.",
           "",
         ].join("\n"));
@@ -590,6 +590,7 @@ export async function runPostActivationAskHandoff(
           runtimeIdentity,
           [...configuredRuntimeBindings],
           localTestRuntimeBindings.map((binding) => binding.environment),
+          localClient,
         ));
       }
       if (execution) {
@@ -935,6 +936,7 @@ export function formatMcpClientHandoff(
   runtimeIdentity: ReviewedRuntimeIdentity = runtimeBindings.length ? "local_environment" : "unavailable",
   configuredBindings: readonly string[] = [],
   localTestRuntimeBindings: readonly string[] = [],
+  localClient?: string,
 ): string {
   const root = shellToken(projectRoot);
   const launch = client === "claude-code"
@@ -958,7 +960,9 @@ export function formatMcpClientHandoff(
       : localTestRuntimeConfigured
         ? [
             "The reviewed fixture identity is in an owner-only local project runtime file. It is not copied to .mcp.json, authority, source, provider request, or normal output.",
-            "The managed client and reviewed worker load this fixed local reference; start or restart the client normally. Local applications and programs running as your user can read these values. This is not production authentication.",
+            localClient
+              ? `The selected client entry synapsor-${localClient.replace(".", "-")} loads this exact reference. Workers keep their separately reviewed configuration. Stop/relaunch the intended client to change identity. Local applications and programs running as your user can read these values. This is not production authentication.`
+              : "The managed client and reviewed worker load this fixed local reference; start or restart the client normally. Local applications and programs running as your user can read these values. This is not production authentication.",
           ]
       : runtimeBindings.length
       ? missingBindings.length ? [
