@@ -1,4 +1,6 @@
 import process from "node:process";
+import path from "node:path";
+import { reviewSemanticReceiptSetup } from "./semantic-receipt-setup.js";
 import { inspectDatabase } from "@synapsor-runner/schema-inspector";
 import { loadActivatedExplorationBoundaries, type ActivatedExplorationBoundary } from "./auto-boundary.js";
 import {
@@ -561,6 +563,15 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
   const dedicatedEnv = semanticDedicatedWriterEnvironment(input.outcome);
   let writeUrlEnv = (env[dedicatedEnv]?.trim() ? dedicatedEnv : undefined) ?? defaults?.write_url_env
     ?? (env.SYNAPSOR_DATABASE_WRITE_URL?.trim() ? "SYNAPSOR_DATABASE_WRITE_URL" : undefined);
+  try {
+    const selected = await reviewSemanticReceiptSetup({ ...input,
+      configPath: path.join(input.projectRoot, "synapsor.actions.runner.json"), writeUrlEnv: writeUrlEnv ?? dedicatedEnv });
+    if (!selected) return undefined;
+    if (selected.reviewed) writeUrlEnv = selected.writeUrlEnv;
+  } catch (error) {
+    const problem = executionSetupProblem(error);
+    return { tone: "danger", title: "Execution was not enabled.", lines: [problem.summary], problem };
+  }
   const workerIdentity = defaults ? defaults.worker_identity : "semantic_action_worker";
   let configured = Boolean(writeUrlEnv && env[writeUrlEnv]?.trim());
   if (configured && input.session.chooseOption) {
@@ -660,7 +671,7 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
             ["Writer role", preview.writer_role],
             ["Credential reference", preview.write_url_env],
             ["Worker identity", workerIdentity ?? "Not pinned by this policy"],
-            ["Receipts", "Runner ledger"],
+            ["Receipts", preview.receipts.authority === "source_db" ? `Source database: ${preview.receipts.schema}.${preview.receipts.table}` : "Runner ledger"],
             ["Concurrency", String(preview.policy.concurrency)],
             ["Queue / retries", `${preview.policy.queue_limit} / ${preview.policy.max_attempts}`],
             ["Rate", `${preview.policy.rate_limit.executions} per ${preview.policy.rate_limit.window_seconds}s`],

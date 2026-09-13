@@ -10,6 +10,8 @@ export type WriterProvisioningPlan = {
   read_env?: string;
   suggested_role: string;
   engine: string;
+  /** Planned existing receipt infrastructure; never evidence that it exists. */
+  receipt_setup?: { schema: string; table: string };
   relations: Array<NonNullable<SupervisedWriterPostureAssessment["required_relations"]>[number] & {
     schema: string; table: string;
     policies: NonNullable<SchemaInspection["tables"][number]["row_level_security_policies"]>;

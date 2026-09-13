@@ -71,6 +71,17 @@ import { recoverPolicyConfiguration } from "./control-policy-config-publication.
 import { reviewVerifiedActionAuthority } from "./verified-action-review.js";
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
+import { previewSemanticReceiptSelection, saveSemanticReceiptSelection } from "./semantic-receipt-setup.js";
+
+// Prepare the reviewed receipt prerequisite before each execution test's own
+// baseline and fault injection. Preview/recovery must never perform this review.
+async function reviewFixtureReceipts(input: { projectRoot: string; outcome: string; writeUrlEnv?: string; env?: NodeJS.ProcessEnv }) {
+  const selection = { projectRoot: input.projectRoot, outcome: input.outcome, env: input.env,
+    configPath: path.join(input.projectRoot, "synapsor.actions.runner.json"),
+    writeUrlEnv: input.writeUrlEnv ?? "SYNAPSOR_DATABASE_WRITE_URL", receipts: { authority: "runner_ledger" as const } };
+  const preview = await previewSemanticReceiptSelection(selection);
+  await saveSemanticReceiptSelection({ ...selection, confirmation: preview.confirmation });
+}
 
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
@@ -2778,6 +2789,8 @@ for (const backend of ["sqlite", "postgres"] as const) {
             expectedConfigDigest: preview.current_config_digest, expectedWriterPostureFingerprint: preview.writer_posture_fingerprint,
             confirmation: semanticExecutionConfirmation(preview) };
         };
+        await reviewFixtureReceipts(inputFor(0));
+        await reviewFixtureReceipts(inputFor(1));
         await enableSemanticSupervisedExecution(await reviewInput(0));
         await enableSemanticSupervisedExecution(await reviewInput(1));
         const oldExecution = await binding.repository.active(binding.deployment_id, OPERATOR_EXECUTION_POLICY);
@@ -2880,6 +2893,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
         inspection.tables[0]!.role_posture!.privileges.update = true;
         const input = { projectRoot, outcome: "inventory.replenish", profile: "staging" as const, writeUrlEnv: "WRITER_URL",
           env: { ...process.env, WRITER_URL: "postgresql://never-open-this-test-url" }, inspect: async () => inspection };
+        await reviewFixtureReceipts(input);
         const preview = await previewSemanticSupervisedExecution(input);
         expect(preview.policy_epoch).toBeDefined();
         const enable = { ...input, expectedActionBoundaryDigest: preview.action_boundary_digest,
@@ -3146,6 +3160,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
           inspection.tables[0]!.role_posture!.privileges.update = true;
           const input = { projectRoot, outcome: "inventory.replenish", profile: "staging" as const,
             env: { ...process.env, SYNAPSOR_DATABASE_WRITE_URL: "postgresql://fixture.invalid/not-used" }, inspect: async () => inspection };
+          await reviewFixtureReceipts(input);
           const preview = await previewSemanticSupervisedExecution(input);
           await enableSemanticSupervisedExecution({ ...input, expectedActionBoundaryDigest: preview.action_boundary_digest,
             expectedConfigDigest: preview.current_config_digest, expectedWriterPostureFingerprint: preview.writer_posture_fingerprint,
@@ -3213,6 +3228,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
         config.storage = storageConfig.storage ?? { sqlite_path: "./control.db" };
         await fs.writeFile(path.join(projectRoot, "synapsor.runner.json"), JSON.stringify(config));
         await activateSemanticActionRuntime({ projectRoot, draft, actor: "operator" });
+        await reviewFixtureReceipts({ projectRoot, outcome: "inventory.replenish", env: process.env });
         await deactivateExplorationBoundary(projectRoot, other.pack.name);
         const before = await binding.repository.deployment(binding.deployment_id);
         const inspection = structuredClone(source.inspection);
@@ -3272,6 +3288,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
         if (backend === "postgres") delete process.env.TEST_POLICY_URL;
         const input = { projectRoot, outcome: "inventory.replenish", profile: "staging" as const, writeUrlEnv: "WRITER_URL",
           env, inspect: async () => inspection };
+        await reviewFixtureReceipts(input);
         const preview = await previewSemanticSupervisedExecution(input);
         const commit = ControlPolicyRepository.prototype.commit;
         const lookup = ControlPolicyRepository.prototype.event;
@@ -3319,6 +3336,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
         inspection.tables[0]!.role_posture!.privileges.update = true;
         const input = { projectRoot, outcome: "inventory.replenish", profile: "staging" as const, writeUrlEnv: "WRITER_URL",
           env: { ...process.env, WRITER_URL: "postgresql://fixture.invalid/not-used" }, inspect: async () => inspection };
+        await reviewFixtureReceipts(input);
         async function reviewedInput() {
           const preview = await previewSemanticSupervisedExecution(input);
           return { ...input, expectedActionBoundaryDigest: preview.action_boundary_digest,

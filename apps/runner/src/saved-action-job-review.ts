@@ -69,3 +69,31 @@ export async function readSavedActionJobReview(input: {
       "No model request, permission change, source query or write occurs when viewing this status."],
   };
 }
+
+/** Exact saved deployment passages for operator setup. These are explanatory
+ * source statements, never executable requirements or permission to provision. */
+export async function readSavedExecutionRequirements(input: { projectRoot: string; boundaryName: string }) {
+  const { loadPolicySources, activePolicySource, policyTextLines } = await import("./authoring-policy-source.js");
+  let selected;
+  try { selected = (await readProjectReadAuthoring(input.projectRoot))?.selected; }
+  catch (error) {
+    if ((error as { code?: string }).code !== "POLICY_READ_AUTHORING_MISSING") throw error;
+  }
+  if (!selected || selected.progress.candidate.pack.name !== input.boundaryName) return { source_digest: null, passages: [] as string[] };
+  const saved = await readBoundaryAuthoringResumeState(input.projectRoot, {
+    boundary_name: input.boundaryName, generation_lock_fingerprint: selected.progress.candidate.generation_lock_fingerprint,
+    schema_fingerprint: selected.draft_lock.schema_fingerprint, role_posture_fingerprint: selected.draft_lock.role_posture_fingerprint,
+  });
+  if (saved.status === "none") return { source_digest: null, passages: [] as string[] };
+  if (saved.status !== "ready") throw new Error("SEMANTIC_RECEIPT_SAVED_REQUIREMENTS_STALE: Revalidate the saved job before reviewing its deployment requirements. No execution was enabled.");
+  if (!saved.value.policy_source_session) return { source_digest: null, passages: [] as string[] };
+  const session = await loadPolicySources(input.projectRoot, saved.value.policy_source_session);
+  const source = activePolicySource(session);
+  if (!source) return { source_digest: null, passages: [] as string[] };
+  const lines = policyTextLines(source.text);
+  const passages = session.coverage?.source_digest === source.digest
+    ? session.coverage.passages.filter(passage => passage.deployment_prerequisite === "runner_execution_setup") : [];
+  return { source_digest: source.digest,
+    passages: passages.length ? passages.map(passage => `Source lines ${passage.start}-${passage.end}: ${lines.slice(passage.start - 1, passage.end).join("\n")}`)
+      : [source.text] };
+}

@@ -19,6 +19,7 @@ import { runPostActivationAskHandoff } from "./post-activation-ask.js";
 import * as clientHandoff from "./post-activation-ask.js";
 import { main } from "./cli.js";
 import * as semanticDeployment from "./semantic-action-deployment.js";
+import { previewSemanticReceiptSelection, saveSemanticReceiptSelection } from "./semantic-receipt-setup.js";
 import { readPausedExecutionSetup } from "./semantic-execution-setup.js";
 import { terminalContentWidth, wrapStyledTerminalLine } from "./terminal-layout.js";
 import { buildBoundaryAuthoringResumeState, readBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
@@ -664,6 +665,10 @@ describe("public governed Action review", () => {
       choose: async (title, choices, context) => {
         if (choices.some((choice) => choice.value === "verified_action")) return homeVisits++ === 0 ? "verified_action" : "quit";
         if (title === "VERIFIED ACTION BOUNDARY") return mode === "activate" ? "activate" : "enable_execution:university.enroll";
+        if (title === "Review saved receipt setup") {
+          expect(context?.join("\n")).toContain('"authority":"runner_ledger"');
+          return "keep";
+        }
         if (title === "Check your write connection") return "check";
         expect(title).toBe("Execution needs a deployment fix");
         expect(context?.join("\n")).toContain("Private row-lock permissions are missing");
@@ -683,6 +688,13 @@ describe("public governed Action review", () => {
     expect(confirm).toHaveBeenCalledOnce();
     mode = "recover"; homeVisits = 0; confirm.mockClear();
     vi.stubEnv("SYNAPSOR_DATABASE_WRITE_URL", "postgresql://fixture.invalid/writer-not-used");
+    // This test pages an already-reviewed writer recovery. Prepare its exact
+    // receipt prerequisite before capturing the authority/configuration baseline.
+    const receiptInput = { projectRoot: root, configPath: path.join(root, "synapsor.actions.runner.json"),
+      outcome: "university.enroll", writeUrlEnv: "SYNAPSOR_DATABASE_WRITE_URL",
+      receipts: { authority: "runner_ledger" as const } };
+    const receiptPreview = await previewSemanticReceiptSelection(receiptInput);
+    await saveSemanticReceiptSelection({ ...receiptInput, confirmation: receiptPreview.confirmation });
     const active = await readActionRuleAuthorityActivation(root);
     expect(active).toBeDefined();
     const reads = await loadActivatedExplorationBoundaries(root);

@@ -937,6 +937,58 @@ worker repeats all guards before any later source mutation. Existing
 See [Operator-Supervised Automatic
 Apply](supervised-automatic-apply.md).
 
+## Receipt Setup For A Semantic Action
+
+After separate Read and Action activation, open `action review --project-root .`
+and select the outcome's execution setup. Review the saved deployment passages,
+then explicitly select **Runner ledger** or **Source database**. A source-atomic
+receipt requirement needs **Source database**. That mode uses the existing
+precreated receipt relation in the same database as the guarded changes. It does
+not provide cross-database atomicity.
+
+The operator confirms the exact outcome, source, writer environment reference,
+receipt schema and table. Saving this selection is a setup record in the existing
+project store: it does not modify active execution configuration, apply grants,
+or enable execution. Cancellation preserves the previous selection. Restart uses
+the same reviewed selection; a changed source/effect contract or saved deployment
+requirement requires renewed review. An ordinary limit edit preserves the mode.
+
+The same selection can be reviewed from the public command:
+
+```bash
+synapsor-runner writeback setup \
+  --config synapsor.actions.runner.json --outcome '<saved-outcome>' \
+  --receipt-mode source_db --write-url-env SYNAPSOR_DATABASE_WRITE_URL \
+  --schema synapsor_receipts --table synapsor_writeback_receipts --json
+```
+
+This previews a selection and prints `SAVE RECEIPT SETUP sha256:...`. Review the
+saved requirements and exact selection, then repeat with `--save-selection
+--confirm 'SAVE RECEIPT SETUP sha256:<exact-preview-digest>'`. Use
+`--receipt-mode runner_ledger` for a project whose reviewed requirement permits
+Runner-ledger receipts. Source database mode never silently falls back to that
+mode if prerequisites are missing.
+
+In execution setup, **Prepare administrator instructions** exports a narrow new
+writer plan. For source receipts it includes the existing receipt migration
+before grants to that writer. An authorized administrator separately reviews and
+applies `grants.sql` and any applicable scoped-policy handoff in the intended
+database. These commands grant no public Read access to receipt content. Keep
+administrator credentials out of the client and keep the reader unchanged.
+
+For an already-provisioned writer role, the generic preview/apply route below
+also handles semantic Actions. Pass the Action config and `--outcome` along with
+`--writer-role` and `--setup-url-env`. Preview never applies DDL. A successful
+administrator apply does not prove the effective writer or enable execution.
+
+Rescan through the reader after relevant schema/policy changes and revalidate
+the same saved job. At separate execution review, Runner checks the actual
+writer, receipt relation and a receipt insert/update rolled back by the existing
+adapter probe. Only the final execution confirmation publishes the mode with
+the governed execution configuration. Start a worker separately, then verify an
+actual business receipt and source readback. Privacy warnings, client identity
+and other unresolved prerequisites remain separate responsibilities.
+
 ## Guarded Development Writeback Setup
 
 Preview is always the default:

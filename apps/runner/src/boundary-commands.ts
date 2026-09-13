@@ -9200,6 +9200,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       } else writerPreflight = { key,
         summary: ["Writer preflight: configured permissions match the combined draft requirements. The selected per-outcome writer is rechecked during separate execution review; execution is not enabled."],
         details: ["Metadata-only draft writer check passed; no source rows read or changed.",
+          "Receipt mode is not verified by this draft check. Select the required mode during separate execution setup; source-atomic receipts require Source database mode.",
           `Action revision: ${checked.action_digest}`, `Writer posture: ${checked.assessment.fingerprint}`,
           JSON.stringify(checked.assessment.required_relations, null, 2)] };
     } catch (error) {

@@ -1144,6 +1144,7 @@ Call a generated semantic tool locally before wiring Claude, Cursor, or another 
 `,
     writeback: `Usage:
   ${cmd} writeback setup [--config ./synapsor.runner.json] [--source <name>] [--profile development|staging|production]
+  ${cmd} writeback setup --config synapsor.actions.runner.json --outcome <name> --receipt-mode runner_ledger|source_db --write-url-env <NAME> [--schema <name> --table <name>] [--save-selection --confirm "SAVE RECEIPT SETUP sha256:..."]
   ${cmd} writeback setup --apply --profile staging --confirm "APPLY WRITEBACK SETUP sha256:..." [--writer-role app_writer] [--setup-url-env APP_SETUP_DATABASE_URL]
   ${cmd} writeback doctor --config ./synapsor.runner.json [--check-db]
   ${cmd} writeback migration --engine postgres [--schema synapsor] [--table synapsor_writeback_receipts]

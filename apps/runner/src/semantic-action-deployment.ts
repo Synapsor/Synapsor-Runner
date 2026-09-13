@@ -1,10 +1,14 @@
 import fs from "node:fs/promises";
+import { inspectSemanticReceiptSetup, selectedSemanticReceipts, type SemanticReceiptMode } from "./semantic-receipt-setup.js";
+import { postgresAdapter } from "@synapsor-runner/postgres";
+import { mysqlAdapter } from "@synapsor-runner/mysql";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import {
   loadRuntimeConfigFromFile,
   resolveRuntimeConfig,
+  resolveSemanticSupervisedWriterSource,
   type RuntimeConfig,
   type RuntimeSupervisedWorkerOutcomePolicy,
 } from "@synapsor-runner/mcp-server";
@@ -74,6 +78,7 @@ export type SemanticSupervisedExecutionPreview = {
   writer_role: string;
   writer_posture_fingerprint: `sha256:${string}`;
   allowed_relations: string[];
+  receipts: SemanticReceiptMode;
   policy: RuntimeSupervisedWorkerOutcomePolicy;
   config: Record<string, unknown>;
   policy_epoch?: number;
@@ -124,6 +129,7 @@ export async function inspectDraftSemanticWriter(input: {
   writeUrlEnv?: string;
   outcome?: string;
   requirementsOnly?: boolean;
+  receipts?: SemanticReceiptMode;
   env?: NodeJS.ProcessEnv;
   inspect?: typeof inspectDatabase;
 }) {
@@ -142,7 +148,7 @@ export async function inspectDraftSemanticWriter(input: {
   // Actual per-outcome deployment still rechecks its selected credential separately.
   const sources = Object.fromEntries(executable.map(({ compiled }) => [compiled.source, {
     engine: input.engine, read_url_env: environmentName(input.readUrlEnv), write_url_env: writeUrlEnv,
-    read_only: false, receipts: { authority: "runner_ledger" },
+    read_only: false, receipts: input.receipts ?? { authority: "runner_ledger" },
   }]));
   if (Object.keys(sources).length !== 1) throw new Error("SEMANTIC_ACTION_WRITER_SOURCE_MISMATCH: select and verify a writer for each source during execution setup.");
   const outcomes = new Set(executable.map(({ compiled }) => compiled.outcome));
@@ -169,8 +175,10 @@ export async function inspectDraftSemanticWriter(input: {
     reasons: ["writer_connection_not_checked"], relation_issues: [] };
   const plan = writerProvisioningPlan({ assessment, inspection, outcome: policies[0]!.outcome,
     outcomes: policies.map((policy) => policy.outcome),
-    actionDigest: authority.action_boundary.digest, writerEnv: writeUrlEnv, readEnv: input.readUrlEnv });
+    actionDigest: authority.action_boundary.digest, writerEnv: writeUrlEnv, readEnv: input.readUrlEnv,
+    ...(input.receipts?.authority === "source_db" ? { receiptSetup: { schema: input.receipts.schema, table: input.receipts.table } } : {}) });
   return { assessment, outcomes: policies.map((policy) => policy.outcome),
+    receipt_status: input.receipts ? "selected_not_verified" as const : "selection_required" as const,
     writer_status: writerConfigured ? "checked" as const : "not_checked" as const,
     inspected_connection_env: inspectionEnv,
     action_digest: authority.action_boundary.digest, collection_issues: collectionIssues, rls_issues: rlsIssues, ...(plan ? { plan } : {}) };
@@ -196,7 +204,9 @@ export async function prepareSemanticWriterHandoff(input: {
     && policy.write_url_env === requestedEnv);
   const writeUrlEnv = requestedEnv && !usedByAnother && requestedEnv !== source.read_url_env
     ? requestedEnv : semanticDedicatedWriterEnvironment(input.outcome);
-  const result = await inspectDraftSemanticWriter({ draft: active.activation, reads: input.reads,
+  const receiptSetup = await inspectSemanticReceiptSetup({ projectRoot: input.projectRoot, configPath, outcome: input.outcome, env: input.env });
+  const receipts = receiptSetup?.epoch !== undefined ? selectedSemanticReceipts(receiptSetup, writeUrlEnv) : undefined;
+  const result = await inspectDraftSemanticWriter({ draft: active.activation, reads: input.reads, receipts,
     engine: source.engine, readUrlEnv: source.read_url_env, writeUrlEnv,
     outcome: input.outcome, requirementsOnly: true, env: input.env, inspect: input.inspect });
   if (!result?.plan) throw new Error("SEMANTIC_ACTION_WRITER_HANDOFF_UNAVAILABLE: complete administrator instructions could not be derived for this database. Exact execution requirements remain available; no grant or execution was enabled.");
@@ -404,9 +414,12 @@ export async function previewSemanticSupervisedExecution(input: {
       `SEMANTIC_ACTION_WRITER_ENGINE_MISMATCH: ${writeUrlEnv} resolved to ${inspection.engine}, but ${activated.compiled.source} is ${String(source.engine)}.`,
     );
   }
+  const receiptSetup = await inspectSemanticReceiptSetup({ projectRoot, configPath, outcome: input.outcome, env });
+  const receipts = receiptSetup?.epoch !== undefined ? selectedSemanticReceipts(receiptSetup, writeUrlEnv) : undefined;
   const fingerprint = rolePostureFingerprint(inspection);
   const nextConfig = semanticSupervisedExecutionConfig({
     sourceConfig: currentConfig,
+    receipts,
     activation: active.activation,
     outcome: input.outcome,
     profile: input.profile,
@@ -437,10 +450,32 @@ export async function previewSemanticSupervisedExecution(input: {
     throw new SemanticWriterPostureError(assessment, writeUrlEnv, writerProvisioningPlan({ assessment: dedicated, inspection,
       outcome: input.outcome, outcomes: [input.outcome], actionDigest: active.authority.action_boundary.digest,
       writerEnv: semanticDedicatedWriterEnvironment(input.outcome),
-      readEnv: typeof source.read_url_env === "string" ? source.read_url_env : undefined }));
+      readEnv: typeof source.read_url_env === "string" ? source.read_url_env : undefined,
+      ...(receipts?.authority === "source_db" ? { receiptSetup: { schema: receipts.schema, table: receipts.table } } : {}) }));
+  }
+  const selectedSource = resolveSemanticSupervisedWriterSource(nextConfig as RuntimeConfig, activated.compiled.source, policy)!;
+  const selectedReceipts = selectedSource.receipts ?? { authority: "runner_ledger" as const };
+  if (selectedReceipts.authority === "source_db") {
+    const relation = inspection.tables.find(table => table.schema === selectedReceipts.schema && table.name === selectedReceipts.table);
+    const required = ["idempotency_key", "job_id", "proposal_id", "status", "result_hash", "completed_at", "semantic_verification_json"];
+    if (!relation || required.some(name => !relation.columns?.some(column => column.name === name))
+      || relation.primary_key?.length !== 1 || relation.primary_key[0] !== "idempotency_key"
+      || source.engine === "postgres" && relation.columns.find(column => column.name === "semantic_verification_json")?.data_type !== "jsonb") {
+      throw new Error("SEMANTIC_RECEIPT_OBJECT_INVALID: The selected source receipt relation does not have the required engine columns and idempotency primary key. Review the exact writeback setup migration; execution was not enabled.");
+    }
+    // Existing adapter probe writes only a receipt diagnostic inside ROLLBACK.
+    // Metadata/grants alone cannot prove the required relation accepts receipts.
+    const checked = await (source.engine === "postgres" ? postgresAdapter : mysqlAdapter).doctor({
+      controlPlaneUrl: "local", runnerToken: "local", runnerId: "semantic-receipt-review", sourceId: activated.compiled.source,
+      engine: source.engine, databaseUrl: env[writeUrlEnv]!, receipts: selectedReceipts,
+      pollIntervalMs: 0, statementTimeoutMs: positiveInteger(source.statement_timeout_ms) ?? 5_000,
+      logLevel: "error", dryRun: true, stateDir: "./state",
+    });
+    if (!checked.ok) throw new Error("SEMANTIC_RECEIPT_NOT_VERIFIED: The effective writer could not verify the required source receipt relation. Apply the reviewed setup and inspect the current writer before execution review.");
   }
   await validateRuntimeConfig(nextConfig, configPath);
   return {
+    receipts: selectedReceipts as SemanticReceiptMode,
     outcome: input.outcome,
     action_boundary_digest: active.authority.action_boundary.digest,
     config_path: projectRelativePath(projectRoot, configPath),
@@ -745,6 +780,7 @@ export function semanticSupervisedExecutionConfig(input: {
   writeUrlEnv: string;
   writerPostureFingerprint: `sha256:${string}`;
   workerIdentity?: string;
+  receipts?: SemanticReceiptMode;
 }): Record<string, unknown> {
   const config = structuredClone(input.sourceConfig);
   const sourceRule = input.activation.authority.rules.find((candidate) => candidate.rule.outcome === input.outcome);
@@ -764,7 +800,12 @@ export function semanticSupervisedExecutionConfig(input: {
     : sourceName;
   source.read_only = false;
   source.write_url_env = writeUrlEnv;
-  source.receipts = { authority: "runner_ledger" };
+  const receipts = input.receipts ?? source.receipts ?? { authority: "runner_ledger" };
+  const otherWriters = (config as RuntimeConfig).supervised_worker?.outcomes?.filter(policy => policy.outcome !== input.outcome && policy.write_url_env === writeUrlEnv) ?? [];
+  if (otherWriters.length && canonicalJsonDigest(receipts) !== canonicalJsonDigest(source.receipts ?? { authority: "runner_ledger" })) {
+    throw new Error("SEMANTIC_RECEIPT_SHARED_WRITER_CONFLICT: Choose a dedicated writer reference before changing this outcome's receipt mode. Other reviewed outcomes remain unchanged.");
+  }
+  source.receipts = receipts;
   if (writerSourceName !== sourceName && sources[writerSourceName]
     && canonicalJsonDigest(sources[writerSourceName]) !== canonicalJsonDigest(source)) {
     throw new Error("SEMANTIC_ACTION_WRITER_SOURCE_CONFLICT: the configured writer alias no longer matches the reviewed source binding");

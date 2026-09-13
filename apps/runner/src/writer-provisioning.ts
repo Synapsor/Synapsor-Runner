@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { formatPostgresReceiptMigration } from "./onboarding.js";
 import path from "node:path";
 import { createHash } from "node:crypto";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
@@ -11,11 +12,18 @@ export type { WriterProvisioningPlan } from "./writer-provisioning-types.js";
 export function writerProvisioningPlan(input: {
   assessment: SupervisedWriterPostureAssessment; inspection: SchemaInspection;
   outcome: string; outcomes?: string[]; actionDigest: string; writerEnv: string; readEnv?: string;
+  receiptSetup?: WriterProvisioningPlan["receipt_setup"];
 }): WriterProvisioningPlan | undefined {
   if (input.inspection.engine !== "postgres" || !input.assessment.required_relations?.length) return undefined;
   const relations: WriterProvisioningPlan["relations"] = [];
   for (const required of input.assessment.required_relations) {
     const table = input.inspection.tables.find((entry) => `${entry.schema}.${entry.name}` === required.relation);
+    if (!table && input.receiptSetup && required.relation === `${input.receiptSetup.schema}.${input.receiptSetup.table}`
+      && !required.rls_required && !required.row_scope?.length && !required.update_columns.length && !required.lock_column
+      && required.privileges.every(privilege => ["select", "insert", "update"].includes(privilege))) {
+      relations.push({ ...required, ...input.receiptSetup, policies: [], triggers: [] });
+      continue;
+    }
     if (!table || table.type !== "table" || !required.privileges.every((value) => ["select", "insert", "update"].includes(value))) return undefined;
     const columns = new Set(table.columns.map((column) => column.name));
     if ([...required.update_columns, ...(required.lock_column ? [required.lock_column] : [])].some((column) => !columns.has(column))) return undefined;
@@ -34,7 +42,7 @@ export function writerProvisioningPlan(input: {
     : readEnv !== "SYNAPSOR_DATABASE_WRITE_URL" ? "SYNAPSOR_DATABASE_WRITE_URL" : "SYNAPSOR_EXECUTION_DATABASE_URL";
   return { version: 1, outcome: input.outcome, ...(input.outcomes ? { outcomes: [...input.outcomes].sort() } : {}), action_digest: input.actionDigest, writer_env: writerEnv, read_env: readEnv,
     suggested_role: `runner_writer_${createHash("sha256").update(input.actionDigest + input.outcome).digest("hex").slice(0, 12)}`,
-    engine: input.inspection.engine, relations };
+    engine: input.inspection.engine, relations, ...(input.receiptSetup ? { receipt_setup: input.receiptSetup } : {}) };
 }
 
 const identifier = (value: string) => `"${value.replaceAll('"', '""')}"`;
@@ -52,6 +60,10 @@ export function writerProvisioningSql(plan: WriterProvisioningPlan): string {
     "\\set ON_ERROR_STOP on", "BEGIN;", "SET LOCAL lock_timeout = '5s';", "SET LOCAL statement_timeout = '30s';",
     `CREATE ROLE ${role} NOLOGIN NOINHERIT NOSUPERUSER NOCREATEDB NOCREATEROLE NOREPLICATION NOBYPASSRLS;`,
     `DO $runner_connect$ BEGIN EXECUTE format('GRANT CONNECT ON DATABASE %I TO %I', current_database(), '${plan.suggested_role}'); END $runner_connect$;`,
+    ...(plan.receipt_setup ? [
+      "-- Reviewed source receipt infrastructure only; receipt storage is not a public Read permission.",
+      formatPostgresReceiptMigration(plan.receipt_setup.schema, plan.receipt_setup.table),
+    ] : []),
     ...[...new Set(plan.relations.map((relation) => relation.schema))].map((schema) => `GRANT USAGE ON SCHEMA ${identifier(schema)} TO ${role};`),
     ...plan.relations.flatMap((relation) => {
       const table = `${identifier(relation.schema)}.${identifier(relation.table)}`;
@@ -96,6 +108,7 @@ export async function exportWriterProvisioning(projectRoot: string, plan: Writer
   await write("README.md", [
     "# Dedicated Writer Review", "", `Outcomes: ${(plan.outcomes ?? [plan.outcome]).join(", ")}`, `Action revision: ${plan.action_digest}`, "",
     "This export is a deployment plan, not execution permission. No database command has run.",
+    ...(plan.receipt_setup ? [`Selected source receipt: ${plan.receipt_setup.schema}.${plan.receipt_setup.table}. grants.sql includes the existing receipt migration before narrow writer grants. This is a preview, not proof that the objects or writer work. No Read access to receipt content is granted. Re-inspection and a rollback receipt probe remain required before execution review.`, ""] : []),
     "1. An authorized database administrator reviews requirements.json: exact effect columns, private locking columns, current RLS policies and triggers.",
     "2. Review grants.sql. It creates only a new NOLOGIN role with the exact relation privileges. Existing role names cause a transaction rollback; never replace a shared role.",
     "3. Provision scoped policies and required helper-function access for the new role. Policy predicates cannot be inferred safely for an arbitrary database. Do not disable RLS, inherit the shared writer, or grant source receipt tables not listed in requirements.json.",

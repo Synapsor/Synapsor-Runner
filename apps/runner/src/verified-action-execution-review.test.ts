@@ -9,6 +9,10 @@ import { enableSemanticSupervisedExecution, previewSemanticSupervisedExecution, 
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 import type { WriterProvisioningPlan } from "./writer-provisioning.js";
 
+// This unit suite isolates writer-recovery choices. The real receipt selection,
+// persistence and review route have composed coverage in semantic-receipt-setup.test.ts.
+vi.mock("./semantic-receipt-setup.js", () => ({ reviewSemanticReceiptSetup: vi.fn(async (input) => ({ writeUrlEnv: input.writeUrlEnv, reviewed: false })) }));
+
 vi.mock("./semantic-action-deployment.js", async (original) => ({
   ...await original<typeof import("./semantic-action-deployment.js")>(),
   previewSemanticSupervisedExecution: vi.fn(), enableSemanticSupervisedExecution: vi.fn(),
@@ -34,7 +38,7 @@ describe("guided execution recovery", () => {
     const input = { projectRoot: root, outcome: "inventory.replenish", activeReads: [], session, env: {},
       active: { authority: { rules: [], action_boundary: { digest: `sha256:${"a".repeat(64)}` } } } } as unknown as Parameters<typeof reviewSemanticSupervisedExecution>[0];
     vi.mocked(previewSemanticSupervisedExecution).mockResolvedValue({
-      outcome: input.outcome, operation: "insert", target: "inventory.requests", writer_role: "bounded_writer",
+      receipts: { authority: "runner_ledger" }, outcome: input.outcome, operation: "insert", target: "inventory.requests", writer_role: "bounded_writer",
       write_url_env: "SYNAPSOR_DATABASE_WRITE_URL", policy: { concurrency: 1, queue_limit: 10, max_attempts: 2,
         rate_limit: { executions: 10, window_seconds: 60 } },
     } as Awaited<ReturnType<typeof previewSemanticSupervisedExecution>>);

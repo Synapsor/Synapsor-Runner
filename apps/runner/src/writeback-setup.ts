@@ -44,6 +44,7 @@ import {
 } from "./terminal-syntax.js";
 import { formatSourceReceiptMode, hashReceipt, receiptTableGuidance, runnerReceiptConfig, sourceNeedsSqlWriteback, writebackDatabaseScope, writebackTimeoutMs } from "./writeback-domain.js";
 import { resolveSqlWriteDatabaseUrl } from "./writeback-execution.js";
+import { inspectSemanticReceiptSetup, previewSemanticReceiptSelection, saveSemanticReceiptSelection, selectedSemanticReceipts, type SemanticReceiptMode } from "./semantic-receipt-setup.js";
 import { withPreservedCleanup } from "./resource-lifecycle.js";
 
 
@@ -497,12 +498,16 @@ type WritebackSetupPlan = {
 };
 
 
-async function writebackSetup(args: string[]): Promise<number> {
+export async function writebackSetup(args: string[]): Promise<number> {
   assertKnownOptions(args, new Set([
     "--config",
     "--source",
     "--profile",
     "--writer-role",
+    "--outcome",
+    "--receipt-mode",
+    "--write-url-env",
+    "--save-selection",
     "--setup-url-env",
     "--schema",
     "--table",
@@ -513,8 +518,44 @@ async function writebackSetup(args: string[]): Promise<number> {
   const configPath = runnerConfigPath(args, defaultConfigPath);
   const config = await readRuntimeConfig(configPath);
   const profile = await writebackSetupProfile(args, configPath);
-  const directSources = Object.entries(config.sources ?? {})
+  const semantic = await inspectSemanticReceiptSetup({ projectRoot: path.dirname(configPath), configPath,
+    outcome: optionalArg(args, "--outcome"), env: process.env });
+  const requestedMode = optionalArg(args, "--receipt-mode");
+  if (requestedMode || args.includes("--save-selection")) {
+    if (!semantic || !["runner_ledger", "source_db"].includes(requestedMode ?? "")) {
+      throw new Error("Receipt selection requires a current semantic outcome and --receipt-mode runner_ledger or source_db.");
+    }
+    if (args.includes("--apply")) throw new Error("Save the reviewed receipt selection separately before applying administrator setup.");
+    const receipts: SemanticReceiptMode = requestedMode === "runner_ledger" ? { authority: "runner_ledger" }
+      : { authority: "source_db", provisioning: "precreated", schema: optionalArg(args, "--schema") ?? "public",
+        table: optionalArg(args, "--table") ?? "synapsor_writeback_receipts" };
+    const input = { projectRoot: path.dirname(configPath), configPath, outcome: semantic.outcome, receipts,
+      writeUrlEnv: optionalArg(args, "--write-url-env") ?? semantic.selection?.write_url_env ?? "SYNAPSOR_DATABASE_WRITE_URL", env: process.env };
+    const preview = await previewSemanticReceiptSelection(input);
+    const saved = args.includes("--save-selection")
+      ? await saveSemanticReceiptSelection({ ...input, confirmation: optionalArg(args, "--confirm") ?? "" }) : undefined;
+    const result = { ok: true, saved: Boolean(saved), selection: preview.selection, digest: preview.digest,
+      requirements: preview.requirements, confirmation: preview.confirmation, source_database_changed: false, execution_enabled: false,
+      next_action: saved ? "Export writeback setup for this outcome; provision only after administrator approval, re-inspect and separately review execution."
+        : "Review these saved deployment requirements and the exact receipt mode. Use --save-selection --confirm with this exact confirmation. No receipt objects, grants or execution have been verified." };
+    process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
+    return 0;
+  }
+  const directSources: Array<[string, RunnerSourceConfig]> = Object.entries(config.sources ?? {})
     .filter(([sourceName]) => sourceNeedsSqlWriteback(config, sourceName));
+  if (semantic) {
+    const receipts = selectedSemanticReceipts(semantic);
+    const staged: RunnerSourceConfig = { ...semantic.source, write_url_env: semantic.selection!.write_url_env, receipts };
+    const prior = directSources.findIndex(([name]) => name === semantic.source_name);
+    if (prior >= 0) directSources.splice(prior, 1);
+    directSources.push([semantic.source_name, staged]);
+  }
+  if (semantic?.selection?.receipts.authority === "source_db") {
+    for (const name of ["schema", "table"] as const) {
+      const override = optionalArg(args, `--${name}`);
+      if (override && override !== semantic.selection.receipts[name]) throw new Error("SEMANTIC_RECEIPT_SELECTION_CHANGED: Review and save the different receipt binding before provisioning it.");
+    }
+  }
   const requestedSource = optionalArg(args, "--source");
   const selected = requestedSource
     ? directSources.find(([sourceName]) => sourceName === requestedSource)
@@ -872,10 +913,19 @@ async function writebackDoctor(args: string[]): Promise<number> {
   const config = await readRuntimeConfig(configPath);
   const color = terminalSyntaxColorEnabled();
   const checkDb = args.includes("--check-db");
-  const sqlSources = Object.entries(config.sources ?? {})
+  const semantic = await inspectSemanticReceiptSetup({ projectRoot: path.dirname(configPath), configPath,
+    outcome: optionalArg(args, "--outcome"), env: process.env });
+  const sqlSources: Array<[string, RunnerSourceConfig]> = Object.entries(config.sources ?? {})
     .filter(([sourceName]) => sourceNeedsSqlWriteback(config, sourceName));
+  if (semantic) {
+    const receipts = selectedSemanticReceipts(semantic);
+    const prior = sqlSources.findIndex(([name]) => name === semantic.source_name);
+    if (prior >= 0) sqlSources.splice(prior, 1);
+    sqlSources.push([semantic.source_name, { ...semantic.source, receipts, write_url_env: semantic.selection!.write_url_env }]);
+  }
   const lines = [
     "Synapsor writeback doctor",
+    ...(semantic ? ["Checks the staged reviewed receipt selection. This does not enable execution or prove business/source-policy readiness."] : []),
     `Config: ${configPath}`,
     "",
   ];
