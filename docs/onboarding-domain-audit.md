@@ -18,8 +18,9 @@ identity startup was blocked by the reviewed-identity guard; the overall fixture
 was extended only with a third-insurer portfolio and three claims, but its accounting
 race was NOT RUN. No product changes or new review machinery were introduced.
 
-See [the complete continuation report](qualification-evidence/approval-time-stage-a-20260912/verification-report.md)
-and [the exact issue requiring the next repair decision](qualification-evidence/approval-time-stage-a-20260912/publication-finding.md).
+The repository-only evidence (not distributed in the npm package) is saved at
+`docs/qualification-evidence/approval-time-stage-a-20260912/verification-report.md`
+and `docs/qualification-evidence/approval-time-stage-a-20260912/publication-finding.md`.
 These results supersede earlier availability statements, while the historical
 milestones, failed qualification, original queues and evidence below remain intact.
 
