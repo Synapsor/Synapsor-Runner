@@ -1,0 +1,183 @@
+{
+  "at": "2026-09-13T07:57:07.308Z",
+  "classification": "fixture-only; no onboarding or Stage B runtime execution",
+  "results": [
+    {
+      "case": "tournament-ratification",
+      "database": "stageb_tournament_ratification",
+      "classification": "source-owner synthetic fixture inspection, not installed/model qualification",
+      "status": "passed_fixture_structure_only",
+      "candidate_tree": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+      "tables": [
+        {
+          "relname": "events",
+          "relrowsecurity": true,
+          "relforcerowsecurity": true
+        },
+        {
+          "relname": "results",
+          "relrowsecurity": true,
+          "relforcerowsecurity": true
+        }
+      ],
+      "foreignKeys": [
+        {
+          "conname": "results_event_id_tenant_id_principal_id_fkey",
+          "condeferrable": false,
+          "condeferred": false,
+          "convalidated": true,
+          "pairs": 3,
+          "definition": "FOREIGN KEY (event_id, tenant_id, principal_id) REFERENCES tournament_ops.events(event_id, tenant_id, principal_id)"
+        }
+      ],
+      "primaryKeys": [
+        {
+          "resource": "tournament_ops.events",
+          "columns": 1
+        },
+        {
+          "resource": "tournament_ops.results",
+          "columns": 1
+        }
+      ],
+      "readerRole": {
+        "rolname": "tournament_trial_reader",
+        "rolsuper": false,
+        "rolbypassrls": false,
+        "rolcreatedb": false,
+        "rolcreaterole": false,
+        "rolinherit": false
+      },
+      "source_rows_unchanged": true,
+      "counts": {
+        "primary": {
+          "events": 2,
+          "results": 24
+        },
+        "colleague": {
+          "events": 2,
+          "results": 24
+        },
+        "second-org": {
+          "events": 2,
+          "results": 24
+        },
+        "third-org": {
+          "events": 2,
+          "results": 24
+        }
+      },
+      "initial_automatic_eligible_subjects": {
+        "primary": 18,
+        "colleague": 18,
+        "second-org": 18,
+        "third-org": 18
+      },
+      "three_organizations": true,
+      "different_principals_in_first_organization": true,
+      "canonical_budget": "NOT_CREATED: must be one project ledger, checked after reviewed public setup",
+      "runner_authority_created": false,
+      "installed_public_context_checks": "NOT_RUN",
+      "source_owner_version_maintenance": "declared fixture-owner contract; no claim about untested external writers"
+    },
+    {
+      "case": "software-release-sealing",
+      "database": "stageb_software_release_sealing",
+      "classification": "source-owner synthetic fixture inspection, not installed/model qualification",
+      "status": "passed_fixture_structure_only",
+      "candidate_tree": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+      "tables": [
+        {
+          "relname": "build_candidates",
+          "relrowsecurity": true,
+          "relforcerowsecurity": true
+        },
+        {
+          "relname": "build_checks",
+          "relrowsecurity": true,
+          "relforcerowsecurity": true
+        },
+        {
+          "relname": "release_slots",
+          "relrowsecurity": true,
+          "relforcerowsecurity": true
+        }
+      ],
+      "foreignKeys": [
+        {
+          "conname": "build_candidates_slot_id_tenant_id_principal_id_fkey",
+          "condeferrable": false,
+          "condeferred": false,
+          "convalidated": true,
+          "pairs": 3,
+          "definition": "FOREIGN KEY (slot_id, tenant_id, principal_id) REFERENCES release_ops.release_slots(slot_id, tenant_id, principal_id)"
+        },
+        {
+          "conname": "build_checks_candidate_id_tenant_id_principal_id_fkey",
+          "condeferrable": false,
+          "condeferred": false,
+          "convalidated": true,
+          "pairs": 3,
+          "definition": "FOREIGN KEY (candidate_id, tenant_id, principal_id) REFERENCES release_ops.build_candidates(candidate_id, tenant_id, principal_id)"
+        }
+      ],
+      "primaryKeys": [
+        {
+          "resource": "release_ops.build_candidates",
+          "columns": 1
+        },
+        {
+          "resource": "release_ops.build_checks",
+          "columns": 1
+        },
+        {
+          "resource": "release_ops.release_slots",
+          "columns": 1
+        }
+      ],
+      "readerRole": {
+        "rolname": "release_trial_reader",
+        "rolsuper": false,
+        "rolbypassrls": false,
+        "rolcreatedb": false,
+        "rolcreaterole": false,
+        "rolinherit": false
+      },
+      "source_rows_unchanged": true,
+      "counts": {
+        "primary": {
+          "release_slots": 29,
+          "build_candidates": 29,
+          "build_checks": 68
+        },
+        "colleague": {
+          "release_slots": 29,
+          "build_candidates": 29,
+          "build_checks": 68
+        },
+        "second-org": {
+          "release_slots": 29,
+          "build_candidates": 29,
+          "build_checks": 68
+        },
+        "third-org": {
+          "release_slots": 29,
+          "build_candidates": 29,
+          "build_checks": 68
+        }
+      },
+      "initial_automatic_eligible_subjects": {
+        "primary": 20,
+        "colleague": 20,
+        "second-org": 20,
+        "third-org": 20
+      },
+      "three_organizations": true,
+      "different_principals_in_first_organization": true,
+      "canonical_budget": "NOT_CREATED: must be one project ledger, checked after reviewed public setup",
+      "runner_authority_created": false,
+      "installed_public_context_checks": "NOT_RUN",
+      "source_owner_version_maintenance": "declared fixture-owner contract; no claim about untested external writers"
+    }
+  ]
+}

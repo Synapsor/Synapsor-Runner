@@ -1,0 +1,8 @@
+{
+  "at": "2026-09-13T08:07:43.848998+00:00",
+  "container": "synapsor-stageb-fixtures-14689edf",
+  "id": "00fe6b240f4e4f67e3e40e735267f079bd219cf1faac99d5eed0cd9a441b90da",
+  "start_exit": 0,
+  "source_rows_altered": false,
+  "reason": "External acceptance arrived after preparation stop; resume the same owned empty-project fixture, no new case or budget reset"
+}

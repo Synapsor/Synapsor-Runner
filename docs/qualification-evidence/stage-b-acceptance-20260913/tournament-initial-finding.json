@@ -1,0 +1,18 @@
+{
+  "at": "2026-09-13T08:19:16.760815+00:00",
+  "case": "tournament-ratification",
+  "classification": "public model-assisted setup blocked while saving ordinary business clarification; not a CLI nonzero exit or an admission race",
+  "actual_cli_exit": 0,
+  "expected": "Save the organization/person business meaning and continue current policy review without recording concrete identity values",
+  "actual": "ACTION_CHECKPOINT_NOT_SAVED: BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED: concrete tenant or principal values cannot be saved in Boundary-authoring state",
+  "exact_answer": "Yes. Each tenant is exactly one league, and each principal is an assigned referee within that league. Referees in the same league share the limit of two automatic ratifications in the rolling 24 hours; all leagues share the overall limit of six.",
+  "actual_reviewed_identity_values_present_in_answer": false,
+  "policy_changed": false,
+  "source_effects": 0,
+  "requests_or_approvals": 0,
+  "cause": "not traced; cannot infer the triggering serialized field solely from message",
+  "relation_to_known_scope_finding": "Not a demonstrated tenant/principal misbinding or zero-row runtime result. Conventional columns used; Finding 8 remains separate and untested at runtime.",
+  "preserved_original": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases/tournament-ratification/checkpoints/unaided-clarification-refusal",
+  "unaided_model_completion": "BLOCKED",
+  "next": "One explicitly labelled assisted continuation; existing public resume and short ordinary confirmation only; no code, authority injection, or fixture changes"
+}

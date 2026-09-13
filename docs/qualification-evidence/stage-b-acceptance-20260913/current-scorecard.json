@@ -1,0 +1,284 @@
+{
+  "at": "2026-09-13T09:01:42.511381+00:00",
+  "candidate_tree": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+  "stage_a_reported_result": "PASSED named local matrix on unchanged prior build; historical report retained",
+  "stage_a_acceptance_review": "ACCEPTED_NO_MATERIAL_BLOCKER",
+  "independent_result_received": true,
+  "new_setup_dependency": "New named setup was independently exercised for two clients, shared allowance and future-launch retirement. Connected-context continuity remains implementer evidence only.",
+  "stage_b": "NOT_PASSED: two-case attempt complete; both stopped before activation",
+  "prerequisites": {
+    "artifact_identity": "PASSED implementer exact verification",
+    "authoring_provider": "PASSED neutral gpt-5.6-terra request",
+    "runtime_client": "PASSED neutral Claude Code 2.1.270 / claude-opus-5 MCP tool call",
+    "supported_envelope": "DECLARED BEFORE SELECTION",
+    "two_cases": "FROZEN",
+    "fixture_structure": "PASSED source-owner inspection only"
+  },
+  "cases": [
+    {
+      "case": "tournament-ratification",
+      "title": "League best-of-three result ratification",
+      "fixture_tree": "843ec6d9f876e5b141f944a3eef52c2b85bcd2d65a04fdf04b8f638c5f78f02e",
+      "initial_authoring": "FAILED checkpoint save after planned pause/resume",
+      "functional_correctness": "NOT_ESTABLISHED; no activated runtime",
+      "model_assisted_completion": "FAILED UNAIDED; one labelled assisted resume also stopped",
+      "ux_measurements": "trial-measurements.json",
+      "assistance": "Same fixture author/coordinator/operator, fresh project/HOME/provider conversation. One labelled public resume assistance attempt; no product-source advice, AST, internal setter or policy/source repair.",
+      "requirements": [
+        {
+          "requirement": "model-assisted initial draft preserves complete policy",
+          "status": "INCOMPLETE",
+          "reason": "Disabled draft produced but final complete-policy review and operational prerequisites not established"
+        },
+        {
+          "requirement": "disabled authority verified before review",
+          "status": "PASSED",
+          "reason": "Public disabled summary and saved draft agree; only management current pointers, no enabled Read/Action authority; zero proposals, approvals, queue and receipts"
+        },
+        {
+          "requirement": "exact Read/Action review",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "narrow writer/admin/rescan/execution prerequisites",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "reviewed local identity, own read and four-tool runtime client",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "actual execution, stored canonical receipt, independent readback",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "valid human review with separate supervisor approval",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "invalid/held requests: no automatic approval or source effects",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "private rows/filter/sort/group/aggregate refusal; private sentinels absent from provider transcript",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "own and inappropriate reviewed contexts with normal refs; actual rejection layer reported",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "changed-fact coordination using legitimate owner update plus maintained version; source control remains invalid",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "real contention measured at product/source coordination, exact durable outcomes",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "ordinary-language automatic edit, exact semantic meaning and retained unrelated rules/history",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "same connected runtime client current behavior",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "old unstarted work current-authority guard",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "planned saved onboarding or model-edit interruption and resume",
+          "status": "PARTIAL_FAILED",
+          "reason": "Normal saved pause/resume retained rules/client/pending scope question; then ordinary clarification could not be saved. Overall resume journey failed."
+        },
+        {
+          "requirement": "ordinary-language add behavior, reviewed execution/pending control",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "ordinary-language removal preserves other behavior/read/history and refuses old unstarted dispatch",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "Known concrete identity/private fixture values absent from captured authoring inputs/outputs",
+          "status": "PASSED_CAPTURE_SCAN",
+          "reason": "Known-value scan passed; tournament response-body capture missing and explicitly limited. This is not runtime privacy/analytics coverage."
+        }
+      ],
+      "initial_finding": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/stage-b-acceptance-20260913/tournament-initial-finding.json"
+    },
+    {
+      "case": "software-release-sealing",
+      "title": "Software build sealing and release-slot consumption",
+      "fixture_tree": "b06cee8e3ea0fb2489b3494e77cec85fdf02767cede3fb5ebcbbe9ae81cbec34",
+      "initial_authoring": "INCOMPLETE at declared initial50-call ceiling",
+      "functional_correctness": "NOT_ESTABLISHED; no activated runtime",
+      "model_assisted_completion": "INCOMPLETE UNAIDED; no assisted continuation within exhausted initial call budget",
+      "ux_measurements": "trial-measurements.json",
+      "assistance": "Same fixture author/coordinator/operator, fresh project/HOME/provider conversation. Ordinary frozen source-owner clarifications and public exact review; no engineering rescue, but completion was not achieved.",
+      "requirements": [
+        {
+          "requirement": "model-assisted initial draft preserves complete policy",
+          "status": "INCOMPLETE",
+          "reason": "Disabled draft produced but final complete-policy review and operational prerequisites not established"
+        },
+        {
+          "requirement": "disabled authority verified before review",
+          "status": "PASSED",
+          "reason": "Public disabled summary and saved draft agree; only management current pointers, no enabled Read/Action authority; zero proposals, approvals, queue and receipts"
+        },
+        {
+          "requirement": "exact Read/Action review",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "narrow writer/admin/rescan/execution prerequisites",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "reviewed local identity, own read and four-tool runtime client",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "actual execution, stored canonical receipt, independent readback",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "valid human review with separate supervisor approval",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "invalid/held requests: no automatic approval or source effects",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "private rows/filter/sort/group/aggregate refusal; private sentinels absent from provider transcript",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "own and inappropriate reviewed contexts with normal refs; actual rejection layer reported",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "changed-fact coordination using legitimate owner update plus maintained version; source control remains invalid",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "real contention measured at product/source coordination, exact durable outcomes",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "ordinary-language automatic edit, exact semantic meaning and retained unrelated rules/history",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "same connected runtime client current behavior",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "old unstarted work current-authority guard",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "planned saved onboarding or model-edit interruption and resume",
+          "status": "BLOCKED",
+          "reason": "Planned interrupted model-assisted rule edit never reached its prerequisite; no substitute interruption was counted"
+        },
+        {
+          "requirement": "ordinary-language add behavior, reviewed execution/pending control",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "ordinary-language removal preserves other behavior/read/history and refuses old unstarted dispatch",
+          "status": "BLOCKED",
+          "reason": "Not run: initial model-assisted setup did not finish; no activation, reviewed runtime context or executable authority"
+        },
+        {
+          "requirement": "Known concrete identity/private fixture values absent from captured authoring inputs/outputs",
+          "status": "PASSED_CAPTURE_SCAN",
+          "reason": "Known-value scan passed; tournament response-body capture missing and explicitly limited. This is not runtime privacy/analytics coverage."
+        }
+      ],
+      "initial_finding": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/stage-b-acceptance-20260913/software-closure.json"
+    }
+  ],
+  "new_product_failures_observed": [
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/stage-b-acceptance-20260913/tournament-initial-finding.json"
+  ],
+  "improvement_proposals": [
+    {
+      "id": "checkpoint-clarification-save",
+      "observed": "Tournament scope clarification and one assisted resume hit BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED with no concrete identity in the supplied answer",
+      "bounded_next_task": "Trace the rejected serialized checkpoint field and repair legitimate clarification persistence without weakening concrete identity protection; add normal public pause/resume regression",
+      "cause": "UNTRACED; do not assume the user answer was the guarded payload"
+    },
+    {
+      "id": "rules-review-source-facts",
+      "observed": "Software rules check treated elapsed_seconds as potentially SQL NULL although the frozen schema and saved authoring catalog mark it NOT NULL; model first said unchanged, then added an explicit guard after owner clarification",
+      "bounded_next_task": "Reconcile attached-rule review with existing authoritative nullability/source facts and test retention across Resolve/Ask/no-op review. Diagnose before choosing a patch; preserve missing-fact refusal",
+      "cause": "Observed contradictory review statements; generating stage/cause untraced. No runtime NULL defect demonstrated."
+    }
+  ],
+  "limitations": [
+    "Stage A accepted for the exact artifact and named local scope; no Stage A/full/PG schedule rerun in this assignment",
+    "Independent reviewer did not execute already-connected cached-context continuity",
+    "Both new cases used conventional identity columns; historical unconventional-scope KNOWN OPEN item remains current-code untested",
+    "Stage B setup failures/incomplete work prevent any Stage B pass; no actual runtime requests, effects, source receipts, semantic edits, add/remove or concurrency schedule",
+    "Same coordinator authored fixtures and operated fresh case contexts; not an independent tester or human usability study",
+    "Tournament raw request/status/terminal evidence retained; original response bodies were not captured. Software captured all50 complete responses",
+    "Only PostgreSQL17.10 source with SQLite control was prepared; no new PostgreSQL control or multi-host qualification",
+    "Existing local identity, admission clock/all-process-version, receipt-mode and worker-concurrency limitations retained; no production authentication or universal exactly-once claim"
+  ],
+  "external_report": {
+    "received_at": "2026-09-13T08:02:55.929926+00:00",
+    "status": "ACCEPTED_NO_MATERIAL_BLOCKER",
+    "report": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/stage-a-acceptance-review-20260913/ACCEPTANCE-REVIEW.md",
+    "report_sha256": "34b1a2446906b6a7d85dc5654f8f2ff69192d1818acd2527fa177cdd2c43d9cc",
+    "candidate_tree": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+    "reviewer": "Independent Claude Code session; did not implement or participate in Stage A runs",
+    "independently_executed": [
+      "complete 7569-entry bidirectional artifact verification including hashes/modes/symlinks",
+      "11 raw-evidence file hashes and scorecard inspection",
+      "fresh public setup smoke: two named reviewed clients, shared tenant allowance, future-launch retirement refusal"
+    ],
+    "not_independently_executed": [
+      "already-connected cached context until explicit stop",
+      "Stage A schedules",
+      "full suite",
+      "real PostgreSQL control-store gate"
+    ],
+    "reviewer_fixture": "own fresh gym fixture; not either selected Stage B case or the coordinator prepared smoke; removed with container after review",
+    "reviewer_harness_error": "Initial shell-string path quoting failure preserved by reviewer; corrected argument-array launch. No product failure inferred.",
+    "stage_b_authorized_to_begin": true
+  }
+}

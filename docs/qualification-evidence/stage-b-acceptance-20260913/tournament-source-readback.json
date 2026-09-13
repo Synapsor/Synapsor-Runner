@@ -1,0 +1,11 @@
+{
+  "at": "2026-09-13T08:32:11.589Z",
+  "case": "tournament-ratification",
+  "source_unchanged": true,
+  "rows": {
+    "events": 8,
+    "results": 96
+  },
+  "readback_sha256": "a1827e14f37fb9a6eaf36eb7681cfbfa4a1802f1b84e86fa8c30736a0db4c200",
+  "actual_exit": 0
+}

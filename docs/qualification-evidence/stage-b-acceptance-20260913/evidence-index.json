@@ -1,0 +1,76 @@
+{
+  "at": "2026-09-13T07:57:07.233984+00:00",
+  "external_review": "IN_PROGRESS_EXTERNALLY",
+  "records": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/verification-report.md",
+      "bytes": 21123,
+      "sha256": "b2b2f7f7e72698910bf30aec20607272267e1dbbaa4c3370c92f7f6b931da5a0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/reviewer-commands.md",
+      "bytes": 11657,
+      "sha256": "75f79f9f51a1d4c38d732dd3d17a1a3fd87a04593bab245450ad515b1441a316"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/installed-scorecard.json",
+      "bytes": 28837,
+      "sha256": "9712fb293ee8c70cffd75c500676d95a9314f281c69382bcee50e8d56c080747"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/installed-evidence-index.json",
+      "bytes": 3642,
+      "sha256": "27da01b34de27931dc3785079c2bf69985d8be14c81f47263289f35ad2e7f781"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/host-test-evidence-index.json",
+      "bytes": 62137,
+      "sha256": "198f48515e80837f49535fabd8ef4d745a9133af99c5173c225c53400dcaad8e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/complete-log-index.json",
+      "bytes": 22911,
+      "sha256": "2b7190d30eeddffb8886fbaeff67aadfc7bc3280c7143939068681aa5b8741a3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/final-artifact.json",
+      "bytes": 1744,
+      "sha256": "7c11708616836c945eca0d10c9d1d76260d0544b0c3c6819e9f628a6e9a2bef0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/review-decision.md",
+      "bytes": 844,
+      "sha256": "151ac369ae9e5b586bb4fd77d8392c23ad65380bf6fbdeb27411685dc055ea83"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/delivery.json",
+      "bytes": 1072,
+      "sha256": "2cb158eb4a9062f4def1dabbde5efb8e2caf1fb2f1f515687e01daad158cfeda"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/frozen/installed-artifact-manifest.json",
+      "bytes": 1622746,
+      "sha256": "d3defd6057ab46150736339a2f08a47ca20864eb86a1d293d4d308ceb7625103"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/manual-mode-test-20260911/FINDINGS.md",
+      "bytes": 41374,
+      "sha256": "ff922ecca4c7b00737b2f8faa521705379f14d21ea75102c357af0268745c983"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/onboarding-domain-audit.md",
+      "bytes": 23528,
+      "sha256": "6822f1ad0ca1f331637a50e541935cea9344ce21b3e1b127c2137685a5a920cf"
+    }
+  ],
+  "closure": {
+    "report": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/stage-b-acceptance-20260913/verification-report.md",
+    "scorecard": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/stage-b-acceptance-20260913/current-scorecard.json",
+    "commands": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/stage-b-acceptance-20260913/reviewer-commands.md",
+    "raw_index": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/stage-b-acceptance-20260913/raw-evidence-index.json",
+    "measurements": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/stage-b-acceptance-20260913/trial-measurements.json",
+    "external_acceptance": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/stage-b-acceptance-20260913/external-acceptance.json",
+    "stage_b": "NOT_PASSED",
+    "at": "2026-09-13T09:06:38.256303+00:00"
+  }
+}

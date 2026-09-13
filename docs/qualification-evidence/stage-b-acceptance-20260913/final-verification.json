@@ -1,0 +1,93 @@
+{
+  "at": "2026-09-13T09:02:35.400253+00:00",
+  "artifact": {
+    "verified_at": "2026-09-13T09:02:35.387Z",
+    "installed_tree_sha256": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+    "entries": 7569
+  },
+  "artifact_verify_exit": 0,
+  "product_test_source_files_unchanged": 947,
+  "source_differences": [],
+  "harness_checks": [
+    {
+      "file": "close-stage-b.py",
+      "check": "Python AST parse without pycache",
+      "exit": 0
+    },
+    {
+      "file": "freeze-cases.py",
+      "check": "Python AST parse without pycache",
+      "exit": 0
+    },
+    {
+      "file": "prepare-reviewer.py",
+      "check": "Python AST parse without pycache",
+      "exit": 0
+    },
+    {
+      "file": "preserve-baseline.py",
+      "check": "Python AST parse without pycache",
+      "exit": 0
+    },
+    {
+      "file": "record-public-terminal.py",
+      "check": "Python AST parse without pycache",
+      "exit": 0
+    },
+    {
+      "file": "save-fixtures-and-pause.py",
+      "check": "Python AST parse without pycache",
+      "exit": 0
+    },
+    {
+      "file": "trial-measurements.py",
+      "check": "Python AST parse without pycache",
+      "exit": 0
+    },
+    {
+      "file": "verify-preserved.py",
+      "check": "Python AST parse without pycache",
+      "exit": 0
+    },
+    {
+      "file": "inspect-frozen-fixtures.mjs",
+      "check": "node --check",
+      "exit": 0
+    },
+    {
+      "file": "neutral-preflight.mjs",
+      "check": "node --check",
+      "exit": 0
+    },
+    {
+      "file": "reviewer-allowance-smoke.mjs",
+      "check": "node --check",
+      "exit": 0
+    },
+    {
+      "file": "run-public-case.mjs",
+      "check": "node --check",
+      "exit": 0
+    }
+  ],
+  "database_url_disclosure_scan": [
+    {
+      "case": "tournament-ratification",
+      "inputs_scanned": 24,
+      "outputs_scanned": 0,
+      "database_url_matches": 0
+    },
+    {
+      "case": "software-release-sealing",
+      "inputs_scanned": 50,
+      "outputs_scanned": 50,
+      "database_url_matches": 0
+    }
+  ],
+  "actual_exit": 0,
+  "full_suite_rerun": false,
+  "types_rerun": false,
+  "package_or_backend_rerun": false,
+  "reason": "Only qualification harness/evidence changed; exact unchanged build gates remain prior evidence",
+  "measurement_parser_correction": "Initial summary read model at top level instead of captured request.model; original summary retained at /home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/trial-measurements-initial-parser-result.json; corrected read-only summary, no trial/provider rerun"
+}

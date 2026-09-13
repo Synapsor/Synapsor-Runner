@@ -1,0 +1,49 @@
+{
+  "saved_at": "2026-09-13T08:00:35.286664+00:00",
+  "container": "synapsor-stageb-fixtures-14689edf",
+  "container_id": "00fe6b240f4e4f67e3e40e735267f079bd219cf1faac99d5eed0cd9a441b90da",
+  "postgres_version": "PostgreSQL 17.10 (Debian 17.10-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+  "image": "sha256:1edc8e87e53194e0cc8006c4e9df9b626c6c72cb43ad3385f0f34af7922065b1",
+  "network": "none",
+  "stop_exit_code": 0,
+  "removed": false,
+  "running_after": false,
+  "provider_children": [
+    {
+      "pid": 2171730,
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/preflight/authoring-1/result.json",
+      "running": false
+    },
+    {
+      "pid": 2171723,
+      "result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/preflight/runtime-1/result.json",
+      "running": false
+    }
+  ],
+  "dumps": [
+    {
+      "case": "tournament-ratification",
+      "database": "stageb_tournament_ratification",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/fixture-validation/saved-state/stageb_tournament_ratification.dump",
+      "bytes": 13522,
+      "sha256": "692ed54108dd4ec1d4b8064c20caacc98285de79bd83a49b51479a8b4b02bd93",
+      "pg_restore_list_exit": 0,
+      "fixture_inputs_unchanged": true,
+      "project_empty": true
+    },
+    {
+      "case": "software-release-sealing",
+      "database": "stageb_software_release_sealing",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/fixture-validation/saved-state/stageb_software_release_sealing.dump",
+      "bytes": 40774,
+      "sha256": "a2594b9a2f627f07c23952f76a7b556aa6fbc2ca0a06b889102535435f4a3d30",
+      "pg_restore_list_exit": 0,
+      "fixture_inputs_unchanged": true,
+      "project_empty": true
+    }
+  ],
+  "logs_saved_before_stop": true,
+  "external_reviewer_smoke_executed": false,
+  "stage_b_authoring_runs": 0,
+  "original_resources_touched": false
+}

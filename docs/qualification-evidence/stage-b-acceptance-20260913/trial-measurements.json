@@ -1,0 +1,131 @@
+{
+  "at": "2026-09-13T09:00:33.106541+00:00",
+  "cases": [
+    {
+      "case": "tournament-ratification",
+      "first_start": "2026-09-13T08:07:45.219000+00:00",
+      "last_exit": "2026-09-13T08:23:20.668000+00:00",
+      "cli_exits": [
+        0,
+        0,
+        0
+      ],
+      "cli_process_wall_seconds": 779.9670000000001,
+      "first_start_to_last_exit_seconds": 935.449,
+      "wall_time_includes": "provider wait, operator review, coordinator/tool/evidence time and pauses; not a human usability measurement",
+      "authoring_provider_attempts": 24,
+      "requested_models": [
+        "gpt-5.6-terra"
+      ],
+      "returned_models_captured": [],
+      "response_completion_captures": 0,
+      "provider_transport_wait_seconds": null,
+      "provider_wait_definition": "union of transport attempt through complete response body; not just HTTP headers; tournament completion capture unavailable",
+      "complete_response_usage_records": 0,
+      "hands_on_seconds": null,
+      "tester_only_measurement_seconds": null,
+      "administrator_source_changes": 0,
+      "writer_setup_or_execution_reviews": 0,
+      "first_verified_execution_seconds": null,
+      "edit_to_review_seconds": null,
+      "edit_to_changed_behavior_seconds": null,
+      "complete_policy_review_ready_seconds": null,
+      "runtime_provider_calls": 0,
+      "runtime_mcp_calls": 0,
+      "worker_invocations": 0,
+      "source_rows_changed": 0,
+      "policy_attachment_reentries": 0,
+      "manual_authority_or_config_edits": 0,
+      "product_changes": 0,
+      "unknown_measurements_are_not_zero": true,
+      "assisted_continuations": 1,
+      "unaided_provider_calls": 16,
+      "assisted_provider_calls": 8,
+      "setup_result": "FAILED checkpoint save; assisted resume also stopped",
+      "planned_pause_resume": "PARTIAL: rules/client/pending question retained; subsequent clarification save failed",
+      "ordinary_clarifications": [
+        "public result_ref meaning",
+        "tenant means league; principal is assigned referee; shared caps"
+      ],
+      "counter_review": "one maintained results.version confirmation",
+      "repeats": "Pending unanswered scope question resumed as expected; no re-entered policy or client choice observed",
+      "first_disabled_summary_time": "not independently timestamped; retained raw public transcript",
+      "navigation": [
+        "public /help",
+        "planned Esc/save-disabled/Q",
+        "normal resume",
+        "one labelled assisted normal resume; Esc stop before new answer prompt"
+      ]
+    },
+    {
+      "case": "software-release-sealing",
+      "first_start": "2026-09-13T08:27:36.361000+00:00",
+      "last_exit": "2026-09-13T08:54:16.246000+00:00",
+      "cli_exits": [
+        0
+      ],
+      "cli_process_wall_seconds": 1599.885,
+      "first_start_to_last_exit_seconds": 1599.885,
+      "wall_time_includes": "provider wait, operator review, coordinator/tool/evidence time and pauses; not a human usability measurement",
+      "authoring_provider_attempts": 50,
+      "requested_models": [
+        "gpt-5.6-terra"
+      ],
+      "returned_models_captured": [
+        "gpt-5.6-terra"
+      ],
+      "response_completion_captures": 50,
+      "provider_transport_wait_seconds": 518.961,
+      "provider_wait_definition": "union of transport attempt through complete response body; not just HTTP headers; tournament completion capture unavailable",
+      "complete_response_usage_records": 50,
+      "hands_on_seconds": null,
+      "tester_only_measurement_seconds": null,
+      "administrator_source_changes": 0,
+      "writer_setup_or_execution_reviews": 0,
+      "first_verified_execution_seconds": null,
+      "edit_to_review_seconds": null,
+      "edit_to_changed_behavior_seconds": null,
+      "complete_policy_review_ready_seconds": null,
+      "runtime_provider_calls": 0,
+      "runtime_mcp_calls": 0,
+      "worker_invocations": 0,
+      "source_rows_changed": 0,
+      "policy_attachment_reentries": 0,
+      "manual_authority_or_config_edits": 0,
+      "product_changes": 0,
+      "unknown_measurements_are_not_zero": true,
+      "assisted_continuations": 0,
+      "unaided_provider_calls": 50,
+      "assisted_provider_calls": 0,
+      "setup_result": "INCOMPLETE at declared initial50-call budget; final draft saved, rules recheck unrun",
+      "observed_disabled_review_summary_at": "2026-09-13T08:38:31.984446+00:00",
+      "first_disabled_summary_observed_by_seconds": 655.623446,
+      "review_summary_measurement": "upper bound from operator checkpoint, not exact time to complete reviewable policy",
+      "planned_edit_pause_resume": "BLOCKED before activation; not run",
+      "ordinary_clarifications": [
+        "entire owned source is synthetic, not a per-row category",
+        "existing elapsed_seconds NOT NULL/nonnegative source definition"
+      ],
+      "counter_review": "one maintained-counter confirmation covering candidate and slot versions",
+      "repeats": "Known-elapsed requirement first reported already satisfied, then repeated resolution added explicit non-null child guard",
+      "navigation": [
+        "Resolve required decisions three times",
+        "View exact Runner details from unchanged-rule confirmation",
+        "close synthetic-source clarification unchanged",
+        "decline unchanged elapsed-rule close",
+        "Ask model for source-definition reconciliation",
+        "save-disabled/Q after budget refusal"
+      ],
+      "saved_catalog_elapsed_seconds": {
+        "name": "elapsed_seconds",
+        "nullable": false,
+        "type": {
+          "kind": "integer",
+          "unit": "seconds"
+        }
+      },
+      "saved_draft_state": "disabled",
+      "saved_authority_sha256": "f406c35aeae0beaabf2838fb939d50cb3edd7d3e6b86a88f06562a87d618f79e"
+    }
+  ]
+}

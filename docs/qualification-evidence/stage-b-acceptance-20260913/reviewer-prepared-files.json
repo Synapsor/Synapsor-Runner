@@ -1,0 +1,80 @@
+{
+  "status": "prepared_not_executed",
+  "files": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/harness/assignment-plan.json",
+      "bytes": 515,
+      "sha256": "5918a2ee8f39e069fdb8d1c1279dbe6636a177c9a2f14d31de0cb5bb650865ec"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/harness/drive-client-setup.py",
+      "bytes": 6090,
+      "sha256": "b9ddc8ef9f49425d76694a6507e16e0b3faf5a39c07d7e76862475e18d21b98e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/harness/drive-retirement.py",
+      "bytes": 2619,
+      "sha256": "5a8632dfd75b65744f47e64af10ff4b3d1db1c02f86857e05951d0e02db3968f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/harness/prepare-runtime.mjs",
+      "bytes": 7539,
+      "sha256": "49fb936c6cb3bc552e0b7ffaefe2a562c4b4db9bb9bbb6f3c7630887827cf165"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/harness/run-owned.py",
+      "bytes": 2020,
+      "sha256": "f60240ab51c62d11497948ffeda120768cde16f39b90ba845b727ab2ce39cc38"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/harness/save-and-stop-owned.py",
+      "bytes": 5002,
+      "sha256": "3d6157c4199c05016e5ccaf8c3109f73ab44047496afe24f8caf79f00a01d00d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/harness/start-local-postgres.mjs",
+      "bytes": 3560,
+      "sha256": "9a0ec42abe20dea6878b180b5ca33cbf71d9739e000366bd32cecd87f6f3c48c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/runtime/accounting-contention.mjs",
+      "bytes": 3250,
+      "sha256": "f24794ea107c913ee9b533f40c200336e9fa0e2cf193f8d0ce0ab04a1d1d772f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/runtime/check-reviewed-contexts.mjs",
+      "bytes": 3581,
+      "sha256": "79462b53d0cb0b676c4936ea8cdce2f64b8da563f62f2c028bec35d844e640ad"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/runtime/installed-identity-lifecycle.mjs",
+      "bytes": 4041,
+      "sha256": "81a1e903112c598fb6bee18899a4d3f93b57fa7788e76cf338fd904a334b46a0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/runtime/invoke-client-setup.mjs",
+      "bytes": 146,
+      "sha256": "6bca057c7d686b5c2c791d252caf8ced637b5d6e4c76af1868be14e4306c043b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/runtime/invoke-interactive.mjs",
+      "bytes": 108,
+      "sha256": "e737f27b307da55ab7fc12167e10a462a6426ca1f087b1f8af2f7114f02dc82d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/runtime/reviewer-allowance-smoke.mjs",
+      "bytes": 5314,
+      "sha256": "57a96c4b71aab9f6f653c90c36b713a8ad527da63c3df34e04cb95328ac09ec9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/runtime/runtime-driver.mjs",
+      "bytes": 19560,
+      "sha256": "d80bf22691bfb1d49d568009c362b11bd092301b2deb99daf35263ea340c396c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/runtime/storage-preflight.mjs",
+      "bytes": 833130,
+      "sha256": "f41c22b65c92ac9629a1236a8a189bd46100edd7516dbfc40639b7ed047ebab2"
+    }
+  ]
+}

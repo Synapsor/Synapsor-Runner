@@ -1,0 +1,117 @@
+{
+  "at": "2026-09-13T07:46:11.763858+00:00",
+  "status": "prepared_not_executed",
+  "owned_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke",
+  "harness": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/harness",
+  "provenance": [
+    {
+      "source": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/start-local-postgres.mjs",
+      "source_sha256": "359dbdb07cb87813b0fdcf0a598005c9492e1dc9b0d5eeb1d72041c074d0d56e",
+      "prepared": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/harness/start-local-postgres.mjs",
+      "prepared_sha256": "9a0ec42abe20dea6878b180b5ca33cbf71d9739e000366bd32cecd87f6f3c48c",
+      "changes": [
+        "import {Pool} from 'pg';",
+        "const evidence=path.dirname(new URL(import.meta.url).pathname);",
+        "synapsor-reviewed-clients-",
+        "reviewed-clients-repair-20260913"
+      ]
+    },
+    {
+      "source": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/prepare-runtime.mjs",
+      "source_sha256": "1f23e8ca39151c98a3c2361dcbf1585bea08a1f8b2d753eacc2b259127a94e36",
+      "prepared": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/harness/prepare-runtime.mjs",
+      "prepared_sha256": "49fb936c6cb3bc552e0b7ffaefe2a562c4b4db9bb9bbb6f3c7630887827cf165",
+      "changes": [
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913",
+        "const artifactRoot=path.join(taskRoot,caseName==='setup_dev'?'development':'frozen');",
+        "reviewed-clients-repair-20260913"
+      ]
+    },
+    {
+      "source": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/drive-client-setup.py",
+      "source_sha256": "b9ddc8ef9f49425d76694a6507e16e0b3faf5a39c07d7e76862475e18d21b98e",
+      "prepared": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/harness/drive-client-setup.py",
+      "prepared_sha256": "b9ddc8ef9f49425d76694a6507e16e0b3faf5a39c07d7e76862475e18d21b98e",
+      "changes": []
+    },
+    {
+      "source": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/drive-retirement.py",
+      "source_sha256": "5a8632dfd75b65744f47e64af10ff4b3d1db1c02f86857e05951d0e02db3968f",
+      "prepared": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/harness/drive-retirement.py",
+      "prepared_sha256": "5a8632dfd75b65744f47e64af10ff4b3d1db1c02f86857e05951d0e02db3968f",
+      "changes": []
+    },
+    {
+      "source": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/run-owned.py",
+      "source_sha256": "d11027285b694a9de2dbefa0b8fcee6fac052271394e401f1ac53abe3e732b31",
+      "prepared": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/harness/run-owned.py",
+      "prepared_sha256": "f60240ab51c62d11497948ffeda120768cde16f39b90ba845b727ab2ce39cc38",
+      "changes": [
+        "artifact=owned/('development' if case=='setup_dev' else 'frozen')"
+      ]
+    },
+    {
+      "source": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/save-and-stop-owned.py",
+      "source_sha256": "0e667214559c48ea0cb40945cc8060e41a688cbc186d936a503be4027dbd278d",
+      "prepared": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/harness/save-and-stop-owned.py",
+      "prepared_sha256": "3d6157c4199c05016e5ccaf8c3109f73ab44047496afe24f8caf79f00a01d00d",
+      "changes": [
+        "reviewed-clients-repair-20260913"
+      ]
+    },
+    {
+      "source": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/runtime-driver.mjs",
+      "source_sha256": "71def74509d3b05320c842808f5386f0ba04324e503ce3538ebc349e7031d9bc",
+      "prepared": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/runtime/runtime-driver.mjs",
+      "prepared_sha256": "d80bf22691bfb1d49d568009c362b11bd092301b2deb99daf35263ea340c396c",
+      "changes": [
+        "deadline:'2026-09-13T11:39:41.401219+00:00'",
+        "maximum_operations:600",
+        "plan.worker_invocations<=24",
+        "Date.now()+120*60000",
+        "plan.schedules[name]<=2"
+      ]
+    },
+    {
+      "source": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/invoke-client-setup.mjs",
+      "source_sha256": "6bca057c7d686b5c2c791d252caf8ced637b5d6e4c76af1868be14e4306c043b",
+      "prepared": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/runtime/invoke-client-setup.mjs",
+      "prepared_sha256": "6bca057c7d686b5c2c791d252caf8ced637b5d6e4c76af1868be14e4306c043b",
+      "changes": []
+    },
+    {
+      "source": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/invoke-interactive.mjs",
+      "source_sha256": "e737f27b307da55ab7fc12167e10a462a6426ca1f087b1f8af2f7114f02dc82d",
+      "prepared": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/runtime/invoke-interactive.mjs",
+      "prepared_sha256": "e737f27b307da55ab7fc12167e10a462a6426ca1f087b1f8af2f7114f02dc82d",
+      "changes": []
+    },
+    {
+      "source": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/check-reviewed-contexts.mjs",
+      "source_sha256": "79462b53d0cb0b676c4936ea8cdce2f64b8da563f62f2c028bec35d844e640ad",
+      "prepared": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/runtime/check-reviewed-contexts.mjs",
+      "prepared_sha256": "79462b53d0cb0b676c4936ea8cdce2f64b8da563f62f2c028bec35d844e640ad",
+      "changes": []
+    },
+    {
+      "source": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/accounting-contention.mjs",
+      "source_sha256": "f24794ea107c913ee9b533f40c200336e9fa0e2cf193f8d0ce0ab04a1d1d772f",
+      "prepared": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/runtime/accounting-contention.mjs",
+      "prepared_sha256": "f24794ea107c913ee9b533f40c200336e9fa0e2cf193f8d0ce0ab04a1d1d772f",
+      "changes": []
+    },
+    {
+      "source": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/installed-identity-lifecycle.mjs",
+      "source_sha256": "210fb7b508a94c9fbc859050092fffd44c5778f39e65eecc7c7e5eb05dd47ac2",
+      "prepared": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/external-review-smoke/runtime/installed-identity-lifecycle.mjs",
+      "prepared_sha256": "81a1e903112c598fb6bee18899a4d3f93b57fa7788e76cf338fd904a334b46a0",
+      "changes": [
+        "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/drive-retirement.py"
+      ]
+    }
+  ],
+  "syntax_checks_exit": 0,
+  "fixture_started": false,
+  "smoke_executed": false,
+  "independent_result": null
+}

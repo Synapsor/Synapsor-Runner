@@ -1,0 +1,15 @@
+{
+  "declared_at": "2026-09-13T07:47:40.429052+00:00",
+  "case_selection_has_started": false,
+  "authoring_runs": 0,
+  "provider_preflights": {
+    "authoring": "passed",
+    "runtime": "passed"
+  },
+  "envelope_sha256": "5c93b8ab32a5367ca41effb0558c24f811032832ee4e73f8cc715def5c0e07d6",
+  "candidate_preselection_verification": {
+    "verified_at": "2026-09-13T07:46:12.743Z",
+    "installed_tree_sha256": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+    "entries": 7569
+  }
+}

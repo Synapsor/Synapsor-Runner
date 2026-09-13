@@ -1,0 +1,76 @@
+{
+  "selected_at": "2026-09-13T07:54:17.472858+00:00",
+  "candidate_tree": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+  "exactly_two": true,
+  "external_review": "IN_PROGRESS_EXTERNALLY",
+  "authoring_trials_started": 0,
+  "used_domains_consulted": [
+    "student/admissions",
+    "telecom",
+    "coded warehouse",
+    "service appointments",
+    "library",
+    "manufacturing",
+    "museum",
+    "municipal",
+    "garden",
+    "radio",
+    "editorial",
+    "insurance",
+    "gym membership freeze",
+    "freight dispatch"
+  ],
+  "known_open_scope_finding": "manual-mode-test-20260911/FINDINGS.md Finding 8 (line 266) and freight-c2 continuation (line 661): unconventional identity mapping; historical gate2-repair artifact, untested here. Neither selected layout uses unconventional identity names.",
+  "rejected_candidates": [
+    {
+      "candidate": "gym membership pause or freight dispatch, including renamed variants",
+      "reason": "Explicitly USED and excluded by the user; no trial run."
+    },
+    {
+      "candidate": "warehouse replenishment / library reservations / manufacturing order completion / editorial publishing",
+      "reason": "Used audit cases or close renamings; not selected."
+    },
+    {
+      "candidate": "utility credit expiry requiring authoritative database-origin now",
+      "reason": "Selection requirement outside declared clock contract; no trial run or product defect inferred."
+    },
+    {
+      "candidate": "uncapped automatic organization action",
+      "reason": "Missing required overall automatic cap; rejected as a specification selection error before either case was frozen."
+    }
+  ],
+  "novelty_basis": "New policies and newly generated tables/facts; no policy, DDL, source rows, saved onboarding, authority or diagnostic correction from a used case is copied. The audit/findings contain no tournament-result ratification or software-build sealing case. Shared generic UPDATE/collection grammar is intentional supported-engine reuse, not claimed to be unseen grammar.",
+  "structural_difference": "Tournament: one mutable result and a scoped parent with scalar best-of-three predicates and stage-dependent approval. Software: two distinct mutable records joined by a unique composite-scope FK plus a complete private inverse-FK collection with count/all-passed/sum constraints and a source-atomic receipt.",
+  "fixture_author_independence": "Coordinator/implementer is also fixture author; no independent fixture-author claim, no trial onboarding or constructed authority.",
+  "cases": [
+    {
+      "id": "tournament-ratification",
+      "title": "League best-of-three result ratification",
+      "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases/tournament-ratification",
+      "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases/tournament-ratification/frozen-input-manifest.json",
+      "manifest_sha256": "a40946e9fff93600cf374895de396266ddc86544ef01b199c8b339504cc0136f",
+      "fixture_input_tree_sha256": "843ec6d9f876e5b141f944a3eef52c2b85bcd2d65a04fdf04b8f638c5f78f02e",
+      "counts": {
+        "events": 8,
+        "results": 96
+      },
+      "identity_columns": "conventional tenant_id/principal_id",
+      "authoring_runs": 0
+    },
+    {
+      "id": "software-release-sealing",
+      "title": "Software build sealing and release-slot consumption",
+      "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases/software-release-sealing",
+      "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases/software-release-sealing/frozen-input-manifest.json",
+      "manifest_sha256": "6b439beb57cc269be6d4c35fea99bdbfe848a6dadcaed58851e242ca7d388a39",
+      "fixture_input_tree_sha256": "b06cee8e3ea0fb2489b3494e77cec85fdf02767cede3fb5ebcbbe9ae81cbec34",
+      "counts": {
+        "release_slots": 116,
+        "build_candidates": 116,
+        "build_checks": 272
+      },
+      "identity_columns": "conventional tenant_id/principal_id",
+      "authoring_runs": 0
+    }
+  ]
+}

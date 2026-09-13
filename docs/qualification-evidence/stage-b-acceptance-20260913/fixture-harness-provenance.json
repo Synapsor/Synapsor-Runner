@@ -1,0 +1,12 @@
+{
+  "source": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/reviewed-local-clients-20260913/start-local-postgres.mjs",
+  "source_sha256": "359dbdb07cb87813b0fdcf0a598005c9492e1dc9b0d5eeb1d72041c074d0d56e",
+  "prepared": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/fixture-validation/start-local-postgres.mjs",
+  "sha256": "b499cc0f5890780be125f483c2f0e988597fbbaa1fab2402038db8f1b28b6bfa",
+  "changes": [
+    "owned name/label",
+    "dependency source exact frozen installation",
+    "decode file URL path"
+  ],
+  "purpose": "local fixture structure only; no authoring"
+}

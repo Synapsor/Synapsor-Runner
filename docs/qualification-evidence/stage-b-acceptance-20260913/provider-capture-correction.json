@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-13T08:27:34.890276+00:00",
+  "classification": "demonstrated measurement gap; not a product failure",
+  "observed": "Tournament actual provider transport used node.request. Request bodies/statuses and terminal transcript exist, but fetch-only output capture produced zero response-body files.",
+  "before_sha256": "c71ebd6fca590bbc539733ac1ac88986d4f96b1761cf5018b1a8435c311f49c9",
+  "after_sha256": "fbd332d903a96d807890ace30f556267909241e05490d5ce8020665a5b080df4",
+  "correction": "Add bounded passive node.request response data/end observation. Do not delay or substitute provider delivery. Applies only to later new invocations.",
+  "prior_attempts_preserved": true,
+  "tournament_rerun_to_fill_capture": false,
+  "syntax_exit": 0,
+  "correction_attempt": 1
+}

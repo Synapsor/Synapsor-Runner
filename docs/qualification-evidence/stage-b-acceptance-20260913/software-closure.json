@@ -1,0 +1,92 @@
+{
+  "at": "2026-09-13T09:06:38.256303+00:00",
+  "case": "software-release-sealing",
+  "status": "STOPPED_INITIAL_PROVIDER_BUDGET",
+  "actual_cli_exit": 0,
+  "zero_exit_is_not_completion": true,
+  "classification": "Incomplete qualification within declared initial50-call budget; not provider outage, product exception or completed rules pass",
+  "actual_provider_attempts": 50,
+  "http_statuses": [
+    200
+  ],
+  "complete_response_captures": 50,
+  "runtime_provider_calls": 0,
+  "deterministic_mcp_calls": 0,
+  "worker_invocations": 0,
+  "assisted_continuations": 0,
+  "editing_calls_reserved_unused": 30,
+  "budget_reset": false,
+  "time_limit_reached": false,
+  "policy_and_source_unchanged": true,
+  "disabled_draft_saved": true,
+  "final_rules_recheck": "BLOCKED QUALIFICATION_PROVIDER_ATTEMPTS",
+  "atomic_source_receipt_setup": "UNVERIFIED; not prepared or executed through public writer/receipt route",
+  "source_and_records": {
+    "case": "software-release-sealing",
+    "at": "2026-09-13T08:57:13.025916+00:00",
+    "fixture_inputs_unchanged": true,
+    "source_rows_unchanged": true,
+    "rows": {
+      "release_slots": 116,
+      "build_candidates": 116,
+      "build_checks": 272
+    },
+    "source_readback": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/fixture-validation/final-saved-state/software-release-sealing-source-readback.json",
+    "source_readback_sha256": "76cba1c0d95efd4c5ec7cf78e6c3c924b50312139c45458db8cb094ced1b5163",
+    "stopped_project": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases/software-release-sealing/checkpoints/budget-stopped/project",
+    "counts": {
+      "proposals": 0,
+      "approvals": 0,
+      "worker_queue": 0,
+      "writeback_receipts": 0
+    },
+    "current_pointer_records": [
+      {
+        "kind": "management",
+        "name": "read_selection",
+        "revision": "policy:92d324b3bf0398feb2c4ee05bb8f215f92bf8ed572a6f45c4edd867398097029"
+      },
+      {
+        "kind": "management",
+        "name": "read_authoring",
+        "revision": "policy:5951805313392a643f28829618328e4a03952f883b23ee899518f721e56ed170"
+      }
+    ],
+    "current_pointers_are_management_not_enabled_authority": true,
+    "authoring_provider_attempts": 50,
+    "http_responses": 50,
+    "http_statuses": [
+      200
+    ],
+    "complete_response_captures": 50,
+    "runtime_provider_calls": 0,
+    "deterministic_mcp_calls": 0,
+    "worker_invocations": 0,
+    "known_private_values_checked": 395,
+    "provider_disclosure_matches": 0,
+    "dump": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/fixture-validation/final-saved-state/stageb_software_release_sealing.dump",
+    "dump_sha256": "85da195d6b09174acafcc2c0271b6b47a3611e7f9ef34fe491c7b5fcc6d53801",
+    "dump_bytes": 40774,
+    "pg_restore_list_exit": 0,
+    "actual_closure_exit": 0
+  },
+  "review_observation": {
+    "claim": "Review said nullable elapsed could be omitted from sum",
+    "frozen_schema": "elapsed_seconds integer NOT NULL CHECK(elapsed_seconds >= 0)",
+    "saved_catalog": {
+      "name": "elapsed_seconds",
+      "nullable": false,
+      "type": {
+        "kind": "integer",
+        "unit": "seconds"
+      }
+    },
+    "public_correction": "Owner stated existing source definition; model eventually added explicit all-checks non-null condition in disabled draft",
+    "runtime_null_defect_demonstrated": false,
+    "generating_stage_or_cause": "untraced"
+  },
+  "synthetic_source_clarification": "Whole fixture/source contract, not a per-record marker. Operator explicitly closed unchanged rule on this basis after exact public review. No eligibility requirement withdrawn.",
+  "remaining": "All activation, operator/writer/runtime/receipt, natural-language edit, add/remove, interrupted edit and concurrency rows blocked/unrun",
+  "saved_original": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases/software-release-sealing/checkpoints/budget-stopped",
+  "next": "No retry within this attempt; preserve for separate setup/UX decision"
+}

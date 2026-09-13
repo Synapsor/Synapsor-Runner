@@ -1,0 +1,16 @@
+{
+  "at": "2026-09-13T09:06:38.256303+00:00",
+  "private_full_index": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/final-raw-evidence-index.json",
+  "private_full_index_sha256": "513741d068225d1822f2d5dbeda60ebdb3d52acca1368fbc7140e3ca4de62fb7",
+  "records": 325,
+  "raw_material_in_git": false,
+  "roots": [
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases/tournament-ratification",
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases/software-release-sealing",
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/fixture-validation/final-saved-state"
+  ],
+  "primary_original_issue": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases/tournament-ratification/checkpoints/unaided-clarification-refusal/failure.json",
+  "software_budget_stop": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases/software-release-sealing/checkpoints/budget-stopped",
+  "provider_capture_limit": "Tournament24 requests/status retained without original response bodies; software50 requests+complete responses",
+  "final_state": "final-local-state.json"
+}

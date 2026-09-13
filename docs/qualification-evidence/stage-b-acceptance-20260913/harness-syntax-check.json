@@ -1,0 +1,17 @@
+{
+  "at": "2026-09-13T08:01:26.804154+00:00",
+  "python_ast_files": [
+    "prepare-reviewer.py",
+    "preserve-baseline.py",
+    "save-fixtures-and-pause.py",
+    "verify-preserved.py",
+    "freeze-cases.py"
+  ],
+  "node_check_files": [
+    "neutral-preflight.mjs",
+    "reviewer-allowance-smoke.mjs",
+    "inspect-frozen-fixtures.mjs"
+  ],
+  "exit_code": 0,
+  "application_tests_run": false
+}

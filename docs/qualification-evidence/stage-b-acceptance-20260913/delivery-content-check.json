@@ -1,0 +1,11 @@
+{
+  "at": "2026-09-13T09:07:31.037771+00:00",
+  "actual_exit": 0,
+  "files_scanned": 46,
+  "concrete_private_values_checked": 498,
+  "matches": 0,
+  "json_parse": "passed",
+  "markdown_file_links_checked": 16,
+  "raw_evidence_index_records": 325,
+  "scope": "New qualification directory only; private values kept outside Git; no runtime privacy assertion"
+}

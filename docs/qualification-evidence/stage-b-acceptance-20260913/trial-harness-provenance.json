@@ -1,0 +1,14 @@
+{
+  "meter_source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/proposal-receipt-scope-961d98c/provider-meter.mjs",
+  "source_sha256": "a54d01cb874fb2bd0064e35e1b60634f506896f7c0f569c2641b5c2212630fd9",
+  "prepared": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/trial-harness/provider-meter.mjs",
+  "prepared_sha256": "c71ebd6fca590bbc539733ac1ac88986d4f96b1761cf5018b1a8435c311f49c9",
+  "changes": [
+    "known private UUID/sentinel preflight refusal for actual request bodies",
+    "asynchronous sanitized response capture without delaying streamed output",
+    "refuse unrelated HTTP endpoints before connecting; configured OpenAI and task loopback only"
+  ],
+  "product_bytes_changed": false,
+  "storage_preflight_sha256": "f41c22b65c92ac9629a1236a8a189bd46100edd7516dbfc40639b7ed047ebab2",
+  "fresh_provider_sessions": "one project/home and new public CLI conversation per case; no prior authority or model transcript imported"
+}

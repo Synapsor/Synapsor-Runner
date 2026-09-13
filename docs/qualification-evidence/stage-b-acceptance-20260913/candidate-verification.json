@@ -1,0 +1,72 @@
+{
+  "verified_at": "2026-09-13T07:33:04.311274+00:00",
+  "classification": "implementer artifact verification; NOT independent acceptance review",
+  "checkout": "674ca78cbe94765181ff4a02cba02d3f1321fb52",
+  "ancestors_verified": [
+    "23e51b1e17c5ec22492518be6d3f6bb0d752bfe7",
+    "66adb954d5a2cdf7419d727f7c551740e6da7b5d"
+  ],
+  "candidate_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/reviewed-local-clients-8d64270-20260913/frozen/installed",
+  "tree": {
+    "verified_at": "2026-09-13T07:33:03.479Z",
+    "installed_tree_sha256": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+    "entries": 7569
+  },
+  "manifest_sha256": "d3defd6057ab46150736339a2f08a47ca20864eb86a1d293d4d308ceb7625103",
+  "archive_sha256": "b363f9ea100ef3da9ee1cd71a12d3835ee0a297d7973507f7402036888e4fdf0",
+  "lockfile_sha256": "842f9b3e4026839ff3cf03204249abea8e0b3e86d72d10a2b28625c71b6830f7",
+  "spec_version": "1.11.0",
+  "lock_packages": 141,
+  "npm_ls_exit_code": 0,
+  "dependency_tree_sha256": "5a00256e65d49a72d30070406428a09a0805b5e760142df992ec480ed10021ae",
+  "entrypoints": [
+    {
+      "path": "node_modules/@synapsor/runner/dist/authoring.mjs",
+      "mode": 384,
+      "kind": "file",
+      "bytes": 197679,
+      "sha256": "b82d745464b0e275993266d6eff074f4e0752a69117e75e8166a3f9d5b177116"
+    },
+    {
+      "path": "node_modules/@synapsor/runner/dist/cli.js",
+      "mode": 448,
+      "kind": "file",
+      "bytes": 3841,
+      "sha256": "fd5383c5bd241f7c1f917ee548bc679b00a188ebeac0f117ac3e6224a7ea6acc"
+    },
+    {
+      "path": "node_modules/@synapsor/runner/dist/runner.mjs",
+      "mode": 384,
+      "kind": "file",
+      "bytes": 11501432,
+      "sha256": "f7686b63e6293043dd02849fe595a82c29ac6a94ca0d84d3a100d95c253a69f3"
+    },
+    {
+      "path": "node_modules/@synapsor/runner/dist/runtime.mjs",
+      "mode": 384,
+      "kind": "file",
+      "bytes": 1655664,
+      "sha256": "e7bbc557064f4102850761fe8e385faf54685ec1e99510b6e875ac578b47e473"
+    },
+    {
+      "path": "node_modules/@synapsor/runner/dist/shadow.mjs",
+      "mode": 384,
+      "kind": "file",
+      "bytes": 541802,
+      "sha256": "741163c6b6de36747088d252d0ebcd0897200dc519f601c8a47e888a86e4ff36"
+    }
+  ],
+  "tarballs": [
+    {
+      "name": "synapsor-runner-1.8.0.tgz",
+      "sha256": "b17154dba6a2e1e1d1bbfa5f80bb438fc8fbd69acf2501fa6170ba7e210a45fe"
+    },
+    {
+      "name": "synapsor-spec-1.11.0.tgz",
+      "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+    }
+  ],
+  "unchanged_source_files": 947,
+  "discrepancies": [],
+  "actual_verification_exit_code": 0
+}
