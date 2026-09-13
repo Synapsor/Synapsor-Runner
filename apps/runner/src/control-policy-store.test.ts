@@ -232,6 +232,12 @@ describe("governed policy-store binding and recovery", () => {
 
   it("chooses one complete binding during concurrent migration", async () => {
     const selection = await fixture();
+    // This is migration of an existing application ledger. Keep one-time SQLite
+    // schema DDL outside the completing cutover schedule: on a loaded disk it can
+    // legitimately exceed the gate's five-second busy bound. Both imports below
+    // still compete for the same uninitialized policy binding and exact snapshot.
+    const ledger = new ProposalStore(selection.storePath);
+    ledger.close();
     const first = migration(selection), second = migration(selection);
     const results = await Promise.all([migrateProjectControlPolicies(first), migrateProjectControlPolicies(second)]);
     results.forEach((result) => track(result.binding));
@@ -242,6 +248,30 @@ describe("governed policy-store binding and recovery", () => {
     // Only the winning migration reads legacy input. Its competitor must wait
     // for the complete import, then use the same immutable binding.
     expect(first.readLegacySnapshot.mock.calls.length + second.readLegacySnapshot.mock.calls.length).toBe(1);
+  });
+
+  it("returns bounded busy when another migration really remains inside the cutover gate", async () => {
+    const selection = await fixture();
+    const ledger = new ProposalStore(selection.storePath); ledger.close();
+    let entered!: () => void, release!: () => void;
+    const ready = new Promise<void>(resolve => {entered = resolve;});
+    const held = new Promise<void>(resolve => {release = resolve;});
+    const first = migration(selection), second = migration(selection);
+    first.readLegacySnapshot.mockImplementation(async () => {entered(); await held; return snapshot();});
+    const winner = migrateProjectControlPolicies(first);
+    void winner.catch(() => undefined);
+    let completed: Awaited<typeof winner> | undefined;
+    try {
+      await Promise.race([ready, winner.then(() => {throw new Error("Migration completed without entering the held snapshot");})]);
+      const started = performance.now();
+      await expect(migrateProjectControlPolicies(second)).rejects.toMatchObject({code: "POLICY_RUNTIME_BUSY"});
+      expect(performance.now() - started).toBeGreaterThanOrEqual(4900);
+      expect(performance.now() - started).toBeLessThan(7500);
+      expect(second.readLegacySnapshot).not.toHaveBeenCalled();
+      expect(first.readLegacySnapshot).toHaveBeenCalledOnce();
+    } finally {release(); completed = await winner; track(completed.binding);}
+    expect(completed.status).toBe("imported");
+    expect((await completed.binding.repository.deployment(completed.binding.deployment_id))?.epoch).toBe(1);
   });
 
   it("binds migration files, local store and the snapshot reader to the locked canonical project", async () => {
