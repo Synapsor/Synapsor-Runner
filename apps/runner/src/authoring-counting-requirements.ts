@@ -98,6 +98,18 @@ export function countingSourceRequirements(source: PolicyTextSnapshot, draft: un
         source_excerpt: source.text.split("\n").slice(interpretation.start - 1, interpretation.end).join("\n") });
     }
   }
+  // A counter-specific citation needs an exact accepted support record even
+  // when the source requirement already establishes literal selector equality.
+  for (const binding of bindings) {
+    binding.accepted_support = [...new Set([
+      ...(binding.operator_clarification ? [binding.operator_clarification] : []),
+      ...(evidence.counting_interpretations ?? []).filter((i: any) => i.source_digest === source.digest
+        && i.operator_history_digest === canonicalJsonDigest(messages) && messages.includes(i.operator_support?.answer)
+        && i.start === binding.start && i.end === binding.end
+        && i.comparisons?.some((c: any) => c.path === binding.path && c.required_capability === binding.required_capability))
+        .map((i: any) => i.operator_support.answer),
+    ])];
+  }
   // Exact operator reviews fill genuinely unestablished interpretations only.
   // They cannot override an established contrary source requirement.
   const decisions = applicableCountingDecisions(source, draft, messages, evidence.counting_decisions ?? []);
@@ -111,7 +123,7 @@ export function countingSourceRequirements(source: PolicyTextSnapshot, draft: un
     for (const match of matches) bindings.splice(bindings.indexOf(match), 1);
     bindings.push({ origin: "HOST-SOURCE-ASSOCIATION", path: configured.path, source_digest: source.digest,
       start: 1, end: source.lines, source_excerpt: source.text, configuration_digest: configured.digest,
-      ...(unique.length === 1 ? { state: "established" as const, required_capability: unique[0]! }
+      ...(unique.length === 1 ? { state: "established" as const, required_capability: unique[0]!, operator_review: structuredClone(selected[0]!) }
         : { state: unique.length > 1 ? "ambiguous" as const : "unknown" as const }) });
   }
   return bindings;
@@ -134,6 +146,12 @@ export function associateCountingRequirements(passage: PolicyPassage, requiremen
     }
     if (required.required_capability !== check.required_capability) {
       throw new Error(`COUNTING_REQUIREMENT_MISMATCH: ${check.path} compares a provider-supplied required value inconsistent with source lines ${required.start}-${required.end}. Use required_capability=${JSON.stringify(required.required_capability)}; equality with the saved selector is not source equivalence. Keep the provider claim separate; use an exact reviewed selector change or the existing applicable domain proof, never an old configuration-preservation answer as a new counting requirement.`);
+    }
+    if (check.operator_clarification && !required.operator_clarification
+      && !required.accepted_support?.includes(check.operator_clarification)) {
+      throw new Error(`COUNTING_SUPPORT_MISMATCH: ${check.path} cites a message with no exact accepted support association. ${required.operator_review
+        ? "This counting requirement is supported by the explicit host-recorded operator counting review."
+        : "This counting requirement is established by its source clause; no accepted counter-specific message is linked."} Omit the unbound counter citation and retain the source/host requirement comparison; keep any paragraph citation separate. No policy change or new owner answer is required.`);
     }
     if (required.operator_clarification && check.operator_clarification && required.operator_clarification !== check.operator_clarification) {
       throw new Error(`COUNTING_SUPPORT_MISMATCH: ${check.path} has no checked provenance link from the submitted implementation citation to its applicable counting-set decision. Reference the existing exact counting decision: ${JSON.stringify(required.operator_clarification)}. Correct this component's citation only; no new owner answer or policy edit is required.`);

@@ -372,5 +372,7 @@ export type CountingRequirementBinding = {
   source_excerpt: string;
   configuration_digest?: string;
   operator_clarification?: string;
+  operator_review?: CountingDecision;
+  accepted_support?: string[];
 } & ({ state: "established"; required_capability: string | null; ambiguity?: never }
   | { state: "unknown" | "ambiguous"; required_capability?: never; ambiguity?: "outcome_reference_unresolved" });

@@ -98,6 +98,18 @@ describe("positive counting requirement inventory",()=>{
       expect(await loadPolicySources(root,loaded.id)).toEqual(newer);
     }finally{await fs.rm(root,{recursive:true,force:true});}
   });
+  it("refuses an unrelated explicit citation after a genuine operator review, while an uncited host comparison stays valid",async()=>{
+    const f=fixture(),outcome=f.d.actions[0].outcome;
+    for(const l of f.d.actions[0].approval.shared_limits)l.capability=outcome;
+    for(const l of f.d.runner_evidence.actions[outcome].automatic_limits){l.capability=outcome;l.history_selector.capability=outcome;}
+    f.d.runner_evidence.counting_decisions=await reviewUnestablishedCounting({source:f.source,draft:f.d,messages:f.state.operator_messages,
+      assertCurrent:async()=>{},session:{chooseOption:async()=>"outcome-0",confirm:async()=>true}});
+    for(const c of counter(f.r).counter_requirements){c.current_capability=c.required_capability=outcome;c.operator_message_id=1;}
+    await expect(produce(f)).rejects.toThrow("COUNTING_SUPPORT_MISMATCH");
+    for(const c of counter(f.r).counter_requirements)delete c.operator_message_id;
+    const report=await produce(f);expect(counter(report).disposition).toBe("implemented");
+    expect(counter(report).counting_requirement_bindings.every((b:any)=>b.operator_review?.origin==="OPERATOR-COUNTING-REVIEW")).toBe(true);
+  });
   it.each(["declined","cancelled","concurrent"])("does not create accepted interpretation when %s",async mode=>{
     const f=fixture();let checks=0;const run=reviewUnestablishedCounting({source:f.source,draft:f.d,messages:f.state.operator_messages,
       assertCurrent:async()=>{if(++checks===2&&mode==="concurrent")throw Error("POLICY_SOURCE_CHANGED");},
