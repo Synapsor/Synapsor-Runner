@@ -928,7 +928,7 @@ describe("exact approval counter evidence and full-bundle targets", () => {
     expect(isMechanicalApprovalCounterPassage(parse(passage).passages[0]!)).toBe(false);
     expect(policyReadinessItems(parse(passage))).toMatchObject([{ kind: "mechanical_correction", blocksReview: true }]);
     expect(parse(passage).passages[0]?.counter_requirements).toEqual(passage.counter_requirements);
-    expect(() => parse({ ...passage, disposition: "implemented" })).toThrow("differing selectors cannot be called implemented");
+    expect(() => parse({ ...passage, disposition: "implemented" })).toThrow("COUNTING_SUPPORT_MISSING");
     for (const replacement of [
       { path: pointer.replace("history_selector/capability", "id"), current_capability: null, required_capability: "service.archive" },
       { path: pointer, current_capability: "service.archive", required_capability: null },

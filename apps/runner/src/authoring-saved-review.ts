@@ -3,6 +3,7 @@ import { listActionRuleAuthorityDrafts } from "./action-rule-authority.js";
 import { readBoundaryAuthoringResumeState, type BoundaryAuthoringResumeBinding } from "./boundary-authoring-resume.js";
 import { activePolicySource, loadPolicySources } from "./authoring-policy-source.js";
 import { policyReviewReadiness } from "./authoring-review-readiness.js";
+import { withCountingOutcomeDomain } from "./authoring-counting-domain.js";
 
 /** Status/navigation projection only. Never replaces the current guided
  * coverage check, exact activation review, or runtime admission. */
@@ -27,6 +28,17 @@ export async function savedAuthoringPolicyReview(input: {
     if (!session.coverage || session.coverage.source_digest !== source.digest
       || !session.coverage_authority_digest || !authorityDigests.some(digest => digest === session.coverage_authority_digest)) {
       return pending("Attached rules need a current interpretation check for this saved revision.");
+    }
+    const domains = session.coverage.passages.flatMap(passage => [
+      ...(passage.counting_resolution ? [passage.counting_resolution.domain] : []),
+      ...(passage.counting_components?.map(component => component.resolution.domain) ?? []),
+    ]);
+    if (domains.length) {
+      const matching = drafts.filter(draft => canonicalJsonDigest({ read: input.readDigest, action: draft.digest }) === session.coverage_authority_digest);
+      if (matching.length !== 1 || !await withCountingOutcomeDomain(input.projectRoot, matching[0]!, async current =>
+        domains.every(domain => canonicalJsonDigest(domain) === canonicalJsonDigest(current)))) {
+        return pending("The saved counting comparison needs revalidation against current authority and retained history. Its former domain condition is not current review evidence.");
+      }
     }
     const review = policyReviewReadiness(source, session.coverage, session);
     if (saved.pending_job_revision || saved.pending_read_revision || saved.pending_action_revision

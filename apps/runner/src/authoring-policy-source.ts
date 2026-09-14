@@ -35,6 +35,19 @@ export type CountingComparisonResolution = {
   established_claim: Pick<PolicyPassage, "disposition" | "interpretation" | "issue_kind" | "next_step">;
   submitted_claim: Pick<PolicyPassage, "disposition" | "interpretation" | "issue_kind" | "next_step">;
 };
+export type CountingInterpretation = {
+  source_digest: string; start: number; end: number; authority_digest: string;
+  operator_support: { question: string; answer: string }; operator_history_digest: string;
+  comparisons: NonNullable<PolicyPassage["counter_requirements"]>;
+  source_passage: PolicyPassage;
+};
+export type CountingComponentResolution = {
+  origin: "HOST-RESOLVED";
+  /** The provider's enclosing citation is preserved, not replaced by the host decision. */
+  submitted_support: { paragraph?: string; operator_message_id?: number; counter?: string };
+  interpretation: CountingInterpretation;
+  resolution: CountingComparisonResolution;
+};
 export type ReadInterpretationRecord = {
   source_digest: string; read_digest: string; catalog_digest: string; instruction: string; checked_at: string;
   fields: Array<{ resource: string; field: string; exposure: "model_and_runner" | "runner_only" | "kept_out" }>;
@@ -50,12 +63,15 @@ export type PolicyPassage = { start: number; end: number;
   supporting_dependencies_digest?: string;
   /** Recomputed by the host from current evidence; never model approval. */
   counting_resolution?: CountingComparisonResolution;
+  counting_components?: CountingComponentResolution[];
   topic?: string;
   responsibility?: "operator" | "runner" | "deployment" | "application";
   issue_kind?: "business_choice" | "schema_meaning" | "missing_configuration" | "unsupported_requirement" | "contradiction" | "coverage_link";
   next_step?: string;
   evidence_checks?: Array<{ path: string; equals: string | number | boolean | null }>;
-  counter_requirements?: Array<{ path: string; current_capability: string | null; required_capability: string | null }>;
+  counter_requirements?: Array<{ path: string; current_capability: string | null; required_capability: string | null;
+    /** Optional exact support for this counter, distinct from the paragraph citation. */
+    operator_clarification?: string }>;
   field_checks?: Array<{ resource: string; field: string; expectation: "private" | "business_visible" }>;
   application_obligations?: Array<"customer_selection" | "status_presentation" | "independent_source_readback">;
   /** Later setup, not verification or an assignment of business controls to the client. */
