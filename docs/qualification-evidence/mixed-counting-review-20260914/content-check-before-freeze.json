@@ -1,0 +1,10 @@
+{
+  "at": "2026-09-14T15:23:38.744642+00:00",
+  "source_private_values_checked": 103,
+  "fixture_files_checked": [
+    "apps/runner/src/fixtures/mixed-counting-review.json"
+  ],
+  "private_value_match_files": [],
+  "fixture_specific_product_terms": [],
+  "credentials_printed": false
+}

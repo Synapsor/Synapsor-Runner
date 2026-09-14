@@ -1,0 +1,10 @@
+
+> synapsor-runner-monorepo@1.8.0 typecheck /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+> tsc -b --pretty false
+
+apps/runner/src/authoring-counting-review.ts(80,9): error TS18048: 'domain' is possibly 'undefined'.
+apps/runner/src/authoring-counting-review.ts(80,54): error TS18048: 'domain' is possibly 'undefined'.
+apps/runner/src/authoring-counting-review.ts(80,82): error TS18048: 'domain' is possibly 'undefined'.
+apps/runner/src/authoring-counting-review.ts(94,51): error TS2322: Type 'CountingComparisonResolution | undefined' is not assignable to type 'CountingComparisonResolution'.
+  Type 'undefined' is not assignable to type 'CountingComparisonResolution'.
+ ELIFECYCLE  Command failed with exit code 1.

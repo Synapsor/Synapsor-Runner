@@ -1,0 +1,27 @@
+{
+  "assignment": "Bind counting evidence within mixed review passages",
+  "started_at": "2026-09-14T14:57:16.024136+00:00",
+  "baseline": "b6557695b7152fdd1c1208aa4442c274f73ac145",
+  "owned_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mixed-counting-review-b655769-20260914",
+  "previous_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/counting-contract-review-f58a824-20260914",
+  "previous_evidence": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/counting-contract-review-20260914",
+  "budgets": {
+    "development_minutes": 180,
+    "fixture_minutes": 35,
+    "verification_minutes": 120,
+    "full_suite_launches": 1,
+    "final_public_minutes": 45,
+    "development_provider_calls": 4,
+    "final_authoring_calls": 25,
+    "reserved_restart_recheck_calls": 6
+  },
+  "status": "FREEZE_READY",
+  "next_step": "Freeze the complete installation from committed source/evidence, verify all files, bind the prepared whole-project recovery, then run installed public review/restart/recheck.",
+  "trial_harness_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/trial-harness",
+  "original_cases_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases",
+  "evidence_root": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mixed-counting-review-20260914",
+  "previous_candidate_tree": "3a871a30a8e226ad60928290bb387fa2a4432cc32400ed164db8ef780b3f3b75",
+  "product_revision": "32f12a050b6eed7ebc5406e3baab00160590b43d",
+  "verification_phase_started_at": "2026-09-14T15:16:51.010956+00:00",
+  "verification_phase_deadline": "2026-09-14T17:16:51.010956+00:00"
+}

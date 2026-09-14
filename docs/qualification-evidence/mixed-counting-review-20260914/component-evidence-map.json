@@ -1,0 +1,226 @@
+[
+  {
+    "captured_reply": 1,
+    "origin": "HOST-RESOLVED",
+    "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+    "source_lines": [
+      7,
+      7
+    ],
+    "submitted_paragraph_support": {
+      "paragraph": "Yes. Each tenant is exactly one league, and each principal is an assigned referee within that league. Referees in the same league share the limit of two automatic ratifications in the rolling 24 hours; all leagues share the overall limit of six.",
+      "operator_message_id": 3
+    },
+    "accepted_counting_support": {
+      "question": "There is a conflict to resolve before changing the saved limits:\n\n- Your accepted clarification says to keep both limits\u2019 existing counted-history selectors unchanged.\n- The requested repair would change each selector from no outcome filter to `league.result_ratification`.\n\nShould I explicitly revise both limits so they count only automatic **result-ratification** approvals, while keeping their 2-per-league, 6-overall, and rolling-24-hour settings unchanged?",
+      "answer": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change."
+    },
+    "accepted_counting_support_index_in_that_request": 5,
+    "counter": {
+      "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+      "retained_capability": null,
+      "required_capability": "league.result_ratification",
+      "actual_predicate": {
+        "action_boundary_name": "reviewed_staging_actions",
+        "approval_status": "approved",
+        "approval_kind": "boundary_automatic",
+        "window_seconds": 86400,
+        "time_bounds": "inclusive: now - window_seconds through now",
+        "capability": null,
+        "tenant": "current_proposal.tenant_id",
+        "principal": null,
+        "business_object": null,
+        "object_id": null
+      },
+      "configured_limit": {
+        "kind": "count",
+        "scope": "tenant",
+        "maximum": 2,
+        "window_seconds": 86400
+      }
+    },
+    "domain": {
+      "boundary_name": "reviewed_staging_actions",
+      "proposed_revision": "sha256:9162f744949333859637dac4209b9bc34ed4bdc55707ba10f4fd45b2c6d03752",
+      "proposed_outcomes": [
+        "league.result_ratification"
+      ],
+      "current_revision": null,
+      "current_outcomes": [],
+      "retained_automatic_outcomes": [],
+      "complete": true,
+      "store_binding_digest": "sha256:181d96574619fa3620812be284453fc94de3fef383fb7ced39c253117c154d78",
+      "history_scope": "all_retained_boundary_automatic_approvals"
+    },
+    "dependencies_digest": "sha256:933cb639945e88a51dd1a9d22f23d17e243e1412f67e5ce66c5fb254d15aa0e4",
+    "maximum_window_condition_privacy_or_other_claims_proven_by_this_comparison": false
+  },
+  {
+    "captured_reply": 1,
+    "origin": "HOST-RESOLVED",
+    "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+    "source_lines": [
+      7,
+      7
+    ],
+    "submitted_paragraph_support": {
+      "paragraph": "Yes. Each tenant is exactly one league, and each principal is an assigned referee within that league. Referees in the same league share the limit of two automatic ratifications in the rolling 24 hours; all leagues share the overall limit of six.",
+      "operator_message_id": 3
+    },
+    "accepted_counting_support": {
+      "question": "There is a conflict to resolve before changing the saved limits:\n\n- Your accepted clarification says to keep both limits\u2019 existing counted-history selectors unchanged.\n- The requested repair would change each selector from no outcome filter to `league.result_ratification`.\n\nShould I explicitly revise both limits so they count only automatic **result-ratification** approvals, while keeping their 2-per-league, 6-overall, and rolling-24-hour settings unchanged?",
+      "answer": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change."
+    },
+    "accepted_counting_support_index_in_that_request": 5,
+    "counter": {
+      "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+      "retained_capability": null,
+      "required_capability": "league.result_ratification",
+      "actual_predicate": {
+        "action_boundary_name": "reviewed_staging_actions",
+        "approval_status": "approved",
+        "approval_kind": "boundary_automatic",
+        "window_seconds": 86400,
+        "time_bounds": "inclusive: now - window_seconds through now",
+        "capability": null,
+        "tenant": null,
+        "principal": null,
+        "business_object": null,
+        "object_id": null
+      },
+      "configured_limit": {
+        "kind": "count",
+        "scope": "boundary",
+        "maximum": 6,
+        "window_seconds": 86400
+      }
+    },
+    "domain": {
+      "boundary_name": "reviewed_staging_actions",
+      "proposed_revision": "sha256:9162f744949333859637dac4209b9bc34ed4bdc55707ba10f4fd45b2c6d03752",
+      "proposed_outcomes": [
+        "league.result_ratification"
+      ],
+      "current_revision": null,
+      "current_outcomes": [],
+      "retained_automatic_outcomes": [],
+      "complete": true,
+      "store_binding_digest": "sha256:181d96574619fa3620812be284453fc94de3fef383fb7ced39c253117c154d78",
+      "history_scope": "all_retained_boundary_automatic_approvals"
+    },
+    "dependencies_digest": "sha256:8d2a20a518392bf4bf74877e36ea0144d8f1a459e8300723fc1773db727a2dc7",
+    "maximum_window_condition_privacy_or_other_claims_proven_by_this_comparison": false
+  },
+  {
+    "captured_reply": 2,
+    "origin": "HOST-RESOLVED",
+    "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+    "source_lines": [
+      7,
+      7
+    ],
+    "submitted_paragraph_support": {
+      "paragraph": "Yes. Each tenant is exactly one league, and each principal is an assigned referee within that league. Referees in the same league share the limit of two automatic ratifications in the rolling 24 hours; all leagues share the overall limit of six.",
+      "operator_message_id": 3
+    },
+    "accepted_counting_support": {
+      "question": "There is a conflict to resolve before changing the saved limits:\n\n- Your accepted clarification says to keep both limits\u2019 existing counted-history selectors unchanged.\n- The requested repair would change each selector from no outcome filter to `league.result_ratification`.\n\nShould I explicitly revise both limits so they count only automatic **result-ratification** approvals, while keeping their 2-per-league, 6-overall, and rolling-24-hour settings unchanged?",
+      "answer": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change."
+    },
+    "accepted_counting_support_index_in_that_request": 5,
+    "counter": {
+      "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+      "retained_capability": null,
+      "required_capability": "league.result_ratification",
+      "actual_predicate": {
+        "action_boundary_name": "reviewed_staging_actions",
+        "approval_status": "approved",
+        "approval_kind": "boundary_automatic",
+        "window_seconds": 86400,
+        "time_bounds": "inclusive: now - window_seconds through now",
+        "capability": null,
+        "tenant": "current_proposal.tenant_id",
+        "principal": null,
+        "business_object": null,
+        "object_id": null
+      },
+      "configured_limit": {
+        "kind": "count",
+        "scope": "tenant",
+        "maximum": 2,
+        "window_seconds": 86400
+      }
+    },
+    "domain": {
+      "boundary_name": "reviewed_staging_actions",
+      "proposed_revision": "sha256:9162f744949333859637dac4209b9bc34ed4bdc55707ba10f4fd45b2c6d03752",
+      "proposed_outcomes": [
+        "league.result_ratification"
+      ],
+      "current_revision": null,
+      "current_outcomes": [],
+      "retained_automatic_outcomes": [],
+      "complete": true,
+      "store_binding_digest": "sha256:181d96574619fa3620812be284453fc94de3fef383fb7ced39c253117c154d78",
+      "history_scope": "all_retained_boundary_automatic_approvals"
+    },
+    "dependencies_digest": "sha256:933cb639945e88a51dd1a9d22f23d17e243e1412f67e5ce66c5fb254d15aa0e4",
+    "maximum_window_condition_privacy_or_other_claims_proven_by_this_comparison": false
+  },
+  {
+    "captured_reply": 2,
+    "origin": "HOST-RESOLVED",
+    "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+    "source_lines": [
+      7,
+      7
+    ],
+    "submitted_paragraph_support": {
+      "paragraph": "Yes. Each tenant is exactly one league, and each principal is an assigned referee within that league. Referees in the same league share the limit of two automatic ratifications in the rolling 24 hours; all leagues share the overall limit of six.",
+      "operator_message_id": 3
+    },
+    "accepted_counting_support": {
+      "question": "There is a conflict to resolve before changing the saved limits:\n\n- Your accepted clarification says to keep both limits\u2019 existing counted-history selectors unchanged.\n- The requested repair would change each selector from no outcome filter to `league.result_ratification`.\n\nShould I explicitly revise both limits so they count only automatic **result-ratification** approvals, while keeping their 2-per-league, 6-overall, and rolling-24-hour settings unchanged?",
+      "answer": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change."
+    },
+    "accepted_counting_support_index_in_that_request": 5,
+    "counter": {
+      "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+      "retained_capability": null,
+      "required_capability": "league.result_ratification",
+      "actual_predicate": {
+        "action_boundary_name": "reviewed_staging_actions",
+        "approval_status": "approved",
+        "approval_kind": "boundary_automatic",
+        "window_seconds": 86400,
+        "time_bounds": "inclusive: now - window_seconds through now",
+        "capability": null,
+        "tenant": null,
+        "principal": null,
+        "business_object": null,
+        "object_id": null
+      },
+      "configured_limit": {
+        "kind": "count",
+        "scope": "boundary",
+        "maximum": 6,
+        "window_seconds": 86400
+      }
+    },
+    "domain": {
+      "boundary_name": "reviewed_staging_actions",
+      "proposed_revision": "sha256:9162f744949333859637dac4209b9bc34ed4bdc55707ba10f4fd45b2c6d03752",
+      "proposed_outcomes": [
+        "league.result_ratification"
+      ],
+      "current_revision": null,
+      "current_outcomes": [],
+      "retained_automatic_outcomes": [],
+      "complete": true,
+      "store_binding_digest": "sha256:181d96574619fa3620812be284453fc94de3fef383fb7ced39c253117c154d78",
+      "history_scope": "all_retained_boundary_automatic_approvals"
+    },
+    "dependencies_digest": "sha256:8d2a20a518392bf4bf74877e36ea0144d8f1a459e8300723fc1773db727a2dc7",
+    "maximum_window_condition_privacy_or_other_claims_proven_by_this_comparison": false
+  }
+]

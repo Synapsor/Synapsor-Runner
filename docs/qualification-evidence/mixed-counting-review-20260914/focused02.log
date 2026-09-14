@@ -1,0 +1,125 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1938845) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1938851) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/authoring-policy-coverage.test.ts (80 tests | 1 failed | 1 skipped) 127ms
+   ✓ private Action field policy evidence > states actual profile semantics without attesting to source data or production authentication (development) 11ms
+   ✓ private Action field policy evidence > states actual profile semantics without attesting to source data or production authentication (staging) 2ms
+   ✓ private Action field policy evidence > states actual profile semantics without attesting to source data or production authentication (production) 1ms
+   ✓ private Action field policy evidence > supplies current local policy metadata without treating resume as completed authority 2ms
+   ✓ private Action field policy evidence > derives private verification-only selection and analysis without adding public Read fields 2ms
+   ✓ private Action field policy evidence > does not hide actual Read return access behind a private Action flag 3ms
+   ✓ private Action field policy evidence > does not hide actual Read filter access behind a private Action flag 1ms
+   ✓ private Action field policy evidence > does not hide actual Read sort access behind a private Action flag 1ms
+   ✓ private Action field policy evidence > does not hide actual Read group access behind a private Action flag 1ms
+   ✓ private Action field policy evidence > does not hide actual Read measure access behind a private Action flag 1ms
+   ✓ private Action field policy evidence > does not hide actual Read count_distinct access behind a private Action flag 1ms
+   ✓ private Action field policy evidence > keeps private Read selection distinct from both raw return and model analysis 1ms
+   ✓ private Action field policy evidence > checks every Action use even when a public Read entry reports the field private 1ms
+   ✓ private Action field policy evidence > requires actual visible-value evidence for business-visible private-only fields 1ms
+   ✓ private Action field policy evidence > normalizes optional verification visibility without claiming a new public permission 1ms
+   ✓ private Action field policy evidence > uses exact escaped resource, outcome, binding and field identities without fuzzy aliases 1ms
+   ✓ private Action field policy evidence > refuses invented Read paths, unknown fields and incomplete private evidence instead of guessing 1ms
+   ✓ private Action field policy evidence > rejects stale private coverage after return exposure changes 2ms
+   ✓ private Action field policy evidence > rejects stale private coverage after analysis exposure changes 2ms
+   ✓ private Action field policy evidence > rejects stale private coverage after action exposure changes 3ms
+   ✓ private Action field policy evidence > does not redirect nonexistent pointer /runner_evidence/read_access/quality.lab_samples/fields/sample_number to similar private evidence 1ms
+   ✓ private Action field policy evidence > does not redirect nonexistent pointer /read_access/quality.lab_samples/fields/sample_number to similar private evidence 1ms
+   ✓ private Action field policy evidence > does not redirect nonexistent pointer /runner_evidence/actions/quality.other_release/scoped_bindings/samples/fields/sample_number to similar private evidence 0ms
+   ✓ private Action field policy evidence > does not redirect nonexistent pointer /runner_evidence/actions/quality.release/scoped_bindings/other_samples/fields/sample_number to similar private evidence 0ms
+   ✓ private Action field policy evidence > does not redirect nonexistent pointer /runner_evidence/actions/quality.release/scoped_bindings/samples/fields/sample_Number to similar private evidence 0ms
+   ✓ private Action field policy evidence > does not redirect nonexistent pointer /runner_evidence/actions/quality.release/scoped_bindings/samples/fields/sample_number/model_analysis/0 to similar private evidence 1ms
+   ✓ private Action field policy evidence > rejects a removed private field through both its old pointer and an unchanged parent reference 0ms
+   ✓ private Action field policy evidence > does not accept inherited field evidence or model-supplied privacy overrides 1ms
+   ✓ private Action field policy evidence > lists exact private references in bounded coverage correction (corrected) 6ms
+   ✓ private Action field policy evidence > lists exact private references in bounded coverage correction (still invalid) 3ms
+   ✓ execution setup is not a business-rule revision > corrects the preserved writer/Read classification without asking for a business edit 3ms
+   ✓ execution setup is not a business-rule revision > does not waive unsupported execution, business decisions, privacy or counters 3ms
+   ✓ policy clarification evidence > resolves a bounded operator message reference to its exact quote without changing the draft 0ms
+   ✓ policy clarification evidence > rejects fabricated, conflicting and cross-message override evidence 1ms
+   ✓ policy clarification evidence > accepts genuine clarification evidence on implemented coverage without treating it as an override 0ms
+   ✓ policy clarification evidence > corrects a paraphrased override into an unmet requirement without waiving a deferred action 2ms
+   ✓ application obligation correction diagnostics > identifies the exact rejected passage and reason (implemented disposition) 0ms
+   ✓ application obligation correction diagnostics > identifies the exact rejected passage and reason (wrong responsibility) 0ms
+   ✓ application obligation correction diagnostics > identifies the exact rejected passage and reason (empty obligations) 0ms
+   ✓ application obligation correction diagnostics > identifies the exact rejected passage and reason (null obligations) 0ms
+   ✓ application obligation correction diagnostics > identifies the exact rejected passage and reason (unknown obligation) 0ms
+   ✓ application obligation correction diagnostics > identifies the exact rejected passage and reason (duplicate obligations) 0ms
+   ✓ application obligation correction diagnostics > identifies the exact rejected passage and reason (missing exact reference) 0ms
+   ✓ application obligation correction diagnostics > identifies the exact rejected passage and reason (mixed privacy check) 0ms
+   ✓ application obligation correction diagnostics > accepts genuinely split clauses on the same source line without transferring the Read rule 0ms
+   ✓ application obligation correction diagnostics > redacts and bounds untrusted offending text without echoing unrelated draft values 0ms
+   ✓ application obligation correction diagnostics > provides bounded exact correction evidence while keeping mandatory work unmet (corrected) 2ms
+   ✓ application obligation correction diagnostics > provides bounded exact correction evidence while keeping mandatory work unmet (still invalid) 2ms
+   ✓ Runner client connection is a later unverified handoff > supplies current installation evidence without implying a configured client or reviewed customer scope 2ms
+   ✓ Runner client connection is a later unverified handoff > rechecks the saved service classification with exact current evidence instead of reopening business authoring 2ms
+   ✓ Runner client connection is a later unverified handoff > requires exact pending Runner-installation evidence, not a generic deployment waiver 3ms
+   ✓ Runner client connection is a later unverified handoff > bounds recovery when the provider keeps returning the old unclassified report 4ms
+   ↓ Read eligibility is not authentication or an Action prerequisite > keeps unmet admission-gated reads blocked with the live authoring model
+   ✓ Read eligibility is not authentication or an Action prerequisite > keeps a missing current-admission Read condition pending after source completion without waiving policy 2ms
+   ✓ attached-rules cancellation > awaits provider cleanup on escape without coverage retry or publication 7ms
+   ✓ attached-rules cancellation > awaits provider cleanup on ctrl-c without coverage retry or publication 2ms
+   ✓ counter coverage correction diagnostics > identifies the rejected counter passage without changing validation (empty array) 1ms
+   ✓ counter coverage correction diagnostics > identifies the rejected counter passage without changing validation (null) 0ms
+   ✓ counter coverage correction diagnostics > identifies the rejected counter passage without changing validation (object) 0ms
+   ✓ counter coverage correction diagnostics > identifies the rejected counter passage without changing validation (too many) 0ms
+   ✓ counter coverage correction diagnostics > identifies the rejected counter passage without changing validation (missing responsibility) 0ms
+   ✓ counter coverage correction diagnostics > identifies the rejected counter passage without changing validation (operator responsibility) 0ms
+   ✓ counter coverage correction diagnostics > identifies the rejected counter passage without changing validation (override) 0ms
+   ✓ counter coverage correction diagnostics > identifies the rejected counter passage without changing validation (pending choice) 0ms
+   ✓ counter coverage correction diagnostics > identifies the rejected counter passage without changing validation (unsupported) 1ms
+   ✓ counter coverage correction diagnostics > identifies the rejected counter passage without changing validation (background) 1ms
+   ✓ counter coverage correction diagnostics > retains strict exact-selector, stale-evidence and operator-override checks 4ms
+   ✓ counter coverage correction diagnostics > bounds and sanitizes the rejected record without echoing unrelated evidence or operator history 1ms
+   ✓ counter coverage correction diagnostics > corrects a threshold-override classification once without waiving other requirements (corrected) 2ms
+   ✓ counter coverage correction diagnostics > corrects a threshold-override classification once without waiving other requirements (still invalid) 2ms
+   × exact approval counter evidence and full-bundle targets > distinguishes a real outcome-history mismatch from an invented diagnostic-ID problem 16ms
+     → expected [Function] to throw error including 'differing selectors cannot be called …' but got 'Counting component /runner_evidence/a…'
+   ✓ exact approval counter evidence and full-bundle targets > bounds semantic counter reconciliation without editing valid rules (corrected) 3ms
+   ✓ exact approval counter evidence and full-bundle targets > bounds semantic counter reconciliation without editing valid rules (persistent) 2ms
+   ✓ exact approval counter evidence and full-bundle targets > bounds semantic counter reconciliation without editing valid rules (distinct_capability) 1ms
+   ✓ exact approval counter evidence and full-bundle targets > maps exact coverage references to outcome identity, not the editable index ({"paths":["/actions/2/approval"],"editable":["service.reminder"],"referenced":["service.reminder"],"selected":["service.reminder"]}) 0ms
+   ✓ exact approval counter evidence and full-bundle targets > maps exact coverage references to outcome identity, not the editable index ({"paths":["/actions/0/approval"],"editable":["service.reminder"],"referenced":["service.archive"],"selected":[]}) 0ms
+   ✓ exact approval counter evidence and full-bundle targets > maps exact coverage references to outcome identity, not the editable index ({"paths":["/actions/2/approval","/runner_evidence/actions/service.reminder/automatic_limits"],"editable":["service.reminder"],"referenced":["service.reminder"],"selected":["service.reminder"]}) 0ms
+   ✓ exact approval counter evidence and full-bundle targets > maps exact coverage references to outcome identity, not the editable index ({"paths":["/actions/0/approval","/actions/1/approval","/actions/2/approval","/runner_evidence/actions/service.archive/automatic_limits","/runner_evidence/actions/service.duration/automatic_limits","/runner_evidence/actions/service.reminder/automatic_limits"],"editable":["service.archive"],"referenced":["service.archive","service.duration","service.reminder"],"selected":["service.archive"]}) 0ms
+   ✓ exact approval counter evidence and full-bundle targets > maps exact coverage references to outcome identity, not the editable index ({"paths":["/runner_evidence/actions/service.duration/automatic_limits"],"editable":["service.reminder","service.duration"],"referenced":["service.duration"],"selected":["service.duration"]}) 0ms
+   ✓ exact approval counter evidence and full-bundle targets > refuses stale, missing and duplicate outcome identities instead of guessing 1ms
+(node:1939141) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-counting-contract.test.ts (21 tests) 105ms
+(node:1939216) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-counting-domain.test.ts (3 tests | 1 skipped) 3283ms
+   ✓ authoring counting domain uses the selected existing store > sqlite: inspects retained history, rejects relocation and releases locks on failure  3277ms
+ ✓ apps/runner/src/authoring-mixed-counting.test.ts (25 tests) 116ms
+(node:1939246) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-review-continuation.test.ts (9 tests) 86ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/authoring-policy-coverage.test.ts > exact approval counter evidence and full-bundle targets > distinguishes a real outcome-history mismatch from an invented diagnostic-ID problem
+AssertionError: expected [Function] to throw error including 'differing selectors cannot be called …' but got 'Counting component /runner_evidence/a…'
+
+Expected: "differing selectors cannot be called implemented"
+Received: "Counting component /runner_evidence/actions/service.archive/automatic_limits/0/history_selector/capability: COUNTING_SUPPORT_MISSING. No established interpretation matches this source span and typed current/required counter values Correct this comparison's evidence structure; keep the saved program and settled policy decision unchanged."
+
+ ❯ apps/runner/src/authoring-policy-coverage.test.ts:931:69
+    929|     expect(policyReadinessItems(parse(passage))).toMatchObject([{ kind…
+    930|     expect(parse(passage).passages[0]?.counter_requirements).toEqual(p…
+    931|     expect(() => parse({ ...passage, disposition: "implemented" })).to…
+       |                                                                     ^
+    932|     for (const replacement of [
+    933|       { path: pointer.replace("history_selector/capability", "id"), cu…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 4 passed (5)
+      Tests  1 failed | 135 passed | 2 skipped (138)
+   Start at  08:05:34
+   Duration  7.90s (transform 3.73s, setup 0ms, collect 9.63s, tests 3.72s, environment 1ms, prepare 258ms)
+

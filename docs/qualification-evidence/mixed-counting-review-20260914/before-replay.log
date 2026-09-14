@@ -1,0 +1,3 @@
+(node:1924414) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"exact_failed_responses_reproduced":2,"classification":"expected-refusal diagnostic, not a passing installed review","provider_calls":0}

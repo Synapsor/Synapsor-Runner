@@ -1,0 +1,29 @@
+{
+  "name": "backend-focused",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-counting-domain.test.ts",
+    "apps/runner/src/semantic-admission-publication.test.ts",
+    "packages/proposal-store/src/automatic-approval-admission.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": true,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T15:09:48.521526+00:00",
+  "source_head": "b6557695b7152fdd1c1208aa4442c274f73ac145",
+  "source_diff_sha256": "0f9c39959dcc86be16d37b9326b2a633342e986963abe62eac5979ddce9f71da",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mixed-counting-review-b655769-20260914/test-environments/backend-focused",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mixed-counting-review-20260914/backend-focused",
+  "source_manifest_sha256": "e7208a326c6ea1e95f5a1af4fa11a8c87db0f9422c8b60505186798ff9adb106",
+  "pid": 1948650,
+  "source_unchanged": false,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T15:11:10.850298+00:00"
+}

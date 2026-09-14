@@ -1,0 +1,15 @@
+{
+  "baseline": "b6557695b7152fdd1c1208aa4442c274f73ac145",
+  "product_commit": "32f12a050b6eed7ebc5406e3baab00160590b43d",
+  "changed_paths": [
+    "apps/runner/src/authoring-counting-freshness.test.ts",
+    "apps/runner/src/authoring-counting-review.ts",
+    "apps/runner/src/authoring-mixed-counting.test.ts",
+    "apps/runner/src/authoring-policy-coverage.test.ts",
+    "apps/runner/src/authoring-policy-coverage.ts",
+    "apps/runner/src/authoring-policy-source.ts",
+    "apps/runner/src/authoring-saved-review.ts",
+    "apps/runner/src/fixtures/mixed-counting-review.json"
+  ],
+  "runtime_accounting_publication_receipts_selectors_unchanged": true
+}

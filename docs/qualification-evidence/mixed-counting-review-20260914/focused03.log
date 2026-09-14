@@ -1,0 +1,70 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1941627) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1941621) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/authoring-mixed-counting.test.ts (26 tests | 1 failed) 203ms
+   ✓ exact installed mixed counting review > replays complete captured request/reply 0 through producer, save/reload, readiness and pending reconciliation 68ms
+   ✓ exact installed mixed counting review > replays complete captured request/reply 1 through producer, save/reload, readiness and pending reconciliation 39ms
+   ✓ exact installed mixed counting review > preserves conclusions when the same explicit components are separated or reordered 22ms
+   ✓ exact installed mixed counting review > keeps different support bound to each counter without interpreting the paragraph as either decision 7ms
+   ✓ exact installed mixed counting review > refuses missing precisely 2ms
+   ✓ exact installed mixed counting review > refuses ambiguous precisely 2ms
+   ✓ exact installed mixed counting review > refuses wrong_explicit precisely 2ms
+   ✓ exact installed mixed counting review > refuses stale_decision precisely 2ms
+   ✓ exact installed mixed counting review > refuses broad_only precisely 3ms
+   ✓ exact installed mixed counting review > refuses bad_pointer precisely 2ms
+   ✓ exact installed mixed counting review > refuses wrong_value precisely 2ms
+   ✓ exact installed mixed counting review > refuses incomplete precisely 4ms
+   ✓ exact installed mixed counting review > refuses other_history precisely 2ms
+   ✓ exact installed mixed counting review > refuses other_current precisely 2ms
+   ✓ exact installed mixed counting review > refuses other_proposed precisely 2ms
+   ✓ exact installed mixed counting review > refuses bad_store precisely 3ms
+   ✓ exact installed mixed counting review > counting proof cannot discharge a maximum failure 3ms
+   ✓ exact installed mixed counting review > counting proof cannot discharge a condition failure 3ms
+   ✓ exact installed mixed counting review > counting proof cannot discharge a unrelated failure 2ms
+   ✓ exact installed mixed counting review > retains scalar maximum and privacy validation within a mixed passage 3ms
+   ✓ exact installed mixed counting review > rejects a saved component after relevant history change 3ms
+   ✓ exact installed mixed counting review > rejects a saved component after relevant authority change 3ms
+   ✓ exact installed mixed counting review > rejects a saved component after relevant store change 3ms
+   ✓ exact installed mixed counting review > rejects a saved component after relevant decision change 3ms
+   ✓ exact installed mixed counting review > rejects a saved component after relevant source change 2ms
+   × exact installed mixed counting review > cannot lose a domain-dependent obligation when a new response omits typed comparisons 11ms
+     → expected false to be true // Object.is equality
+(node:1941968) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-counting-contract.test.ts (21 tests) 130ms
+ ✓ apps/runner/src/authoring-policy-coverage.test.ts (80 tests | 1 skipped) 110ms
+(node:1942018) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-review-continuation.test.ts (9 tests) 89ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/authoring-mixed-counting.test.ts > exact installed mixed counting review > cannot lose a domain-dependent obligation when a new response omits typed comparisons
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ apps/runner/src/authoring-mixed-counting.test.ts:141:98
+    139|     const reply = structuredClone(saved.replies[0]), draft = structure…
+    140|     delete counter(reply).counter_requirements;
+    141|     expect(policyReviewReadiness(saved.source, parse(reply, draft), sa…
+       |                                                                                                  ^
+    142|     draft.runner_evidence.runtime_contract.approval_counter_selection.…
+    143|     const report = parse(reply, draft);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 3 passed (4)
+      Tests  1 failed | 134 passed | 1 skipped (136)
+   Start at  08:06:48
+   Duration  6.13s (transform 3.63s, setup 0ms, collect 9.53s, tests 532ms, environment 1ms, prepare 179ms)
+

@@ -1,0 +1,17 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1960654) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1960660) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-mixed-counting.test.ts (26 tests) 170ms
+ ✓ apps/runner/src/authoring-counting-freshness.test.ts (2 tests) 4050ms
+   ✓ saved counting review depends on the actual current store > sqlite: a competing automatic outcome invalidates status, reuse and pre-save validation  3676ms
+   ✓ saved counting review depends on the actual current store > postgres: a competing automatic outcome invalidates status, reuse and pre-save validation  372ms
+
+ Test Files  2 passed (2)
+      Tests  28 passed (28)
+   Start at  08:13:54
+   Duration  6.88s (transform 1.76s, setup 0ms, collect 4.90s, tests 4.22s, environment 0ms, prepare 113ms)
+

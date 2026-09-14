@@ -1,0 +1,33 @@
+{
+  "name": "structured-saved-focused",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/boundary-structured-authoring.test.ts",
+    "apps/runner/src/boundary-structured-execution.test.ts",
+    "apps/runner/src/boundary-authoring-saved-actions.test.ts",
+    "apps/runner/src/action-policy-scope.test.ts",
+    "apps/runner/src/authoring-mixed-counting.test.ts",
+    "apps/runner/src/authoring-counting-contract.test.ts",
+    "apps/runner/src/saved-action-job-review.test.ts",
+    "--maxWorkers=3",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T15:14:54.670322+00:00",
+  "source_head": "b6557695b7152fdd1c1208aa4442c274f73ac145",
+  "source_diff_sha256": "28d357c8a5d2737336a45dba95232fbd4789ed6352ee799dad99e059d3b88ac0",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mixed-counting-review-b655769-20260914/test-environments/structured-saved-focused",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mixed-counting-review-20260914/structured-saved-focused",
+  "source_manifest_sha256": "1ae0c8cc96164cf6f7a9fa907fa52e33ab5ee00d061bc11bf6cf9cbd9dbc8923",
+  "pid": 1963229,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T15:16:04.677011+00:00"
+}

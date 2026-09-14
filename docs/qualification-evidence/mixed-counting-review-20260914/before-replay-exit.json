@@ -1,0 +1,22 @@
+{
+  "name": "before-replay",
+  "args": [
+    "node",
+    "--import",
+    "tsx",
+    "docs/qualification-evidence/mixed-counting-review-20260914/replay-before.mts",
+    "--save"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T14:58:33.954773+00:00",
+  "source_head": "b6557695b7152fdd1c1208aa4442c274f73ac145",
+  "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mixed-counting-review-b655769-20260914/test-environments/before-replay",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mixed-counting-review-20260914/before-replay",
+  "source_manifest_sha256": "7aceb9285f229bb58ea2eafe446b4071a7404b53de11b418041770a08fa88fab",
+  "pid": 1924413,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T14:58:34.670995+00:00"
+}

@@ -1,0 +1,20 @@
+{
+  "name": "types03",
+  "args": [
+    "corepack",
+    "pnpm",
+    "typecheck"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T15:12:20.918049+00:00",
+  "source_head": "b6557695b7152fdd1c1208aa4442c274f73ac145",
+  "source_diff_sha256": "28d357c8a5d2737336a45dba95232fbd4789ed6352ee799dad99e059d3b88ac0",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mixed-counting-review-b655769-20260914/test-environments/types03",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mixed-counting-review-20260914/types03",
+  "source_manifest_sha256": "07059e94537a0c2a7f4d877e6edb3f0382f8569311f6c831cc9a55231612274c",
+  "pid": 1956367,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T15:12:25.602941+00:00"
+}

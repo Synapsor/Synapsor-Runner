@@ -1,0 +1,24 @@
+{
+  "at": "2026-09-14T15:27:35.275589+00:00",
+  "product_commit": "32f12a050b6eed7ebc5406e3baab00160590b43d",
+  "artifact_tree": null,
+  "classification": "implementation-owned known-case repair; installed confirmation pending",
+  "rows": {
+    "both_exact_response_composed_replays": "PASSED",
+    "derived_broad_pointer_before_refusal": "PRESERVED",
+    "negative_component_controls": "PASSED",
+    "sqlite_and_postgres_control_freshness": "PASSED",
+    "sqlite_and_postgres_accounting_publication": "PASSED",
+    "explicit_postgres_review_recovery": "PASSED",
+    "types_same_source": "PASSED",
+    "full_suite": "PASSED: 6289 passed / 463 skipped, 303 files passed / 21 skipped, exit 0",
+    "offline_checks": "PASSED: all 10 checks, each exit 0",
+    "installed_business_review": "NOT RUN",
+    "installed_save_restart": "NOT RUN",
+    "installed_explicit_unchanged_recheck": "NOT RUN"
+  },
+  "stage_a": "historical artifact-specific acceptance unchanged",
+  "original_stage_b": "NOT PASSED",
+  "development_provider_calls": 0,
+  "source_manifest_sha256": "1ae0c8cc96164cf6f7a9fa907fa52e33ab5ee00d061bc11bf6cf9cbd9dbc8923"
+}

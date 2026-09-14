@@ -1,0 +1,41 @@
+{
+  "at": "2026-09-14T15:19:18.802Z",
+  "provider_calls": 0,
+  "results": [
+    {
+      "name": "missing",
+      "classification": "DERIVED negative control, not a provider reply",
+      "error": "Error: Counting component /runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability: COUNTING_SUPPORT_MISSING. No established interpretation matches this source span and typed current/required counter values Correct this comparison's evidence structure; keep the saved program and settled policy decision unchanged."
+    },
+    {
+      "name": "ambiguous",
+      "classification": "DERIVED negative control, not a provider reply",
+      "error": "Error: Counting component /runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability: COUNTING_INTERPRETATION_AMBIGUOUS. More than one scoped interpretation applies; provide a uniquely established source/counter decision, not another business restatement Correct this comparison's evidence structure; keep the saved program and settled policy decision unchanged."
+    },
+    {
+      "name": "explicit_wrong_support",
+      "classification": "DERIVED negative control, not a provider reply",
+      "error": "Error: Counting component /runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability: COUNTING_SUPPORT_MISMATCH. The explicit counter support differs from the applicable interpretation (indexed operator reference 5); the enclosing paragraph citation is separate Correct this comparison's evidence structure; keep the saved program and settled policy decision unchanged."
+    },
+    {
+      "name": "broad_only",
+      "classification": "DERIVED negative control, not a provider reply",
+      "error": "Error: Counting component /runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability: COUNTING_REFERENCE_OVERBROAD. Reference this counter's exact automatic_limits root or history_selector/capability path; broad approval context cannot establish it Correct this comparison's evidence structure; keep the saved program and settled policy decision unchanged."
+    },
+    {
+      "name": "invalid_typed_pointer",
+      "classification": "DERIVED negative control, not a provider reply",
+      "error": "Error: Counter requirements must name an exact referenced history_selector/capability, its current filter and the policy-required filter; diagnostic IDs are not filters. Select path from [\"/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability\",\"/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability\"] and include its parent evidence in draft_paths. Omit counter_requirements entirely when no capability-filter comparison is needed."
+    },
+    {
+      "name": "incomplete_domain",
+      "classification": "DERIVED negative control, not a provider reply",
+      "error": "Error: Counting component /runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability: COUNTING_DOMAIN_INCOMPLETE. Current complete proposed/current authority and retained automatic-history evidence is required; missing storage is not empty history Correct this comparison's evidence structure; keep the saved program and settled policy decision unchanged."
+    },
+    {
+      "name": "different_history",
+      "classification": "DERIVED negative control, not a provider reply",
+      "error": "Error: Counting component /runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability: COUNTING_BEHAVIOR_DIFFERENT. The complete domain contains another relevant automatic outcome; absent and outcome-specific selectors are not established equivalent Correct this comparison's evidence structure; keep the saved program and settled policy decision unchanged."
+    }
+  ]
+}

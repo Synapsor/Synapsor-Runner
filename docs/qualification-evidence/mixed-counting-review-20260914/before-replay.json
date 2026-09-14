@@ -1,0 +1,147 @@
+{
+  "at": "2026-09-14T14:58:34.608Z",
+  "artifact_tree": "3a871a30a8e226ad60928290bb387fa2a4432cc32400ed164db8ef780b3f3b75",
+  "classification": "Host diagnostic replay of exact failed installed responses; expected refusal reproduced, not public success",
+  "provider_calls": 0,
+  "product_or_saved_job_changed": false,
+  "results": [
+    {
+      "call": 1,
+      "error": "Error: Counter disposition must match the actual versus required filter. A matching selector is not a rule defect; differing selectors cannot be called implemented without established current-domain equivalence.",
+      "derived_support_only": {
+        "classification": "DERIVED, not exact provider reply",
+        "changed_field": "counter passage operator_message_id only",
+        "error": "Error: Counter disposition must match the actual versus required filter. A matching selector is not a rule defect; differing selectors cannot be called implemented without established current-domain equivalence.",
+        "broad_pointer_refusal": true,
+        "narrow_positive_control": true
+      },
+      "submitted_counter_passage": {
+        "start": 7,
+        "end": 7,
+        "disposition": "implemented",
+        "interpretation": "Qualifying stage is the automatic-approval condition. The retained limits are count limits with inclusive 24-hour windows, maximum two for the tenant/league and six boundary-wide. Operator message 3 confirms the tenant-to-league meaning and shared referee pool. Although both capability selectors are null, the complete outcome domain contains only league.result_ratification in proposed, current, and retained automatic history, so their selected automatic history is currently equivalent to that outcome-only population.",
+        "draft_paths": [
+          "/actions/0/approval",
+          "/runner_evidence/actions/league.result_ratification/automatic_limits",
+          "/runner_evidence/runtime_contract/approval_counter_selection"
+        ],
+        "topic": "Shared automatic ratification caps",
+        "responsibility": "runner",
+        "issue_kind": "coverage_link",
+        "next_step": "Revalidate this equivalence if the boundary outcome domain changes.",
+        "operator_message_id": 3,
+        "counter_requirements": [
+          {
+            "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+            "current_capability": null,
+            "required_capability": "league.result_ratification"
+          },
+          {
+            "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+            "current_capability": null,
+            "required_capability": "league.result_ratification"
+          }
+        ]
+      },
+      "submitted_operator_message": {
+        "id": 3,
+        "text": "Yes. Each tenant is exactly one league, and each principal is an assigned referee within that league. Referees in the same league share the limit of two automatic ratifications in the rolling 24 hours; all leagues share the overall limit of six."
+      },
+      "applicable_interpretation_support": [
+        {
+          "id": 5,
+          "question": "There is a conflict to resolve before changing the saved limits:\n\n- Your accepted clarification says to keep both limits’ existing counted-history selectors unchanged.\n- The requested repair would change each selector from no outcome filter to `league.result_ratification`.\n\nShould I explicitly revise both limits so they count only automatic **result-ratification** approvals, while keeping their 2-per-league, 6-overall, and rolling-24-hour settings unchanged?",
+          "answer": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change."
+        }
+      ],
+      "matching_scoped_support_count": 0,
+      "first_failed_resolution_precondition": "The submitted passage cites a different supporting answer from the established scoped counting interpretation.",
+      "additional_static_guard_observation": {
+        "broader_approval_pointer": true,
+        "explanation": "This pointer is also outside the narrow counter-only passage contract. The exact replay stops at missing matching support first; no altered-response experiment was performed."
+      },
+      "domain": {
+        "boundary_name": "reviewed_staging_actions",
+        "proposed_revision": "sha256:9162f744949333859637dac4209b9bc34ed4bdc55707ba10f4fd45b2c6d03752",
+        "proposed_outcomes": [
+          "league.result_ratification"
+        ],
+        "current_revision": null,
+        "current_outcomes": [],
+        "retained_automatic_outcomes": [],
+        "complete": true,
+        "store_binding_digest": "sha256:181d96574619fa3620812be284453fc94de3fef383fb7ced39c253117c154d78",
+        "history_scope": "all_retained_boundary_automatic_approvals"
+      }
+    },
+    {
+      "call": 2,
+      "error": "Error: Counter disposition must match the actual versus required filter. A matching selector is not a rule defect; differing selectors cannot be called implemented without established current-domain equivalence.",
+      "derived_support_only": {
+        "classification": "DERIVED, not exact provider reply",
+        "changed_field": "counter passage operator_message_id only",
+        "error": "Error: Counter disposition must match the actual versus required filter. A matching selector is not a rule defect; differing selectors cannot be called implemented without established current-domain equivalence.",
+        "broad_pointer_refusal": true,
+        "narrow_positive_control": true
+      },
+      "submitted_counter_passage": {
+        "start": 7,
+        "end": 7,
+        "disposition": "implemented",
+        "interpretation": "Qualifying stage is the automatic-approval condition. The limits are inclusive 24-hour count limits: two for the tenant/league and six boundary-wide. Operator message 3 confirms the shared league pool. Both capability selectors are null, but the complete proposed, current, and retained automatic-outcome domain contains only league.result_ratification, so the selected automatic history is currently equivalent to outcome-only ratification history.",
+        "draft_paths": [
+          "/actions/0/approval",
+          "/runner_evidence/actions/league.result_ratification/automatic_limits",
+          "/runner_evidence/runtime_contract/approval_counter_selection"
+        ],
+        "topic": "Shared automatic ratification caps",
+        "responsibility": "runner",
+        "issue_kind": "coverage_link",
+        "next_step": "Revalidate this equivalence if the boundary outcome domain changes.",
+        "operator_message_id": 3,
+        "counter_requirements": [
+          {
+            "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+            "current_capability": null,
+            "required_capability": "league.result_ratification"
+          },
+          {
+            "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+            "current_capability": null,
+            "required_capability": "league.result_ratification"
+          }
+        ]
+      },
+      "submitted_operator_message": {
+        "id": 3,
+        "text": "Yes. Each tenant is exactly one league, and each principal is an assigned referee within that league. Referees in the same league share the limit of two automatic ratifications in the rolling 24 hours; all leagues share the overall limit of six."
+      },
+      "applicable_interpretation_support": [
+        {
+          "id": 5,
+          "question": "There is a conflict to resolve before changing the saved limits:\n\n- Your accepted clarification says to keep both limits’ existing counted-history selectors unchanged.\n- The requested repair would change each selector from no outcome filter to `league.result_ratification`.\n\nShould I explicitly revise both limits so they count only automatic **result-ratification** approvals, while keeping their 2-per-league, 6-overall, and rolling-24-hour settings unchanged?",
+          "answer": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change."
+        }
+      ],
+      "matching_scoped_support_count": 0,
+      "first_failed_resolution_precondition": "The submitted passage cites a different supporting answer from the established scoped counting interpretation.",
+      "additional_static_guard_observation": {
+        "broader_approval_pointer": true,
+        "explanation": "This pointer is also outside the narrow counter-only passage contract. The exact replay stops at missing matching support first; no altered-response experiment was performed."
+      },
+      "domain": {
+        "boundary_name": "reviewed_staging_actions",
+        "proposed_revision": "sha256:9162f744949333859637dac4209b9bc34ed4bdc55707ba10f4fd45b2c6d03752",
+        "proposed_outcomes": [
+          "league.result_ratification"
+        ],
+        "current_revision": null,
+        "current_outcomes": [],
+        "retained_automatic_outcomes": [],
+        "complete": true,
+        "store_binding_digest": "sha256:181d96574619fa3620812be284453fc94de3fef383fb7ced39c253117c154d78",
+        "history_scope": "all_retained_boundary_automatic_approvals"
+      }
+    }
+  ]
+}

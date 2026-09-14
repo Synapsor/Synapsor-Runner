@@ -1,0 +1,28 @@
+{
+  "name": "focused03",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-mixed-counting.test.ts",
+    "apps/runner/src/authoring-counting-contract.test.ts",
+    "apps/runner/src/authoring-policy-coverage.test.ts",
+    "apps/runner/src/authoring-review-continuation.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T15:06:48.322609+00:00",
+  "source_head": "b6557695b7152fdd1c1208aa4442c274f73ac145",
+  "source_diff_sha256": "0e0a3ee1be93681da10ac29a19bb2562ed161c6b8b6e86c1594c1d8e0d1004b0",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mixed-counting-review-b655769-20260914/test-environments/focused03",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mixed-counting-review-20260914/focused03",
+  "source_manifest_sha256": "b5098fe4eea04abafc6af1b5c295751273d3f131a6b2ec54c3bd8102566a745c",
+  "pid": 1941573,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T15:06:55.248492+00:00"
+}

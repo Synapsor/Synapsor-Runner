@@ -1,0 +1,24 @@
+generic-stdio.json: stdio tools/list verified
+claude-desktop.json: stdio tools/list verified
+cursor.json: stdio tools/list verified
+vscode.json: stdio tools/list verified
+support-plan-credit/claude-desktop.json: parsed and safety-scanned
+support-plan-credit/cursor-project.mcp.json: parsed and safety-scanned
+support-plan-credit/cursor-global.mcp.json: parsed and safety-scanned
+support-plan-credit/openai-agents-stdio.ts: parsed and safety-scanned
+support-plan-credit/openai-agents-streamable-http.ts: parsed and safety-scanned
+support-plan-credit/generic-stdio.json: parsed and safety-scanned
+support-plan-credit/generic-streamable-http.json: parsed and safety-scanned
+support-plan-credit/README.md: syntax-checked and safety-scanned
+support-plan-credit/claude-code.sh: syntax-checked and safety-scanned
+support-plan-credit/codex.config.toml: syntax-checked and safety-scanned
+support-plan-credit/vscode.mcp.json: syntax-checked and safety-scanned
+support-plan-credit/langchain.mjs: syntax-checked and safety-scanned
+support-plan-credit/google-adk.py: syntax-checked and safety-scanned
+support-plan-credit/llamaindex.py: syntax-checked and safety-scanned
+support-plan-credit/generic-stdio.mjs: syntax-checked and safety-scanned
+support-plan-credit/generic-streamable-http.mjs: syntax-checked and safety-scanned
+claude-code: current CLI accepted the stdio configuration (2.1.270 (Claude Code))
+codex: current CLI accepted the stdio configuration (codex-cli 0.154.0)
+support-plan-credit: stdio tools/list verified
+MCP client config examples are parseable, secret-free, and expose semantic tools only.
