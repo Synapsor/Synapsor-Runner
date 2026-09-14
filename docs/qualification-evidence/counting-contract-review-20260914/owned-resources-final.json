@@ -1,0 +1,22 @@
+{
+  "at": "2026-09-14T10:40:08.226227+00:00",
+  "exit_code": 0,
+  "containers": [
+    {
+      "name": "synapsor-counting-review-tests-e16abe2a",
+      "id": "90d188401326695823b2e1a3169d1a4ef75c3bc8f50295f062549b114fcf2a03",
+      "running": false,
+      "label": "counting-contract-review-20260914"
+    },
+    {
+      "name": "synapsor-counting-review-recovery-tournament-assisted-06f57f5d",
+      "id": "5816b5375aba13cee884f3c5d847cb0eff96cc8355cbdc707c2bb15e118f265a",
+      "running": false,
+      "label": "counting-contract-review-20260914"
+    }
+  ],
+  "public_cli_exit": 0,
+  "no_public_run_lock": true,
+  "recorded_processes_checked": 33,
+  "recorded_processes_still_present": []
+}

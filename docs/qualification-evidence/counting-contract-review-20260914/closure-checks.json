@@ -1,0 +1,9 @@
+{
+  "at": "2026-09-14T10:48:05.881678+00:00",
+  "new_evidence_files_scanned": 382,
+  "potential_credential_patterns": [],
+  "product_test_script_source_changes_since_freeze": false,
+  "new_public_attempts_after_stop": 0,
+  "public_guard_or_policy_override": false,
+  "report_scope": "known-case authoring recovery remains incomplete; no new qualification"
+}

@@ -1,0 +1,48 @@
+{
+  "at": "2026-09-14T10:45:08.746640+00:00",
+  "artifact_tree": "3a871a30a8e226ad60928290bb387fa2a4432cc32400ed164db8ef780b3f3b75",
+  "product": "bf156a0ba5834c1c832d967400c5f4e2274ea4fd",
+  "tests": "113859e424e77906fae74a0e2203d714b0014e70",
+  "frozen_source": "26fc90fafa576ec511d74685807327037e8f1ab2",
+  "overall_assignment": "NOT_COMPLETE",
+  "semantic_classification": "A_CONDITIONAL_SINGLE_OUTCOME_EQUIVALENCE",
+  "independent_review": false,
+  "rows": {
+    "semantic_adjudication": "ESTABLISHED_WITH_DOMAIN_CONDITION",
+    "deterministic_counting_and_captured_review": "PASS",
+    "types": "PASS_EXIT_0",
+    "full_suite": {
+      "status": "PASS",
+      "passed": 6262,
+      "skipped": 462,
+      "exit": 0
+    },
+    "real_postgresql_control": {
+      "status": "PASS",
+      "accounting_publication_domain_passed": 37,
+      "review_recovery_passed": 4,
+      "excluded_review_cases": 416
+    },
+    "offline_package_checks": {
+      "status": "PASS",
+      "count": 10
+    },
+    "complete_candidate_hash_before_after": "PASS",
+    "installed_public_business_review": "FAIL_POLICY_COVERAGE_INVALID",
+    "exact_program_and_absent_selectors": "PASS_PRESERVED",
+    "pending_repair_reconciliation": "BLOCKED_REVIEW_FAILED",
+    "successful_review_restart": "BLOCKED_NOT_RUN",
+    "explicit_unchanged_recheck": "BLOCKED_NOT_RUN",
+    "deployment_and_independent_readback": "UNPERFORMED_UNVERIFIED_AS_REQUIRED",
+    "original_software_controls": "PASS_LOCAL_COMPOSED_ONLY",
+    "original_evidence_preservation": "PASS_202108_ENTRIES_UNCHANGED",
+    "owned_cleanup": "PASS"
+  },
+  "public_calls": 2,
+  "public_ceiling": 25,
+  "development_provider_calls": 0,
+  "runtime_effects_exercised": false,
+  "historical_stage_a": "ARTIFACT_SPECIFIC_ACCEPTANCE_UNCHANGED",
+  "original_stage_b": "NOT_PASSED",
+  "next_decision": "remaining-counter-review.md"
+}

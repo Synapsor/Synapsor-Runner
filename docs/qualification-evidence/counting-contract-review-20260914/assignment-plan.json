@@ -23,7 +23,7 @@
   "scope_correction": "Assisted tenant2/boundary6 capability selectors stay ABSENT exactly. Original retains league.ratify_result selectors. Absence is accepted meaning; never fill it in.",
   "excluded_worker_issue": "TRUSTED_BINDING_MISSING worker-retry classification reported by independent reviewer; separate decision, no reproduction/repair/worker in this assignment",
   "stage_b": "NOT_PASSED",
-  "next_step": "All stable/type/backend/offline gates complete. Commit evidence checkpoint and freeze one complete installation, then bind/run assisted public review, restart and explicit unchanged recheck.",
+  "next_step": "STOP. Separate decision on remaining-counter-review.md; no additional model review, source repair, activation or qualification authorized by this delivery.",
   "trial_harness_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/trial-harness",
   "original_cases_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases",
   "budget_amendments": [
@@ -46,5 +46,12 @@
   "product_revision": "bf156a0ba5834c1c832d967400c5f4e2274ea4fd",
   "verification_phase_started_at": "2026-09-14T09:26:46Z",
   "verification_phase_deadline": "2026-09-14T11:26:46Z",
-  "current_stable_source": "113859e424e77906fae74a0e2203d714b0014e70"
+  "current_stable_source": "113859e424e77906fae74a0e2203d714b0014e70",
+  "status": "STOPPED_FOR_REVIEW_NOT_COMPLETE",
+  "closed_at": "2026-09-14T10:46:53.900422+00:00",
+  "final_candidate_tree": "3a871a30a8e226ad60928290bb387fa2a4432cc32400ed164db8ef780b3f3b75",
+  "final_public_calls": 2,
+  "final_public_status": "FAILED_POLICY_COVERAGE_INVALID",
+  "successful_review_restart": "BLOCKED_NOT_RUN",
+  "explicit_unchanged_recheck": "BLOCKED_NOT_RUN"
 }

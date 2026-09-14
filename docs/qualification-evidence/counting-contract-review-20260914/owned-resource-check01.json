@@ -1,0 +1,7 @@
+{
+  "exit_code": 1,
+  "classification": "closure harness metadata-field error; no resource mutated",
+  "error": "TypeError: expected str, bytes or os.PathLike object, not NoneType",
+  "cause": "Read a nonexistent container key from private/live-postgres.json; use the already recorded cleanup identity instead.",
+  "frozen_verification_completed_before_error": true
+}

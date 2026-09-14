@@ -1,0 +1,14 @@
+{
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "tsx",
+    "docs/qualification-evidence/counting-contract-review-20260914/replay-public-refusal.mts"
+  ],
+  "exit_code": 0,
+  "verdict": "two exact expected refusals reproduced; NOT an installed success",
+  "provider_calls": 0,
+  "read_only_repeat_verified_raw_inputs_and_replies": true,
+  "read_only_repeat_exit_code": 0
+}

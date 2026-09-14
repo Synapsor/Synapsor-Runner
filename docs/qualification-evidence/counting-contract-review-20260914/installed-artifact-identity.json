@@ -1,0 +1,37 @@
+{
+  "at": "2026-09-14T10:32:50.062597+00:00",
+  "source_commit": "26fc90fafa576ec511d74685807327037e8f1ab2",
+  "product_commit": "bf156a0ba5834c1c832d967400c5f4e2274ea4fd",
+  "test_commit": "113859e424e77906fae74a0e2203d714b0014e70",
+  "prompt_commit": "79b3fdba300c8f7c0166bf229555a97c70b9aa76",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/counting-contract-review-f58a824-20260914/frozen/installed",
+  "installed_tree_sha256": "3a871a30a8e226ad60928290bb387fa2a4432cc32400ed164db8ef780b3f3b75",
+  "entries": 7569,
+  "runner_version": "1.8.0",
+  "spec_version": "1.11.0",
+  "package_lock_sha256": "2238445711f25d9e29fb5671d80fad37561f726fedf0a07eca8c8101bb5ebeef",
+  "node": {
+    "version": "v22.22.2",
+    "executable": "/usr/bin/node",
+    "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+  },
+  "verification": {
+    "verified_at": "2026-09-14T10:32:50.041Z",
+    "installed_tree_sha256": "3a871a30a8e226ad60928290bb387fa2a4432cc32400ed164db8ef780b3f3b75",
+    "entries": 7569
+  },
+  "files": {
+    "installed-artifact-manifest.json": "91a61d2289eb4bb8d5c04df094a15df7b8ffcbe5dceae5d8f4eb4a96a4125159",
+    "installed-dependency-tree.json": "09bb79f9a1b09961d009787559698b358d359c881892376b2eeff1440b9ee1a6",
+    "installed-artifact.tar.gz": "31310dd6411a36dcab2ca2e57059c0603f959e2a86b347b1860efcf9c87253bf",
+    "synapsor-runner-1.8.0.tgz": "c3dcdb4f1f092fb8c288ea3c7285e3c92ad1f3b7a3518f38cfd950213ef162de",
+    "synapsor-spec-1.11.0.tgz": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+  },
+  "entrypoints": {
+    "node_modules/@synapsor/runner/dist/authoring.mjs": "b82d745464b0e275993266d6eff074f4e0752a69117e75e8166a3f9d5b177116",
+    "node_modules/@synapsor/runner/dist/cli.js": "fd5383c5bd241f7c1f917ee548bc679b00a188ebeac0f117ac3e6224a7ea6acc",
+    "node_modules/@synapsor/runner/dist/runner.mjs": "039c6bec0759b964d2262e64ecff4c66940783f411d6e7f3f2b68a1dbf294977",
+    "node_modules/@synapsor/runner/dist/runtime.mjs": "2af5a8ad545507eee4e2e480d9dfb7c3df046b0ea9fede6a837247a01ed17848",
+    "node_modules/@synapsor/runner/dist/shadow.mjs": "b77c62f1e28a8aa637f62a0c03477d8b897ae15c5f1720be07804f86be0fa932"
+  }
+}

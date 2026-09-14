@@ -1,0 +1,27 @@
+{
+  "at": "2026-09-14T10:46:53.900422+00:00",
+  "status": "STOPPED_FOR_REVIEW_NOT_COMPLETE",
+  "branch": "codex/tui-safe-action-control-plane",
+  "product_commit": "bf156a0ba5834c1c832d967400c5f4e2274ea4fd",
+  "test_commit": "113859e424e77906fae74a0e2203d714b0014e70",
+  "frozen_source_commit": "26fc90fafa576ec511d74685807327037e8f1ab2",
+  "installed_tree_sha256": "3a871a30a8e226ad60928290bb387fa2a4432cc32400ed164db8ef780b3f3b75",
+  "primary_report": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/counting-contract-review-20260914/FINAL-REPORT.md",
+  "remaining_issue": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/counting-contract-review-20260914/remaining-counter-review.md",
+  "scorecard": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/counting-contract-review-20260914/SCORECARD.json",
+  "raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/counting-contract-review-f58a824-20260914",
+  "stopped_checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/counting-contract-review-f58a824-20260914/runs/recovery-tournament-assisted/checkpoints/stopped-counter-disposition",
+  "external_delivery_receipt": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/counting-contract-review-f58a824-20260914/delivery.json",
+  "final_commit_locator": [
+    "git",
+    "log",
+    "-1",
+    "--format=%H",
+    "--",
+    "docs/qualification-evidence/counting-contract-review-20260914/FINAL-REPORT.md"
+  ],
+  "push_destination": "https://github.com/Synapsor/Synapsor-Runner-Backup.git",
+  "push_remote": "backup",
+  "private_destination_verified": true,
+  "note": "Final commit, remote equality and clean-tree verification are recorded in external_delivery_receipt after pushing. No public deployment/release."
+}

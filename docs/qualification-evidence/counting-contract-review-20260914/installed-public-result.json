@@ -1,0 +1,21 @@
+{
+  "at": "2026-09-14T10:37:49.101709+00:00",
+  "artifact_tree": "3a871a30a8e226ad60928290bb387fa2a4432cc32400ed164db8ef780b3f3b75",
+  "status": "FAILED_INSTALLED_REVIEW",
+  "cause_class": "host review integration / invalid mixed counter passage; not provider transport or runtime accounting",
+  "new_public_transport_attempts": 2,
+  "complete_responses": 2,
+  "development_provider_calls": 0,
+  "coverage_equal": true,
+  "policy_sources_equal": true,
+  "pending_equal": true,
+  "all_ledger_tables_equal": false,
+  "operator_messages_equal": true,
+  "restart_success_and_explicit_unchanged_recheck": "BLOCKED_NOT_RUN: no completed business review",
+  "no_new_owner_decision": true,
+  "historical_two_call_failure_preserved": true,
+  "fresh_trials": 0,
+  "first_public_start": "2026-09-14T10:33:19.647Z",
+  "deadline": "2026-09-14T11:18:19.647Z",
+  "stopped_after_two_response_attempts": true
+}

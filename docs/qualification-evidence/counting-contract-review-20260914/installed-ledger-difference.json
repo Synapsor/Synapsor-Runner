@@ -1,0 +1,39 @@
+[
+  {
+    "table": "control_policy_deployments",
+    "before": 1,
+    "after": 1,
+    "removed": [
+      {
+        "deployment_id": "a595c8b3-94a3-4ca5-a83e-6c3225be9952",
+        "project_id": "26d83072-6eac-43a4-b170-7034f4a6fb34",
+        "epoch": 16,
+        "migration_digest": "sha256:fc7bf0729d70f53a8da21b4bf4d7a2080849ad837fd87b0ab7d6441cd246784a"
+      }
+    ],
+    "added": [
+      {
+        "deployment_id": "a595c8b3-94a3-4ca5-a83e-6c3225be9952",
+        "project_id": "26d83072-6eac-43a4-b170-7034f4a6fb34",
+        "epoch": 17,
+        "migration_digest": "sha256:fc7bf0729d70f53a8da21b4bf4d7a2080849ad837fd87b0ab7d6441cd246784a"
+      }
+    ]
+  },
+  {
+    "table": "control_policy_events",
+    "before": 16,
+    "after": 17,
+    "removed": [],
+    "added": [
+      {
+        "deployment_id": "a595c8b3-94a3-4ca5-a83e-6c3225be9952",
+        "epoch": 17,
+        "event_id": "56d73694-7152-44e0-a903-7694b0e4bdd0",
+        "actor": "local_operator",
+        "occurred_at": "2026-09-14T10:33:41.195Z",
+        "receipt_json": "{\"after\":\"policy:3a09a1839a9483abcaef6352720ea800a9a0cf154ab9e3d19d0145781a98cb87\",\"before\":\"policy:3a09a1839a9483abcaef6352720ea800a9a0cf154ab9e3d19d0145781a98cb87\",\"name\":\"reviewed_staging_rules\",\"operation\":\"save_disabled_action\",\"source_database_changed\":false}"
+      }
+    ]
+  }
+]
