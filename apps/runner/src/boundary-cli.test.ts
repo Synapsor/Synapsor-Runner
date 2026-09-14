@@ -5196,7 +5196,7 @@ describe("boundary operator-plane CLI", () => {
       expect(interrupted.value.action).toEqual(unfinished);
       expect(interrupted.value.conversation).toEqual(conversation);
       const source = newPolicySourceSession();
-      source.snapshots = [policyTextSnapshot(Buffer.from("The overall and customer automatic-approval limits share the same rolling 24-hour window."), "Saved-rules.txt")];
+      source.snapshots = [policyTextSnapshot(Buffer.from("The overall and customer automatic-approval limits share the same rolling 24-hour window. The existing allowance counts automatic approvals across all outcomes."), "Saved-rules.txt")];
       source.active = 1;
       source.approvals = [{ digest: source.snapshots[0]!.digest, destination: authoringDestination({ provider: "openai", model: "gpt-test" }) }];
       await savePolicySources(root, source);
@@ -8084,13 +8084,15 @@ describe("boundary operator-plane CLI", () => {
           reviews: compiled.map((entry) => ({ outcome: entry.rule.outcome, ...entry.review })) });
         await writeActionRuleAuthorityDraft(root, combined);
         const source = newPolicySourceSession();
-        source.snapshots = [policyTextSnapshot(Buffer.from(reconciliation
+        // These prepared automatic limits need a positive count-set requirement,
+        // independently of the narrower routing/readback concern under test.
+        source.snapshots = [policyTextSnapshot(Buffer.from((reconciliation
           ? (reconciliationClient ? "The client captures the chosen record and displays its true status. Independently verify the changed source row after execution." : "Independently verify the changed source row after execution.")
           : requiresCurrentState
           ? "Require current eligibility before reading information or requesting a change; keep approval limits unchanged."
           : posture === "policy_target_mixed_read_scope"
             ? "Customers may read only their permitted records before requesting a change; keep approval limits unchanged."
-          : "Preserve the shared limits and resolve the reviewer requirement for the current new outcome."), "Saved-rules.txt")];
+          : "Preserve the shared limits and resolve the reviewer requirement for the current new outcome.") + " The existing allowance counts automatic approvals across all outcomes."), "Saved-rules.txt")];
         source.active = 1;
         source.approvals = [{ digest: source.snapshots[0]!.digest, destination: authoringDestination({ provider: "openai", model: "gpt-test" }) }];
         if (reconciliationClient) source.application_assignments = [{ source_digest: source.snapshots[0]!.digest, draft_digest: canonicalJsonDigest("older complete coverage input"), start: 1, end: 1, obligations: ["customer_selection", "status_presentation"], assigned_at: "2026-09-13T00:00:00Z", owner: "client_application", verified: false }];
@@ -8380,8 +8382,12 @@ describe("boundary operator-plane CLI", () => {
           expect(restarted.pending_action_revision).toBeUndefined();
           expect(revise).not.toHaveBeenCalled();
           const currentSource = await loadPolicySources(root, restarted.policy_source_session);
-          expect(currentSource.coverage?.passages).toMatchObject([{ disposition: "needs_decision", responsibility: "application",
+          expect(currentSource.coverage?.passages.filter(p => p.application_obligations?.length)).toMatchObject([{ disposition: "needs_decision", responsibility: "application",
             application_obligations: ["independent_source_readback"] }, ...(reconciliationClient ? [{ disposition: "needs_decision", responsibility: "application", application_obligations: ["customer_selection", "status_presentation"] }] : [])]);
+          expect(currentSource.coverage?.passages).toHaveLength(reconciliationClient ? 8 : 7);
+          expect(currentSource.coverage?.passages.filter(p => p.counting_requirement_bindings?.length)).toHaveLength(6);
+          expect(currentSource.coverage?.passages.filter(p => p.counting_requirement_bindings?.length).every(p => p.disposition === "implemented"
+            && p.counter_requirements?.every(c => c.current_capability === null && c.required_capability === null))).toBe(true);
           if (reconciliationClient) expect(currentSource.application_assignments).toMatchObject([{ source_digest: currentSource.coverage!.source_digest, draft_digest: currentSource.coverage!.draft_digest, obligations: ["customer_selection", "status_presentation"], owner: "client_application", verified: false }]);
           return;
         }
