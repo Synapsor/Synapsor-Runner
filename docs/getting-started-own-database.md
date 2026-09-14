@@ -54,7 +54,7 @@ or accepts SQL. A proposal is not approval; approval is not completion. Only an
 applied receipt establishes a completed write. Trusted tenant/principal values
 come from the configured caller context, never from model arguments.
 
-## Current Headless Path
+## Provider-free drafting and terminal requirements
 
 Without a TTY, `--from-env` initializes the same metadata-only disabled Auto
 Boundary as `boundary draft`. `--json` emits one JSON result with next steps;
@@ -80,7 +80,19 @@ synapsor-runner action review --project-root .
 ```
 
 `start` accepts the same export/submit flags. Export and submission assume
-metadata already exists; neither needs a TTY or provider. Dry-run validates
+metadata already exists; neither needs a provider. Ordinary export/submission can
+run without a TTY when the required source mappings are already reviewed. If an
+UPDATE target needs an explicit maintained-counter choice, run the submission
+with `--review-counters` in a real operator terminal. This operation is model-free,
+not headless: the source owner selects an inspected counter and confirms its
+maintenance contract. `--json`, redirected input and the draft file do not supply
+that consent. A non-TTY attempt exits 2 with
+`ACTION_VERSION_REVIEW_TERMINAL_REQUIRED`, saves nothing, and directs the operator
+to the terminal review; it does not ask them to correct a valid draft.
+
+An exact reviewed mapping can be reused non-interactively while its metadata and
+review bindings remain valid; a changed binding requires renewed review.
+Dry-run validates
 without publishing. Submission saves disabled drafts, not human confirmations.
 `--yes` never activates semantic authority. Headless semantic activation is not
 implemented: legacy `action activate --headless` is not a substitute for the

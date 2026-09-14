@@ -121,6 +121,10 @@ async function structuredBoundaryAuthoringCommandInner(
   if (args.includes("--review-counters")) {
     if (!draftPath) throw new Error("--review-counters requires --draft <file>; it reviews the submitted UPDATE targets.");
     // The typed file and --json never supply or imply source-owner consent.
+    if (!counterReviewSession && (!process.stdin.isTTY || !process.stdout.isTTY)) {
+      throw Object.assign(new Error("Counter review requires a real terminal for the source owner's explicit confirmation. No draft was saved."),
+        { code: "ACTION_VERSION_REVIEW_TERMINAL_REQUIRED" });
+    }
     counterReviewSession ??= createBoundaryReviewInteractiveSession();
   } else counterReviewSession = undefined;
   const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
@@ -864,6 +868,9 @@ function structuredErrorMessage(error: unknown, code: string): string {
 }
 
 function structuredErrorNextAction(code: string): string | undefined {
+  if (code === "ACTION_VERSION_REVIEW_TERMINAL_REQUIRED") {
+    return "Run the counter review in a real operator terminal. The typed draft and --json do not supply source-owner consent; no draft-field correction is required by this refusal.";
+  }
   if (code === "STRUCTURED_DRAFT_STALE" || code === "POLICY_REVISION_CONFLICT") {
     return "Export a new structured draft from the current saved review, then resubmit it.";
   }

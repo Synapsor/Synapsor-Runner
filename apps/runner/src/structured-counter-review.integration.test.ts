@@ -86,7 +86,35 @@ describe("public model-free structured counter review", () => {
     expect(exported.action_authoring_catalog.resources[0]).toMatchObject({ selected_version_field: "c09", operations: { update: true } });
     expect(await f.run(["--draft", "after.json", "--dry-run"])).toBe(0);
     expect(await readActionRuleAuthorityDraft(f.root, f.name)).toEqual(saved);
+    // Persist exact reviewed mappings without another model or terminal consent.
+    expect(await f.run(["--draft", "after.json"])).toBe(0);
+    const content = (authority: typeof saved.authority) => {
+      const { digest: _digest, ...rest } = authority;
+      return { ...rest, rules: rest.rules.map(({ activated_at: _timestamp, ...rule }) => rule) };
+    };
+    expect(content((await readActionRuleAuthorityDraft(f.root, f.name))!.authority)).toEqual(content(saved.authority));
+    expect(await readActionRuleAuthorityActivation(f.root)).toBeUndefined();
     expect(output(f)).toContain('"maintenance": "all_writers_increment"');
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it("permits a deliberate exact history-filter edit through a separate structured disabled review", async () => {
+    const f = await fixture();
+    expect(await f.run(["--draft", "action.json", "--review-counters"], reviewSession())).toBe(0);
+    const before = (await readActionRuleAuthorityDraft(f.root, f.name))!;
+    expect(await f.run(["--export-draft", "selector-review.json"])).toBe(0);
+    const selected = JSON.parse(await fs.readFile(path.join(f.root, "selector-review.json"), "utf8"));
+    const rule = selected.actions[0];
+    rule.approval.shared_limits.find((limit: { id: string }) => limit.id === "joint_overall").capability = rule.outcome;
+    await fs.writeFile(path.join(f.root, "selector-review.json"), JSON.stringify(selected));
+    expect(await f.run(["--draft", "selector-review.json", "--dry-run"])).toBe(0);
+    expect(await readActionRuleAuthorityDraft(f.root, f.name)).toEqual(before);
+    expect(await f.run(["--draft", "selector-review.json"])).toBe(0);
+    const after = (await readActionRuleAuthorityDraft(f.root, f.name))!;
+    expect(after.authority.approval_classes[0]!.shared_limits.find(limit => limit.id === "joint_overall")!.capability).toBe(rule.outcome);
+    expect(after.authority.rules[0]!.rule.effect).toEqual(before.authority.rules[0]!.rule.effect);
+    expect(after.state).toBe("disabled");
+    expect(await readActionRuleAuthorityActivation(f.root)).toBeUndefined();
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
@@ -144,6 +172,9 @@ describe("public model-free structured counter review", () => {
     const f = await fixture(), baseline = await readActionRuleAuthorityRevisionBaseline(f.root);
     expect(await f.run(["--draft", "action.json", "--review-counters"])).toBe(2);
     expect(output(f)).toContain("real terminal");
+    expect(output(f)).toContain("ACTION_VERSION_REVIEW_TERMINAL_REQUIRED");
+    expect(output(f)).toContain("Run the counter review in a real operator terminal");
+    expect(output(f)).not.toContain("Correct the reported draft field");
     expect(await f.run(["--draft", "action.json", "--review-counters", "--yes"], reviewSession())).toBe(2);
     expect(await f.run(["--export-draft", "unused.json", "--review-counters"], reviewSession())).toBe(2);
     expect(await readActionRuleAuthorityRevisionBaseline(f.root)).toEqual(baseline);
