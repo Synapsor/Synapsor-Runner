@@ -89,7 +89,8 @@ export function actionRuleIntentSkeletonsFromResume(input: {
     resources: structuredClone(input.builtCatalog.authoring.resources),
     relationships: structuredClone(input.builtCatalog.authoring.relationships),
     subject_ref_resource_candidates: input.builtCatalog.catalog.resources
-      .filter((resource) => resource.tenant_key !== undefined)
+      .filter((resource) => resource.tenant_key !== undefined
+        && input.builtCatalog.authoring.resources.find(r => r.name === resource.name)?.subject_reference?.obtainable !== false)
       .map((resource) => resource.name),
   };
   return intents.map((intent, index) => ({

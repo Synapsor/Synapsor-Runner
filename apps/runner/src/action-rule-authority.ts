@@ -1,3 +1,4 @@
+import { assertActionSubjectsObtainable } from "./action-subject-compatibility.js";
 import fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
 import path from "node:path";
@@ -479,6 +480,8 @@ export async function activateActionRuleAuthority(input: {
   actor: string;
   now?: string;
   mutationPermit?: ProjectAuthorityMutationPermit;
+  /** Selected by the fixed-tool deployment host, never a model option. Other hosts can issue their own reviewed subjects. */
+  clientContract?: "four_tool";
   /** Internal, already-validated runtime binding; never model-supplied authority. */
   runtimePublication?: { binding: BoundProjectPolicyStore; configPath: string; before: string | undefined; after: string };
 }): Promise<ActionRuleAuthorityActivationV1> {
@@ -533,7 +536,9 @@ async function reviewedActionActivation(input: Parameters<typeof activateActionR
     throw authorityError("ACTION_RULE_CONFIRMATION_REQUIRED", `Enter ACTIVATE ${draft.digest} to publish this exact Action Rule authority.`);
   }
   const loaded = parseActionRuleAuthority(draft.authority, draft.digest);
-  assertReadDependenciesActive(loaded, await readBoundaries());
+  const currentReads = await readBoundaries();
+  assertReadDependenciesActive(loaded, currentReads);
+  if (input.clientContract === "four_tool") assertActionSubjectsObtainable(loaded.authority, currentReads);
   return {
     schema_version: ACTION_RULE_AUTHORITY_ACTIVATION_VERSION,
     state: "active",

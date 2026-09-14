@@ -1,3 +1,4 @@
+import { actionSubjectCompatibility, type ActionSubjectCompatibility } from "./action-subject-compatibility.js";
 import {
   ActionRuleError,
   actionRuleRelationshipPairs,
@@ -94,6 +95,7 @@ export type ActionRuleModelDraftV1 = {
 };
 
 export type CompiledActionRuleModelDraftV1 = {
+  client_compatibility: ActionSubjectCompatibility;
   draft: ActionRuleModelDraftV1;
   verification_boundary: RuleVerificationBoundarySpecV1;
   effect_envelope: DerivedEffectEnvelopeSpecV1;
@@ -567,6 +569,7 @@ export function compileActionRuleModelDraft(input: {
     effect_envelope: envelope,
     rule,
     approval_class: approvalClass,
+    client_compatibility: actionSubjectCompatibility(loaded.authority, [input.readBoundary]),
     loaded,
     review: draft.review,
   };

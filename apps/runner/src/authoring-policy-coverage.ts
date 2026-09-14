@@ -542,6 +542,14 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
       draft_paths: [requirement.path], counting_requirement_bindings: [requirement],
       next_step: "Supply the actual and source-required capability values with applicable support, then validate the exact selector or the existing conditional-domain proof. Do not change policy to fix a citation." });
   }
+  const subjectCompatibility = evidenceRecord(evidenceRecord(evidenceRecord(draft)?.runner_evidence)?.action_subject_compatibility);
+  if (subjectCompatibility?.compatible === false) {
+    const line = Math.max(1, lines.findIndex(l => l.trim()) + 1);
+    passages.push({ start: line, end: line, disposition: "unsupported", responsibility: "runner", issue_kind: "missing_configuration",
+      topic: "Action subject reference unavailable", interpretation: "An external Action subject cannot be obtained through the current reviewed four-tool Read contract. Related values do not establish reference issuance.",
+      draft_paths: ["/runner_evidence/action_subject_compatibility"],
+      next_step: "Review an obtainable subject with an existing exact binding only if all eligible targets remain reachable, or request a separate explicit Read/reference decision. The disabled draft is retained; publication is not ready." });
+  }
   if (passages.length > 120) throw new Error("Coverage including retained counting comparisons exceeds 120 passages; group the remaining clauses without dropping requirements.");
   const missing = lines.flatMap((line, index) => line.trim() && !covered.has(index + 1) ? [index + 1] : []);
   if (missing.length) throw new Error(`Unaccounted source lines: ${missing.join(", ")}. Include restrictions and unsupported clauses, not only implemented clauses.`);

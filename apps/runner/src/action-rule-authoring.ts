@@ -1,3 +1,4 @@
+import { subjectReferenceRoute } from "./action-subject-compatibility.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   ACTION_RULE_CATALOG_VERSION,
@@ -32,6 +33,8 @@ export type ActionRuleAuthoringFieldV1 = {
 };
 
 export type ActionRuleAuthoringResourceV1 = {
+  /** Metadata-only client route, distinct from internal verification eligibility. */
+  subject_reference?: { obtainable: boolean; code?: string };
   name: string;
   label?: string;
   description?: string;
@@ -247,7 +250,9 @@ export function buildActionRuleAuthoringCatalog(input: {
           : {}),
       };
     });
+    const subjectCode = subjectReferenceRoute(input.boundary, canonical);
     authoringResources.push({
+      subject_reference: { obtainable: subjectCode === undefined, ...(subjectCode ? { code: subjectCode } : {}) },
       name: resourceName,
       ...(resource?.label ? { label: resource.label } : {}),
       ...(resource?.description ? { description: resource.description } : {}),

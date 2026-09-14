@@ -603,7 +603,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
           const unchanged = initial && ACTION_RULE_PHASES.every((phase) => canonicalJsonDigest(initial![phase]) === canonicalJsonDigest(submissions[phase]));
           compiled = result;
           checkpointNeedsRevalidation = false;
-          return { ok: true, value: { status: "ready_for_review", draft_changed: !unchanged,
+          return { ok: true, value: { status: result.client_compatibility.compatible ? "ready_for_review" : "incomplete_client_contract", client_compatibility: result.client_compatibility, draft_changed: !unchanged,
             ...(unchanged ? { explanation: "The existing draft validates unchanged. No revision was saved. Explain whether it already represents the clarification; do not request a redundant edit or repeat an answered question." } : {}),
             outcome: result.rule.outcome, review: result.draft.review, inputs: result.draft.inputs ?? [], authority_granted: false, source_database_changed: false } };
         }

@@ -1,3 +1,4 @@
+import { actionSubjectCompatibility } from "./action-subject-compatibility.js";
 import { policyCountingInterpretations } from "./authoring-counting-review.js";
 import type { CountingOutcomeDomain } from "./authoring-policy-source.js";
 import { explorationBoundaryCandidateDigest, hasReviewedPrincipalScope, type ExplorationBoundaryDraft } from "./auto-boundary.js";
@@ -351,6 +352,7 @@ export function policyCoverageDraft(input: {
           semantics: "With direct_sql configured and separately enabled, the worker processes approved requests without a per-request staff step. Approval alone is not completion. A disabled configuration is prepared behavior, not missing business logic.",
         },
       }])),
+      action_subject_compatibility: input.authority ? actionSubjectCompatibility(input.authority.authority, [input.read]) : null,
       counting_interpretations: policyCountingInterpretations(input.policySources, policySource,
         canonicalJsonDigest({ read: readDigest, action: input.authority?.digest ?? null }), input.operatorClarifications ?? []),
       runtime_contract: {

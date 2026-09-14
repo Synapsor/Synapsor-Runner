@@ -1,3 +1,4 @@
+import { actionSubjectCompatibility } from "./action-subject-compatibility.js";
 import process from "node:process";
 import path from "node:path";
 import { reviewSemanticReceiptSetup } from "./semantic-receipt-setup.js";
@@ -105,14 +106,17 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
     if ((error as NodeJS.ErrnoException).code === "ENOENT") return [];
     throw error;
   });
-  const draftReady = input.draft?.authority.rules.every((rule) => activeReads.some((boundary) =>
+  const compatibility = input.draft || input.active ? actionSubjectCompatibility((input.draft ?? input.active)!.authority, activeReads) : undefined;
+  const subjectConcerns = compatibility?.subjects.filter(s => !s.obtainable) ?? [];
+  const subjectLines = subjectConcerns.flatMap(s => [`${s.outcome}/${s.binding}: ${s.code}.`, s.next_step!]);
+  const draftReady = !subjectConcerns.length && (input.draft?.authority.rules.every((rule) => activeReads.some((boundary) =>
     boundary.pack.name === rule.read_boundary_name
-    && boundary.activation.digest === rule.read_boundary_digest)) ?? false;
+    && boundary.activation.digest === rule.read_boundary_digest)) ?? false);
   const unavailableOutcomes = new Set(input.active?.authority.rules.filter((rule) => !activeReads.some((boundary) =>
     boundary.pack.name === rule.read_boundary_name && boundary.activation.digest === rule.read_boundary_digest))
     .map((rule) => rule.rule.outcome) ?? []);
   const unavailableNotice = "Verified Action authority is saved; Read dependency unavailable.";
-  const canContinueClientSetup = Boolean(input.clientSetup && input.active && !unavailableOutcomes.size
+  const canContinueClientSetup = Boolean(input.clientSetup && input.active && !unavailableOutcomes.size && !subjectConcerns.length
     && activeReads.length && activeReads.every(read => read.deployment_profile !== "production"));
   const current = input.draft ?? input.active;
   if (!current) {
@@ -171,6 +175,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
   };
   const summary = [
     ...jobReview.summary,
+    ...subjectLines,
     ...(needsReadReview ? ["Review the saved read access first; its latest revision is not active.",
       "Your business rules stay saved. Read approval is separate and does not enable changes or execution.",
       ...(input.reviewRead ? [] : [`Open: ${cliCommandName()} boundary review --project-root ${shellQuote(input.projectRoot)} --access`])] : []),
@@ -195,6 +200,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
           ? unavailableOutcomes.size ? "The saved activation is unchanged until you separately confirm this exact replacement."
             : "The active authority remains live until you separately confirm this exact replacement."
           : "Disabled revision is ready for its separate proposal-authority confirmation."
+        : subjectConcerns.length ? "This revision is not ready for the four-tool client: review its subject acquisition requirement. Existing authority remains unchanged."
         : input.active
           ? canRecheckRead ? "The saved activation is unchanged. Recheck its replacement against the reviewed access before activation."
             : `The saved activation is unchanged. Activate the exact linked Read Boundary ${input.boundaryName} before reviewing its replacement.`

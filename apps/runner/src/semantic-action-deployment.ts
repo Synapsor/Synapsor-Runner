@@ -269,7 +269,7 @@ async function activateSemanticActionRuntimeUnlocked(input: Parameters<typeof ac
       const selected = await openProjectControlPolicies({ projectRoot, config: resolved, env: input.env,
         storePath: path.resolve(path.dirname(outputConfigPath), resolved.storage?.sqlite_path ?? ".synapsor/local.db") });
       await selected?.close();
-      const activation = await activateActionRuleAuthority({ projectRoot, name: input.draft.authority.name,
+      const activation = await activateActionRuleAuthority({ clientContract: "four_tool", projectRoot, name: input.draft.authority.name,
         expected_digest: input.draft.digest, confirmation: `ACTIVATE ${input.draft.digest}`, actor: input.actor,
         mutationPermit: permit, ...(input.now ? { now: input.now } : {}),
         runtimePublication: { binding, configPath: outputConfigPath, before: previous, after: nextText } });
@@ -278,7 +278,7 @@ async function activateSemanticActionRuntimeUnlocked(input: Parameters<typeof ac
     if (configChanged) await writePrivateTextAtomic(outputConfigPath, nextText);
     try {
       const activation = await activateActionRuleAuthority({
-        projectRoot,
+        clientContract: "four_tool", projectRoot,
         name: input.draft.authority.name,
         expected_digest: input.draft.digest,
         confirmation: `ACTIVATE ${input.draft.digest}`,

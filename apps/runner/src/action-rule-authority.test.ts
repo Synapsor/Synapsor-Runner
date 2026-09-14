@@ -70,6 +70,29 @@ afterEach(async () => {
 });
 
 describe("semantic Action Rule authority persistence", () => {
+  it.each([false, true])("checks the selected four-tool contract before publication (relationship-only=%s)", async relatedOnly => {
+    const root = await temporaryRoot(), read = activeReadBoundary();
+    if (relatedOnly) read.pack.resources[0]!.relationship_only = true;
+    const { activation, ...material } = read;
+    read.activation.digest = canonicalJsonDigest({ ...material, activation: "reviewed" });
+    await writeActiveReadSet(root, read);
+    const source = authoritySource(read.activation.digest);
+    const draft = buildActionRuleAuthorityDraft({ name: "billing_active_rules", action_boundary_name: "billing_actions", catalog: source.catalog,
+      rules: [{ read_boundary_name: read.pack.name, read_boundary_digest: read.activation.digest,
+        verification_boundary: source.verification, effect_envelope: source.envelope, rule: source.rule }], reviews: [authorityReview()] });
+    await writeActionRuleAuthorityDraft(root, draft);
+    const publish = () => activateActionRuleAuthority({ projectRoot: root, name: draft.authority.name, expected_digest: draft.digest,
+      confirmation: `ACTIVATE ${draft.digest}`, actor: "fixture reviewer", clientContract: "four_tool" });
+    if (relatedOnly) {
+      await expect(publish()).rejects.toThrow("ACTION_SUBJECT_UNOBTAINABLE");
+      expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+      expect(await readActionRuleAuthorityDraft(root, draft.authority.name)).toEqual(draft);
+    } else {
+      expect((await publish()).digest).toBe(draft.digest);
+      expect((await readActionRuleAuthorityActivation(root))?.digest).toBe(draft.digest);
+    }
+  });
+
   it.each(["legacy", "sqlite"] as const)("retires only the exact reviewed active bundle under the writer permit (%s)", async backend => {
     const root = await temporaryRoot(), read = activeReadBoundary();
     await writeActiveReadSet(root, read);
@@ -473,8 +496,7 @@ describe("semantic Action Rule authority persistence", () => {
     const root = await temporaryRoot();
     const readBoundary = activeReadBoundary();
     if (mode === "scope_repair") {
-      readBoundary.pack.resources.push({ id: "billing.preferences", tenant_key: "account_id", principal_key: "principal_id",
-        rls_session: { tenant_setting: "synapsor.tenant_id" } } as never);
+      readBoundary.pack.resources[0]!.rls_session = { tenant_setting: "synapsor.tenant_id" };
       readBoundary.activation.digest = canonicalJsonDigest({ ...readBoundary, activation: "reviewed" });
     }
     await writeActiveReadSet(root, readBoundary);
@@ -1757,8 +1779,11 @@ function activeReadBoundary(): ActivatedExplorationBoundary {
     },
     generation_lock_fingerprint: lock,
     role_posture_fingerprint: `sha256:${"b".repeat(64)}` as const,
-    pack: { name: "reviewed_billing", resources: [] },
-    budgets: {},
+    pack: { name: "reviewed_billing", resources: [{
+      id: "billing.preferences", schema: "billing", table: "preferences", primary_key: "preference_id", tenant_key: "account_id", principal_key: "principal_id",
+      field_types: { status: "text", version: "integer" }, field_enums: {}, selectable_fields: ["status"], filterable_fields: {}, sortable_fields: [], groupable_fields: [], aggregate_measures: [], count_distinct_fields: [], time_bucket_fields: {}, kept_out_fields: ["preference_id", "account_id", "principal_id", "version"], relationships: [],
+    }] },
+    budgets: { max_rows: 50, max_response_cells: 500 },
   };
   return {
     ...authority,

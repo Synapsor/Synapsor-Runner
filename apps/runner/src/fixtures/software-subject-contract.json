@@ -1,0 +1,1584 @@
+{
+  "provenance": {
+    "checkpoint": "workflow-evolution-37ec677-20260914/recovery-software/final-stopped",
+    "artifact": "aff01e8be77d65e614f8b6b283b1692b1a4e663d0240cac2ff9c09a5e2957008",
+    "source": "read-only current policy record and exact disabled/active Action revision; metadata only"
+  },
+  "read": {
+    "activation": {
+      "activated_at": "2026-09-13T21:21:55.768Z",
+      "actor": "local-developer",
+      "digest": "sha256:a91351724426e866f15372afdd8a8c3ba689685450e4eac090dd53d4323f3948",
+      "generation_lock_fingerprint": "sha256:bb3b22228b4520dc1633e4524684d096a6dfecaa236c2c9117f5804a6700d08b",
+      "reviewed_decisions": [
+        {
+          "confirmed": true,
+          "decision": "deployment profile: confirm development or staging authoring-only use"
+        },
+        {
+          "confirmed": true,
+          "decision": "release_ops.build_candidates: confirm filter/sort/group/aggregate-only field permissions"
+        },
+        {
+          "confirmed": true,
+          "decision": "release_ops.build_candidates: confirm minimum cohort and extraction/differencing budgets"
+        },
+        {
+          "confirmed": true,
+          "decision": "release_ops.build_candidates: confirm principal scope principal_id"
+        },
+        {
+          "confirmed": true,
+          "decision": "release_ops.build_candidates: confirm tenant key tenant_id"
+        },
+        {
+          "confirmed": true,
+          "decision": "release_ops.build_candidates: confirm visible and kept-out fields"
+        },
+        {
+          "confirmed": true,
+          "decision": "release_ops.build_candidates: review relationship build_candidates_slot_id_tenant_id_principal_id_fkey cardinality and scope on release_ops.release_slots"
+        },
+        {
+          "confirmed": true,
+          "decision": "release_ops.release_slots: confirm filter/sort/group/aggregate-only field permissions"
+        },
+        {
+          "confirmed": true,
+          "decision": "release_ops.release_slots: confirm minimum cohort and extraction/differencing budgets"
+        },
+        {
+          "confirmed": true,
+          "decision": "release_ops.release_slots: confirm principal scope principal_id"
+        },
+        {
+          "confirmed": true,
+          "decision": "release_ops.release_slots: confirm tenant key tenant_id"
+        },
+        {
+          "confirmed": true,
+          "decision": "release_ops.release_slots: confirm visible and kept-out fields"
+        },
+        {
+          "confirmed": true,
+          "decision": "trusted context: confirm tenant scope comes from the verified PostgreSQL credential setting app.tenant_id and principal scope remains outside model arguments"
+        }
+      ],
+      "state": "active"
+    },
+    "budgets": {
+      "max_analysis_relationship_hops": 2,
+      "max_complexity": 24,
+      "max_derived_scope_hops": 2,
+      "max_differencing_queries": 16,
+      "max_dimensions": 3,
+      "max_extracted_cells_per_session": 4000,
+      "max_groups": 50,
+      "max_measures": 3,
+      "max_queries_per_session": 1000,
+      "max_ranked_groups": 500,
+      "max_relationship_hops": 2,
+      "max_response_bytes": 65536,
+      "max_response_cells": 500,
+      "max_rows": 50,
+      "max_time_ranges": 2,
+      "max_top_n": 25,
+      "rate_limit_per_minute": 120,
+      "statement_timeout_ms": 3000
+    },
+    "compiler_version": "1.7.0",
+    "database_server_authority": {
+      "engine": "postgres",
+      "features": {
+        "automatic_numeric_bands": true,
+        "schema_check_constraints": true
+      },
+      "schema_version": "synapsor.database-server-authority.v1",
+      "version_line": "17"
+    },
+    "database_server_tier": "full",
+    "database_server_version": "PostgreSQL 17.10 (Debian 17.10-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+    "deployment_profile": "staging",
+    "generation_lock_fingerprint": "sha256:bb3b22228b4520dc1633e4524684d096a6dfecaa236c2c9117f5804a6700d08b",
+    "pack": {
+      "name": "reviewed_staging",
+      "resources": [
+        {
+          "aggregate_measures": [],
+          "count_distinct_fields": [],
+          "field_enums": {
+            "candidate_state": [
+              "staged",
+              "sealed"
+            ]
+          },
+          "field_types": {
+            "application_name": "text",
+            "candidate_id": "uuid",
+            "candidate_ref": "text",
+            "candidate_state": "text",
+            "internal_finding": "text",
+            "principal_id": "uuid",
+            "security_hold": "boolean",
+            "slot_id": "uuid",
+            "tenant_id": "uuid",
+            "version": "integer"
+          },
+          "filterable_fields": {},
+          "groupable_fields": [],
+          "id": "release_ops.build_candidates",
+          "kept_out_fields": [
+            "tenant_id",
+            "principal_id"
+          ],
+          "minimum_cohort_size": 5,
+          "primary_key": "candidate_id",
+          "principal_key": "principal_id",
+          "relationships": [
+            {
+              "cardinality": "many_to_one",
+              "counted_entity": "candidate_id",
+              "id": "build_candidates_slot_id_tenant_id_principal_id_fkey",
+              "local_columns": [
+                "slot_id",
+                "tenant_id",
+                "principal_id"
+              ],
+              "max_fan_out": 1,
+              "nullable": false,
+              "path_depth": 1,
+              "proof": {
+                "digest": "sha256:367627d8d82140a4806cf25a8b6e0ea143678ccc52b4140063ddc8874ba88e09",
+                "links": [
+                  {
+                    "cardinality": "many_to_one",
+                    "constraint_name": "build_candidates_slot_id_tenant_id_principal_id_fkey",
+                    "max_fan_out": 1,
+                    "nullable": false,
+                    "source_columns": [
+                      "slot_id",
+                      "tenant_id",
+                      "principal_id"
+                    ],
+                    "source_resource": "release_ops.build_candidates",
+                    "target_columns": [
+                      "slot_id",
+                      "tenant_id",
+                      "principal_id"
+                    ],
+                    "target_resource": "release_ops.release_slots",
+                    "target_uniqueness": {
+                      "columns": [
+                        "slot_id",
+                        "tenant_id",
+                        "principal_id"
+                      ],
+                      "kind": "unique_constraint",
+                      "name": "release_slots_slot_id_tenant_id_principal_id_key"
+                    }
+                  }
+                ],
+                "source": "database_catalog"
+              },
+              "target_columns": [
+                "slot_id",
+                "tenant_id",
+                "principal_id"
+              ],
+              "target_resource": "release_ops.release_slots",
+              "unmatched_rows": "exclude"
+            }
+          ],
+          "rls_session": {
+            "principal_setting": "app.principal_id",
+            "tenant_setting": "app.tenant_id"
+          },
+          "schema": "release_ops",
+          "selectable_fields": [
+            "candidate_ref",
+            "application_name",
+            "candidate_state"
+          ],
+          "sortable_fields": [],
+          "suppression_aware_totals": true,
+          "table": "build_candidates",
+          "tenant_key": "tenant_id",
+          "time_bucket_fields": {}
+        },
+        {
+          "aggregate_measures": [],
+          "count_distinct_fields": [],
+          "field_enums": {
+            "slot_state": [
+              "ready",
+              "consumed",
+              "retired"
+            ]
+          },
+          "field_types": {
+            "principal_id": "uuid",
+            "slot_id": "uuid",
+            "slot_ref": "text",
+            "slot_state": "text",
+            "tenant_id": "uuid",
+            "version": "integer"
+          },
+          "filterable_fields": {},
+          "groupable_fields": [],
+          "id": "release_ops.release_slots",
+          "kept_out_fields": [
+            "tenant_id",
+            "principal_id"
+          ],
+          "minimum_cohort_size": 5,
+          "primary_key": "slot_id",
+          "principal_key": "principal_id",
+          "relationship_only": true,
+          "relationships": [],
+          "rls_session": {
+            "principal_setting": "app.principal_id",
+            "tenant_setting": "app.tenant_id"
+          },
+          "schema": "release_ops",
+          "selectable_fields": [
+            "slot_ref",
+            "slot_state"
+          ],
+          "sortable_fields": [],
+          "suppression_aware_totals": true,
+          "table": "release_slots",
+          "tenant_key": "tenant_id",
+          "time_bucket_fields": {}
+        }
+      ]
+    },
+    "reporting_timezone": "UTC",
+    "role_posture_fingerprint": "sha256:6436af072232447a9b734c4f130a77110a3ca4e9c04e43a3be1722ca3e053462",
+    "schema_version": "synapsor.exploration-boundary.v1",
+    "source": "local_postgres",
+    "spec_version": "1.9.0",
+    "trusted_context": {
+      "database_role_tenant": {
+        "engine": "postgres",
+        "setting": "app.tenant_id"
+      },
+      "principal_env": "SYNAPSOR_PRINCIPAL",
+      "provider": "environment",
+      "tenant_env": "SYNAPSOR_TENANT_ID"
+    }
+  },
+  "action": {
+    "schema_version": "synapsor.action-rule-authority-draft.v1",
+    "state": "disabled",
+    "authority": {
+      "schema_version": "synapsor.action-rule-authority.v1",
+      "name": "reviewed_staging_rules",
+      "catalog": {
+        "generation_lock_fingerprint": "sha256:bb3b22228b4520dc1633e4524684d096a6dfecaa236c2c9117f5804a6700d08b",
+        "relationships": [
+          {
+            "cardinality": "many_to_one",
+            "field_pairs": [
+              {
+                "local_field": "slot_id",
+                "target_field": "slot_id"
+              },
+              {
+                "local_field": "tenant_id",
+                "target_field": "tenant_id"
+              },
+              {
+                "local_field": "principal_id",
+                "target_field": "principal_id"
+              }
+            ],
+            "from_resource": "release_ops.build_candidates",
+            "name": "build_candidates_slot_id_tenant_id_principal_id_fkey",
+            "nullable": false,
+            "target_unique": true,
+            "to_resource": "release_ops.release_slots"
+          },
+          {
+            "cardinality": "many_to_one",
+            "field_pairs": [
+              {
+                "local_field": "candidate_id",
+                "target_field": "candidate_id"
+              },
+              {
+                "local_field": "tenant_id",
+                "target_field": "tenant_id"
+              },
+              {
+                "local_field": "principal_id",
+                "target_field": "principal_id"
+              }
+            ],
+            "from_resource": "release_ops.build_checks",
+            "name": "build_checks_candidate_id_tenant_id_principal_id_fkey",
+            "nullable": false,
+            "target_unique": true,
+            "to_resource": "release_ops.build_candidates"
+          }
+        ],
+        "resources": [
+          {
+            "engine": "postgres",
+            "fields": [
+              {
+                "name": "application_name",
+                "nullable": false,
+                "type": {
+                  "comparison": "exact",
+                  "kind": "string",
+                  "max_length": 4096
+                }
+              },
+              {
+                "name": "candidate_id",
+                "nullable": false,
+                "type": {
+                  "comparison": "exact",
+                  "kind": "string",
+                  "max_length": 36
+                }
+              },
+              {
+                "name": "candidate_ref",
+                "nullable": false,
+                "type": {
+                  "comparison": "exact",
+                  "kind": "string",
+                  "max_length": 4096
+                }
+              },
+              {
+                "name": "candidate_state",
+                "nullable": false,
+                "type": {
+                  "comparison": "exact",
+                  "enum": [
+                    "sealed",
+                    "staged"
+                  ],
+                  "kind": "string",
+                  "max_length": 6
+                }
+              },
+              {
+                "name": "internal_finding",
+                "nullable": false,
+                "type": {
+                  "comparison": "exact",
+                  "kind": "string",
+                  "max_length": 4096
+                }
+              },
+              {
+                "name": "principal_id",
+                "nullable": false,
+                "type": {
+                  "comparison": "exact",
+                  "kind": "string",
+                  "max_length": 36
+                }
+              },
+              {
+                "name": "security_hold",
+                "nullable": false,
+                "type": {
+                  "kind": "boolean"
+                }
+              },
+              {
+                "name": "slot_id",
+                "nullable": false,
+                "type": {
+                  "comparison": "exact",
+                  "kind": "string",
+                  "max_length": 36
+                }
+              },
+              {
+                "name": "tenant_id",
+                "nullable": false,
+                "type": {
+                  "comparison": "exact",
+                  "kind": "string",
+                  "max_length": 36
+                }
+              },
+              {
+                "name": "version",
+                "nullable": false,
+                "type": {
+                  "kind": "integer"
+                }
+              }
+            ],
+            "name": "release_ops.build_candidates",
+            "primary_key": "candidate_id",
+            "principal_scope_key": "principal_id",
+            "schema": "release_ops",
+            "source": "local_postgres",
+            "table": "build_candidates",
+            "tenant_key": "tenant_id",
+            "version_field": "version"
+          },
+          {
+            "engine": "postgres",
+            "fields": [
+              {
+                "name": "candidate_id",
+                "nullable": false,
+                "type": {
+                  "comparison": "exact",
+                  "kind": "string",
+                  "max_length": 36
+                }
+              },
+              {
+                "name": "check_id",
+                "nullable": false,
+                "type": {
+                  "comparison": "exact",
+                  "kind": "string",
+                  "max_length": 36
+                }
+              },
+              {
+                "name": "check_kind",
+                "nullable": false,
+                "type": {
+                  "comparison": "exact",
+                  "kind": "string",
+                  "max_length": 4096
+                }
+              },
+              {
+                "name": "check_state",
+                "nullable": false,
+                "type": {
+                  "comparison": "exact",
+                  "enum": [
+                    "failed",
+                    "passed",
+                    "pending"
+                  ],
+                  "kind": "string",
+                  "max_length": 7
+                }
+              },
+              {
+                "name": "elapsed_seconds",
+                "nullable": false,
+                "type": {
+                  "kind": "integer",
+                  "unit": "seconds"
+                }
+              },
+              {
+                "name": "principal_id",
+                "nullable": false,
+                "type": {
+                  "comparison": "exact",
+                  "kind": "string",
+                  "max_length": 36
+                }
+              },
+              {
+                "name": "private_check_note",
+                "nullable": false,
+                "type": {
+                  "comparison": "exact",
+                  "kind": "string",
+                  "max_length": 4096
+                }
+              },
+              {
+                "name": "tenant_id",
+                "nullable": false,
+                "type": {
+                  "comparison": "exact",
+                  "kind": "string",
+                  "max_length": 36
+                }
+              },
+              {
+                "name": "version",
+                "nullable": false,
+                "type": {
+                  "kind": "integer"
+                }
+              }
+            ],
+            "name": "release_ops.build_checks",
+            "primary_key": "check_id",
+            "principal_scope_key": "principal_id",
+            "schema": "release_ops",
+            "source": "local_postgres",
+            "table": "build_checks",
+            "tenant_key": "tenant_id",
+            "version_field": "version"
+          },
+          {
+            "engine": "postgres",
+            "fields": [
+              {
+                "name": "principal_id",
+                "nullable": false,
+                "type": {
+                  "comparison": "exact",
+                  "kind": "string",
+                  "max_length": 36
+                }
+              },
+              {
+                "name": "slot_id",
+                "nullable": false,
+                "type": {
+                  "comparison": "exact",
+                  "kind": "string",
+                  "max_length": 36
+                }
+              },
+              {
+                "name": "slot_ref",
+                "nullable": false,
+                "type": {
+                  "comparison": "exact",
+                  "kind": "string",
+                  "max_length": 4096
+                }
+              },
+              {
+                "name": "slot_state",
+                "nullable": false,
+                "type": {
+                  "comparison": "exact",
+                  "enum": [
+                    "consumed",
+                    "ready",
+                    "retired"
+                  ],
+                  "kind": "string",
+                  "max_length": 8
+                }
+              },
+              {
+                "name": "tenant_id",
+                "nullable": false,
+                "type": {
+                  "comparison": "exact",
+                  "kind": "string",
+                  "max_length": 36
+                }
+              },
+              {
+                "name": "version",
+                "nullable": false,
+                "type": {
+                  "kind": "integer"
+                }
+              }
+            ],
+            "name": "release_ops.release_slots",
+            "primary_key": "slot_id",
+            "principal_scope_key": "principal_id",
+            "schema": "release_ops",
+            "source": "local_postgres",
+            "table": "release_slots",
+            "tenant_key": "tenant_id",
+            "version_field": "version"
+          }
+        ],
+        "schema_version": "synapsor.action-rule-catalog.v1"
+      },
+      "action_boundary": {
+        "schema_version": "synapsor.semantic-action-boundary.v1",
+        "name": "reviewed_staging_actions",
+        "rules": [
+          {
+            "approval_policy_digest": "sha256:254be647eecb1b9f1c553749a3a307e7f47f367e7b0539714bae31c95e64b283",
+            "approval_mode": "human",
+            "outcome": "release_ops.retire_unused_slot",
+            "effect_envelope_digest": "sha256:5f8a19ab2e5eec56804710be69eb75b7e6f63cf7aead69576310ed58d76ddc33",
+            "action_rule_digest": "sha256:61eb3f4a9cb86354ae588da462e7d2ee2a7794a49ca072b69c68cd2d706ccd63",
+            "compiled_plan_digest": "sha256:371fa600ad48aabd4d5247000db93948a566e9203702f814d608312a97d6b9e7",
+            "approval_class": "release_ops.retire_unused_slot_review",
+            "operation": "update",
+            "target_resource": "release_ops.release_slots",
+            "allowed_fields": [
+              "slot_state"
+            ],
+            "max_rows": 1,
+            "writeback": {
+              "mode": "direct_sql",
+              "supervised_worker": "allowed"
+            }
+          },
+          {
+            "approval_policy_digest": "sha256:0e313b38f3ed7e5eac117cd2cc3c5d3ea4a73bd239fbd622f2dcc2d82beab43f",
+            "approval_mode": "policy",
+            "outcome": "release_ops.seal_candidate",
+            "effect_envelope_digest": "sha256:cfc819a9fc00c51997afa2ff904cc0096f22721b2c25301ffafc71264bd12ea5",
+            "action_rule_digest": "sha256:0f5477048f892afe5622ee60b6908d75afb9d1f772d40ff73f5b97e4e999955e",
+            "compiled_plan_digest": "sha256:768a220d48bf9ef1741f36ea7542ac5eaaa54ac4d9dca7ae68e01f4fb3c722a3",
+            "approval_class": "release_ops.seal_candidate_approval",
+            "operation": "update",
+            "target_resource": "release_ops.build_candidates",
+            "allowed_fields": [
+              "candidate_state"
+            ],
+            "max_rows": 1,
+            "writeback": {
+              "mode": "direct_sql",
+              "supervised_worker": "allowed"
+            }
+          }
+        ],
+        "digest": "sha256:f9c348b5bdbfa69dc0a5313e8de086e82fef7be28b732c0bbaf7bb715aeb90c6"
+      },
+      "rules": [
+        {
+          "read_boundary_name": "reviewed_staging",
+          "read_boundary_digest": "sha256:a91351724426e866f15372afdd8a8c3ba689685450e4eac090dd53d4323f3948",
+          "verification_boundary": {
+            "context": "trusted_context",
+            "generation_lock_fingerprint": "sha256:bb3b22228b4520dc1633e4524684d096a6dfecaa236c2c9117f5804a6700d08b",
+            "lock_order": [
+              "slot"
+            ],
+            "name": "release_ops.retire_unused_slot.verification",
+            "resources": [
+              {
+                "binding": "slot",
+                "cardinality": "one",
+                "fields": [
+                  {
+                    "model_visible": false,
+                    "name": "principal_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "slot_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": true,
+                    "name": "slot_ref",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 4096
+                    }
+                  },
+                  {
+                    "model_visible": true,
+                    "name": "slot_state",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "enum": [
+                        "consumed",
+                        "ready",
+                        "retired"
+                      ],
+                      "kind": "string",
+                      "max_length": 8
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "tenant_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "version",
+                    "nullable": false,
+                    "type": {
+                      "kind": "integer"
+                    }
+                  }
+                ],
+                "lock": "for_update",
+                "max_rows": 1,
+                "overflow": "unsupported",
+                "primary_key": "slot_id",
+                "resource": "release_ops.release_slots",
+                "scope": {
+                  "mode": "columns",
+                  "principal_field": "principal_id",
+                  "tenant_field": "tenant_id"
+                },
+                "source": {
+                  "kind": "subject_ref"
+                },
+                "version_field": "version"
+              }
+            ],
+            "schema_version": "synapsor.verification-boundary.v1",
+            "source": "local_postgres",
+            "transaction": {
+              "isolation": "repeatable_read",
+              "timezone": "UTC"
+            }
+          },
+          "effect_envelope": {
+            "allowed_fields": [
+              {
+                "name": "slot_state",
+                "type": {
+                  "comparison": "exact",
+                  "enum": [
+                    "consumed",
+                    "ready",
+                    "retired"
+                  ],
+                  "kind": "string",
+                  "max_length": 8
+                },
+                "values": [
+                  "retired"
+                ]
+              }
+            ],
+            "approval_classes": [
+              "release_ops.retire_unused_slot_review"
+            ],
+            "conflict_key": "version",
+            "max_rows": 1,
+            "name": "release_ops.retire_unused_slot.effect",
+            "operation": "update",
+            "primary_key": "slot_id",
+            "principal_scope_key": "principal_id",
+            "schema_version": "synapsor.derived-effect-envelope.v1",
+            "source": "local_postgres",
+            "target_binding": "slot",
+            "target_resource": "release_ops.release_slots",
+            "tenant_key": "tenant_id",
+            "version_advance": {
+              "column": "version",
+              "strategy": "integer_increment"
+            },
+            "writeback": {
+              "mode": "direct_sql",
+              "supervised_worker": "allowed"
+            }
+          },
+          "rule": {
+            "approval_class": "release_ops.retire_unused_slot_review",
+            "context": "trusted_context",
+            "derive": {},
+            "effect": {
+              "operation": "update",
+              "set": {
+                "slot_state": {
+                  "kind": "literal",
+                  "value": "retired",
+                  "value_type": {
+                    "comparison": "exact",
+                    "enum": [
+                      "consumed",
+                      "ready",
+                      "retired"
+                    ],
+                    "kind": "string",
+                    "max_length": 8
+                  }
+                }
+              },
+              "target_binding": "slot",
+              "target_resource": "release_ops.release_slots"
+            },
+            "effect_envelope_ref": "release_ops.retire_unused_slot.effect",
+            "name": "release_ops.retire_unused_slot",
+            "outcome": "release_ops.retire_unused_slot",
+            "require": {
+              "kind": "compare",
+              "left": {
+                "binding": "slot",
+                "field": "slot_state",
+                "kind": "field"
+              },
+              "operator": "eq",
+              "right": {
+                "kind": "literal",
+                "value": "ready",
+                "value_type": {
+                  "comparison": "exact",
+                  "enum": [
+                    "consumed",
+                    "ready",
+                    "retired"
+                  ],
+                  "kind": "string",
+                  "max_length": 8
+                }
+              }
+            },
+            "schema_version": "synapsor.action-rule.v1",
+            "source": "local_postgres",
+            "subjects": [
+              {
+                "binding": "slot",
+                "input": "opaque_subject_ref",
+                "resource": "release_ops.release_slots"
+              }
+            ],
+            "ttl_seconds": 300,
+            "verification_boundary_ref": "release_ops.retire_unused_slot.verification",
+            "x-runner-discovery": {
+              "aliases": [
+                "retire release slot",
+                "retire unused slot",
+                "release slot retirement"
+              ],
+              "summary": "Request retirement of a ready release slot assigned to you.",
+              "title": "Retire unused release slot"
+            }
+          },
+          "activated_at": "2026-09-14T17:21:13.612Z"
+        },
+        {
+          "read_boundary_name": "reviewed_staging",
+          "read_boundary_digest": "sha256:a91351724426e866f15372afdd8a8c3ba689685450e4eac090dd53d4323f3948",
+          "verification_boundary": {
+            "context": "trusted_context",
+            "generation_lock_fingerprint": "sha256:bb3b22228b4520dc1633e4524684d096a6dfecaa236c2c9117f5804a6700d08b",
+            "lock_order": [
+              "candidate",
+              "slot",
+              "checks"
+            ],
+            "name": "release_ops.seal_candidate_verification",
+            "resources": [
+              {
+                "binding": "candidate",
+                "cardinality": "one",
+                "fields": [
+                  {
+                    "model_visible": false,
+                    "name": "candidate_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": true,
+                    "name": "candidate_state",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "enum": [
+                        "sealed",
+                        "staged"
+                      ],
+                      "kind": "string",
+                      "max_length": 6
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "principal_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "security_hold",
+                    "nullable": false,
+                    "type": {
+                      "kind": "boolean"
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "slot_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "tenant_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "version",
+                    "nullable": false,
+                    "type": {
+                      "kind": "integer"
+                    }
+                  }
+                ],
+                "lock": "for_update",
+                "max_rows": 1,
+                "overflow": "unsupported",
+                "primary_key": "candidate_id",
+                "resource": "release_ops.build_candidates",
+                "scope": {
+                  "mode": "columns",
+                  "principal_field": "principal_id",
+                  "tenant_field": "tenant_id"
+                },
+                "source": {
+                  "kind": "subject_ref"
+                },
+                "version_field": "version"
+              },
+              {
+                "binding": "checks",
+                "cardinality": "many",
+                "collection_consistency": "complete_locked",
+                "deterministic_order": [
+                  {
+                    "direction": "asc",
+                    "field": "check_id"
+                  }
+                ],
+                "fields": [
+                  {
+                    "model_visible": false,
+                    "name": "candidate_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "check_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "check_state",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "enum": [
+                        "failed",
+                        "passed",
+                        "pending"
+                      ],
+                      "kind": "string",
+                      "max_length": 7
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "elapsed_seconds",
+                    "nullable": false,
+                    "type": {
+                      "kind": "integer",
+                      "unit": "seconds"
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "principal_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "tenant_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "version",
+                    "nullable": false,
+                    "type": {
+                      "kind": "integer"
+                    }
+                  }
+                ],
+                "lock": "for_update",
+                "max_rows": 12,
+                "overflow": "ineligible",
+                "primary_key": "check_id",
+                "resource": "release_ops.build_checks",
+                "scope": {
+                  "mode": "columns",
+                  "principal_field": "principal_id",
+                  "tenant_field": "tenant_id"
+                },
+                "source": {
+                  "direction": "inverse",
+                  "field_pairs": [
+                    {
+                      "local_field": "candidate_id",
+                      "target_field": "candidate_id"
+                    },
+                    {
+                      "local_field": "tenant_id",
+                      "target_field": "tenant_id"
+                    },
+                    {
+                      "local_field": "principal_id",
+                      "target_field": "principal_id"
+                    }
+                  ],
+                  "from_binding": "candidate",
+                  "kind": "relationship",
+                  "relationship": "build_checks_candidate_id_tenant_id_principal_id_fkey"
+                },
+                "version_field": "version"
+              },
+              {
+                "binding": "slot",
+                "cardinality": "one",
+                "fields": [
+                  {
+                    "model_visible": false,
+                    "name": "principal_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "slot_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": true,
+                    "name": "slot_state",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "enum": [
+                        "consumed",
+                        "ready",
+                        "retired"
+                      ],
+                      "kind": "string",
+                      "max_length": 8
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "tenant_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "version",
+                    "nullable": false,
+                    "type": {
+                      "kind": "integer"
+                    }
+                  }
+                ],
+                "lock": "for_update",
+                "max_rows": 1,
+                "overflow": "unsupported",
+                "primary_key": "slot_id",
+                "resource": "release_ops.release_slots",
+                "scope": {
+                  "mode": "columns",
+                  "principal_field": "principal_id",
+                  "tenant_field": "tenant_id"
+                },
+                "source": {
+                  "direction": "forward",
+                  "field_pairs": [
+                    {
+                      "local_field": "slot_id",
+                      "target_field": "slot_id"
+                    },
+                    {
+                      "local_field": "tenant_id",
+                      "target_field": "tenant_id"
+                    },
+                    {
+                      "local_field": "principal_id",
+                      "target_field": "principal_id"
+                    }
+                  ],
+                  "from_binding": "candidate",
+                  "kind": "relationship",
+                  "relationship": "build_candidates_slot_id_tenant_id_principal_id_fkey"
+                },
+                "version_field": "version"
+              }
+            ],
+            "schema_version": "synapsor.verification-boundary.v1",
+            "source": "local_postgres",
+            "transaction": {
+              "isolation": "read_committed",
+              "timezone": "UTC"
+            }
+          },
+          "effect_envelope": {
+            "allowed_fields": [
+              {
+                "name": "candidate_state",
+                "type": {
+                  "comparison": "exact",
+                  "enum": [
+                    "sealed",
+                    "staged"
+                  ],
+                  "kind": "string",
+                  "max_length": 6
+                },
+                "values": [
+                  "sealed"
+                ]
+              }
+            ],
+            "approval_classes": [
+              "release_ops.seal_candidate_approval"
+            ],
+            "atomic_updates": [
+              {
+                "allowed_fields": [
+                  {
+                    "name": "slot_state",
+                    "type": {
+                      "comparison": "exact",
+                      "enum": [
+                        "consumed",
+                        "ready",
+                        "retired"
+                      ],
+                      "kind": "string",
+                      "max_length": 8
+                    },
+                    "values": [
+                      "consumed"
+                    ]
+                  }
+                ],
+                "conflict_key": "version",
+                "max_rows": 1,
+                "operation": "update",
+                "primary_key": "slot_id",
+                "principal_scope_key": "principal_id",
+                "target_binding": "slot",
+                "target_resource": "release_ops.release_slots",
+                "tenant_key": "tenant_id",
+                "version_advance": {
+                  "column": "version",
+                  "strategy": "integer_increment"
+                }
+              }
+            ],
+            "conflict_key": "version",
+            "max_rows": 1,
+            "name": "release_ops.seal_candidate_effect",
+            "operation": "update",
+            "primary_key": "candidate_id",
+            "principal_scope_key": "principal_id",
+            "schema_version": "synapsor.derived-effect-envelope.v1",
+            "source": "local_postgres",
+            "target_binding": "candidate",
+            "target_resource": "release_ops.build_candidates",
+            "tenant_key": "tenant_id",
+            "version_advance": {
+              "column": "version",
+              "strategy": "integer_increment"
+            },
+            "writeback": {
+              "mode": "direct_sql",
+              "supervised_worker": "allowed"
+            }
+          },
+          "rule": {
+            "approval_class": "release_ops.seal_candidate_approval",
+            "atomic_updates": [
+              {
+                "operation": "update",
+                "set": {
+                  "slot_state": {
+                    "kind": "literal",
+                    "value": "consumed",
+                    "value_type": {
+                      "comparison": "exact",
+                      "enum": [
+                        "consumed",
+                        "ready",
+                        "retired"
+                      ],
+                      "kind": "string",
+                      "max_length": 8
+                    }
+                  }
+                },
+                "target_binding": "slot",
+                "target_resource": "release_ops.release_slots"
+              }
+            ],
+            "context": "trusted_context",
+            "derive": {
+              "total_check_seconds": {
+                "binding": "checks",
+                "field": "elapsed_seconds",
+                "kind": "aggregate",
+                "operation": "sum"
+              }
+            },
+            "effect": {
+              "operation": "update",
+              "set": {
+                "candidate_state": {
+                  "kind": "literal",
+                  "value": "sealed",
+                  "value_type": {
+                    "comparison": "exact",
+                    "enum": [
+                      "sealed",
+                      "staged"
+                    ],
+                    "kind": "string",
+                    "max_length": 6
+                  }
+                }
+              },
+              "target_binding": "candidate",
+              "target_resource": "release_ops.build_candidates"
+            },
+            "effect_envelope_ref": "release_ops.seal_candidate_effect",
+            "name": "release_ops.request_seal_candidate",
+            "outcome": "release_ops.seal_candidate",
+            "require": {
+              "expressions": [
+                {
+                  "expression": {
+                    "binding": "checks",
+                    "kind": "exists",
+                    "where": {
+                      "kind": "compare",
+                      "left": {
+                        "binding": "checks",
+                        "field": "check_state",
+                        "kind": "field"
+                      },
+                      "operator": "neq",
+                      "right": {
+                        "kind": "literal",
+                        "value": "passed",
+                        "value_type": {
+                          "comparison": "exact",
+                          "enum": [
+                            "failed",
+                            "passed",
+                            "pending"
+                          ],
+                          "kind": "string",
+                          "max_length": 7
+                        }
+                      }
+                    }
+                  },
+                  "kind": "not"
+                },
+                {
+                  "kind": "compare",
+                  "left": {
+                    "binding": "candidate",
+                    "field": "candidate_state",
+                    "kind": "field"
+                  },
+                  "operator": "eq",
+                  "right": {
+                    "kind": "literal",
+                    "value": "staged",
+                    "value_type": {
+                      "comparison": "exact",
+                      "enum": [
+                        "sealed",
+                        "staged"
+                      ],
+                      "kind": "string",
+                      "max_length": 6
+                    }
+                  }
+                },
+                {
+                  "kind": "compare",
+                  "left": {
+                    "binding": "candidate",
+                    "field": "security_hold",
+                    "kind": "field"
+                  },
+                  "operator": "eq",
+                  "right": {
+                    "kind": "literal",
+                    "value": false,
+                    "value_type": {
+                      "kind": "boolean"
+                    }
+                  }
+                },
+                {
+                  "kind": "compare",
+                  "left": {
+                    "binding": "checks",
+                    "field": "elapsed_seconds",
+                    "kind": "aggregate",
+                    "operation": "sum"
+                  },
+                  "operator": "lte",
+                  "right": {
+                    "kind": "literal",
+                    "value": 600,
+                    "value_type": {
+                      "kind": "integer",
+                      "unit": "seconds"
+                    }
+                  }
+                },
+                {
+                  "kind": "compare",
+                  "left": {
+                    "binding": "checks",
+                    "kind": "aggregate",
+                    "operation": "count"
+                  },
+                  "operator": "gte",
+                  "right": {
+                    "kind": "literal",
+                    "value": 2,
+                    "value_type": {
+                      "kind": "integer",
+                      "unit": "rows"
+                    }
+                  }
+                },
+                {
+                  "kind": "compare",
+                  "left": {
+                    "binding": "slot",
+                    "field": "slot_state",
+                    "kind": "field"
+                  },
+                  "operator": "eq",
+                  "right": {
+                    "kind": "literal",
+                    "value": "ready",
+                    "value_type": {
+                      "comparison": "exact",
+                      "enum": [
+                        "consumed",
+                        "ready",
+                        "retired"
+                      ],
+                      "kind": "string",
+                      "max_length": 8
+                    }
+                  }
+                }
+              ],
+              "kind": "all"
+            },
+            "schema_version": "synapsor.action-rule.v1",
+            "source": "local_postgres",
+            "subjects": [
+              {
+                "binding": "candidate",
+                "input": "opaque_subject_ref",
+                "resource": "release_ops.build_candidates"
+              }
+            ],
+            "ttl_seconds": 300,
+            "verification_boundary_ref": "release_ops.seal_candidate_verification",
+            "x-runner-discovery": {
+              "aliases": [
+                "seal build candidate",
+                "request candidate seal",
+                "consume reserved slot"
+              ],
+              "summary": "Request sealing for an assigned staged build candidate and its reserved slot.",
+              "title": "Request candidate sealing"
+            }
+          },
+          "activated_at": "2026-09-14T17:21:13.612Z"
+        }
+      ],
+      "approval_classes": [
+        {
+          "name": "release_ops.retire_unused_slot_review",
+          "mode": "human",
+          "rules": [
+            {
+              "outcome": "release_ops.retire_unused_slot"
+            }
+          ],
+          "required_role": "release_supervisor",
+          "required_approvals": 1,
+          "shared_limits": []
+        },
+        {
+          "name": "release_ops.seal_candidate_approval",
+          "mode": "policy",
+          "rules": [
+            {
+              "outcome": "release_ops.seal_candidate",
+              "auto_approve_when": {
+                "kind": "compare",
+                "left": {
+                  "kind": "derived",
+                  "name": "total_check_seconds"
+                },
+                "operator": "lte",
+                "right": {
+                  "kind": "literal",
+                  "value": 50,
+                  "value_type": {
+                    "kind": "integer",
+                    "unit": "seconds"
+                  }
+                }
+              }
+            }
+          ],
+          "required_role": "release_supervisor",
+          "required_approvals": 1,
+          "shared_limits": [
+            {
+              "id": "automatic_seals_overall_24h",
+              "kind": "count",
+              "scope": "boundary",
+              "maximum": 8,
+              "window_seconds": 86400,
+              "capability": "release_ops.seal_candidate"
+            },
+            {
+              "id": "automatic_seals_per_organization_24h",
+              "kind": "count",
+              "scope": "tenant",
+              "maximum": 3,
+              "window_seconds": 86400,
+              "capability": "release_ops.seal_candidate"
+            }
+          ]
+        }
+      ],
+      "digest": "sha256:7d5eb041fd76142ef44221387eb9ea935a504d85c66a2b0d6b84fce027c532ab"
+    },
+    "digest": "sha256:7d5eb041fd76142ef44221387eb9ea935a504d85c66a2b0d6b84fce027c532ab",
+    "reviews": [
+      {
+        "outcome": "release_ops.retire_unused_slot",
+        "when": "The requested release slot is in your trusted organization and coordinator scope and is currently ready.",
+        "then": "Propose retiring that slot; completion changes only its state to retired after separate supervised execution.",
+        "refused": [
+          "Refuse if the slot is unavailable, outside the coordinator's trusted scope, or not ready.",
+          "Refuse if the slot changes before execution."
+        ],
+        "human_review": "Every valid request requires release-supervisor review. Invalid requests are refused, not routed to review. Completion can occur only once execution is separately enabled and a worker is running.",
+        "examples": [
+          {
+            "kind": "eligible",
+            "scenario": "A coordinator requests retirement of a ready release slot assigned to that coordinator.",
+            "result": "The request is valid and is sent to release-supervisor review."
+          },
+          {
+            "kind": "ineligible",
+            "scenario": "A coordinator requests a consumed, retired, unavailable, or differently scoped slot.",
+            "result": "The request is refused."
+          },
+          {
+            "kind": "human_review",
+            "scenario": "A coordinator requests retirement of a ready scoped release slot.",
+            "result": "A release supervisor must approve before separately supervised completion can occur."
+          }
+        ]
+      },
+      {
+        "outcome": "release_ops.seal_candidate",
+        "when": "The coordinator's scoped candidate is staged with no security hold, its related reserved slot is ready, and the complete set of 2 to 12 checks has all passed with a total elapsed time of at most 600 seconds.",
+        "then": "Propose sealing the candidate and consuming its related reserved slot together; completion remains separately supervised.",
+        "refused": [
+          "Refuse if the candidate is not staged, has a security hold, the related slot is unavailable, any required relationship or check fact is missing or unknown, the check collection overflows, fewer than two checks exist, any check is not passed, total elapsed time exceeds 600 seconds, or dependency versions are stale."
+        ],
+        "human_review": "A valid request with total check time above 50 seconds, or one that exceeds an automatic rolling limit, requires release-supervisor review. Invalid requests are refused and never routed to human review.",
+        "examples": [
+          {
+            "kind": "eligible",
+            "scenario": "A staged candidate without a hold has a ready slot and two passed checks totaling 50 seconds, within both automatic rolling limits.",
+            "result": "The sealing request is valid and eligible for automatic approval; supervised execution is still required before any change."
+          },
+          {
+            "kind": "human_review",
+            "scenario": "A staged candidate without a hold has a ready slot and three passed checks totaling 180 seconds.",
+            "result": "The request is valid but requires release-supervisor review."
+          },
+          {
+            "kind": "ineligible",
+            "scenario": "A staged candidate has a ready slot, but one of its complete check records is pending.",
+            "result": "The request is refused."
+          }
+        ]
+      }
+    ],
+    "created_at": "2026-09-14T17:21:13.612Z"
+  }
+}
