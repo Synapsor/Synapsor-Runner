@@ -55,6 +55,18 @@ export type BoundaryAuthoringActionRevision = {
   operator_statements?: string[];
   baseline_digest: `sha256:${string}`;
   checkpoint?: ActionRuleAuthoringCheckpoint;
+  /** Host-generated coverage repair, never an owner edit or accepted policy. */
+  coverage_repair?: { source_digest: string; report_digest: string;
+    source_ranges: Array<{ start: number; end: number }> };
+};
+
+export type BoundaryActionReconciliation = {
+  pending: BoundaryAuthoringActionRevision;
+  source_digest: string;
+  report_digest: string;
+  draft_digest: string;
+  reason: "current_review_requires_no_action_edit";
+  confirmed_by: "operator" | "current_coverage";
 };
 
 /** A cited policy requirement that needs one new disabled Action draft. */
@@ -76,7 +88,8 @@ export function prepareBoundaryActionRevision(
     throw new Error("ACTION_REVISION_BASELINE_CHANGED: The saved edit belongs to another draft revision. Keep it pending and review the current draft before retrying; no saved or active authority was overwritten.");
   }
   return pending.instruction === checked.instruction
-    && canonicalJsonDigest(pending.operator_statements ?? null) === canonicalJsonDigest(checked.operator_statements ?? null) ? pending : checked;
+    && canonicalJsonDigest(pending.operator_statements ?? null) === canonicalJsonDigest(checked.operator_statements ?? null)
+    && canonicalJsonDigest(pending.coverage_repair ?? null) === canonicalJsonDigest(checked.coverage_repair ?? null) ? pending : checked;
 }
 
 export type BoundaryAuthoringResumeAction = {
@@ -114,6 +127,7 @@ export type BoundaryAuthoringResumeState = {
   /** Exact outcome awaiting a separately reviewed removal, never a new action intent. */
   pending_action_removal?: BoundaryAuthoringActionRemoval;
   pending_action_revision?: BoundaryAuthoringActionRevision;
+  reconciled_action_revisions?: BoundaryActionReconciliation[];
   /** Host-reviewed operating prerequisites, not proof of external writers or authority. */
   reviewed_version_fields?: ReviewedActionVersionField[];
   /** Scoped business answers only. Current applicability, metadata consent and authority are rechecked separately. */
@@ -173,6 +187,7 @@ export function buildBoundaryAuthoringResumeState(input: {
   metadataDestinationDigest?: `sha256:${string}`;
   pendingActionRemoval?: BoundaryAuthoringActionRemoval;
   pendingActionRevision?: BoundaryAuthoringActionRevision;
+  reconciledActionRevisions?: BoundaryActionReconciliation[];
   reviewedVersionFields?: readonly ReviewedActionVersionField[];
   /** Omitted retains this Boundary's records; [] explicitly clears them. Never upgrades legacy conversation. */
   readPrerequisiteDecisions?: readonly ReadPrerequisiteBusinessDecision[];
@@ -232,6 +247,9 @@ export function buildBoundaryAuthoringResumeState(input: {
     ...(input.metadataDestinationDigest ? { metadata_destination_digest: normalizePrivateReadMetadataDigest(input.metadataDestinationDigest) } : {}),
     ...(input.pendingActionRemoval ? { pending_action_removal: normalizeActionRemoval(input.pendingActionRemoval) } : {}),
     ...(input.pendingActionRevision ? { pending_action_revision: normalizeActionRevision(input.pendingActionRevision) } : {}),
+    ...((input.reconciledActionRevisions ?? input.previous?.reconciled_action_revisions)?.length ? {
+      reconciled_action_revisions: normalizeActionReconciliations(input.reconciledActionRevisions ?? input.previous!.reconciled_action_revisions),
+    } : {}),
     ...(reviewedVersionFields.length ? { reviewed_version_fields: reviewedVersionFields } : {}),
     ...(readPrerequisiteDecisions.length ? { read_prerequisite_decisions: readPrerequisiteDecisions } : {}),
     ...(input.pendingActionAddition ? { pending_action_addition: normalizeActionAddition(input.pendingActionAddition) } : {}),
@@ -284,6 +302,7 @@ export async function assertBoundaryAuthoringResumeCurrent(
   projectRoot: string,
   expected: BoundaryAuthoringResumeState,
   action?: BoundaryAuthoringActionFreshness,
+  options?: { permit?: ProjectAuthorityMutationPermit },
 ): Promise<void> {
   assertBoundaryAuthoringResumeState(expected);
   const frozen = structuredClone(expected);
@@ -304,7 +323,7 @@ export async function assertBoundaryAuthoringResumeCurrent(
     } else if (!(current.action?.intents ?? (current.action ? [current.action.intent] : [])).includes(target.intent)) {
       throw resumeChanged();
     }
-  });
+  }, { permit: options?.permit });
 }
 
 async function compareResumeRevision(projectRoot: string, binding: BoundaryAuthoringResumeBinding,
@@ -365,7 +384,8 @@ export async function clearBoundaryAuthoringResumeState(projectRootInput: string
     catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return true; throw error; }
     assertBoundaryAuthoringResumeState(state);
     if (boundaryAuthoringActionIsUnfinished(state.action) || state.pending_job_revision || state.pending_read_revision
-      || state.pending_action_addition || state.pending_action_revision || state.pending_action_removal) return false;
+      || state.pending_action_addition || state.pending_action_revision || state.pending_action_removal
+      || state.reconciled_action_revisions?.length) return false;
     await fs.rm(filePath, { force: true });
     return true;
   });
@@ -467,6 +487,7 @@ export function assertBoundaryAuthoringResumeState(
   if (value.private_read_metadata_digest !== undefined) normalizePrivateReadMetadataDigest(value.private_read_metadata_digest);
   if (value.metadata_destination_digest !== undefined) normalizePrivateReadMetadataDigest(value.metadata_destination_digest);
   if (value.pending_action_revision !== undefined) normalizeActionRevision(value.pending_action_revision);
+  if (value.reconciled_action_revisions !== undefined) normalizeActionReconciliations(value.reconciled_action_revisions);
   if (value.reviewed_version_fields !== undefined) parseReviewedActionVersionFields(value.reviewed_version_fields, 32);
   if (value.read_prerequisite_decisions !== undefined) parseReadPrerequisiteBusinessDecisions(value.read_prerequisite_decisions);
   if (value.pending_action_addition !== undefined) normalizeActionAddition(value.pending_action_addition);
@@ -490,7 +511,7 @@ function normalizePrivateReadMetadataDigest(value: unknown): `sha256:${string}` 
 function normalizeActionRevision(value: unknown): BoundaryAuthoringActionRevision {
   if (!isRecord(value) || typeof value.outcome !== "string" || typeof value.instruction !== "string"
     || typeof value.baseline_digest !== "string"
-    || Object.keys(value).some(key => !["outcome", "instruction", "operator_statements", "baseline_digest", "checkpoint"].includes(key))) {
+    || Object.keys(value).some(key => !["outcome", "instruction", "operator_statements", "baseline_digest", "checkpoint", "coverage_repair"].includes(key))) {
     throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Action revision checkpoint is invalid.");
   }
   if (value.operator_statements !== undefined && (!Array.isArray(value.operator_statements)
@@ -498,7 +519,18 @@ function normalizeActionRevision(value: unknown): BoundaryAuthoringActionRevisio
     || value.operator_statements.reduce((total: number, text: unknown) => total + (typeof text === "string" ? text.length : 65_537), 0) > 65_536)) {
     throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Original operator statements exceed bounded repair context.");
   }
+  const repair = value.coverage_repair;
+  if (repair !== undefined && (!isRecord(repair)
+    || Object.keys(repair).some(key => !["source_digest", "report_digest", "source_ranges"].includes(key))
+    || !Array.isArray(repair.source_ranges) || !repair.source_ranges.length || repair.source_ranges.length > 120
+    || repair.source_ranges.some(range => !isRecord(range) || Object.keys(range).some(key => !["start", "end"].includes(key))
+      || !Number.isSafeInteger(range.start) || !Number.isSafeInteger(range.end) || Number(range.start) < 1 || Number(range.end) < Number(range.start)))) {
+    throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Coverage repair provenance is invalid.");
+  }
   return { outcome: reviewedName(value.outcome, "Action revision outcome", 200),
+    ...(repair ? { coverage_repair: { source_digest: reviewedDigest(repair.source_digest, "repair source"),
+      report_digest: reviewedDigest(repair.report_digest, "repair coverage"),
+      source_ranges: structuredClone(repair.source_ranges) as Array<{ start: number; end: number }> } } : {}),
     instruction: reviewedText(value.instruction, "Action revision request", MAX_BOUNDARY_ACTION_INTENT_CHARACTERS),
     baseline_digest: reviewedDigest(value.baseline_digest, "Action revision baseline"),
     ...(value.operator_statements ? { operator_statements: (value.operator_statements as unknown[])
@@ -511,6 +543,19 @@ function normalizeActionRevision(value: unknown): BoundaryAuthoringActionRevisio
       }) } : {}),
     ...(value.checkpoint ? { checkpoint: parseActionRuleAuthoringCheckpoint(value.checkpoint) } : {}),
   };
+}
+
+function normalizeActionReconciliations(value: unknown): BoundaryActionReconciliation[] {
+  if (!Array.isArray(value) || value.length > 16) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Retain at most 16 reconciled Action instructions; existing history was not removed.");
+  return value.map(item => {
+    if (!isRecord(item) || Object.keys(item).some(key => !["pending", "source_digest", "report_digest", "draft_digest", "reason", "confirmed_by"].includes(key))
+      || item.reason !== "current_review_requires_no_action_edit" || !["operator", "current_coverage"].includes(String(item.confirmed_by))) {
+      throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Action reconciliation record is invalid.");
+    }
+    return { pending: normalizeActionRevision(item.pending), source_digest: reviewedDigest(item.source_digest, "reconciled source"),
+      report_digest: reviewedDigest(item.report_digest, "reconciled report"), draft_digest: reviewedDigest(item.draft_digest, "reconciled draft"),
+      reason: item.reason, confirmed_by: item.confirmed_by as BoundaryActionReconciliation["confirmed_by"] };
+  });
 }
 
 function normalizeActionRemoval(value: unknown): BoundaryAuthoringActionRemoval {
@@ -625,8 +670,8 @@ function reviewedName(value: string, label: string, maximum: number): string {
   return normalized;
 }
 
-function reviewedDigest(value: string, label: string): `sha256:${string}` {
-  if (!/^sha256:[a-f0-9]{64}$/u.test(value)) {
+function reviewedDigest(value: unknown, label: string): `sha256:${string}` {
+  if (typeof value !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(value)) {
     throw new Error(`BOUNDARY_AUTHORING_RESUME_INVALID: ${label} is invalid.`);
   }
   return value as `sha256:${string}`;

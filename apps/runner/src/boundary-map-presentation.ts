@@ -46,7 +46,7 @@ export function renderBoundaryMapFieldMatrix(
 export function boundaryMapOperationLegend(): string[] {
   return [
     "Access: Model + Runner may return reviewed values to the model; Runner only keeps raw output local or tokenized but does not hide inferences from reviewed operations; Kept out is unavailable.",
-    "Reviewed operations are listed by name. Any operation omitted from a field is unavailable.",
+    "Reviewed operations are listed by name. Any operation omitted from a field is unavailable. Analysis only permits the listed operations without raw return. No Read ops establishes no private Action use; that requires separate evidence.",
   ];
 }
 
@@ -82,7 +82,7 @@ function renderWideTable(
     rows.map((row) => [
       row.field,
       row.data_type,
-      accessLabel(row.access),
+      boundaryMapFieldAccessLabel(row),
       packOperationLabels(row, operationWidth).join("\n") || "None",
     ]),
     [fieldWidth, typeWidth, accessWidth, operationWidth],
@@ -117,7 +117,7 @@ function renderNarrowTable(
   const tableRows = rows.flatMap((row) => [
     ["Field", row.field],
     ["Database type", row.data_type],
-    ["Access", accessLabel(row.access)],
+    ["Access", boundaryMapFieldAccessLabel(row)],
     ["Reviewed operations", packOperationLabels(row, valueWidth).join("\n") || "None"],
     ...(row.note ? [["Review note", row.note]] : []),
   ]);
@@ -151,10 +151,11 @@ function packOperationLabels(row: BoundaryMapFieldRow, width: number): string[] 
   return lines;
 }
 
-function accessLabel(access: BoundaryMapFieldRow["access"]): string {
-  if (access === "MODEL") return "Model + Runner";
-  if (access === "RUNNER") return "Runner only";
-  return "Kept out";
+export function boundaryMapFieldAccessLabel(row: BoundaryMapFieldRow): string {
+  if (row.access === "KEPT") return "Kept out";
+  if (!Object.values(row.operations).some(Boolean)) return "No Read ops";
+  if (!row.operations.return_value) return "Analysis only";
+  return row.access === "RUNNER" ? "Runner only" : "Model + Runner";
 }
 
 function renderAsciiTable(

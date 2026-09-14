@@ -6,6 +6,20 @@ import {
 } from "./boundary-map-presentation.js";
 
 describe("boundary map field matrix", () => {
+  it("labels absent Read operations without inventing model access or private Runner use", () => {
+    const noOperations = Object.fromEntries(Object.keys(rows()[0]!.operations).map(key => [key, false])) as BoundaryMapFieldRow["operations"];
+    for (const access of ["MODEL", "RUNNER"] as const) {
+      const row = { ...rows()[0]!, access, operations: noOperations }, before = structuredClone(row);
+      const text = renderBoundaryMapFieldMatrix([row], { width: 140 }).join(" ");
+      expect(text).toContain("No Read ops");
+      expect(text).not.toMatch(/Model \+ Runner|Runner only/);
+      expect(row).toEqual(before);
+      const analytical = renderBoundaryMapFieldMatrix([{ ...row, operations: { ...noOperations, filter: true } }], { width: 140 }).join(" ");
+      expect(analytical).toContain("Analysis only");
+      expect(analytical).toContain("Filter");
+      expect(analytical).not.toContain("Return value");
+    }
+  });
   it("renders plain-language reviewed operations in a bordered table at 80 characters", () => {
     const lines = renderBoundaryMapFieldMatrix(rows(), { width: 80, indent: "  " });
     const sourceIndex = lines.findIndex((line) => line.includes("note_source"));

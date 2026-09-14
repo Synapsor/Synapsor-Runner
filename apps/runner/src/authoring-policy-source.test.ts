@@ -1,4 +1,5 @@
 import fs from "node:fs/promises";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import path from "node:path";
 import os from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -24,6 +25,17 @@ function approved(text?: string) {
 }
 
 describe("complete operator-selected policy text", () => {
+  it("refuses an older review save after a competing accepted clarification without clearing its evidence", async () => {
+    const root = await directory(), session = approved();
+    await savePolicySources(root, session);
+    const before = await loadPolicySources(root, session.id), expectedDigest = canonicalJsonDigest(before);
+    const newer = structuredClone(before); newer.operator_messages = ["A newer exact meaning remains pending review."];
+    await savePolicySources(root, newer);
+    before.operator_messages = ["Older review answer."];
+    await expect(savePolicySources(root, before, { expectedDigest })).rejects.toThrow("POLICY_SOURCE_CHANGED");
+    expect(await loadPolicySources(root, session.id)).toEqual(newer);
+  });
+
 
   it("retains supporting source assertions through saved coverage without turning them into overrides", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-source-assertion-"));
@@ -420,12 +432,14 @@ describe("complete operator-selected policy text", () => {
     } } };
     const report = await reviewPolicyCoverage({ session, source, draft, previousReport: restored.coverage, env: { OPENAI_API_KEY: "test-key" } });
     expect(report).toEqual(restored.coverage);
-    expect(requests[0]).toContain("Previous supporting interpretations for this unchanged source and draft");
+    expect(requests[0]).toContain("Previous supporting interpretations with unchanged source, accepted statements and applicable evidence");
     expect(requests[0]).toContain("not independent database proof or a per-row classifier");
     expect(requests[0]).not.toContain("operator_clarification"); // Saved provenance is projected through the existing indexed tool field.
-    await reviewPolicyCoverage({ session, source, draft: { ...draft, changed_source_facts: true }, previousReport: report, env: { OPENAI_API_KEY: "test-key" } });
-    expect(requests[1]).not.toContain("Previous supporting interpretations for this unchanged source and draft");
-    expect(requests).toHaveLength(2);
+    await reviewPolicyCoverage({ session, source, draft: { ...draft, unrelated_display_note: true }, previousReport: report, env: { OPENAI_API_KEY: "test-key" } });
+    expect(requests[1]).toContain("Previous supporting interpretations with unchanged source, accepted statements and applicable evidence");
+    await reviewPolicyCoverage({ session, source, draft: { runner_evidence: { ...draft.runner_evidence, source_scope: "another-source" } }, previousReport: report, env: { OPENAI_API_KEY: "test-key" } });
+    expect(requests[2]).not.toContain("Previous supporting interpretations with unchanged source, accepted statements and applicable evidence");
+    expect(requests).toHaveLength(3);
     expect(draft).toEqual({ runner_evidence: { source_scope: "reviewed-source", nullable: false } });
   });
 

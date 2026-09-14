@@ -6990,7 +6990,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 25_000);
 
-  it.each(["proposal_only", "supervised", "writer_setup", "repair_on_resume", "concurrent_action_read_rebind", "privacy_retry", "guided_privacy", "guided_privacy_manual_retry_noop", "guided_privacy_manual_retry_change", "decline_privacy", "policy_text", "clarified_privacy", "confirmed_current", "partial_confirmation", "read_correction", "read_correction_failed", "read_correction_retry", "application_clarification", "coverage_failure", "read_only_pivot", "cancel_action", "cancel_coverage", "cancel_read_scope_preview", "cancel_action_scope_preview", "cancel_action_scope_dependency", "cancel_action_scope_commit", "active_rules_recovery", "policy_target_business", "policy_target_postcommit_once", "policy_target_postcommit_permanent", "policy_target_postcommit_competing_pause", "policy_target_postcommit_edit_current", "policy_target_postcommit_delegation_save", "policy_target_explained", "policy_target_explained_failure", "policy_target_counter_clarified", "policy_target_counter_clarified_failure", "policy_target_mechanical", "policy_target_multi", "policy_target_pause", "policy_target_mixed_read", "policy_target_mixed_read_scope", "policy_target_retained", "policy_target_concurrent", "policy_target_collision"] as const)("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (%s)", async (posture) => {
+  it.each(["proposal_only", "supervised", "writer_setup", "repair_on_resume", "concurrent_action_read_rebind", "privacy_retry", "guided_privacy", "guided_privacy_manual_retry_noop", "guided_privacy_manual_retry_change", "decline_privacy", "policy_text", "clarified_privacy", "confirmed_current", "partial_confirmation", "read_correction", "read_correction_failed", "read_correction_retry", "application_clarification", "coverage_failure", "read_only_pivot", "cancel_action", "cancel_coverage", "cancel_read_scope_preview", "cancel_action_scope_preview", "cancel_action_scope_dependency", "cancel_action_scope_commit", "active_rules_recovery", "policy_target_business", "policy_target_postcommit_once", "policy_target_postcommit_permanent", "policy_target_postcommit_competing_pause", "policy_target_postcommit_edit_current", "policy_target_postcommit_delegation_save", "policy_target_explained", "policy_target_explained_failure", "policy_target_counter_clarified", "policy_target_counter_clarified_failure", "policy_target_mechanical", "policy_target_multi", "policy_target_pause", "policy_target_mixed_read", "policy_target_mixed_read_scope", "policy_target_retained", "policy_target_concurrent", "policy_target_collision", "policy_target_reconcile_legacy", "policy_target_reconcile_generated", "policy_target_reconcile_declined", "policy_target_reconcile_concurrent", "policy_target_reconcile_save_failure", "policy_target_reconcile_owner", "policy_target_reconcile_source_concurrent", "policy_target_reconcile_client"] as const)("compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (%s)", async (posture) => {
     const writerSetup = posture === "writer_setup";
     const coverageFailure = posture === "coverage_failure";
     const partialConfirmation = posture === "partial_confirmation";
@@ -8045,6 +8045,8 @@ describe("boundary operator-plane CLI", () => {
         confirmReviewedDisabled: async () => true,
       };
       if (posture === "active_rules_recovery" || posture.startsWith("policy_target_")) {
+        const reconciliation = posture.startsWith("policy_target_reconcile_");
+        const reconciliationClient = posture === "policy_target_reconcile_client";
         const postCommitResumeFailure = posture.startsWith("policy_target_postcommit_");
         const competingPendingRevision = posture === "policy_target_postcommit_competing_pause";
         const rebasePendingRevision = posture === "policy_target_postcommit_edit_current";
@@ -8082,13 +8084,16 @@ describe("boundary operator-plane CLI", () => {
           reviews: compiled.map((entry) => ({ outcome: entry.rule.outcome, ...entry.review })) });
         await writeActionRuleAuthorityDraft(root, combined);
         const source = newPolicySourceSession();
-        source.snapshots = [policyTextSnapshot(Buffer.from(requiresCurrentState
+        source.snapshots = [policyTextSnapshot(Buffer.from(reconciliation
+          ? (reconciliationClient ? "The client captures the chosen record and displays its true status. Independently verify the changed source row after execution." : "Independently verify the changed source row after execution.")
+          : requiresCurrentState
           ? "Require current eligibility before reading information or requesting a change; keep approval limits unchanged."
           : posture === "policy_target_mixed_read_scope"
             ? "Customers may read only their permitted records before requesting a change; keep approval limits unchanged."
           : "Preserve the shared limits and resolve the reviewer requirement for the current new outcome."), "Saved-rules.txt")];
         source.active = 1;
         source.approvals = [{ digest: source.snapshots[0]!.digest, destination: authoringDestination({ provider: "openai", model: "gpt-test" }) }];
+        if (reconciliationClient) source.application_assignments = [{ source_digest: source.snapshots[0]!.digest, draft_digest: canonicalJsonDigest("older complete coverage input"), start: 1, end: 1, obligations: ["customer_selection", "status_presentation"], assigned_at: "2026-09-13T00:00:00Z", owner: "client_application", verified: false }];
         await savePolicySources(root, source);
         await writeBoundaryAuthoringResumeState(root, buildBoundaryAuthoringResumeState({ binding: deferredResume.value.binding,
           stage: "authority_review", jobIntent: deferredResume.value.job_intent, provider: "openai", model: "gpt-test",
@@ -8096,6 +8101,15 @@ describe("boundary operator-plane CLI", () => {
           ...(posture === "policy_target_pause" || mixedRead ? { action: { intent: "Review the saved actions.",
             intents: outcomes.map(outcome => `Review ${outcome}.`), completed_outcomes: outcomes, outcome: original.outcome,
             strategy: "rule_derived" as const } } : {}),
+          ...(reconciliationClient ? { intendedClient: "claude-code" as const } : {}),
+          ...(reconciliation ? { pendingActionRevision: {
+            outcome: original.outcome, baseline_digest: canonicalJsonDigest(compiled[1]!.draft),
+            instruction: posture === "policy_target_reconcile_owner" ? "Require two reviewers; keep the other outcomes unchanged."
+              : "Implement this already supplied business requirement in the same disabled action. Add independent post-change readback.",
+            operator_statements: ["Preserve the existing business rules and separately verify the result after execution."],
+            ...(posture === "policy_target_reconcile_generated" ? { coverage_repair: { source_digest: source.snapshots[0]!.digest,
+              report_digest: canonicalJsonDigest("original misclassified report"), source_ranges: [{ start: 1, end: 1 }] } } : {}),
+          } } : {}),
           policySourceSession: source.id, previous: deferredResume.value }));
         const recovery = posture === "active_rules_recovery";
         let phase: "blocked" | "fail" | "ready" = "blocked";
@@ -8109,6 +8123,33 @@ describe("boundary operator-plane CLI", () => {
           },
           chooseOption: async (title, _choices, options) => {
             if (title === "START BOUNDARY DRAFTING") return "resume";
+            if (title === "SETUP NEEDS ATTENTION" && posture === "policy_target_reconcile_concurrent") {
+              expect(options?.context?.join(" ")).toContain("BOUNDARY_AUTHORING_RESUME_CHANGED");
+              return "pause";
+            }
+            if (title === "RECHECK SAVED REPAIR" && reconciliationClient) {
+              return _choices.some(choice => choice.value === "client_duties") ? "client_duties" : "pause";
+            }
+            if (title === "REVIEW SAVED REPAIR ROUTING" && reconciliation) {
+              pendingReviewMenus++;
+              expect(options?.initialValue).toBe("pause");
+              expect(options?.context?.join(" ")).toContain("no definite origin record");
+              if (posture === "policy_target_reconcile_source_concurrent") {
+                const newer = await loadPolicySources(root, source.id);
+                newer.operator_messages = ["A newer source clarification remains pending its own review."];
+                await savePolicySources(root, newer);
+              }
+              if (posture === "policy_target_reconcile_concurrent") {
+                const current = await readBoundaryAuthoringResumeState(root, deferredResume.value.binding);
+                if (current.status !== "ready") throw new Error("Missing current job");
+                await writeBoundaryAuthoringResumeState(root, buildBoundaryAuthoringResumeState({
+                  binding: current.value.binding, stage: "authority_review", jobIntent: current.value.job_intent,
+                  provider: "openai", model: "gpt-test", previous: current.value,
+                  pendingActionRevision: { ...current.value.pending_action_revision!, instruction: "A newer owner request must remain pending." },
+                }), { expectedRevisionDigest: current.value.revision_digest });
+              }
+              return posture === "policy_target_reconcile_declined" ? "pause" : "reconcile";
+            }
             if (title === "REVIEW DISABLED ACTION REVISION") return "save";
             if (title === "REVIEW CHANGED ACTION DRAFT") {
               expect(options?.initialValue).toBe("pause");
@@ -8148,7 +8189,7 @@ describe("boundary operator-plane CLI", () => {
               if (menus === 4) { expect(calls).toBe(3); return "pause"; }
               expect(calls).toBe(3); phase = "ready"; return "resolve";
             }
-            throw new Error(`Unexpected rules recovery prompt: ${title}`);
+            throw new Error(`Unexpected rules recovery prompt: ${title}; ${JSON.stringify(options?.context)}`);
           },
           showReviewDetails: async (_title, lines) => { details.push(lines); },
           confirmActivation: confirmAction,
@@ -8254,6 +8295,13 @@ describe("boundary operator-plane CLI", () => {
               expect(body).toContain("history_selector");
               for (const outcome of outcomes) expect(body).toContain(outcome);
               if (phase === "fail") throw new Error("POLICY_TEST_PROVIDER_UNAVAILABLE");
+              if (reconciliation) return { status: 200, body: { output: [{ type: "function_call", call_id: `later_${calls}`,
+                name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: [{ start: 1, end: 1,
+                  disposition: "needs_decision", responsibility: "application", issue_kind: "missing_configuration",
+                  interpretation: "Independent source readback is required after each applicable execution and remains unverified.",
+                  application_obligations: ["independent_source_readback"],
+                  draft_paths: ["/runner_evidence/runtime_contract/application_obligations/independent_source_readback"],
+                }, ...(reconciliationClient ? [{ start: 1, end: 1, disposition: "needs_decision", responsibility: "application", issue_kind: "missing_configuration", interpretation: "The client must capture the selected record and display the exact status; these duties remain unverified.", application_obligations: ["customer_selection", "status_presentation"], draft_paths: ["/runner_evidence/runtime_contract/application_obligations/customer_selection", "/runner_evidence/runtime_contract/application_obligations/status_presentation"] }] : [])] }) }] } };
               if (explained && calls > (counterClarification ? 2 : 1)) {
                 expect(body).toContain(clarifiedNoChange);
                 if (posture === "policy_target_explained_failure" || posture === "policy_target_counter_clarified_failure") throw new Error("POLICY_TEST_CLARIFICATION_RECHECK_UNAVAILABLE");
@@ -8283,6 +8331,60 @@ describe("boundary operator-plane CLI", () => {
             modelAuthoringNarrator: async () => "Review the pending requirement for the saved outcome.",
             actionProjectInspector: async () => inspection, boundaryAuthoringChatFactory: () => chat,
           });
+        if (reconciliation) {
+          const resumePath = path.join(root, ".synapsor/boundary-authoring/resume.json");
+          const before = JSON.parse(await fs.readFile(resumePath, "utf8"));
+          const rename = fs.rename.bind(fs);
+          let failures = 0;
+          const failure = vi.spyOn(fs, "rename").mockImplementation(async (from, to) => {
+            if (posture === "policy_target_reconcile_save_failure" && to === resumePath
+              && JSON.parse(await fs.readFile(from, "utf8")).reconciled_action_revisions?.length) {
+              failures++;
+              throw Object.assign(new Error("EACCES: controlled reconciliation save failure"), { code: "EACCES" });
+            }
+            return rename(from, to);
+          });
+          try { expect(await run()).toBe(0); } finally { failure.mockRestore(); }
+          const after = JSON.parse(await fs.readFile(resumePath, "utf8"));
+          if (posture === "policy_target_reconcile_owner") {
+            expect(revise).toHaveBeenCalledOnce();
+            expect(after.reconciled_action_revisions).toBeUndefined();
+            expect(pendingReviewMenus).toBe(0);
+            return;
+          }
+          expect(revise).not.toHaveBeenCalled();
+          expect((await readActionRuleAuthorityDraft(root, combined.authority.name))!.digest).toBe(combined.digest);
+          expect(await loadActivatedExplorationBoundaries(root)).toEqual(activeReadBefore);
+          expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+          const stopped = ["policy_target_reconcile_declined", "policy_target_reconcile_concurrent", "policy_target_reconcile_source_concurrent", "policy_target_reconcile_save_failure"].includes(posture);
+          if (stopped) {
+            expect(confirmAction).not.toHaveBeenCalled();
+            expect(after.reconciled_action_revisions).toBeUndefined();
+            expect(after.pending_action_revision).toEqual(posture === "policy_target_reconcile_concurrent"
+              ? { ...before.pending_action_revision, instruction: "A newer owner request must remain pending." } : before.pending_action_revision);
+            if (posture === "policy_target_reconcile_save_failure") expect(failures).toBeGreaterThan(0);
+            if (posture === "policy_target_reconcile_source_concurrent") expect((await loadPolicySources(root, source.id)).operator_messages)
+              .toEqual(["A newer source clarification remains pending its own review."]);
+            return;
+          }
+          expect(after.pending_action_revision).toBeUndefined();
+          expect(after.reconciled_action_revisions).toMatchObject([{ pending: before.pending_action_revision,
+            confirmed_by: posture === "policy_target_reconcile_generated" ? "current_coverage" : "operator" }]);
+          expect(pendingReviewMenus).toBe(posture === "policy_target_reconcile_generated" ? 0 : 1);
+          expect(confirmAction).toHaveBeenCalledOnce();
+          const preserved = structuredClone(after.reconciled_action_revisions);
+          confirmAction.mockClear();
+          expect(await run()).toBe(0);
+          const restarted = JSON.parse(await fs.readFile(resumePath, "utf8"));
+          expect(restarted.reconciled_action_revisions).toEqual(preserved);
+          expect(restarted.pending_action_revision).toBeUndefined();
+          expect(revise).not.toHaveBeenCalled();
+          const currentSource = await loadPolicySources(root, restarted.policy_source_session);
+          expect(currentSource.coverage?.passages).toMatchObject([{ disposition: "needs_decision", responsibility: "application",
+            application_obligations: ["independent_source_readback"] }, ...(reconciliationClient ? [{ disposition: "needs_decision", responsibility: "application", application_obligations: ["customer_selection", "status_presentation"] }] : [])]);
+          if (reconciliationClient) expect(currentSource.application_assignments).toMatchObject([{ source_digest: currentSource.coverage!.source_digest, draft_digest: currentSource.coverage!.draft_digest, obligations: ["customer_selection", "status_presentation"], owner: "client_application", verified: false }]);
+          return;
+        }
         if (postCommitResumeFailure) {
           const permanentFailure = posture !== "policy_target_postcommit_once" && !delegationSaveFailure;
           const resumePath = path.join(root, ".synapsor/boundary-authoring/resume.json");

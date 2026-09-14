@@ -9,6 +9,53 @@ import { createModelAuthoringConversation } from "./model-authoring-conversation
 import { policyReviewReadiness } from "./authoring-review-readiness.js";
 
 const root = "/runner_evidence/runtime_contract";
+
+describe("post-change verification is a later observation, not an Action expression", () => {
+  it("keeps unassigned client duties separate from readback on the same source range without topic labels", () => {
+    const source = policyTextSnapshot(Buffer.from("The client selects the record. Independently verify the changed source row after execution."), "rules.txt");
+    const draft = policyCoverageDraft(fixture());
+    const report = parsePolicyCoverage({ passages: [
+      { start: 1, end: 1, disposition: "needs_decision", responsibility: "application", issue_kind: "missing_configuration",
+        interpretation: "Independent source readback is required later and unverified.", application_obligations: ["independent_source_readback"],
+        draft_paths: [`${root}/application_obligations/independent_source_readback`] },
+      { start: 1, end: 1, disposition: "needs_decision", responsibility: "application", issue_kind: "missing_configuration",
+        interpretation: "The client must capture the intended selection; no assignment is current.", application_obligations: ["customer_selection"],
+        draft_paths: [`${root}/application_obligations/customer_selection`] },
+    ] }, source, draft, []);
+    const ready = policyReviewReadiness(source, report);
+    expect(ready.ready).toBe(false);
+    expect(ready.items).toHaveLength(2);
+    expect(ready.items?.filter(item => item.blocksReview).flatMap(item => item.passages).map(passage => passage.application_obligations)).toEqual([["customer_selection"]]);
+    expect(ready.summary.join(" ")).toContain("Independent source readback remains unverified");
+  });
+  it("retains required independent readback without blocking the earlier business review or claiming it happened", () => {
+    const input = fixture(), before = structuredClone(input), draft = policyCoverageDraft(input);
+    const source = policyTextSnapshot(Buffer.from("Independently verify the changed source row after execution."), "rules.txt");
+    const report = parsePolicyCoverage({ passages: [{ start: 1, end: 1,
+      disposition: "needs_decision", responsibility: "application", issue_kind: "missing_configuration",
+      interpretation: "A separate per-execution observation is required after the change; it has not been performed.",
+      draft_paths: [`${root}/application_obligations/independent_source_readback`],
+      application_obligations: ["independent_source_readback"],
+      next_step: "After execution, independently read the permitted source state and compare it with the exact change; retain this obligation until observed.",
+    }] }, source, draft, []);
+    expect(policyReviewReadiness(source, report)).toMatchObject({ ready: true });
+    expect(report.passages[0]).toMatchObject({ disposition: "needs_decision", responsibility: "application" });
+    expect(policyReviewReadiness(source, report).summary.join(" ")).toMatch(/readback.*unverified|unverified.*readback/i);
+    expect(input).toEqual(before);
+  });
+
+  it("does not route an unsupported automatic runtime postcondition as a mechanical Action correction", () => {
+    const source = policyTextSnapshot(Buffer.from("Automatically verify an independent postcondition before completing every execution."), "rules.txt");
+    const draft = policyCoverageDraft(fixture());
+    const report = parsePolicyCoverage({ passages: [{ start: 1, end: 1,
+      disposition: "unsupported", responsibility: "runner", issue_kind: "unsupported_requirement",
+      interpretation: "This automatic postcondition is not represented by the existing Action or receipt engine.",
+      draft_paths: [`${root}/receipts`], next_step: "Keep the exact unsupported guarantee unresolved.",
+    }] }, source, draft, []);
+    expect(policyReviewReadiness(source, report)).toMatchObject({ ready: false,
+      items: [{ kind: "unsupported_runtime", blocksReview: true }] });
+  });
+});
 function fixture() {
   const inspection: SchemaInspection = {
     engine: "postgres", current_user: "inspected_reader", server_version: "17", inspected_at: "2026-09-11T19:30:00Z",

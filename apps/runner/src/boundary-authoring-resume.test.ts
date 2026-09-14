@@ -23,6 +23,17 @@ const binding: BoundaryAuthoringResumeBinding = {
 };
 
 describe("Boundary authoring resume state", () => {
+  it("does not transfer generated-repair provenance into a genuine owner edit with the same words", () => {
+    const request = { outcome: "work.finish", instruction: "Review the existing effect.", baseline_digest: canonicalJsonDigest("exact draft") };
+    const generated = { ...request, coverage_repair: { source_digest: canonicalJsonDigest("source"),
+      report_digest: canonicalJsonDigest("coverage"), source_ranges: [{ start: 1, end: 1 }] },
+      checkpoint: actionRuleAuthoringCheckpoint({ intent_digest: canonicalJsonDigest("intent"), context_digest: canonicalJsonDigest("context"), components: {} }) };
+    expect(prepareBoundaryActionRevision({ ...request, coverage_repair: generated.coverage_repair }, generated)).toEqual(generated);
+    const owner = prepareBoundaryActionRevision(request, generated);
+    expect(owner).toEqual(request);
+    expect(owner.coverage_repair).toBeUndefined();
+    expect(owner.checkpoint).toBeUndefined();
+  });
   it("retains scoped business decisions through rewrite, restart and rescan without upgrading history or consent", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-scoped-decision-resume-"));
     try {

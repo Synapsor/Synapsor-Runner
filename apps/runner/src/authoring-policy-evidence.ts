@@ -88,6 +88,8 @@ export function policyCoverageDraft(input: {
   policySources?: PolicySourceSession;
   /** Current host-selected authoring session, not saved policy prose or a runtime client. */
   authoringSession?: { provider: AskProvider; model: string };
+  /** Sanitized current operator policy readback; no credentials, identities or source rows. */
+  executionReview?: { action_digest: string; enabled_outcomes: string[]; policy_digest: string };
 }) {
   const policySource = activePolicySource(input.policySources);
   const versionReviews = input.reviewedVersionFields === undefined ? [] : parseReviewedActionVersionFields(input.reviewedVersionFields, 32);
@@ -408,11 +410,23 @@ export function policyCoverageDraft(input: {
         conflict_protection: "Runner records immutable eligibility/effect evidence, re-verifies current facts and approved effect at execution, and checks configured version fields. A changed version or changed approved effect refuses stale execution; do not require duplicate equality predicates in require for these Runner-owned checks.",
         version_advancement: "Each compiled action effect lists its exact version_advance, or null when none is configured. integer_increment advances that column in the same guarded source transaction as the successful change. Refused, rolled-back and replayed requests do not advance it again. A conflict field alone is not proof of advancement; neither is this contract permission to add an unconfigured version update.",
         source_counter_maintenance: "Each effect and atomic_updates entry supplies source_counter_maintenance: an exact host-confirmed operating prerequisite, validated against the current Read dependency, inspection, role posture, generation lock, catalog, compiled update target and saved review digest, or null when no matching current confirmation is available. Cite that exact entry for a source-owner obligation to maintain the counter on every update. This is not independent proof that external writers enforce the obligation: external_writers_verified and production_integration_verified remain false. If the policy requires formal independent enforcement, keep that requirement pending until its actual evidence is supplied. Neither model text, source-policy wording, structural suitability nor compiled version advancement substitutes for host confirmation; a null entry cannot support a positive maintenance claim. This metadata grants no Read visibility, activation or execution authority.",
+        saved_execution_review: input.executionReview && input.authority
+          && input.executionReview.action_digest === input.authority.authority.action_boundary.digest
+          ? { ...input.executionReview, authority: "existing_operator_execution_policy", live_writer_rechecked: false,
+            worker_running_verified: false, receipt_mode_verified: false, independent_source_readback_verified: false,
+            meaning: "These outcomes have an enabled operator execution policy bound to this exact Action revision. This existing record is not a fresh writer/grant check, worker liveness check, receipt mode verification, completed execution or independent observation. Preserve its history without repeating a business Action repair. Inspect remaining setup separately." }
+          : null,
         receipts: "Runner supports distinct receipt authorities. runner_ledger records processing and execution receipts in the control ledger, separately from source effects; it is not a source-atomic receipt. For supported direct SQL effects, source_db records the applied receipt in the same source transaction as the guarded effects. It requires separately reviewed receipt objects and writer grants through writeback setup (precreated or reviewed auto-migration), then execution verification and a worker. Receipt mode and readiness are not established by this disabled draft. A source-atomic requirement cannot be satisfied by a control-ledger receipt or by adding a model-authored audit INSERT. Independent source readback is a separate verification step, not an automatic client behavior guarantee. request_change distinguishes queued/human_review/not_enabled/completed; completed requires applied state. Pending/failed is not completed.",
         client_responsibilities: "The application authenticates the person, supplies trusted session identity, captures their selection and uses returned execution status/receipts for messages. A scoped subject reference authorizes one reviewed row; it does not prove the human clicked a UI. When an effective date is in the future, recording the change is not proof its benefits are already in force. Boundary rules cannot prove arbitrary client UI wording.",
         application_obligations: {
           customer_selection: "The client captures the customer's intended choice and submits that reviewed subject reference. Runner independently verifies its scope and eligibility; it cannot prove the human selected it.",
           status_presentation: "The client presents returned statuses and receipts accurately. Approval, a queued request or a failed execution is not completion. A recorded future-effective change does not mean benefits are already in force.",
+          independent_source_readback: {
+            phase: "after_execution", verified: false, receipt_proves_observation: false,
+            observation_scope: null,
+            meaning: "An independent client or source owner observes the source after a particular execution and compares it with that exact intended change. This required observation remains external and unverified here; it cannot be performed before the change exists. Neither a receipt, selected receipt mode, execution setup, past test nor conversation establishes this observation. No private source rows or external verifier files are imported into authoring evidence. Business review may finish while this later obligation remains visible; claiming independently verified completion may not.",
+            limits: "This is only a separately performed observation, not an automatic runtime postcondition, transactional readback expression or guarantee for every future execution. If the policy requires such an automated guarantee, keep that precise unsupported requirement unresolved rather than assigning it away. Source_db atomic receipt requirements remain distinct.",
+          },
         },
         deployment_prerequisites: {
           runner_execution_setup: {

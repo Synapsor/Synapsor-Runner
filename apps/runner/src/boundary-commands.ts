@@ -20,7 +20,7 @@ import {
   type SchemaInspection,
 } from "@synapsor-runner/schema-inspector";
 import crypto from "node:crypto";
-import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
+import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { explicitActionExecutionIntent } from "./action-execution-intent.js";
 import { prepareActionRuleReadRevision, rebindActionCatalogForReadPolicyRevision, rebuildActionCatalogAfterMetadataRefresh, buildActionCatalogForSavedReadRevision, combineReviewedActionCatalogs,
   rebindActiveActionRuleAuthorityForReadRevision, rebindStoredActionRuleAuthorityDraftForReadRevision } from "./action-rule-read-revision.js";
@@ -170,6 +170,8 @@ import {
   writeBoundaryAuthoringResumeState,
   type BoundaryAuthoringResumeAction,
   type BoundaryAuthoringActionAddition,
+  type BoundaryAuthoringActionRevision,
+  type BoundaryActionReconciliation,
   type BoundaryAuthoringResumeBinding,
   type BoundaryAuthoringResumeRead,
   type BoundaryAuthoringResumeStage,
@@ -194,6 +196,7 @@ import {
 } from "./model-principal-scope-review.js";
 import {
   boundaryMapOperationLegend,
+  boundaryMapFieldAccessLabel,
   renderBoundaryMapFieldMatrix,
   renderBoundaryMapTable,
   type BoundaryMapFieldRow,
@@ -289,7 +292,7 @@ import { automaticApprovalBusinessSummary } from "./authoring-business-review.js
 import { authoringClientChoices, authoringClientLabel, authoringClientSetupFacts, isAuthoringClientPlan, type AuthoringClientPlan } from "./authoring-client-plan.js";
 import { renderReviewFacts } from "./review-facts.js";
 import { renderRunnerResultPanel } from "./runner-result-panel.js";
-import { newPolicySourceSession, loadPolicySources, activePolicySource, authoringDestination, savePolicySources, bindPolicyCoverage, recordReadInterpretation, confirmedReadFieldMeanings } from "./authoring-policy-source.js";
+import { newPolicySourceSession, loadPolicySources, activePolicySource, authoringDestination, savePolicySources, policySourceSavedDigest, bindPolicyCoverage, recordReadInterpretation, confirmedReadFieldMeanings } from "./authoring-policy-source.js";
 import { BoundaryJobPlanningError, planningDiagnosticLines, saveBoundaryJobPlanningDiagnostic } from "./boundary-job-diagnostics.js";
 import { installPolicySourceCommands } from "./authoring-policy-source-ui.js";
 import { reviewPolicyCoverage, parsePolicyCoverage, policyCoverageSection, policyCoverageSummary, unresolvedPolicyPassages, isMechanicalApprovalCounterPassage, isReadOnlyPolicyPassage, referencesReadPolicy, actionablePolicyRequirements, prioritizePolicyRepairs, type PolicyCoverage } from "./authoring-policy-coverage.js";
@@ -4316,6 +4319,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   let privateReadMetadataDigest = availableResume?.private_read_metadata_digest;
   let pendingActionRemoval = availableResume?.pending_action_removal;
   let pendingActionRevision = availableResume?.pending_action_revision;
+  let reconciledActionRevisions = structuredClone(availableResume?.reconciled_action_revisions ?? []);
   let reviewedVersionFields = boundaryAuthoringVersionReviews(availableResume);
   let readPrerequisiteDecisions = parseReadPrerequisiteBusinessDecisions(availableResume?.read_prerequisite_decisions ?? []);
   let pendingActionAddition = availableResume?.pending_action_addition;
@@ -4343,7 +4347,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     }
     await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, action);
   };
-  const persistAuthoringResume = async (stage: BoundaryAuthoringResumeStage): Promise<void> => {
+  const persistAuthoringResume = async (stage: BoundaryAuthoringResumeStage, permit?: ProjectAuthorityMutationPermit): Promise<void> => {
     assertRunning();
     if (!input.authoringChat
       || !currentResumeBinding
@@ -4383,6 +4387,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         ...(privateReadMetadataDigest ? { privateReadMetadataDigest } : {}),
         ...(pendingActionRemoval ? { pendingActionRemoval } : {}),
         ...(pendingActionRevision ? { pendingActionRevision } : {}),
+        reconciledActionRevisions,
         reviewedVersionFields,
         readPrerequisiteDecisions,
         ...((retainedReadEdit ? retainedReadEdit.addition : pendingActionAddition)
@@ -4393,7 +4398,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         ...(activeResume ? { previous: activeResume } : {}),
       });
       assertRunning();
-      await writeBoundaryAuthoringResumeState(input.projectRoot, nextResume, { expectedRevisionDigest });
+      await writeBoundaryAuthoringResumeState(input.projectRoot, nextResume, { expectedRevisionDigest, permit });
       activeResume = nextResume;
       savedResumeRevision = nextResume.revision_digest;
       resumePersistenceBlocked = false;
@@ -8280,8 +8285,9 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   let policyAttemptKey: string | undefined;
   let policyReport: { key: string; report: PolicyCoverage } | undefined;
   let policyFailure: string | undefined;
+  let executionReviewEvidence: Parameters<typeof policyCoverageDraft>[0]["executionReview"];
   const currentPolicyCoverageDraft = () => policyCoverageDraft({ read: context.candidate, decisions: context.bundle.decisions,
-    reviewedVersionFields, policySources: authoringConversation?.policySources,
+    reviewedVersionFields, policySources: authoringConversation?.policySources, executionReview: executionReviewEvidence,
     ...(modelAssistSession ? { authoringSession: { provider: modelAssistSession.provider, model: modelAssistSession.model } } : {}),
     ...(actionInspection ? { source: { inspection: actionInspection, generationLock: context.lock } } : {}),
     actions: semanticActionDrafts.map((entry) => entry.result.compiled), authority: semanticActionAuthorityDraft });
@@ -8372,6 +8378,16 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       }
       return undefined;
     }
+    executionReviewEvidence = undefined;
+    if (semanticActionAuthorityDraft) {
+      try {
+        const execution = await readSemanticSupervisedExecutionState({ projectRoot: input.projectRoot, env: process.env });
+        const actionDigest = semanticActionAuthorityDraft.authority.action_boundary.digest;
+        const matching = execution.policies.filter(policy => policy.action_boundary_digest === actionDigest);
+        if (matching.length) executionReviewEvidence = { action_digest: actionDigest, policy_digest: canonicalJsonDigest({ enabled: execution.enabled, policies: matching }),
+          enabled_outcomes: execution.enabled ? matching.map(policy => policy.outcome).sort() : [] };
+      } catch { /* Unavailable or changed deployment is not evidence of enabled execution. */ }
+    }
     const draftRecord = currentPolicyCoverageDraft();
     const authorityDigest = canonicalJsonDigest({ read: explorationBoundaryCandidateDigest(context.candidate),
       action: semanticActionAuthorityDraft?.digest ?? null });
@@ -8389,6 +8405,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     if (force || policyAttemptKey !== key) {
       policyAttemptKey = key;
       try {
+        const expectedSourceDigest = sources ? await policySourceSavedDigest(input.projectRoot, sources.id) : undefined;
         const report = await runWithProgress("Checking attached rules against this exact draft", () => reviewPolicyCoverage({
           session: modelAssistSession!, source, draft: draftRecord,
           ...(sources?.coverage?.source_digest === source.digest ? { previousReport: sources.coverage } : {}),
@@ -8396,9 +8413,15 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         policyReport = { key, report };
         policyFailure = undefined;
         if (sources) {
-          bindPolicyCoverage(sources, report, authorityDigest);
-          sources.coverage_context_digest = key;
-          await savePolicySources(input.projectRoot, sources);
+          const staged = structuredClone(sources);
+          bindPolicyCoverage(staged, report, authorityDigest);
+          staged.coverage_context_digest = key;
+          await withProjectAuthorityMutation(input.projectRoot, async permit => {
+            if (activeResume) await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, undefined, { permit });
+            await reloadReadReviewForModelRevision(input.projectRoot, context, semanticActionAuthorityDraft);
+            await savePolicySources(input.projectRoot, staged, { expectedDigest: expectedSourceDigest ?? null, permit });
+          });
+          Object.assign(sources, staged);
         }
       } catch (error) {
         assertRunning(error);
@@ -8418,7 +8441,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     ...(authoringConversation?.policySources?.operator_messages ?? []),
     ...(authoringConversation?.turns.filter(turn => turn.kind === "clarification").map(turn => turn.answer) ?? []),
   ].filter((text): text is string => Boolean(text?.trim())))];
-  const revisePolicyAction = async (entry: typeof semanticActionDrafts[number], instruction: string, operatorStatements?: string[]): Promise<boolean> => {
+  const revisePolicyAction = async (entry: typeof semanticActionDrafts[number], instruction: string, operatorStatements?: string[],
+    coverageRepair?: BoundaryAuthoringActionRevision["coverage_repair"]): Promise<boolean> => {
     const chat = input.authoringChat;
     if (!chat || !modelAssistSession || !input.session.chooseOption) return false;
     let savedRevision: string | undefined;
@@ -8427,6 +8451,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       pendingActionRevision = prepareBoundaryActionRevision({
         outcome: before.rule.outcome, instruction, baseline_digest: canonicalJsonDigest(before.draft),
         ...(operatorStatements ? { operator_statements: operatorStatements } : {}),
+        ...(coverageRepair ? { coverage_repair: coverageRepair } : {}),
       }, pendingActionRevision);
       await persistAuthoringResume("authority_review");
       if (resumePersistenceBlocked) throw checkpointSaveFailure("The edit request");
@@ -8596,7 +8621,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     }
     const checked = await ensurePolicyCoverage();
     const ready = Boolean(checked && policyReviewReadiness(checked.source, checked.report, authoringConversation?.policySources).ready);
-    return ready;
+    return ready && await reconcilePendingPolicyRepair();
   };
   let actionAdditionQueued = false;
   const missingActionCanBeAdded = (passages: PolicyCoverage["passages"]) => passages.some((passage) =>
@@ -8964,7 +8989,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           ...item.passages.flatMap((passage) => (passage.counter_requirements ?? []).map((check) =>
             `Validated current history filter at ${check.path}: ${JSON.stringify(check.current_capability)}. The source-required filter is ${JSON.stringify(check.required_capability)}. Revise that existing limit's capability selector, preserving its maximum, window, trusted scope and all unrelated limits. Never rename diagnostic IDs as a substitute.`)),
           "Preserve all other rules, approval limits and requested execution. If success requires changing and consuming related records together, use supported atomic_updates; do not replace consumption with plan mismatch or split requests. If an exact version-guarded field or relationship is unavailable, explain that concrete prerequisite. Activation and writer authorization remain separate.",
-        ].join("\n"), originalPolicyStatements());
+        ].join("\n"), originalPolicyStatements(), { source_digest: current.source.digest,
+          report_digest: canonicalJsonDigest(current.report), source_ranges: item.passages.map(({ start, end }) => ({ start, end })) });
         const rechecked = await ensurePolicyCoverage();
         modelActionRepairAttempt = rechecked?.key;
       }
@@ -9074,6 +9100,98 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       "This is a metadata-only repair: preserve all field exposure, operations, exclusions, trusted scope, Action business rules, shared approval limits and execution intent. No authority is activated by this repair.",
     ].join("\n"), undefined, { vocabularyOnly: true });
   }
+  async function reconcilePendingPolicyRepair(): Promise<boolean> {
+    // Recheck generated repair work before replay. Prefix recognition only offers
+    // a legacy routing review; it never establishes provenance or owner consent.
+    if (pendingActionRevision && (pendingActionRevision.coverage_repair
+      || pendingActionRevision.operator_statements?.length && pendingActionRevision.instruction.startsWith(
+        "Implement this already supplied business requirement in the same disabled action."))) {
+      const pending = pendingActionRevision;
+      const entry = semanticActionDrafts.find(item => item.result.compiled.rule.outcome === pending.outcome);
+      let current = entry && pending.baseline_digest === canonicalJsonDigest(entry.result.compiled.draft)
+        ? await ensurePolicyCoverage() : undefined;
+      for (let attempt = 0; current && attempt < 4
+        && !policyReviewReadiness(current.source, current.report, authoringConversation?.policySources).ready; attempt++) {
+        const remaining = policyReadinessItems(current.report, authoringConversation?.policySources).filter(item => item.blocksReview);
+        const onlyClientDuties = remaining.length > 0 && remaining.every(item => item.kind === "deployment_prerequisite"
+          && item.passages.every(passage => passage.application_obligations?.length
+            && passage.application_obligations.every(duty => duty === "customer_selection" || duty === "status_presentation")));
+        const choice = await input.session.chooseOption?.("RECHECK SAVED REPAIR", [
+          ...(onlyClientDuties ? [{ value: "client_duties", label: "Review the remaining client responsibilities" }] : []),
+          { value: "recheck", label: "Recheck the current draft and recorded requirements" },
+          { value: "clarify", label: "Clarify the disputed meaning without changing the Action" },
+          { value: "continue_edit", label: "Keep this instruction as an unfinished Action edit" },
+          { value: "pause", label: "Pause with all pending work preserved" },
+        ], { initialValue: "pause", displayContext: true, context: [
+          "A generated repair is pending. Current coverage has not yet established whether an Action edit is required.",
+          ...policyReviewReadiness(current.source, current.report, authoringConversation?.policySources).summary,
+          ...(!current.report && policyFailure ? [policyFailure] : []),
+          "Rechecking or clarifying changes no program or authority and does not waive a requirement.",
+        ] });
+        if (choice === "continue_edit") return true;
+        if (choice === "client_duties" && onlyClientDuties) await resolveRequirements();
+        else if (choice === "clarify") await clarifyAttachedRules(current);
+        else if (choice === "recheck") await ensurePolicyCoverage(true);
+        else return false;
+        current = await ensurePolicyCoverage();
+      }
+      if (current?.report && policyReviewReadiness(current.source, current.report, authoringConversation?.policySources).ready) {
+        const reviewedReport = current.report;
+        const provenGenerated = pending.coverage_repair?.source_digest === current.source.digest
+          && pending.coverage_repair.source_ranges.every(range => reviewedReport.passages.some(passage =>
+            passage.start <= range.start && passage.end >= range.end));
+        const expectedSourceDigest = canonicalJsonDigest(authoringConversation!.policySources!);
+        const choice = provenGenerated ? "reconcile" : await input.session.chooseOption?.("REVIEW SAVED REPAIR ROUTING", [
+          { value: "reconcile", label: "This was a generated repair; keep the draft and use the current review" },
+          { value: "continue_edit", label: "This is still my unfinished Action edit; keep working on it" },
+          { value: "pause", label: "Pause with the instruction preserved" },
+        ], { initialValue: "pause", displayContext: true, context: [
+          `Saved instruction: ${pending.instruction}`,
+          "Current business review requires no Action change. Deployment and independent verification remain separate, unverified work.",
+          "This older instruction has no definite origin record. Confirm its routing only; no rule, permission, receipt or source row will change.",
+        ] });
+        if (choice === "reconcile") {
+          const history = reconciledActionRevisions;
+          try {
+            await withProjectAuthorityMutation(input.projectRoot, async permit => {
+              if (await policySourceSavedDigest(input.projectRoot, authoringConversation!.policySources!.id) !== expectedSourceDigest) {
+                throw new Error("POLICY_SOURCE_CHANGED: The attached policy or its accepted decisions changed during routing review. Reopen this job; the instruction remains pending and newer work was not overwritten.");
+              }
+              await reloadReadReviewForModelRevision(input.projectRoot, context, semanticActionAuthorityDraft!);
+              const record: BoundaryActionReconciliation = { pending: structuredClone(pending), source_digest: current.source.digest,
+                report_digest: canonicalJsonDigest(reviewedReport), draft_digest: reviewedReport.draft_digest,
+                reason: "current_review_requires_no_action_edit", confirmed_by: provenGenerated ? "current_coverage" : "operator" };
+              reconciledActionRevisions = [...history, record];
+              pendingActionRevision = undefined;
+              await persistAuthoringResume("authority_review", permit);
+              if (resumePersistenceBlocked) throw checkpointSaveFailure("The repair routing review");
+            });
+            input.authoringChat?.checkpoint("Saved repair reconciled", [
+              "The previous instruction is retained in the job's reconciliation history. No Action edit was implemented or required by the current business review.",
+              "Deployment and per-execution verification obligations remain visible; no completed observation was inferred from a receipt or conversation.",
+            ]);
+          } catch (error) {
+            pendingActionRevision = pending;
+            reconciledActionRevisions = history;
+            assertRunning(error);
+            input.authoringChat?.checkpoint("Repair reconciliation was not saved", [
+              redactCliErrorMessage(error instanceof Error ? error.message : String(error)),
+              "The instruction remains pending; no authority or source data changed.",
+            ], "warning");
+            return false;
+          }
+        } else if (choice !== "continue_edit") return false;
+      } else if (current) {
+        input.authoringChat?.checkpoint("Saved repair needs current review", [
+          "Current coverage is incomplete. The saved instruction is retained; it has not been replayed as a new business requirement.",
+          "Recheck the attached requirements before retrying this generated Action repair.",
+        ], "warning");
+        return false;
+      }
+    }
+    return true;
+  }
+  if (!await reconcilePendingPolicyRepair()) return pauseAttachedRules();
   if (pendingActionRevision) {
     const entry = semanticActionDrafts.find(item => item.result.compiled.rule.outcome === pendingActionRevision!.outcome);
     if (!entry) {
@@ -9123,7 +9241,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         return pauseAttachedRules();
       }
     }
-    if (pendingActionRevision) await revisePolicyAction(entry, pendingActionRevision.instruction, pendingActionRevision.operator_statements);
+    if (pendingActionRevision) await revisePolicyAction(entry, pendingActionRevision.instruction, pendingActionRevision.operator_statements, pendingActionRevision.coverage_repair);
     if (pendingActionRevision) return pauseAttachedRules();
   }
   // Preparing the explicitly requested disabled configuration is mechanical.
@@ -9169,6 +9287,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     if (!after?.report || previous === canonicalJsonDigest({ key: after.key, report: after.report,
       assignments: authoringConversation?.policySources?.application_assignments ?? [] })) break;
   }
+  if (!await reconcilePendingPolicyRepair()) return pauseAttachedRules();
   const modelGuidedReadReviewReady = Boolean(input.authoringChat && modelAssistRecord);
   let writerPreflight: { key: string; summary: string[]; details: string[] } | undefined;
   const draftWriterReadiness = async () => {
@@ -9297,7 +9416,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     });
   }
   if (readBoundaryActive && semanticActionAuthorityDraft && semanticActionModelResult) {
-    if (!await reviewActiveActionRules()) return pauseAttachedRules();
+    if (!await reviewActiveActionRules() || !await reconcilePendingPolicyRepair()) return pauseAttachedRules();
     if (unmetExecutionEntries().length && input.session.chooseOption) {
       const choice = await input.session.chooseOption("AUTOMATIC COMPLETION IS NOT CONFIGURED", [
         { value: "prepare", label: "Prepare requested automatic execution", detail: "Keep the business rules and approval limits. Prepare a disabled replacement for separate Action and execution review; no writes." },
@@ -13357,6 +13476,7 @@ function readBoundaryFieldOperationFlags(
 function readBoundaryFieldReviewNote(
   roles: string[],
   access: BoundaryMapFieldRow["access"],
+  operations: BoundaryMapFieldRow["operations"],
 ): string | undefined {
   const labels: string[] = [];
   if (roles.includes("trusted_scope")) labels.push("trusted scope");
@@ -13368,6 +13488,8 @@ function readBoundaryFieldReviewNote(
   const unique = [...new Set(labels)];
   if (!unique.length) return undefined;
   const roleSummary = unique.join(", ");
+  if (access !== "KEPT" && !Object.values(operations).some(Boolean)) return `No reviewed Read operations; ${roleSummary}. Private Action use is not established by this Read view.`;
+  if (access !== "KEPT" && !operations.return_value) return `REVIEW: model analysis of ${roleSummary}; raw values are not returned`;
   if (access === "MODEL") {
     return `REVIEW: model-facing ${roleSummary}; prefer Runner only unless raw values are intentionally required by the agent`;
   }
@@ -13422,12 +13544,13 @@ export function formatFocusedBoundaryActivationReview(
           ? "RUNNER"
           : "MODEL";
       const roles = catalogResource?.fields.find((candidate) => candidate.id === field)?.roles ?? [];
-      const note = readBoundaryFieldReviewNote(roles, access);
+      const operations = readBoundaryFieldOperationFlags(resource, field, access === "KEPT");
+      const note = readBoundaryFieldReviewNote(roles, access, operations);
       return {
         field,
         data_type: resource.field_types[field] ?? "reviewed",
         access,
-        operations: readBoundaryFieldOperationFlags(resource, field, access === "KEPT"),
+        operations,
         ...(note ? { note } : {}),
       };
     }).sort((left, right) => {
@@ -13452,9 +13575,9 @@ export function formatFocusedBoundaryActivationReview(
       ...(resource.auto_bands ?? []).map((policy) =>
         `${policy.field}: automatic ${policy.methods.join(" or ")}, ${policy.min_buckets}-${policy.max_buckets} buckets, ${policy.label_style} labels`),
     ];
-    const modelCount = fieldRows.filter((row) => row.access === "MODEL").length;
-    const runnerCount = fieldRows.filter((row) => row.access === "RUNNER").length;
-    const keptCount = fieldRows.filter((row) => row.access === "KEPT").length;
+    const countAccess = (label: string) => fieldRows.filter(row => boundaryMapFieldAccessLabel(row) === label).length;
+    const modelCount = countAccess("Model + Runner"), runnerCount = countAccess("Runner only"), keptCount = countAccess("Kept out");
+    const analysisCount = countAccess("Analysis only"), noOperationsCount = countAccess("No Read ops");
     const settingsWidth = reviewWidth - 2;
     const settingKeyWidth = Math.min(20, Math.max(14, Math.floor((settingsWidth - 7) * 0.24)));
     const settingValueWidth = Math.max(12, settingsWidth - 7 - settingKeyWidth);
@@ -13464,7 +13587,8 @@ export function formatFocusedBoundaryActivationReview(
       `${theme.bold("Resource:")} ${theme.scope(resource.label ? `${resource.label} (${resource.id})` : resource.id)}`,
       ...(resource.description ? [theme.dim(resource.description)] : []),
       `${theme.bold("Field access:")} ${theme.visible(`${modelCount} Model + Runner`)} | `
-        + `${theme.runnerOnly(`${runnerCount} Runner only`)} | ${theme.keptOut(`${keptCount} Kept out`)}`,
+        + `${theme.runnerOnly(`${runnerCount} Runner only`)} | ${theme.keptOut(`${keptCount} Kept out`)}`
+        + ` | ${analysisCount} Analysis only | ${noOperationsCount} No Read ops`,
       ...(riskyModelFields.length
         ? [theme.warning(
             `REVIEW BEFORE ACTIVATION: ${riskyModelFields.map((row) => row.field).join(", ")} `

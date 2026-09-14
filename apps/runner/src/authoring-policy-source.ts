@@ -4,6 +4,7 @@ import path from "node:path";
 import { createHash, randomUUID } from "node:crypto";
 import type { AskHistoryTurn } from "./model-ask.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 
 export type ReadInterpretationRecord = {
   source_digest: string; read_digest: string; catalog_digest: string; instruction: string; checked_at: string;
@@ -16,6 +17,8 @@ export type PolicyPassage = { start: number; end: number;
   interpretation: string; draft_paths: string[]; operator_override?: string;
   /** Exact supporting operator statement; not independently proven and not a policy override. */
   operator_clarification?: string;
+  /** Host-bound context for re-review, not a cached semantic verdict. */
+  supporting_dependencies_digest?: string;
   topic?: string;
   responsibility?: "operator" | "runner" | "deployment" | "application";
   issue_kind?: "business_choice" | "schema_meaning" | "missing_configuration" | "unsupported_requirement" | "contradiction" | "coverage_link";
@@ -23,7 +26,7 @@ export type PolicyPassage = { start: number; end: number;
   evidence_checks?: Array<{ path: string; equals: string | number | boolean | null }>;
   counter_requirements?: Array<{ path: string; current_capability: string | null; required_capability: string | null }>;
   field_checks?: Array<{ resource: string; field: string; expectation: "private" | "business_visible" }>;
-  application_obligations?: Array<"customer_selection" | "status_presentation">;
+  application_obligations?: Array<"customer_selection" | "status_presentation" | "independent_source_readback">;
   /** Later setup, not verification or an assignment of business controls to the client. */
   deployment_prerequisite?: "authenticated_identity" | "runner_client_connection" | "runner_execution_setup";
 };
@@ -37,6 +40,19 @@ export function isDeferredPolicyDeployment(passage: PolicyPassage): boolean {
     && passage.issue_kind === "missing_configuration" && !passage.field_checks?.length && !passage.application_obligations?.length
     && !passage.counter_requirements?.length
     && passage.draft_paths.includes(pointer) && passage.draft_paths.every((path) => path === pointer || path.startsWith(`${pointer}/`));
+}
+
+/** An observation after an execution is still required; it is not a missing
+ * business predicate or evidence that any particular execution was verified. */
+export function isDeferredSourceReadback(passage: PolicyPassage): boolean {
+  const pointer = "/runner_evidence/runtime_contract/application_obligations/independent_source_readback";
+  return passage.disposition === "needs_decision" && passage.responsibility === "application"
+    && passage.issue_kind === "missing_configuration"
+    && passage.application_obligations?.length === 1
+    && passage.application_obligations[0] === "independent_source_readback"
+    && !passage.field_checks?.length && !passage.counter_requirements?.length && !passage.deployment_prerequisite
+    && passage.draft_paths.includes(pointer)
+    && passage.draft_paths.every(path => path === pointer || path.startsWith(`${pointer}/`));
 }
 
 export const POLICY_TEXT_MAX_BYTES = 32_768;
@@ -197,14 +213,25 @@ function sourcePath(root: string, id: string): string {
   return path.join(root, ".synapsor", "boundary-authoring", "policy-sources", `${id}.json`);
 }
 
-export async function savePolicySources(root: string, session: PolicySourceSession): Promise<void> {
-  const file = sourcePath(root, session.id), temporary = `${file}.${randomUUID()}.tmp`;
-  const serialized = JSON.stringify(session);
-  if (Buffer.byteLength(serialized) > 2 * 1024 * 1024) throw new Error("Saved policy sources exceed the supported size. The previous snapshot remains unchanged; remove older sources explicitly before adding more context.");
-  await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
-  await fs.chmod(path.dirname(file), 0o700);
-  try { await fs.writeFile(temporary, serialized, { mode: 0o600 }); await fs.rename(temporary, file); }
-  finally { await fs.unlink(temporary).catch(() => undefined); }
+export async function policySourceSavedDigest(root: string, id: string): Promise<string | null> {
+  try { return canonicalJsonDigest(JSON.parse(await fs.readFile(sourcePath(root, id), "utf8"))); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return null; throw error; }
+}
+
+export async function savePolicySources(root: string, session: PolicySourceSession,
+  options?: { expectedDigest?: string | null; permit?: ProjectAuthorityMutationPermit }): Promise<void> {
+  return withProjectAuthorityMutation(root, async () => {
+    const file = sourcePath(root, session.id), temporary = `${file}.${randomUUID()}.tmp`;
+    const serialized = JSON.stringify(session);
+    if (Buffer.byteLength(serialized) > 2 * 1024 * 1024) throw new Error("Saved policy sources exceed the supported size. The previous snapshot remains unchanged; remove older sources explicitly before adding more context.");
+    if (options?.expectedDigest !== undefined && await policySourceSavedDigest(root, session.id) !== options.expectedDigest) {
+      throw new Error("POLICY_SOURCE_CHANGED: The attached policy or its review changed while this check was running. Reopen the saved job; no newer decision or pending work was overwritten.");
+    }
+    await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
+    await fs.chmod(path.dirname(file), 0o700);
+    try { await fs.writeFile(temporary, serialized, { mode: 0o600 }); await fs.rename(temporary, file); }
+    finally { await fs.unlink(temporary).catch(() => undefined); }
+  }, { permit: options?.permit });
 }
 
 export async function loadPolicySources(root: string, id: string): Promise<PolicySourceSession> {
@@ -239,7 +266,8 @@ export async function loadPolicySources(root: string, id: string): Promise<Polic
 
 export function validApplicationObligations(value: unknown): value is NonNullable<PolicyPassage["application_obligations"]> {
   return Array.isArray(value) && value.length > 0 && value.length <= 2 && new Set(value).size === value.length
-    && value.every((entry) => entry === "customer_selection" || entry === "status_presentation");
+    && value.every((entry) => entry === "customer_selection" || entry === "status_presentation"
+      || entry === "independent_source_readback" && value.length === 1);
 }
 
 function validStoredCoverage(report: PolicyCoverage, sources: PolicyTextSnapshot[]): boolean {
@@ -267,6 +295,7 @@ function validStoredCoverage(report: PolicyCoverage, sources: PolicyTextSnapshot
           && check.path.length <= 500 && [check.current_capability, check.required_capability].every((value) => value === null || typeof value === "string" && value.length <= 256)))
       && (passage.application_obligations === undefined || validApplicationObligations(passage.application_obligations))
       && (passage.deployment_prerequisite === undefined || isDeferredPolicyDeployment(passage))
+      && (passage.supporting_dependencies_digest === undefined || typeof passage.supporting_dependencies_digest === "string" && /^sha256:[a-f0-9]{64}$/u.test(passage.supporting_dependencies_digest))
       && (passage.operator_clarification === undefined || typeof passage.operator_clarification === "string" && passage.operator_clarification.length <= 4_000)
       && (passage.operator_override === undefined || typeof passage.operator_override === "string" && passage.operator_override.length <= 4_000)));
 }

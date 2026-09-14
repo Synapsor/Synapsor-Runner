@@ -1,4 +1,4 @@
-import { isDeferredPolicyDeployment, type PolicyCoverage, type PolicyTextSnapshot, type PolicyPassage, type PolicySourceSession } from "./authoring-policy-source.js";
+import { isDeferredPolicyDeployment, isDeferredSourceReadback, type PolicyCoverage, type PolicyTextSnapshot, type PolicyPassage, type PolicySourceSession } from "./authoring-policy-source.js";
 import { needsDeploymentCoverageClassification, unresolvedPolicyPassages } from "./authoring-policy-coverage.js";
 import { readBoundaryRevisionCatalog, type ReadBoundaryFieldExposureChange } from "./read-boundary-revision-model.js";
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
@@ -23,17 +23,19 @@ export function policyReadinessItems(report?: PolicyCoverage, session?: PolicySo
   const grouped = new Map<string, AuthoringReadinessItem>();
   for (const passage of unresolvedPolicyPassages(report)) {
     const needsClassification = needsDeploymentCoverageClassification(passage);
-    const deferred = isDeferredPolicyDeployment(passage);
+    const deferred = isDeferredPolicyDeployment(passage) || isDeferredSourceReadback(passage);
     const kind = needsClassification ? "mechanical_correction"
       : passage.application_obligations?.length || deferred ? "deployment_prerequisite"
       : passage.issue_kind === "schema_meaning" || passage.issue_kind === "business_choice" ? "business_decision"
-      : passage.responsibility === "runner" || passage.issue_kind === "coverage_link" ? "mechanical_correction"
       : passage.disposition === "unsupported" ? "unsupported_runtime"
+      : passage.responsibility === "runner" || passage.issue_kind === "coverage_link" ? "mechanical_correction"
       : passage.responsibility === "deployment" ? "deployment_prerequisite" : "business_decision";
     const title = passage.topic ?? `Rule at lines ${passage.start}-${passage.end}`;
-    const key = `${kind}:${passage.deployment_prerequisite ?? ""}:${title}`;
+    const key = `${kind}:${passage.deployment_prerequisite ?? (isDeferredSourceReadback(passage) ? "independent_source_readback" : "")}:${title}`;
     const nextStep = needsClassification
       ? "Recheck this deployment classification against exact Runner setup evidence. Do not revise business rules or require a client connection before authority review."
+      : isDeferredSourceReadback(passage)
+        ? "After each applicable execution, independently observe the source and compare it with the exact intended change. This readback remains unverified; a receipt alone is not that observation. No Action-code repair is required for this external step."
       : deferred && passage.deployment_prerequisite === "runner_client_connection"
         ? "After authority review, choose a supported Runner client in client setup and review installation and the connection check. Configuration has not been checked and connection remains unverified; identity, application behavior and execution need separate checks."
       : deferred && passage.deployment_prerequisite === "authenticated_identity"
@@ -60,7 +62,7 @@ export function policyReviewReadiness(source: PolicyTextSnapshot, report?: Polic
   const clientChecks = [...new Set(assigned.flatMap((item) => item.passages.flatMap((passage) => [
     ...(passage.deployment_prerequisite === "authenticated_identity" ? ["signed-in customer identity"] : []),
     ...(passage.deployment_prerequisite === "runner_client_connection" ? ["Runner client connection"] : []),
-    ...(passage.application_obligations ?? []).map((obligation) => obligation === "customer_selection"
+    ...(passage.application_obligations ?? []).filter(obligation => obligation !== "independent_source_readback").map((obligation) => obligation === "customer_selection"
       ? "customer selection" : "accurate status messages"),
   ])))];
   const privacy = pending.some((passage) => passage.field_checks?.some((check) => check.expectation === "private"));
@@ -69,6 +71,8 @@ export function policyReviewReadiness(source: PolicyTextSnapshot, report?: Polic
     "Continue with the model to resolve them in this saved draft. Activation is unavailable until the checks pass.",
   ] : [`Attached rules: ${source.name} v${source.version}; interpretation checked for this revision.`]),
     ...(clientChecks.length ? [`Client integration still unverified: ${clientChecks.join(", ")}. Check these during client setup before customer use.`] : []),
+    ...(assigned.some(item => item.passages.some(isDeferredSourceReadback))
+      ? ["Independent source readback remains unverified for each applicable execution. Perform and retain that separate observation after the change; a receipt or completed business review does not prove it."] : []),
     ...(assigned.some((item) => item.passages.some((passage) => passage.deployment_prerequisite === "runner_execution_setup"))
       ? ["Execution setup pending: dedicated writer review, separate execution permission and worker startup. Continue to these checks after authority review; automatic completion is not yet enabled."] : []),
   ] };
