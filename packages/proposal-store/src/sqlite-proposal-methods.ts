@@ -878,6 +878,19 @@ export const proposalStoreProposalsMethods: ProposalStoreProposalMethods & ThisT
       return this.requireProposal(proposalId);
     },
   
+  automaticApprovalOutcomeDomain(boundaryName: string): { outcomes: string[]; complete: boolean } {
+      // Same boundary/kind/status/join as admission. Retain ALL history, not
+      // merely this revision or window, to make the authoring check conservative.
+      // Two distinct outcomes already disprove the singleton condition.
+      const rows = this.db.prepare(`
+        SELECT DISTINCT COALESCE(p.capability, p.action) AS outcome
+        FROM approvals a JOIN proposals p ON p.proposal_id = a.proposal_id
+        WHERE a.action_boundary_name = ? AND a.status = 'approved'
+        ORDER BY outcome LIMIT 2
+      `).all(boundaryName);
+      return { outcomes: rows.map(row => String(row.outcome)), complete: rows.length < 2 };
+    },
+
   approvals(proposalId: string): StoredApproval[] {
       return this.db.prepare("SELECT * FROM approvals WHERE proposal_id = ? ORDER BY approval_id ASC")
         .all(proposalId)

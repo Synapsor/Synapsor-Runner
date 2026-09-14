@@ -1,3 +1,4 @@
+import { withCountingOutcomeDomain, type CountingOutcomeDomain } from "./authoring-counting-domain.js";
 import {
   ProposalStore
 } from "@synapsor-runner/proposal-store";
@@ -8286,8 +8287,11 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   let policyReport: { key: string; report: PolicyCoverage } | undefined;
   let policyFailure: string | undefined;
   let executionReviewEvidence: Parameters<typeof policyCoverageDraft>[0]["executionReview"];
+  let countingDomain: CountingOutcomeDomain | undefined;
   const currentPolicyCoverageDraft = () => policyCoverageDraft({ read: context.candidate, decisions: context.bundle.decisions,
-    reviewedVersionFields, policySources: authoringConversation?.policySources, executionReview: executionReviewEvidence,
+    reviewedVersionFields, policySources: authoringConversation?.policySources, executionReview: executionReviewEvidence, countingDomain,
+    operatorClarifications: authoringConversation?.turns.filter(turn => turn.kind === "clarification"
+      && authoringConversation?.policySources?.operator_messages?.includes(turn.answer)).map(turn => ({ question: turn.question, answer: turn.answer })) ?? [],
     ...(modelAssistSession ? { authoringSession: { provider: modelAssistSession.provider, model: modelAssistSession.model } } : {}),
     ...(actionInspection ? { source: { inspection: actionInspection, generationLock: context.lock } } : {}),
     actions: semanticActionDrafts.map((entry) => entry.result.compiled), authority: semanticActionAuthorityDraft });
@@ -8388,6 +8392,11 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           enabled_outcomes: execution.enabled ? matching.map(policy => policy.outcome).sort() : [] };
       } catch { /* Unavailable or changed deployment is not evidence of enabled execution. */ }
     }
+    countingDomain = undefined;
+    if (semanticActionAuthorityDraft) {
+      try { countingDomain = await withCountingOutcomeDomain(input.projectRoot, semanticActionAuthorityDraft, async domain => domain); }
+      catch { /* Missing, busy or mismatched history is not evidence of an empty domain. */ }
+    }
     const draftRecord = currentPolicyCoverageDraft();
     const authorityDigest = canonicalJsonDigest({ read: explorationBoundaryCandidateDigest(context.candidate),
       action: semanticActionAuthorityDraft?.digest ?? null });
@@ -8416,11 +8425,19 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           const staged = structuredClone(sources);
           bindPolicyCoverage(staged, report, authorityDigest);
           staged.coverage_context_digest = key;
-          await withProjectAuthorityMutation(input.projectRoot, async permit => {
+          const persist = async (permit: Parameters<Parameters<typeof withProjectAuthorityMutation>[1]>[0]) => {
             if (activeResume) await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, undefined, { permit });
             await reloadReadReviewForModelRevision(input.projectRoot, context, semanticActionAuthorityDraft);
             await savePolicySources(input.projectRoot, staged, { expectedDigest: expectedSourceDigest ?? null, permit });
-          });
+          };
+          if (countingDomain && semanticActionAuthorityDraft) {
+            await withCountingOutcomeDomain(input.projectRoot, semanticActionAuthorityDraft, async (current, permit) => {
+              if (canonicalJsonDigest(current) !== canonicalJsonDigest(countingDomain)) {
+                throw new Error("POLICY_COUNTING_DOMAIN_CHANGED: Current authority or retained history changed during review. Recheck the exact saved rules; no policy or selector changed.");
+              }
+              await persist(permit);
+            });
+          } else await withProjectAuthorityMutation(input.projectRoot, persist);
           Object.assign(sources, staged);
         }
       } catch (error) {

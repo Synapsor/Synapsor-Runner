@@ -5,7 +5,7 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { randomUUID } from "node:crypto";
 import { Pool } from "pg";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ProposalStore, PostgresProposalRuntimeStore, type ProposalRuntimeStore, type ActionBoundaryApprovalContext,
   type PostgresRuntimeClient, type PostgresRuntimePool, type StoredProposal } from "./index.js";
 
@@ -90,6 +90,44 @@ describe("durable automatic approval admission", () => {
         expect(store.approvals(next.proposal_id)).toHaveLength(narrowed ? 1 : 0);
       } finally { store.close(); }
     }
+  });
+
+  it("records the counting contract across human decisions, outcomes, tenants and inclusive windows", async () => {
+    const observations = [];
+    for (const history of ["same_automatic", "other_automatic", "other_human", "other_boundary", "other_tenant", "expired", "exact_start"] as const) {
+      for (const filtered of [false, true]) {
+        const store = new ProposalStore();
+        const shared: ActionBoundaryApprovalContext = { name: boundary.name, digest: boundary.digest, limits: [
+          { id: "scope", kind: "count", scope: "tenant", maximum: 1, window_seconds: 60,
+            ...(filtered ? { capability: outcome } : {}) },
+        ] };
+        try {
+          const prior = await proposal(store, "wrp_diagnostic_prior", history === "other_tenant" ? "insurer-b" : "insurer-a", "first-person",
+            ["other_automatic", "other_human"].includes(history) ? "reserve_ops.review_claim" : outcome);
+          if (history === "other_human") {
+            vi.useFakeTimers(); vi.setSystemTime(time(0));
+            try { store.approveProposal(prior.proposal_id,
+              { approver: "fixture-owner", proposal_hash: prior.proposal_hash, proposal_version: prior.proposal_version }); }
+            finally { vi.useRealTimers(); }
+            expect(store.approvals(prior.proposal_id)[0]?.created_at).toBe(time(0));
+          }
+          else expect(store.approveProposalByPolicy(prior.proposal_id, options(prior, time(0), {
+            ...shared, name: history === "other_boundary" ? "separate_boundary" : shared.name,
+            limits: [],
+          })).approved).toBe(true);
+          expect(store.automaticApprovalOutcomeDomain(shared.name)).toEqual({ complete: true, outcomes:
+            ["other_human", "other_boundary"].includes(history) ? [] : [history === "other_automatic" ? "reserve_ops.review_claim" : outcome] });
+          const candidate = await proposal(store, "wrp_diagnostic_next", "insurer-a", "second-person");
+          const result = store.approveProposalByPolicy(candidate.proposal_id, options(candidate,
+            time(history === "expired" ? 60.001 : history === "exact_start" ? 60 : 1), shared));
+          const expected = !["same_automatic", "exact_start"].includes(history) && !(history === "other_automatic" && !filtered);
+          expect(result.approved).toBe(expected);
+          observations.push({ history, filtered, limits: shared.limits, approved: result.approved,
+            tripped_limits: result.tripped_limits, prior_approvals: store.approvals(prior.proposal_id), candidate_approvals: store.approvals(candidate.proposal_id) });
+        } finally { store.close(); }
+      }
+    }
+    await saveObservation("counting-contract", observations);
   });
 
   it("preserves the inclusive rolling-window boundary, then releases capacity only after expiry", async () => {

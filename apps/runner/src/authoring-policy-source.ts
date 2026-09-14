@@ -1,3 +1,4 @@
+import type { CountingComparisonResolution } from "./authoring-counting-review.js";
 import fs from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";
@@ -19,6 +20,8 @@ export type PolicyPassage = { start: number; end: number;
   operator_clarification?: string;
   /** Host-bound context for re-review, not a cached semantic verdict. */
   supporting_dependencies_digest?: string;
+  /** Recomputed by the host from current evidence; never model approval. */
+  counting_resolution?: CountingComparisonResolution;
   topic?: string;
   responsibility?: "operator" | "runner" | "deployment" | "application";
   issue_kind?: "business_choice" | "schema_meaning" | "missing_configuration" | "unsupported_requirement" | "contradiction" | "coverage_link";

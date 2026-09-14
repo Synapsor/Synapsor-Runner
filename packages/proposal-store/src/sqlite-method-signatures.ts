@@ -168,6 +168,7 @@ export interface ProposalStoreProposalMethods {
       },
     ): StoredProposal;
   approvals(proposalId: string): StoredApproval[];
+  automaticApprovalOutcomeDomain(boundaryName: string): { outcomes: string[]; complete: boolean };
   approvalProgress(proposalId: string): ApprovalProgress;
   recordOperatorAuthorization(proposalId: string, identity: OperatorIdentityProof, requireVerifiedIdentity?: boolean): void;
   markPendingWorker(proposalId: string, proposalHash: string, proposalVersion: number): StoredProposal;

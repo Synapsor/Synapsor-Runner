@@ -488,6 +488,10 @@ VALUES ($1, $2, $3::jsonb, $4::timestamptz)`,
     return await this.withRead((store) => store.listProposals(filters));
   }
 
+  async automaticApprovalOutcomeDomain(boundaryName: string): Promise<{ outcomes: string[]; complete: boolean }> {
+    return await this.withRead(store => store.automaticApprovalOutcomeDomain(boundaryName));
+  }
+
   async approvals(proposalId: string): Promise<StoredApproval[]> {
     return await this.withRead((store) => store.approvals(proposalId));
   }

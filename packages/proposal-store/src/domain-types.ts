@@ -1223,6 +1223,8 @@ export type ProposalRuntimeStore = {
   getProposal(proposalId: string): MaybePromise<StoredProposal | undefined>;
   listProposals?(filters?: LocalProposalState | ProposalSearchFilters): MaybePromise<StoredProposal[]>;
   approvals?(proposalId: string): MaybePromise<StoredApproval[]>;
+  /** Bounded metadata for authoring comparison; no proposal identities or business rows. */
+  automaticApprovalOutcomeDomain?(boundaryName: string): MaybePromise<{ outcomes: string[]; complete: boolean }>;
   approvalProgress?(proposalId: string): MaybePromise<ApprovalProgress>;
   operationalMetrics?(filters?: { tenant?: string; capability?: string }): MaybePromise<OperationalMetricRow[]>;
   fleetEventMetrics?(filters?: { tenant?: string; capability?: string }): MaybePromise<FleetEventMetricRow[]>;

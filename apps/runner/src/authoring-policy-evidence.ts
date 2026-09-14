@@ -1,3 +1,5 @@
+import { policyCountingInterpretations } from "./authoring-counting-review.js";
+import type { CountingOutcomeDomain } from "./authoring-counting-domain.js";
 import { explorationBoundaryCandidateDigest, hasReviewedPrincipalScope, type ExplorationBoundaryDraft } from "./auto-boundary.js";
 import { actionRuleModelDraftFromAuthority, type CompiledActionRuleModelDraftV1 } from "./action-rule-draft.js";
 import type { ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";
@@ -89,6 +91,8 @@ export function policyCoverageDraft(input: {
   /** Current host-selected authoring session, not saved policy prose or a runtime client. */
   authoringSession?: { provider: AskProvider; model: string };
   /** Sanitized current operator policy readback; no credentials, identities or source rows. */
+  countingDomain?: CountingOutcomeDomain;
+  operatorClarifications?: Array<{ question: string; answer: string }>;
   executionReview?: { action_digest: string; enabled_outcomes: string[]; policy_digest: string };
 }) {
   const policySource = activePolicySource(input.policySources);
@@ -303,7 +307,7 @@ export function policyCoverageDraft(input: {
           applies_to_outcome: limit.capability === undefined || limit.capability === action.rule.outcome,
           history_selector: {
             action_boundary_name: action.boundary_name,
-            approval_status: "approved",
+            approval_status: "approved", approval_kind: "boundary_automatic",
             window_seconds: limit.window_seconds,
             time_bounds: "inclusive: now - window_seconds through now",
             capability: limit.capability ?? (limit.scope === "capability" ? action.rule.outcome : null),
@@ -347,6 +351,8 @@ export function policyCoverageDraft(input: {
           semantics: "With direct_sql configured and separately enabled, the worker processes approved requests without a per-request staff step. Approval alone is not completion. A disabled configuration is prepared behavior, not missing business logic.",
         },
       }])),
+      counting_interpretations: policyCountingInterpretations(input.policySources, policySource,
+        canonicalJsonDigest({ read: readDigest, action: input.authority?.digest ?? null }), input.operatorClarifications ?? []),
       runtime_contract: {
         authoring_provider: input.authoringSession ? {
           provider: input.authoringSession.provider, model: input.authoringSession.model, purpose: "disabled_policy_authoring",
@@ -401,10 +407,14 @@ export function policyCoverageDraft(input: {
         },
         approval: "Automatic approval counts are taken atomically from Runner's proposal/approval ledger with the configured scope, capability and window. Limits govern automatic approval, not authorized human fallback. Invalid eligibility is refused before approval.",
         approval_counter_selection: {
+          outcome_domain: input.countingDomain && input.authority && input.countingDomain.proposed_revision === input.authority.digest
+            && input.countingDomain.boundary_name === input.authority.authority.action_boundary.name
+            && canonicalJsonDigest(input.countingDomain.proposed_outcomes) === canonicalJsonDigest(actions.map(action => action.rule.outcome).sort())
+            ? input.countingDomain : null,
           evidence: "Each automatic_limits entry supplies its exact history_selector and applies_to_outcome, derived from the current compiled authority. Null selectors mean no filter, not missing configuration. Tenant/principal/object selectors reference the current trusted proposal; no runtime identity values are supplied here.",
           diagnostic_only: ["limit.id"],
           not_history_filters: ["limit.id", "approval_class", "action_boundary_digest"],
-          semantics: "The evaluator selects approved history by Action Boundary name, inclusive time window and the listed optional capability/tenant/principal/object filters. Different limit IDs or approval classes do NOT create separate counters. The same selectors share the same history across outcomes and authority revisions; matching IDs do not combine different selectors. Compare kind, maximum and optional total field separately from the history selector. A capability filter, capability scope, different trusted scope or different window can change the selected history. Reconcile a false grouping claim in the report; do not rename IDs or change valid business rules to satisfy it.",
+          semantics: "The evaluator selects automatic approval records tagged with this Action Boundary name and status approved; human approvals have no boundary tag and are excluded. It filters by inclusive time window and the listed optional capability/tenant/principal/object filters. Different limit IDs or approval classes do NOT create separate counters. The same selectors share the same history across outcomes and authority revisions; matching IDs do not combine different selectors. Compare kind, maximum and optional total field separately from the history selector. A capability filter, capability scope, different trusted scope or different window can change the selected history. Reconcile a false grouping claim in the report; do not rename IDs or change valid business rules to satisfy it.",
         },
         request_identity: "The fixed request_change operation accepts outcome, scoped subject_refs and reviewed business inputs, not a client-supplied request ID. Repeating the same claimed references, outcome and inputs reuses the recorded proposal. New references or a different reviewed request are not an unlimited delivery-retry exemption. Execution uses the sealed proposal's idempotency identity.",
         conflict_protection: "Runner records immutable eligibility/effect evidence, re-verifies current facts and approved effect at execution, and checks configured version fields. A changed version or changed approved effect refuses stale execution; do not require duplicate equality predicates in require for these Runner-owned checks.",
