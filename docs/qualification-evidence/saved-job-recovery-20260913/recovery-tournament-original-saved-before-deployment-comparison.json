@@ -1,0 +1,89 @@
+{
+  "artifact_tree": "9e88145ed118e5e1f87f5dc0c55fe19197299dd9913633917c2b07c085cb3367",
+  "id": "recovery-tournament-original",
+  "label": "saved-before-deployment",
+  "before_revision": "policy:015fd3903fe976cff7f5460d3c49c1eb0b5071ca3dbfcf9d3a3a4fcafc87ef75",
+  "after_revision": "policy:015fd3903fe976cff7f5460d3c49c1eb0b5071ca3dbfcf9d3a3a4fcafc87ef75",
+  "original_accepted_intent": "boundary maximum6 and tenant maximum2, rolling86400, both existing league.ratify_result filters retained; no principal cap",
+  "before_counts": {
+    "proposals": 0,
+    "approvals": 0,
+    "worker_queue": 0,
+    "writeback_receipts": 0
+  },
+  "after_counts": {
+    "proposals": 0,
+    "approvals": 0,
+    "worker_queue": 0,
+    "writeback_receipts": 0
+  },
+  "normalized_differences_from_accepted_intent": [],
+  "differences_from_saved_draft": [],
+  "permitted_normalization": [
+    "enclosing authority digest",
+    "compiled action-boundary digest",
+    "approval policy digest recomputed from complete compared approval content",
+    "generated rule activated_at inside disabled envelope"
+  ],
+  "review_text_before": [
+    {
+      "examples": [
+        {
+          "kind": "eligible",
+          "result": "The request is valid and may be automatically approved only if both shared rolling limits remain available.",
+          "scenario": "An assigned referee requests a finished qualifying result with a 2–1 score, an open event, and no integrity hold."
+        },
+        {
+          "kind": "human_review",
+          "result": "The valid request requires league-supervisor review.",
+          "scenario": "An assigned referee requests a valid championship-stage result."
+        },
+        {
+          "kind": "ineligible",
+          "result": "The request is refused.",
+          "scenario": "An assigned referee requests a finished result while its event is closed."
+        }
+      ],
+      "human_review": "Valid championship-stage requests, and valid qualifying-stage requests that exceed either shared automatic-approval limit, require league-supervisor review. Invalid requests are refused and never routed to review.",
+      "outcome": "league.ratify_result",
+      "refused": [
+        "Refuse if the event is not open, the result is not finished, the winner does not have exactly two wins, the loser does not have zero or one win, or an integrity hold exists.",
+        "Never alter the recorded winner, score, referee assignment, event, or league."
+      ],
+      "then": "Propose changing only the result state to ratified. Completion remains supervised and can occur only after approval, execution is separately enabled, and a worker is running.",
+      "when": "The assigned referee requests ratification and the related event is open; the result is finished with a 2–0 or 2–1 score; and it has no integrity hold."
+    }
+  ],
+  "review_text_after": [
+    {
+      "examples": [
+        {
+          "kind": "eligible",
+          "result": "The request is valid and may be automatically approved only if both shared rolling limits remain available.",
+          "scenario": "An assigned referee requests a finished qualifying result with a 2–1 score, an open event, and no integrity hold."
+        },
+        {
+          "kind": "human_review",
+          "result": "The valid request requires league-supervisor review.",
+          "scenario": "An assigned referee requests a valid championship-stage result."
+        },
+        {
+          "kind": "ineligible",
+          "result": "The request is refused.",
+          "scenario": "An assigned referee requests a finished result while its event is closed."
+        }
+      ],
+      "human_review": "Valid championship-stage requests, and valid qualifying-stage requests that exceed either shared automatic-approval limit, require league-supervisor review. Invalid requests are refused and never routed to review.",
+      "outcome": "league.ratify_result",
+      "refused": [
+        "Refuse if the event is not open, the result is not finished, the winner does not have exactly two wins, the loser does not have zero or one win, or an integrity hold exists.",
+        "Never alter the recorded winner, score, referee assignment, event, or league."
+      ],
+      "then": "Propose changing only the result state to ratified. Completion remains supervised and can occur only after approval, execution is separately enabled, and a worker is running.",
+      "when": "The assigned referee requests ratification and the related event is open; the result is finished with a 2–0 or 2–1 score; and it has no integrity hold."
+    }
+  ],
+  "status": "passed_exact_disabled_recovery",
+  "full_comparison_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/runs/recovery-tournament-original/comparisons/saved-before-deployment-full.json",
+  "full_comparison_sha256": "1683570c65ad83243e823b1885e63490c08518c67582d0ef1a8e3f9a189c82f0"
+}

@@ -1,0 +1,7 @@
+{
+  "verified_at": "2026-09-14T02:00:40.251Z",
+  "installed_tree_sha256": "9e88145ed118e5e1f87f5dc0c55fe19197299dd9913633917c2b07c085cb3367",
+  "entries": 7569,
+  "exit": 0,
+  "command": "node /home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/frozen/freeze-repair.mjs --verify"
+}

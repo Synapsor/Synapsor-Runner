@@ -1,0 +1,95 @@
+{
+  "verdict": "NOT_COMPLETE: exact disabled corrections persist, PostgreSQL fixes and recovered runtime/edit pass; final assisted attached-policy recovery review remains incomplete",
+  "product_test_revision": "e425aad05add8842a78886c4ed1d452cca546c68",
+  "full_vitest": {
+    "status": "passed",
+    "exit": 0,
+    "passed": 6215,
+    "skipped": 461,
+    "source_unchanged": true,
+    "evidence": "stable-full02-exit.json",
+    "prior_interrupted_attempt": "stable-suite-interruption.json"
+  },
+  "types": {
+    "status": "passed",
+    "exit": 0,
+    "evidence": "types-final-exit.json"
+  },
+  "live_backend": {
+    "status": "passed",
+    "exit": 0,
+    "tests": 43,
+    "evidence": "final-postgres-exit.json",
+    "configurations": [
+      "PostgreSQL business source with SQLite control ledger: semantic atomic source receipt tests",
+      "real PostgreSQL control store: accounting/publication",
+      "SQLite control store and file-authority SQLite publication controls"
+    ],
+    "prior_gate_tests": 42,
+    "added_test": "multi-outcome unfiltered-versus-filtered history control"
+  },
+  "four_named_pg_review": {
+    "status": "passed",
+    "exit": 0,
+    "tests": 4,
+    "other_tests_filtered_out": 416,
+    "evidence": "final-pg-four-exit.json",
+    "states": [
+      "disabled",
+      "revoked",
+      "revoked_execution",
+      "revoked_unconfirmed"
+    ],
+    "inspection_preserved_state": true
+  },
+  "installed": {
+    "counter_terminal_diagnostic": {
+      "status": "PASSED",
+      "checks": 4,
+      "evidence": "installed-counter-terminal-diagnostic.json"
+    },
+    "original_tournament_exact_recovery_restart": {
+      "status": "EXACT_PROGRAM_AND_RESTART_PASSED; saved-review consistency limitation retained",
+      "evidence": "original-recovery-current-verdict.json"
+    },
+    "assisted_tournament_exact_recovery_restart": {
+      "status": "EXACT_DISABLED_PROGRAM_AND_RESTART_PASSED; attached-policy review INCOMPLETE",
+      "evidence": "assisted-recovery-current-verdict.json"
+    },
+    "recovered_tournament_receipt_readback": {
+      "status": "PASSED",
+      "evidence": "original-recovered-runtime.json"
+    },
+    "recovered_tournament_same_client_edit": {
+      "status": "PASSED",
+      "evidence": "recovered-tournament-edit-final.json"
+    },
+    "software_saved_review_rescan_edit_preservation": {
+      "status": "PASSED",
+      "evidence": "software-after-publication-preservation.json"
+    },
+    "new_installed_software_receipt_failure": {
+      "status": "NOT_RUN; outside focused restored-job check; host source receipt tests separate"
+    },
+    "fresh_unseen_onboarding": {
+      "status": "NOT_RUN; not authorized"
+    }
+  },
+  "historical_stage_a": "ACCEPTED only on tree278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+  "original_stage_b": "NOT_PASSED; original unrun add/remove and case-specific rows remain unchanged",
+  "new_unseen_qualification": false,
+  "offline_package_checks": {
+    "status": "passed",
+    "commands": 10,
+    "all_exits": 0,
+    "evidence": "offline-package-plan.json"
+  },
+  "installed_tree_sha256": "9e88145ed118e5e1f87f5dc0c55fe19197299dd9913633917c2b07c085cb3367",
+  "preservation": {
+    "original_entries_unchanged": 170144,
+    "installed_entries_unchanged": 7569,
+    "owned_containers_saved_and_stopped": 4
+  },
+  "remaining_issue": "remaining-review-consistency.md",
+  "acceptance_recommended": false
+}

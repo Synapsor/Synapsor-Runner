@@ -1,0 +1,519 @@
+[
+  {
+    "run": "recovery-tournament-original",
+    "new_authoring_calls": 31,
+    "completed_responses": 30,
+    "first_provider_attempt_at": "2026-09-14T01:16:21.648Z",
+    "last_provider_attempt_at": "2026-09-14T01:47:08.550Z",
+    "transport_errors": [
+      {
+        "at": "2026-09-14T01:41:36.528Z",
+        "type": "transport_error",
+        "index": 21,
+        "code": "ERR_SSL_SSL/TLS_ALERT_BAD_RECORD_MAC"
+      }
+    ],
+    "operator_invocations": [
+      {
+        "at": "2026-09-14T01:15:04.786Z",
+        "args": [
+          "start",
+          "--project-root",
+          ".",
+          "--export-draft",
+          "counter-diagnostic.json",
+          "--json"
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T01:15:05.673Z",
+        "code": 0,
+        "signal": null,
+        "event": "exit"
+      },
+      {
+        "at": "2026-09-14T01:15:06.843Z",
+        "args": [
+          "start",
+          "--project-root",
+          ".",
+          "--draft",
+          "counter-diagnostic.json",
+          "--review-counters",
+          "--json"
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T01:15:07.634Z",
+        "code": 2,
+        "signal": null,
+        "event": "exit"
+      },
+      {
+        "at": "2026-09-14T01:15:08.817Z",
+        "args": [
+          "start",
+          "--project-root",
+          ".",
+          "--draft",
+          "counter-diagnostic.json",
+          "--review-counters",
+          "--json"
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T01:15:09.591Z",
+        "code": 2,
+        "signal": null,
+        "event": "exit"
+      },
+      {
+        "at": "2026-09-14T01:15:10.772Z",
+        "args": [
+          "onboard",
+          "db",
+          "--project-root",
+          ".",
+          "--draft",
+          "counter-diagnostic.json",
+          "--review-counters",
+          "--json"
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T01:15:11.548Z",
+        "code": 2,
+        "signal": null,
+        "event": "exit"
+      },
+      {
+        "at": "2026-09-14T01:15:12.780Z",
+        "args": [
+          "onboard",
+          "db",
+          "--project-root",
+          ".",
+          "--draft",
+          "counter-diagnostic.json",
+          "--review-counters",
+          "--json"
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T01:15:13.534Z",
+        "code": 2,
+        "signal": null,
+        "event": "exit"
+      },
+      {
+        "at": "2026-09-14T01:15:40.067Z",
+        "args": [
+          "start",
+          "--project-root",
+          ".",
+          "--cli"
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T01:23:05.550Z",
+        "code": 0,
+        "signal": null,
+        "event": "exit"
+      },
+      {
+        "at": "2026-09-14T01:23:47.240Z",
+        "args": [
+          "action",
+          "review",
+          "--project-root",
+          "."
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T01:26:20.779Z",
+        "code": 0,
+        "signal": null,
+        "event": "exit"
+      },
+      {
+        "at": "2026-09-14T01:29:39.508Z",
+        "args": [
+          "action",
+          "review",
+          "--project-root",
+          "."
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T01:32:39.613Z",
+        "code": null,
+        "signal": "SIGTERM",
+        "event": "exit"
+      },
+      {
+        "at": "2026-09-14T01:33:47.886Z",
+        "args": [
+          "boundary",
+          "rescan",
+          "--from-env",
+          "DATABASE_URL",
+          "--project-root",
+          ".",
+          "--json"
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T01:33:48.785Z",
+        "code": 0,
+        "signal": null,
+        "event": "exit"
+      },
+      {
+        "at": "2026-09-14T01:34:05.273Z",
+        "args": [
+          "action",
+          "review",
+          "--project-root",
+          "."
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T01:34:57.295Z",
+        "code": 0,
+        "signal": null,
+        "event": "exit"
+      },
+      {
+        "at": "2026-09-14T01:35:23.380Z",
+        "args": [
+          "action",
+          "review",
+          "--project-root",
+          "."
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T01:36:04.495Z",
+        "code": null,
+        "signal": "SIGHUP",
+        "event": "exit"
+      },
+      {
+        "at": "2026-09-14T01:36:59.311Z",
+        "args": [
+          "action",
+          "review",
+          "--project-root",
+          "."
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T01:37:02.648Z",
+        "code": 0,
+        "signal": null,
+        "event": "exit"
+      },
+      {
+        "at": "2026-09-14T01:40:28.852Z",
+        "args": [
+          "start",
+          "--project-root",
+          ".",
+          "--cli"
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T01:44:17.320Z",
+        "code": 0,
+        "signal": null,
+        "event": "exit"
+      },
+      {
+        "at": "2026-09-14T01:45:07.321Z",
+        "args": [
+          "start",
+          "--project-root",
+          ".",
+          "--cli"
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T01:48:58.876Z",
+        "code": 0,
+        "signal": null,
+        "event": "exit"
+      },
+      {
+        "at": "2026-09-14T01:49:22.458Z",
+        "args": [
+          "action",
+          "review",
+          "--project-root",
+          "."
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T01:52:22.566Z",
+        "code": null,
+        "signal": "SIGTERM",
+        "event": "exit"
+      },
+      {
+        "at": "2026-09-14T01:55:36.727Z",
+        "args": [
+          "action",
+          "review",
+          "--project-root",
+          "."
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T01:57:21.485Z",
+        "code": 0,
+        "signal": null,
+        "event": "exit"
+      }
+    ],
+    "historical_calls_not_reset": 31,
+    "initial_recovery_calls": 25,
+    "separate_edit_calls": 6,
+    "initial_maximum": 25,
+    "edit_maximum": 15,
+    "runtime": {
+      "started_at": "2026-09-14T01:38:25.389Z",
+      "attempt_started_at": "2026-09-14T01:38:25.389Z",
+      "deadline": "2026-09-14T02:38:25.389Z",
+      "maximum_provider_attempts": 30,
+      "provider_attempts": 11,
+      "user_turns": 3,
+      "maximum_worker_invocations": 12,
+      "artifact_tree": "9e88145ed118e5e1f87f5dc0c55fe19197299dd9913633917c2b07c085cb3367",
+      "status": "stopped",
+      "prior_attempt": null,
+      "exit": {
+        "code": 0,
+        "signal": null
+      },
+      "completed_at": "2026-09-14T01:57:51.770Z"
+    }
+  },
+  {
+    "run": "recovery-tournament-assisted",
+    "new_authoring_calls": 25,
+    "completed_responses": 24,
+    "first_provider_attempt_at": "2026-09-14T01:28:01.699Z",
+    "last_provider_attempt_at": "2026-09-14T01:37:10.647Z",
+    "transport_errors": [
+      {
+        "at": "2026-09-14T01:34:57.699Z",
+        "type": "transport_error",
+        "index": 22,
+        "code": "ERR_SSL_SSL/TLS_ALERT_BAD_RECORD_MAC"
+      }
+    ],
+    "operator_invocations": [
+      {
+        "at": "2026-09-14T01:27:34.060Z",
+        "args": [
+          "start",
+          "--project-root",
+          ".",
+          "--cli"
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T01:35:37.074Z",
+        "code": 0,
+        "signal": null,
+        "event": "exit"
+      },
+      {
+        "at": "2026-09-14T01:35:59.331Z",
+        "args": [
+          "start",
+          "--project-root",
+          ".",
+          "--cli"
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T01:38:24.376Z",
+        "code": 0,
+        "signal": null,
+        "event": "exit"
+      }
+    ],
+    "historical_calls_not_reset": 17,
+    "maximum_authoring_calls": 25
+  },
+  {
+    "run": "recovery-software",
+    "new_authoring_calls": 7,
+    "completed_responses": 7,
+    "first_provider_attempt_at": "2026-09-14T01:55:34.586Z",
+    "last_provider_attempt_at": "2026-09-14T01:56:47.472Z",
+    "transport_errors": [],
+    "operator_invocations": [
+      {
+        "at": "2026-09-14T01:37:34.081Z",
+        "args": [
+          "action",
+          "status",
+          "--project-root",
+          "."
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T01:37:34.917Z",
+        "code": 0,
+        "signal": null,
+        "event": "exit"
+      },
+      {
+        "at": "2026-09-14T01:38:44.087Z",
+        "args": [
+          "boundary",
+          "rescan",
+          "--from-env",
+          "DATABASE_URL",
+          "--project-root",
+          ".",
+          "--json"
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T01:38:45.038Z",
+        "code": 0,
+        "signal": null,
+        "event": "exit"
+      },
+      {
+        "at": "2026-09-14T01:46:40.902Z",
+        "args": [
+          "writeback",
+          "setup",
+          "--config",
+          "synapsor.actions.runner.json",
+          "--profile",
+          "development",
+          "--outcome",
+          "release_ops.seal_candidate",
+          "--json"
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T01:46:41.743Z",
+        "code": 1,
+        "signal": null,
+        "event": "exit"
+      },
+      {
+        "at": "2026-09-14T01:47:20.302Z",
+        "args": [
+          "writeback",
+          "setup",
+          "--config",
+          "synapsor.actions.runner.json",
+          "--profile",
+          "development",
+          "--outcome",
+          "release_ops.seal_candidate",
+          "--writer-role",
+          "runner_writer_bfef10f6ea3c",
+          "--json"
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T01:47:21.146Z",
+        "code": 1,
+        "signal": null,
+        "event": "exit"
+      },
+      {
+        "at": "2026-09-14T01:48:30.173Z",
+        "args": [
+          "writeback",
+          "setup",
+          "--config",
+          "synapsor.actions.runner.json",
+          "--profile",
+          "development",
+          "--outcome",
+          "release_ops.seal_candidate",
+          "--writer-role",
+          "runner_writer_bfef10f6ea3c",
+          "--setup-url-env",
+          "SETUP_DATABASE_URL",
+          "--schema",
+          "synapsor_receipts",
+          "--table",
+          "synapsor_writeback_receipts",
+          "--json"
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T01:48:30.990Z",
+        "code": 0,
+        "signal": null,
+        "event": "exit"
+      },
+      {
+        "at": "2026-09-14T01:49:23.624Z",
+        "args": [
+          "start",
+          "--project-root",
+          ".",
+          "--cli"
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T01:58:01.872Z",
+        "code": 0,
+        "signal": null,
+        "event": "exit"
+      },
+      {
+        "at": "2026-09-14T01:58:33.824Z",
+        "args": [
+          "action",
+          "review",
+          "--project-root",
+          "."
+        ],
+        "event": "start"
+      },
+      {
+        "at": "2026-09-14T02:00:10.072Z",
+        "code": 0,
+        "signal": null,
+        "event": "exit"
+      }
+    ],
+    "historical_calls_not_reset": 42,
+    "maximum_authoring_calls": 10
+  }
+]

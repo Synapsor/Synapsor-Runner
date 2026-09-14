@@ -1,0 +1,23 @@
+{
+  "frozen_at": "2026-09-14T01:14:25.250Z",
+  "source_commit": "1ad8860abc00ad352ea1ecff859bc95de8d9edd4",
+  "installed_tree_sha256": "9e88145ed118e5e1f87f5dc0c55fe19197299dd9913633917c2b07c085cb3367",
+  "manifest_sha256": "a088565ecbc23cc9ac5dd2e9e5be669b7ee8ce1c4cc28c3a1b4fe5bca722b4e6",
+  "archive_sha256": "e5c6ba2c26777171e87d11fcc1ced48bda46775f4e857f3ef12768c67bac53a8",
+  "package_lock_sha256": "9e5d4499d0d06d3d46ed53a4bbbfa2a37f5efc68081b3d73597abc97740bed3c",
+  "entries": 7569,
+  "tarballs": [
+    {
+      "name": "synapsor-runner-1.8.0.tgz",
+      "sha256": "c0de01a340b18f6c81a82e5d41e3c78ea890b8100f201c7b703fc43fe4d94c2f"
+    },
+    {
+      "name": "synapsor-spec-1.11.0.tgz",
+      "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+    }
+  ],
+  "freeze_exit_code": 0,
+  "manifest_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/frozen/installed-artifact-manifest.json",
+  "product_revision": "e425aad05add8842a78886c4ed1d452cca546c68",
+  "test_revision": "e425aad05add8842a78886c4ed1d452cca546c68"
+}

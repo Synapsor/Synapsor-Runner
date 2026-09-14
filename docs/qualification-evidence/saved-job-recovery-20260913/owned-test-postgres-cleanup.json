@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-14T02:01:14.123170+00:00",
+  "container": "synapsor-saved-recovery-tests-7c810610",
+  "id": "c546ae455f0bd96d83de1a0bfc3bede933d30b4ddbdee52890e0e6cf91cc7b8b",
+  "stop_exit": 0,
+  "running_after": false,
+  "removed": false,
+  "saved_before_stop": {
+    "source.dump": "77b9ea6a204a414579fc2a7f69177e47549a6146ec71f8558aa6e4ef169bcf73",
+    "postgres.log": "1f173293b154c0572021ea35ea1112d2233b4c257c61232b5c5b1012e4796e08"
+  },
+  "directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/closure/test-postgres"
+}

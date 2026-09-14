@@ -1,0 +1,230 @@
+{
+  "at": "2026-09-14T01:27:02.621Z",
+  "records": [
+    {
+      "label": "original-stopped",
+      "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/runs/fresh-tournament/checkpoints/stopped-scope-intent/project",
+      "management_revision": "policy:1c52f4abeea52e6916d29b4e74716d2892a0f16d852285abd152c38300b854cb",
+      "selected_generation_lock": "sha256:5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6",
+      "selected_fields": [
+        {
+          "resource": "tournament_ops.events",
+          "selectable": [
+            "event_name",
+            "operating_state"
+          ],
+          "filterable": {},
+          "groupable": [],
+          "kept_out": [
+            "tenant_id",
+            "principal_id"
+          ]
+        },
+        {
+          "resource": "tournament_ops.results",
+          "selectable": [
+            "result_ref",
+            "stage",
+            "winner_game_wins",
+            "loser_game_wins",
+            "result_state"
+          ],
+          "filterable": {},
+          "groupable": [],
+          "kept_out": [
+            "referee_private_note",
+            "tenant_id",
+            "principal_id"
+          ]
+        }
+      ],
+      "read_draft_revision": "policy:495a93593684b62e33a353ca6aec7443b25055435d5115c6e976eae22bdfd617",
+      "read_draft_generation_lock": "sha256:5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6",
+      "read_draft_fields": [
+        {
+          "resource": "tournament_ops.events",
+          "selectable": [
+            "event_name",
+            "operating_state"
+          ],
+          "filterable": {},
+          "groupable": [],
+          "kept_out": [
+            "tenant_id",
+            "principal_id"
+          ]
+        },
+        {
+          "resource": "tournament_ops.results",
+          "selectable": [
+            "result_ref",
+            "stage",
+            "winner_game_wins",
+            "loser_game_wins",
+            "result_state"
+          ],
+          "filterable": {},
+          "groupable": [],
+          "kept_out": [
+            "referee_private_note",
+            "tenant_id",
+            "principal_id"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "original-current",
+      "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/runs/recovery-tournament-original/project",
+      "management_revision": "policy:1c52f4abeea52e6916d29b4e74716d2892a0f16d852285abd152c38300b854cb",
+      "selected_generation_lock": "sha256:5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6",
+      "selected_fields": [
+        {
+          "resource": "tournament_ops.events",
+          "selectable": [
+            "event_name",
+            "operating_state"
+          ],
+          "filterable": {},
+          "groupable": [],
+          "kept_out": [
+            "tenant_id",
+            "principal_id"
+          ]
+        },
+        {
+          "resource": "tournament_ops.results",
+          "selectable": [
+            "result_ref",
+            "stage",
+            "winner_game_wins",
+            "loser_game_wins",
+            "result_state"
+          ],
+          "filterable": {},
+          "groupable": [],
+          "kept_out": [
+            "referee_private_note",
+            "tenant_id",
+            "principal_id"
+          ]
+        }
+      ],
+      "read_draft_revision": "policy:495a93593684b62e33a353ca6aec7443b25055435d5115c6e976eae22bdfd617",
+      "read_draft_generation_lock": "sha256:5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6",
+      "read_draft_fields": [
+        {
+          "resource": "tournament_ops.events",
+          "selectable": [
+            "event_name",
+            "operating_state"
+          ],
+          "filterable": {},
+          "groupable": [],
+          "kept_out": [
+            "tenant_id",
+            "principal_id"
+          ]
+        },
+        {
+          "resource": "tournament_ops.results",
+          "selectable": [
+            "result_ref",
+            "stage",
+            "winner_game_wins",
+            "loser_game_wins",
+            "result_state"
+          ],
+          "filterable": {},
+          "groupable": [],
+          "kept_out": [
+            "referee_private_note",
+            "tenant_id",
+            "principal_id"
+          ]
+        }
+      ]
+    },
+    {
+      "label": "assisted-stopped",
+      "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/runs/recovery-tournament-assisted/checkpoints/stopped-extra-scope/project",
+      "management_revision": "policy:c4dd5a79a4dd8115c4390f40ba30cd59ed02a35cf41000c23ed757b4b94df680",
+      "selected_generation_lock": "sha256:5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6",
+      "selected_fields": [
+        {
+          "resource": "tournament_ops.events",
+          "selectable": [
+            "event_name",
+            "operating_state"
+          ],
+          "filterable": {},
+          "groupable": [],
+          "kept_out": [
+            "tenant_id",
+            "principal_id"
+          ]
+        },
+        {
+          "resource": "tournament_ops.results",
+          "selectable": [
+            "result_ref",
+            "stage",
+            "winner_game_wins",
+            "loser_game_wins",
+            "result_state"
+          ],
+          "filterable": {},
+          "groupable": [],
+          "kept_out": [
+            "referee_private_note",
+            "tenant_id",
+            "principal_id"
+          ]
+        }
+      ],
+      "read_draft_revision": "policy:495a93593684b62e33a353ca6aec7443b25055435d5115c6e976eae22bdfd617",
+      "read_draft_generation_lock": "sha256:5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6",
+      "read_draft_fields": [
+        {
+          "resource": "tournament_ops.events",
+          "selectable": [
+            "event_name",
+            "operating_state"
+          ],
+          "filterable": {},
+          "groupable": [],
+          "kept_out": [
+            "tenant_id",
+            "principal_id"
+          ]
+        },
+        {
+          "resource": "tournament_ops.results",
+          "selectable": [
+            "result_ref",
+            "stage",
+            "winner_game_wins",
+            "loser_game_wins",
+            "result_state"
+          ],
+          "filterable": {},
+          "groupable": [],
+          "kept_out": [
+            "referee_private_note",
+            "tenant_id",
+            "principal_id"
+          ]
+        }
+      ]
+    }
+  ],
+  "activation_performed": false,
+  "interpretation": "Prepared and durable Read candidates match. Display labels are computed from kept_out/model_withheld flags, independently of operation allowlists. The warning does not itself establish a grant. Exact operation flags for omitted private fields are all false. No activation was performed during this observation.",
+  "code_basis": {
+    "access_label": "boundary-commands.ts:13417-13422",
+    "operation_flags": "boundary-commands.ts:13336-13357",
+    "candidate_used_for_review": "boundary-commands.ts:12863-12872",
+    "review_details": "boundary-commands.ts:13096-13102"
+  },
+  "next": "Continue existing exact restricted Read review; preserve the misleading categorical warning as a reporting limitation, no product repair here."
+}

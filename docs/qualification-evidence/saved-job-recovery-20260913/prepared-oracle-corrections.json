@@ -1,0 +1,25 @@
+{
+  "at": "2026-09-14T01:22:03.234664+00:00",
+  "attempts": [
+    {
+      "script": "software-preservation-check.mjs before",
+      "actual": "assert(r) before snapshot/setup run",
+      "cause": "cleared disabled pointer row exists with null revision_id; prepared oracle incorrectly preferred it over active revision",
+      "fix": "only a non-null pointer selects a revision; source receipt config is sources.local_postgres.receipts.authority as verified from actual saved config",
+      "product_state_changes": false
+    },
+    {
+      "script": "snapshot-known-run.mjs receipt-reconciliation-pending",
+      "actual": "refused while public CLI lock held, no directory written",
+      "cause": "attempted whole-directory snapshot before public CLI exited",
+      "fix": "retain guard and wait for actual quiescent exit"
+    },
+    {
+      "script": "recovered-tournament-edit-check.mjs after",
+      "actual": "exit1 at approval deepStrictEqual: null-prototype SQLite rows versus parsed ordinary JSON objects",
+      "cause": "measurement prototype mismatch; persisted field values shown identical; original after result and source/ledger snapshots retained",
+      "fix": "serialize freshly read ledger to ordinary JSON values before complete comparison; rerun label after02 without reissuing any request or editing product",
+      "product_state_changes": false
+    }
+  ]
+}

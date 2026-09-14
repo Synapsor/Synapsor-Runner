@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-14T01:41:58.849146+00:00",
+  "status": "passed_exact_business_authority_through_public_activation_and_execution",
+  "artifact_tree": "9e88145ed118e5e1f87f5dc0c55fe19197299dd9913633917c2b07c085cb3367",
+  "initial_disabled_revision": "policy:015fd3903fe976cff7f5460d3c49c1eb0b5071ca3dbfcf9d3a3a4fcafc87ef75",
+  "active_revision": "policy:8bf6c72dfd2f70b2082cde2cf146bc27ce248b0e7f2f9bc8ebd8e5d95d0264db",
+  "comparison": "Complete normalized compiled Action program equal; no business-policy changes during public Read/Action/receipt/writer/execution setup",
+  "receipt_result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/runs/recovery-tournament-original/deterministic/initial-execute-result.json",
+  "receipt_result_sha256": "c504117901b98ce8e1494c997996dba24ef65e0e5a40e73c5db7f24e9fa02383",
+  "same_client_session": "6a7c9eda-fa23-4159-a1b6-8832960ddc73",
+  "topology": "one installed stdio MCP process; real configured Claude client; supervised public worker in separate local process; PostgreSQL business source and SQLite control ledger",
+  "receipt_mode": "runner_ledger; not source-atomic"
+}

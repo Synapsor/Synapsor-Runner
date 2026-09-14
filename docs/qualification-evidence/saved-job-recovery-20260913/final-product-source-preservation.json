@@ -1,0 +1,8 @@
+{
+  "at": "2026-09-14T02:03:04.571712+00:00",
+  "source_manifest": "stable-full02-source.json",
+  "sha256": "85ba5c5b6eb3a3d1eb5eb6ddebf75a060c5c7786a9d84e30d2c301d47f20b846",
+  "files": 950,
+  "unchanged": true,
+  "changes_since_stable_gate": "evidence/harness/report only"
+}

@@ -1,0 +1,26 @@
+{
+  "started_at": "2026-09-14T01:36:57.915088+00:00",
+  "entrypoint": "installed action review -> Continue client setup",
+  "context": "primary synthetic coordinator",
+  "provider_calls": 0,
+  "steps": [
+    "Q Quit",
+    "Continue client setup",
+    "existing saved job requires explicit local stdio and client selection",
+    "CONNECT A LOCAL MCP CLIENT",
+    "Local development client identity",
+    "Type yes to continue:",
+    "Use a trusted local test identity for this setup session?",
+    "hidden reviewed tenant",
+    "hidden reviewed principal",
+    "Verify this configured client connection now?",
+    "verified MCP handshake and tool catalog; test connection closed",
+    "Start the reviewed execution worker here?",
+    "VERIFIED ACTION BOUNDARY",
+    "Q Quit"
+  ],
+  "status": "passed_public_default_identity_install_and_launch",
+  "exit_code": 0,
+  "identity_values_absent_from_log": true,
+  "completed_at": "2026-09-14T01:37:02.753863+00:00"
+}

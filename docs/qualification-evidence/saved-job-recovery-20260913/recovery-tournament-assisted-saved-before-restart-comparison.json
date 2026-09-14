@@ -1,0 +1,1152 @@
+{
+  "artifact_tree": "9e88145ed118e5e1f87f5dc0c55fe19197299dd9913633917c2b07c085cb3367",
+  "id": "recovery-tournament-assisted",
+  "label": "saved-before-restart",
+  "before_revision": "policy:bf9c3eadca1de7b4979ea4aba29b685cb17d16c9c7e8c0935a3175fbb407a923",
+  "after_revision": "policy:3a09a1839a9483abcaef6352720ea800a9a0cf154ab9e3d19d0145781a98cb87",
+  "original_accepted_intent": "boundary maximum6 and tenant maximum2, rolling86400, both capability absent; no principal cap",
+  "before_counts": {
+    "proposals": 0,
+    "approvals": 0,
+    "worker_queue": 0,
+    "writeback_receipts": 0
+  },
+  "after_counts": {
+    "proposals": 0,
+    "approvals": 0,
+    "worker_queue": 0,
+    "writeback_receipts": 0
+  },
+  "normalized_differences_from_accepted_intent": [],
+  "differences_from_saved_draft": [
+    {
+      "path": ".authority.action_boundary.digest",
+      "before": "sha256:1ca86f99cc72fa596d6ff0807e1fb8df149c91081e7c1942e475bbb99b655e9c",
+      "after": "sha256:33efa99dcc7690e18adf5c9c49c8ba2a305d494b1d91aefafa14006500e2e378"
+    },
+    {
+      "path": ".authority.action_boundary.rules",
+      "before": [
+        {
+          "action_rule_digest": "sha256:b26554f58b18d0aaae6ca00df7f9db23cee7aed02bcbe7ec8d884136236bf94d",
+          "allowed_fields": [
+            "result_state"
+          ],
+          "approval_class": "league.result_ratification_approval",
+          "approval_mode": "policy",
+          "approval_policy_digest": "sha256:984bb893b3dcb04bd1da856c7c7be29074d539e327a02a927e2b813382b21a5f",
+          "compiled_plan_digest": "sha256:9848ce3198e7a0a0f1065e6a7b71d1195debc48d65c1b5c0c760b2c37344e12d",
+          "effect_envelope_digest": "sha256:94a88fac3b82047b3d56ac1074f7fe887643e2c199585ce5a9afd95cf0b3469a",
+          "max_rows": 1,
+          "operation": "update",
+          "outcome": "league.result_ratification",
+          "target_resource": "tournament_ops.results",
+          "writeback": {
+            "mode": "direct_sql",
+            "supervised_worker": "allowed"
+          }
+        }
+      ],
+      "after": [
+        {
+          "action_rule_digest": "sha256:b26554f58b18d0aaae6ca00df7f9db23cee7aed02bcbe7ec8d884136236bf94d",
+          "allowed_fields": [
+            "result_state"
+          ],
+          "approval_class": "league.result_ratification_approval",
+          "approval_mode": "policy",
+          "approval_policy_digest": "sha256:0b7e92c9f6fa06571bde6bf9d775324a1e7f93c5e24795d2ef97a307132adaf8",
+          "compiled_plan_digest": "sha256:9848ce3198e7a0a0f1065e6a7b71d1195debc48d65c1b5c0c760b2c37344e12d",
+          "effect_envelope_digest": "sha256:94a88fac3b82047b3d56ac1074f7fe887643e2c199585ce5a9afd95cf0b3469a",
+          "max_rows": 1,
+          "operation": "update",
+          "outcome": "league.result_ratification",
+          "target_resource": "tournament_ops.results",
+          "writeback": {
+            "mode": "direct_sql",
+            "supervised_worker": "allowed"
+          }
+        }
+      ]
+    },
+    {
+      "path": ".authority.approval_classes",
+      "before": [
+        {
+          "mode": "policy",
+          "name": "league.result_ratification_approval",
+          "required_approvals": 1,
+          "required_role": "league_supervisor",
+          "rules": [
+            {
+              "auto_approve_when": {
+                "kind": "compare",
+                "left": {
+                  "binding": "result",
+                  "field": "stage",
+                  "kind": "field"
+                },
+                "operator": "eq",
+                "right": {
+                  "kind": "literal",
+                  "value": "qualifying",
+                  "value_type": {
+                    "comparison": "exact",
+                    "enum": [
+                      "championship",
+                      "qualifying"
+                    ],
+                    "kind": "string",
+                    "max_length": 12
+                  }
+                }
+              },
+              "outcome": "league.result_ratification"
+            }
+          ],
+          "shared_limits": [
+            {
+              "id": "league_automatic_ratifications_24h",
+              "kind": "count",
+              "maximum": 2,
+              "scope": "tenant",
+              "window_seconds": 86400
+            },
+            {
+              "id": "overall_automatic_ratifications_24h",
+              "kind": "count",
+              "maximum": 6,
+              "scope": "boundary",
+              "window_seconds": 86400
+            },
+            {
+              "id": "referee_automatic_ratifications_24h",
+              "kind": "count",
+              "maximum": 2,
+              "scope": "tenant_principal",
+              "window_seconds": 86400
+            }
+          ]
+        }
+      ],
+      "after": [
+        {
+          "mode": "policy",
+          "name": "league.result_ratification_approval",
+          "required_approvals": 1,
+          "required_role": "league_supervisor",
+          "rules": [
+            {
+              "auto_approve_when": {
+                "kind": "compare",
+                "left": {
+                  "binding": "result",
+                  "field": "stage",
+                  "kind": "field"
+                },
+                "operator": "eq",
+                "right": {
+                  "kind": "literal",
+                  "value": "qualifying",
+                  "value_type": {
+                    "comparison": "exact",
+                    "enum": [
+                      "championship",
+                      "qualifying"
+                    ],
+                    "kind": "string",
+                    "max_length": 12
+                  }
+                }
+              },
+              "outcome": "league.result_ratification"
+            }
+          ],
+          "shared_limits": [
+            {
+              "id": "league_automatic_ratifications_24h",
+              "kind": "count",
+              "maximum": 2,
+              "scope": "tenant",
+              "window_seconds": 86400
+            },
+            {
+              "id": "overall_automatic_ratifications_24h",
+              "kind": "count",
+              "maximum": 6,
+              "scope": "boundary",
+              "window_seconds": 86400
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "path": ".authority.digest",
+      "before": "sha256:54fc97f1559f2300402ee1da5ad341822ac0f3e93ee8a0a3c7dcfe5dffeb1c28",
+      "after": "sha256:9162f744949333859637dac4209b9bc34ed4bdc55707ba10f4fd45b2c6d03752"
+    },
+    {
+      "path": ".authority.rules",
+      "before": [
+        {
+          "activated_at": "2026-09-13T16:32:16.281Z",
+          "effect_envelope": {
+            "allowed_fields": [
+              {
+                "name": "result_state",
+                "type": {
+                  "comparison": "exact",
+                  "enum": [
+                    "finished",
+                    "ratified",
+                    "withdrawn"
+                  ],
+                  "kind": "string",
+                  "max_length": 9
+                },
+                "values": [
+                  "ratified"
+                ]
+              }
+            ],
+            "approval_classes": [
+              "league.result_ratification_approval"
+            ],
+            "conflict_key": "version",
+            "max_rows": 1,
+            "name": "league.ratify_result_effect",
+            "operation": "update",
+            "primary_key": "result_id",
+            "principal_scope_key": "principal_id",
+            "schema_version": "synapsor.derived-effect-envelope.v1",
+            "source": "local_postgres",
+            "target_binding": "result",
+            "target_resource": "tournament_ops.results",
+            "tenant_key": "tenant_id",
+            "version_advance": {
+              "column": "version",
+              "strategy": "integer_increment"
+            },
+            "writeback": {
+              "mode": "direct_sql",
+              "supervised_worker": "allowed"
+            }
+          },
+          "read_boundary_digest": "sha256:6c6196b167fe621caf480cd2b2a4449ef083315cebaf044cc5bcb1660985efd3",
+          "read_boundary_name": "reviewed_staging",
+          "rule": {
+            "approval_class": "league.result_ratification_approval",
+            "context": "trusted_context",
+            "derive": {},
+            "effect": {
+              "operation": "update",
+              "set": {
+                "result_state": {
+                  "kind": "literal",
+                  "value": "ratified",
+                  "value_type": {
+                    "comparison": "exact",
+                    "enum": [
+                      "finished",
+                      "ratified",
+                      "withdrawn"
+                    ],
+                    "kind": "string",
+                    "max_length": 9
+                  }
+                }
+              },
+              "target_binding": "result",
+              "target_resource": "tournament_ops.results"
+            },
+            "effect_envelope_ref": "league.ratify_result_effect",
+            "name": "league.request_result_ratification",
+            "outcome": "league.result_ratification",
+            "require": {
+              "expressions": [
+                {
+                  "kind": "compare",
+                  "left": {
+                    "binding": "event",
+                    "field": "operating_state",
+                    "kind": "field"
+                  },
+                  "operator": "eq",
+                  "right": {
+                    "kind": "literal",
+                    "value": "open",
+                    "value_type": {
+                      "comparison": "exact",
+                      "enum": [
+                        "closed",
+                        "open"
+                      ],
+                      "kind": "string",
+                      "max_length": 6
+                    }
+                  }
+                },
+                {
+                  "kind": "compare",
+                  "left": {
+                    "binding": "result",
+                    "field": "integrity_hold",
+                    "kind": "field"
+                  },
+                  "operator": "eq",
+                  "right": {
+                    "kind": "literal",
+                    "value": false,
+                    "value_type": {
+                      "kind": "boolean"
+                    }
+                  }
+                },
+                {
+                  "kind": "compare",
+                  "left": {
+                    "binding": "result",
+                    "field": "result_state",
+                    "kind": "field"
+                  },
+                  "operator": "eq",
+                  "right": {
+                    "kind": "literal",
+                    "value": "finished",
+                    "value_type": {
+                      "comparison": "exact",
+                      "enum": [
+                        "finished",
+                        "ratified",
+                        "withdrawn"
+                      ],
+                      "kind": "string",
+                      "max_length": 9
+                    }
+                  }
+                },
+                {
+                  "kind": "compare",
+                  "left": {
+                    "binding": "result",
+                    "field": "winner_game_wins",
+                    "kind": "field"
+                  },
+                  "operator": "eq",
+                  "right": {
+                    "kind": "literal",
+                    "value": 2,
+                    "value_type": {
+                      "kind": "integer"
+                    }
+                  }
+                },
+                {
+                  "kind": "in",
+                  "value": {
+                    "binding": "result",
+                    "field": "loser_game_wins",
+                    "kind": "field"
+                  },
+                  "values": [
+                    {
+                      "kind": "literal",
+                      "value": 0,
+                      "value_type": {
+                        "kind": "integer"
+                      }
+                    },
+                    {
+                      "kind": "literal",
+                      "value": 1,
+                      "value_type": {
+                        "kind": "integer"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "kind": "all"
+            },
+            "schema_version": "synapsor.action-rule.v1",
+            "source": "local_postgres",
+            "subjects": [
+              {
+                "binding": "result",
+                "input": "opaque_subject_ref",
+                "resource": "tournament_ops.results"
+              }
+            ],
+            "ttl_seconds": 300,
+            "verification_boundary_ref": "league.result_ratification_verification",
+            "x-runner-discovery": {
+              "aliases": [
+                "ratify match result",
+                "request ratification",
+                "ratify result"
+              ],
+              "summary": "Request ratification for an assigned completed match result.",
+              "title": "Request result ratification"
+            }
+          },
+          "verification_boundary": {
+            "context": "trusted_context",
+            "generation_lock_fingerprint": "sha256:5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6",
+            "lock_order": [
+              "result",
+              "event"
+            ],
+            "name": "league.result_ratification_verification",
+            "resources": [
+              {
+                "binding": "event",
+                "cardinality": "one",
+                "fields": [
+                  {
+                    "model_visible": false,
+                    "name": "event_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": true,
+                    "name": "operating_state",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "enum": [
+                        "closed",
+                        "open"
+                      ],
+                      "kind": "string",
+                      "max_length": 6
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "principal_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "tenant_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "version",
+                    "nullable": false,
+                    "type": {
+                      "kind": "integer"
+                    }
+                  }
+                ],
+                "lock": "for_update",
+                "max_rows": 1,
+                "overflow": "unsupported",
+                "primary_key": "event_id",
+                "resource": "tournament_ops.events",
+                "scope": {
+                  "mode": "columns",
+                  "principal_field": "principal_id",
+                  "tenant_field": "tenant_id"
+                },
+                "source": {
+                  "direction": "forward",
+                  "field_pairs": [
+                    {
+                      "local_field": "event_id",
+                      "target_field": "event_id"
+                    },
+                    {
+                      "local_field": "tenant_id",
+                      "target_field": "tenant_id"
+                    },
+                    {
+                      "local_field": "principal_id",
+                      "target_field": "principal_id"
+                    }
+                  ],
+                  "from_binding": "result",
+                  "kind": "relationship",
+                  "relationship": "results_event_id_tenant_id_principal_id_fkey"
+                },
+                "version_field": "version"
+              },
+              {
+                "binding": "result",
+                "cardinality": "one",
+                "fields": [
+                  {
+                    "model_visible": false,
+                    "name": "event_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "integrity_hold",
+                    "nullable": false,
+                    "type": {
+                      "kind": "boolean"
+                    }
+                  },
+                  {
+                    "model_visible": true,
+                    "name": "loser_game_wins",
+                    "nullable": false,
+                    "type": {
+                      "kind": "integer"
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "principal_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "result_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": true,
+                    "name": "result_ref",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 4096
+                    }
+                  },
+                  {
+                    "model_visible": true,
+                    "name": "result_state",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "enum": [
+                        "finished",
+                        "ratified",
+                        "withdrawn"
+                      ],
+                      "kind": "string",
+                      "max_length": 9
+                    }
+                  },
+                  {
+                    "model_visible": true,
+                    "name": "stage",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "enum": [
+                        "championship",
+                        "qualifying"
+                      ],
+                      "kind": "string",
+                      "max_length": 12
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "tenant_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "version",
+                    "nullable": false,
+                    "type": {
+                      "kind": "integer"
+                    }
+                  },
+                  {
+                    "model_visible": true,
+                    "name": "winner_game_wins",
+                    "nullable": false,
+                    "type": {
+                      "kind": "integer"
+                    }
+                  }
+                ],
+                "lock": "for_update",
+                "max_rows": 1,
+                "overflow": "unsupported",
+                "primary_key": "result_id",
+                "resource": "tournament_ops.results",
+                "scope": {
+                  "mode": "columns",
+                  "principal_field": "principal_id",
+                  "tenant_field": "tenant_id"
+                },
+                "source": {
+                  "kind": "subject_ref"
+                },
+                "version_field": "version"
+              }
+            ],
+            "schema_version": "synapsor.verification-boundary.v1",
+            "source": "local_postgres",
+            "transaction": {
+              "isolation": "repeatable_read",
+              "timezone": "UTC"
+            }
+          }
+        }
+      ],
+      "after": [
+        {
+          "activated_at": "2026-09-14T01:30:08.850Z",
+          "effect_envelope": {
+            "allowed_fields": [
+              {
+                "name": "result_state",
+                "type": {
+                  "comparison": "exact",
+                  "enum": [
+                    "finished",
+                    "ratified",
+                    "withdrawn"
+                  ],
+                  "kind": "string",
+                  "max_length": 9
+                },
+                "values": [
+                  "ratified"
+                ]
+              }
+            ],
+            "approval_classes": [
+              "league.result_ratification_approval"
+            ],
+            "conflict_key": "version",
+            "max_rows": 1,
+            "name": "league.ratify_result_effect",
+            "operation": "update",
+            "primary_key": "result_id",
+            "principal_scope_key": "principal_id",
+            "schema_version": "synapsor.derived-effect-envelope.v1",
+            "source": "local_postgres",
+            "target_binding": "result",
+            "target_resource": "tournament_ops.results",
+            "tenant_key": "tenant_id",
+            "version_advance": {
+              "column": "version",
+              "strategy": "integer_increment"
+            },
+            "writeback": {
+              "mode": "direct_sql",
+              "supervised_worker": "allowed"
+            }
+          },
+          "read_boundary_digest": "sha256:6c6196b167fe621caf480cd2b2a4449ef083315cebaf044cc5bcb1660985efd3",
+          "read_boundary_name": "reviewed_staging",
+          "rule": {
+            "approval_class": "league.result_ratification_approval",
+            "context": "trusted_context",
+            "derive": {},
+            "effect": {
+              "operation": "update",
+              "set": {
+                "result_state": {
+                  "kind": "literal",
+                  "value": "ratified",
+                  "value_type": {
+                    "comparison": "exact",
+                    "enum": [
+                      "finished",
+                      "ratified",
+                      "withdrawn"
+                    ],
+                    "kind": "string",
+                    "max_length": 9
+                  }
+                }
+              },
+              "target_binding": "result",
+              "target_resource": "tournament_ops.results"
+            },
+            "effect_envelope_ref": "league.ratify_result_effect",
+            "name": "league.request_result_ratification",
+            "outcome": "league.result_ratification",
+            "require": {
+              "expressions": [
+                {
+                  "kind": "compare",
+                  "left": {
+                    "binding": "event",
+                    "field": "operating_state",
+                    "kind": "field"
+                  },
+                  "operator": "eq",
+                  "right": {
+                    "kind": "literal",
+                    "value": "open",
+                    "value_type": {
+                      "comparison": "exact",
+                      "enum": [
+                        "closed",
+                        "open"
+                      ],
+                      "kind": "string",
+                      "max_length": 6
+                    }
+                  }
+                },
+                {
+                  "kind": "compare",
+                  "left": {
+                    "binding": "result",
+                    "field": "integrity_hold",
+                    "kind": "field"
+                  },
+                  "operator": "eq",
+                  "right": {
+                    "kind": "literal",
+                    "value": false,
+                    "value_type": {
+                      "kind": "boolean"
+                    }
+                  }
+                },
+                {
+                  "kind": "compare",
+                  "left": {
+                    "binding": "result",
+                    "field": "result_state",
+                    "kind": "field"
+                  },
+                  "operator": "eq",
+                  "right": {
+                    "kind": "literal",
+                    "value": "finished",
+                    "value_type": {
+                      "comparison": "exact",
+                      "enum": [
+                        "finished",
+                        "ratified",
+                        "withdrawn"
+                      ],
+                      "kind": "string",
+                      "max_length": 9
+                    }
+                  }
+                },
+                {
+                  "kind": "compare",
+                  "left": {
+                    "binding": "result",
+                    "field": "winner_game_wins",
+                    "kind": "field"
+                  },
+                  "operator": "eq",
+                  "right": {
+                    "kind": "literal",
+                    "value": 2,
+                    "value_type": {
+                      "kind": "integer"
+                    }
+                  }
+                },
+                {
+                  "kind": "in",
+                  "value": {
+                    "binding": "result",
+                    "field": "loser_game_wins",
+                    "kind": "field"
+                  },
+                  "values": [
+                    {
+                      "kind": "literal",
+                      "value": 0,
+                      "value_type": {
+                        "kind": "integer"
+                      }
+                    },
+                    {
+                      "kind": "literal",
+                      "value": 1,
+                      "value_type": {
+                        "kind": "integer"
+                      }
+                    }
+                  ]
+                }
+              ],
+              "kind": "all"
+            },
+            "schema_version": "synapsor.action-rule.v1",
+            "source": "local_postgres",
+            "subjects": [
+              {
+                "binding": "result",
+                "input": "opaque_subject_ref",
+                "resource": "tournament_ops.results"
+              }
+            ],
+            "ttl_seconds": 300,
+            "verification_boundary_ref": "league.result_ratification_verification",
+            "x-runner-discovery": {
+              "aliases": [
+                "ratify match result",
+                "request ratification",
+                "ratify result"
+              ],
+              "summary": "Request ratification for an assigned completed match result.",
+              "title": "Request result ratification"
+            }
+          },
+          "verification_boundary": {
+            "context": "trusted_context",
+            "generation_lock_fingerprint": "sha256:5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6",
+            "lock_order": [
+              "result",
+              "event"
+            ],
+            "name": "league.result_ratification_verification",
+            "resources": [
+              {
+                "binding": "event",
+                "cardinality": "one",
+                "fields": [
+                  {
+                    "model_visible": false,
+                    "name": "event_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": true,
+                    "name": "operating_state",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "enum": [
+                        "closed",
+                        "open"
+                      ],
+                      "kind": "string",
+                      "max_length": 6
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "principal_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "tenant_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "version",
+                    "nullable": false,
+                    "type": {
+                      "kind": "integer"
+                    }
+                  }
+                ],
+                "lock": "for_update",
+                "max_rows": 1,
+                "overflow": "unsupported",
+                "primary_key": "event_id",
+                "resource": "tournament_ops.events",
+                "scope": {
+                  "mode": "columns",
+                  "principal_field": "principal_id",
+                  "tenant_field": "tenant_id"
+                },
+                "source": {
+                  "direction": "forward",
+                  "field_pairs": [
+                    {
+                      "local_field": "event_id",
+                      "target_field": "event_id"
+                    },
+                    {
+                      "local_field": "tenant_id",
+                      "target_field": "tenant_id"
+                    },
+                    {
+                      "local_field": "principal_id",
+                      "target_field": "principal_id"
+                    }
+                  ],
+                  "from_binding": "result",
+                  "kind": "relationship",
+                  "relationship": "results_event_id_tenant_id_principal_id_fkey"
+                },
+                "version_field": "version"
+              },
+              {
+                "binding": "result",
+                "cardinality": "one",
+                "fields": [
+                  {
+                    "model_visible": false,
+                    "name": "event_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "integrity_hold",
+                    "nullable": false,
+                    "type": {
+                      "kind": "boolean"
+                    }
+                  },
+                  {
+                    "model_visible": true,
+                    "name": "loser_game_wins",
+                    "nullable": false,
+                    "type": {
+                      "kind": "integer"
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "principal_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "result_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": true,
+                    "name": "result_ref",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 4096
+                    }
+                  },
+                  {
+                    "model_visible": true,
+                    "name": "result_state",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "enum": [
+                        "finished",
+                        "ratified",
+                        "withdrawn"
+                      ],
+                      "kind": "string",
+                      "max_length": 9
+                    }
+                  },
+                  {
+                    "model_visible": true,
+                    "name": "stage",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "enum": [
+                        "championship",
+                        "qualifying"
+                      ],
+                      "kind": "string",
+                      "max_length": 12
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "tenant_id",
+                    "nullable": false,
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 36
+                    }
+                  },
+                  {
+                    "model_visible": false,
+                    "name": "version",
+                    "nullable": false,
+                    "type": {
+                      "kind": "integer"
+                    }
+                  },
+                  {
+                    "model_visible": true,
+                    "name": "winner_game_wins",
+                    "nullable": false,
+                    "type": {
+                      "kind": "integer"
+                    }
+                  }
+                ],
+                "lock": "for_update",
+                "max_rows": 1,
+                "overflow": "unsupported",
+                "primary_key": "result_id",
+                "resource": "tournament_ops.results",
+                "scope": {
+                  "mode": "columns",
+                  "principal_field": "principal_id",
+                  "tenant_field": "tenant_id"
+                },
+                "source": {
+                  "kind": "subject_ref"
+                },
+                "version_field": "version"
+              }
+            ],
+            "schema_version": "synapsor.verification-boundary.v1",
+            "source": "local_postgres",
+            "transaction": {
+              "isolation": "repeatable_read",
+              "timezone": "UTC"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "path": ".created_at",
+      "before": "2026-09-13T16:32:16.281Z",
+      "after": "2026-09-14T01:30:08.850Z"
+    },
+    {
+      "path": ".digest",
+      "before": "sha256:54fc97f1559f2300402ee1da5ad341822ac0f3e93ee8a0a3c7dcfe5dffeb1c28",
+      "after": "sha256:9162f744949333859637dac4209b9bc34ed4bdc55707ba10f4fd45b2c6d03752"
+    }
+  ],
+  "permitted_normalization": [
+    "enclosing authority digest",
+    "compiled action-boundary digest",
+    "approval policy digest recomputed from complete compared approval content",
+    "generated rule activated_at inside disabled envelope"
+  ],
+  "review_text_before": [
+    {
+      "examples": [
+        {
+          "kind": "eligible",
+          "result": "The ratification request is valid and may be considered for automatic approval subject to rolling limits.",
+          "scenario": "An assigned qualifying result has an open event, is finished, records 2–1, and has no integrity hold."
+        },
+        {
+          "kind": "human_review",
+          "result": "The valid request requires league-supervisor review.",
+          "scenario": "An assigned championship result has an open event, is finished, records 2–0, and has no integrity hold."
+        },
+        {
+          "kind": "ineligible",
+          "result": "The request is refused.",
+          "scenario": "An assigned result is finished with a 2–1 score, but its event is closed."
+        }
+      ],
+      "human_review": "A valid championship-stage request requires league-supervisor review. A valid qualifying-stage request not automatically approved, including a rolling-limit overrun, also requires league-supervisor review.",
+      "outcome": "league.result_ratification",
+      "refused": [
+        "Refuse if the event is not open.",
+        "Refuse if the result is not finished, its score is not a qualifying best-of-three score, or it has an integrity hold."
+      ],
+      "then": "Propose changing only the result state to ratified. Completion requires separate supervised execution after approval.",
+      "when": "The assigned result’s related event is open; the result is finished; it records exactly two winner game wins and zero or one loser game wins; and it has no integrity hold."
+    }
+  ],
+  "review_text_after": [
+    {
+      "examples": [
+        {
+          "kind": "eligible",
+          "result": "The ratification request is valid and may be considered for automatic approval subject to rolling limits.",
+          "scenario": "An assigned qualifying result has an open event, is finished, records 2–1, and has no integrity hold."
+        },
+        {
+          "kind": "human_review",
+          "result": "The valid request requires league-supervisor review.",
+          "scenario": "An assigned championship result has an open event, is finished, records 2–0, and has no integrity hold."
+        },
+        {
+          "kind": "ineligible",
+          "result": "The request is refused.",
+          "scenario": "An assigned result is finished with a 2–1 score, but its event is closed."
+        }
+      ],
+      "human_review": "A valid championship-stage request requires league-supervisor review. A valid qualifying-stage request not automatically approved, including a rolling-limit overrun, also requires league-supervisor review.",
+      "outcome": "league.result_ratification",
+      "refused": [
+        "Refuse if the event is not open.",
+        "Refuse if the result is not finished, its score is not a qualifying best-of-three score, or it has an integrity hold."
+      ],
+      "then": "Propose changing only the result state to ratified. Completion requires separate supervised execution after approval.",
+      "when": "The assigned result’s related event is open; the result is finished; it records exactly two winner game wins and zero or one loser game wins; and it has no integrity hold."
+    }
+  ],
+  "status": "passed_exact_disabled_recovery",
+  "full_comparison_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/runs/recovery-tournament-assisted/comparisons/saved-before-restart-full.json",
+  "full_comparison_sha256": "448233661a5d357234c841464a0ce4ea7066a3faa374658da3701ef76c910d31"
+}

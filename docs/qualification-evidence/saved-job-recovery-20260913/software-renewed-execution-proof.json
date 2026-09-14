@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-14T02:09:28.321922+00:00",
+  "status": "passed_exact_Read_and_execution_binding_preservation",
+  "read_revision_unchanged": "policy:aab58322e968d1275ee0ac1d3969a33bfb0b3cd64b7b11db0466105cb9972c73",
+  "before_execution_revision": "policy:ef32534a589208ab1f0b08812d0648cb3db38bc022b7624317ea7d62a593c3e1",
+  "after_execution_revision": "policy:8557f6307ad89d8ee5db07cdee7ce30cdd62f202afd0e46c7621dfda1fc68804",
+  "before_action_digest": "sha256:e6910aa733e2ba0cfcc36c75180f760de624ec102a1ea3afae2cc13db2bf6f42",
+  "after_action_digest": "sha256:1160ff545423729caeb6f7228dd57e3382b8d9c83e3bcb6edb0f8b51dde7c170",
+  "complete_execution_comparison": "only exact current Action digest changed; same runtime binding digest, enabled mode, writer fingerprint/reference, concurrency, lease, rate, queue and TTL",
+  "current_action_matches_execution": true,
+  "no_worker_run": true
+}

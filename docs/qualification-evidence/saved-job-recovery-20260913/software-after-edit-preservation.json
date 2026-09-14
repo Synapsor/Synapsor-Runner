@@ -1,0 +1,11 @@
+{
+  "at": "2026-09-14T01:58:18.483Z",
+  "artifact_tree": "9e88145ed118e5e1f87f5dc0c55fe19197299dd9913633917c2b07c085cb3367",
+  "phase": "after-edit",
+  "snapshot": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/runs/recovery-software/deterministic/software-after-edit-state.json",
+  "snapshot_sha256": "6b295081de771795f17546d2af531a136bb0d1522308dd8418a31694f5a6852e",
+  "status": "passed_after_edit_exact_source_db_bindings_history_source_and_authority",
+  "source_receipts": 1,
+  "control_receipts": 1,
+  "no_worker_invoked": true
+}

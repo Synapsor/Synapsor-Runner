@@ -1,0 +1,7 @@
+{
+  "at": "2026-09-14T01:17:39.084547+00:00",
+  "classification": "prepared measurement correction before comparison execution",
+  "observation": "Read-only original stopped stores show distinct existing selector contracts. Original policy:015fd3903fe976cff7f5460d3c49c1eb0b5071ca3dbfcf9d3a3a4fcafc87ef75 already has capability league.ratify_result on both limits. Assisted policy:bf9c3eadca1de7b4979ea4aba29b685cb17d16c9c7e8c0935a3175fbb407a923 has absent capability on both retained limits. The new original current revision is identical to its stopped revision.",
+  "correction": "Preserve each actual stopped baseline; restrict absent-filter assertion to assisted case. Do not remove original filters or add assisted filters. No product/fixture/authority changes. Earlier plan wording overgeneralized the assisted absence requirement.",
+  "operator_decision": "Original pending generated receipt-in-Action edit closed with business rule unchanged; receipt and independent readback remain separately required deployment/runtime operations, not waived."
+}

@@ -1,0 +1,15 @@
+{
+  "started_at": "2026-09-14T01:35:22.040739+00:00",
+  "entrypoint": "installed action review -> Continue client setup",
+  "context": "primary synthetic coordinator",
+  "provider_calls": 0,
+  "steps": [
+    "Q Quit",
+    "Continue client setup"
+  ],
+  "status": "incomplete",
+  "error_type": "TIMEOUT",
+  "last_output": "ts       | Policy + fallback             | Execution enabled        |\r\r\n    +-----------------------------------+-------------------------------------+-------------------------------+--------------------------+\r\r\n    The agent supplies an outcome and opaque subject reference only. Runner reloads facts and derives the effect.\r\r\n    This verified Action Boundary is active. Approval and apply remain separate.\r\r\n\r\r\n      View unfinished saved work\r\r\n        Inspect saved job status without changing this review or contacting the model.\r\r\n      View active authority details\r\r\n        Shows the exact saved rules; current Read dependencies still determine availability.\r\r\n    > Continue client setup\r\r\n        Connect Claude Code, Cursor or VS Code, review trusted identity and worker startup. Pending drafts stay saved; this choice grants\r\r\n        no authority.\r\r\n      Edit business rules manually\r\r\n        The current draft and live permissions stay unchanged until a separate review activates a disabled replacement.\r\r\n      Describe a verified outcome change with a model\r\r\n        Retains the exact current Read and Action baseline; any replacement remains disabled until separate review.\r\r\n      Disable supervised execution for league.ratify_result\r\r\n        Stops new worker leases for this exact outcome; proposal authority stays active.\r\r\n      Deactivate verified proposal authority\r\r\n        Stops app.request_change for these outcomes; source data is unchanged.\r\r\n      Back\r\r\n\r\r\n    Up/Down Navigate   Enter Select   Esc Back  Read: active. Verified outcomes: active.\r\n  Approval: 1 automatic policy with human fallback. Execution enabled: 1/1 outcomes.\r\n  Worker: not checked. Approval is not completion. \"/usr/bin/node\" \"/home/sandesh-tiwari/Desktop/C++/Progress docs\r\n  tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/frozen/installed/node_modules/@synapsor/runner/dist/cli.js\" action status\r\n  shows each outcome.\r\n\r  CONNECT YOUR CLIENT\r\r\n  Choose the next step for this saved project.\r\r\n\r\r\n  > Local stdio MCP       Choose Claude Code, Cursor, or VS Code next\r\r\n    Later                 Leave the reviewed boundary active and return to the shell\r\r\n    Edit rules with model Add or revise behavior; keep the same client and four tools\r\r\n    Execution setup       Review the writer for active actions; no redrafting or automatic writes\r\r\n    More options          Terminal chat, production HTTP and manual controls\r\r\n\r\r\n  Up/Down Select   Enter Continue   Esc Back",
+  "identity_values_absent_from_log": true,
+  "completed_at": "2026-09-14T01:36:04.594119+00:00"
+}

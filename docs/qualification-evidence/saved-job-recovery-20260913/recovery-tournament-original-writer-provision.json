@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-14T01:33:10.739Z",
+  "artifact_tree": "9e88145ed118e5e1f87f5dc0c55fe19197299dd9913633917c2b07c085cb3367",
+  "container": "synapsor-saved-recovery-recovery-tournament-original-e320973d",
+  "container_id": "3417376ac544d345a12573c5b4abd36e5cd6928cc6dee4486849ef59ac8a4e9f",
+  "sql_file": ".synapsor/writer-handoffs/review-3wqbCJ/grants.sql",
+  "sql_sha256": "f76eaffdfe480524b289ead0c01daf0aef93beeb0a3c2509d42eae5437032df7",
+  "administrator": "authorized synthetic fixture owner",
+  "local_authentication": "network none, private Unix socket, dedicated LOGIN role",
+  "business_rows_and_original_policies_unchanged": true,
+  "baseline_sha256": "4d8f2d996d0ea3601c4151c5514ada8e3da2cb5ef3f7234d83f980badb361b18",
+  "writer_reinspection": "PENDING",
+  "execution_enabled": false,
+  "source_execution": "NOT_RUN"
+}

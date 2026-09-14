@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-14T01:48:59.010Z",
+  "artifact_tree": "9e88145ed118e5e1f87f5dc0c55fe19197299dd9913633917c2b07c085cb3367",
+  "status": "passed_exact_disabled_limit_edit",
+  "disabled_revision": "policy:54e5839cfa5e6fab8ffed793f89abaf0004057723a8e0445b3fb02a071ac45bf",
+  "prior_active_revision": "policy:8bf6c72dfd2f70b2082cde2cf146bc27ce248b0e7f2f9bc8ebd8e5d95d0264db",
+  "counts": {
+    "proposals": 1,
+    "approvals": 1,
+    "worker_queue": 1,
+    "writeback_receipts": 1
+  },
+  "permitted_change": "tenant automatic maximum2->1 only; complete normalized program compared"
+}

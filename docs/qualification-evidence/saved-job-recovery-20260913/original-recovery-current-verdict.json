@@ -1,0 +1,19 @@
+{
+  "at": "2026-09-14T01:45:38.751721+00:00",
+  "initial_recovery_attempts": 25,
+  "initial_complete_responses": 24,
+  "initial_transport_failure": {
+    "attempt": 21,
+    "code": "ERR_SSL_SSL/TLS_ALERT_BAD_RECORD_MAC"
+  },
+  "exact_disabled_action_before_deployment": "passed full normalized comparison",
+  "exact_disabled_action_after_public_restart_and_owned_receipt": "passed full normalized comparison; known one-proposal/one-receipt history retained",
+  "public_runtime": "passed canonical receipt + full independent source readback + same Claude receipt replay",
+  "saved_recovery_limitation": "The client_setup-stage checkpoint still carries a generated pending receipt/readback Action revision although reviewed deployment and actual receipt/readback have completed. Preserve this stale pending work as incomplete saved-review consistency, not a missing actual source effect.",
+  "editing_budget": "15 calls separately reserved; now used only for the authorized new league2->1 edit. Initial25-call recovery is closed; no count or budget reset.",
+  "evidence": [
+    "original-recovered-runtime.json",
+    "recovery-tournament-original-after-restart-and-receipt-comparison.json",
+    "recovery-tournament-original-after-restart-and-receipt.json"
+  ]
+}

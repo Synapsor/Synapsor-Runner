@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-14T02:10:23.980573+00:00",
+  "raw_index": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/raw-evidence-index.json",
+  "raw_index_sha256": "b49ce0c0672c182ef2b5c49a53ed460dc449a2c4544c4b29f2a5e97da34b72ad",
+  "raw_entries": 3463,
+  "private_archive": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/reviewer-private-state.tar.gz",
+  "private_archive_sha256": "2d6da657cc0bc8ebe0146a37f0f6d7eb2d777ae19817b969fc1aae6580a770b7",
+  "private_archive_bytes": 39502333,
+  "installation": "installed-candidate.json contains separately complete immutable installation archive/manifest",
+  "committed_raw_logs": false,
+  "scope": "Original and current states/failures preserved; archive is private local verifier evidence, not a public artifact or model input."
+}

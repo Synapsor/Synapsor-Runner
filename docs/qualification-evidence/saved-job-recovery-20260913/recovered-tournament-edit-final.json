@@ -1,0 +1,21 @@
+{
+  "at": "2026-09-14T01:58:18.299Z",
+  "artifact_tree": "9e88145ed118e5e1f87f5dc0c55fe19197299dd9913633917c2b07c085cb3367",
+  "phase": "after",
+  "status": "passed_exact_limit_edit_retained_history_and_current_human_review",
+  "before_revision": "policy:8bf6c72dfd2f70b2082cde2cf146bc27ce248b0e7f2f9bc8ebd8e5d95d0264db",
+  "after_revision": "policy:59ea12eba6294f1bfc016fd1efda3fe17c69ec5e053ee0637b03dd1ba9d48995",
+  "counts": {
+    "proposals": 2,
+    "automatic_approvals": 1,
+    "control_receipts": 1,
+    "pending_review": 1
+  },
+  "comparison": "complete normalized Action authority; only tenant maximum2->1 plus generated digests/timestamps",
+  "source_unchanged_since_verified_effect": true,
+  "old_unstarted_work": "not exercised in this smaller recovered schedule; historical wider check remains separate",
+  "same_client_session": "6a7c9eda-fa23-4159-a1b6-8832960ddc73",
+  "source_receipt_mode": "runner_ledger",
+  "published_and_execution_reviewed": true,
+  "runtime_exit": 0
+}

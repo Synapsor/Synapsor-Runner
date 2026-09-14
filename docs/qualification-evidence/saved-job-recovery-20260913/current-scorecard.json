@@ -1,5 +1,5 @@
 {
-  "verdict": "IN_PROGRESS: final deterministic gates passed; installed public recovery remains unexecuted",
+  "verdict": "NOT_COMPLETE: exact disabled corrections persist, PostgreSQL fixes and recovered runtime/edit pass; final assisted attached-policy recovery review remains incomplete",
   "product_test_revision": "e425aad05add8842a78886c4ed1d452cca546c68",
   "full_vitest": {
     "status": "passed",
@@ -43,12 +43,37 @@
     "inspection_preserved_state": true
   },
   "installed": {
-    "counter_terminal_diagnostic": "NOT_RUN",
-    "original_tournament_exact_recovery_restart": "NOT_RUN",
-    "assisted_tournament_exact_recovery_restart": "NOT_RUN",
-    "recovered_tournament_receipt_readback": "NOT_RUN",
-    "recovered_tournament_same_client_edit": "NOT_RUN",
-    "software_saved_review_rescan_edit_preservation": "NOT_RUN"
+    "counter_terminal_diagnostic": {
+      "status": "PASSED",
+      "checks": 4,
+      "evidence": "installed-counter-terminal-diagnostic.json"
+    },
+    "original_tournament_exact_recovery_restart": {
+      "status": "EXACT_PROGRAM_AND_RESTART_PASSED; saved-review consistency limitation retained",
+      "evidence": "original-recovery-current-verdict.json"
+    },
+    "assisted_tournament_exact_recovery_restart": {
+      "status": "EXACT_DISABLED_PROGRAM_AND_RESTART_PASSED; attached-policy review INCOMPLETE",
+      "evidence": "assisted-recovery-current-verdict.json"
+    },
+    "recovered_tournament_receipt_readback": {
+      "status": "PASSED",
+      "evidence": "original-recovered-runtime.json"
+    },
+    "recovered_tournament_same_client_edit": {
+      "status": "PASSED",
+      "evidence": "recovered-tournament-edit-final.json"
+    },
+    "software_saved_review_rescan_edit_preservation": {
+      "status": "PASSED",
+      "evidence": "software-after-publication-preservation.json"
+    },
+    "new_installed_software_receipt_failure": {
+      "status": "NOT_RUN; outside focused restored-job check; host source receipt tests separate"
+    },
+    "fresh_unseen_onboarding": {
+      "status": "NOT_RUN; not authorized"
+    }
   },
   "historical_stage_a": "ACCEPTED only on tree278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
   "original_stage_b": "NOT_PASSED; original unrun add/remove and case-specific rows remain unchanged",
@@ -58,5 +83,13 @@
     "commands": 10,
     "all_exits": 0,
     "evidence": "offline-package-plan.json"
-  }
+  },
+  "installed_tree_sha256": "9e88145ed118e5e1f87f5dc0c55fe19197299dd9913633917c2b07c085cb3367",
+  "preservation": {
+    "original_entries_unchanged": 170144,
+    "installed_entries_unchanged": 7569,
+    "owned_containers_saved_and_stopped": 4
+  },
+  "remaining_issue": "remaining-review-consistency.md",
+  "acceptance_recommended": false
 }

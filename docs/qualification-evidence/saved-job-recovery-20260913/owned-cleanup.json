@@ -1,0 +1,59 @@
+{
+  "at": "2026-09-14T02:00:40.576871+00:00",
+  "records": [
+    {
+      "run": "recovery-software",
+      "container": "synapsor-saved-recovery-recovery-software-e7f1c1f9",
+      "container_id": "9fc99f94f249eea2d35c2609df17b052846b474144869b6ba2ef56f50b7de230",
+      "label": "saved-job-recovery-20260913",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "de4bdd2bdd6b5276690110a1f8eec2ea392cab3ca8a8a1ff1077cd564759e883",
+        "postgres.log": "94c092676dd9cd6e100df95ef0838377d8bcf8606e8c88046b51fe973fae13ef",
+        "source.dump": "4fe63aabc82e4960b41464ed8f936f1b03b5614606f9d65fc2ee0377c6999690"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/closure/recovery-software",
+      "removed": false
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "container": "synapsor-saved-recovery-recovery-tournament-assisted-65cf3fc5",
+      "container_id": "6078df49bdf96a2e63f07d9b4e6d333f05ffc45233e69e3b692b28b460af9c55",
+      "label": "saved-job-recovery-20260913",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "1930935cb369ebe8d503b4ff1352ea7bc2eababa2b3b70f71434fbc8e14c9c75",
+        "postgres.log": "d9ee5c3cefd85f4b840758fda19e7f536aa61f6d7c98720d480dd5e9a419ce7a",
+        "source.dump": "6dfe28fad2fe11c8146cf942b83c5e08dd22b5a541b7062c18086dd5637ae111"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/closure/recovery-tournament-assisted",
+      "removed": false
+    },
+    {
+      "run": "recovery-tournament-original",
+      "container": "synapsor-saved-recovery-recovery-tournament-original-e320973d",
+      "container_id": "3417376ac544d345a12573c5b4abd36e5cd6928cc6dee4486849ef59ac8a4e9f",
+      "label": "saved-job-recovery-20260913",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "ef0e47a49dc4b3943b15f5538850c38754419b1e588b66be8c8c2e5db149a5ab",
+        "postgres.log": "43581642d2087713441a86953e00b82b72900c4d8069381302ce31e4af1af951",
+        "source.dump": "eecebb50d4d997609ec9c29ee9eabd4e6f8c4d9523c79c028b95c5cb31a1b3a7"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/closure/recovery-tournament-original",
+      "removed": false
+    }
+  ],
+  "counts_note": "Actual worker/client invocations retained in each deterministic/events.jsonl and budget.json; no zero-runtime claim.",
+  "original_containers_touched": false,
+  "fixture_directories_removed": false
+}

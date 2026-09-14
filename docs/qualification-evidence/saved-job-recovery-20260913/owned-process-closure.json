@@ -1,0 +1,11 @@
+{
+  "at": "2026-09-14T02:08:44.935034+00:00",
+  "recorded_runtime_pids_checked": [
+    252658
+  ],
+  "live_owned_runtime_pids": [],
+  "authoring_lock_present": false,
+  "operator_exit_records": "public-run-counters.json; starts/exits balanced by save-stop-owned.py",
+  "containers": "4 exact IDs stopped with saved states; owned-cleanup.json and owned-test-postgres-cleanup.json",
+  "unrelated_processes_stopped": false
+}

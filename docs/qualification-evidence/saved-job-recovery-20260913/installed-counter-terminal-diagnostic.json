@@ -1,0 +1,101 @@
+{
+  "artifact_tree": "9e88145ed118e5e1f87f5dc0c55fe19197299dd9913633917c2b07c085cb3367",
+  "status": "passed",
+  "provider_calls": 0,
+  "results": [
+    {
+      "args": [
+        "start",
+        "--project-root",
+        ".",
+        "--draft",
+        "counter-diagnostic.json",
+        "--review-counters",
+        "--json"
+      ],
+      "input": "closed",
+      "exit": 2,
+      "output": {
+        "ok": false,
+        "code": "ACTION_VERSION_REVIEW_TERMINAL_REQUIRED",
+        "message": "Counter review requires a real terminal for the source owner's explicit confirmation. No draft was saved.",
+        "next_action": "Run the counter review in a real operator terminal. The typed draft and --json do not supply source-owner consent; no draft-field correction is required by this refusal.",
+        "source_database_changed": false,
+        "active_authority_changed": false,
+        "disabled_authority_changed": false
+      },
+      "whole_project_unchanged": true
+    },
+    {
+      "args": [
+        "start",
+        "--project-root",
+        ".",
+        "--draft",
+        "counter-diagnostic.json",
+        "--review-counters",
+        "--json"
+      ],
+      "input": "redirected",
+      "exit": 2,
+      "output": {
+        "ok": false,
+        "code": "ACTION_VERSION_REVIEW_TERMINAL_REQUIRED",
+        "message": "Counter review requires a real terminal for the source owner's explicit confirmation. No draft was saved.",
+        "next_action": "Run the counter review in a real operator terminal. The typed draft and --json do not supply source-owner consent; no draft-field correction is required by this refusal.",
+        "source_database_changed": false,
+        "active_authority_changed": false,
+        "disabled_authority_changed": false
+      },
+      "whole_project_unchanged": true
+    },
+    {
+      "args": [
+        "onboard",
+        "db",
+        "--project-root",
+        ".",
+        "--draft",
+        "counter-diagnostic.json",
+        "--review-counters",
+        "--json"
+      ],
+      "input": "closed",
+      "exit": 2,
+      "output": {
+        "ok": false,
+        "code": "ACTION_VERSION_REVIEW_TERMINAL_REQUIRED",
+        "message": "Counter review requires a real terminal for the source owner's explicit confirmation. No draft was saved.",
+        "next_action": "Run the counter review in a real operator terminal. The typed draft and --json do not supply source-owner consent; no draft-field correction is required by this refusal.",
+        "source_database_changed": false,
+        "active_authority_changed": false,
+        "disabled_authority_changed": false
+      },
+      "whole_project_unchanged": true
+    },
+    {
+      "args": [
+        "onboard",
+        "db",
+        "--project-root",
+        ".",
+        "--draft",
+        "counter-diagnostic.json",
+        "--review-counters",
+        "--json"
+      ],
+      "input": "redirected",
+      "exit": 2,
+      "output": {
+        "ok": false,
+        "code": "ACTION_VERSION_REVIEW_TERMINAL_REQUIRED",
+        "message": "Counter review requires a real terminal for the source owner's explicit confirmation. No draft was saved.",
+        "next_action": "Run the counter review in a real operator terminal. The typed draft and --json do not supply source-owner consent; no draft-field correction is required by this refusal.",
+        "source_database_changed": false,
+        "active_authority_changed": false,
+        "disabled_authority_changed": false
+      },
+      "whole_project_unchanged": true
+    }
+  ]
+}

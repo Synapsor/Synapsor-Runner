@@ -1,0 +1,28 @@
+{
+  "at": "2026-09-14T01:39:55.491820+00:00",
+  "status": "exact_disabled_correction_and_restart_passed; attached_policy_review_incomplete",
+  "new_authoring_attempts": 25,
+  "complete_responses": 24,
+  "transport_failure": {
+    "attempt": 22,
+    "code": "ERR_SSL_SSL/TLS_ALERT_BAD_RECORD_MAC"
+  },
+  "retry": "one resumed public retry, same checkpoint and allowance; calls23-25, then qualification meter refused additional attempts",
+  "unchanged_original_budget": 25,
+  "saved_result": "Only extra referee cap removed. Both original absent selectors retained. Full normalized comparisons before/after restart pass; no proposals, approvals, receipts, queue or source effects.",
+  "remaining": "Attached-policy reviewer continued to demand outcome-specific filters after exact refusal/withdrawal; exact intended draft is retained but final model rules check is unavailable. Do not call the full recovery accepted.",
+  "evidence": [
+    "recovery-tournament-assisted-after-restart-comparison.json",
+    "recovery-tournament-assisted-exact-disabled-after-restart.json"
+  ],
+  "public_logs": [
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/runs/recovery-tournament-assisted/logs/recovery01.ansi",
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/runs/recovery-tournament-assisted/logs/recovery02-tls-retry.ansi"
+  ],
+  "final_trace_clarification": {
+    "selector_dispute": "output0013 attempted filters; input0014 proves host refusal. output0024 still calls retained null selectors a conflict after exact operator refusal of the change.",
+    "actual_saved_pending_instruction": "Independent post-change source-row verification is absent: generated Action repair request, not a saved selector mutation.",
+    "final_unavailable_review": "25-call cap reached after one transport retry; exact program preserved with both filters absent.",
+    "trace": "remaining-review-trace.json"
+  }
+}

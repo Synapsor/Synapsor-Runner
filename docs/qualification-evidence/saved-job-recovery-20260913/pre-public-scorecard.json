@@ -1,0 +1,62 @@
+{
+  "verdict": "IN_PROGRESS: final deterministic gates passed; installed public recovery remains unexecuted",
+  "product_test_revision": "e425aad05add8842a78886c4ed1d452cca546c68",
+  "full_vitest": {
+    "status": "passed",
+    "exit": 0,
+    "passed": 6215,
+    "skipped": 461,
+    "source_unchanged": true,
+    "evidence": "stable-full02-exit.json",
+    "prior_interrupted_attempt": "stable-suite-interruption.json"
+  },
+  "types": {
+    "status": "passed",
+    "exit": 0,
+    "evidence": "types-final-exit.json"
+  },
+  "live_backend": {
+    "status": "passed",
+    "exit": 0,
+    "tests": 43,
+    "evidence": "final-postgres-exit.json",
+    "configurations": [
+      "PostgreSQL business source with SQLite control ledger: semantic atomic source receipt tests",
+      "real PostgreSQL control store: accounting/publication",
+      "SQLite control store and file-authority SQLite publication controls"
+    ],
+    "prior_gate_tests": 42,
+    "added_test": "multi-outcome unfiltered-versus-filtered history control"
+  },
+  "four_named_pg_review": {
+    "status": "passed",
+    "exit": 0,
+    "tests": 4,
+    "other_tests_filtered_out": 416,
+    "evidence": "final-pg-four-exit.json",
+    "states": [
+      "disabled",
+      "revoked",
+      "revoked_execution",
+      "revoked_unconfirmed"
+    ],
+    "inspection_preserved_state": true
+  },
+  "installed": {
+    "counter_terminal_diagnostic": "NOT_RUN",
+    "original_tournament_exact_recovery_restart": "NOT_RUN",
+    "assisted_tournament_exact_recovery_restart": "NOT_RUN",
+    "recovered_tournament_receipt_readback": "NOT_RUN",
+    "recovered_tournament_same_client_edit": "NOT_RUN",
+    "software_saved_review_rescan_edit_preservation": "NOT_RUN"
+  },
+  "historical_stage_a": "ACCEPTED only on tree278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+  "original_stage_b": "NOT_PASSED; original unrun add/remove and case-specific rows remain unchanged",
+  "new_unseen_qualification": false,
+  "offline_package_checks": {
+    "status": "passed",
+    "commands": 10,
+    "all_exits": 0,
+    "evidence": "offline-package-plan.json"
+  }
+}
