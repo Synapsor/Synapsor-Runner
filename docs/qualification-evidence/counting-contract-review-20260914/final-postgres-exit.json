@@ -1,0 +1,29 @@
+{
+  "name": "final-postgres",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-counting-domain.test.ts",
+    "apps/runner/src/semantic-admission-publication.test.ts",
+    "packages/proposal-store/src/automatic-approval-admission.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": true,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T09:22:55.271731+00:00",
+  "source_head": "f58a824ed4ff4a8b08e2328592ec751da2066202",
+  "source_diff_sha256": "14108b2475ec32e626f0bafe969f5ac1fa8120df6274abef65b8bb2835c519ae",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/counting-contract-review-f58a824-20260914/test-environments/final-postgres",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/counting-contract-review-20260914/final-postgres",
+  "source_manifest_sha256": "2c877f803b65bf10ae33489e63aa2ba680ff2c50808ff7440b30c97a5d1291f8",
+  "pid": 1244030,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T09:24:18.372826+00:00"
+}

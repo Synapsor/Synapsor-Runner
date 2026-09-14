@@ -1,0 +1,7 @@
+{
+  "at": "2026-09-14T09:29:34.122467+00:00",
+  "pid": 1255069,
+  "verified_owned_process": true,
+  "signal": "SIGTERM",
+  "reason": "Dependency gate found introduced type-import cycles; stop before editing source; this launch is counted and incomplete"
+}

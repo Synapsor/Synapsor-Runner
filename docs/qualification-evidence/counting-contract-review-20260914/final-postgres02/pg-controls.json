@@ -1,0 +1,479 @@
+{
+  "concurrent": [
+    {
+      "proposal": {
+        "proposal_id": "wrp_ample0",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_ample0",
+        "action": "reserve_ops.adjust_claim_reserve",
+        "state": "approved",
+        "scope_kind": "tenant",
+        "scope_id": "insurer-0",
+        "tenant_id": "insurer-0",
+        "principal": "adjuster-a",
+        "capability": "reserve_ops.adjust_claim_reserve",
+        "business_object": "invoice",
+        "object_id": "wrp_ample0",
+        "source_kind": "external_postgres",
+        "source_id": "src_pg_acme",
+        "source_schema": "public",
+        "source_table": "invoices",
+        "source_database_mutated": false,
+        "change_set": {
+          "schema_version": "synapsor.change-set.v1",
+          "proposal_id": "wrp_ample0",
+          "proposal_version": 1,
+          "action": "reserve_ops.adjust_claim_reserve",
+          "mode": "review_required",
+          "principal": {
+            "id": "adjuster-a",
+            "source": "trusted_session"
+          },
+          "scope": {
+            "tenant_id": "insurer-0",
+            "business_object": "invoice",
+            "object_id": "wrp_ample0"
+          },
+          "source": {
+            "kind": "external_postgres",
+            "source_id": "src_pg_acme",
+            "schema": "public",
+            "table": "invoices",
+            "primary_key": {
+              "column": "id",
+              "value": "wrp_ample0"
+            }
+          },
+          "before": {
+            "updated_at": "2026-06-20T14:31:08Z",
+            "waiver_reason": null,
+            "late_fee_cents": 5500
+          },
+          "patch": {
+            "waiver_reason": "customer requested review",
+            "late_fee_cents": 0
+          },
+          "after": {
+            "updated_at": "2026-06-20T14:31:08Z",
+            "waiver_reason": "customer requested review",
+            "late_fee_cents": 0
+          },
+          "guards": {
+            "tenant": {
+              "column": "tenant_id",
+              "value": "insurer-0"
+            },
+            "allowed_columns": [
+              "late_fee_cents",
+              "waiver_reason"
+            ],
+            "expected_version": {
+              "column": "updated_at",
+              "value": "2026-06-20T14:31:08Z"
+            }
+          },
+          "evidence": {
+            "bundle_id": "ev_456",
+            "query_fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "items": []
+          },
+          "approval": {
+            "status": "pending",
+            "required_role": "support_lead"
+          },
+          "writeback": {
+            "status": "not_applied",
+            "mode": "trusted_worker_required"
+          },
+          "source_database_mutated": false,
+          "integrity": {
+            "proposal_hash": "sha256:wrp_ample0"
+          },
+          "created_at": "2026-06-20T14:31:09Z"
+        },
+        "created_at": "2026-06-20T14:31:09Z",
+        "updated_at": "2026-09-14T09:34:03.668Z"
+      },
+      "approved": true,
+      "policy": "reviewed_policy",
+      "tripped_limits": []
+    },
+    {
+      "proposal": {
+        "proposal_id": "wrp_ample1",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_ample1",
+        "action": "reserve_ops.adjust_claim_reserve",
+        "state": "approved",
+        "scope_kind": "tenant",
+        "scope_id": "insurer-1",
+        "tenant_id": "insurer-1",
+        "principal": "adjuster-a",
+        "capability": "reserve_ops.adjust_claim_reserve",
+        "business_object": "invoice",
+        "object_id": "wrp_ample1",
+        "source_kind": "external_postgres",
+        "source_id": "src_pg_acme",
+        "source_schema": "public",
+        "source_table": "invoices",
+        "source_database_mutated": false,
+        "change_set": {
+          "schema_version": "synapsor.change-set.v1",
+          "proposal_id": "wrp_ample1",
+          "proposal_version": 1,
+          "action": "reserve_ops.adjust_claim_reserve",
+          "mode": "review_required",
+          "principal": {
+            "id": "adjuster-a",
+            "source": "trusted_session"
+          },
+          "scope": {
+            "tenant_id": "insurer-1",
+            "business_object": "invoice",
+            "object_id": "wrp_ample1"
+          },
+          "source": {
+            "kind": "external_postgres",
+            "source_id": "src_pg_acme",
+            "schema": "public",
+            "table": "invoices",
+            "primary_key": {
+              "column": "id",
+              "value": "wrp_ample1"
+            }
+          },
+          "before": {
+            "updated_at": "2026-06-20T14:31:08Z",
+            "waiver_reason": null,
+            "late_fee_cents": 5500
+          },
+          "patch": {
+            "waiver_reason": "customer requested review",
+            "late_fee_cents": 0
+          },
+          "after": {
+            "updated_at": "2026-06-20T14:31:08Z",
+            "waiver_reason": "customer requested review",
+            "late_fee_cents": 0
+          },
+          "guards": {
+            "tenant": {
+              "column": "tenant_id",
+              "value": "insurer-1"
+            },
+            "allowed_columns": [
+              "late_fee_cents",
+              "waiver_reason"
+            ],
+            "expected_version": {
+              "column": "updated_at",
+              "value": "2026-06-20T14:31:08Z"
+            }
+          },
+          "evidence": {
+            "bundle_id": "ev_456",
+            "query_fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "items": []
+          },
+          "approval": {
+            "status": "pending",
+            "required_role": "support_lead"
+          },
+          "writeback": {
+            "status": "not_applied",
+            "mode": "trusted_worker_required"
+          },
+          "source_database_mutated": false,
+          "integrity": {
+            "proposal_hash": "sha256:wrp_ample1"
+          },
+          "created_at": "2026-06-20T14:31:09Z"
+        },
+        "created_at": "2026-06-20T14:31:09Z",
+        "updated_at": "2026-09-14T09:34:02.926Z"
+      },
+      "approved": true,
+      "policy": "reviewed_policy",
+      "tripped_limits": []
+    },
+    {
+      "proposal": {
+        "proposal_id": "wrp_ample2",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_ample2",
+        "action": "reserve_ops.adjust_claim_reserve",
+        "state": "approved",
+        "scope_kind": "tenant",
+        "scope_id": "insurer-2",
+        "tenant_id": "insurer-2",
+        "principal": "adjuster-a",
+        "capability": "reserve_ops.adjust_claim_reserve",
+        "business_object": "invoice",
+        "object_id": "wrp_ample2",
+        "source_kind": "external_postgres",
+        "source_id": "src_pg_acme",
+        "source_schema": "public",
+        "source_table": "invoices",
+        "source_database_mutated": false,
+        "change_set": {
+          "schema_version": "synapsor.change-set.v1",
+          "proposal_id": "wrp_ample2",
+          "proposal_version": 1,
+          "action": "reserve_ops.adjust_claim_reserve",
+          "mode": "review_required",
+          "principal": {
+            "id": "adjuster-a",
+            "source": "trusted_session"
+          },
+          "scope": {
+            "tenant_id": "insurer-2",
+            "business_object": "invoice",
+            "object_id": "wrp_ample2"
+          },
+          "source": {
+            "kind": "external_postgres",
+            "source_id": "src_pg_acme",
+            "schema": "public",
+            "table": "invoices",
+            "primary_key": {
+              "column": "id",
+              "value": "wrp_ample2"
+            }
+          },
+          "before": {
+            "updated_at": "2026-06-20T14:31:08Z",
+            "waiver_reason": null,
+            "late_fee_cents": 5500
+          },
+          "patch": {
+            "waiver_reason": "customer requested review",
+            "late_fee_cents": 0
+          },
+          "after": {
+            "updated_at": "2026-06-20T14:31:08Z",
+            "waiver_reason": "customer requested review",
+            "late_fee_cents": 0
+          },
+          "guards": {
+            "tenant": {
+              "column": "tenant_id",
+              "value": "insurer-2"
+            },
+            "allowed_columns": [
+              "late_fee_cents",
+              "waiver_reason"
+            ],
+            "expected_version": {
+              "column": "updated_at",
+              "value": "2026-06-20T14:31:08Z"
+            }
+          },
+          "evidence": {
+            "bundle_id": "ev_456",
+            "query_fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "items": []
+          },
+          "approval": {
+            "status": "pending",
+            "required_role": "support_lead"
+          },
+          "writeback": {
+            "status": "not_applied",
+            "mode": "trusted_worker_required"
+          },
+          "source_database_mutated": false,
+          "integrity": {
+            "proposal_hash": "sha256:wrp_ample2"
+          },
+          "created_at": "2026-06-20T14:31:09Z"
+        },
+        "created_at": "2026-06-20T14:31:09Z",
+        "updated_at": "2026-09-14T09:34:03.166Z"
+      },
+      "approved": true,
+      "policy": "reviewed_policy",
+      "tripped_limits": []
+    },
+    {
+      "proposal": {
+        "proposal_id": "wrp_ample3",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_ample3",
+        "action": "reserve_ops.adjust_claim_reserve",
+        "state": "approved",
+        "scope_kind": "tenant",
+        "scope_id": "insurer-3",
+        "tenant_id": "insurer-3",
+        "principal": "adjuster-a",
+        "capability": "reserve_ops.adjust_claim_reserve",
+        "business_object": "invoice",
+        "object_id": "wrp_ample3",
+        "source_kind": "external_postgres",
+        "source_id": "src_pg_acme",
+        "source_schema": "public",
+        "source_table": "invoices",
+        "source_database_mutated": false,
+        "change_set": {
+          "schema_version": "synapsor.change-set.v1",
+          "proposal_id": "wrp_ample3",
+          "proposal_version": 1,
+          "action": "reserve_ops.adjust_claim_reserve",
+          "mode": "review_required",
+          "principal": {
+            "id": "adjuster-a",
+            "source": "trusted_session"
+          },
+          "scope": {
+            "tenant_id": "insurer-3",
+            "business_object": "invoice",
+            "object_id": "wrp_ample3"
+          },
+          "source": {
+            "kind": "external_postgres",
+            "source_id": "src_pg_acme",
+            "schema": "public",
+            "table": "invoices",
+            "primary_key": {
+              "column": "id",
+              "value": "wrp_ample3"
+            }
+          },
+          "before": {
+            "updated_at": "2026-06-20T14:31:08Z",
+            "waiver_reason": null,
+            "late_fee_cents": 5500
+          },
+          "patch": {
+            "waiver_reason": "customer requested review",
+            "late_fee_cents": 0
+          },
+          "after": {
+            "updated_at": "2026-06-20T14:31:08Z",
+            "waiver_reason": "customer requested review",
+            "late_fee_cents": 0
+          },
+          "guards": {
+            "tenant": {
+              "column": "tenant_id",
+              "value": "insurer-3"
+            },
+            "allowed_columns": [
+              "late_fee_cents",
+              "waiver_reason"
+            ],
+            "expected_version": {
+              "column": "updated_at",
+              "value": "2026-06-20T14:31:08Z"
+            }
+          },
+          "evidence": {
+            "bundle_id": "ev_456",
+            "query_fingerprint": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+            "items": []
+          },
+          "approval": {
+            "status": "pending",
+            "required_role": "support_lead"
+          },
+          "writeback": {
+            "status": "not_applied",
+            "mode": "trusted_worker_required"
+          },
+          "source_database_mutated": false,
+          "integrity": {
+            "proposal_hash": "sha256:wrp_ample3"
+          },
+          "created_at": "2026-06-20T14:31:09Z"
+        },
+        "created_at": "2026-06-20T14:31:09Z",
+        "updated_at": "2026-09-14T09:34:03.407Z"
+      },
+      "approved": true,
+      "policy": "reviewed_policy",
+      "tripped_limits": []
+    }
+  ],
+  "sequence": [
+    "injected definite failure before COMMIT submission",
+    "ROLLBACK acknowledged",
+    "ROLLBACK acknowledged"
+  ],
+  "approvals_after_restart": [
+    {
+      "approval_id": 5,
+      "proposal_id": "wrp_rollback",
+      "proposal_version": 1,
+      "proposal_hash": "sha256:wrp_rollback",
+      "approver": "policy:reviewed_policy",
+      "status": "approved",
+      "reason": "eligible synthetic local fixture",
+      "action_boundary_name": "reviewed_insurance",
+      "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "created_at": "2026-09-14T09:34:03.793Z"
+    },
+    {
+      "approval_id": 3,
+      "proposal_id": "wrp_ample3",
+      "proposal_version": 1,
+      "proposal_hash": "sha256:wrp_ample3",
+      "approver": "policy:reviewed_policy",
+      "status": "approved",
+      "reason": "eligible synthetic local fixture",
+      "action_boundary_name": "reviewed_insurance",
+      "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "created_at": "2026-09-14T09:34:03.407Z"
+    },
+    {
+      "approval_id": 2,
+      "proposal_id": "wrp_ample2",
+      "proposal_version": 1,
+      "proposal_hash": "sha256:wrp_ample2",
+      "approver": "policy:reviewed_policy",
+      "status": "approved",
+      "reason": "eligible synthetic local fixture",
+      "action_boundary_name": "reviewed_insurance",
+      "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "created_at": "2026-09-14T09:34:03.166Z"
+    },
+    {
+      "approval_id": 1,
+      "proposal_id": "wrp_ample1",
+      "proposal_version": 1,
+      "proposal_hash": "sha256:wrp_ample1",
+      "approver": "policy:reviewed_policy",
+      "status": "approved",
+      "reason": "eligible synthetic local fixture",
+      "action_boundary_name": "reviewed_insurance",
+      "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "created_at": "2026-09-14T09:34:02.926Z"
+    },
+    {
+      "approval_id": 4,
+      "proposal_id": "wrp_ample0",
+      "proposal_version": 1,
+      "proposal_hash": "sha256:wrp_ample0",
+      "approver": "policy:reviewed_policy",
+      "status": "approved",
+      "reason": "eligible synthetic local fixture",
+      "action_boundary_name": "reviewed_insurance",
+      "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "created_at": "2026-09-14T09:34:03.668Z"
+    }
+  ],
+  "sequential": [
+    {
+      "approval_id": 6,
+      "proposal_id": "wrp_sequential",
+      "proposal_version": 1,
+      "proposal_hash": "sha256:wrp_sequential",
+      "approver": "policy:reviewed_policy",
+      "status": "approved",
+      "reason": "eligible synthetic local fixture",
+      "action_boundary_name": "reviewed_insurance",
+      "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "created_at": "2026-09-14T09:34:03.945Z"
+    }
+  ],
+  "uncertain_commit_recovery": "unrun",
+  "clock": "ordinary default"
+}

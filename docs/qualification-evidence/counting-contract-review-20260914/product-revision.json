@@ -1,0 +1,11 @@
+{
+  "commit": "bf156a0ba5834c1c832d967400c5f4e2274ea4fd",
+  "test_revision": "113859e424e77906fae74a0e2203d714b0014e70",
+  "prompt_revision": "79b3fdba300c8f7c0166bf229555a97c70b9aa76",
+  "baseline": "f58a824ed4ff4a8b08e2328592ec751da2066202",
+  "branch": "codex/tui-safe-action-control-plane",
+  "implementation_commit": "79b3fdba300c8f7c0166bf229555a97c70b9aa76",
+  "test_source_commit": "113859e424e77906fae74a0e2203d714b0014e70",
+  "type_dependency_correction": "bf156a0ba5834c1c832d967400c5f4e2274ea4fd",
+  "exact_selector_expectation_correction": "113859e424e77906fae74a0e2203d714b0014e70"
+}

@@ -1,0 +1,61 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1229310) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1229317) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1229311) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-review-continuation.test.ts (9 tests) 105ms
+ ❯ apps/runner/src/authoring-counting-contract.test.ts (20 tests | 1 failed) 117ms
+   ✓ saved counting disagreement > completes the actual corrected-pointer response through validation, persistence and readiness 22ms
+   ✓ saved counting disagreement > retains the historical conflict without domain proof and rejects the original invalid pointer 5ms
+   ✓ saved counting disagreement > keeps the actual counter dispute blocking with missing evidence 2ms
+   ✓ saved counting disagreement > keeps the actual counter dispute blocking with incomplete evidence 2ms
+   ✓ saved counting disagreement > keeps the actual counter dispute blocking with second_proposed evidence 2ms
+   ✓ saved counting disagreement > keeps the actual counter dispute blocking with second_active evidence 2ms
+   ✓ saved counting disagreement > keeps the actual counter dispute blocking with other_history evidence 1ms
+   ✓ saved counting disagreement > keeps the actual counter dispute blocking with wrong_boundary evidence 2ms
+   ✓ saved counting disagreement > keeps the actual counter dispute blocking with human_kind evidence 2ms
+   ✓ saved counting disagreement > keeps the actual counter dispute blocking with unconfirmed_statement evidence 4ms
+   ✓ saved counting disagreement > does not reuse an unrelated/stale decision or turn generated prose into clarification provenance 2ms
+   × saved counting disagreement > retains the domain condition when a later review agrees, and ignores unrelated display wording 15ms
+     → expected [] to have a length of 1 but got +0
+   ✓ saved counting disagreement > invalidates saved comparison after a source change 2ms
+   ✓ saved counting disagreement > invalidates saved comparison after a selector change 2ms
+   ✓ saved counting disagreement > invalidates saved comparison after a authority change 2ms
+   ✓ saved counting disagreement > invalidates saved comparison after a store change 2ms
+   ✓ saved counting disagreement > invalidates saved comparison after a history change 2ms
+   ✓ saved counting disagreement > invalidates saved comparison after a decision change 2ms
+   ✓ saved counting disagreement > does not discharge a new source contradiction, ambiguous owner choice, or generated assertion 4ms
+   ✓ saved counting disagreement > replays the complete captured response through provider validation, saves and rechecks without losing pending-work provenance 39ms
+ ✓ apps/runner/src/authoring-policy-coverage.test.ts (80 tests | 1 skipped) 108ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/authoring-counting-contract.test.ts > saved counting disagreement > retains the domain condition when a later review agrees, and ignores unrelated display wording
+AssertionError: expected [] to have a length of 1 but got +0
+
+- Expected
++ Received
+
+- 1
++ 0
+
+ ❯ apps/runner/src/authoring-counting-contract.test.ts:100:60
+     98|     const built = policyCoverageDraft({ read: old.read, authority: old…
+     99|       policySources: saved.policy_sources, operatorClarifications: sav…
+    100|     expect(built.runner_evidence.counting_interpretations).toHaveLengt…
+       |                                                            ^
+    101|   });
+    102| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed | 107 passed | 1 skipped (109)
+   Start at  02:17:04
+   Duration  5.04s (transform 3.54s, setup 0ms, collect 9.70s, tests 331ms, environment 1ms, prepare 340ms)
+

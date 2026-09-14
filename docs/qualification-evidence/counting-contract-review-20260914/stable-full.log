@@ -1,0 +1,259 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1255119) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1255126) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1255128) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1255127) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"timestamp":"2026-09-14T09:26:58.334Z","level":"warn","event":"cli_rejected","command":"config","error_code":"COMMAND_REJECTED"}
+Runner config is not valid JSON: /tmp/synapsor-cli-json-comment-FiMxLj/commented.runner.json at line 2, column 3. Expected property name or '}' in JSON at position 4 (line 2 column 3) JSON does not support // or /* */ comments; remove the comments or keep notes outside the config. State preserved: the file and source database were not changed. Next: correct that location, then run synapsor-runner config validate --config '/tmp/synapsor-cli-json-comment-FiMxLj/commented.runner.json' --json.
+Warning: Local store appears active for mcp/streamable-http (pid 1255127, started 2026-09-14T09:27:14.806Z). Refusing store prune. Stop the server or rerun with --allow-concurrent-store/--force if you have verified it is safe.
+{"timestamp":"2026-09-14T09:27:23.988Z","level":"warn","event":"mcp_operation_failed","code":"UNRECOGNIZED","result_code":"EXPLORE_INTERNAL"}
+[synapsor try] source_ready: {"source_path":"/tmp/synapsor-cli-try-json-CDN2G6/.synapsor-try/source.json","ledger_path":"/tmp/synapsor-cli-try-json-CDN2G6/.synapsor-try/ledger.db","source_database_changed":false}
+[synapsor try] evidence_read: {"tenant_id":"acme","principal":"support-agent-demo","invoice_id":"INV-3001","support_ticket":"SUP-184"}
+[synapsor try] proposal_created: {"proposal_id":"wrp_try_INV_3001","operation_id":"op_try_waive_INV_3001_v1","source_database_changed":false}
+[synapsor try] review_complete: {"proposal_id":"wrp_try_INV_3001","state":"approved"}
+[synapsor try] writeback_applied: {"proposal_id":"wrp_try_INV_3001","status":"applied","source_database_changed":true,"receipt_hash":"sha256:5021bb76d612b4139cd4634007dae4f7cbd2ccd67a9225a9c736fa470641872c"}
+Warning: mcp serve-http is a legacy JSON-RPC bridge, not spec MCP Streamable HTTP.
+For OpenAI Agents SDK or standard HTTP MCP clients, use: synapsor-runner mcp serve --transport streamable-http
+Warning: mcp serve-http is a legacy JSON-RPC bridge, not spec MCP Streamable HTTP.
+For OpenAI Agents SDK or standard HTTP MCP clients, use: synapsor-runner mcp serve --transport streamable-http
+Warning: Local store appears active for mcp/streamable-http (pid 1255127, started 2026-09-14T09:27:34.728Z). Refusing store reset. Stop the server or rerun with --allow-concurrent-store/--force if you have verified it is safe.
+[synapsor try] source_ready: {"source_path":"/tmp/synapsor-cli-quick-demo-json-yv6HR6/.synapsor-try/source.json","ledger_path":"/tmp/synapsor-cli-quick-demo-json-yv6HR6/.synapsor-try/ledger.db","source_database_changed":false}
+[synapsor try] evidence_read: {"tenant_id":"acme","principal":"support-agent-demo","invoice_id":"INV-3001","support_ticket":"SUP-184"}
+[synapsor try] proposal_created: {"proposal_id":"wrp_try_INV_3001","operation_id":"op_try_waive_INV_3001_v1","source_database_changed":false}
+[synapsor try] review_complete: {"proposal_id":"wrp_try_INV_3001","state":"approved"}
+[synapsor try] writeback_applied: {"proposal_id":"wrp_try_INV_3001","status":"applied","source_database_changed":true,"receipt_hash":"sha256:5021bb76d612b4139cd4634007dae4f7cbd2ccd67a9225a9c736fa470641872c"}
+dsl valid: /home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/dsl/examples/bounded-set-multi-term.synapsor.sql
+wrote contract: /tmp/synapsor-cli-dsl-multi-term-z6vGKV/synapsor.contract.json
+contract valid: /tmp/synapsor-cli-dsl-multi-term-z6vGKV/synapsor.contract.json
+dsl valid: /tmp/synapsor-cli-dsl-extensions-uUzRXh/contract.synapsor.sql
+dsl valid: /tmp/synapsor-cli-dsl-extensions-uUzRXh/contract.synapsor
+wrote contract: /tmp/synapsor-cli-dsl-extensions-uUzRXh/sql.contract.json
+wrote contract: /tmp/synapsor-cli-dsl-extensions-uUzRXh/legacy.contract.json
+{
+  "ok": true,
+  "contract_id": "act_env",
+  "contract_version_id": "act_env_v1",
+  "digest": "sha256:c7f7396ae2e680555abc3ce50e790c70144f8232e62cb80c596da2b6c20c7778",
+  "local_digest": "sha256:c7f7396ae2e680555abc3ce50e790c70144f8232e62cb80c596da2b6c20c7778"
+}
+wrote contract: /tmp/synapsor-cli-dsl-bounds-vzIL7S/synapsor.contract.json
+{"timestamp":"2026-09-14T09:28:02.540Z","level":"info","event":"tool_rejected","capability":"support.propose_plan_credit","tenant":"acme","error_code":"POLICY_VIOLATION","runtime_code":"PATCH_ABOVE_MAXIMUM","retryable":false,"source_database_changed":false}
+Detected project context (files were inspected; adopter code was not executed):
+  root: /tmp/synapsor-cli-init-crud-BsXzIM
+  package manager: not detected
+  frameworks: not detected
+  schema inputs: none
+  database env names: none in process/.env.example
+  .env values were not read.
+created insert.runner.json
+created canonical contract insert.contract.json
+created .env.example
+created MCP client snippets under .synapsor/mcp
+created onboarding manifest .synapsor/onboarding.json
+Next: set the referenced environment variables, run `synapsor-runner config validate --config ./insert.runner.json`, then add the reviewed tools to a project client with `synapsor-runner mcp install <cursor|claude-code|vscode> --project --config ./insert.runner.json`.
+selected public.credits from postgres inspection
+exposed tools: credit.inspect_credit, credit.propose_credit_insert
+Detected project context (files were inspected; adopter code was not executed):
+  root: /tmp/synapsor-cli-init-crud-BsXzIM
+  package manager: not detected
+  frameworks: not detected
+  schema inputs: none
+  database env names: DATABASE_URL, SYNAPSOR_DATABASE_WRITE_URL
+  .env values were not read.
+created delete.runner.json
+created canonical contract delete.contract.json
+created .env.example
+created MCP client snippets under .synapsor/mcp
+created onboarding manifest .synapsor/onboarding.json
+Next: set the referenced environment variables, run `synapsor-runner config validate --config ./delete.runner.json`, then add the reviewed tools to a project client with `synapsor-runner mcp install <cursor|claude-code|vscode> --project --config ./delete.runner.json`.
+selected public.credits from postgres inspection
+exposed tools: credit.inspect_credit, credit.propose_credit_delete
+Detected project context (files were inspected; adopter code was not executed):
+  root: /tmp/synapsor-cli-init-names-s3cb2K
+  package manager: not detected
+  frameworks: not detected
+  schema inputs: none
+  database env names: none in process/.env.example
+  .env values were not read.
+created synapsor.runner.json
+created canonical contract synapsor.contract.json
+created .env.example
+created MCP client snippets under .synapsor/mcp
+created onboarding manifest .synapsor/onboarding.json
+Next: set the referenced environment variables, run `synapsor-runner config validate --config ./synapsor.runner.json`, then add the reviewed tools to a project client with `synapsor-runner mcp install <cursor|claude-code|vscode> --project --config ./synapsor.runner.json`.
+selected public.support_tickets from postgres inspection
+exposed tools: support.inspect_support_ticket, support.propose_support_ticket_update
+Detected project context (files were inspected; adopter code was not executed):
+  root: /tmp/synapsor-cli-init-names-s3cb2K
+  package manager: not detected
+  frameworks: not detected
+  schema inputs: synapsor:synapsor.runner.json, synapsor:synapsor.contract.json
+  database env names: DATABASE_URL, SYNAPSOR_DATABASE_WRITE_URL
+  .env values were not read.
+created renamed.runner.json
+created canonical contract renamed.contract.json
+created .env.example
+created MCP client snippets under .synapsor/mcp
+created onboarding manifest .synapsor/onboarding.json
+Next: set the referenced environment variables, run `synapsor-runner config validate --config ./renamed.runner.json`, then add the reviewed tools to a project client with `synapsor-runner mcp install <cursor|claude-code|vscode> --project --config ./renamed.runner.json`.
+selected public.support_tickets from postgres inspection
+exposed tools: helpdesk.read_ticket, helpdesk.propose_ticket_note
+Detected project context (files were inspected; adopter code was not executed):
+  root: /tmp/synapsor-cli-init-wizard-7idyHd
+  package manager: not detected
+  frameworks: not detected
+  schema inputs: synapsor:synapsor.runner.json
+  database env names: none in process/.env.example
+  .env values were not read.
+created synapsor.runner.json
+created canonical contract synapsor.contract.json
+created .env.example
+created MCP client snippets under .synapsor/mcp
+created onboarding manifest .synapsor/onboarding.json
+Detected project context (files were inspected; adopter code was not executed):
+  root: /tmp/synapsor-cli-init-wizard-handler-C4Ha5P
+  package manager: not detected
+  frameworks: not detected
+  schema inputs: none
+  database env names: none in process/.env.example
+  .env values were not read.
+created synapsor.runner.json
+created canonical contract synapsor.contract.json
+created .env.example
+created MCP client snippets under .synapsor/mcp
+created onboarding manifest .synapsor/onboarding.json
+Detected project context (files were inspected; adopter code was not executed):
+  root: /tmp/synapsor-cli-init-wizard-recipe-fU6XM2
+  package manager: not detected
+  frameworks: not detected
+  schema inputs: none
+  database env names: none in process/.env.example
+  .env values were not read.
+created synapsor.runner.json
+created canonical contract synapsor.contract.json
+created .env.example
+created MCP client snippets under .synapsor/mcp
+created onboarding manifest .synapsor/onboarding.json
+Warning: relative paths are resolved by the MCP client working directory. Use --absolute-paths if the client runs from another directory.
+Paste this generic-stdio MCP config into your local MCP client settings. It contains command paths and credential environment references only, not database URLs, write credentials, or token values.
+Production Explore exposes exactly app.describe_data and app.explore_data; activation, approval, apply, Protect, credentials, and SQL remain outside MCP.
+Streamable HTTP endpoint: https://runner.acme.test/mcp
+Authentication: generic-stdio reads the bearer token from environment SYNAPSOR_MCP_ACCESS_TOKEN; no token value was written.
+Protected resource: https://runner.acme.test/mcp
+Authorization servers: https://identity.acme.test
+Required scopes: synapsor.explore
+Obtain a short-lived access token from the configured identity provider, expose it to the client process as SYNAPSOR_MCP_ACCESS_TOKEN, then start or reload the client. Runner verifies tokens but never issues or refreshes them.
+Server mode: production_explore.enabled selects the locked two-tool surface automatically; generated local launch commands also include --production-explore explicitly.
+{
+  "ok": true,
+  "config_path": "/tmp/synapsor-cli-config-single-org-cksjm7/synapsor.runner.json",
+  "mode": "read_only",
+  "active_capabilities": 0,
+  "profile": "production_explore",
+  "source": "internal_analytics",
+  "engine": "postgres",
+  "read_url_env": "DATABASE_URL",
+  "source_database_changed": false,
+  "control_store_migration_command": "synapsor-runner store shared-postgres apply-migration --url-env SYNAPSOR_CONTROL_DATABASE_URL --schema synapsor_runner --yes",
+  "preflight_command": "synapsor-runner doctor --config '/tmp/synapsor-cli-config-single-org-cksjm7/synapsor.runner.json' --transport streamable-http --preflight --trusted-tls-proxy",
+  "next_action": "Set the referenced secret environment values, initialize the shared control store, then run the production preflight."
+}
+Destination: /tmp/synapsor-cli-config-migrate-pu4VaQ/migrated.json
+{"timestamp":"2026-09-14T09:28:12.358Z","level":"info","event":"writeback_outcome","proposal_id":"wrp_local","scope_kind":"tenant","tenant":"acme","source":"app_postgres","runner_id":"local-runner","executor":"sql_update","status":"applied","rows_affected":0,"dry_run":true,"source_database_changed":false}
+{"timestamp":"2026-09-14T09:28:15.543Z","level":"warn","event":"mcp_operation_failed","code":"SUBJECT_REFERENCE_UNAVAILABLE","result_code":"EXPLORE_INTERNAL"}
+{"timestamp":"2026-09-14T09:28:22.175Z","level":"info","event":"operator_decision","action":"apply","proposal_id":"wrp_54a8d84d7efcdaf024c8","capability":"billing.propose_late_fee_waiver","tenant":"acme","subject":"local_operator","identity_provider":"dev_env","identity_verified":false}
+{"timestamp":"2026-09-14T09:28:22.597Z","level":"info","event":"writeback_outcome","proposal_id":"wrp_54a8d84d7efcdaf024c8","capability":"billing.propose_late_fee_waiver","tenant":"acme","runner_id":"local_runner","executor":"sql_update","status":"applied","rows_affected":0,"receipt_hash":"sha256:12cee176271c5e9e8bb5868f85d3e5f123b716fc9cd7aedae6ab56367091a6e8","dry_run":true,"source_database_changed":false}
+{"timestamp":"2026-09-14T09:28:27.967Z","level":"info","event":"operator_decision","action":"apply","proposal_id":"wrp_96d45edaad7522f145ae","capability":"billing.propose_late_fee_waiver","tenant":"acme","subject":"local_operator","identity_provider":"dev_env","identity_verified":false}
+{"timestamp":"2026-09-14T09:28:28.112Z","level":"info","event":"writeback_outcome","proposal_id":"wrp_96d45edaad7522f145ae","capability":"billing.propose_late_fee_waiver","tenant":"acme","runner_id":"local_runner","executor":"billing_handler","status":"applied","rows_affected":1,"receipt_hash":"sha256:3b8e2f0711a83c181a7a1b4ad455df5d8a310a5f333abfd6dabad3418692766e","dry_run":false,"source_database_changed":true}
+{"timestamp":"2026-09-14T09:28:32.920Z","level":"info","event":"tool_rejected","capability":"billing.propose_late_fee_waiver","tenant":"acme","error_code":"INTERNAL","runtime_code":"WRITEBACK_UNRESOLVED","retryable":false,"source_database_changed":false}
+{"timestamp":"2026-09-14T09:28:38.127Z","level":"info","event":"operator_decision","action":"apply","proposal_id":"wrp_87ec51a2843ffa71ec57","capability":"billing.propose_late_fee_waiver","tenant":"acme","subject":"local_operator","identity_provider":"dev_env","identity_verified":false}
+Connecting and inspecting schema metadata...
+{"timestamp":"2026-09-14T09:28:43.074Z","level":"info","event":"operator_decision","action":"apply","proposal_id":"wrp_6f342d33b3c30f072503","capability":"billing.propose_late_fee_waiver","tenant":"acme","subject":"local_operator","identity_provider":"dev_env","identity_verified":false}
+
+✓ Connected
+✓ Inspected 1 tables (metadata only; no rows read)
+The disabled Boundary review is saved in the local control store. No Read, Action or execution authority is active.
+{"level":"info","message":"no approved writeback jobs available","meta":{"source_id":"src_pg_cloud"}}
+Connecting and inspecting schema metadata...
+Synced 1 pending proposal to Cloud for src_pg_acme.
+Only proposal diffs and bounded evidence/query-audit metadata were sent; database credentials and source rows stayed local.
+Synced 3 local activity references to Cloud for wrp_cli.
+Evidence contents, source rows, database credentials, and local replay payloads stayed local.
+Connecting and inspecting schema metadata...
+
+✓ Connected
+✓ Inspected 1 tables (metadata only; no rows read)
+The disabled Boundary review is saved in the local control store. No Read, Action or execution authority is active.
+Connecting and inspecting schema metadata...
+
+✓ Connected
+✓ Inspected 1 tables (metadata only; no rows read)
+The disabled Boundary review is saved in the local control store. No Read, Action or execution authority is active.
+Connecting and inspecting schema metadata...
+Warning: config path does not exist yet: ./synapsor.runner.json
+Warning: relative paths are resolved by the MCP client working directory. Use --absolute-paths if the client runs from another directory.
+Paste this claude-desktop MCP config into your local MCP client settings. It contains command paths and credential environment references only, not database URLs, write credentials, or token values.
+Proposal tools advertise a display-only MCP App automatically where the host supports it; other clients retain the same text/JSON result. Approval and apply remain outside MCP.
+Warning: config path does not exist yet: ./synapsor.runner.json
+Warning: relative paths are resolved by the MCP client working directory. Use --absolute-paths if the client runs from another directory.
+Paste this claude-desktop MCP config into your local MCP client settings. It contains command paths and credential environment references only, not database URLs, write credentials, or token values.
+Proposal tools advertise a display-only MCP App automatically where the host supports it; other clients retain the same text/JSON result. Approval and apply remain outside MCP.
+Warning: config path does not exist yet: ./synapsor.runner.json
+Paste this openai-agents MCP config into your local MCP client settings. It contains command paths and credential environment references only, not database URLs, write credentials, or token values.
+Proposal tools advertise a display-only MCP App automatically where the host supports it; other clients retain the same text/JSON result. Approval and apply remain outside MCP.
+Streamable HTTP endpoint: http://127.0.0.1:8766/mcp
+Authentication: openai-agents reads the bearer token from environment SYNAPSOR_RUNNER_HTTP_TOKEN; no token value was written.
+Start the local Runner Streamable HTTP server separately and expose the provisioned endpoint token to the client process as SYNAPSOR_RUNNER_HTTP_TOKEN.
+Warning: config path does not exist yet: ./synapsor.runner.json
+Paste this openai-agents MCP config into your local MCP client settings. It contains command paths and credential environment references only, not database URLs, write credentials, or token values.
+Proposal tools advertise a display-only MCP App automatically where the host supports it; other clients retain the same text/JSON result. Approval and apply remain outside MCP.
+Streamable HTTP endpoint: http://127.0.0.1:8766/mcp
+Authentication: openai-agents reads the bearer token from environment SYNAPSOR_RUNNER_HTTP_TOKEN; no token value was written.
+Start the local Runner Streamable HTTP server separately and expose the provisioned endpoint token to the client process as SYNAPSOR_RUNNER_HTTP_TOKEN.
+Warning: config path does not exist yet: ./synapsor.runner.json
+Warning: config path does not exist yet: ./synapsor.runner.json
+Paste this openai-agents MCP config into your local MCP client settings. It contains command paths and credential environment references only, not database URLs, write credentials, or token values.
+Proposal tools advertise a display-only MCP App automatically where the host supports it; other clients retain the same text/JSON result. Approval and apply remain outside MCP.
+Streamable HTTP endpoint: http://127.0.0.1:8766/mcp
+Authentication: openai-agents reads the bearer token from environment SYNAPSOR_CONFIGURED_ENDPOINT_TOKEN; no token value was written.
+Start the local Runner Streamable HTTP server separately and expose the provisioned endpoint token to the client process as SYNAPSOR_CONFIGURED_ENDPOINT_TOKEN.
+Paste this openai-agents MCP config into your local MCP client settings. It contains command paths and credential environment references only, not database URLs, write credentials, or token values.
+Proposal tools advertise a display-only MCP App automatically where the host supports it; other clients retain the same text/JSON result. Approval and apply remain outside MCP.
+Streamable HTTP endpoint: http://127.0.0.1:8766/mcp
+Authentication: openai-agents reads the bearer token from environment SYNAPSOR_CLIENT_ACCESS_TOKEN; no token value was written.
+Start the local Runner Streamable HTTP server separately and expose the provisioned endpoint token to the client process as SYNAPSOR_CLIENT_ACCESS_TOKEN.
+Paste this generic MCP config into your local MCP client settings. It contains command paths and credential environment references only, not database URLs, write credentials, or token values.
+Proposal tools advertise a display-only MCP App automatically where the host supports it; other clients retain the same text/JSON result. Approval and apply remain outside MCP.
+
+✓ Connected
+✓ Inspected 1 tables (metadata only; no rows read)
+The disabled Boundary review is saved in the local control store. No Read, Action or execution authority is active.
+Existing Synapsor guided project found.
+Completed: connected, classified, boundary_generated
+Saved Read candidate: 1 table(s) in revision 2; 7/7 exact review decisions confirmed.
+Agent authority active: yes
+Source database changed: no
+No schema inspection, digest change, or file rewrite was performed.
+Continuing to model or MCP-client selection in this terminal.
+Metadata inspected. The disabled Boundary review is saved in the local control store.
+No Read, Action or execution authority is active. Source database changed: no.
+Structured authoring needs no TTY or model API; edit the exported typed draft before validation/submission:
+  synapsor-runner start --project-root '/tmp/synapsor-start-managed-reset-POTGqo' --export-draft '/tmp/synapsor-start-managed-reset-POTGqo/boundary-authoring.json' --json
+  synapsor-runner start --project-root '/tmp/synapsor-start-managed-reset-POTGqo' --draft '/tmp/synapsor-start-managed-reset-POTGqo/boundary-authoring.json' --dry-run --json
+  synapsor-runner start --project-root '/tmp/synapsor-start-managed-reset-POTGqo' --draft '/tmp/synapsor-start-managed-reset-POTGqo/boundary-authoring.json' --json
+  synapsor-runner boundary review --project-root '/tmp/synapsor-start-managed-reset-POTGqo' --access
+  synapsor-runner action review --project-root '/tmp/synapsor-start-managed-reset-POTGqo'
+Review the saved Read with C, then select Verified Action Boundary for the separate exact Action confirmation. No model or new job conversation is required.
+Read and Action authority require separate trusted human review. --yes and --dry-run never activate authority.
+The current MCP entry uses app.describe_data, app.explore_data, app.describe_actions and app.request_change; approval and apply stay outside model tools.
+Discarded curated review for disabled boundary "reviewed_staging".
+Preserved: Runner config, local ledger and evidence, and source database.
+Authority activated: no
+Source database changed: no
+Next: synapsor-runner boundary draft --from-env DATABASE_URL --project-root '.'

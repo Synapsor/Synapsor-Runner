@@ -1,0 +1,40 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1205262) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1205260) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-counting-contract.test.ts (18 tests) 88ms
+ ❯ apps/runner/src/authoring-counting-domain.test.ts (3 tests | 1 failed | 1 skipped) 4072ms
+   × authoring counting domain uses the selected existing store > sqlite: inspects retained history, rejects relocation and releases locks on failure 4054ms
+     → Invalid Runner config /tmp/synapsor-counting-domain-HOCeqL/synapsor.runner.json: $.sources SOURCES_REQUIRED: At least one source is required. State preserved: the config and source database were not changed. Next: run synapsor-runner config validate --config '/tmp/synapsor-counting-domain-HOCeqL/synapsor.runner.json' --json.
+   ↓ authoring counting domain uses the selected existing store > postgres: inspects retained history, rejects relocation and releases locks on failure
+   ✓ authoring counting domain uses the selected existing store > does not create an empty ledger when configuration or the selected ledger is missing 17ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/authoring-counting-domain.test.ts > authoring counting domain uses the selected existing store > sqlite: inspects retained history, rejects relocation and releases locks on failure
+Error: Invalid Runner config /tmp/synapsor-counting-domain-HOCeqL/synapsor.runner.json: $.sources SOURCES_REQUIRED: At least one source is required. State preserved: the config and source database were not changed. Next: run synapsor-runner config validate --config '/tmp/synapsor-counting-domain-HOCeqL/synapsor.runner.json' --json.
+ ❯ assertRuntimeConfigValid apps/runner/src/cli-project.ts:290:11
+    288|   if (!validation.ok) {
+    289|     const first = validation.errors[0]!;
+    290|     throw new Error(
+       |           ^
+    291|       `Invalid Runner config ${path.resolve(configPath)}: ${first.path…
+    292|       `State preserved: the config and source database were not change…
+ ❯ apps/runner/src/cli-project.ts:144:5
+ ❯ apps/runner/src/cli-project.ts:269:28
+ ❯ withAdmission apps/runner/src/project-runtime-admission.ts:71:12
+ ❯ apps/runner/src/authoring-counting-domain.ts:37:20
+ ❯ withAdmission apps/runner/src/project-runtime-admission.ts:71:12
+ ❯ apps/runner/src/authoring-counting-domain.test.ts:40:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 19 passed | 1 skipped (21)
+   Start at  02:07:52
+   Duration  6.82s (transform 1.78s, setup 0ms, collect 4.39s, tests 4.16s, environment 0ms, prepare 238ms)
+

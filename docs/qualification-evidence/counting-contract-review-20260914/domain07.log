@@ -1,0 +1,39 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1213259) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/authoring-counting-domain.test.ts (3 tests | 1 failed) 2880ms
+   ✓ authoring counting domain uses the selected existing store > sqlite: inspects retained history, rejects relocation and releases locks on failure  2783ms
+   × authoring counting domain uses the selected existing store > postgres: inspects retained history, rejects relocation and releases locks on failure 92ms
+     → relation "counting_1789377035399_4914df.ledger_entries" does not exist
+   ✓ authoring counting domain uses the selected existing store > does not create an empty ledger when configuration or the selected ledger is missing 4ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/authoring-counting-domain.test.ts > authoring counting domain uses the selected existing store > postgres: inspects retained history, rejects relocation and releases locks on failure
+error: relation "counting_1789377035399_4914df.ledger_entries" does not exist
+ ❯ node_modules/.pnpm/pg-pool@3.14.0_pg@8.22.0/node_modules/pg-pool/index.js:45:11
+ ❯ fetchSharedLedgerEntries packages/proposal-store/dist/postgres-runtime-store.js:1070:20
+    1068| async function fetchSharedLedgerEntries(connection, schema, maxEntries…
+    1069|     const qualified = `${quotePostgresIdentifier(schema)}.ledger_entri…
+    1070|     const result = await connection.query(`
+       |                    ^
+    1071|     SELECT entry_key, kind, proposal_id, tenant_id, capability, payloa…
+    1072|     FROM ${qualified}
+ ❯ PostgresProposalRuntimeStore.transientStoreFromPostgres packages/proposal-store/dist/postgres-runtime-store.js:866:25
+ ❯ PostgresProposalRuntimeStore.withRead packages/proposal-store/dist/postgres-runtime-store.js:783:23
+ ❯ PostgresProposalRuntimeStore.automaticApprovalOutcomeDomain packages/proposal-store/dist/postgres-runtime-store.js:371:16
+ ❯ apps/runner/src/authoring-counting-domain.ts:49:25
+ ❯ runScope apps/runner/src/project-authority-mutation.ts:77:16
+ ❯ withProjectAuthorityMutation apps/runner/src/project-authority-mutation.ts:62:12
+ ❯ apps/runner/src/authoring-counting-domain.ts:44:14
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 passed (3)
+   Start at  02:10:29
+   Duration  5.95s (transform 1.53s, setup 0ms, collect 2.76s, tests 2.88s, environment 0ms, prepare 105ms)
+

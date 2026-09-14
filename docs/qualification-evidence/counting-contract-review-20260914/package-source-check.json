@@ -1,0 +1,8 @@
+{
+  "at": "2026-09-14T10:31:43.484519+00:00",
+  "head": "113859e424e77906fae74a0e2203d714b0014e70",
+  "matches_completed_full_suite_sources": true,
+  "changed": [],
+  "all_ten_offline_checks_exit_zero": true,
+  "source_checks_before_test_only_expectation_change": true
+}

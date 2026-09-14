@@ -1,0 +1,56 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1209966) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/authoring-counting-domain.test.ts (3 tests | 2 failed) 2544ms
+   × authoring counting domain uses the selected existing store > sqlite: inspects retained history, rejects relocation and releases locks on failure 2428ms
+     → Invalid Runner config /tmp/synapsor-counting-domain-5320uI/synapsor.runner.json: $.capabilities CAPABILITIES_REQUIRED: At least one capability is required. State preserved: the config and source database were not changed. Next: run synapsor-runner config validate --config '/tmp/synapsor-counting-domain-5320uI/synapsor.runner.json' --json.
+   × authoring counting domain uses the selected existing store > postgres: inspects retained history, rejects relocation and releases locks on failure 107ms
+     → Invalid Runner config /tmp/synapsor-counting-domain-TpZpsH/synapsor.runner.json: $.capabilities CAPABILITIES_REQUIRED: At least one capability is required. State preserved: the config and source database were not changed. Next: run synapsor-runner config validate --config '/tmp/synapsor-counting-domain-TpZpsH/synapsor.runner.json' --json.
+   ✓ authoring counting domain uses the selected existing store > does not create an empty ledger when configuration or the selected ledger is missing 8ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/authoring-counting-domain.test.ts > authoring counting domain uses the selected existing store > sqlite: inspects retained history, rejects relocation and releases locks on failure
+Error: Invalid Runner config /tmp/synapsor-counting-domain-5320uI/synapsor.runner.json: $.capabilities CAPABILITIES_REQUIRED: At least one capability is required. State preserved: the config and source database were not changed. Next: run synapsor-runner config validate --config '/tmp/synapsor-counting-domain-5320uI/synapsor.runner.json' --json.
+ ❯ assertRuntimeConfigValid apps/runner/src/cli-project.ts:290:11
+    288|   if (!validation.ok) {
+    289|     const first = validation.errors[0]!;
+    290|     throw new Error(
+       |           ^
+    291|       `Invalid Runner config ${path.resolve(configPath)}: ${first.path…
+    292|       `State preserved: the config and source database were not change…
+ ❯ apps/runner/src/cli-project.ts:144:5
+ ❯ apps/runner/src/cli-project.ts:269:28
+ ❯ withAdmission apps/runner/src/project-runtime-admission.ts:71:12
+ ❯ apps/runner/src/authoring-counting-domain.ts:37:20
+ ❯ withAdmission apps/runner/src/project-runtime-admission.ts:71:12
+ ❯ apps/runner/src/authoring-counting-domain.test.ts:40:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  apps/runner/src/authoring-counting-domain.test.ts > authoring counting domain uses the selected existing store > postgres: inspects retained history, rejects relocation and releases locks on failure
+Error: Invalid Runner config /tmp/synapsor-counting-domain-TpZpsH/synapsor.runner.json: $.capabilities CAPABILITIES_REQUIRED: At least one capability is required. State preserved: the config and source database were not changed. Next: run synapsor-runner config validate --config '/tmp/synapsor-counting-domain-TpZpsH/synapsor.runner.json' --json.
+ ❯ assertRuntimeConfigValid apps/runner/src/cli-project.ts:290:11
+    288|   if (!validation.ok) {
+    289|     const first = validation.errors[0]!;
+    290|     throw new Error(
+       |           ^
+    291|       `Invalid Runner config ${path.resolve(configPath)}: ${first.path…
+    292|       `State preserved: the config and source database were not change…
+ ❯ apps/runner/src/cli-project.ts:144:5
+ ❯ apps/runner/src/cli-project.ts:269:28
+ ❯ withAdmission apps/runner/src/project-runtime-admission.ts:71:12
+ ❯ apps/runner/src/authoring-counting-domain.ts:37:20
+ ❯ withAdmission apps/runner/src/project-runtime-admission.ts:71:12
+ ❯ apps/runner/src/authoring-counting-domain.test.ts:40:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 1 passed (3)
+   Start at  02:09:22
+   Duration  5.86s (transform 1.58s, setup 0ms, collect 2.95s, tests 2.54s, environment 0ms, prepare 72ms)
+

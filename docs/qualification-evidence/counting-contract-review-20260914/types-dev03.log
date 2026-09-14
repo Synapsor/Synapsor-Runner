@@ -1,0 +1,6 @@
+
+> synapsor-runner-monorepo@1.8.0 typecheck /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+> tsc -b --pretty false
+
+apps/runner/src/authoring-counting-domain.test.ts(32,29): error TS18048: 'config.capabilities' is possibly 'undefined'.
+ ELIFECYCLE  Command failed with exit code 1.

@@ -1,0 +1,50 @@
+{
+  "assignment": "Establish conditional counting equivalence and repair only the established attached-policy review integration",
+  "started_at": "2026-09-14T08:42:00Z",
+  "baseline": "f58a824ed4ff4a8b08e2328592ec751da2066202",
+  "branch": "codex/tui-safe-action-control-plane",
+  "previous_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913",
+  "previous_evidence": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913",
+  "owned_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/counting-contract-review-f58a824-20260914",
+  "evidence_root": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/counting-contract-review-20260914",
+  "previous_candidate_tree": "e4a0689b104b39aed7db7a2053a135e3265459d0df58e7378d7efb01c62ba829",
+  "brief": "/home/sandesh-tiwari/.codex/attachments/b48bb3da-c882-4e28-9c14-46073ff64bb3/pasted-text.txt",
+  "brief_sha256": "20e16fd1a1f37405eaff9bbd55be2b283e15caa91430ce8eb38ab475f6507093",
+  "budgets": {
+    "implementation_minutes_including_trace": 180,
+    "local_backend_minutes": 60,
+    "stable_suite_and_package_minutes": 120,
+    "full_stable_suite_launches": 3,
+    "development_provider_calls": 0,
+    "final_assisted_authoring_calls": 25,
+    "final_assisted_minutes": 45,
+    "assisted_restart_reserved_calls": 6
+  },
+  "scope_correction": "Assisted tenant2/boundary6 capability selectors stay ABSENT exactly. Original retains league.ratify_result selectors. Absence is accepted meaning; never fill it in.",
+  "excluded_worker_issue": "TRUSTED_BINDING_MISSING worker-retry classification reported by independent reviewer; separate decision, no reproduction/repair/worker in this assignment",
+  "stage_b": "NOT_PASSED",
+  "next_step": "All stable/type/backend/offline gates complete. Commit evidence checkpoint and freeze one complete installation, then bind/run assisted public review, restart and explicit unchanged recheck.",
+  "trial_harness_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/trial-harness",
+  "original_cases_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases",
+  "budget_amendments": [
+    {
+      "at": "2026-09-14T09:29:34.122824+00:00",
+      "field": "full_stable_suite_launches",
+      "before": 1,
+      "after": 2,
+      "reason": "Introduced type-import cycle found by separate dependency guard after focused gates passed; first launch interrupted before source edits. One corrected full run within unchanged 120-minute verification budget."
+    },
+    {
+      "at": "2026-09-14T10:05:10.894530+00:00",
+      "field": "full_stable_suite_launches",
+      "before": 2,
+      "after": 3,
+      "reason": "Completed full02 exposed five instances of one exact-object expectation lacking the newly added boundary_automatic evidence descriptor. Correct that assertion without weakening it; targeted rerun first, then one last unchanged-source suite within original 120-minute verification budget."
+    }
+  ],
+  "declared_at": "2026-09-14T08:46:06.148015+00:00",
+  "product_revision": "bf156a0ba5834c1c832d967400c5f4e2274ea4fd",
+  "verification_phase_started_at": "2026-09-14T09:26:46Z",
+  "verification_phase_deadline": "2026-09-14T11:26:46Z",
+  "current_stable_source": "113859e424e77906fae74a0e2203d714b0014e70"
+}

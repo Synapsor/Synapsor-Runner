@@ -1,0 +1,24 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1220879) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1220892) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1220883) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1220886) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-review-continuation.test.ts (9 tests) 128ms
+ ✓ apps/runner/src/authoring-counting-contract.test.ts (19 tests) 92ms
+ ✓ apps/runner/src/authoring-policy-coverage.test.ts (80 tests | 1 skipped) 103ms
+ ✓ packages/proposal-store/src/automatic-approval-admission.test.ts (9 tests | 3 skipped) 13142ms
+   ✓ durable automatic approval admission > does not partially consume combined limits, merge insurers, count human decisions, or reset history on a stricter revision  4168ms
+   ✓ durable automatic approval admission > preserves the inclusive rolling-window boundary, then releases capacity only after expiry  3979ms
+   ✓ durable automatic approval admission > takes admission time after real cross-process SQLite writer exclusion  4758ms
+
+ Test Files  4 passed (4)
+      Tests  113 passed | 4 skipped (117)
+   Start at  02:13:34
+   Duration  14.62s (transform 4.33s, setup 0ms, collect 10.57s, tests 13.47s, environment 1ms, prepare 449ms)
+

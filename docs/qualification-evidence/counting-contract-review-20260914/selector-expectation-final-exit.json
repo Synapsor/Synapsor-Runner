@@ -1,0 +1,28 @@
+{
+  "name": "selector-expectation-final",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/action-rule-draft.test.ts",
+    "apps/runner/src/authoring-counting-contract.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T10:05:25.523886+00:00",
+  "source_head": "bf156a0ba5834c1c832d967400c5f4e2274ea4fd",
+  "source_diff_sha256": "254a412cc70084ec0d94ee6ed8b6ef6e9dc5b4f21c757a59862a19b8261d3046",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/counting-contract-review-f58a824-20260914/test-environments/selector-expectation-final",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/counting-contract-review-20260914/selector-expectation-final",
+  "source_manifest_sha256": "7aceb9285f229bb58ea2eafe446b4071a7404b53de11b418041770a08fa88fab",
+  "pid": 1347771,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T10:05:31.441641+00:00"
+}

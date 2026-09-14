@@ -1,0 +1,34 @@
+{
+  "history": [],
+  "active": [
+    {
+      "kind": "management",
+      "name": "read_selection",
+      "revision_id": "policy:92d324b3bf0398feb2c4ee05bb8f215f92bf8ed572a6f45c4edd867398097029"
+    },
+    {
+      "kind": "management",
+      "name": "read_authoring",
+      "revision_id": "policy:268f2f5b83dcc0c77b18d816be1d925d023e8088904e8c7655074d7c954af684"
+    }
+  ],
+  "drafts": [
+    {
+      "kind": "read",
+      "name": "reviewed_staging",
+      "revision_id": "policy:495a93593684b62e33a353ca6aec7443b25055435d5115c6e976eae22bdfd617"
+    },
+    {
+      "kind": "action",
+      "name": "reviewed_staging_rules",
+      "revision_id": "policy:3a09a1839a9483abcaef6352720ea800a9a0cf154ab9e3d19d0145781a98cb87"
+    }
+  ],
+  "counts": [
+    {
+      "proposals": 0,
+      "approvals": 0,
+      "queue": 0
+    }
+  ]
+}

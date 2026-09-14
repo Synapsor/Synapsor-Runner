@@ -1,0 +1,28 @@
+{
+  "name": "focused-after-dependency",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-counting-contract.test.ts",
+    "apps/runner/src/authoring-counting-domain.test.ts",
+    "apps/runner/src/authoring-policy-coverage.test.ts",
+    "apps/runner/src/authoring-review-continuation.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T09:32:23.087778+00:00",
+  "source_head": "79b3fdba300c8f7c0166bf229555a97c70b9aa76",
+  "source_diff_sha256": "7244da994bf48ba6bc0a8c337ead45d047ba270988f6f75d56c4ccff01e25410",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/counting-contract-review-f58a824-20260914/test-environments/focused-after-dependency",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/counting-contract-review-20260914/focused-after-dependency",
+  "source_manifest_sha256": "3c52d62e1ff3d5dbbb083a6f88350d3b36c888beda007690269ad44a2b2920f3",
+  "pid": 1268364,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T09:32:31.669314+00:00"
+}

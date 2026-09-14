@@ -1,0 +1,25 @@
+{
+  "name": "review-after01",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-counting-contract.test.ts",
+    "apps/runner/src/authoring-policy-coverage.test.ts",
+    "apps/runner/src/authoring-review-continuation.test.ts"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T09:02:00.557809+00:00",
+  "source_head": "f58a824ed4ff4a8b08e2328592ec751da2066202",
+  "source_diff_sha256": "5dc6532ca47d0f579fa7ed4ec845eb8fbe675a62e7c28ae0e691b5eec7ebfbfd",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/counting-contract-review-f58a824-20260914/test-environments/review-after01",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/counting-contract-review-20260914/review-after01",
+  "source_manifest_sha256": "2a447be2a92b42260d8ea7567001370261b5643ef81936e3fc478d5b8ce4fda3",
+  "pid": 1191469,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T09:02:05.888973+00:00"
+}

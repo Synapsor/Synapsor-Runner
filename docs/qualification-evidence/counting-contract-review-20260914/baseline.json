@@ -1,0 +1,17 @@
+{
+  "at": "2026-09-14T08:46:06.148015+00:00",
+  "head": "f58a824ed4ff4a8b08e2328592ec751da2066202",
+  "branch": "codex/tui-safe-action-control-plane",
+  "status_before": "clean",
+  "retained_finding9": "7431f89ad0c05d927e23c5241be6788249d0a536",
+  "read_reports": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/FINAL-REPORT.md",
+      "sha256": "3697ec9a6f2f67b1898df1bc07283a9c63ea4cd7641cc4460455cf021bbe6830"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/remaining-assisted-review.md",
+      "sha256": "8af4080540d0978146f99e72fe266324d5a858a58480995b51537a5190d7b295"
+    }
+  ]
+}

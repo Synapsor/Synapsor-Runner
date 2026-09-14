@@ -1,0 +1,14 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1217300) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-counting-domain.test.ts (3 tests) 4365ms
+   ✓ authoring counting domain uses the selected existing store > sqlite: inspects retained history, rejects relocation and releases locks on failure  4010ms
+   ✓ authoring counting domain uses the selected existing store > postgres: inspects retained history, rejects relocation and releases locks on failure  350ms
+
+ Test Files  1 passed (1)
+      Tests  3 passed (3)
+   Start at  02:12:07
+   Duration  7.31s (transform 1.42s, setup 0ms, collect 2.63s, tests 4.37s, environment 0ms, prepare 66ms)
+

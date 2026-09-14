@@ -1,0 +1,15 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1250655) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/control-policy-authority-codec.test.ts (420 tests | 416 skipped) 1930ms
+   ✓ postgres validated operator policy transactions > keeps Action recovery review available with unavailable Read authority: revoked  391ms
+   ✓ postgres validated operator policy transactions > keeps Action recovery review available with unavailable Read authority: revoked_execution  865ms
+   ✓ postgres validated operator policy transactions > keeps Action recovery review available with unavailable Read authority: revoked_unconfirmed  379ms
+
+ Test Files  1 passed (1)
+      Tests  4 passed | 416 skipped (420)
+   Start at  02:25:07
+   Duration  8.16s (transform 3.96s, setup 0ms, collect 6.02s, tests 1.93s, environment 0ms, prepare 41ms)
+

@@ -1,0 +1,25 @@
+{
+  "name": "counting-before",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "packages/proposal-store/src/automatic-approval-admission.test.ts",
+    "-t",
+    "records the counting contract"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T08:54:06.100981+00:00",
+  "source_head": "f58a824ed4ff4a8b08e2328592ec751da2066202",
+  "source_diff_sha256": "4fd6323579afeb71d2289e43f97643b97fc55997d9f5a12df3fef29f33605ff6",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/counting-contract-review-f58a824-20260914/test-environments/counting-before",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/counting-contract-review-20260914/counting-before",
+  "source_manifest_sha256": "2c80a1186c7ff9dd9fdcaac96c9b9f67292eedd95d86e62a31d640cfb1ecc989",
+  "pid": 1174195,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T08:54:07.864294+00:00"
+}

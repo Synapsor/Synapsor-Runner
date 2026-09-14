@@ -1,0 +1,53 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1201489) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1201490) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ packages/proposal-store/src/automatic-approval-admission.test.ts (9 tests | 8 skipped) 205ms
+ ❯ apps/runner/src/authoring-counting-contract.test.ts (18 tests | 1 failed) 94ms
+   ✓ saved counting disagreement > completes the actual corrected-pointer response through validation, persistence and readiness 21ms
+   ✓ saved counting disagreement > retains the historical conflict without domain proof and rejects the original invalid pointer 5ms
+   ✓ saved counting disagreement > keeps the actual counter dispute blocking with missing evidence 2ms
+   ✓ saved counting disagreement > keeps the actual counter dispute blocking with incomplete evidence 2ms
+   ✓ saved counting disagreement > keeps the actual counter dispute blocking with second_proposed evidence 4ms
+   ✓ saved counting disagreement > keeps the actual counter dispute blocking with second_active evidence 3ms
+   ✓ saved counting disagreement > keeps the actual counter dispute blocking with other_history evidence 2ms
+   ✓ saved counting disagreement > keeps the actual counter dispute blocking with wrong_boundary evidence 1ms
+   ✓ saved counting disagreement > keeps the actual counter dispute blocking with human_kind evidence 2ms
+   ✓ saved counting disagreement > keeps the actual counter dispute blocking with unconfirmed_statement evidence 1ms
+   ✓ saved counting disagreement > invalidates saved comparison after a source change 3ms
+   ✓ saved counting disagreement > invalidates saved comparison after a selector change 2ms
+   ✓ saved counting disagreement > invalidates saved comparison after a authority change 6ms
+   ✓ saved counting disagreement > invalidates saved comparison after a store change 5ms
+   ✓ saved counting disagreement > invalidates saved comparison after a history change 4ms
+   ✓ saved counting disagreement > invalidates saved comparison after a decision change 3ms
+   ✓ saved counting disagreement > does not discharge a new source contradiction, ambiguous owner choice, or generated assertion 10ms
+   × saved counting disagreement > replays the complete captured response through provider validation, saves and rechecks without losing pending-work provenance 15ms
+     → POLICY_TEXT_EGRESS_REQUIRED: Review the attached text for this exact model destination before sending it. The draft is unchanged.
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/authoring-counting-contract.test.ts > saved counting disagreement > replays the complete captured response through provider validation, saves and rechecks without losing pending-work provenance
+Error: POLICY_TEXT_EGRESS_REQUIRED: Review the attached text for this exact model destination before sending it. The draft is unchanged.
+ ❯ policySourceHistory apps/runner/src/authoring-policy-source.ts:199:11
+    197|   if (!source) return [];
+    198|   if (!destination || !session!.approvals.some((approval) => approval.…
+    199|     throw new Error("POLICY_TEXT_EGRESS_REQUIRED: Review the attached …
+       |           ^
+    200|   }
+    201|   return [{ question: [
+ ❯ modelAuthoringHistory apps/runner/src/model-authoring-conversation.ts:28:14
+ ❯ reviewPolicyCoverage apps/runner/src/authoring-policy-coverage.ts:529:54
+ ❯ review apps/runner/src/authoring-counting-contract.test.ts:109:72
+ ❯ apps/runner/src/authoring-counting-contract.test.ts:114:28
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  1 failed | 18 passed | 8 skipped (27)
+   Start at  02:06:18
+   Duration  3.05s (transform 1.72s, setup 0ms, collect 3.24s, tests 300ms, environment 0ms, prepare 151ms)
+

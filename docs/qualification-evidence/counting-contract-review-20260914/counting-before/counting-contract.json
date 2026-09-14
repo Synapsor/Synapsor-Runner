@@ -1,0 +1,612 @@
+[
+  {
+    "history": "same_automatic",
+    "filtered": false,
+    "limits": [
+      {
+        "id": "scope",
+        "kind": "count",
+        "scope": "tenant",
+        "maximum": 1,
+        "window_seconds": 60
+      }
+    ],
+    "approved": false,
+    "tripped_limits": [
+      {
+        "id": "scope",
+        "kind": "count",
+        "scope": "tenant",
+        "maximum": 1,
+        "window_seconds": 60,
+        "observed": 1,
+        "proposed": 1,
+        "projected": 2,
+        "window_start": "2026-09-12T11:59:01.000Z",
+        "window_end": "2026-09-12T12:00:01.000Z",
+        "reason": "scope rolling count 2 exceeds 1"
+      }
+    ],
+    "prior_approvals": [
+      {
+        "approval_id": 1,
+        "proposal_id": "wrp_diagnostic_prior",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_diagnostic_prior",
+        "approver": "policy:reviewed_policy",
+        "status": "approved",
+        "reason": "eligible synthetic local fixture",
+        "action_boundary_name": "reviewed_insurance",
+        "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created_at": "2026-09-12T12:00:00.000Z"
+      }
+    ],
+    "candidate_approvals": []
+  },
+  {
+    "history": "same_automatic",
+    "filtered": true,
+    "limits": [
+      {
+        "id": "scope",
+        "kind": "count",
+        "scope": "tenant",
+        "maximum": 1,
+        "window_seconds": 60,
+        "capability": "reserve_ops.adjust_claim_reserve"
+      }
+    ],
+    "approved": false,
+    "tripped_limits": [
+      {
+        "id": "scope",
+        "kind": "count",
+        "scope": "tenant",
+        "maximum": 1,
+        "window_seconds": 60,
+        "capability": "reserve_ops.adjust_claim_reserve",
+        "observed": 1,
+        "proposed": 1,
+        "projected": 2,
+        "window_start": "2026-09-12T11:59:01.000Z",
+        "window_end": "2026-09-12T12:00:01.000Z",
+        "reason": "scope rolling count 2 exceeds 1"
+      }
+    ],
+    "prior_approvals": [
+      {
+        "approval_id": 1,
+        "proposal_id": "wrp_diagnostic_prior",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_diagnostic_prior",
+        "approver": "policy:reviewed_policy",
+        "status": "approved",
+        "reason": "eligible synthetic local fixture",
+        "action_boundary_name": "reviewed_insurance",
+        "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created_at": "2026-09-12T12:00:00.000Z"
+      }
+    ],
+    "candidate_approvals": []
+  },
+  {
+    "history": "other_automatic",
+    "filtered": false,
+    "limits": [
+      {
+        "id": "scope",
+        "kind": "count",
+        "scope": "tenant",
+        "maximum": 1,
+        "window_seconds": 60
+      }
+    ],
+    "approved": false,
+    "tripped_limits": [
+      {
+        "id": "scope",
+        "kind": "count",
+        "scope": "tenant",
+        "maximum": 1,
+        "window_seconds": 60,
+        "observed": 1,
+        "proposed": 1,
+        "projected": 2,
+        "window_start": "2026-09-12T11:59:01.000Z",
+        "window_end": "2026-09-12T12:00:01.000Z",
+        "reason": "scope rolling count 2 exceeds 1"
+      }
+    ],
+    "prior_approvals": [
+      {
+        "approval_id": 1,
+        "proposal_id": "wrp_diagnostic_prior",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_diagnostic_prior",
+        "approver": "policy:reviewed_policy",
+        "status": "approved",
+        "reason": "eligible synthetic local fixture",
+        "action_boundary_name": "reviewed_insurance",
+        "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created_at": "2026-09-12T12:00:00.000Z"
+      }
+    ],
+    "candidate_approvals": []
+  },
+  {
+    "history": "other_automatic",
+    "filtered": true,
+    "limits": [
+      {
+        "id": "scope",
+        "kind": "count",
+        "scope": "tenant",
+        "maximum": 1,
+        "window_seconds": 60,
+        "capability": "reserve_ops.adjust_claim_reserve"
+      }
+    ],
+    "approved": true,
+    "tripped_limits": [],
+    "prior_approvals": [
+      {
+        "approval_id": 1,
+        "proposal_id": "wrp_diagnostic_prior",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_diagnostic_prior",
+        "approver": "policy:reviewed_policy",
+        "status": "approved",
+        "reason": "eligible synthetic local fixture",
+        "action_boundary_name": "reviewed_insurance",
+        "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created_at": "2026-09-12T12:00:00.000Z"
+      }
+    ],
+    "candidate_approvals": [
+      {
+        "approval_id": 2,
+        "proposal_id": "wrp_diagnostic_next",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_diagnostic_next",
+        "approver": "policy:reviewed_policy",
+        "status": "approved",
+        "reason": "eligible synthetic local fixture",
+        "action_boundary_name": "reviewed_insurance",
+        "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created_at": "2026-09-12T12:00:01.000Z"
+      }
+    ]
+  },
+  {
+    "history": "other_human",
+    "filtered": false,
+    "limits": [
+      {
+        "id": "scope",
+        "kind": "count",
+        "scope": "tenant",
+        "maximum": 1,
+        "window_seconds": 60
+      }
+    ],
+    "approved": true,
+    "tripped_limits": [],
+    "prior_approvals": [
+      {
+        "approval_id": 1,
+        "proposal_id": "wrp_diagnostic_prior",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_diagnostic_prior",
+        "approver": "fixture-owner",
+        "status": "approved",
+        "created_at": "2026-09-14T08:54:07.558Z"
+      }
+    ],
+    "candidate_approvals": [
+      {
+        "approval_id": 2,
+        "proposal_id": "wrp_diagnostic_next",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_diagnostic_next",
+        "approver": "policy:reviewed_policy",
+        "status": "approved",
+        "reason": "eligible synthetic local fixture",
+        "action_boundary_name": "reviewed_insurance",
+        "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created_at": "2026-09-12T12:00:01.000Z"
+      }
+    ]
+  },
+  {
+    "history": "other_human",
+    "filtered": true,
+    "limits": [
+      {
+        "id": "scope",
+        "kind": "count",
+        "scope": "tenant",
+        "maximum": 1,
+        "window_seconds": 60,
+        "capability": "reserve_ops.adjust_claim_reserve"
+      }
+    ],
+    "approved": true,
+    "tripped_limits": [],
+    "prior_approvals": [
+      {
+        "approval_id": 1,
+        "proposal_id": "wrp_diagnostic_prior",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_diagnostic_prior",
+        "approver": "fixture-owner",
+        "status": "approved",
+        "created_at": "2026-09-14T08:54:07.575Z"
+      }
+    ],
+    "candidate_approvals": [
+      {
+        "approval_id": 2,
+        "proposal_id": "wrp_diagnostic_next",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_diagnostic_next",
+        "approver": "policy:reviewed_policy",
+        "status": "approved",
+        "reason": "eligible synthetic local fixture",
+        "action_boundary_name": "reviewed_insurance",
+        "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created_at": "2026-09-12T12:00:01.000Z"
+      }
+    ]
+  },
+  {
+    "history": "other_boundary",
+    "filtered": false,
+    "limits": [
+      {
+        "id": "scope",
+        "kind": "count",
+        "scope": "tenant",
+        "maximum": 1,
+        "window_seconds": 60
+      }
+    ],
+    "approved": true,
+    "tripped_limits": [],
+    "prior_approvals": [
+      {
+        "approval_id": 1,
+        "proposal_id": "wrp_diagnostic_prior",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_diagnostic_prior",
+        "approver": "policy:reviewed_policy",
+        "status": "approved",
+        "reason": "eligible synthetic local fixture",
+        "action_boundary_name": "separate_boundary",
+        "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created_at": "2026-09-12T12:00:00.000Z"
+      }
+    ],
+    "candidate_approvals": [
+      {
+        "approval_id": 2,
+        "proposal_id": "wrp_diagnostic_next",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_diagnostic_next",
+        "approver": "policy:reviewed_policy",
+        "status": "approved",
+        "reason": "eligible synthetic local fixture",
+        "action_boundary_name": "reviewed_insurance",
+        "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created_at": "2026-09-12T12:00:01.000Z"
+      }
+    ]
+  },
+  {
+    "history": "other_boundary",
+    "filtered": true,
+    "limits": [
+      {
+        "id": "scope",
+        "kind": "count",
+        "scope": "tenant",
+        "maximum": 1,
+        "window_seconds": 60,
+        "capability": "reserve_ops.adjust_claim_reserve"
+      }
+    ],
+    "approved": true,
+    "tripped_limits": [],
+    "prior_approvals": [
+      {
+        "approval_id": 1,
+        "proposal_id": "wrp_diagnostic_prior",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_diagnostic_prior",
+        "approver": "policy:reviewed_policy",
+        "status": "approved",
+        "reason": "eligible synthetic local fixture",
+        "action_boundary_name": "separate_boundary",
+        "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created_at": "2026-09-12T12:00:00.000Z"
+      }
+    ],
+    "candidate_approvals": [
+      {
+        "approval_id": 2,
+        "proposal_id": "wrp_diagnostic_next",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_diagnostic_next",
+        "approver": "policy:reviewed_policy",
+        "status": "approved",
+        "reason": "eligible synthetic local fixture",
+        "action_boundary_name": "reviewed_insurance",
+        "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created_at": "2026-09-12T12:00:01.000Z"
+      }
+    ]
+  },
+  {
+    "history": "other_tenant",
+    "filtered": false,
+    "limits": [
+      {
+        "id": "scope",
+        "kind": "count",
+        "scope": "tenant",
+        "maximum": 1,
+        "window_seconds": 60
+      }
+    ],
+    "approved": true,
+    "tripped_limits": [],
+    "prior_approvals": [
+      {
+        "approval_id": 1,
+        "proposal_id": "wrp_diagnostic_prior",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_diagnostic_prior",
+        "approver": "policy:reviewed_policy",
+        "status": "approved",
+        "reason": "eligible synthetic local fixture",
+        "action_boundary_name": "reviewed_insurance",
+        "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created_at": "2026-09-12T12:00:00.000Z"
+      }
+    ],
+    "candidate_approvals": [
+      {
+        "approval_id": 2,
+        "proposal_id": "wrp_diagnostic_next",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_diagnostic_next",
+        "approver": "policy:reviewed_policy",
+        "status": "approved",
+        "reason": "eligible synthetic local fixture",
+        "action_boundary_name": "reviewed_insurance",
+        "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created_at": "2026-09-12T12:00:01.000Z"
+      }
+    ]
+  },
+  {
+    "history": "other_tenant",
+    "filtered": true,
+    "limits": [
+      {
+        "id": "scope",
+        "kind": "count",
+        "scope": "tenant",
+        "maximum": 1,
+        "window_seconds": 60,
+        "capability": "reserve_ops.adjust_claim_reserve"
+      }
+    ],
+    "approved": true,
+    "tripped_limits": [],
+    "prior_approvals": [
+      {
+        "approval_id": 1,
+        "proposal_id": "wrp_diagnostic_prior",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_diagnostic_prior",
+        "approver": "policy:reviewed_policy",
+        "status": "approved",
+        "reason": "eligible synthetic local fixture",
+        "action_boundary_name": "reviewed_insurance",
+        "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created_at": "2026-09-12T12:00:00.000Z"
+      }
+    ],
+    "candidate_approvals": [
+      {
+        "approval_id": 2,
+        "proposal_id": "wrp_diagnostic_next",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_diagnostic_next",
+        "approver": "policy:reviewed_policy",
+        "status": "approved",
+        "reason": "eligible synthetic local fixture",
+        "action_boundary_name": "reviewed_insurance",
+        "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created_at": "2026-09-12T12:00:01.000Z"
+      }
+    ]
+  },
+  {
+    "history": "expired",
+    "filtered": false,
+    "limits": [
+      {
+        "id": "scope",
+        "kind": "count",
+        "scope": "tenant",
+        "maximum": 1,
+        "window_seconds": 60
+      }
+    ],
+    "approved": true,
+    "tripped_limits": [],
+    "prior_approvals": [
+      {
+        "approval_id": 1,
+        "proposal_id": "wrp_diagnostic_prior",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_diagnostic_prior",
+        "approver": "policy:reviewed_policy",
+        "status": "approved",
+        "reason": "eligible synthetic local fixture",
+        "action_boundary_name": "reviewed_insurance",
+        "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created_at": "2026-09-12T12:00:00.000Z"
+      }
+    ],
+    "candidate_approvals": [
+      {
+        "approval_id": 2,
+        "proposal_id": "wrp_diagnostic_next",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_diagnostic_next",
+        "approver": "policy:reviewed_policy",
+        "status": "approved",
+        "reason": "eligible synthetic local fixture",
+        "action_boundary_name": "reviewed_insurance",
+        "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created_at": "2026-09-12T12:01:00.001Z"
+      }
+    ]
+  },
+  {
+    "history": "expired",
+    "filtered": true,
+    "limits": [
+      {
+        "id": "scope",
+        "kind": "count",
+        "scope": "tenant",
+        "maximum": 1,
+        "window_seconds": 60,
+        "capability": "reserve_ops.adjust_claim_reserve"
+      }
+    ],
+    "approved": true,
+    "tripped_limits": [],
+    "prior_approvals": [
+      {
+        "approval_id": 1,
+        "proposal_id": "wrp_diagnostic_prior",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_diagnostic_prior",
+        "approver": "policy:reviewed_policy",
+        "status": "approved",
+        "reason": "eligible synthetic local fixture",
+        "action_boundary_name": "reviewed_insurance",
+        "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created_at": "2026-09-12T12:00:00.000Z"
+      }
+    ],
+    "candidate_approvals": [
+      {
+        "approval_id": 2,
+        "proposal_id": "wrp_diagnostic_next",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_diagnostic_next",
+        "approver": "policy:reviewed_policy",
+        "status": "approved",
+        "reason": "eligible synthetic local fixture",
+        "action_boundary_name": "reviewed_insurance",
+        "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created_at": "2026-09-12T12:01:00.001Z"
+      }
+    ]
+  },
+  {
+    "history": "exact_start",
+    "filtered": false,
+    "limits": [
+      {
+        "id": "scope",
+        "kind": "count",
+        "scope": "tenant",
+        "maximum": 1,
+        "window_seconds": 60
+      }
+    ],
+    "approved": false,
+    "tripped_limits": [
+      {
+        "id": "scope",
+        "kind": "count",
+        "scope": "tenant",
+        "maximum": 1,
+        "window_seconds": 60,
+        "observed": 1,
+        "proposed": 1,
+        "projected": 2,
+        "window_start": "2026-09-12T12:00:00.000Z",
+        "window_end": "2026-09-12T12:01:00.000Z",
+        "reason": "scope rolling count 2 exceeds 1"
+      }
+    ],
+    "prior_approvals": [
+      {
+        "approval_id": 1,
+        "proposal_id": "wrp_diagnostic_prior",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_diagnostic_prior",
+        "approver": "policy:reviewed_policy",
+        "status": "approved",
+        "reason": "eligible synthetic local fixture",
+        "action_boundary_name": "reviewed_insurance",
+        "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created_at": "2026-09-12T12:00:00.000Z"
+      }
+    ],
+    "candidate_approvals": []
+  },
+  {
+    "history": "exact_start",
+    "filtered": true,
+    "limits": [
+      {
+        "id": "scope",
+        "kind": "count",
+        "scope": "tenant",
+        "maximum": 1,
+        "window_seconds": 60,
+        "capability": "reserve_ops.adjust_claim_reserve"
+      }
+    ],
+    "approved": false,
+    "tripped_limits": [
+      {
+        "id": "scope",
+        "kind": "count",
+        "scope": "tenant",
+        "maximum": 1,
+        "window_seconds": 60,
+        "capability": "reserve_ops.adjust_claim_reserve",
+        "observed": 1,
+        "proposed": 1,
+        "projected": 2,
+        "window_start": "2026-09-12T12:00:00.000Z",
+        "window_end": "2026-09-12T12:01:00.000Z",
+        "reason": "scope rolling count 2 exceeds 1"
+      }
+    ],
+    "prior_approvals": [
+      {
+        "approval_id": 1,
+        "proposal_id": "wrp_diagnostic_prior",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:wrp_diagnostic_prior",
+        "approver": "policy:reviewed_policy",
+        "status": "approved",
+        "reason": "eligible synthetic local fixture",
+        "action_boundary_name": "reviewed_insurance",
+        "action_boundary_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "created_at": "2026-09-12T12:00:00.000Z"
+      }
+    ],
+    "candidate_approvals": []
+  }
+]

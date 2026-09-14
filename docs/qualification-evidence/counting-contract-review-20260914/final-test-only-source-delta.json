@@ -1,0 +1,9 @@
+{
+  "prior_product": "bf156a0ba5834c1c832d967400c5f4e2274ea4fd",
+  "final_test_revision": "113859e424e77906fae74a0e2203d714b0014e70",
+  "changed_paths": [
+    "apps/runner/src/action-rule-draft.test.ts"
+  ],
+  "product_source_unchanged": true,
+  "explicit_backend_gates_unchanged": true
+}

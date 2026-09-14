@@ -1,0 +1,6 @@
+
+> synapsor-runner-monorepo@1.8.0 typecheck /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+> tsc -b --pretty false
+
+packages/proposal-store/src/automatic-approval-admission.test.ts(108,120): error TS2353: Object literal may only specify known properties, and 'now' does not exist in type '{ approver: string; proposal_hash: string; proposal_version: number; reason?: string | undefined; identity?: OperatorIdentityProof | undefined; require_verified_identity?: boolean | undefined; freshness_proof_digest?: string | undefined; }'.
+ ELIFECYCLE  Command failed with exit code 2.

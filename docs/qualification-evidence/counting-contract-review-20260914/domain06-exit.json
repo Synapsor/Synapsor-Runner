@@ -1,0 +1,23 @@
+{
+  "name": "domain06",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-counting-domain.test.ts"
+  ],
+  "owned_postgres_database_url_enabled": true,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T09:09:21.579543+00:00",
+  "source_head": "f58a824ed4ff4a8b08e2328592ec751da2066202",
+  "source_diff_sha256": "4e30b63049d38cd98ca8700bd395749f764277246b328652338a37ef4549bb5f",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/counting-contract-review-f58a824-20260914/test-environments/domain06",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/counting-contract-review-20260914/domain06",
+  "source_manifest_sha256": "6c15041c3eef21dd3ecaa9d0de82405e8675880eca58e3878229541b94ecd8fe",
+  "pid": 1209894,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T09:09:28.222782+00:00"
+}

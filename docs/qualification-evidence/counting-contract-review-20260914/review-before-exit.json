@@ -1,0 +1,23 @@
+{
+  "name": "review-before",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-counting-contract.test.ts"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T08:57:52.473558+00:00",
+  "source_head": "f58a824ed4ff4a8b08e2328592ec751da2066202",
+  "source_diff_sha256": "4fd6323579afeb71d2289e43f97643b97fc55997d9f5a12df3fef29f33605ff6",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/counting-contract-review-f58a824-20260914/test-environments/review-before",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/counting-contract-review-20260914/review-before",
+  "source_manifest_sha256": "00dab2a525a58aa69894fd318c46c12981fda8256dc2d7af1ce9028eeae2f8f3",
+  "pid": 1182567,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T08:57:55.634307+00:00"
+}

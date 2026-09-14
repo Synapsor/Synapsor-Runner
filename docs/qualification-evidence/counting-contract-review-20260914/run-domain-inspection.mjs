@@ -1,0 +1,17 @@
+import {createRequire} from "node:module";
+import fs from 'node:fs/promises';import path from 'node:path';import {fileURLToPath} from 'node:url';import {spawnSync,execFileSync} from 'node:child_process';import assert from 'node:assert/strict';
+import {qualificationSandboxArguments,qualificationEnvironment} from '../../../scripts/qualification-sandbox.mjs';
+process.umask(0o077);
+const E=path.dirname(fileURLToPath(import.meta.url)),plan=JSON.parse(await fs.readFile(path.join(E,'assignment-plan.json'),'utf8'));
+const R=path.join(plan.owned_root,'runs/recovery-tournament-assisted'),D=path.join(plan.owned_root,'domain-inspection-copy02');
+await fs.cp(R,D,{recursive:true,errorOnExist:true,force:false});
+const state=JSON.parse(await fs.readFile(path.join(D,'run-state.json'),'utf8')),connection=JSON.parse(await fs.readFile(path.join(D,'private/connection.json'),'utf8'));
+const container=JSON.parse(execFileSync('docker',['inspect',connection.container],{encoding:'utf8'}))[0];assert.equal(container.Id,connection.container_id);assert.equal(container.Config.Labels['synapsor.qualification'],connection.label);assert.equal(container.HostConfig.NetworkMode,'none');assert(container.State.Running);
+const mountPlan=path.join(D,'mount-plan.json');await fs.writeFile(mountPlan,JSON.stringify({mounts:[{logical:state.logicalCase,physical:D}],owned_database_envs:['DATABASE_URL','WRITER_DATABASE_URL']}));
+const env=qualificationEnvironment({...connection.env,NO_COLOR:'1',QUALIFICATION_MOUNT_PLAN:mountPlan});
+const sandbox=await qualificationSandboxArguments({ownedRoot:D,mounts:[{logical:state.logicalCase,physical:D}],cwd:state.logicalProject,home:path.join(D,'home')});
+sandbox.splice(sandbox.length-1,0,'--unshare-net','--ro-bind',connection.socket,connection.logicalSocket,'--bind',path.join(D,'var-tmp'),'/var/tmp');
+const pre=spawnSync('bwrap',[...sandbox,process.execPath,path.join(plan.trial_harness_root,'storage-preflight.mjs'),'start','--project-root',state.logicalProject,'--cli'],{env,encoding:'utf8'});
+await fs.writeFile(path.join(E,'owned-domain-preflight02.log'),pre.stdout+pre.stderr,{flag:'wx'});assert.equal(pre.status,0);
+const result=spawnSync('bwrap',[...sandbox,process.execPath,'--import',createRequire(import.meta.url).resolve('tsx'),path.join(E,'inspect-owned-domain.mts')],{env,encoding:'utf8'});
+await fs.writeFile(path.join(E,'owned-domain-inspection02.log'),result.stdout+result.stderr,{flag:'wx'});await fs.writeFile(path.join(E,'owned-domain-inspection02-exit.json'),JSON.stringify({code:result.status,provider_calls:0,final_public_fixture_untouched:true},null,2)+'\n',{flag:'wx'});console.log(result.stdout+result.stderr);process.exitCode=result.status??1;

@@ -1,0 +1,100 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1226493) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1226499) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1226492) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/authoring-counting-contract.test.ts (20 tests | 18 failed) 73ms
+   × saved counting disagreement > completes the actual corrected-pointer response through validation, persistence and readiness 18ms
+     → canonical JSON does not accept undefined values
+   ✓ saved counting disagreement > retains the historical conflict without domain proof and rejects the original invalid pointer 5ms
+   × saved counting disagreement > keeps the actual counter dispute blocking with missing evidence 2ms
+     → canonical JSON does not accept undefined values
+   × saved counting disagreement > keeps the actual counter dispute blocking with incomplete evidence 1ms
+     → canonical JSON does not accept undefined values
+   × saved counting disagreement > keeps the actual counter dispute blocking with second_proposed evidence 1ms
+     → canonical JSON does not accept undefined values
+   × saved counting disagreement > keeps the actual counter dispute blocking with second_active evidence 2ms
+     → canonical JSON does not accept undefined values
+   × saved counting disagreement > keeps the actual counter dispute blocking with other_history evidence 3ms
+     → canonical JSON does not accept undefined values
+   × saved counting disagreement > keeps the actual counter dispute blocking with wrong_boundary evidence 3ms
+     → canonical JSON does not accept undefined values
+   × saved counting disagreement > keeps the actual counter dispute blocking with human_kind evidence 3ms
+     → canonical JSON does not accept undefined values
+   ✓ saved counting disagreement > keeps the actual counter dispute blocking with unconfirmed_statement evidence 3ms
+   × saved counting disagreement > does not reuse an unrelated/stale decision or turn generated prose into clarification provenance 7ms
+     → canonical JSON does not accept undefined values
+   × saved counting disagreement > retains the domain condition when a later review agrees, and ignores unrelated display wording 2ms
+     → canonical JSON does not accept undefined values
+   × saved counting disagreement > invalidates saved comparison after a source change 2ms
+     → canonical JSON does not accept undefined values
+   × saved counting disagreement > invalidates saved comparison after a selector change 1ms
+     → canonical JSON does not accept undefined values
+   × saved counting disagreement > invalidates saved comparison after a authority change 1ms
+     → canonical JSON does not accept undefined values
+   × saved counting disagreement > invalidates saved comparison after a store change 1ms
+     → canonical JSON does not accept undefined values
+   × saved counting disagreement > invalidates saved comparison after a history change 1ms
+     → canonical JSON does not accept undefined values
+   × saved counting disagreement > invalidates saved comparison after a decision change 1ms
+     → canonical JSON does not accept undefined values
+   × saved counting disagreement > does not discharge a new source contradiction, ambiguous owner choice, or generated assertion 1ms
+     → canonical JSON does not accept undefined values
+   × saved counting disagreement > replays the complete captured response through provider validation, saves and rechecks without losing pending-work provenance 12ms
+     → POLICY_COVERAGE_INVALID: canonical JSON does not accept undefined values
+ ✓ apps/runner/src/authoring-review-continuation.test.ts (9 tests) 103ms
+ ✓ apps/runner/src/authoring-policy-coverage.test.ts (80 tests | 1 skipped) 119ms
+
+⎯⎯⎯⎯⎯⎯ Failed Tests 18 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/authoring-counting-contract.test.ts > saved counting disagreement > completes the actual corrected-pointer response through validation, persistence and readiness
+ FAIL  apps/runner/src/authoring-counting-contract.test.ts > saved counting disagreement > keeps the actual counter dispute blocking with missing evidence
+ FAIL  apps/runner/src/authoring-counting-contract.test.ts > saved counting disagreement > keeps the actual counter dispute blocking with incomplete evidence
+ FAIL  apps/runner/src/authoring-counting-contract.test.ts > saved counting disagreement > keeps the actual counter dispute blocking with second_proposed evidence
+ FAIL  apps/runner/src/authoring-counting-contract.test.ts > saved counting disagreement > keeps the actual counter dispute blocking with second_active evidence
+ FAIL  apps/runner/src/authoring-counting-contract.test.ts > saved counting disagreement > keeps the actual counter dispute blocking with other_history evidence
+ FAIL  apps/runner/src/authoring-counting-contract.test.ts > saved counting disagreement > keeps the actual counter dispute blocking with wrong_boundary evidence
+ FAIL  apps/runner/src/authoring-counting-contract.test.ts > saved counting disagreement > keeps the actual counter dispute blocking with human_kind evidence
+ FAIL  apps/runner/src/authoring-counting-contract.test.ts > saved counting disagreement > does not reuse an unrelated/stale decision or turn generated prose into clarification provenance
+ FAIL  apps/runner/src/authoring-counting-contract.test.ts > saved counting disagreement > retains the domain condition when a later review agrees, and ignores unrelated display wording
+ FAIL  apps/runner/src/authoring-counting-contract.test.ts > saved counting disagreement > invalidates saved comparison after a source change
+ FAIL  apps/runner/src/authoring-counting-contract.test.ts > saved counting disagreement > invalidates saved comparison after a selector change
+ FAIL  apps/runner/src/authoring-counting-contract.test.ts > saved counting disagreement > invalidates saved comparison after a authority change
+ FAIL  apps/runner/src/authoring-counting-contract.test.ts > saved counting disagreement > invalidates saved comparison after a store change
+ FAIL  apps/runner/src/authoring-counting-contract.test.ts > saved counting disagreement > invalidates saved comparison after a history change
+ FAIL  apps/runner/src/authoring-counting-contract.test.ts > saved counting disagreement > invalidates saved comparison after a decision change
+ FAIL  apps/runner/src/authoring-counting-contract.test.ts > saved counting disagreement > does not discharge a new source contradiction, ambiguous owner choice, or generated assertion
+TypeError: canonical JSON does not accept undefined values
+ ❯ parsePolicyCoverage apps/runner/src/authoring-policy-coverage.ts:463:56
+    461|   const missing = lines.flatMap((line, index) => line.trim() && !cover…
+    462|   if (missing.length) throw new Error(`Unaccounted source lines: ${mis…
+    463|   return { source_digest: source.digest, draft_digest: canonicalJsonDi…
+       |                                                        ^
+    464| }
+    465| 
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/18]⎯
+
+ FAIL  apps/runner/src/authoring-counting-contract.test.ts > saved counting disagreement > replays the complete captured response through provider validation, saves and rechecks without losing pending-work provenance
+Error: POLICY_COVERAGE_INVALID: canonical JSON does not accept undefined values
+ ❯ reviewPolicyCoverage apps/runner/src/authoring-policy-coverage.ts:620:11
+    618|       }
+    619|     }
+    620|     throw new Error(`POLICY_COVERAGE_INVALID: ${issue}`);
+       |           ^
+    621|   } finally { await gateway.close(); }
+    622| }
+ ❯ apps/runner/src/authoring-counting-contract.test.ts:145:22
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/18]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  18 failed | 90 passed | 1 skipped (109)
+   Start at  02:16:02
+   Duration  5.14s (transform 3.50s, setup 0ms, collect 10.09s, tests 295ms, environment 1ms, prepare 284ms)
+

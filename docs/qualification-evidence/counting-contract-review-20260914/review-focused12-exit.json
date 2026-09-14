@@ -1,0 +1,25 @@
+{
+  "name": "review-focused12",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-counting-contract.test.ts",
+    "apps/runner/src/authoring-policy-coverage.test.ts",
+    "apps/runner/src/authoring-review-continuation.test.ts"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T09:18:17.862030+00:00",
+  "source_head": "f58a824ed4ff4a8b08e2328592ec751da2066202",
+  "source_diff_sha256": "98739c137fbc3b3829487bc6387433ba6d9daad45534e7258f81fba0354ec019",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/counting-contract-review-f58a824-20260914/test-environments/review-focused12",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/counting-contract-review-20260914/review-focused12",
+  "source_manifest_sha256": "6fbdb9752e3e7ce409d425c61185461825090be3f11fa486311a368c2fe08c91",
+  "pid": 1232448,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T09:18:24.108538+00:00"
+}

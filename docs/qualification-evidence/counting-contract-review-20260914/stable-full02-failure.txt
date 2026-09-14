@@ -1,0 +1,38 @@
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/action-rule-draft.test.ts > model-authored Action Rule draft compilation > derives exact approval-history selectors, not ID-based pools (boundary)
+ FAIL  apps/runner/src/action-rule-draft.test.ts > model-authored Action Rule draft compilation > derives exact approval-history selectors, not ID-based pools (tenant)
+ FAIL  apps/runner/src/action-rule-draft.test.ts > model-authored Action Rule draft compilation > derives exact approval-history selectors, not ID-based pools (tenant_principal)
+ FAIL  apps/runner/src/action-rule-draft.test.ts > model-authored Action Rule draft compilation > derives exact approval-history selectors, not ID-based pools (tenant_object)
+ FAIL  apps/runner/src/action-rule-draft.test.ts > model-authored Action Rule draft compilation > derives exact approval-history selectors, not ID-based pools (capability)
+AssertionError: expected { …(10) } to deeply equal { …(9) }
+
+- Expected
++ Received
+
+@@ -1,7 +1,8 @@
+  {
+    "action_boundary_name": "billing_read_actions",
++   "approval_kind": "boundary_automatic",
+    "approval_status": "approved",
+    "business_object": null,
+    "capability": null,
+    "object_id": null,
+    "principal": null,
+
+ ❯ apps/runner/src/action-rule-draft.test.ts:333:38
+    331|       const second = evidence.runner_evidence.actions["billing.second"…
+    332|       expect(first.id).not.toBe(second.id);
+    333|       expect(first.history_selector).toEqual({
+       |                                      ^
+    334|         action_boundary_name: actions[0]!.loaded.authority.action_boun…
+    335|         window_seconds: 86_400, time_bounds: "inclusive: now - window_…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+
+ Test Files  1 failed | 300 passed | 21 skipped (322)
+      Tests  5 failed | 6257 passed | 462 skipped (6724)
+   Start at  02:36:47
+   Duration  1658.77s (transform 13.06s, setup 0ms, collect 203.67s, tests 4347.73s, environment 57ms, prepare 19.02s)
+

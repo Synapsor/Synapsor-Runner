@@ -1,0 +1,20 @@
+{
+  "name": "types-dev03",
+  "args": [
+    "corepack",
+    "pnpm",
+    "typecheck"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T09:19:43.779768+00:00",
+  "source_head": "f58a824ed4ff4a8b08e2328592ec751da2066202",
+  "source_diff_sha256": "14108b2475ec32e626f0bafe969f5ac1fa8120df6274abef65b8bb2835c519ae",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/counting-contract-review-f58a824-20260914/test-environments/types-dev03",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/counting-contract-review-20260914/types-dev03",
+  "source_manifest_sha256": "314f1078594bc3a04fe511b8f2c66945f8db88402ef9200f78f4736cce664e9d",
+  "pid": 1236036,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T09:19:56.727825+00:00"
+}

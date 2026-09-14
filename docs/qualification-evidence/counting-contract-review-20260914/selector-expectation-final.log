@@ -1,0 +1,15 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1347840) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1347834) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-counting-contract.test.ts (21 tests) 112ms
+ ✓ apps/runner/src/action-rule-draft.test.ts (44 tests) 342ms
+
+ Test Files  2 passed (2)
+      Tests  65 passed (65)
+   Start at  03:05:26
+   Duration  5.15s (transform 3.41s, setup 0ms, collect 6.60s, tests 454ms, environment 0ms, prepare 124ms)
+

@@ -1,0 +1,12 @@
+{
+  "name": "synapsor-counting-review-tests-e16abe2a",
+  "id": "90d188401326695823b2e1a3169d1a4ef75c3bc8f50295f062549b114fcf2a03",
+  "label": "counting-contract-review-20260914",
+  "image": "sha256:1edc8e87e53194e0cc8006c4e9df9b626c6c72cb43ad3385f0f34af7922065b1",
+  "network": "none",
+  "database": "policy_reconciliation_tests",
+  "socket": "/tmp/synapsor-counting-review-pg-0u8nff/socket",
+  "private_configuration": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/counting-contract-review-f58a824-20260914/private/live-postgres.json",
+  "ready_at": "2026-09-14T09:08:47.729Z",
+  "credentials": "only scoped SYNAPSOR_TEST_POSTGRES_URL, no provider environment"
+}

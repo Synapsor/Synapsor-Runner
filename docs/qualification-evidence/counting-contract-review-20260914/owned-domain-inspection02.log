@@ -1,0 +1,22 @@
+{
+  "classification": "instrumented host inspection on a separate restored copy; not final installed public review",
+  "domain": {
+    "boundary_name": "reviewed_staging_actions",
+    "proposed_revision": "sha256:9162f744949333859637dac4209b9bc34ed4bdc55707ba10f4fd45b2c6d03752",
+    "proposed_outcomes": [
+      "league.result_ratification"
+    ],
+    "current_revision": null,
+    "current_outcomes": [],
+    "retained_automatic_outcomes": [],
+    "complete": true,
+    "store_binding_digest": "sha256:181d96574619fa3620812be284453fc94de3fef383fb7ced39c253117c154d78",
+    "history_scope": "all_retained_boundary_automatic_approvals"
+  },
+  "scoped_interpretations": 1,
+  "source_queries": 0,
+  "provider_calls": 0,
+  "authority_changed": false
+}
+(node:2) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)

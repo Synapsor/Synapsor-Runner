@@ -1,0 +1,56 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:1238138) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1238132) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1238140) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:1238139) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/boundary-authoring-resume-concurrency.test.ts (12 tests) 516ms
+   ✓ authoring resume filesystem compare-and-save > serializes real independent processes using the same saved revision and canonical project alias  403ms
+(node:1238380) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/action-rule-model.test.ts (117 tests | 1 skipped) 922ms
+(node:1238579) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-policy-source.test.ts (29 tests) 130ms
+(node:1238604) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-review-continuation.test.ts (9 tests) 91ms
+ ✓ apps/runner/src/authoring-counting-contract.test.ts (21 tests) 102ms
+(node:1238654) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-counting-domain.test.ts (3 tests | 1 skipped) 4404ms
+   ✓ authoring counting domain uses the selected existing store > sqlite: inspects retained history, rejects relocation and releases locks on failure  4397ms
+ ✓ apps/runner/src/authoring-policy-coverage.test.ts (80 tests | 1 skipped) 101ms
+(node:1238820) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/model-principal-scope-review.test.ts (2 tests) 9ms
+ ✓ apps/runner/src/control-policy-store.test.ts (19 tests | 1 skipped) 57765ms
+   ✓ governed policy-store binding and recovery > drains runtime work before reading the migration snapshot or installing its locator  3313ms
+   ✓ governed policy-store binding and recovery > imports exact active and disabled revisions without changing their provenance  4051ms
+   ✓ governed policy-store binding and recovery > opens current policies without rerunning ledger migrations and can borrow the actual runtime store  2804ms
+   ✓ governed policy-store binding and recovery > refuses a borrowed runtime connected to a different repository  2456ms
+   ✓ governed policy-store binding and recovery > refuses a changed or missing store before runtime creation can leave an empty shadow file  3183ms
+   ✓ governed policy-store binding and recovery > validates only the required store selection before constructing an authoring ledger  2988ms
+   ✓ governed policy-store binding and recovery > resumes a frozen pending import rather than rereading changed legacy files  2378ms
+   ✓ governed policy-store binding and recovery > recovers an import committed before the process lost its response without replaying it  2385ms
+   ✓ governed policy-store binding and recovery > does not load or trust the snapshot export after repository authority is established  3764ms
+   ✓ governed policy-store binding and recovery > refuses tampered pending input before importing any authority  2601ms
+   ✓ governed policy-store binding and recovery > does not create a shadow control store when the selection changes  2347ms
+   ✓ governed policy-store binding and recovery > fails closed for a missing or replaced bound repository  6238ms
+   ✓ governed policy-store binding and recovery > never falls back to file authority if the migration binding disappears  2328ms
+   ✓ governed policy-store binding and recovery > rejects unvalidated input before creating a binding or initializing policy tables  2282ms
+   ✓ governed policy-store binding and recovery > chooses one complete binding during concurrent migration  3867ms
+   ✓ governed policy-store binding and recovery > returns bounded busy when another migration really remains inside the cutover gate  7574ms
+   ✓ governed policy-store binding and recovery > binds migration files, local store and the snapshot reader to the locked canonical project  3198ms
+ ✓ apps/runner/src/boundary-authoring-saved-actions.test.ts (15 tests) 5ms
+
+ Test Files  10 passed (10)
+      Tests  303 passed | 4 skipped (307)
+   Start at  02:20:36
+   Duration  59.52s (transform 3.64s, setup 0ms, collect 12.96s, tests 64.04s, environment 1ms, prepare 505ms)
+

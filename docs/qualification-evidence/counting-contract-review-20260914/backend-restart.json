@@ -1,0 +1,7 @@
+{
+  "at": "2026-09-14T09:32:24.450117+00:00",
+  "container": "synapsor-counting-review-tests-e16abe2a",
+  "id": "90d188401326695823b2e1a3169d1a4ef75c3bc8f50295f062549b114fcf2a03",
+  "exit_code": 0,
+  "reason": "Final-source backend confirmation after type dependency correction; prior database dump/log retained"
+}
