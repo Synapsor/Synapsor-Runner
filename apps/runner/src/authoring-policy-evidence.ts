@@ -1,5 +1,5 @@
 import { policyCountingInterpretations } from "./authoring-counting-review.js";
-import type { CountingOutcomeDomain } from "./authoring-counting-domain.js";
+import type { CountingOutcomeDomain } from "./authoring-policy-source.js";
 import { explorationBoundaryCandidateDigest, hasReviewedPrincipalScope, type ExplorationBoundaryDraft } from "./auto-boundary.js";
 import { actionRuleModelDraftFromAuthority, type CompiledActionRuleModelDraftV1 } from "./action-rule-draft.js";
 import type { ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";

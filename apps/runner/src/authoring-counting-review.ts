@@ -1,23 +1,7 @@
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { PolicyPassage, PolicyTextSnapshot, PolicySourceSession } from "./authoring-policy-source.js";
-import type { CountingOutcomeDomain } from "./authoring-counting-domain.js";
+import type { CountingOutcomeDomain, CountingComparisonResolution } from "./authoring-policy-source.js";
 
-export type CountingComparisonResolution = {
-  kind: "conditional_singleton_equivalence";
-  source_digest: string;
-  source_lines: [number, number];
-  source_excerpt: string;
-  /** Supporting exact clarification, not an override or independent semantic proof. */
-  operator_support: { question: string; answer: string };
-  operator_history_digest: string;
-  comparisons: Array<{ path: string; retained_capability: null; required_capability: string; actual_predicate: unknown; configured_limit: unknown }>;
-  domain: CountingOutcomeDomain;
-  dependencies_digest: string;
-  reason: string;
-  claim_origin: "submitted_passage" | "retained_review";
-  established_claim: Pick<PolicyPassage, "disposition" | "interpretation" | "issue_kind" | "next_step">;
-  submitted_claim: Pick<PolicyPassage, "disposition" | "interpretation" | "issue_kind" | "next_step">;
-};
 const record = (value: unknown): Record<string, any> | undefined => value && typeof value === "object" && !Array.isArray(value)
   ? value as Record<string, any> : undefined;
 

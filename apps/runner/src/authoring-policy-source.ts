@@ -1,4 +1,3 @@
-import type { CountingComparisonResolution } from "./authoring-counting-review.js";
 import fs from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";
@@ -7,6 +6,35 @@ import type { AskHistoryTurn } from "./model-ask.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 
+/** Host-only point-in-time metadata, never a promise about future publication. */
+export type CountingOutcomeDomain = {
+  boundary_name: string;
+  proposed_revision: string;
+  proposed_outcomes: string[];
+  current_revision: string | null;
+  current_outcomes: string[];
+  retained_automatic_outcomes: string[];
+  complete: boolean;
+  store_binding_digest: string;
+  history_scope: "all_retained_boundary_automatic_approvals";
+};
+
+export type CountingComparisonResolution = {
+  kind: "conditional_singleton_equivalence";
+  source_digest: string;
+  source_lines: [number, number];
+  source_excerpt: string;
+  /** Supporting exact clarification, not an override or independent semantic proof. */
+  operator_support: { question: string; answer: string };
+  operator_history_digest: string;
+  comparisons: Array<{ path: string; retained_capability: null; required_capability: string; actual_predicate: unknown; configured_limit: unknown }>;
+  domain: CountingOutcomeDomain;
+  dependencies_digest: string;
+  reason: string;
+  claim_origin: "submitted_passage" | "retained_review";
+  established_claim: Pick<PolicyPassage, "disposition" | "interpretation" | "issue_kind" | "next_step">;
+  submitted_claim: Pick<PolicyPassage, "disposition" | "interpretation" | "issue_kind" | "next_step">;
+};
 export type ReadInterpretationRecord = {
   source_digest: string; read_digest: string; catalog_digest: string; instruction: string; checked_at: string;
   fields: Array<{ resource: string; field: string; exposure: "model_and_runner" | "runner_only" | "kept_out" }>;

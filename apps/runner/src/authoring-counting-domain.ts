@@ -1,3 +1,5 @@
+import type { CountingOutcomeDomain } from "./authoring-policy-source.js";
+export type { CountingOutcomeDomain } from "./authoring-policy-source.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -7,19 +9,6 @@ import { readLedgerRuntimeConfig, runnerConfigPath } from "./cli-project.js";
 import { SEMANTIC_ACTION_RUNTIME_CONFIG } from "./semantic-action-deployment.js";
 import { withProjectRuntimeAdmission } from "./project-runtime-admission.js";
 import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
-
-/** Host-only point-in-time metadata, never a promise about future publication. */
-export type CountingOutcomeDomain = {
-  boundary_name: string;
-  proposed_revision: string;
-  proposed_outcomes: string[];
-  current_revision: string | null;
-  current_outcomes: string[];
-  retained_automatic_outcomes: string[];
-  complete: boolean;
-  store_binding_digest: string;
-  history_scope: "all_retained_boundary_automatic_approvals";
-};
 
 /** Read the already selected store, including before execution setup exists.
  * Runtime gate -> authority mutex -> store read; provider work stays outside.
