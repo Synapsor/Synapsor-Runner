@@ -562,7 +562,7 @@ describe("Boundary authoring resume state", () => {
             context_digest: canonicalJsonDigest("context"), components: {}, operator_messages: [answer] }) } });
       await writeBoundaryAuthoringResumeState(root, next, { expectedRevisionDigest: initial.revision_digest });
       expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: next });
-      for (const prohibited of ["tenant: 2", "principal_id = 17", "tenant: customer123", "principal is a7", "api_key=private"]) {
+      for (const prohibited of ["tenant: 2", "principal_id = 17", "tenant: customer123", "principal is a7", 'tenant: "maximum 2"', "principal: 'at most 1'", "tenant: `maximum 2`", '{"tenant": "7"}', "api_key=private"]) {
         expect(() => buildBoundaryAuthoringResumeState({ ...input, previous: next,
           conversation: [...next.conversation, { question: "Mixed material", answer: `${answer}; ${prohibited}` }] })).toThrow(/BLOCKED/);
         expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: next });

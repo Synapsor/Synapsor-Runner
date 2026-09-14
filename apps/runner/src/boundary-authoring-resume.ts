@@ -649,15 +649,15 @@ export function assertBoundaryAuthoringResumeMaterial(value: unknown): void {
   }
   for (const { text, category } of resumeMaterialText(value)) {
     // Markdown presentation does not decide whether a value is an identity.
-    const plain = text.replace(/[*`]/gu, "");
+    const plain = text.replace(/[*]/gu, "");
     const concreteIdentity = [...plain.matchAll(
-      /\b(?:tenant|principal)(?:[_ -]?id)?\s*(=|:|is)\s*["']?([A-Za-z0-9_-]+)/giu,
+      /\b(?:tenant|principal)(?:[_ -]?id)?["'`]?\s*(=|:|is)\s*["'`]?([A-Za-z0-9_-]+)/giu,
     )].some((match) => {
       if (/^(?:runner(?:-injected)?|trusted|runtime|environment|injected|symbolic|reviewed|unknown|unset|required|outside)$/iu.test(match[2]!)) return false;
       const tail = plain.slice(match.index! + match[0].length);
       // A descriptive quota heading has an explicit limiting operator and a
       // quantity. Neither a literal id assignment nor a number alone qualifies.
-      if (/^(?:tenant|principal)\s*:/iu.test(match[0])
+      if (/^(?:tenant|principal)["'`]?\s*:\s*(?:maximum|limit|at|up)\b/iu.test(match[0])
         && /^(?:maximum(?:\s+of)?|limit(?:\s+of)?|at\s+most|up\s+to)\s+(?:\d+(?:,\d{3})*|one|two|three|four|five|six|seven|eight|nine|ten)\b/iu
           .test(`${match[2]}${tail}`)) return false;
       // Quantified role definitions describe cardinality, not runtime values.
