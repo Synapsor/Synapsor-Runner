@@ -1,0 +1,118 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:865466) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:865472) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/structured-counter-review.integration.test.ts (11 tests) 49889ms
+   ✓ public model-free structured counter review > requires explicit ambiguous-field review, previews without saving, and retains the selected counter in a disabled Action  4978ms
+   ✓ public model-free structured counter review > permits a deliberate exact history-filter edit through a separate structured disabled review  4507ms
+   ✓ public model-free structured counter review > leaves existing authority and Read unchanged on pending  4327ms
+   ✓ public model-free structured counter review > leaves existing authority and Read unchanged on cancel  4647ms
+   ✓ public model-free structured counter review > leaves existing authority and Read unchanged on field_cancel  4542ms
+   ✓ public model-free structured counter review > leaves existing authority and Read unchanged on invalid_field  4635ms
+   ✓ public model-free structured counter review > rejects stale inspected metadata before_review  4204ms
+   ✓ public model-free structured counter review > rejects stale inspected metadata during_confirmation  4486ms
+   ✓ public model-free structured counter review > rejects stale inspected metadata before_save  4588ms
+   ✓ public model-free structured counter review > rejects a concurrent saved Action revision after owner confirmation  4512ms
+   ✓ public model-free structured counter review > does not accept a file, --json or --yes as source-owner confirmation  4462ms
+(node:867594) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{
+  "ok": true,
+  "activation": "disabled_unreviewed",
+  "storage": "control_repository",
+  "deployment_profile": "staging",
+  "boundary_id": "bnd_1efdf0e438b6728c039c04ccc889b385",
+  "candidate_digest": "sha256:2cca49a71ef7320c908cb72288957c5b6a388544c85bcc0d483ba4f700c71365",
+  "review_revision": 1,
+  "authoring_binding": {
+    "repository_id": "510fb0c7-b7be-4183-9f39-8a1cc3424e87",
+    "deployment_id": "4ab7b86e-f061-475e-bd16-13e628e382d7",
+    "project_id": "0e5723e3-a312-46b8-88ac-6df1cddbf3ea",
+    "epoch": 1,
+    "revision_id": "policy:bf5d63472b028951d78d633661073a003e2759c8e13deabd4497fd7571097ba4"
+  },
+  "guided_project_created": true,
+  "config_path": "/tmp/synapsor-structured-skeleton-oBrK0k/synapsor.runner.json",
+  "store_path": "/tmp/synapsor-structured-skeleton-oBrK0k/.synapsor/local.db",
+  "source_database_changed": false,
+  "active_authority_changed": false,
+  "next_action": "synapsor-runner boundary review --project-root '/tmp/synapsor-structured-skeleton-oBrK0k' --access",
+  "next_steps": {
+    "export_draft": "synapsor-runner start --project-root '/tmp/synapsor-structured-skeleton-oBrK0k' --export-draft '/tmp/synapsor-structured-skeleton-oBrK0k/boundary-authoring.json' --json",
+    "validate_draft": "synapsor-runner start --project-root '/tmp/synapsor-structured-skeleton-oBrK0k' --draft '/tmp/synapsor-structured-skeleton-oBrK0k/boundary-authoring.json' --dry-run --json",
+    "submit_disabled_draft": "synapsor-runner start --project-root '/tmp/synapsor-structured-skeleton-oBrK0k' --draft '/tmp/synapsor-structured-skeleton-oBrK0k/boundary-authoring.json' --json",
+    "review": "synapsor-runner boundary review --project-root '/tmp/synapsor-structured-skeleton-oBrK0k' --access",
+    "review_actions": "synapsor-runner action review --project-root '/tmp/synapsor-structured-skeleton-oBrK0k'"
+  }
+}
+{"ok":true,"state":"exported","path":"skeleton.json","source_database_changed":false}
+ ✓ apps/runner/src/boundary-structured-authoring.integration.test.ts (3 tests) 14216ms
+   ✓ public structured Boundary authoring integration > prepares private coded fields and two joint-limited actions through the real disabled-authority path  5858ms
+   ✓ public structured Boundary authoring integration > authors a private 16-credit approval condition without making credits a proposed patch or caller argument  4068ms
+   ✓ public structured Boundary authoring integration > exports incomplete saved intents as view-only skeletons without turning catalog candidates into actions  4289ms
+(node:868140) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/boundary-authoring-resume.test.ts (49 tests) 205ms
+(node:868183) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-policy-source.test.ts (29 tests) 164ms
+(node:868230) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/boundary-authoring-resume-concurrency.test.ts (12 tests) 523ms
+   ✓ authoring resume filesystem compare-and-save > serializes real independent processes using the same saved revision and canonical project alias  404ms
+(node:868347) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-policy-coverage.test.ts (80 tests | 1 skipped) 111ms
+(node:868400) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-policy-context.test.ts (24 tests) 79ms
+(node:868476) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-review-continuation.test.ts (8 tests) 103ms
+ ✓ apps/runner/src/boundary-structured-execution.test.ts (16 tests) 72613ms
+   ✓ structured draft save with genuine stored execution > saves the exact disabled 3-to-1 candidate via start without altering current execution  5138ms
+   ✓ structured draft save with genuine stored execution > saves the exact disabled 3-to-1 candidate via onboard without altering current execution  4592ms
+   ✓ structured draft save with genuine stored execution > refuses missing_all execution context before export, preview and save without touching stored records  4565ms
+   ✓ structured draft save with genuine stored execution > refuses missing_companion execution context before export, preview and save without touching stored records  4530ms
+   ✓ structured draft save with genuine stored execution > refuses wrong_project execution context before export, preview and save without touching stored records  4668ms
+   ✓ structured draft save with genuine stored execution > refuses wrong_source execution context before export, preview and save without touching stored records  4640ms
+   ✓ structured draft save with genuine stored execution > refuses wrong_store execution context before export, preview and save without touching stored records  4478ms
+   ✓ structured draft save with genuine stored execution > refuses ambiguous execution context before export, preview and save without touching stored records  4905ms
+   ✓ structured draft save with genuine stored execution > refuses stale execution context before export, preview and save without touching stored records  4708ms
+   ✓ structured draft save with genuine stored execution > does not require runtime configuration or writer credentials when no execution record exists  4919ms
+   ✓ structured draft save with genuine stored execution > rejects a competing draft change after preview and preserves the winner  4195ms
+   ✓ structured draft save with genuine stored execution > rejects a competing current change after preview and preserves the winner  4650ms
+   ✓ structured draft save with genuine stored execution > rejects a competing context change after preview and preserves the winner  4598ms
+   ✓ structured draft save with genuine stored execution > rejects a competing context_during_preparation change after preview and preserves the winner  4676ms
+   ✓ structured draft save with genuine stored execution > preserves atomic state and supports exact reopen after before_commit  4238ms
+   ✓ structured draft save with genuine stored execution > preserves atomic state and supports exact reopen after lost_acknowledgement  3111ms
+(node:868518) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"ok":true,"state":"validated_disabled_preview","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","action_authority_digest":"sha256:billing.pausebilling.pausebilling.pausebilling.pausebilling.paus","action_outcomes":["billing.pause","billing.resume"],"confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","source_database_changed":false}
+{"ok":true,"state":"saved_disabled","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","action_authority_digest":"sha256:billing.pausebilling.pausebilling.pausebilling.pausebilling.paus","action_outcomes":["billing.cancel","billing.pause","billing.resume"],"confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","policy_epoch":9,"next_steps":{"review_read":"synapsor-runner boundary review --project-root '/tmp/synapsor-structured-authoring-Xpq8M4' --access","review_actions":"synapsor-runner action review --project-root '/tmp/synapsor-structured-authoring-Xpq8M4'"},"source_database_changed":false}
+{"ok":true,"state":"validated_disabled_preview","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","source_database_changed":false}
+{"ok":true,"state":"saved_disabled","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","policy_epoch":9,"next_steps":{"review_read":"synapsor-runner boundary review --project-root '/tmp/synapsor-structured-authoring-c5gf2T' --access"},"source_database_changed":false}
+{"ok":true,"state":"saved_disabled","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","action_authority_digest":"sha256:billing.pausebilling.pausebilling.pausebilling.pausebilling.paus","action_outcomes":["billing.pause"],"confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","policy_epoch":9,"next_steps":{"review_read":"synapsor-runner boundary review --project-root '/tmp/synapsor-structured-authoring-HqGzEc' --access","review_actions":"synapsor-runner action review --project-root '/tmp/synapsor-structured-authoring-HqGzEc'"},"source_database_changed":false}
+{"ok":true,"state":"validated_disabled_preview","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","action_authority_digest":"sha256:billing.pausebilling.pausebilling.pausebilling.pausebilling.paus","action_outcomes":["billing.pause"],"confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","source_database_changed":false}
+{"ok":true,"state":"saved_disabled","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","action_authority_digest":"sha256:billing.pausebilling.pausebilling.pausebilling.pausebilling.paus","action_outcomes":["billing.pause","billing.unrelated"],"confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","policy_epoch":9,"next_steps":{"review_read":"synapsor-runner boundary review --project-root '/tmp/synapsor-structured-authoring-QMpFNa' --access","review_actions":"synapsor-runner action review --project-root '/tmp/synapsor-structured-authoring-QMpFNa'"},"source_database_changed":false}
+{"ok":true,"state":"saved_disabled","review_bundle_digest":"sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","read_candidate_digest":"sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","action_authority_digest":"sha256:billing.pausebilling.pausebilling.pausebilling.pausebilling.paus","action_outcomes":["billing.pause","billing.unrelated"],"confirmed_read_decisions":0,"activation":"unsupported_from_structured_authoring","provenance":"external_draft","policy_epoch":9,"next_steps":{"review_read":"synapsor-runner boundary review --project-root '/tmp/synapsor-structured-authoring-QzRtHT' --access","review_actions":"synapsor-runner action review --project-root '/tmp/synapsor-structured-authoring-QzRtHT'"},"source_database_changed":false}
+{
+  "ok": false,
+  "code": "STRUCTURED_DRAFT_INPUT_UNAVAILABLE",
+  "message": "ENOENT: no such file or directory, open '/tmp/synapsor-structured-authoring-s9aHHN/missing.json'",
+  "next_action": "Correct the reported draft field and resubmit the same saved review bundle.",
+  "source_database_changed": false,
+  "active_authority_changed": false,
+  "disabled_authority_changed": false
+}
+ ✓ apps/runner/src/boundary-structured-authoring.test.ts (14 tests) 184ms
+ ✓ apps/runner/src/boundary-authoring-saved-actions.test.ts (15 tests) 6ms
+
+ Test Files  11 passed (11)
+      Tests  260 passed | 1 skipped (261)
+   Start at  23:43:10
+   Duration  82.83s (transform 6.01s, setup 0ms, collect 23.72s, tests 138.09s, environment 2ms, prepare 619ms)
+

@@ -1,0 +1,15 @@
+
+> synapsor-runner-monorepo@1.8.0 typecheck /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+> tsc -b --pretty false
+
+apps/runner/src/authoring-policy-context.test.ts(17,20): error TS2554: Expected 4 arguments, but got 3.
+apps/runner/src/authoring-policy-context.test.ts(33,20): error TS2554: Expected 4 arguments, but got 3.
+apps/runner/src/boundary-authoring-resume.ts(528,69): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'string'.
+apps/runner/src/boundary-authoring-resume.ts(529,37): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'string'.
+apps/runner/src/boundary-authoring-resume.ts(552,92): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'string'.
+apps/runner/src/boundary-authoring-resume.ts(553,37): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'string'.
+apps/runner/src/boundary-authoring-resume.ts(553,108): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'string'.
+apps/runner/src/boundary-commands.ts(8973,53): error TS2322: Type 'string' is not assignable to type '`sha256:${string}`'.
+apps/runner/src/boundary-commands.ts(9129,93): error TS2322: Type 'string' is not assignable to type '`sha256:${string}`'.
+apps/runner/src/boundary-commands.ts(9130,65): error TS2322: Type 'string' is not assignable to type '`sha256:${string}`'.
+ ELIFECYCLE  Command failed with exit code 1.

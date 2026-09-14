@@ -1,0 +1,354 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:833801) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+READ REVIEW COMPLETE - NOT ACTIVE
+Read Boundary: reviewed_staging
+Next: continue this same job into Action Boundary decisions.
+EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF
+Source database changed: no
+Access editor closed. Reviewed authority is unchanged.
+READ REVIEW COMPLETE - NOT ACTIVE
+Read Boundary: reviewed_staging
+Next: continue this same job into Action Boundary decisions.
+EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF
+Source database changed: no
+Access editor closed. Reviewed authority is unchanged.
+READ REVIEW COMPLETE - NOT ACTIVE
+Read Boundary: reviewed_staging
+Next: continue this same job into Action Boundary decisions.
+EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF
+Source database changed: no
+Access editor closed. Reviewed authority is unchanged.
+READ REVIEW COMPLETE - NOT ACTIVE
+Read Boundary: reviewed_staging
+Next: continue this same job into Action Boundary decisions.
+EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF
+Source database changed: no
+Access editor closed. Reviewed authority is unchanged.
+READ REVIEW COMPLETE - NOT ACTIVE
+Read Boundary: reviewed_staging
+Next: continue this same job into Action Boundary decisions.
+EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF
+Source database changed: no
+Access editor closed. Reviewed authority is unchanged.
+READ REVIEW COMPLETE - NOT ACTIVE
+Read Boundary: reviewed_staging
+Next: continue this same job into Action Boundary decisions.
+EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF
+Source database changed: no
+Access editor closed. Reviewed authority is unchanged.
+ ❯ apps/runner/src/boundary-cli.test.ts (279 tests | 5 failed | 273 skipped) 36504ms
+   ↓ boundary operator-plane CLI > reviews populated contradictory freight identity mappings (accepted)
+   ↓ boundary operator-plane CLI > reviews populated contradictory freight identity mappings (declined)
+   ↓ boundary operator-plane CLI > reviews populated contradictory freight identity mappings (concurrent)
+   ↓ boundary operator-plane CLI > reviews populated contradictory freight identity mappings (unsupported)
+   ↓ boundary operator-plane CLI > reviews pre-admission identity mappings in guided chat (editorial, manuscripts, publisher_id, editor_id, app.publisher, app.editor, text, accepted)
+   ↓ boundary operator-plane CLI > reviews pre-admission identity mappings in guided chat (reserve_ops, claims, insurer_id, adjuster_id, app.insurer_id, app.adjuster_id, uuid, accepted)
+   ↓ boundary operator-plane CLI > reviews pre-admission identity mappings in guided chat (q7, r2, z9, a4, ctx.z, ctx.a, uuid, accepted)
+   ↓ boundary operator-plane CLI > reviews pre-admission identity mappings in guided chat (q7, r2, z9, a4, ctx.z, ctx.a, uuid, grouped)
+   ↓ boundary operator-plane CLI > reviews pre-admission identity mappings in guided chat (q7, r2, z9, a4, ctx.z, ctx.a, uuid, ambiguous)
+   ↓ boundary operator-plane CLI > reviews pre-admission identity mappings in guided chat (q7, r2, z9, a4, ctx.z, ctx.a, uuid, swapped)
+   ↓ boundary operator-plane CLI > reviews pre-admission identity mappings in guided chat (q7, r2, z9, a4, ctx.z, ctx.a, uuid, declined)
+   ↓ boundary operator-plane CLI > reviews pre-admission identity mappings in guided chat (q7, r2, z9, a4, ctx.z, ctx.a, uuid, stale)
+   ↓ boundary operator-plane CLI > reviews pre-admission identity mappings in guided chat (q7, r2, z9, a4, ctx.z, ctx.a, uuid, unavailable)
+   ↓ boundary operator-plane CLI > reviews pre-admission identity mappings in guided chat (q7, r2, z9, a4, ctx.z, ctx.a, uuid, stale_before)
+   ↓ boundary operator-plane CLI > reviews pre-admission identity mappings in guided chat (q7, r2, z9, a4, ctx.z, ctx.a, uuid, unsupported)
+   ↓ boundary operator-plane CLI > reviews pre-admission identity mappings in guided chat (q7, r2, z9, a4, ctx.z, ctx.a, uuid, resume)
+   ↓ boundary operator-plane CLI > reviews pre-admission identity mappings in guided chat (q7, r2, z9, a4, ctx.z, ctx.a, uuid, resume_after_mapping)
+   ↓ boundary operator-plane CLI > preserves private fields, active authority and pending work during scope admission (accepted)
+   ↓ boundary operator-plane CLI > preserves private fields, active authority and pending work during scope admission (declined)
+   ↓ boundary operator-plane CLI > preserves private fields, active authority and pending work during scope admission (concurrent_review)
+   ↓ boundary operator-plane CLI > preserves private fields, active authority and pending work during scope admission (cancelled)
+   ↓ boundary operator-plane CLI > persists scoped Read decisions through the actual host callback across commands (persist)
+   ↓ boundary operator-plane CLI > persists scoped Read decisions through the actual host callback across commands (missing_refs)
+   ↓ boundary operator-plane CLI > persists scoped Read decisions through the actual host callback across commands (stale_refs)
+   ↓ boundary operator-plane CLI > persists scoped Read decisions through the actual host callback across commands (failed_save)
+   ↓ boundary operator-plane CLI > persists scoped Read decisions through the actual host callback across commands (noop_save)
+   ↓ boundary operator-plane CLI > persists scoped Read decisions through the actual host callback across commands (unrelated_passage)
+   ↓ boundary operator-plane CLI > persists scoped Read decisions through the actual host callback across commands (changed_requirement)
+   ↓ boundary operator-plane CLI > persists scoped Read decisions through the actual host callback across commands (stale_proof)
+   ↓ boundary operator-plane CLI > summarizes reused Read and Action authority instead of echoing the model request
+   ↓ boundary operator-plane CLI > preserves a disabled deterministic policy in setup status
+   ↓ boundary operator-plane CLI > detects an installed loopback model during first-run boundary drafting
+   ↓ boundary operator-plane CLI > selects a detected loopback model from the TUI without endpoint or model text prompts
+   ↓ boundary operator-plane CLI > does not infer a drafting provider from ready credentials or a detected local model
+   ↓ boundary operator-plane CLI > lists compatible hosted models in an Up/Down picker after the credential source is chosen
+   ↓ boundary operator-plane CLI > requires an explicit choice before reusing the configured OpenAI drafting model
+   ↓ boundary operator-plane CLI > changes the OpenAI drafting model without replacing its in-memory credential
+   ↓ boundary operator-plane CLI > switches a configured hosted drafting model to a detected local provider
+   ↓ boundary operator-plane CLI > exports an exact review bundle and requires a replay-safe signed decision for headless activation
+   ↓ boundary operator-plane CLI > resolves a blocked tenant scope through the CLI without activating authority
+   ↓ boundary operator-plane CLI > previews an explicit owner cohort override with its threshold-one consequence
+   ↓ boundary operator-plane CLI > keeps standalone drafts in the governed CLI and offers external drafting and exact review
+   ↓ boundary operator-plane CLI > points a production boundary draft directly to the secured runtime config generator
+   ↓ boundary operator-plane CLI > drafts explicit single-organization Explore without adding fake tenant columns
+   ↓ boundary operator-plane CLI > records a model-withheld field through the top-level CLI and rejects unknown fields
+   ↓ boundary operator-plane CLI > never prompts for a resource decision on a non-TTY without decision flags
+   ↓ boundary operator-plane CLI > preserves a hand-authored Runner config while drafting a boundary
+   ↓ boundary operator-plane CLI > points a production draft with a local trusted-context config to the production scaffold
+   ↓ boundary operator-plane CLI > turns a trusted config principal binding into a disabled reviewed column decision
+   ↓ boundary operator-plane CLI > gives boundary diff a copy-paste regeneration command for the reviewed source env
+   ↓ boundary operator-plane CLI > routes boundary rescan and force-draft through the same non-destructive reconciliation
+   ↓ boundary operator-plane CLI > distinguishes rescan, focused access review, and guided rescan in boundary help
+   ↓ boundary operator-plane CLI > renames the one disabled multi-table boundary without activating authority
+   ↓ boundary operator-plane CLI > keeps every boundary limit visible while reviewing a numbered choice
+   ↓ boundary operator-plane CLI > disables active Explore without deleting its named draft, review state, or protected artifacts
+   ↓ boundary operator-plane CLI > keeps /access open when the last boundary is deactivated and supports immediate reactivation
+   ↓ boundary operator-plane CLI > returns from column review to the table list without saving
+   ↓ boundary operator-plane CLI > turns reviewed question cards into a fully reviewed disabled candidate for the same-session action flow
+   ↓ boundary operator-plane CLI > accepts a 2,000-character agent job before choosing a mapping path
+   ↓ boundary operator-plane CLI > rejects a 2,001-character agent job before staging the mapping catalog
+   ↓ boundary operator-plane CLI > keeps a read-only model job in chat through its explicit activation gate
+   ↓ boundary operator-plane CLI > revises a freshly saved Read mapping without accepting a competing revision (own_save)
+   ↓ boundary operator-plane CLI > revises a freshly saved Read mapping without accepting a competing revision (concurrent_change)
+   ↓ boundary operator-plane CLI > keeps an egress denial in the same authoring chat and continues without a model
+   ↓ boundary operator-plane CLI > maps one no-model job across uniquely proven three-hop scope paths
+   ↓ boundary operator-plane CLI > requires and records an exact principal predicate for an own-row model job
+   ↓ boundary operator-plane CLI > resumes a long model-guided job after principal review with its concise Read intent
+   ↓ boundary operator-plane CLI > stops before Action drafting when new trusted scope blocks a model projection
+   ↓ boundary operator-plane CLI > stops before Action drafting when already reviewed trusted scope blocks a model projection
+   ↓ boundary operator-plane CLI > accepts reviewed PostgreSQL RLS principal scope for an own-row model job
+   ↓ boundary operator-plane CLI > lets the model clarify an opaque RLS principal setting before exact Runner confirmation
+   ↓ boundary operator-plane CLI > keeps own-row principal review when a refused model draft falls back to exact cards
+   ↓ boundary operator-plane CLI > confirms a direct principal meaning once and carries it through mandatory dependent paths
+   ↓ boundary operator-plane CLI > pauses an own-row model job instead of guessing between principal candidates
+   ↓ boundary operator-plane CLI > resolves an exact numbered principal-scope answer without a second model interpretation
+   ↓ boundary operator-plane CLI > skips an unrelated shared-reference table without interrupting no-model job mapping
+   ↓ boundary operator-plane CLI > requires a human attestation when a no-model job explicitly names a shared-reference table
+   ↓ boundary operator-plane CLI > threads one job purpose into prepare-only action authoring without granting either authority
+   ↓ boundary operator-plane CLI > continues one agent job through separate Read and Action activation before MCP handoff
+   ↓ boundary operator-plane CLI > reuses the current Ask model for workload mapping without asking for provider setup again
+   ↓ boundary operator-plane CLI > revalidates a saved review without model replanning or clearing its pending review
+   ↓ boundary operator-plane CLI > persists host counter reviews through an unchanged atomic Action and public policy resume (confirmed_noop)
+   ↓ boundary operator-plane CLI > persists host counter reviews through an unchanged atomic Action and public policy resume (cancelled_checkpoint)
+   ↓ boundary operator-plane CLI > persists host counter reviews through an unchanged atomic Action and public policy resume (declined)
+   ↓ boundary operator-plane CLI > persists host counter reviews through an unchanged atomic Action and public policy resume (save_failure)
+   ↓ boundary operator-plane CLI > revalidates completed semantic outcomes by their exact saved identities without drafting aliases
+   ↓ boundary operator-plane CLI > reuses retained Read decisions before Action revalidation without an early manual activation detour
+   ↓ boundary operator-plane CLI > rebuilds completed actions after a real writer-policy metadata rescan and resumes the same outcome again (disabled)
+   ↓ boundary operator-plane CLI > rebuilds completed actions after a real writer-policy metadata rescan and resumes the same outcome again (active)
+   ↓ boundary operator-plane CLI > revalidates separately saved rules while retaining an unfinished standalone agenda (stale_resume)
+   ↓ boundary operator-plane CLI > revalidates separately saved rules while retaining an unfinished standalone agenda (failed_planning_resume)
+   ↓ boundary operator-plane CLI > revalidates separately saved rules while retaining an unfinished standalone agenda (pending_removal_draft)
+   ↓ boundary operator-plane CLI > revalidates separately saved rules while retaining an unfinished standalone agenda (authority_review_resume)
+   ↓ boundary operator-plane CLI > revalidates separately saved rules while retaining an unfinished standalone agenda (read_only_revision)
+   ↓ boundary operator-plane CLI > revalidates separately saved rules while retaining an unfinished standalone agenda (current_resume)
+   ↓ boundary operator-plane CLI > revalidates separately saved rules while retaining an unfinished standalone agenda (current_removal_draft)
+   ↓ boundary operator-plane CLI > plans an unfulfilled edit after a client-prompt interruption without an Action agenda
+   ↓ boundary operator-plane CLI > retains the exact 30-to-10 policy edit across client selection (selected)
+   ↓ boundary operator-plane CLI > retains the exact 30-to-10 policy edit across client selection (deferred)
+   ↓ boundary operator-plane CLI > retains the exact 30-to-10 policy edit across client selection (interrupted)
+   ↓ boundary operator-plane CLI > retains the exact 30-to-10 policy edit across client selection (unchanged_pending)
+   ↓ boundary operator-plane CLI > retains the exact 30-to-10 policy edit across client selection (narration_pending)
+   ↓ boundary operator-plane CLI > retains the exact 30-to-10 policy edit across client selection (unchanged_closed)
+   ↓ boundary operator-plane CLI > keeps one saved job through interruption, a limit edit and writer rescan with an unfinished intent
+   ↓ boundary operator-plane CLI > keeps an authoring failure visible with local details and pauses without a manual-editor detour
+   ↓ boundary operator-plane CLI > refuses a stale completed outcome with no exact reviewed anchor before changing disabled or active authority
+   ↓ boundary operator-plane CLI > recompiles completed outcomes once and drafts only the unfinished saved intent
+   ↓ boundary operator-plane CLI > retains private prepared-action dependencies and unfinished components across writer rescan
+   ↓ boundary operator-plane CLI > reuses exact active reads for a 502-character Action edit without remapping or changing Read authority
+   ↓ boundary operator-plane CLI > reuses exact active reads for a 2000-character Action edit without remapping or changing Read authority
+   ↓ boundary operator-plane CLI > resumes disabled Read and saves a semantic clarification without remapping (pause before answer: false)
+   ↓ boundary operator-plane CLI > resumes disabled Read and saves a semantic clarification without remapping (pause before answer: true)
+   ↓ boundary operator-plane CLI > carries two Boundary-routing clarifications into the third model turn
+   ↓ boundary operator-plane CLI > Draft a change retains the saved policy snapshot, business answers and chosen client without replaying component checkpoints
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (disabled)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (active)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (active_changes)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (retry)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (clarification)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (changed_dependency)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (planning_failure)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (active_planning_failure)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (planning_pause)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (three_outcomes)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (partial)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (partial_separate)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (partial_separate_missing)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (partial_separate_older_read)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (partial_planning_failure)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (partial_planning_noop)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (partial_signedoff_without_workload_review)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (partial_signedoff_navigation)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (partial_signedoff_navigation_decline)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (partial_signedoff_navigation_noop)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (partial_signedoff_navigation_none_noop)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (partial_unreviewed_create)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (partial_unreviewed_revise)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (partial_unreviewed_private_retry)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (partial_unreviewed_navigation)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (partial_unreviewed_navigation_decline)
+   ↓ boundary operator-plane CLI > general access edit preserves saved outcomes without remapping (partial_unreviewed_navigation_action_create)
+   ↓ boundary operator-plane CLI > saves a cited missing Action for bounded planning, then adds one outcome without replacing the saved job
+   ↓ boundary operator-plane CLI > keeps a cited missing Action pending when the same-session continuation is cancelled before planning
+   ↓ boundary operator-plane CLI > general access edit removes one saved outcome, then resumes its separate review without replanning
+   ↓ boundary operator-plane CLI > offers one bounded retry when typed job planning fails before candidate mutation
+   ↓ boundary operator-plane CLI > pauses safely after an invalid typed job plan without staging a mapping catalog
+   ↓ boundary operator-plane CLI > carries a model-selected action target into exact disabled read review before reusing the suggestion
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (proposal_only)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (supervised)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (writer_setup)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (repair_on_resume)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (concurrent_action_read_rebind)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (privacy_retry)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (guided_privacy)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (guided_privacy_manual_retry_noop)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (guided_privacy_manual_retry_change)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (decline_privacy)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_text)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (clarified_privacy)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (confirmed_current)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (partial_confirmation)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (read_correction)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (read_correction_failed)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (read_correction_retry)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (application_clarification)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (coverage_failure)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (read_only_pivot)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (cancel_action)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (cancel_coverage)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (cancel_read_scope_preview)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (cancel_action_scope_preview)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (cancel_action_scope_dependency)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (cancel_action_scope_commit)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (active_rules_recovery)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_business)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_postcommit_once)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_postcommit_permanent)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_postcommit_competing_pause)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_postcommit_edit_current)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_postcommit_delegation_save)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_explained)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_explained_failure)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_counter_clarified)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_counter_clarified_failure)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_mechanical)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_multi)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_pause)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_mixed_read)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_mixed_read_scope)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_retained)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_concurrent)
+   ↓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_collision)
+   × boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_legacy) 6504ms
+     → Unexpected rules recovery prompt: SETUP NEEDS ATTENTION
+   × boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_generated) 5968ms
+     → Unexpected rules recovery prompt: SETUP NEEDS ATTENTION
+   × boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_declined) 5995ms
+     → Unexpected rules recovery prompt: SETUP NEEDS ATTENTION
+   × boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_concurrent) 5973ms
+     → Unexpected rules recovery prompt: SETUP NEEDS ATTENTION
+   × boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_save_failure) 5971ms
+     → Unexpected rules recovery prompt: SETUP NEEDS ATTENTION
+   ✓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_owner)  6089ms
+   ↓ boundary operator-plane CLI > retries Action drafting after ASK_REQUIRED_TOOL_NOT_CALLED without restarting the agent job
+   ↓ boundary operator-plane CLI > retries Action drafting after ASK_PROVIDER_RESPONSE_INVALID without restarting the agent job
+   ↓ boundary operator-plane CLI > retries Action drafting after ASK_TOOL_ARGUMENTS_INVALID without restarting the agent job
+   ↓ boundary operator-plane CLI > replaces a refused Action Boundary model once and re-confirms structural metadata egress
+   ↓ boundary operator-plane CLI > offers model retry and exact required_tool details while preserving optional Runner guidance
+   ↓ boundary operator-plane CLI > offers model retry and exact validation details while preserving optional Runner guidance
+   ↓ boundary operator-plane CLI > offers model retry and exact mixed details while preserving optional Runner guidance
+   ↓ boundary operator-plane CLI > offers model retry and exact clarification_paused details while preserving optional Runner guidance
+   ↓ boundary operator-plane CLI > continues the same job through Runner guidance when a structured model draft violates reviewed grammar
+   ↓ boundary operator-plane CLI > lets the operator retry one refused structured model draft without re-entering the job
+   ↓ boundary operator-plane CLI > lets the operator replace a refused drafting model and requires fresh metadata-egress review
+   ↓ boundary operator-plane CLI > accepts a bounded no-model recommendation once and preserves its proposal target without activation
+   ↓ boundary operator-plane CLI > returns from boundary naming and final review prompts without saving or activating
+   ↓ boundary operator-plane CLI > turns an unchanged column inspection into one explicit table sign-off
+   ↓ boundary operator-plane CLI > refuses a stale grouped sign-off after another session changes candidate
+   ↓ boundary operator-plane CLI > refuses a stale grouped sign-off after another session changes confirmations
+   ↓ boundary operator-plane CLI > groups final review into one boundary sign-off and one sign-off per table
+   ↓ boundary operator-plane CLI > lets an operator inspect the complete Read revision during a provider outage and activate without leaving chat
+   ↓ boundary operator-plane CLI > keeps conversational activation output inside the authoring transcript
+   ↓ boundary operator-plane CLI > keeps a stale-schema activation failure in guided recovery (pause)
+   ↓ boundary operator-plane CLI > keeps a stale-schema activation failure in guided recovery (retry)
+   ↓ boundary operator-plane CLI > preflights missing table vocabulary before an activation offer (conversation=false)
+   ↓ boundary operator-plane CLI > preflights missing table vocabulary before an activation offer (conversation=true)
+   ↓ boundary operator-plane CLI > keeps manual activation blockers visible until acknowledged (response)
+   ↓ boundary operator-plane CLI > keeps manual activation blockers visible until acknowledged (entry)
+   ↓ boundary operator-plane CLI > keeps manual activation blockers visible until acknowledged (late_failure)
+   ↓ boundary operator-plane CLI > reports live boundary refresh after production runtime setup is already ready
+   ↓ boundary operator-plane CLI > names authority removals before replacing an active Read Boundary and keeps the active revision by default
+   ↓ boundary operator-plane CLI > stages focused access edits and activates the exact replacement with one confirmation
+   ↓ boundary operator-plane CLI > renders a width-bounded Read access matrix with conspicuous internal-field review notes
+   ↓ boundary operator-plane CLI > saves an enum review with pending column edits and returns to the column screen
+   ↓ boundary operator-plane CLI > reports deterministic outcomes when focused access widens a sensitive field
+   ↓ boundary operator-plane CLI > returns from a focused column editor to the selected boundary's table list
+   ↓ boundary operator-plane CLI > reviews an ordinary principal column inline and returns to the same column editor
+   ↓ boundary operator-plane CLI > keeps a completed review inactive when the operator declines the default-yes activation handoff
+   ↓ boundary operator-plane CLI > prints direct routes back to guided or explicit Ask after standalone activation
+   ↓ boundary operator-plane CLI > records the same disabled candidate through the picker and flag paths
+   ↓ boundary operator-plane CLI > opens an excluded reviewable table in the picker and includes it only after confirmation
+   ↓ boundary operator-plane CLI > resolves a blocked table inline and returns to review instead of terminating the CLI
+   ↓ boundary operator-plane CLI > keeps identical shared-reference review previews digest-stable across reviewer timestamps
+   ↓ boundary operator-plane CLI > requires a fresh shared-reference acknowledgement when adding the table to a second boundary
+   ↓ boundary operator-plane CLI > requires a reason and explicit confirmation before adding a shared reference
+   ↓ boundary operator-plane CLI > adds a table before column review and stages removal without exiting the access editor
+   ↓ boundary operator-plane CLI > explains a scope-dependent removal and stays in the focused access editor
+   ↓ boundary operator-plane CLI > changes one table's minimum group size with default-Yes save and activation
+   ↓ boundary operator-plane CLI > toggles the selected boundary's local Ask plan check without changing authority
+   ↓ boundary operator-plane CLI > toggles model-facing authority metadata from access without changing reviewed authority
+   ↓ boundary operator-plane CLI > sets one cohort threshold across the boundary, activates it, and keeps access open
+   ↓ boundary operator-plane CLI > refuses a requested relationship when its target table is not in the boundary
+   ↓ boundary operator-plane CLI > stages an available relationship through the terminal editor without activating it
+   ↓ boundary operator-plane CLI > creates, switches, and deletes named disabled boundaries without changing active authority
+   ↓ boundary operator-plane CLI > marks derived-only tables as add-after-ancestor and refuses them before first-table review
+   ↓ boundary operator-plane CLI > adds a genuine depth-three derived resource through the reviewed CLI mutation path
+   ↓ boundary operator-plane CLI > also blocks a selected derived principal path from starting a boundary alone
+   ↓ boundary operator-plane CLI > keeps invalid interactive boundary names inside review and normalizes ordinary capitalization
+   ↓ boundary operator-plane CLI > conservatively rebases another saved draft only after shared schema facts change
+   ↓ boundary operator-plane CLI > keeps overlapping table policy isolated by immutable boundary identity
+   ↓ boundary operator-plane CLI > starts an overlapping boundary from policy-neutral schema facts instead of the selected policy
+   ↓ boundary operator-plane CLI > migrates legacy review state from the exact boundary without trusting a conflicting global override
+   ↓ boundary operator-plane CLI > never assigns one ambiguous legacy override to either overlapping boundary
+   ↓ boundary operator-plane CLI > rejects a self-consistent saved policy candidate bound to different shared database facts
+   ↓ boundary operator-plane CLI > records a narrow schema-enum allowlist and disables value operations when none remain
+   ↓ boundary operator-plane CLI > restores current inspected operation suggestions when a kept-out enum becomes model-visible again
+   ↓ boundary operator-plane CLI > repairs a legacy model-visible field with no analytical operations without changing active authority
+   ↓ boundary operator-plane CLI > records a reviewed child-count metric through the shared CLI and Workbench mutation path
+   ↓ boundary operator-plane CLI > records and removes reviewed automatic numeric bands through the shared CLI and Workbench mutation path
+   ↓ boundary operator-plane CLI > stages exact scalar grouping without changing active authority until activation
+   ↓ boundary operator-plane CLI > refuses automatic numeric-band review on MySQL 5.7 through the shared CLI and Workbench mutation path
+   ↓ boundary operator-plane CLI > renames and deletes disabled saved boundaries through the CLI front door
+   ↓ boundary operator-plane CLI > lists the fixed four tools for an active local Read project, even before Action activation
+   ↓ boundary operator-plane CLI > reports serving boundaries separately from the disabled boundary being edited
+   ↓ boundary operator-plane CLI > creates and activates an additional boundary in the active development profile
+   ↓ boundary operator-plane CLI > creates and activates a second MySQL boundary from explicit trusted bindings
+   ↓ boundary operator-plane CLI > preserves reviewed MySQL HTTP bindings and its authoring baseline through review mutation
+   ↓ boundary operator-plane CLI > writes a startable MySQL baseline through the standalone boundary draft command
+   ↓ boundary operator-plane CLI > invalidates stale profile review when restoring an existing disabled boundary
+   ↓ boundary operator-plane CLI > preserves and reports every Runner-only decision across an atomic multi-table batch
+   ↓ boundary operator-plane CLI > preserves one boundary-wide depth decision across every resource in an atomic batch
+   ↓ boundary operator-plane CLI > applies a versioned multi-resource decision file and headlessly activates its exact result
+   ↓ boundary operator-plane CLI > revalidates a workload-minimized candidate and saves it disabled without active authority
+   ↓ boundary operator-plane CLI > previews and applies an exact workload through boundary assist with a digest-bound human decision
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 5 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/boundary-cli.test.ts > boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_legacy)
+ FAIL  apps/runner/src/boundary-cli.test.ts > boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_generated)
+ FAIL  apps/runner/src/boundary-cli.test.ts > boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_declined)
+ FAIL  apps/runner/src/boundary-cli.test.ts > boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_concurrent)
+ FAIL  apps/runner/src/boundary-cli.test.ts > boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_save_failure)
+Error: Unexpected rules recovery prompt: SETUP NEEDS ATTENTION
+ ❯ Object.chooseOption apps/runner/src/boundary-cli.test.ts:8177:19
+    8175|               expect(calls).toBe(3); phase = "ready"; return "resolve";
+    8176|             }
+    8177|             throw new Error(`Unexpected rules recovery prompt: ${title…
+       |                   ^
+    8178|           },
+    8179|           showReviewDetails: async (_title, lines) => { details.push(l…
+ ❯ showBoundaryAuthoringFailure apps/runner/src/boundary-commands.ts:3187:34
+ ❯ interactiveBoundaryReviewLoop apps/runner/src/boundary-commands.ts:1866:32
+ ❯ apps/runner/src/boundary-cli.test.ts:8332:24
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/5]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  5 failed | 1 passed | 273 skipped (279)
+   Start at  23:28:00
+   Duration  51.46s (transform 9.93s, setup 0ms, collect 14.47s, tests 36.50s, environment 0ms, prepare 133ms)
+

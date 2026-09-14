@@ -1,0 +1,753 @@
+{
+  "backend": "sqlite",
+  "ordering": "replacement_first",
+  "sequence": [
+    {
+      "event": "publication_committed",
+      "at": "2026-09-14T07:52:07.716Z",
+      "detail": {
+        "maximum": 3,
+        "digest": "sha256:0e90e304c032b46b222f36ee95855cb720ec5d6b33e115cb5f00c21f2fce8164",
+        "revision": {
+          "deployment_id": "921e16c2-71f8-436f-b71d-c038f1081903",
+          "action_name": "billing_active_rules",
+          "revision_id": "policy:c229cc22eec28cfaaf795d78727ae239a8ec1e0a6cd6c2955b48b21f513ad34e"
+        }
+      }
+    },
+    {
+      "event": "admission_entered",
+      "at": "2026-09-14T07:52:08.168Z",
+      "detail": {
+        "id": "wrp_rule_442ccdf53ae79efb95ea6c4ac8bd3da2",
+        "now_override": null
+      }
+    },
+    {
+      "event": "publication_committed",
+      "at": "2026-09-14T07:52:08.286Z",
+      "detail": {
+        "maximum": 1,
+        "digest": "sha256:62a188757ae092c6b775e7e008a68c8756f0f89c0a15cefc6ca914b55a715bd7",
+        "revision": {
+          "deployment_id": "921e16c2-71f8-436f-b71d-c038f1081903",
+          "action_name": "billing_active_rules",
+          "revision_id": "policy:e020c53e420111818f45a3b4a073f72e194c009e1e77b9ada770abdca54aea29"
+        }
+      }
+    },
+    {
+      "event": "admission_returned",
+      "at": "2026-09-14T07:52:08.548Z",
+      "detail": {
+        "id": "wrp_rule_156de9547cbb5dbb92eebd5f410ed2ae",
+        "result": {
+          "proposal": {
+            "proposal_id": "wrp_rule_156de9547cbb5dbb92eebd5f410ed2ae",
+            "proposal_version": 1,
+            "proposal_hash": "sha256:b3b3a184c673d1e597ccb39b72911b69208704ff3b9f13be826ae928172ec460",
+            "action": "billing.pause_notifications",
+            "state": "pending_review",
+            "scope_kind": "tenant",
+            "scope_id": "acct_1",
+            "tenant_id": "acct_1",
+            "principal": "customer_1",
+            "capability": "billing.pause_notifications",
+            "business_object": "billing.preferences",
+            "object_id": "fresh",
+            "source_kind": "external_postgres",
+            "source_id": "local_postgres",
+            "source_schema": "billing",
+            "source_table": "preferences",
+            "source_database_mutated": false,
+            "change_set": {
+              "schema_version": "synapsor.change-set.v4",
+              "proposal_id": "wrp_rule_156de9547cbb5dbb92eebd5f410ed2ae",
+              "proposal_version": 1,
+              "action": "billing.pause_notifications",
+              "operation": "single_row_update",
+              "mode": "review_required",
+              "principal": {
+                "id": "customer_1",
+                "source": "static_dev"
+              },
+              "scope": {
+                "tenant_id": "acct_1",
+                "business_object": "billing.preferences",
+                "object_id": "fresh"
+              },
+              "source": {
+                "kind": "external_postgres",
+                "source_id": "local_postgres",
+                "schema": "billing",
+                "table": "preferences",
+                "primary_key": {
+                  "column": "preference_id",
+                  "value": "fresh"
+                }
+              },
+              "before": {
+                "preference_id": "fresh",
+                "version": 4
+              },
+              "patch": {
+                "status": "paused"
+              },
+              "after": {
+                "preference_id": "fresh",
+                "version": 5,
+                "status": "paused",
+                "principal_id": "customer_1"
+              },
+              "guards": {
+                "tenant": {
+                  "column": "account_id",
+                  "value": "acct_1"
+                },
+                "principal_scope": {
+                  "schema_version": "synapsor.principal-scope.v1",
+                  "column": "principal_id",
+                  "binding": "principal",
+                  "provider": "static_dev",
+                  "value_fingerprint": "sha256:5957c7d548efc1551ccfc61a2b351c9efc40daded8e120d8fe4793f19739c5fd",
+                  "value": "customer_1"
+                },
+                "allowed_columns": [
+                  "status"
+                ],
+                "expected_version": {
+                  "column": "version",
+                  "value": 4
+                },
+                "version_advance": {
+                  "column": "version",
+                  "strategy": "integer_increment"
+                }
+              },
+              "evidence": {
+                "bundle_id": "ev_rule_156de9547cbb5dbb92eebd5f410ed2ae",
+                "query_fingerprint": "sha256:95a38c339469b5d06d7a90132225ac470a7ea65eae974fc51eb3e0f9441931c4",
+                "items": []
+              },
+              "approval": {
+                "status": "pending",
+                "mode": "policy",
+                "approval_class": "billing.standard_change",
+                "approval_policy_digest": "sha256:2e786cfbe47b7ca4a66857b20b2191f1c8838497cfc0f4dd1b259640907c4c46",
+                "required_role": "billing_reviewer",
+                "required_approvals": 1
+              },
+              "writeback": {
+                "status": "not_applied",
+                "mode": "trusted_worker_required",
+                "executor": "semantic_rule"
+              },
+              "semantic_authority": {
+                "proof": {
+                  "schema_version": "synapsor.eligibility-proof.v1",
+                  "result": "eligible",
+                  "action_boundary_name": "billing_actions",
+                  "action_boundary_digest": "sha256:181f0a2b5a547b029bfbd5a2263c16432adc00838850fb0fed0f908a8715a4a6",
+                  "verification_boundary_digest": "sha256:64be1ba89b8485fd934aaf5cb3d7bcd2308132f52a0447dfb40620d8a3cf0813",
+                  "effect_envelope_digest": "sha256:e8a3731d599608d47daf1161cb34a0132bdc14ebe14b66cce95ab60984b55c4a",
+                  "action_rule_name": "billing.pause_notifications",
+                  "outcome": "billing.pause_notifications",
+                  "action_rule_digest": "sha256:a82d4514f1d68a817985b8bf8d8137700d204ccb7cd4fe68a26c8afd88c7a9f4",
+                  "compiled_plan_digest": "sha256:1c5ba1e8b952cea730da5565de71c099f67a3cc044d28efa0e86ef8f60fb66ae",
+                  "compiler_version": "synapsor.action-rule-compiler.v1",
+                  "schema_lock_digest": "sha256:68e4017535ce75f55a217727c08e2bcd46f35ae1e875eaf399cc1534ed30fa70",
+                  "generation_lock_fingerprint": "sha256:41abae6bfaeb511786a009bda782b7186dcc7885b374c97932cac035e59642c7",
+                  "verification_transaction": {
+                    "isolation": "repeatable_read",
+                    "timezone": "UTC"
+                  },
+                  "trusted_context_digest": "sha256:e0bccb72ca6b383a41c29ebbe02e5291a49bc801d648c9488d221b04dde80264",
+                  "subject_bindings_digest": "sha256:21e3e44943d5af588495614bf223b41a7b65a90acb7131b0e5dfdfb0625bc8ad",
+                  "evidence_provenance_digest": "sha256:5174e2456819150af8d7c59b72f7d18c8a8853cff5969777b7aab705e9062175",
+                  "verified_facts_digest": "sha256:94d184fde1a0a07acb59643de114337ef008d94e102a04670411fc5aeb8eed42",
+                  "dependency_set_digest": "sha256:b90d60bf36d31d508fdc520674d88ae75ba325649a737650de40601cbe37f293",
+                  "derived_effect_digest": "sha256:fd46c25b7ba7659a94f93a3c3f2555ef0686e5ea89a41c0f4c24da1afeb669d3",
+                  "approval_class": "billing.standard_change",
+                  "approval_policy_digest": "sha256:2e786cfbe47b7ca4a66857b20b2191f1c8838497cfc0f4dd1b259640907c4c46",
+                  "approval_path": "automatic_eligible",
+                  "verified_at": "2026-09-14T07:52:08.374Z",
+                  "valid_until": "2026-09-14T07:57:08.374Z",
+                  "uses": 1,
+                  "proof_digest": "sha256:b3077e88f60013e7078399184b0cbb057ebd8d15c0e50be4dd69acd0ad9c5899"
+                },
+                "subject_bindings": [
+                  {
+                    "binding": "preference",
+                    "resource": "billing.preferences",
+                    "subject_ref_digest": "sha256:02d5fe721dc1cc6c4a7ec195c80d00b3f45137fa1199b9f4ce67b45725fecde9"
+                  }
+                ],
+                "dependencies": [
+                  {
+                    "binding": "preference",
+                    "resource": "billing.preferences",
+                    "primary_key": {
+                      "column": "preference_id",
+                      "value": "fresh"
+                    },
+                    "version": {
+                      "column": "version",
+                      "value": 4
+                    },
+                    "row_digest": "sha256:cb088c3ba2ceeb7228932d50b08a6291423584d58848392bce4ea4875f8393ec"
+                  }
+                ],
+                "effect": {
+                  "operation": "single_row_update",
+                  "source": "local_postgres",
+                  "resource": "billing.preferences",
+                  "schema": "billing",
+                  "table": "preferences",
+                  "primary_key": {
+                    "column": "preference_id",
+                    "value": "fresh"
+                  },
+                  "tenant_guard": {
+                    "column": "account_id",
+                    "value": "acct_1"
+                  },
+                  "principal_scope": {
+                    "column": "principal_id",
+                    "value": "customer_1"
+                  },
+                  "expected_version": {
+                    "column": "version",
+                    "value": 4
+                  },
+                  "version_advance": {
+                    "column": "version",
+                    "strategy": "integer_increment"
+                  },
+                  "allowed_columns": [
+                    "status"
+                  ],
+                  "set": {
+                    "status": "paused"
+                  },
+                  "effect_digest": "sha256:fd46c25b7ba7659a94f93a3c3f2555ef0686e5ea89a41c0f4c24da1afeb669d3"
+                }
+              },
+              "source_database_mutated": false,
+              "integrity": {
+                "proposal_hash": "sha256:b3b3a184c673d1e597ccb39b72911b69208704ff3b9f13be826ae928172ec460"
+              },
+              "created_at": "2026-09-14T07:52:08.374Z"
+            },
+            "created_at": "2026-09-14T07:52:08.374Z",
+            "updated_at": "2026-09-14T07:52:08.374Z"
+          },
+          "approved": false,
+          "policy": "billing.standard_change",
+          "tripped_limits": [
+            {
+              "id": "billing_pause_action_24h",
+              "kind": "count",
+              "scope": "capability",
+              "maximum": 1,
+              "window_seconds": 86400,
+              "capability": "billing.pause_notifications",
+              "observed": 1,
+              "proposed": 1,
+              "projected": 2,
+              "window_start": "2026-09-13T07:52:08.509Z",
+              "window_end": "2026-09-14T07:52:08.509Z",
+              "reason": "billing_pause_action_24h rolling count 2 exceeds 1"
+            },
+            {
+              "id": "billing_pause_customer_24h",
+              "kind": "count",
+              "scope": "tenant_principal",
+              "maximum": 1,
+              "window_seconds": 86400,
+              "capability": "billing.pause_notifications",
+              "observed": 1,
+              "proposed": 1,
+              "projected": 2,
+              "window_start": "2026-09-13T07:52:08.509Z",
+              "window_end": "2026-09-14T07:52:08.509Z",
+              "reason": "billing_pause_customer_24h rolling count 2 exceeds 1"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "event": "final",
+      "at": "2026-09-14T07:52:08.548Z",
+      "detail": {
+        "result": {
+          "error": {
+            "code": "SEMANTIC_ACTION_UNAVAILABLE",
+            "message": "Runner could not prove this reviewed outcome from current authoritative facts. No source change was executed. An unapproved proposal may remain; ask the operator to inspect existing requests before retrying."
+          }
+        },
+        "beforeFresh": {
+          "proposals": [
+            {
+              "proposal_id": "wrp_rule_442ccdf53ae79efb95ea6c4ac8bd3da2",
+              "proposal_version": 1,
+              "proposal_hash": "sha256:9cf32693093dde6fb3b0216da86b75601c0e4fe5a9dd3bdae05cf602eb5596f5",
+              "action": "billing.pause_notifications",
+              "state": "pending_review",
+              "scope_kind": "tenant",
+              "scope_id": "acct_1",
+              "tenant_id": "acct_1",
+              "principal": "customer_1",
+              "capability": "billing.pause_notifications",
+              "business_object": "billing.preferences",
+              "object_id": "waiting",
+              "source_kind": "external_postgres",
+              "source_id": "local_postgres",
+              "source_schema": "billing",
+              "source_table": "preferences",
+              "source_database_mutated": false,
+              "change_set": {
+                "schema_version": "synapsor.change-set.v4",
+                "proposal_id": "wrp_rule_442ccdf53ae79efb95ea6c4ac8bd3da2",
+                "proposal_version": 1,
+                "action": "billing.pause_notifications",
+                "operation": "single_row_update",
+                "mode": "review_required",
+                "principal": {
+                  "id": "customer_1",
+                  "source": "static_dev"
+                },
+                "scope": {
+                  "tenant_id": "acct_1",
+                  "business_object": "billing.preferences",
+                  "object_id": "waiting"
+                },
+                "source": {
+                  "kind": "external_postgres",
+                  "source_id": "local_postgres",
+                  "schema": "billing",
+                  "table": "preferences",
+                  "primary_key": {
+                    "column": "preference_id",
+                    "value": "waiting"
+                  }
+                },
+                "before": {
+                  "preference_id": "waiting",
+                  "version": 4
+                },
+                "patch": {
+                  "status": "paused"
+                },
+                "after": {
+                  "preference_id": "waiting",
+                  "version": 5,
+                  "status": "paused",
+                  "principal_id": "customer_1"
+                },
+                "guards": {
+                  "tenant": {
+                    "column": "account_id",
+                    "value": "acct_1"
+                  },
+                  "principal_scope": {
+                    "schema_version": "synapsor.principal-scope.v1",
+                    "column": "principal_id",
+                    "binding": "principal",
+                    "provider": "static_dev",
+                    "value_fingerprint": "sha256:5957c7d548efc1551ccfc61a2b351c9efc40daded8e120d8fe4793f19739c5fd",
+                    "value": "customer_1"
+                  },
+                  "allowed_columns": [
+                    "status"
+                  ],
+                  "expected_version": {
+                    "column": "version",
+                    "value": 4
+                  },
+                  "version_advance": {
+                    "column": "version",
+                    "strategy": "integer_increment"
+                  }
+                },
+                "evidence": {
+                  "bundle_id": "ev_rule_442ccdf53ae79efb95ea6c4ac8bd3da2",
+                  "query_fingerprint": "sha256:52b8ff17d69bd3fd3622ee129f9c6aa139d272e574d0f5e2c3e4e43a8a18e197",
+                  "items": []
+                },
+                "approval": {
+                  "status": "pending",
+                  "mode": "policy",
+                  "approval_class": "billing.standard_change",
+                  "approval_policy_digest": "sha256:6061e8367ec2d0db10cea9c37e16d3597bfa105d14512e802ae2c479403b1105",
+                  "required_role": "billing_reviewer",
+                  "required_approvals": 1
+                },
+                "writeback": {
+                  "status": "not_applied",
+                  "mode": "trusted_worker_required",
+                  "executor": "semantic_rule"
+                },
+                "semantic_authority": {
+                  "proof": {
+                    "schema_version": "synapsor.eligibility-proof.v1",
+                    "result": "eligible",
+                    "action_boundary_name": "billing_actions",
+                    "action_boundary_digest": "sha256:6a6a9f39b557436413afed1b1a93c2391eb0bafe72db4f08b1e67643c522332c",
+                    "verification_boundary_digest": "sha256:64be1ba89b8485fd934aaf5cb3d7bcd2308132f52a0447dfb40620d8a3cf0813",
+                    "effect_envelope_digest": "sha256:e8a3731d599608d47daf1161cb34a0132bdc14ebe14b66cce95ab60984b55c4a",
+                    "action_rule_name": "billing.pause_notifications",
+                    "outcome": "billing.pause_notifications",
+                    "action_rule_digest": "sha256:a82d4514f1d68a817985b8bf8d8137700d204ccb7cd4fe68a26c8afd88c7a9f4",
+                    "compiled_plan_digest": "sha256:1c5ba1e8b952cea730da5565de71c099f67a3cc044d28efa0e86ef8f60fb66ae",
+                    "compiler_version": "synapsor.action-rule-compiler.v1",
+                    "schema_lock_digest": "sha256:68e4017535ce75f55a217727c08e2bcd46f35ae1e875eaf399cc1534ed30fa70",
+                    "generation_lock_fingerprint": "sha256:41abae6bfaeb511786a009bda782b7186dcc7885b374c97932cac035e59642c7",
+                    "verification_transaction": {
+                      "isolation": "repeatable_read",
+                      "timezone": "UTC"
+                    },
+                    "trusted_context_digest": "sha256:e0bccb72ca6b383a41c29ebbe02e5291a49bc801d648c9488d221b04dde80264",
+                    "subject_bindings_digest": "sha256:cc0d075169572227f89640ff48a3112cb4a3ba2581459175d54b34f3f923efdf",
+                    "evidence_provenance_digest": "sha256:235c700198f27a4e1ad6daf3e6b90165d468e6edec0178330486aa77446ac158",
+                    "verified_facts_digest": "sha256:93f14c1258dbb36b07772b68f7d11fd22badc09be6d5272386c1261d5c7ac4bf",
+                    "dependency_set_digest": "sha256:75a2156a26e3d41a8fcb8ac9f8fdb64e28d6f5e6a2fb6e45f0b4a661c87fa8c2",
+                    "derived_effect_digest": "sha256:43b4f5fbe2073f40bfd692d134f59afdec0772d2ddd7e071a5e0637f3243657e",
+                    "approval_class": "billing.standard_change",
+                    "approval_policy_digest": "sha256:6061e8367ec2d0db10cea9c37e16d3597bfa105d14512e802ae2c479403b1105",
+                    "approval_path": "automatic_eligible",
+                    "verified_at": "2026-09-14T07:52:08.024Z",
+                    "valid_until": "2026-09-14T07:57:08.024Z",
+                    "uses": 1,
+                    "proof_digest": "sha256:b56a53d83105fe79ffce2915e05561f6700747a9f6443398ea45e7bc5e02f34d"
+                  },
+                  "subject_bindings": [
+                    {
+                      "binding": "preference",
+                      "resource": "billing.preferences",
+                      "subject_ref_digest": "sha256:358ce7e030e0e4bdf10260cc7dc03aaa317ed4242abc4afae6647fb30cd46920"
+                    }
+                  ],
+                  "dependencies": [
+                    {
+                      "binding": "preference",
+                      "resource": "billing.preferences",
+                      "primary_key": {
+                        "column": "preference_id",
+                        "value": "waiting"
+                      },
+                      "version": {
+                        "column": "version",
+                        "value": 4
+                      },
+                      "row_digest": "sha256:79671c2d43a5f438716569a5d837734b186bb9f1ef6f7dbb36c46d75ca20514d"
+                    }
+                  ],
+                  "effect": {
+                    "operation": "single_row_update",
+                    "source": "local_postgres",
+                    "resource": "billing.preferences",
+                    "schema": "billing",
+                    "table": "preferences",
+                    "primary_key": {
+                      "column": "preference_id",
+                      "value": "waiting"
+                    },
+                    "tenant_guard": {
+                      "column": "account_id",
+                      "value": "acct_1"
+                    },
+                    "principal_scope": {
+                      "column": "principal_id",
+                      "value": "customer_1"
+                    },
+                    "expected_version": {
+                      "column": "version",
+                      "value": 4
+                    },
+                    "version_advance": {
+                      "column": "version",
+                      "strategy": "integer_increment"
+                    },
+                    "allowed_columns": [
+                      "status"
+                    ],
+                    "set": {
+                      "status": "paused"
+                    },
+                    "effect_digest": "sha256:43b4f5fbe2073f40bfd692d134f59afdec0772d2ddd7e071a5e0637f3243657e"
+                  }
+                },
+                "source_database_mutated": false,
+                "integrity": {
+                  "proposal_hash": "sha256:9cf32693093dde6fb3b0216da86b75601c0e4fe5a9dd3bdae05cf602eb5596f5"
+                },
+                "created_at": "2026-09-14T07:52:08.024Z"
+              },
+              "created_at": "2026-09-14T07:52:08.024Z",
+              "updated_at": "2026-09-14T07:52:08.024Z"
+            },
+            {
+              "proposal_id": "wrp_rule_d9505bca7a0f58dd7339df5d638a7f3c",
+              "proposal_version": 1,
+              "proposal_hash": "sha256:c9e0b4eb57e1cbc606d47dac0adf62b8fb3ad14b83a177b36688118a38e93b85",
+              "action": "billing.pause_notifications",
+              "state": "approved",
+              "scope_kind": "tenant",
+              "scope_id": "acct_1",
+              "tenant_id": "acct_1",
+              "principal": "customer_1",
+              "capability": "billing.pause_notifications",
+              "business_object": "billing.preferences",
+              "object_id": "baseline",
+              "source_kind": "external_postgres",
+              "source_id": "local_postgres",
+              "source_schema": "billing",
+              "source_table": "preferences",
+              "source_database_mutated": false,
+              "change_set": {
+                "schema_version": "synapsor.change-set.v4",
+                "proposal_id": "wrp_rule_d9505bca7a0f58dd7339df5d638a7f3c",
+                "proposal_version": 1,
+                "action": "billing.pause_notifications",
+                "operation": "single_row_update",
+                "mode": "review_required",
+                "principal": {
+                  "id": "customer_1",
+                  "source": "static_dev"
+                },
+                "scope": {
+                  "tenant_id": "acct_1",
+                  "business_object": "billing.preferences",
+                  "object_id": "baseline"
+                },
+                "source": {
+                  "kind": "external_postgres",
+                  "source_id": "local_postgres",
+                  "schema": "billing",
+                  "table": "preferences",
+                  "primary_key": {
+                    "column": "preference_id",
+                    "value": "baseline"
+                  }
+                },
+                "before": {
+                  "preference_id": "baseline",
+                  "version": 4
+                },
+                "patch": {
+                  "status": "paused"
+                },
+                "after": {
+                  "preference_id": "baseline",
+                  "version": 5,
+                  "status": "paused",
+                  "principal_id": "customer_1"
+                },
+                "guards": {
+                  "tenant": {
+                    "column": "account_id",
+                    "value": "acct_1"
+                  },
+                  "principal_scope": {
+                    "schema_version": "synapsor.principal-scope.v1",
+                    "column": "principal_id",
+                    "binding": "principal",
+                    "provider": "static_dev",
+                    "value_fingerprint": "sha256:5957c7d548efc1551ccfc61a2b351c9efc40daded8e120d8fe4793f19739c5fd",
+                    "value": "customer_1"
+                  },
+                  "allowed_columns": [
+                    "status"
+                  ],
+                  "expected_version": {
+                    "column": "version",
+                    "value": 4
+                  },
+                  "version_advance": {
+                    "column": "version",
+                    "strategy": "integer_increment"
+                  }
+                },
+                "evidence": {
+                  "bundle_id": "ev_rule_d9505bca7a0f58dd7339df5d638a7f3c",
+                  "query_fingerprint": "sha256:ed9b51781430f60ce300bc8302c4fab1db633f02c46fc3a822076058b8f73b83",
+                  "items": []
+                },
+                "approval": {
+                  "status": "pending",
+                  "mode": "policy",
+                  "approval_class": "billing.standard_change",
+                  "approval_policy_digest": "sha256:6061e8367ec2d0db10cea9c37e16d3597bfa105d14512e802ae2c479403b1105",
+                  "required_role": "billing_reviewer",
+                  "required_approvals": 1
+                },
+                "writeback": {
+                  "status": "not_applied",
+                  "mode": "trusted_worker_required",
+                  "executor": "semantic_rule"
+                },
+                "semantic_authority": {
+                  "proof": {
+                    "schema_version": "synapsor.eligibility-proof.v1",
+                    "result": "eligible",
+                    "action_boundary_name": "billing_actions",
+                    "action_boundary_digest": "sha256:6a6a9f39b557436413afed1b1a93c2391eb0bafe72db4f08b1e67643c522332c",
+                    "verification_boundary_digest": "sha256:64be1ba89b8485fd934aaf5cb3d7bcd2308132f52a0447dfb40620d8a3cf0813",
+                    "effect_envelope_digest": "sha256:e8a3731d599608d47daf1161cb34a0132bdc14ebe14b66cce95ab60984b55c4a",
+                    "action_rule_name": "billing.pause_notifications",
+                    "outcome": "billing.pause_notifications",
+                    "action_rule_digest": "sha256:a82d4514f1d68a817985b8bf8d8137700d204ccb7cd4fe68a26c8afd88c7a9f4",
+                    "compiled_plan_digest": "sha256:1c5ba1e8b952cea730da5565de71c099f67a3cc044d28efa0e86ef8f60fb66ae",
+                    "compiler_version": "synapsor.action-rule-compiler.v1",
+                    "schema_lock_digest": "sha256:68e4017535ce75f55a217727c08e2bcd46f35ae1e875eaf399cc1534ed30fa70",
+                    "generation_lock_fingerprint": "sha256:41abae6bfaeb511786a009bda782b7186dcc7885b374c97932cac035e59642c7",
+                    "verification_transaction": {
+                      "isolation": "repeatable_read",
+                      "timezone": "UTC"
+                    },
+                    "trusted_context_digest": "sha256:e0bccb72ca6b383a41c29ebbe02e5291a49bc801d648c9488d221b04dde80264",
+                    "subject_bindings_digest": "sha256:d0b75c7aba0538ba3b33485a7a6f57f35c7495a400bc8925e000bdc8afc478a6",
+                    "evidence_provenance_digest": "sha256:4c9cc2b0679b5b1e07ea0f359e722a052764558fd93d5c1c4b5e6a0513f00cdd",
+                    "verified_facts_digest": "sha256:d6a5d6af7f209e917a08c43cbdfa56a7f693d304059a18eb43671f8e85122c0a",
+                    "dependency_set_digest": "sha256:9579cd6820e5e6fb282e5c6227c0545053af50afe6b8d6591838bc4dd2d2e348",
+                    "derived_effect_digest": "sha256:546b601eb012b97f4b2097ecc42e1b2d20b740154638eb0258be6407f2d2c0dc",
+                    "approval_class": "billing.standard_change",
+                    "approval_policy_digest": "sha256:6061e8367ec2d0db10cea9c37e16d3597bfa105d14512e802ae2c479403b1105",
+                    "approval_path": "automatic_eligible",
+                    "verified_at": "2026-09-14T07:52:07.791Z",
+                    "valid_until": "2026-09-14T07:57:07.791Z",
+                    "uses": 1,
+                    "proof_digest": "sha256:b78ca4a46b1efca42a02b40597947420d59fe3a5d0f3e2ceb7f78ef01233581f"
+                  },
+                  "subject_bindings": [
+                    {
+                      "binding": "preference",
+                      "resource": "billing.preferences",
+                      "subject_ref_digest": "sha256:f73bdc4e4073b4f7914fb1230b55304f4e696d6fbfba461e5510f1e92ca02ba5"
+                    }
+                  ],
+                  "dependencies": [
+                    {
+                      "binding": "preference",
+                      "resource": "billing.preferences",
+                      "primary_key": {
+                        "column": "preference_id",
+                        "value": "baseline"
+                      },
+                      "version": {
+                        "column": "version",
+                        "value": 4
+                      },
+                      "row_digest": "sha256:149e36a05abd9a62d280766c483ef4e74ec6398efc18b15638cb9328e1523c0f"
+                    }
+                  ],
+                  "effect": {
+                    "operation": "single_row_update",
+                    "source": "local_postgres",
+                    "resource": "billing.preferences",
+                    "schema": "billing",
+                    "table": "preferences",
+                    "primary_key": {
+                      "column": "preference_id",
+                      "value": "baseline"
+                    },
+                    "tenant_guard": {
+                      "column": "account_id",
+                      "value": "acct_1"
+                    },
+                    "principal_scope": {
+                      "column": "principal_id",
+                      "value": "customer_1"
+                    },
+                    "expected_version": {
+                      "column": "version",
+                      "value": 4
+                    },
+                    "version_advance": {
+                      "column": "version",
+                      "strategy": "integer_increment"
+                    },
+                    "allowed_columns": [
+                      "status"
+                    ],
+                    "set": {
+                      "status": "paused"
+                    },
+                    "effect_digest": "sha256:546b601eb012b97f4b2097ecc42e1b2d20b740154638eb0258be6407f2d2c0dc"
+                  }
+                },
+                "source_database_mutated": false,
+                "integrity": {
+                  "proposal_hash": "sha256:c9e0b4eb57e1cbc606d47dac0adf62b8fb3ad14b83a177b36688118a38e93b85"
+                },
+                "created_at": "2026-09-14T07:52:07.791Z"
+              },
+              "created_at": "2026-09-14T07:52:07.791Z",
+              "updated_at": "2026-09-14T07:52:07.945Z"
+            }
+          ],
+          "approvals": [
+            {
+              "approval_id": 1,
+              "proposal_id": "wrp_rule_d9505bca7a0f58dd7339df5d638a7f3c",
+              "proposal_version": 1,
+              "proposal_hash": "sha256:c9e0b4eb57e1cbc606d47dac0adf62b8fb3ad14b83a177b36688118a38e93b85",
+              "approver": "policy:billing.standard_change",
+              "status": "approved",
+              "reason": "Exact semantic Action Rule and reviewed automatic-approval policy matched current authoritative facts.",
+              "action_boundary_name": "billing_actions",
+              "action_boundary_digest": "sha256:6a6a9f39b557436413afed1b1a93c2391eb0bafe72db4f08b1e67643c522332c",
+              "created_at": "2026-09-14T07:52:07.945Z"
+            }
+          ],
+          "queue": []
+        },
+        "oldReplay": {
+          "error": {
+            "code": "SUBJECT_REFERENCE_UNAVAILABLE"
+          }
+        },
+        "fresh": {
+          "ok": true,
+          "outcome": "billing.pause_notifications",
+          "status": "pending_human_review",
+          "request_disposition": "created",
+          "status_check": {
+            "tool": "app.request_change",
+            "guidance": "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+            "completion_evidence": "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not."
+          },
+          "result_summary": {
+            "description": "Pause notifications",
+            "change": "Update one reviewed billing.preferences record using only the exact Runner-derived effect.",
+            "fields": [
+              "status"
+            ],
+            "values_disclosed": false
+          },
+          "authorization": {
+            "eligibility": "verified",
+            "approval": "pending_human_review",
+            "execution": "human_review"
+          },
+          "proposal": {
+            "status": "pending_review",
+            "approval": "pending human review because an automatic-approval limit did not pass"
+          },
+          "execution": "human_review",
+          "eligibility": "verified from current authoritative facts",
+          "exact_effect": "Runner-derived and sealed in the operator proposal record",
+          "source_database_changed": false,
+          "model_authority": {
+            "supplied_outcome_and_opaque_subjects_only": true,
+            "supplied_only_reviewed_business_inputs": true,
+            "supplied_patch": false,
+            "approval": false,
+            "apply": false
+          }
+        }
+      }
+    }
+  ]
+}

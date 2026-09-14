@@ -1,0 +1,7 @@
+
+> synapsor-runner-monorepo@1.8.0 typecheck /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+> tsc -b --pretty false
+
+apps/runner/src/authoring-review-continuation.test.ts(6,19): error TS1543: Importing a JSON file into an ECMAScript module requires a 'type: "json"' import attribute when 'module' is set to 'NodeNext'.
+apps/runner/src/authoring-review-continuation.test.ts(6,19): error TS6307: File '/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/fixtures/attached-policy-reconciliation.json' is not listed within the file list of project '/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/tsconfig.json'. Projects must list all files or use an 'include' pattern.
+ ELIFECYCLE  Command failed with exit code 1.

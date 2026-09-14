@@ -1,0 +1,60 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:996311) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/authoring-policy-context.test.ts (25 tests | 1 failed | 24 skipped) 26ms
+   × post-change verification is a later observation, not an Action expression > keeps unassigned client duties separate from readback on the same source range without topic labels 26ms
+     → expected [ { …(5) } ] to have a length of 2 but got 1
+   ↓ post-change verification is a later observation, not an Action expression > retains required independent readback without blocking the earlier business review or claiming it happened
+   ↓ post-change verification is a later observation, not an Action expression > does not route an unsupported automatic runtime postcondition as a mechanical Action correction
+   ↓ current authoring context is separate from runtime deployment > exposes only the selected authoring provider/model, not credentials or runtime connection claims
+   ↓ current authoring context is separate from runtime deployment > does not infer a provider from saved policy text or an absent current session
+   ↓ current authoring context is separate from runtime deployment > rekeys coverage when the actual selected provider changes without rewriting authority
+   ↓ current authoring context is separate from runtime deployment > supplies exact inspected reader posture without treating it as RLS, writer or authentication proof
+   ↓ current authoring context is separate from runtime deployment > never supplies stale role reader proof even without an RLS-only resource
+   ↓ current authoring context is separate from runtime deployment > never supplies stale read_role reader proof even without an RLS-only resource
+   ↓ current authoring context is separate from runtime deployment > never supplies stale schema reader proof even without an RLS-only resource
+   ↓ current authoring context is separate from runtime deployment > never supplies stale lock reader proof even without an RLS-only resource
+   ↓ current authoring context is separate from runtime deployment > leaves absent inspected reader evidence unavailable
+   ↓ current authoring context is separate from runtime deployment > does not turn current unverified posture into a satisfied reader prerequisite
+   ↓ current authoring context is separate from runtime deployment > does not turn current writes posture into a satisfied reader prerequisite
+   ↓ current authoring context is separate from runtime deployment > does not turn current owner posture into a satisfied reader prerequisite
+   ↓ current authoring context is separate from runtime deployment > does not turn current owner_membership posture into a satisfied reader prerequisite
+   ↓ current authoring context is separate from runtime deployment > does not turn current bypass posture into a satisfied reader prerequisite
+   ↓ current authoring context is separate from runtime deployment > does not turn current superuser posture into a satisfied reader prerequisite
+   ↓ current authoring context is separate from runtime deployment > does not turn current unknown posture into a satisfied reader prerequisite
+   ↓ current authoring context is separate from runtime deployment > does not turn current missing_relation posture into a satisfied reader prerequisite
+   ↓ current authoring context is separate from runtime deployment > keeps database-clock origin distinct from the supported trusted evaluation timestamp
+   ↓ current authoring context is separate from runtime deployment > provides the actual coverage callback with current authoring, reader and clock evidence plus explicit classification guidance
+   ↓ current authoring context is separate from runtime deployment > bounds a supplied-provider misclassification without waiving the independent clock requirement (corrected=false)
+   ↓ current authoring context is separate from runtime deployment > bounds a supplied-provider misclassification without waiving the independent clock requirement (corrected=true)
+   ↓ current authoring context is separate from runtime deployment > transmits retained field meanings outside bounded narration history without declaring them permission
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/authoring-policy-context.test.ts > post-change verification is a later observation, not an Action expression > keeps unassigned client duties separate from readback on the same source range without topic labels
+AssertionError: expected [ { …(5) } ] to have a length of 2 but got 1
+
+- Expected
++ Received
+
+- 2
++ 1
+
+ ❯ apps/runner/src/authoring-policy-context.test.ts:27:25
+     25|     const ready = policyReviewReadiness(source, report);
+     26|     expect(ready.ready).toBe(false);
+     27|     expect(ready.items).toHaveLength(2);
+       |                         ^
+     28|     expect(ready.items?.filter(item => item.blocksReview).flatMap(item…
+     29|     expect(ready.summary.join(" ")).toContain("Independent source read…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 24 skipped (25)
+   Start at  00:37:07
+   Duration  2.48s (transform 1.18s, setup 0ms, collect 2.25s, tests 26ms, environment 0ms, prepare 45ms)
+

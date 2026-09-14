@@ -1,0 +1,48 @@
+{
+  "assignment": "Reconcile attached-policy review and saved pending work; preserve exact selector absence, classify external readback honestly, reconcile only proven generated obsolete repairs",
+  "started_at": "2026-09-14T06:00:36.685441+00:00",
+  "baseline": "9ca8a480b5a6aa8b8f49a44ce2a32e902c17e591",
+  "branch": "codex/tui-safe-action-control-plane",
+  "previous_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913",
+  "previous_evidence": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-job-recovery-20260913",
+  "owned_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913",
+  "evidence_root": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913",
+  "previous_candidate_tree": "9e88145ed118e5e1f87f5dc0c55fe19197299dd9913633917c2b07c085cb3367",
+  "brief": "/home/sandesh-tiwari/.codex/attachments/be68398a-b5de-4295-aa2b-bf091e3a8878/pasted-text.txt",
+  "brief_sha256": "1ec0c999b627776132e33b1d9b95def631f804dbdce709c6982d4cc178cc0d53",
+  "budgets": {
+    "implementation_minutes": 180,
+    "local_backend_minutes": 60,
+    "stable_suite_and_package_minutes": 120,
+    "full_stable_suite_launches": 2,
+    "assisted_authoring_calls": 25,
+    "assisted_minutes": 45,
+    "assisted_restart_reserved_calls": 6,
+    "original_authoring_calls": 15,
+    "original_minutes": 45,
+    "edit_authoring_calls": 12,
+    "edit_minutes": 30,
+    "software_authoring_calls_if_needed": 8,
+    "software_minutes": 30,
+    "explained_transient_retries_per_path": 1,
+    "operator_setup_minutes_per_case": 45
+  },
+  "scope_correction": "Assisted tenant2/boundary6 capability selectors stay ABSENT exactly. Original retains league.ratify_result selectors. Absence is accepted meaning; never fill it in.",
+  "excluded_worker_issue": "TRUSTED_BINDING_MISSING worker-retry classification reported by independent reviewer; separate decision, no reproduction/repair/worker in this assignment",
+  "stage_b": "NOT_PASSED",
+  "next_step": "Hash preserved evidence and candidate, reconstruct actual review/accepted-decision inputs, add deterministic failing sequence tests before product changes",
+  "trial_harness_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/trial-harness",
+  "original_cases_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases",
+  "budget_amendments": [
+    {
+      "at": "2026-09-14T07:35:53.327116+00:00",
+      "original_full_launches": 1,
+      "new_total_full_launches": 2,
+      "reason": "After stable-full passed unchanged, client-duty-before reproduced a missed supported-assignment path that prevents the named pending repair from reconciling. One small within-scope routing correction needs its own unchanged-source full run. First 6236-pass result and failing-before case are retained.",
+      "stable_and_package_minutes_unchanged": 120,
+      "stable_deadline": "2026-09-14T09:00:09.435764+00:00",
+      "assisted_calls_unchanged": 25,
+      "restart_reserved_calls_unchanged": 6
+    }
+  ]
+}

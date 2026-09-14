@@ -1,0 +1,27 @@
+{
+  "name": "client-duty-group-before",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-policy-context.test.ts",
+    "--testNamePattern",
+    "same source range",
+    "--maxWorkers=1",
+    "--minWorkers=1"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T07:37:06.989793+00:00",
+  "source_head": "9ca8a480b5a6aa8b8f49a44ce2a32e902c17e591",
+  "source_diff_sha256": "20479ade7b193561bbce5bf1d996bcd01d6f9134f3c1098e11d14b7ac05c7500",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/test-environments/client-duty-group-before",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/client-duty-group-before",
+  "source_manifest_sha256": "a158d30a72f0a61f7e4381961568287d446ba97cd15284c303a699bd1667a11e",
+  "pid": 996261,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T07:37:10.266689+00:00"
+}

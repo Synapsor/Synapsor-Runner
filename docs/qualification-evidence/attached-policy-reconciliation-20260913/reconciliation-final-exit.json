@@ -1,0 +1,30 @@
+{
+  "name": "reconciliation-final",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/boundary-cli.test.ts",
+    "apps/runner/src/authoring-review-continuation.test.ts",
+    "--testNamePattern",
+    "policy_target_reconcile_|saved policy review continuation",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T06:51:14.467017+00:00",
+  "source_head": "9ca8a480b5a6aa8b8f49a44ce2a32e902c17e591",
+  "source_diff_sha256": "a87be974fc93ff8ee3d61d8e2fa1fdffd65a595e9b0769f3c149c8ec0e8a3bfc",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/test-environments/reconciliation-final",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/reconciliation-final",
+  "source_manifest_sha256": "6afa708ef1efb32123c057274b118578fa41c28f3a77a4d7d86df1b20ee41d42",
+  "pid": 883342,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T06:51:31.348801+00:00"
+}

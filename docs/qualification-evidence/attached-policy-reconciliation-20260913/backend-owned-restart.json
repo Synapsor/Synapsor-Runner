@@ -1,0 +1,8 @@
+{
+  "at": "2026-09-14T07:38:28.668148+00:00",
+  "name": "synapsor-policy-reconcile-tests-7a0ef525",
+  "id": "ae59780d3eca932bed48a7edb7422d04fee6576e20afadb6afaeec21dcc641a5",
+  "restart_exit": 0,
+  "readiness_exit": 0,
+  "reason": "Current-source gates after the reproduced client-duty routing correction; previous stopped database dump/logs remain retained. Same owned test database, no original fixture or preserved failure store touched."
+}

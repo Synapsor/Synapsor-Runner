@@ -1,0 +1,27 @@
+{
+  "name": "competing-review-before",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-policy-source.test.ts",
+    "--testNamePattern",
+    "refuses an older review save",
+    "--maxWorkers=1",
+    "--minWorkers=1"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T06:19:06.938416+00:00",
+  "source_head": "9ca8a480b5a6aa8b8f49a44ce2a32e902c17e591",
+  "source_diff_sha256": "2b5279d34b7a82e55adf4be83ad2967b6855cc7052bafce72b1a098065daa63e",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/test-environments/competing-review-before",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/competing-review-before",
+  "source_manifest_sha256": "f6c4e61f9ec6e1475ea99969d3920b310298dd779cf1384c258977b0a4e27bfc",
+  "pid": 814978,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T06:19:15.088987+00:00"
+}

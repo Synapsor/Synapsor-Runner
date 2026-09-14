@@ -1,0 +1,37 @@
+{
+  "status": "stable_source_exact_diff",
+  "baseline": "9ca8a480b5a6aa8b8f49a44ce2a32e902c17e591",
+  "exact_before_after_diff": "prompt-context-change.diff",
+  "diff_sha256": "93c115f72219bcf94c939fb66f9e35ee9ffacdbb51213775eef090139777f1bb",
+  "traced_basis": [
+    {
+      "change": "selector guidance and scoped supporting-context reuse",
+      "evidence": "initial-saved-review-trace.json; assisted actual input0023 carries all five accepted operator messages and null selectors; output0013 proposed filters, input0014 guard refusal, output0023 override and0024 conflict despite preserved absence"
+    },
+    {
+      "change": "typed separate unverified independent readback contract and instructions",
+      "evidence": "assisted saved unsupported Runner readback classification and generated pending instruction; original current coverage already deployment while old generated instruction remains"
+    },
+    {
+      "change": "exact saved operator execution policy readback, false live/receipt/readback guarantees retained",
+      "evidence": "original after-restart-and-receipt state has completed approval/receipt yet draft-review-only evidence omitted applicable saved execution policy; no harness rows imported"
+    }
+  ],
+  "product_prompt_case_terms_added": false,
+  "source_rows_credentials_or_runtime_identity_values_added": false,
+  "new_model_provider_integration": false,
+  "case_term_scan": {
+    "terms": [
+      "tournament",
+      "ratification",
+      "referee",
+      "league",
+      "software",
+      "release_slots",
+      "build_candidates",
+      "carrier_id",
+      "account_id"
+    ],
+    "added_product_prompt_matches": []
+  }
+}

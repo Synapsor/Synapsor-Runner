@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-14T07:43:17.583962+00:00",
+  "container": "synapsor-policy-reconcile-tests-7a0ef525",
+  "id": "ae59780d3eca932bed48a7edb7422d04fee6576e20afadb6afaeec21dcc641a5",
+  "saved_before_stop": {
+    "container-before.json": "a63b8cb47b860c01dcbef0fadfcb45ec76432e7f43c946a4ad85ded2ff7530a7",
+    "postgres.log": "33ce44b243ce0305f43a3bfeb9ed9874a31e7844b44e2338802751af14ce67e9",
+    "source.dump": "20baa6956ce083a36a72743efc0df1b98c6ca1dd2b2745eed15311592fd7def8"
+  },
+  "stop_exit": 0,
+  "running_after": false,
+  "saved": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/closure/backend-tests-final",
+  "removed": false,
+  "original_containers_touched": false
+}

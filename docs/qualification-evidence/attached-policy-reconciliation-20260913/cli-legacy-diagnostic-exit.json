@@ -1,0 +1,29 @@
+{
+  "name": "cli-legacy-diagnostic",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/boundary-cli.test.ts",
+    "--testNamePattern",
+    "policy_target_reconcile_legacy",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T06:29:37.061465+00:00",
+  "source_head": "9ca8a480b5a6aa8b8f49a44ce2a32e902c17e591",
+  "source_diff_sha256": "481edab854b0d63834b27c0bcb63b52b1d2ea817a8a7c05881f9eb0fa602c46a",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/test-environments/cli-legacy-diagnostic",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/cli-legacy-diagnostic",
+  "source_manifest_sha256": "ce6068b2d3469e99a80fef99c2f1fe4f068a77d466b93580f9b9eb722b02aa38",
+  "pid": 837231,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T06:29:59.013208+00:00"
+}

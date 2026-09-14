@@ -1,0 +1,29 @@
+{
+  "name": "final-postgres02",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/semantic-atomic-postgres.test.ts",
+    "apps/runner/src/semantic-admission-publication.test.ts",
+    "packages/proposal-store/src/automatic-approval-admission.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": true,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T07:00:10.633780+00:00",
+  "source_head": "9ca8a480b5a6aa8b8f49a44ce2a32e902c17e591",
+  "source_diff_sha256": "0bdab2e75ca75dc269361e1b0815ff40610014ac6a7ab37d9a2b670c7d84b882",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/test-environments/final-postgres02",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/final-postgres02",
+  "source_manifest_sha256": "150351220722df09497230cee66c53c65dede8a28ef224b6f575423ea666ecf6",
+  "pid": 905630,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T07:02:18.681070+00:00"
+}

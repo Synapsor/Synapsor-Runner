@@ -1,0 +1,69 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:883463) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:883456) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-review-continuation.test.ts (9 tests) 199ms
+READ REVIEW COMPLETE - NOT ACTIVE
+Read Boundary: reviewed_staging
+Next: continue this same job into Action Boundary decisions.
+EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF
+Source database changed: no
+Access editor closed. Reviewed authority is unchanged.
+Access editor closed. Reviewed authority is unchanged.
+Access editor closed. Reviewed authority is unchanged.
+READ REVIEW COMPLETE - NOT ACTIVE
+Read Boundary: reviewed_staging
+Next: continue this same job into Action Boundary decisions.
+EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF
+Source database changed: no
+Access editor closed. Reviewed authority is unchanged.
+Access editor closed. Reviewed authority is unchanged.
+Access editor closed. Reviewed authority is unchanged.
+READ REVIEW COMPLETE - NOT ACTIVE
+Read Boundary: reviewed_staging
+Next: continue this same job into Action Boundary decisions.
+EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF
+Source database changed: no
+Access editor closed. Reviewed authority is unchanged.
+READ REVIEW COMPLETE - NOT ACTIVE
+Read Boundary: reviewed_staging
+Next: continue this same job into Action Boundary decisions.
+EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF
+Source database changed: no
+Access editor closed. Reviewed authority is unchanged.
+READ REVIEW COMPLETE - NOT ACTIVE
+Read Boundary: reviewed_staging
+Next: continue this same job into Action Boundary decisions.
+EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF
+Source database changed: no
+Access editor closed. Reviewed authority is unchanged.
+READ REVIEW COMPLETE - NOT ACTIVE
+Read Boundary: reviewed_staging
+Next: continue this same job into Action Boundary decisions.
+EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF
+Source database changed: no
+Access editor closed. Reviewed authority is unchanged.
+Access editor closed. Reviewed authority is unchanged.
+READ REVIEW COMPLETE - NOT ACTIVE
+Read Boundary: reviewed_staging
+Next: continue this same job into Action Boundary decisions.
+EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF
+Source database changed: no
+Access editor closed. Reviewed authority is unchanged.
+ ✓ apps/runner/src/boundary-cli.test.ts (280 tests | 273 skipped) 6125ms
+   ✓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_legacy)  1260ms
+   ✓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_generated)  943ms
+   ✓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_declined)  867ms
+   ✓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_concurrent)  664ms
+   ✓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_save_failure)  778ms
+   ✓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_owner)  852ms
+   ✓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_source_concurrent)  759ms
+
+ Test Files  2 passed (2)
+      Tests  16 passed | 273 skipped (289)
+   Start at  23:51:15
+   Duration  15.83s (transform 6.90s, setup 0ms, collect 13.66s, tests 6.32s, environment 1ms, prepare 217ms)
+

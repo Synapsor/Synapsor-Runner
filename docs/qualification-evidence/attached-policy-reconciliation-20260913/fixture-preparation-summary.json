@@ -1,0 +1,97 @@
+{
+  "at": "2026-09-14T08:00:22.063578+00:00",
+  "classification": "preparation and read-only baseline, not public application execution",
+  "public_authoring_calls": 0,
+  "fixtures": [
+    {
+      "run": "recovery-tournament-assisted",
+      "status": "PREPARED_AWAITING_FINAL_CANDIDATE",
+      "artifact_tree": null,
+      "baseline_snapshot_sha256": "cc22ccad303552077f97b7a8750a5b6f4eaf46c2150590da05741801153139b1",
+      "history": {
+        "proposals": {
+          "rows": 0,
+          "digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "approvals": {
+          "rows": 0,
+          "digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "worker_queue": {
+          "rows": 0,
+          "digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "writeback_receipts": {
+          "rows": 0,
+          "digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        },
+        "writeback_jobs": {
+          "rows": 0,
+          "digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945"
+        }
+      },
+      "business_review_ready": false,
+      "source_fixture_manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/runs/recovery-tournament-assisted/fixture-state/restored-baseline-source.json"
+    },
+    {
+      "run": "recovery-tournament-original",
+      "status": "PREPARED_AWAITING_FINAL_CANDIDATE",
+      "artifact_tree": null,
+      "baseline_snapshot_sha256": "ca54b20958ba52a539adc444d3281ab90c8a325a84a07d5880091bdaa041c2f1",
+      "history": {
+        "proposals": {
+          "rows": 1,
+          "digest": "sha256:493fdaf19a5f0d3294870e1230eb1c902197c46c5192acca0fcd5da38741b5ac"
+        },
+        "approvals": {
+          "rows": 1,
+          "digest": "sha256:a41e1a9407de27ca6059f1d370e251203e7377aa1c86dcca44530cd010a9a647"
+        },
+        "worker_queue": {
+          "rows": 1,
+          "digest": "sha256:e52430e4fdc2c946247b6f8565067b0cec199c1293be95b6cc719872fa74a637"
+        },
+        "writeback_receipts": {
+          "rows": 1,
+          "digest": "sha256:2f6164ad2c4b4d0050f0ff7db5bde8c32d3eb70e3ac524da57c3436ec61ef65f"
+        },
+        "writeback_jobs": {
+          "rows": 1,
+          "digest": "sha256:9f56a94be0d688286da39152cac0c0a06d2e1eaa72a276518fff4c38161c428b"
+        }
+      },
+      "business_review_ready": true,
+      "source_fixture_manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/runs/recovery-tournament-original/fixture-state/restored-baseline-source.json"
+    },
+    {
+      "run": "recovery-software",
+      "status": "PREPARED_AWAITING_FINAL_CANDIDATE",
+      "artifact_tree": null,
+      "baseline_snapshot_sha256": "940e790eee9f7941c8c2cc0f8c8d51199539816b5eb46fe5e1f185daef3407a2",
+      "history": {
+        "proposals": {
+          "rows": 5,
+          "digest": "sha256:33fd092e4af0c6e5f7b5e3c48c35b4b47ddcae15d2270f206667662804f42eed"
+        },
+        "approvals": {
+          "rows": 3,
+          "digest": "sha256:26ff9c612e91f49c2f48906aeea5410cb94bf11edbbf641907e72cc7aa8ced6e"
+        },
+        "worker_queue": {
+          "rows": 3,
+          "digest": "sha256:2e5019810d88ab77f9b555182567df457c98fc23cf76f5c62c899ab882ecd989"
+        },
+        "writeback_receipts": {
+          "rows": 1,
+          "digest": "sha256:78b0f819db828bb7093b1148d530681de01cb56be83b387743177609b00d261d"
+        },
+        "writeback_jobs": {
+          "rows": 1,
+          "digest": "sha256:5b94fcb0c21dee9ae75a5ba6a90525d7f945b46ea58159faa16895041e7d2cf7"
+        }
+      },
+      "business_review_ready": true,
+      "source_fixture_manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/runs/recovery-software/fixture-state/restored-baseline-source.json"
+    }
+  ]
+}

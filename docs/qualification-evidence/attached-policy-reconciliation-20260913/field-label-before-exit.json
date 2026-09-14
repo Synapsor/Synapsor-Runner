@@ -1,0 +1,27 @@
+{
+  "name": "field-label-before",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/boundary-map-presentation.test.ts",
+    "--testNamePattern",
+    "labels absent Read operations",
+    "--maxWorkers=1",
+    "--minWorkers=1"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T06:34:03.982927+00:00",
+  "source_head": "9ca8a480b5a6aa8b8f49a44ce2a32e902c17e591",
+  "source_diff_sha256": "a3735cdd1be1c9cfdd8ec8ba0fe0d222756660fcddab6ac9c90b00fe2db04541",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/test-environments/field-label-before",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/field-label-before",
+  "source_manifest_sha256": "fb3484eb36ce4265ff0c57e0bbc723f95df00ef1d670dfc248895687d3131469",
+  "pid": 846806,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T06:34:07.864618+00:00"
+}

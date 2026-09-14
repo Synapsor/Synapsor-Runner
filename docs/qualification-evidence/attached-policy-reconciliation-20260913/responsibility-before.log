@@ -1,0 +1,78 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:787770) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/authoring-policy-context.test.ts (24 tests | 2 failed | 22 skipped) 67ms
+   × post-change verification is a later observation, not an Action expression > retains required independent readback without blocking the earlier business review or claiming it happened 50ms
+     → Draft pointer(s) not present: /runner_evidence/runtime_contract/application_obligations/independent_source_readback. Use the supplied exact coverage references; do not invent a missing setting or edit a rule to repair a link. Private verification-only fields are under /runner_evidence/actions/<outcome>/scoped_bindings/<binding>/fields/<field>, not nonexistent read_access resources. Select an existing exact path; no missing Read path is redirected.
+   × post-change verification is a later observation, not an Action expression > does not route an unsupported automatic runtime postcondition as a mechanical Action correction 14ms
+     → expected { ready: false, privacy: false, …(2) } to match object { ready: false, items: [ { …(2) } ] }
+(5 matching properties omitted from actual)
+   ↓ current authoring context is separate from runtime deployment > exposes only the selected authoring provider/model, not credentials or runtime connection claims
+   ↓ current authoring context is separate from runtime deployment > does not infer a provider from saved policy text or an absent current session
+   ↓ current authoring context is separate from runtime deployment > rekeys coverage when the actual selected provider changes without rewriting authority
+   ↓ current authoring context is separate from runtime deployment > supplies exact inspected reader posture without treating it as RLS, writer or authentication proof
+   ↓ current authoring context is separate from runtime deployment > never supplies stale role reader proof even without an RLS-only resource
+   ↓ current authoring context is separate from runtime deployment > never supplies stale read_role reader proof even without an RLS-only resource
+   ↓ current authoring context is separate from runtime deployment > never supplies stale schema reader proof even without an RLS-only resource
+   ↓ current authoring context is separate from runtime deployment > never supplies stale lock reader proof even without an RLS-only resource
+   ↓ current authoring context is separate from runtime deployment > leaves absent inspected reader evidence unavailable
+   ↓ current authoring context is separate from runtime deployment > does not turn current unverified posture into a satisfied reader prerequisite
+   ↓ current authoring context is separate from runtime deployment > does not turn current writes posture into a satisfied reader prerequisite
+   ↓ current authoring context is separate from runtime deployment > does not turn current owner posture into a satisfied reader prerequisite
+   ↓ current authoring context is separate from runtime deployment > does not turn current owner_membership posture into a satisfied reader prerequisite
+   ↓ current authoring context is separate from runtime deployment > does not turn current bypass posture into a satisfied reader prerequisite
+   ↓ current authoring context is separate from runtime deployment > does not turn current superuser posture into a satisfied reader prerequisite
+   ↓ current authoring context is separate from runtime deployment > does not turn current unknown posture into a satisfied reader prerequisite
+   ↓ current authoring context is separate from runtime deployment > does not turn current missing_relation posture into a satisfied reader prerequisite
+   ↓ current authoring context is separate from runtime deployment > keeps database-clock origin distinct from the supported trusted evaluation timestamp
+   ↓ current authoring context is separate from runtime deployment > provides the actual coverage callback with current authoring, reader and clock evidence plus explicit classification guidance
+   ↓ current authoring context is separate from runtime deployment > bounds a supplied-provider misclassification without waiving the independent clock requirement (corrected=false)
+   ↓ current authoring context is separate from runtime deployment > bounds a supplied-provider misclassification without waiving the independent clock requirement (corrected=true)
+   ↓ current authoring context is separate from runtime deployment > transmits retained field meanings outside bounded narration history without declaring them permission
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/authoring-policy-context.test.ts > post-change verification is a later observation, not an Action expression > retains required independent readback without blocking the earlier business review or claiming it happened
+Error: Draft pointer(s) not present: /runner_evidence/runtime_contract/application_obligations/independent_source_readback. Use the supplied exact coverage references; do not invent a missing setting or edit a rule to repair a link. Private verification-only fields are under /runner_evidence/actions/<outcome>/scoped_bindings/<binding>/fields/<field>, not nonexistent read_access resources. Select an existing exact path; no missing Read path is redirected.
+ ❯ parsePolicyCoverage apps/runner/src/authoring-policy-coverage.ts:248:39
+
+ ❯ apps/runner/src/authoring-policy-context.test.ts:17:20
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  apps/runner/src/authoring-policy-context.test.ts > post-change verification is a later observation, not an Action expression > does not route an unsupported automatic runtime postcondition as a mechanical Action correction
+AssertionError: expected { ready: false, privacy: false, …(2) } to match object { ready: false, items: [ { …(2) } ] }
+(5 matching properties omitted from actual)
+
+- Expected
++ Received
+
+  {
+    "items": [
+      {
+        "blocksReview": true,
+-       "kind": "unsupported_runtime",
++       "kind": "mechanical_correction",
+      },
+    ],
+    "ready": false,
+  }
+
+ ❯ apps/runner/src/authoring-policy-context.test.ts:38:51
+     36|       draft_paths: [`${root}/receipts`], next_step: "Keep the exact un…
+     37|     }] }, source, draft);
+     38|     expect(policyReviewReadiness(source, report)).toMatchObject({ read…
+       |                                                   ^
+     39|       items: [{ kind: "unsupported_runtime", blocksReview: true }] });
+     40|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 22 skipped (24)
+   Start at  23:05:37
+   Duration  5.30s (transform 2.60s, setup 0ms, collect 4.87s, tests 67ms, environment 0ms, prepare 68ms)
+

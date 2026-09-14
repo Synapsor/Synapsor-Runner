@@ -1,0 +1,29 @@
+{
+  "name": "responsibility-before",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-policy-context.test.ts",
+    "--testNamePattern",
+    "post-change verification is a later observation",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T06:05:36.710661+00:00",
+  "source_head": "9ca8a480b5a6aa8b8f49a44ce2a32e902c17e591",
+  "source_diff_sha256": "b584fad5a5c7e925835df5af43f055af27814abfae5b4cf8f743ff6e68592b7c",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/test-environments/responsibility-before",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/responsibility-before",
+  "source_manifest_sha256": "9027e1b9591c118049fd33d646031cb837ccac3534fe77e827c2e1c1ca21967d",
+  "pid": 787657,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T06:05:43.475803+00:00"
+}

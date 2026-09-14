@@ -1,0 +1,25 @@
+node:internal/modules/run_main:123
+    triggerUncaughtException(
+    ^
+
+Error: Transform failed with 13 errors:
+/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/verify-saved-review.ts:14:69: ERROR: Top-level await is currently not supported with the "cjs" output format
+/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/verify-saved-review.ts:19:13: ERROR: Top-level await is currently not supported with the "cjs" output format
+/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/verify-saved-review.ts:19:46: ERROR: Top-level await is currently not supported with the "cjs" output format
+/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/verify-saved-review.ts:20:23: ERROR: Top-level await is currently not supported with the "cjs" output format
+/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/verify-saved-review.ts:21:24: ERROR: Top-level await is currently not supported with the "cjs" output format
+...
+    at failureErrorWithLog (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/esbuild@0.28.1/node_modules/esbuild/lib/main.js:1748:15)
+    at /home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/esbuild@0.28.1/node_modules/esbuild/lib/main.js:1017:50
+    at responseCallbacks.<computed> (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/esbuild@0.28.1/node_modules/esbuild/lib/main.js:884:9)
+    at handleIncomingPacket (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/esbuild@0.28.1/node_modules/esbuild/lib/main.js:939:12)
+    at Socket.readFromStdout (/home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.pnpm/esbuild@0.28.1/node_modules/esbuild/lib/main.js:862:7)
+    at Socket.emit (node:events:519:28)
+    at addChunk (node:internal/streams/readable:561:12)
+    at readableAddChunkPushByteMode (node:internal/streams/readable:512:3)
+    at Readable.push (node:internal/streams/readable:392:5)
+    at Pipe.onStreamRead (node:internal/stream_base_commons:189:23) {
+  name: 'TransformError'
+}
+
+Node.js v22.22.2

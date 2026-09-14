@@ -1,0 +1,3 @@
+(node:1054481) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"run":"recovery-software","label":"baseline","status":"baseline_recorded","ready":true,"stage":"authority_review","pending":false,"artifact_tree":null}

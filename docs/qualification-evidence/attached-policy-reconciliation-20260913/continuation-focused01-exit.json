@@ -1,0 +1,32 @@
+{
+  "name": "continuation-focused01",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-review-continuation.test.ts",
+    "apps/runner/src/authoring-policy-context.test.ts",
+    "apps/runner/src/authoring-policy-coverage.test.ts",
+    "apps/runner/src/authoring-policy-source.test.ts",
+    "apps/runner/src/authoring-review-readiness.test.ts",
+    "apps/runner/src/boundary-authoring-resume.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T06:26:13.552616+00:00",
+  "source_head": "9ca8a480b5a6aa8b8f49a44ce2a32e902c17e591",
+  "source_diff_sha256": "9e49d29e74e1433b9ac0fdcf8433cd8ef6a14df6443ddaad282125b68e4dc0e0",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/test-environments/continuation-focused01",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/continuation-focused01",
+  "source_manifest_sha256": "c5af8fa3a513c5f257f51def51bdb17796be79196a0051d041c6ea35225069a3",
+  "pid": 829943,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T06:26:29.221339+00:00"
+}

@@ -1,0 +1,29 @@
+{
+  "name": "cli-reconciliation01",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/boundary-cli.test.ts",
+    "--testNamePattern",
+    "policy_target_reconcile_",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T06:27:59.527738+00:00",
+  "source_head": "9ca8a480b5a6aa8b8f49a44ce2a32e902c17e591",
+  "source_diff_sha256": "9ab96f30aa7a3c39e2ec4d2b9058a33e099bf5409f3c9b864f409b87551c07d7",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/test-environments/cli-reconciliation01",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/cli-reconciliation01",
+  "source_manifest_sha256": "974f7f1735888a4e4493e1a976a58aa68b8d96d2b75c167c6085a7a846fdd9f9",
+  "pid": 833706,
+  "source_unchanged": false,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T06:28:52.637108+00:00"
+}

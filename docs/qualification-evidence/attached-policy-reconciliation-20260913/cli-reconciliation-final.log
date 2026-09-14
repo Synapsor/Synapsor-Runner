@@ -1,0 +1,66 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:876241) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+READ REVIEW COMPLETE - NOT ACTIVE
+Read Boundary: reviewed_staging
+Next: continue this same job into Action Boundary decisions.
+EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF
+Source database changed: no
+Access editor closed. Reviewed authority is unchanged.
+Access editor closed. Reviewed authority is unchanged.
+Access editor closed. Reviewed authority is unchanged.
+READ REVIEW COMPLETE - NOT ACTIVE
+Read Boundary: reviewed_staging
+Next: continue this same job into Action Boundary decisions.
+EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF
+Source database changed: no
+Access editor closed. Reviewed authority is unchanged.
+Access editor closed. Reviewed authority is unchanged.
+Access editor closed. Reviewed authority is unchanged.
+READ REVIEW COMPLETE - NOT ACTIVE
+Read Boundary: reviewed_staging
+Next: continue this same job into Action Boundary decisions.
+EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF
+Source database changed: no
+Access editor closed. Reviewed authority is unchanged.
+READ REVIEW COMPLETE - NOT ACTIVE
+Read Boundary: reviewed_staging
+Next: continue this same job into Action Boundary decisions.
+EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF
+Source database changed: no
+Access editor closed. Reviewed authority is unchanged.
+READ REVIEW COMPLETE - NOT ACTIVE
+Read Boundary: reviewed_staging
+Next: continue this same job into Action Boundary decisions.
+EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF
+Source database changed: no
+Access editor closed. Reviewed authority is unchanged.
+READ REVIEW COMPLETE - NOT ACTIVE
+Read Boundary: reviewed_staging
+Next: continue this same job into Action Boundary decisions.
+EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF
+Source database changed: no
+Access editor closed. Reviewed authority is unchanged.
+Access editor closed. Reviewed authority is unchanged.
+READ REVIEW COMPLETE - NOT ACTIVE
+Read Boundary: reviewed_staging
+Next: continue this same job into Action Boundary decisions.
+EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF
+Source database changed: no
+Access editor closed. Reviewed authority is unchanged.
+ ✓ apps/runner/src/boundary-cli.test.ts (280 tests | 273 skipped) 4538ms
+   ✓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_legacy)  1059ms
+   ✓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_generated)  760ms
+   ✓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_declined)  537ms
+   ✓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_concurrent)  505ms
+   ✓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_save_failure)  561ms
+   ✓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_owner)  597ms
+   ✓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_reconcile_source_concurrent)  517ms
+
+ Test Files  1 passed (1)
+      Tests  7 passed | 273 skipped (280)
+   Start at  23:48:08
+   Duration  12.21s (transform 4.89s, setup 0ms, collect 7.44s, tests 4.54s, environment 0ms, prepare 42ms)
+

@@ -1,0 +1,111 @@
+{
+  "at": "2026-09-14T07:59:45.266Z",
+  "run": "recovery-software",
+  "label": "baseline",
+  "mode": "baseline",
+  "artifact_tree": null,
+  "classification": "candidate-neutral read-only restored-fixture baseline; no installed public operation executed",
+  "snapshot": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/runs/recovery-software/deterministic/review-baseline-state.json",
+  "snapshot_sha256": "940e790eee9f7941c8c2cc0f8c8d51199539816b5eb46fe5e1f185daef3407a2",
+  "business_review_ready": true,
+  "readiness_summary": [
+    "Attached rules: rules.txt v1; interpretation checked for this revision.",
+    "Client integration still unverified: customer selection, signed-in customer identity, accurate status messages. Check these during client setup before customer use.",
+    "Execution setup pending: dedicated writer review, separate execution permission and worker startup. Continue to these checks after authority review; automatic completion is not yet enabled."
+  ],
+  "resume_stage": "authority_review",
+  "pending_instruction": null,
+  "reconciliations": [],
+  "coverage_digest": "sha256:b0ab2eba08ea6430fd0b1cd7d9a9e194a7b2cf01e51263e2b0db5e801e90bc4c",
+  "pending_responsibilities": [
+    {
+      "start": 3,
+      "end": 3,
+      "disposition": "needs_decision",
+      "interpretation": "Runner verifies the scoped candidate reference but cannot prove that a coordinator intentionally selected it; the client must capture the coordinator's choice before submitting that reference.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/application_obligations/customer_selection"
+      ],
+      "topic": "Coordinator candidate selection",
+      "responsibility": "application",
+      "issue_kind": "missing_configuration",
+      "next_step": "Assign the client to capture the coordinator’s intended candidate selection.",
+      "application_obligations": [
+        "customer_selection"
+      ]
+    },
+    {
+      "start": 3,
+      "end": 3,
+      "disposition": "needs_decision",
+      "interpretation": "The reviewed tenant/principal record scope exists, but connecting an authenticated application session to it is still unverified later deployment wiring.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+      ],
+      "topic": "Authenticated scoped identity",
+      "responsibility": "deployment",
+      "issue_kind": "missing_configuration",
+      "next_step": "After authority review, configure authenticated session identity for the reviewed tenant and principal scope.",
+      "deployment_prerequisite": "authenticated_identity"
+    },
+    {
+      "start": 7,
+      "end": 7,
+      "disposition": "needs_decision",
+      "interpretation": "The disabled direct-SQL effect supports source-database receipts and supervised execution, but the exact source receipt objects and grants, dedicated writer review, execution enablement, worker startup, and independent changed-row readback remain later unverified deployment work. Prepared behavior is not live execution.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+      ],
+      "topic": "Source-atomic receipt and supervised execution",
+      "responsibility": "deployment",
+      "issue_kind": "missing_configuration",
+      "next_step": "After authority review, configure the source-database receipt, dedicated writer, execution consent, worker, and independent readback.",
+      "deployment_prerequisite": "runner_execution_setup"
+    },
+    {
+      "start": 9,
+      "end": 9,
+      "disposition": "needs_decision",
+      "interpretation": "Runner supplies statuses and receipts but cannot prove that the client truthfully presents approval, queued, failed, and completed execution states or the receipt/readback outcome to coordinators.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/application_obligations/status_presentation"
+      ],
+      "topic": "Truthful sealing status presentation",
+      "responsibility": "application",
+      "issue_kind": "missing_configuration",
+      "next_step": "Assign the client to present request status and receipts accurately.",
+      "application_obligations": [
+        "status_presentation"
+      ]
+    }
+  ],
+  "source_rows_in_authoring": false,
+  "source_readback_as_application_evidence": false,
+  "authority_revision": "policy:41f7c0475cb6ae357ec96f10fcc4c64518b8897d469233ca3f6f92deb70ac6f7",
+  "history": {
+    "proposals": {
+      "rows": 5,
+      "digest": "sha256:33fd092e4af0c6e5f7b5e3c48c35b4b47ddcae15d2270f206667662804f42eed"
+    },
+    "approvals": {
+      "rows": 3,
+      "digest": "sha256:26ff9c612e91f49c2f48906aeea5410cb94bf11edbbf641907e72cc7aa8ced6e"
+    },
+    "worker_queue": {
+      "rows": 3,
+      "digest": "sha256:2e5019810d88ab77f9b555182567df457c98fc23cf76f5c62c899ab882ecd989"
+    },
+    "writeback_receipts": {
+      "rows": 1,
+      "digest": "sha256:78b0f819db828bb7093b1148d530681de01cb56be83b387743177609b00d261d"
+    },
+    "writeback_jobs": {
+      "rows": 1,
+      "digest": "sha256:5b94fcb0c21dee9ae75a5ba6a90525d7f945b46ea58159faa16895041e7d2cf7"
+    }
+  },
+  "configured_receipt_modes": [
+    "source_db"
+  ],
+  "status": "baseline_recorded"
+}

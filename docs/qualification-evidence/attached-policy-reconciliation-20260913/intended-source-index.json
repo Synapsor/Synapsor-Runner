@@ -1,0 +1,76 @@
+{
+  "checks": [
+    {
+      "path": "apps/runner/src/authoring-policy-context.test.ts",
+      "sha256": "35d9f29c7bf54f41a3000d1bd3a955528b95f3956b55e011d9f4ccad596e76f8",
+      "bytes": 24242
+    },
+    {
+      "path": "apps/runner/src/authoring-policy-coverage.ts",
+      "sha256": "96920d73e3d4da1116c74d6c6e6b086c6aea39c53b926ab589e86614d5ed5769",
+      "bytes": 81346
+    },
+    {
+      "path": "apps/runner/src/authoring-policy-evidence.ts",
+      "sha256": "1521a4cd79679dc54ef80d9c4769d46dafc40b8e900e17ea2bc1b339506693cf",
+      "bytes": 50926
+    },
+    {
+      "path": "apps/runner/src/authoring-policy-source.test.ts",
+      "sha256": "28479ece844e6ef0fa784d047ebfeddb1be677976c671f78be0dd460120a3c25",
+      "bytes": 38442
+    },
+    {
+      "path": "apps/runner/src/authoring-policy-source.ts",
+      "sha256": "960488976f0bc537a0dfd8f7e6afd0c2308d891f306e17a08ae500032b334966",
+      "bytes": 23926
+    },
+    {
+      "path": "apps/runner/src/authoring-review-readiness.ts",
+      "sha256": "d3b20bbcaf0e7964968636fe7d69c710ea0ed05627e67b904c3bc1e96c02fbd9",
+      "bytes": 9629
+    },
+    {
+      "path": "apps/runner/src/boundary-authoring-resume.test.ts",
+      "sha256": "fb16353f6c55e7b323f1a2b18a0872b56db00af104e36bcdd81872e254f55da3",
+      "bytes": 42887
+    },
+    {
+      "path": "apps/runner/src/boundary-authoring-resume.ts",
+      "sha256": "6c80900fa472a70d559d5331f053ea7fb3ceeec45bf51f691157c08c86b30cd6",
+      "bytes": 43254
+    },
+    {
+      "path": "apps/runner/src/boundary-cli.test.ts",
+      "sha256": "ac50d63e8996b5616000c1600ad6e28441eda9048e38ff24e92a44e2af374f85",
+      "bytes": 816588
+    },
+    {
+      "path": "apps/runner/src/boundary-commands.ts",
+      "sha256": "03199218cdf842d60b361a6c3ba11260af4355a27b052b407e973c221c419418",
+      "bytes": 883322
+    },
+    {
+      "path": "apps/runner/src/boundary-map-presentation.test.ts",
+      "sha256": "a870167982d202ac3bc95f673c342006581301852a3bd7b03874e2f05b840617",
+      "bytes": 3316
+    },
+    {
+      "path": "apps/runner/src/boundary-map-presentation.ts",
+      "sha256": "2f5983f06dc618962d454e7ecc59f41110b106d09ba170a247086f4aa3c97803",
+      "bytes": 6958
+    },
+    {
+      "path": "apps/runner/src/fixtures/attached-policy-reconciliation.json",
+      "sha256": "125ec600f45bcfdccbfd86eb78f82a6697b8fced29f57722b037274ce4f596f5",
+      "bytes": 93960
+    },
+    {
+      "path": "apps/runner/src/authoring-review-continuation.test.ts",
+      "sha256": "22a8468d0e3cb1b79876f691701a31d00ed3c66ed12463f60eebd3b89de23bbe",
+      "bytes": 13006
+    }
+  ],
+  "scope": "Intended product/tests plus exact synthetic metadata-only fixture; no source-row fixtures or runtime client identity values added",
+  "private_key_token_pattern_matches": 0
+}

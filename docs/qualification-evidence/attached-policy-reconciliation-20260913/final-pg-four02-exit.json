@@ -1,0 +1,29 @@
+{
+  "name": "final-pg-four02",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/control-policy-authority-codec.test.ts",
+    "--testNamePattern",
+    "postgres validated operator policy transactions.*keeps Action recovery review available with unavailable Read authority:",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": true,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T07:38:59.595453+00:00",
+  "source_head": "9ca8a480b5a6aa8b8f49a44ce2a32e902c17e591",
+  "source_diff_sha256": "101bcf9937e958c5cd2e328f0336e39bca8b087b8d4dd855284170a01d9798ed",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/test-environments/final-pg-four02",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/final-pg-four02",
+  "source_manifest_sha256": "4909e4fc1bee1ac4a1eb7f4effba80d0c5b1bdbd10c8ccf9bea84346f2d6690d",
+  "pid": 1000902,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T07:39:09.260107+00:00"
+}

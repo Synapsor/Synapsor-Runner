@@ -1,0 +1,8 @@
+{
+  "at": "2026-09-14T08:04:27.392377+00:00",
+  "exit_code": 1,
+  "classification": "harness sequencing/precondition failure, before creating installed directory",
+  "cause": "The evidence commit was withheld by raw-log whitespace in git diff --check; an unconditional subsequent freeze call correctly refused the dirty checkout. Raw logs and exact prompt diff must retain original whitespace.",
+  "correction": "Check authored files excluding exact raw logs/diff, commit complete evidence, then freeze. No installation was created or patched.",
+  "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/frozen/freeze-command-attempt1.log"
+}

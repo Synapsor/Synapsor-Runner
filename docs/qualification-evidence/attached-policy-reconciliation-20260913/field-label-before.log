@@ -1,0 +1,33 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+ ❯ apps/runner/src/boundary-map-presentation.test.ts (3 tests | 1 failed | 2 skipped) 37ms
+   × boundary map field matrix > labels absent Read operations without inventing model access or private Runner use 33ms
+     → expected '+------------------------+-----------…' to contain 'No Read ops'
+   ↓ boundary map field matrix > renders plain-language reviewed operations in a bordered table at 80 characters
+   ↓ boundary map field matrix > uses a bordered property table with full names on narrow terminals
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/boundary-map-presentation.test.ts > boundary map field matrix > labels absent Read operations without inventing model access or private Runner use
+AssertionError: expected '+------------------------+-----------…' to contain 'No Read ops'
+
+Expected: "No Read ops"
+Received: "+------------------------+---------------+----------------+--------------------------------------------------------------------------------+ | Field                  | Database type | Access         | Reviewed operations                                                            | +------------------------+---------------+----------------+--------------------------------------------------------------------------------+ | note_source            | enum          | Model + Runner | None                                                                           | +------------------------+---------------+----------------+--------------------------------------------------------------------------------+"
+
+ ❯ apps/runner/src/boundary-map-presentation.test.ts:14:20
+     12|       const row = { ...rows()[0]!, access, operations: noOperations },…
+     13|       const text = renderBoundaryMapFieldMatrix([row], { width: 140 })…
+     14|       expect(text).toContain("No Read ops");
+       |                    ^
+     15|       expect(text).not.toMatch(/Model \+ Runner|Runner only/);
+     16|       expect(row).toEqual(before);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 2 skipped (3)
+   Start at  23:34:06
+   Duration  881ms (transform 184ms, setup 0ms, collect 169ms, tests 37ms, environment 1ms, prepare 176ms)
+

@@ -1,0 +1,9 @@
+{
+  "before_evidence": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-job-recovery-20260913/saved-read-review-candidates.json",
+  "sha256": "9b855225dcb91a09969c9f2ea04dfa4e5d38e576b0c2855d37527ceb782dff44",
+  "all_three_selected_candidates_match_saved": true,
+  "actual_cause": "Categorical access default ignored operation flags, not a different permission grant. Correct label uses actual return/analysis flags; no-ops does not infer private Action use.",
+  "before_test": "field-label-before-exit.json",
+  "after_test": "final-focused-exit.json",
+  "permissions_changed": false
+}

@@ -1,0 +1,33 @@
+{
+  "original": "sha256:4edf3415c64f084209c81118de931c245b72aec91e442f57129bf18834dc416d",
+  "replacement": "sha256:28a12055ebddb0b4b5fa19840f8697d5bb82aef063edaf1b32bc679c13b90330",
+  "approvals": [
+    {
+      "approval_id": 1,
+      "proposal_id": "wrp_pause_pref_1",
+      "proposal_version": 1,
+      "proposal_hash": "sha256:c58cebc0cd83c47ba6a841cb2bb7f3aeee448c3c35b8a7af49713a27a3e308af",
+      "approver": "policy:billing.standard_change",
+      "status": "approved",
+      "reason": "Exact semantic policy matched.",
+      "action_boundary_name": "billing_actions",
+      "action_boundary_digest": "sha256:4b26e9c1ce0d7453d92d0b0398ff5e4de06d2e1cb16d8c70f1d28e690f266b90",
+      "created_at": "2026-09-14T07:55:31.190Z"
+    }
+  ],
+  "queue": {
+    "proposal_id": "wrp_pause_pref_1",
+    "status": "queued",
+    "execution_mode": "supervised_worker",
+    "contract_digest": "sha256:4b26e9c1ce0d7453d92d0b0398ff5e4de06d2e1cb16d8c70f1d28e690f266b90",
+    "cancellation_control_role": null,
+    "attempts": 0,
+    "max_attempts": 3,
+    "next_attempt_at": "2026-09-14T07:55:36.229Z",
+    "created_at": "2026-09-14T07:55:36.229Z",
+    "updated_at": "2026-09-14T07:55:36.229Z"
+  },
+  "receipts": [],
+  "source_execution": "not dispatched",
+  "already_dispatched": "not exercised by this case"
+}

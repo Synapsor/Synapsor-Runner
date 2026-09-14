@@ -1,0 +1,66 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:815128) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/authoring-policy-source.test.ts (29 tests | 1 failed | 28 skipped) 47ms
+   × complete operator-selected policy text > refuses an older review save after a competing accepted clarification without clearing its evidence 43ms
+     → promise resolved "undefined" instead of rejecting
+   ↓ complete operator-selected policy text > retains supporting source assertions through saved coverage without turning them into overrides
+   ↓ complete operator-selected policy text > binds OpenRouter rules transfer to its actual service, not the local provider default
+   ↓ complete operator-selected policy text > refuses an oversized saved session without replacing the previous readable snapshot
+   ↓ complete operator-selected policy text > persists a bounded no-change interpretation without pretending authority or coverage changed
+   ↓ complete operator-selected policy text > cancels replacement, reconsents a changed destination, retains overrides and explicitly removes snapshots
+   ↓ complete operator-selected policy text > rejects an unsaveable answer before carrying it into another revision and accepts a corrected answer
+   ↓ complete operator-selected policy text > drops corrupt optional coverage without losing an intact source snapshot
+   ↓ complete operator-selected policy text > retains the complete version outside bounded history and refuses a changed destination
+   ↓ complete operator-selected policy text > loads exactly the approved snapshot after the original path changes or disappears
+   ↓ complete operator-selected policy text > rejects oversize, invalid UTF-8, binary, excess lines, missing files and implicit indirection
+   ↓ complete operator-selected policy text > requires a new text-version consent and detects changed retained bytes
+   ↓ complete operator-selected policy text > keeps source line coverage exact and refuses omitted restrictions or invented override evidence
+   ↓ complete operator-selected policy text > records complete hosted structured coverage with one targeted correction and no mutation
+   ↓ complete operator-selected policy text > identifies a misplaced schema keyword and gives the correction the exact shape problem
+   ↓ complete operator-selected policy text > previews and consents locally, keeps path case, and does not accept the stale default after attach
+   ↓ complete operator-selected policy text > uses first-job wording for attachment paths (bare command: false)
+   ↓ complete operator-selected policy text > uses first-job wording for attachment paths (bare command: true)
+   ↓ complete operator-selected policy text > returns from full attachment preview to the same permission and cancels without egress (bare: false)
+   ↓ complete operator-selected policy text > returns from full attachment preview to the same permission and cancels without egress (bare: true)
+   ↓ complete operator-selected policy text > groups business topics with source, interpretation, ownership and exact evidence behind details
+   ↓ complete operator-selected policy text > refuses false implemented privacy claims for visible values or analysis (values visible: true)
+   ↓ complete operator-selected policy text > refuses false implemented privacy claims for visible values or analysis (values visible: false)
+   ↓ complete operator-selected policy text > canonicalizes exact evidence-section shorthand without guessing a missing field or position
+   ↓ complete operator-selected policy text > corrects false mechanical claims without editing rules and keeps genuine privacy concerns blocking
+   ↓ complete operator-selected policy text > keeps a clarified source meaning in a no-op resumed review, and drops it when dependencies change
+   ↓ complete operator-selected policy text > corrects one prose-only coverage response without changing the draft
+   ↓ complete operator-selected policy text > bounds mechanical coverage rechecks without reusing stale success (second tool: true)
+   ↓ complete operator-selected policy text > bounds mechanical coverage rechecks without reusing stale success (second tool: false)
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/authoring-policy-source.test.ts > complete operator-selected policy text > refuses an older review save after a competing accepted clarification without clearing its evidence
+AssertionError: promise resolved "undefined" instead of rejecting
+
+- Expected: 
+Error {
+  "message": "rejected promise",
+}
+
++ Received: 
+undefined
+
+ ❯ apps/runner/src/authoring-policy-source.test.ts:35:69
+     33|     await savePolicySources(root, newer);
+     34|     before.operator_messages = ["Older review answer."];
+     35|     await expect(savePolicySources(root, before, { expectedDigest })).…
+       |                                                                     ^
+     36|     expect(await loadPolicySources(root, session.id)).toEqual(newer);
+     37|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 28 skipped (29)
+   Start at  23:19:08
+   Duration  6.62s (transform 3.63s, setup 0ms, collect 6.17s, tests 47ms, environment 0ms, prepare 77ms)
+

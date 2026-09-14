@@ -1,0 +1,7 @@
+{
+  "at": "2026-09-14T07:59:21.930912+00:00",
+  "failure": "assisted-baseline-exit.json",
+  "cause": "tsx interpreted a .ts verifier under the root CommonJS package; top-level await failed before any application/SQLite open",
+  "correction": "Use explicit .mts ESM; resolve host protocol through the repository source path",
+  "scope": "read-only measurement harness; original attempt retained; no product changes"
+}

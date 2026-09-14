@@ -1,0 +1,63 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:807278) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:807274) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/boundary-authoring-resume.test.ts (48 tests) 528ms
+(node:807390) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-policy-source.test.ts (28 tests) 236ms
+(node:807605) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-policy-context.test.ts (24 tests) 115ms
+ ✓ apps/runner/src/authoring-policy-coverage.test.ts (80 tests | 1 skipped) 159ms
+(node:807673) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/authoring-review-readiness.test.ts (8 tests | 1 failed) 60ms
+   ✓ one authoritative guided review readiness model > keeps client installation separate from identity, application choices and privacy even under one topic 7ms
+   ✓ one authoritative guided review readiness model > does not waive generic deployment, custom application work or a malformed client prerequisite 2ms
+   ✓ one authoritative guided review readiness model > repairs mixed deployment evidence in the bounded model correction, without changing scope or needing identity values 10ms
+   ✓ one authoritative guided review readiness model > carries authenticated identity to deployment without waiving an undecided row scope or claiming authentication 3ms
+   ✓ one authoritative guided review readiness model > keeps unassigned application requirements pending without calling database behavior unsupported 1ms
+   ✓ one authoritative guided review readiness model > persists exact operator assignments without claiming verification and invalidates them on source/draft changes 13ms
+   × one authoritative guided review readiness model > cannot assign away privacy, authorization or arbitrary runtime requirements 22ms
+     → expected [Function] to throw error including 'Application obligations' but got 'Source lines 1-1 (passages[0]): Inval…'
+   ✓ one authoritative guided review readiness model > does not lose mixed business, mechanical and client duties behind an all-passages test 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/authoring-review-readiness.test.ts > one authoritative guided review readiness model > cannot assign away privacy, authorization or arbitrary runtime requirements
+AssertionError: expected [Function] to throw error including 'Application obligations' but got 'Source lines 1-1 (passages[0]): Inval…'
+
+- Expected
++ Received
+
+- Application obligations
++ Source lines 1-1 (passages[0]): Invalid application obligation record.
++ Failed check: responsibility must be "application" for a client obligation. Keep Runner and deployment clauses separate.
++ Source excerpt (untrusted): Capture the customer's selected offer.
++ Submitted interpretation (untrusted): Runner verifies the operation, but not the client interaction.
++ Submitted disposition="unsupported"; responsibility="runner"; application_obligations=["customer_selection"]; field_checks=(absent).
++ Submitted draft_paths: /runner_evidence/runtime_contract/application_obligations/customer_selection.
++ Allowed external contract references: /runner_evidence/runtime_contract/application_obligations/customer_selection, /runner_evidence/runtime_contract/application_obligations/status_presentation, and a separate /runner_evidence/runtime_contract/application_obligations/independent_source_readback; include each selected exact contract.
++ Independent source readback is a required later observation, not automatic runtime enforcement or proof supplied by a receipt. Split field/privacy, eligibility, authentication and other mandatory controls into their own passages; they cannot be assigned away. Different clauses may use overlapping source lines; preserve every mandatory clause and its unresolved status where enforcement is missing.
++ Return the complete corrected coverage, not a patch; do not change the draft, invent business decisions, mark pending work overridden, or waive requirements to repair this coverage record.
+
+ ❯ apps/runner/src/authoring-review-readiness.test.ts:153:108
+    151|       { ...entry, disposition: "implemented" }, { ...entry, draft_path…
+    152|       { ...entry, field_checks: [{ resource: "offers", field: "eligibi…
+    153|     ]) expect(() => parsePolicyCoverage({ passages: [changed, report()…
+       |                                                                                                            ^
+    154|     const unsupported = { ...entry, application_obligations: undefined…
+    155|     expect(policyReadinessItems({ ...report(), passages: [unsupported]…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 4 passed (5)
+      Tests  1 failed | 186 passed | 1 skipped (188)
+   Start at  23:15:22
+   Duration  10.55s (transform 5.91s, setup 0ms, collect 16.12s, tests 1.10s, environment 1ms, prepare 435ms)
+

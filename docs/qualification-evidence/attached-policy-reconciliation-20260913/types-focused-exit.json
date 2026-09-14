@@ -1,0 +1,20 @@
+{
+  "name": "types-focused",
+  "args": [
+    "corepack",
+    "pnpm",
+    "typecheck"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T06:16:29.834491+00:00",
+  "source_head": "9ca8a480b5a6aa8b8f49a44ce2a32e902c17e591",
+  "source_diff_sha256": "4f6cff3e3b902e31f6c3a0944bfbb25f5ddc5db5b442724d4d87fbaebf78b52e",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/test-environments/types-focused",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/types-focused",
+  "source_manifest_sha256": "9a88846b42fe36e827e0532c807c49c19c21fbb69d07ad838828a8ec0790f65e",
+  "pid": 809690,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T06:16:52.913886+00:00"
+}

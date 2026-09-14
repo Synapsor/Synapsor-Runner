@@ -1,0 +1,29 @@
+{
+  "name": "client-duty-before",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/boundary-cli.test.ts",
+    "--testNamePattern",
+    "policy_target_reconcile_client",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T07:34:45.282218+00:00",
+  "source_head": "9ca8a480b5a6aa8b8f49a44ce2a32e902c17e591",
+  "source_diff_sha256": "aeecc7d0f3941c75528f16e334b2e4de0b982d00884c2b22b585b133e4ec45b8",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/test-environments/client-duty-before",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/client-duty-before",
+  "source_manifest_sha256": "a95ff22aeb16f8303094c18054994e3664a6df7af77bd01b597fa38db0299b24",
+  "pid": 989641,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T07:34:54.438611+00:00"
+}

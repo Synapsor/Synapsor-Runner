@@ -1,0 +1,322 @@
+{
+  "status": "stable_full_in_progress_no_final_candidate",
+  "independent_runs_not_aggregated": true,
+  "runs": [
+    {
+      "name": "responsibility-before",
+      "exit_code": 1,
+      "source_unchanged": true,
+      "source_manifest_sha256": "9027e1b9591c118049fd33d646031cb837ccac3534fe77e827c2e1c1ca21967d",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  2 failed | 22 skipped (24)",
+        "Duration  5.30s (transform 2.60s, setup 0ms, collect 4.87s, tests 67ms, environment 0ms, prepare 68ms)"
+      ],
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/authoring-policy-context.test.ts",
+        "--testNamePattern",
+        "post-change verification is a later observation",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "result": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/responsibility-before-exit.json",
+      "log": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/responsibility-before.log"
+    },
+    {
+      "name": "responsibility-after",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "source_manifest_sha256": "08635921c897b1f545872d406f7003bdca947a003d882732df9eaa3865311836",
+      "summary": [
+        "Test Files  1 passed (1)",
+        "Tests  2 passed | 22 skipped (24)",
+        "Duration  4.52s (transform 2.17s, setup 0ms, collect 4.12s, tests 42ms, environment 0ms, prepare 68ms)"
+      ],
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/authoring-policy-context.test.ts",
+        "--testNamePattern",
+        "post-change verification is a later observation",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "result": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/responsibility-after-exit.json",
+      "log": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/responsibility-after.log"
+    },
+    {
+      "name": "competing-review-before",
+      "exit_code": 1,
+      "source_unchanged": true,
+      "source_manifest_sha256": "f6c4e61f9ec6e1475ea99969d3920b310298dd779cf1384c258977b0a4e27bfc",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 28 skipped (29)",
+        "Duration  6.62s (transform 3.63s, setup 0ms, collect 6.17s, tests 47ms, environment 0ms, prepare 77ms)"
+      ],
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/authoring-policy-source.test.ts",
+        "--testNamePattern",
+        "refuses an older review save",
+        "--maxWorkers=1",
+        "--minWorkers=1"
+      ],
+      "result": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/competing-review-before-exit.json",
+      "log": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/competing-review-before.log"
+    },
+    {
+      "name": "field-label-before",
+      "exit_code": 1,
+      "source_unchanged": true,
+      "source_manifest_sha256": "fb3484eb36ce4265ff0c57e0bbc723f95df00ef1d670dfc248895687d3131469",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 2 skipped (3)",
+        "Duration  881ms (transform 184ms, setup 0ms, collect 169ms, tests 37ms, environment 1ms, prepare 176ms)"
+      ],
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/boundary-map-presentation.test.ts",
+        "--testNamePattern",
+        "labels absent Read operations",
+        "--maxWorkers=1",
+        "--minWorkers=1"
+      ],
+      "result": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/field-label-before-exit.json",
+      "log": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/field-label-before.log"
+    },
+    {
+      "name": "reconciliation-source-race-before",
+      "exit_code": 1,
+      "source_unchanged": true,
+      "source_manifest_sha256": "52ced31617356dd793e851d4522690e9faa8261ba5fe2e5d60cb4c7c96b01607",
+      "summary": [
+        "Test Files  1 failed (1)",
+        "Tests  1 failed | 279 skipped (280)",
+        "Duration  8.46s (transform 4.76s, setup 0ms, collect 7.28s, tests 950ms, environment 0ms, prepare 51ms)"
+      ],
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/boundary-cli.test.ts",
+        "--testNamePattern",
+        "policy_target_reconcile_source_concurrent",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "result": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/reconciliation-source-race-before-exit.json",
+      "log": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/reconciliation-source-race-before.log"
+    },
+    {
+      "name": "combined-review01",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "source_manifest_sha256": "6b769d3069ee6d12e9a4e3aa119258584e84eb78441c2db3891dcd43dc9bd4f0",
+      "summary": [
+        "Test Files  9 passed (9)",
+        "Tests  594 passed | 2 skipped (596)",
+        "Duration  304.74s (transform 16.89s, setup 0ms, collect 47.15s, tests 288.02s, environment 5ms, prepare 1.70s)"
+      ],
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/boundary-cli.test.ts",
+        "apps/runner/src/boundary-authoring-resume.test.ts",
+        "apps/runner/src/authoring-review-continuation.test.ts",
+        "apps/runner/src/authoring-policy-context.test.ts",
+        "apps/runner/src/authoring-policy-coverage.test.ts",
+        "apps/runner/src/authoring-policy-source.test.ts",
+        "apps/runner/src/authoring-review-readiness.test.ts",
+        "apps/runner/src/boundary-map-presentation.test.ts",
+        "apps/runner/src/structured-authoring.test.ts",
+        "apps/runner/src/action-rule-model.test.ts",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "result": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/combined-review01-exit.json",
+      "log": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/combined-review01.log"
+    },
+    {
+      "name": "final-focused",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "source_manifest_sha256": "c11a1fa9a24108af79230dcae05f4b076ab2fd646dbd291604ecd788ea1f63b8",
+      "summary": [
+        "Test Files  11 passed (11)",
+        "Tests  260 passed | 1 skipped (261)",
+        "Duration  82.83s (transform 6.01s, setup 0ms, collect 23.72s, tests 138.09s, environment 2ms, prepare 619ms)"
+      ],
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/boundary-authoring-resume.test.ts",
+        "apps/runner/src/boundary-authoring-resume-concurrency.test.ts",
+        "apps/runner/src/authoring-review-continuation.test.ts",
+        "apps/runner/src/authoring-policy-context.test.ts",
+        "apps/runner/src/authoring-policy-source.test.ts",
+        "apps/runner/src/authoring-policy-coverage.test.ts",
+        "apps/runner/src/boundary-structured-authoring.test.ts",
+        "apps/runner/src/boundary-structured-authoring.integration.test.ts",
+        "apps/runner/src/boundary-structured-execution.test.ts",
+        "apps/runner/src/structured-counter-review.integration.test.ts",
+        "apps/runner/src/boundary-authoring-saved-actions.test.ts",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "result": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/final-focused-exit.json",
+      "log": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/final-focused.log"
+    },
+    {
+      "name": "reconciliation-final",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "source_manifest_sha256": "6afa708ef1efb32123c057274b118578fa41c28f3a77a4d7d86df1b20ee41d42",
+      "summary": [
+        "Test Files  2 passed (2)",
+        "Tests  16 passed | 273 skipped (289)",
+        "Duration  15.83s (transform 6.90s, setup 0ms, collect 13.66s, tests 6.32s, environment 1ms, prepare 217ms)"
+      ],
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/boundary-cli.test.ts",
+        "apps/runner/src/authoring-review-continuation.test.ts",
+        "--testNamePattern",
+        "policy_target_reconcile_|saved policy review continuation",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "result": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/reconciliation-final-exit.json",
+      "log": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/reconciliation-final.log"
+    },
+    {
+      "name": "types-final02",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "source_manifest_sha256": "150351220722df09497230cee66c53c65dede8a28ef224b6f575423ea666ecf6",
+      "summary": [],
+      "command": [
+        "corepack",
+        "pnpm",
+        "typecheck"
+      ],
+      "result": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/types-final02-exit.json",
+      "log": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/types-final02.log"
+    },
+    {
+      "name": "final-pg-four",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "source_manifest_sha256": "150351220722df09497230cee66c53c65dede8a28ef224b6f575423ea666ecf6",
+      "summary": [
+        "Test Files  1 passed (1)",
+        "Tests  4 passed | 416 skipped (420)",
+        "Duration  10.88s (transform 5.67s, setup 0ms, collect 8.56s, tests 2.05s, environment 0ms, prepare 62ms)"
+      ],
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/control-policy-authority-codec.test.ts",
+        "--testNamePattern",
+        "postgres validated operator policy transactions.*keeps Action recovery review available with unavailable Read authority:",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "result": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/final-pg-four-exit.json",
+      "log": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/final-pg-four.log"
+    },
+    {
+      "name": "final-postgres02",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "source_manifest_sha256": "150351220722df09497230cee66c53c65dede8a28ef224b6f575423ea666ecf6",
+      "summary": [
+        "Test Files  3 passed (3)",
+        "Tests  43 passed (43)",
+        "Duration  126.74s (transform 2.86s, setup 0ms, collect 5.84s, tests 139.43s, environment 1ms, prepare 228ms)"
+      ],
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/semantic-atomic-postgres.test.ts",
+        "apps/runner/src/semantic-admission-publication.test.ts",
+        "packages/proposal-store/src/automatic-approval-admission.test.ts",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "result": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/final-postgres02-exit.json",
+      "log": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/final-postgres02.log"
+    },
+    {
+      "name": "stable-full",
+      "exit_code": null,
+      "source_unchanged": null,
+      "source_manifest_sha256": "150351220722df09497230cee66c53c65dede8a28ef224b6f575423ea666ecf6",
+      "summary": [],
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "--maxWorkers=4",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "result": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/stable-full-exit.json",
+      "log": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/stable-full.log"
+    }
+  ]
+}

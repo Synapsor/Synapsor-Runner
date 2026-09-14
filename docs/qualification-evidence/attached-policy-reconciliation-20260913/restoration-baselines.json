@@ -1,0 +1,75 @@
+[
+  {
+    "run": "recovery-tournament-assisted",
+    "checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/runs/recovery-tournament-assisted/checkpoints/exact-disabled-after-restart",
+    "source_counts": {
+      "events": 8,
+      "results": 96
+    },
+    "total_business_rows": 104,
+    "source_oracle": "original source-facts manifest",
+    "ledger_counts": {
+      "proposals": 0,
+      "approvals": 0,
+      "writeback_receipts": 0,
+      "writeback_jobs": 0,
+      "worker_queue": 0
+    },
+    "historical_calls_at_checkpoint": 25,
+    "files": {
+      "result.json": "89846f8c1d2df1f1b57e955c3f72d80c421b8402bbe2829bb2d68554521fb328",
+      "project-manifest.json": "d2fb143def90196a08f6e420e873c90dbd3695c6c23d4aba20aaae1b09ea4869",
+      "source.dump": "d1c46eb8a9c54a8f1b6339d9a353d3761acab5d961abbe01d6640656ce194dae",
+      "source-readback.json": "73e4c993d256baf8c34951fa04006b3e0bfe0dfba1080bc3eb9f01af1e1b6535"
+    }
+  },
+  {
+    "run": "recovery-tournament-original",
+    "checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/runs/recovery-tournament-original/checkpoints/after-restart-and-receipt",
+    "source_counts": {
+      "events": 8,
+      "results": 96
+    },
+    "total_business_rows": 104,
+    "source_oracle": "deterministic/initial-after-source.json",
+    "ledger_counts": {
+      "proposals": 1,
+      "approvals": 1,
+      "writeback_receipts": 1,
+      "writeback_jobs": 1,
+      "worker_queue": 1
+    },
+    "historical_calls_at_checkpoint": 25,
+    "files": {
+      "result.json": "c6b63857bbfea5a065e084a3b89724958f718139fd20cb453812616d4292d281",
+      "project-manifest.json": "b19cb491b98c6a1da5fe4079c22fe7db917431120eea83a2f84e1329fe055d79",
+      "source.dump": "332c582c2a37036da43fe758afc930143c2dfe8ed1e7197a6121979f2b4de958",
+      "source-readback.json": "8d4b92d59d0bb94815e28fbfeb1f0485b7ca4b62306657e5be9421f90dec9f0f"
+    }
+  },
+  {
+    "run": "recovery-software",
+    "checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/runs/recovery-software/checkpoints/final-focused-preservation",
+    "source_counts": {
+      "release_slots": 116,
+      "build_candidates": 116,
+      "build_checks": 272
+    },
+    "total_business_rows": 504,
+    "source_oracle": "deterministic/focused-preserved-source.json",
+    "ledger_counts": {
+      "proposals": 5,
+      "approvals": 3,
+      "writeback_receipts": 1,
+      "writeback_jobs": 1,
+      "worker_queue": 3
+    },
+    "historical_calls_at_checkpoint": 7,
+    "files": {
+      "result.json": "140be8bbede122a18214719ea149dc8833fe4fb5fdcae0c2b8928f468aaf5ab8",
+      "project-manifest.json": "dd11cce8ff39d7b560120492078d08b15d8df70a3807f01373c4a91cdcf22132",
+      "source.dump": "65a92b812c8ba0ec60c4af2ef2edf259def016a321cf6e7a03fe990518f47b56",
+      "source-readback.json": "a744fb0322dac0219bf6084ecee28c105000014f5bae3be252255a8a0f50a120"
+    }
+  }
+]

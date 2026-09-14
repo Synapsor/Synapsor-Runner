@@ -1,0 +1,12 @@
+{
+  "name": "synapsor-policy-reconcile-tests-7a0ef525",
+  "id": "ae59780d3eca932bed48a7edb7422d04fee6576e20afadb6afaeec21dcc641a5",
+  "label": "attached-policy-reconciliation-20260913",
+  "image": "sha256:1edc8e87e53194e0cc8006c4e9df9b626c6c72cb43ad3385f0f34af7922065b1",
+  "network": "none",
+  "database": "policy_reconciliation_tests",
+  "socket": "/tmp/synapsor-policy-reconcile-pg-kAS4Hc/socket",
+  "private_configuration": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/private/live-postgres.json",
+  "ready_at": "2026-09-14T06:50:35.759Z",
+  "credentials": "only scoped SYNAPSOR_TEST_POSTGRES_URL, no provider environment"
+}

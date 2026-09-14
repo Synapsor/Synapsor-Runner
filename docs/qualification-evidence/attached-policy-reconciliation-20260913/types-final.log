@@ -1,0 +1,6 @@
+
+> synapsor-runner-monorepo@1.8.0 typecheck /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+> tsc -b --pretty false
+
+apps/runner/src/boundary-commands.ts(9155,83): error TS18048: 'current.report' is possibly 'undefined'.
+ ELIFECYCLE  Command failed with exit code 1.

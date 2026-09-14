@@ -1,0 +1,8 @@
+{
+  "node": "v22.22.2",
+  "observed_sqlite_row_null_prototype": true,
+  "observed_parsed_json_null_prototype": false,
+  "correction": "Normalize current SQLite rows/byte arrays through JSON before storing and comparing with the saved JSON baseline. Every property/byte remains compared; no records or assertions are removed.",
+  "application_states_opened": false,
+  "public_attempts_at_correction": 0
+}
