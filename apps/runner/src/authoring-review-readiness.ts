@@ -55,6 +55,9 @@ export function policyReviewReadiness(source: PolicyTextSnapshot, report?: Polic
   if (!report) return { ready: false, privacy: false, summary: [
     "Before activation: recheck the attached rules. Activation is unavailable; the saved draft and exact details remain available.",
   ] };
+  if (report.passages.some(p => p.counter_requirements?.length || p.counting_components?.length || p.counting_requirement_bindings?.length)
+    && report.counting_inventory?.version !== 1) return { ready: false, privacy: false, summary: [
+      "Counting review predates the positive requirement check. Recheck the saved draft; historical authority is unchanged."] };
   const items = policyReadinessItems(report, session);
   const pending = items.filter((item) => item.blocksReview).flatMap((item) => item.passages);
   const topics = items.filter((item) => item.blocksReview).map((item) => item.title);

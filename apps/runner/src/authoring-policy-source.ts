@@ -78,7 +78,7 @@ export type PolicyPassage = { start: number; end: number;
   /** Later setup, not verification or an assignment of business controls to the client. */
   deployment_prerequisite?: "authenticated_identity" | "runner_client_connection" | "runner_execution_setup";
 };
-export type PolicyCoverage = { source_digest: string; draft_digest: string; passages: PolicyPassage[] };
+export type PolicyCoverage = { counting_inventory?: { version: 1; digest: string; paths: string[] }; source_digest: string; draft_digest: string; passages: PolicyPassage[] };
 
 export function isDeferredPolicyDeployment(passage: PolicyPassage): boolean {
   const prerequisite = passage.deployment_prerequisite;
@@ -116,6 +116,7 @@ export type PolicySourceSession = {
   approvals: Array<{ digest: string; destination: string }>;
   operator_messages?: string[];
   coverage?: PolicyCoverage;
+  counting_decisions?: CountingDecision[];
   coverage_context_digest?: string;
   coverage_authority_digest?: string;
   /** Interpretation evidence only, never an authority revision or coverage waiver. */
@@ -300,6 +301,13 @@ export async function loadPolicySources(root: string, id: string): Promise<Polic
   if (value.approvals.some((entry) => typeof entry.destination !== "string" || !value.snapshots.some((source) => source.digest === entry.digest))) throw new Error("Saved policy permission is invalid.");
   if (value.operator_messages !== undefined && (!Array.isArray(value.operator_messages) || value.operator_messages.length > 64
     || value.operator_messages.some((message) => typeof message !== "string" || message.length > 4_000))) throw new Error("Saved source-related operator messages exceed supported bounds.");
+  if (value.counting_decisions && (!Array.isArray(value.counting_decisions) || value.counting_decisions.length > 120
+    || value.counting_decisions.some(d => !d || d.origin !== "OPERATOR-COUNTING-REVIEW"
+      || !value.snapshots.some(s => s.digest === d.source_digest) || typeof d.path !== "string"
+      || !/^\/runner_evidence\/actions\/[^/]+\/automatic_limits\/\d+\/history_selector\/capability$/u.test(d.path)
+      || !/^sha256:[a-f0-9]{64}$/u.test(d.configuration_digest) || !/^sha256:[a-f0-9]{64}$/u.test(d.operator_history_digest)
+      || !(d.required_capability === null || typeof d.required_capability === "string" && d.required_capability.length <= 256)
+      || !Number.isFinite(Date.parse(d.reviewed_at))))) delete value.counting_decisions;
   // Optional explanation records are not authority. Corruption must not make the intact source unreadable.
   if (value.coverage && !validStoredCoverage(value.coverage, value.snapshots)) delete value.coverage;
   if (value.read_interpretations && (!Array.isArray(value.read_interpretations) || value.read_interpretations.length > 16
@@ -350,15 +358,19 @@ function validStoredCoverage(report: PolicyCoverage, sources: PolicyTextSnapshot
 
 export async function removePolicySources(root: string, session: PolicySourceSession): Promise<void> {
   await fs.unlink(sourcePath(root, session.id)).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
-  session.snapshots = []; session.approvals = []; delete session.active; delete session.operator_messages; delete session.coverage; delete session.coverage_authority_digest; delete session.application_assignments; delete session.read_interpretations;
+  session.snapshots = []; session.approvals = []; delete session.active; delete session.operator_messages; delete session.coverage; delete session.coverage_authority_digest; delete session.application_assignments; delete session.read_interpretations; delete session.counting_decisions;
 }
 
+export type CountingDecision = {
+  origin: "OPERATOR-COUNTING-REVIEW"; source_digest: string; path: string;
+  configuration_digest: string; required_capability: string | null;
+  operator_history_digest: string; reviewed_at: string;
+};
 export type CountingRequirementBinding = {
   origin: "HOST-SOURCE-ASSOCIATION";
   path: string; source_digest: string; start: number; end: number;
-  required_capability: string | null;
   source_excerpt: string;
-  ambiguity?: "outcome_reference_unresolved";
-  /** Exact applicable counting decision, not a generic instruction to preserve configuration. */
+  configuration_digest?: string;
   operator_clarification?: string;
-};
+} & ({ state: "established"; required_capability: string | null; ambiguity?: never }
+  | { state: "unknown" | "ambiguous"; required_capability?: never; ambiguity?: "outcome_reference_unresolved" });

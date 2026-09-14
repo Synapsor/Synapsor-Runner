@@ -1,3 +1,5 @@
+import { actionRuleModelDraftFromAuthority } from "./action-rule-draft.js";
+import { countingConfigurationDigest, countingSourceRequirements } from "./authoring-counting-requirements.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { listActionRuleAuthorityDrafts } from "./action-rule-authority.js";
 import { readBoundaryAuthoringResumeState, type BoundaryAuthoringResumeBinding } from "./boundary-authoring-resume.js";
@@ -28,6 +30,24 @@ export async function savedAuthoringPolicyReview(input: {
     if (!session.coverage || session.coverage.source_digest !== source.digest
       || !session.coverage_authority_digest || !authorityDigests.some(digest => digest === session.coverage_authority_digest)) {
       return pending("Attached rules need a current interpretation check for this saved revision.");
+    }
+    const matchingAuthority = drafts.find(draft => canonicalJsonDigest({ read: input.readDigest, action: draft.digest }) === session.coverage_authority_digest);
+    const countingActions = matchingAuthority ? matchingAuthority.authority.rules.map(action => actionRuleModelDraftFromAuthority({
+      authority: matchingAuthority.authority, outcome: action.rule.outcome,
+      review: matchingAuthority.reviews.find(r => r.outcome === action.rule.outcome)!, preserveVerificationFields: true })) : [];
+    const inventory = countingActions.flatMap(action => action.approval.shared_limits.flatMap((limit, index) =>
+      limit.kind === "count" ? [{ path: `/runner_evidence/actions/${action.outcome}/automatic_limits/${index}/history_selector/capability`, digest: countingConfigurationDigest(limit) }] : []));
+    if (inventory.length && (session.coverage.counting_inventory?.version !== 1
+      || session.coverage.counting_inventory.digest !== canonicalJsonDigest(inventory))) {
+      return pending("Counting coverage lacks a current positive requirement inventory. Recheck the saved interpretation; historical authority is unchanged.");
+    }
+    const requirements = countingSourceRequirements(source, { actions: countingActions, runner_evidence: {
+      counting_decisions: session.counting_decisions ?? [],
+      actions: Object.fromEntries(countingActions.map(action => [action.outcome, { automatic_limits: action.approval.shared_limits }])) } }, session.operator_messages ?? []);
+    if (requirements.some(r => r.state !== "established" || !session.coverage!.passages.some(p => p.disposition === "implemented"
+      && (p.counting_requirement_bindings?.some(b => b.path === r.path && b.state === "established" && b.required_capability === r.required_capability)
+        || p.counting_resolution?.comparisons.some(c => c.path === r.path && c.required_capability === r.required_capability))))) {
+      return pending("Counting requirements lack applicable positive support. Recheck this review; no authority or history changed.");
     }
     const domains = session.coverage.passages.flatMap(passage => [
       ...(passage.counting_resolution ? [passage.counting_resolution.domain] : []),

@@ -1,3 +1,4 @@
+import { reviewUnestablishedCounting } from "./authoring-counting-decision-review.js";
 import { reviewHistorySelectorChange } from "./action-history-selector-review.js";
 import { withCountingOutcomeDomain, type CountingOutcomeDomain } from "./authoring-counting-domain.js";
 import {
@@ -8403,7 +8404,28 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       try { countingDomain = await withCountingOutcomeDomain(input.projectRoot, semanticActionAuthorityDraft, async domain => domain); }
       catch { /* Missing, busy or mismatched history is not evidence of an empty domain. */ }
     }
-    const draftRecord = currentPolicyCoverageDraft();
+    let draftRecord = currentPolicyCoverageDraft();
+    if (sources) {
+      const expected = await policySourceSavedDigest(input.projectRoot, sources.id);
+      const assertCurrent = async () => {
+        if (await policySourceSavedDigest(input.projectRoot, sources.id) !== expected) throw new Error("POLICY_SOURCE_CHANGED: Counting review changed concurrently; reopen the saved job.");
+        if (activeResume) await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume);
+        await reloadReadReviewForModelRevision(input.projectRoot, context, semanticActionAuthorityDraft);
+      };
+      const decisions = await reviewUnestablishedCounting({ source, draft: draftRecord,
+        messages: sources.operator_messages ?? [], session: input.session, assertCurrent });
+      if (decisions?.length) {
+        const staged = structuredClone(sources);
+        staged.counting_decisions = [...(staged.counting_decisions ?? []).filter(d => !decisions.some(n => n.path === d.path)), ...decisions];
+        await withProjectAuthorityMutation(input.projectRoot, async permit => {
+          if (activeResume) await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, undefined, { permit });
+          await reloadReadReviewForModelRevision(input.projectRoot, context, semanticActionAuthorityDraft);
+          await savePolicySources(input.projectRoot, staged, { expectedDigest: expected, permit });
+        });
+        Object.assign(sources, staged);
+        draftRecord = currentPolicyCoverageDraft();
+      }
+    }
     const authorityDigest = canonicalJsonDigest({ read: explorationBoundaryCandidateDigest(context.candidate),
       action: semanticActionAuthorityDraft?.digest ?? null });
     const key = canonicalJsonDigest({ source: source.digest, draft: draftRecord, messages: sources?.operator_messages ?? [],

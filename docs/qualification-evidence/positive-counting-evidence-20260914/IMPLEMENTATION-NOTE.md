@@ -1,0 +1,17 @@
+# Positive counting evidence design
+
+The compiled Action approval shared limits own the actual counting configuration. Attached source snapshots and exact operator interpretations own the required meaning. The provider supplies a comparison, never its own answer key. Existing conditional interpretations retain their complete authority/history dependencies.
+
+Inventory every configured count limit independently of prose extraction. Distinguish established (boundary-wide null or canonical outcome), ambiguous, and unknown; missing extraction has no required value. Require an established association before equality/disposition and preserve inventory obligations despite omitted/background comparisons. Recompute on coverage parse and reuse; saved status must reject coverage lacking this inventory check. Source-derived exact equality may supply a host comparison even when omitted by a provider; no assumption from current values alone.
+
+For genuinely unknown interpretation, add a bounded operator review in the existing attached-policy flow: show source and exact scope/window, select counted outcome or boundary-wide automatic approvals, confirm explicitly, and save a source/configuration-bound interpretation under the existing authority/CAS coordination. No selector edit or authority grant. Decline preserves existing state. Relevant changes invalidate the review.
+
+Legacy restart replies cite the implementation instruction instead of the established counting-set answer. The selector confirmation returned a boolean and saved no durable decision-to-implementation edge. Therefore an automatic provenance link would be invented. Preserve both exact replies as refused; return the existing valid indexed support as a precise structural correction. A provider citation correction requires no new owner question. Do not infer edges from adjacency, values or similar text.
+
+Mixed comparison construction remains unchanged: narrow counter objects exclude maxima, windows, conditions, privacy, effects and other obligations. All surrounding claims retain their own validation. No runtime counting, selector, clock, publication or receipt changes.
+
+Focused evidence: independent controls 2/3/4 now refuse with COUNTING_REQUIREMENT_UNESTABLISHED; 8 remains implemented with two proofs. Combined02: 338 passed, three opt-in skips. New exact-capture regressions retain both unsupported legacy citations, verify precise existing-decision guidance, and separately label a derived structural correction. Customer-selection responsibility remains pending in those exact replies; it is not silently assigned by the test.
+
+Two prior test expectations needed positive-evidence prerequisites: a three-action unknown clause now uses the real explicit counting-review component to establish boundary-wide meaning; an ambiguous source case now retains all configured-limit obligations, so it has multiple blocking items. No business-rule assertion was removed. Earlier failed attempts are retained.
+
+Limitations: recognized English patterns remain a bounded aid, not arbitrary-language completeness. New explicit decisions bind the entire current source, exact limit configuration and operator-history digest; relevant change requires re-review. No guessed provenance edge is stored for the legacy selector confirmation.

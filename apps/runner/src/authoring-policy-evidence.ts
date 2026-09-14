@@ -353,6 +353,7 @@ export function policyCoverageDraft(input: {
         },
       }])),
       action_subject_compatibility: input.authority ? actionSubjectCompatibility(input.authority.authority, [input.read]) : null,
+      counting_decisions: input.policySources?.counting_decisions ?? [],
       counting_interpretations: policyCountingInterpretations(input.policySources, policySource,
         canonicalJsonDigest({ read: readDigest, action: input.authority?.digest ?? null }), input.operatorClarifications ?? []),
       runtime_contract: {

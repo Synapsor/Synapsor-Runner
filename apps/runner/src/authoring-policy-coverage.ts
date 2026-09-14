@@ -1,4 +1,4 @@
-import { associateCountingRequirements, countingSourceRequirements } from "./authoring-counting-requirements.js";
+import { associateCountingRequirements, countingSourceRequirements, configuredCountingLimits } from "./authoring-counting-requirements.js";
 import { associateCountingComponents, resolveCountingComparison } from "./authoring-counting-review.js";
 import { stripVTControlCharacters } from "node:util";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -257,6 +257,7 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
   if (unsupportedKeys.length) throw new Error(`Coverage tool accepts only passages; unexpected top-level keys: ${unsupportedKeys.slice(0, 8).map((key) => key.replace(/[^a-zA-Z0-9_.-]/gu, "_").slice(0, 64)).join(", ")}. Put every interpretation inside its passage; Runner binds source and draft digests.`);
   if (!Array.isArray(args.passages)) throw new Error(`Coverage passages must be an array; received ${args.passages === null ? "null" : typeof args.passages}. Return the complete structured passages array.`);
   if (args.passages.length > 120) throw new Error(`Coverage contains ${args.passages.length} passages; maximum is 120. Group related lines while preserving every nonblank source line.`);
+  const sourceRequirements = countingSourceRequirements(source, draft, messagesForCoverage(operatorHistory));
   const missingReferences = args.passages.flatMap((raw) => {
     if (!raw || typeof raw !== "object" || !Array.isArray(raw.draft_paths)) return [];
     return raw.draft_paths.filter((pointer: unknown) => {
@@ -268,7 +269,6 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
   const covered = new Set<number>(), lines = policyTextLines(source.text);
   const fieldEvidence = fieldPrivacyEvidence(draft);
   const passages: PolicyPassage[] = [];
-  const sourceRequirements = countingSourceRequirements(source, draft, messagesForCoverage(operatorHistory));
   for (const [index, raw] of args.passages.entries()) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Each passage must be an object.");
     // Saved comparisons are not trusted on restart. Restore and revalidate the
@@ -530,17 +530,26 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
       ...(dependencies ? { supporting_dependencies_digest: dependencies } : {}) });
   }
   for (const requirement of sourceRequirements) {
-    const current = draftValue(draft, requirement.path);
-    if (!requirement.ambiguity && current === requirement.required_capability) continue;
-    const coveredRequirement = passages.some(p => p.start <= requirement.start && p.end >= requirement.end && (
-      p.counter_requirements?.some(c => c.path === requirement.path && (c.required_capability === requirement.required_capability || requirement.ambiguity && p.disposition === "conflict"))
+    const coveredRequirement = requirement.state === "established" && passages.some(p =>
+      p.counter_requirements?.some(c => c.path === requirement.path && c.required_capability === requirement.required_capability)
       || p.counting_resolution?.comparisons.some(c => c.path === requirement.path && c.required_capability === requirement.required_capability)
-      || p.counting_components?.some(c => c.resolution.comparisons.some(v => v.path === requirement.path && v.required_capability === requirement.required_capability))));
+      || p.counting_components?.some(c => c.resolution.comparisons.some(v => v.path === requirement.path && v.required_capability === requirement.required_capability)));
     if (coveredRequirement) continue;
-    passages.push({ start: requirement.start, end: requirement.end, responsibility: "runner", disposition: "conflict", issue_kind: "coverage_link",
-      interpretation: "An applicable source counting requirement has no validated comparison. Equal supplied values or omission cannot remove this obligation.",
+    const matches = requirement.state === "established" && draftValue(draft, requirement.path) === requirement.required_capability;
+    passages.push({ start: requirement.start, end: requirement.end,
+      responsibility: requirement.state === "unknown" ? "operator" : "runner",
+      disposition: matches ? "implemented" : requirement.state === "unknown" ? "needs_decision" : "conflict",
+      issue_kind: requirement.state === "unknown" ? "business_choice" : "coverage_link",
+      topic: "Counted automatic approvals",
+      interpretation: matches
+        ? "Host comparison: the positively established counting set matches the configured selector. This comparison establishes no maximum, window, condition or other claim."
+        : "COUNTING_REQUIREMENT_UNESTABLISHED: A configured allowance has no completed positive requirement comparison. Omission or equal provider values cannot remove this obligation.",
       draft_paths: [requirement.path], counting_requirement_bindings: [requirement],
-      next_step: "Supply the actual and source-required capability values with applicable support, then validate the exact selector or the existing conditional-domain proof. Do not change policy to fix a citation." });
+      ...(matches ? { counter_requirements: [{ path: requirement.path, current_capability: requirement.required_capability!, required_capability: requirement.required_capability! }] } : {}),
+      ...(!matches ? { next_step: requirement.state === "unknown"
+        ? "Use Review counted automatic approvals to confirm which automatic decisions consume this allowance. The saved policy and program are unchanged."
+        : "Supply the actual and source-required capability values with applicable support and validate their comparison; do not change policy to repair a citation." } : {}),
+    });
   }
   const subjectCompatibility = evidenceRecord(evidenceRecord(evidenceRecord(draft)?.runner_evidence)?.action_subject_compatibility);
   if (subjectCompatibility?.compatible === false) {
@@ -553,7 +562,9 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
   if (passages.length > 120) throw new Error("Coverage including retained counting comparisons exceeds 120 passages; group the remaining clauses without dropping requirements.");
   const missing = lines.flatMap((line, index) => line.trim() && !covered.has(index + 1) ? [index + 1] : []);
   if (missing.length) throw new Error(`Unaccounted source lines: ${missing.join(", ")}. Include restrictions and unsupported clauses, not only implemented clauses.`);
-  return { source_digest: source.digest, draft_digest: canonicalJsonDigest(draft), passages };
+  const inventory = configuredCountingLimits(draft);
+  return { source_digest: source.digest, draft_digest: canonicalJsonDigest(draft), passages,
+    counting_inventory: { version: 1, digest: canonicalJsonDigest(inventory.map(({ path, digest }) => ({ path, digest }))), paths: inventory.map(i => i.path) } };
 }
 
 export async function reviewPolicyCoverage(input: {
@@ -641,6 +652,7 @@ export async function reviewPolicyCoverage(input: {
         dependencies: session.dependencies, history: modelAuthoringHistory(session.conversation, session),
         question: ["Review every nonblank source line against this actual draft. Return all dispositions, not just successes.",
           `Current draft (JSON pointer root): ${JSON.stringify(input.draft)}`,
+          `Host counting requirement states (unknown is not boundary-wide; source and explicit review establish meaning): ${JSON.stringify(countingSourceRequirements(input.source, input.draft, operatorMessages))}`,
           `Exact coverage references (select, do not invent paths): ${JSON.stringify(coverageReferences(input.draft))}`,
           `Indexed operator messages for supporting clarifications or explicit overrides (not source text or model narration): ${JSON.stringify(operatorMessages.map((message, index) => ({ operator_message_id: index + 1, message })))}`,
           `Privacy candidates requiring comparison with source requirements: ${JSON.stringify((input.draft as { runner_evidence?: { privacy_review?: unknown } })?.runner_evidence?.privacy_review ?? [])}`,
