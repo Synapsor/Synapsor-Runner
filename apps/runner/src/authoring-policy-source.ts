@@ -64,7 +64,7 @@ export type PolicyPassage = { start: number; end: number;
   /** Recomputed by the host from current evidence; never model approval. */
   counting_resolution?: CountingComparisonResolution;
   counting_components?: CountingComponentResolution[];
-  counting_requirement_bindings?: import("./authoring-counting-requirements.js").CountingRequirementBinding[];
+  counting_requirement_bindings?: CountingRequirementBinding[];
   topic?: string;
   responsibility?: "operator" | "runner" | "deployment" | "application";
   issue_kind?: "business_choice" | "schema_meaning" | "missing_configuration" | "unsupported_requirement" | "contradiction" | "coverage_link";
@@ -352,3 +352,13 @@ export async function removePolicySources(root: string, session: PolicySourceSes
   await fs.unlink(sourcePath(root, session.id)).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
   session.snapshots = []; session.approvals = []; delete session.active; delete session.operator_messages; delete session.coverage; delete session.coverage_authority_digest; delete session.application_assignments; delete session.read_interpretations;
 }
+
+export type CountingRequirementBinding = {
+  origin: "HOST-SOURCE-ASSOCIATION";
+  path: string; source_digest: string; start: number; end: number;
+  required_capability: string | null;
+  source_excerpt: string;
+  ambiguity?: "outcome_reference_unresolved";
+  /** Exact applicable counting decision, not a generic instruction to preserve configuration. */
+  operator_clarification?: string;
+};

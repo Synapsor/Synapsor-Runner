@@ -1,16 +1,8 @@
-import type { PolicyPassage, PolicyTextSnapshot } from "./authoring-policy-source.js";
+import type { CountingRequirementBinding, PolicyPassage, PolicyTextSnapshot } from "./authoring-policy-source.js";
 
 const record = (x: unknown): Record<string, any> => x && typeof x === "object" && !Array.isArray(x) ? x as Record<string, any> : {};
 const words = (s: string) => s.toLowerCase().split(/[^a-z0-9]+/u).filter(Boolean).map(w => w.endsWith("s") ? w.slice(0, -1) : w);
-export type CountingRequirementBinding = {
-  origin: "HOST-SOURCE-ASSOCIATION";
-  path: string; source_digest: string; start: number; end: number;
-  required_capability: string | null;
-  source_excerpt: string;
-  ambiguity?: "outcome_reference_unresolved";
-  /** Exact applicable counting decision, not a generic instruction to preserve configuration. */
-  operator_clarification?: string;
-};
+
 
 /** A bounded association of explicit counting clauses with canonical outcomes.
  * Not semantic equivalence: a recognised outcome-specific requirement still
