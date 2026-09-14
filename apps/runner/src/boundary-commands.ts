@@ -1,3 +1,4 @@
+import { reviewHistorySelectorChange } from "./action-history-selector-review.js";
 import { withCountingOutcomeDomain, type CountingOutcomeDomain } from "./authoring-counting-domain.js";
 import {
   ProposalStore
@@ -6476,6 +6477,11 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
                   : {}),
                 egressAcknowledged: true,
                 env: process.env,
+                reviewHistorySelectors: request => reviewHistorySelectorChange(request, input.session, async () => {
+                  await assertAuthoringResumeCurrent({ intent: semanticIntent, outcome: semanticActionRevisionBaseline?.outcome }, true);
+                  const fresh = await loadBoundaryReviewContext(input.projectRoot);
+                  if (explorationBoundaryCandidateDigest(fresh.candidate) !== request.read_digest) throw new Error("ACTION_RULE_REVISION_STALE: Read changed during selector review.");
+                }),
                 reviewVersionField: async request => {
                   const generationLock = await loadGenerationLockSnapshot(input.projectRoot, request.context.readBoundary.generation_lock_fingerprint);
                   const prepared = await reviewActionVersionField({ ...request,
@@ -8488,6 +8494,11 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           } catch (error) { pendingActionRevision = previousRevision; throw error; }
         },
         builtCatalog: entry.catalog, readBoundary: context.candidate, readBoundaryDigest: committed.candidate_digest,
+        reviewHistorySelectors: request => reviewHistorySelectorChange(request, input.session, async () => {
+          await assertAuthoringResumeCurrent({ revision: { outcome: before.rule.outcome, instruction, ...(operatorStatements ? { operator_statements: operatorStatements } : {}), baseline_digest: canonicalJsonDigest(before.draft) } }, true);
+          const fresh = await loadBoundaryReviewContext(input.projectRoot);
+          if (explorationBoundaryCandidateDigest(fresh.candidate) !== request.read_digest) throw new Error("ACTION_RULE_REVISION_STALE: Read changed during selector review.");
+        }),
         reviewVersionField: async request => {
           const generationLock = await loadGenerationLockSnapshot(input.projectRoot, request.context.readBoundary.generation_lock_fingerprint);
           const prepared = await reviewActionVersionField({ ...request,

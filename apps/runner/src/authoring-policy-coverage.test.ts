@@ -858,8 +858,11 @@ describe("counter coverage correction diagnostics", () => {
     exposed.runner_evidence.read_access["civic.renewal_notices"].fields.notification_id.actual_values_returned = true;
     expect(() => parsePolicyCoverage({ passages: passages() }, source, exposed, [operatorMessage])).toThrow("Field coverage mismatch");
     const conflict = { ...selector, disposition: "conflict", counter_requirements: [{ ...check, required_capability: null }] };
-    const report = parsePolicyCoverage({ passages: [...passages(), conflict] }, source, draft, [operatorMessage]);
-    expect(report.passages.at(-1)).toMatchObject({ disposition: "conflict", counter_requirements: conflict.counter_requirements });
+    // An invented contrary required value is now refused before disposition validation.
+    expect(() => parsePolicyCoverage({ passages: [...passages(), conflict] }, source, draft, [operatorMessage])).toThrow("COUNTING_REQUIREMENT_MISMATCH");
+    const boundarySource = policyTextSnapshot(Buffer.from(source.text.replaceAll("automatic notice delivery approvals", "automatic approvals")), "boundary-rules.txt");
+    const report = parsePolicyCoverage({ passages: [...passages().map(p => ({ ...p, counter_requirements: undefined })), conflict] }, boundarySource, draft, [operatorMessage]);
+    expect(report.passages.find(p => p.counter_requirements?.length)).toMatchObject({ disposition: "conflict", counter_requirements: conflict.counter_requirements });
     expect(policyReviewReadiness(source, report).ready).toBe(false);
   });
 
@@ -928,7 +931,7 @@ describe("exact approval counter evidence and full-bundle targets", () => {
     expect(isMechanicalApprovalCounterPassage(parse(passage).passages[0]!)).toBe(false);
     expect(policyReadinessItems(parse(passage))).toMatchObject([{ kind: "mechanical_correction", blocksReview: true }]);
     expect(parse(passage).passages[0]?.counter_requirements).toEqual(passage.counter_requirements);
-    expect(() => parse({ ...passage, disposition: "implemented" })).toThrow("COUNTING_SUPPORT_MISSING");
+    expect(() => parse({ ...passage, disposition: "implemented" })).toThrow("COUNTING_REQUIREMENT_AMBIGUOUS");
     for (const replacement of [
       { path: pointer.replace("history_selector/capability", "id"), current_capability: null, required_capability: "service.archive" },
       { path: pointer, current_capability: "service.archive", required_capability: null },

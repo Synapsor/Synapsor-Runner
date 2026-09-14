@@ -1,3 +1,4 @@
+import { associateCountingRequirements, countingSourceRequirements } from "./authoring-counting-requirements.js";
 import { associateCountingComponents, resolveCountingComparison } from "./authoring-counting-review.js";
 import { stripVTControlCharacters } from "node:util";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -267,6 +268,7 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
   const covered = new Set<number>(), lines = policyTextLines(source.text);
   const fieldEvidence = fieldPrivacyEvidence(draft);
   const passages: PolicyPassage[] = [];
+  const sourceRequirements = countingSourceRequirements(source, draft, messagesForCoverage(operatorHistory));
   for (const [index, raw] of args.passages.entries()) {
     if (!raw || typeof raw !== "object" || Array.isArray(raw)) throw new Error("Each passage must be an object.");
     // Saved comparisons are not trusted on restart. Restore and revalidate the
@@ -275,6 +277,7 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
     const entry = { ...stored, ...(stored.counting_resolution?.submitted_claim ?? {}) } as PolicyPassage & { operator_message_id?: unknown };
     delete entry.counting_resolution;
     delete entry.counting_components;
+    delete entry.counting_requirement_bindings;
     if (stored.counting_resolution && stored.counting_resolution.source_digest !== source.digest) {
       throw new Error("Counting comparison source changed; review the current requirement before reusing this interpretation.");
     }
@@ -440,6 +443,7 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
     });
     const normalized = { ...entry, draft_paths: draftPaths, operator_clarification: operatorClarification,
       ...(counterRequirements ? { counter_requirements: counterRequirements } : {}) };
+    const requirementBindings = associateCountingRequirements(normalized, sourceRequirements);
     const resolution = !counterRequirements?.some(check => check.operator_clarification !== undefined)
       && !stored.counting_components ? resolveCountingComparison(normalized, source, draft, operatorClarification) : undefined;
     let components: ReturnType<typeof associateCountingComponents> = [];
@@ -450,7 +454,9 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
         // An unresolved conflict remains a conflict; an implemented claim or
         // explicit wrong counter citation must return the precise diagnostic.
         if (entry.disposition !== "conflict" || stored.counting_components
-          || counterRequirements.some(check => check.operator_clarification !== undefined)) throw error;
+          || counterRequirements.some(check => check.operator_clarification !== undefined
+            && !requirementBindings.some(binding => binding.path === check.path
+              && binding.operator_clarification === check.operator_clarification))) throw error;
       }
     }
     if (stored.counting_components) {
@@ -479,12 +485,13 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
       ...(components.length ? { counting_components: components } : {}),
       draft_paths: draftPaths, ...(entry.disposition === "overridden" ? { operator_override: operatorOverride } : {}),
       ...(operatorClarification ? { operator_clarification: operatorClarification,
-        supporting_dependencies_digest: supportingPolicyDependencies({ ...entry, draft_paths: draftPaths,
+        supporting_dependencies_digest: supportingPolicyDependencies({ ...normalized, draft_paths: draftPaths,
           operator_clarification: operatorClarification }, source, draft, messages) } : {}),
       ...(entry.topic ? { topic: entry.topic } : {}), ...(entry.responsibility ? { responsibility: entry.responsibility } : {}),
       ...(resolution ? { issue_kind: "coverage_link" as const } : entry.issue_kind ? { issue_kind: entry.issue_kind } : {}), ...(!resolution && entry.next_step ? { next_step: entry.next_step } : {}),
       ...(entry.evidence_checks ? { evidence_checks: structuredClone(entry.evidence_checks) } : {}),
       ...(counterRequirements ? { counter_requirements: counterRequirements } : {}),
+      ...(requirementBindings.length ? { counting_requirement_bindings: requirementBindings } : {}),
       ...(entry.field_checks ? { field_checks: structuredClone(entry.field_checks) } : {}),
       ...(entry.application_obligations ? { application_obligations: [...entry.application_obligations] } : {}),
       ...(entry.deployment_prerequisite ? { deployment_prerequisite: entry.deployment_prerequisite } : {}),
@@ -521,6 +528,19 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
       interpretation: "The retained capability choice conditionally implements this source counting requirement. See the host comparison and its exact domain/revalidation condition; the original review claim remains recorded.",
       counting_resolution: resolution,
       ...(dependencies ? { supporting_dependencies_digest: dependencies } : {}) });
+  }
+  for (const requirement of sourceRequirements) {
+    const current = draftValue(draft, requirement.path);
+    if (!requirement.ambiguity && current === requirement.required_capability) continue;
+    const coveredRequirement = passages.some(p => p.start <= requirement.start && p.end >= requirement.end && (
+      p.counter_requirements?.some(c => c.path === requirement.path && (c.required_capability === requirement.required_capability || requirement.ambiguity && p.disposition === "conflict"))
+      || p.counting_resolution?.comparisons.some(c => c.path === requirement.path && c.required_capability === requirement.required_capability)
+      || p.counting_components?.some(c => c.resolution.comparisons.some(v => v.path === requirement.path && v.required_capability === requirement.required_capability))));
+    if (coveredRequirement) continue;
+    passages.push({ start: requirement.start, end: requirement.end, responsibility: "runner", disposition: "conflict", issue_kind: "coverage_link",
+      interpretation: "An applicable source counting requirement has no validated comparison. Equal supplied values or omission cannot remove this obligation.",
+      draft_paths: [requirement.path], counting_requirement_bindings: [requirement],
+      next_step: "Supply the actual and source-required capability values with applicable support, then validate the exact selector or the existing conditional-domain proof. Do not change policy to fix a citation." });
   }
   if (passages.length > 120) throw new Error("Coverage including retained counting comparisons exceeds 120 passages; group the remaining clauses without dropping requirements.");
   const missing = lines.flatMap((line, index) => line.trim() && !covered.has(index + 1) ? [index + 1] : []);

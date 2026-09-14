@@ -64,6 +64,7 @@ export type PolicyPassage = { start: number; end: number;
   /** Recomputed by the host from current evidence; never model approval. */
   counting_resolution?: CountingComparisonResolution;
   counting_components?: CountingComponentResolution[];
+  counting_requirement_bindings?: import("./authoring-counting-requirements.js").CountingRequirementBinding[];
   topic?: string;
   responsibility?: "operator" | "runner" | "deployment" | "application";
   issue_kind?: "business_choice" | "schema_meaning" | "missing_configuration" | "unsupported_requirement" | "contradiction" | "coverage_link";

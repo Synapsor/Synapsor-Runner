@@ -331,6 +331,24 @@ describe("conversational Action authoring tools", () => {
   });
   const say = (text: string) => ({ status: 200, body: { output: [{ type: "message", content: [{ type: "output_text", text }] }] } });
 
+  it.each([true, false])("requires exact host operator review for a guided history-selector change (%s)", async accepted => {
+    const baseline = policyModelDraft();
+    baseline.approval.shared_limits = [{ id: "overall", kind: "count", scope: "boundary", maximum: 6, window_seconds: 86400 }, { id: "tenant", kind: "count", scope: "tenant", maximum: 2, window_seconds: 86400 }];
+    const changed = { ...baseline.approval, shared_limits: baseline.approval.shared_limits.map(l => ({ ...l, capability: baseline.outcome })) };
+    const steps: Array<ReturnType<typeof call> | ReturnType<typeof say>> = [call("runner.submit_approval_policy_draft", { status: "draft", ...changed, changed_fields: ["shared_limits"] }), call("runner.validate_action_draft", {})];
+    if (!accepted) steps.push(call("runner.submit_approval_policy_draft", { status: "draft", ...baseline.approval, changed_fields: ["shared_limits"] }), call("runner.validate_action_draft", {}));
+    steps.push(say("Disabled revision prepared; publication remains separate."));
+    const reviews: any[] = [], requests: string[] = [];
+    const result = await converseActionRuleDraft({ ...requestInput(async request => { requests.push(JSON.stringify(request.body)); if (!steps.length) throw new Error("Unexpected retry");return steps.shift()!; }),
+      existingDraft: baseline, intent: "Review the exact automatic history selector for this new revision.",
+      reviewHistorySelectors: async review => { reviews.push(review);return accepted; } });
+    expect(reviews).toHaveLength(1);expect(reviews[0]).toMatchObject({ before: baseline, after: { approval: changed }, read_digest: readDigest });
+    expect(result.compiled.draft.approval).toEqual(accepted ? changed : baseline.approval);
+    expect(result.compiled.draft.effect).toEqual(baseline.effect);expect(result.compiled.draft.require).toEqual(baseline.require);
+    expect(result.authority_granted).toBe(false);
+    if (!accepted) expect(requests.join("\n")).toContain("ACTION_RULE_HISTORY_SELECTOR_REVIEW_REQUIRED");
+  });
+
   it("keeps generated repair diagnostics separate from original counter intent", async () => {
     const diagnostic = "Recorded requirement at lines 57-62: The private routine-ceiling condition, maxima, rolling 24-hour window, and boundary/trusted-insurer scopes are drafted, but both history selectors have capability=null. They therefore count approved outcomes across the Action Boundary rather than only this reserve-adjustment outcome, contrary to the outcome-specific source requirement.";
     const baseline = policyModelDraft();

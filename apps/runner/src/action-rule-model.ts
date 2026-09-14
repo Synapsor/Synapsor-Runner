@@ -1,3 +1,4 @@
+import { historySelectorChanges, type HistorySelectorReview } from "./action-history-selector-review.js";
 import { Buffer } from "node:buffer";
 import { assertActionExecutionIntentPreserved } from "./action-execution-intent.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -194,6 +195,8 @@ export type ModelActionRuleDraftInput = {
   operatorStatements?: string[];
   /** Mechanical repair of an already saved draft, not permission to redesign it. */
   approvalLimitsOnly?: boolean;
+  /** Trusted operator callback for a proposed exact disabled selector edit; never model consent. */
+  reviewHistorySelectors?: (review: HistorySelectorReview) => Promise<boolean>;
   builtCatalog: BuiltActionRuleAuthoringCatalogV1;
   readBoundary: ExplorationBoundaryDraft;
   readBoundaryDigest: `sha256:${string}`;
@@ -334,6 +337,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   let operatorMessages: string[] = [];
   const reviewedRelationships = new Set<string>();
   const declinedPrivateSources = new Set<string>();
+  const declinedHistorySelectors = new Set<string>();
   let reopenedDraft: ActionRuleAuthoringCheckpoint["reopened_draft"];
   const preparedDrafts = (input.preparedDrafts ?? []).map((draft) =>
     compileActionRuleModelDraft({ draft, ...context }).draft);
@@ -583,7 +587,16 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
           const joint = explicitJointApprovalLimits([operatorJob, ...statements]).length > 0;
           assertJointApprovalLimitsPreserved([operatorJob, ...statements], draft.approval);
           assertExplicitApprovalIntentPreserved(statements, draft.approval, joint);
-          if (baseline) assertApprovalHistorySelectorsPreserved(baseline.approval, draft.approval, baseline.outcome);
+          if (baseline) {
+            const review = { before: baseline, after: draft, read_digest: context.readBoundaryDigest };
+            if (historySelectorChanges(review).length) {
+              const key = canonicalJsonDigest(review);
+              if (!input.reviewHistorySelectors || declinedHistorySelectors.has(key) || !await input.reviewHistorySelectors(review)) {
+                declinedHistorySelectors.add(key);
+                assertApprovalHistorySelectorsPreserved(baseline.approval, draft.approval, baseline.outcome);
+              }
+            }
+          }
           if (input.approvalLimitsOnly) assertOnlyApprovalLimitsChanged(baseline, draft);
           assertActionExecutionIntentPreserved(statements, draft.effect.writeback);
           const result = compileActionRuleModelDraft({ draft, ...context });
@@ -602,7 +615,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
           return { ok: true, value: { status: "needs_operator_answer", question: clarification, authority_granted: false } };
         }
         let submission = baseline
-          ? mergeRevisionSubmission({ phase, candidate: parsed.submission, current: submissions[phase]!, baseline, changedFields: parsed.changed_fields })
+          ? mergeRevisionSubmission({ phase, candidate: parsed.submission, current: submissions[phase]!, baseline, changedFields: parsed.changed_fields, allowPendingSelectorReview: !!input.reviewHistorySelectors })
           : parsed.submission;
         if (phase === "verification" || phase === "effect") {
           const prepared = await preparePhaseResources({ phase, submission, input, activeContext: context }).catch((error) => {
@@ -2301,6 +2314,7 @@ function mergeRevisionSubmission(input: {
   current: PhaseSubmission;
   baseline: ActionRuleModelDraftV1;
   changedFields?: RevisionField[];
+  allowPendingSelectorReview?: boolean;
 }): PhaseSubmission {
   if (!input.changedFields) {
     throw new Error("ACTION_RULE_REVISION_SCOPE_REQUIRED: the model did not declare an exact changed_fields patch scope.");
@@ -2363,7 +2377,7 @@ function mergeRevisionSubmission(input: {
   if (input.changedFields.includes("required_role")) current.required_role = candidate.required_role;
   if (input.changedFields.includes("required_approvals")) current.required_approvals = candidate.required_approvals;
   if (input.changedFields.includes("shared_limits")) {
-    assertApprovalHistorySelectorsPreserved(input.baseline.approval, candidate, input.baseline.outcome);
+    if (!input.allowPendingSelectorReview) assertApprovalHistorySelectorsPreserved(input.baseline.approval, candidate, input.baseline.outcome);
     current.shared_limits = structuredClone(candidate.shared_limits);
   }
   current.class_name = input.baseline.approval.class_name;

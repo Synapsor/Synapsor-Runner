@@ -1,3 +1,4 @@
+import { associateCountingRequirements, countingSourceRequirements } from "./authoring-counting-requirements.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { PolicyPassage, PolicyTextSnapshot, PolicySourceSession } from "./authoring-policy-source.js";
 import type { CountingOutcomeDomain, CountingComparisonResolution, CountingComponentResolution, CountingInterpretation } from "./authoring-policy-source.js";
@@ -55,6 +56,7 @@ export function associateCountingComponents(passage: PolicyPassage, source: Poli
   messages: readonly string[], submittedMessageId?: number): CountingComponentResolution[] {
   const evidence = record(record(draft)?.runner_evidence);
   const interpretations: CountingInterpretation[] = Array.isArray(evidence?.counting_interpretations) ? evidence.counting_interpretations : [];
+  associateCountingRequirements(passage, countingSourceRequirements(source, draft, messages));
   const result: CountingComponentResolution[] = [];
   for (const check of passage.counter_requirements ?? []) {
     if (check.current_capability === check.required_capability) continue;
