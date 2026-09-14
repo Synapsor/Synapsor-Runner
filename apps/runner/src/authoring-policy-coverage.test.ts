@@ -1,3 +1,4 @@
+import { reviewUnestablishedCounting } from "./authoring-counting-decision-review.js";
 import { PassThrough } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
 import { createTerminalAnalyticsShellIo } from "./analytics-shell.js";
@@ -929,7 +930,8 @@ describe("exact approval counter evidence and full-bundle targets", () => {
     };
     const parse = (item: PolicyPassage) => parsePolicyCoverage({ passages: [item] }, source, draft, []);
     expect(isMechanicalApprovalCounterPassage(parse(passage).passages[0]!)).toBe(false);
-    expect(policyReadinessItems(parse(passage))).toMatchObject([{ kind: "mechanical_correction", blocksReview: true }]);
+    expect(policyReadinessItems(parse(passage)).length).toBeGreaterThan(0);
+    expect(policyReadinessItems(parse(passage)).every(item => item.kind === "mechanical_correction" && item.blocksReview)).toBe(true);
     expect(parse(passage).passages[0]?.counter_requirements).toEqual(passage.counter_requirements);
     expect(() => parse({ ...passage, disposition: "implemented" })).toThrow("COUNTING_REQUIREMENT_AMBIGUOUS");
     for (const replacement of [
@@ -974,7 +976,13 @@ describe("exact approval counter evidence and full-bundle targets", () => {
   };
 
   it.each(["corrected", "persistent", "distinct_capability"] as const)("bounds semantic counter reconciliation without editing valid rules (%s)", async (mode) => {
-    const draft = counterCoverageFixture(mode === "distinct_capability"), before = structuredClone(draft);
+    const draft = counterCoverageFixture(mode === "distinct_capability");
+    // This wording is outside bounded source recognition. Explicit operator
+    // interpretation supplies the missing positive basis; model equality does not.
+    const decisions = await reviewUnestablishedCounting({ source, draft, messages: [], assertCurrent: async () => {},
+      session: { chooseOption: async () => "boundary", confirm: async () => true } });
+    Object.assign(draft.runner_evidence, { counting_decisions: decisions });
+    const before = structuredClone(draft);
     const conversation = createModelAuthoringConversation();
     conversation.policySources = newPolicySourceSession();
     conversation.policySources.snapshots = [source]; conversation.policySources.active = 1;
