@@ -1,0 +1,48 @@
+{
+  "command": [
+    "corepack",
+    "pnpm",
+    "test"
+  ],
+  "exit": 1,
+  "product": "58493690e499b0be64c8dc1ec42e31582e1ee690",
+  "passed": 6291,
+  "failed": 27,
+  "skipped": 463,
+  "files": {
+    "passed": 304,
+    "failed": 2,
+    "skipped": 21
+  },
+  "source_unchanged": true,
+  "failures": [
+    "apps/runner/src/authoring-review-continuation.test.ts > saved policy review continuation > retains 'assisted' selector meaning and later duties through review, save and restart",
+    "apps/runner/src/semantic-action-deployment.test.ts > mixed-state semantic Read scope repair > repairs only already-reviewed RLS wiring and reports human proposal-only authority without worker claims",
+    "apps/runner/src/semantic-action-deployment.test.ts > mixed-state semantic Read scope repair > does not mistake malformed active authority for absence",
+    "apps/runner/src/semantic-action-deployment.test.ts > mixed-state semantic Read scope repair > does not mistake digest active authority for absence",
+    "apps/runner/src/semantic-action-deployment.test.ts > mixed-state semantic Read scope repair > does not mistake missing_immutable active authority for absence",
+    "apps/runner/src/semantic-action-deployment.test.ts > mixed-state semantic Read scope repair > does not mistake missing_read active authority for absence",
+    "apps/runner/src/semantic-action-deployment.test.ts > mixed-state semantic Read scope repair > does not mistake stale_read active authority for absence",
+    "apps/runner/src/semantic-action-deployment.test.ts > mixed-state semantic Read scope repair > does not restore revoked semantic authority from its retained config or immutable revision",
+    "apps/runner/src/semantic-action-deployment.test.ts > mixed-state semantic Read scope repair > reports policy approval separately from exact execution binding (matches=false)",
+    "apps/runner/src/semantic-action-deployment.test.ts > mixed-state semantic Read scope repair > reports policy approval separately from exact execution binding (matches=true)",
+    "apps/runner/src/semantic-action-deployment.test.ts > complete Action Boundary execution re-review > retires one action from the same client only after activation and cannot resurrect it from the active baseline",
+    "apps/runner/src/semantic-action-deployment.test.ts > complete Action Boundary execution re-review > refuses a removal publication if another reviewer changes the saved bundle",
+    "apps/runner/src/semantic-action-deployment.test.ts > metadata-only writer preflight before activation > checks the whole planned writer envelope without activating (multiple=false)",
+    "apps/runner/src/semantic-action-deployment.test.ts > metadata-only writer preflight before activation > checks the whole planned writer envelope without activating (multiple=true)",
+    "apps/runner/src/semantic-action-deployment.test.ts > metadata-only writer preflight before activation > refuses stale dependencies and missing credentials before opening a database connection",
+    "apps/runner/src/semantic-action-deployment.test.ts > metadata-only writer preflight before activation > does not call the reader a checked writer, but still derives requirements through it",
+    "apps/runner/src/semantic-action-deployment.test.ts > metadata-only writer preflight before activation > derives complete requirements through a read-only connection without claiming writer readiness (multiple=false)",
+    "apps/runner/src/semantic-action-deployment.test.ts > metadata-only writer preflight before activation > derives complete requirements through a read-only connection without claiming writer readiness (multiple=true)",
+    "apps/runner/src/semantic-action-deployment.test.ts > metadata-only writer preflight before activation > retains exact foreign Read dependencies only for executable outcomes (executable=false)",
+    "apps/runner/src/semantic-action-deployment.test.ts > metadata-only writer preflight before activation > retains exact foreign Read dependencies only for executable outcomes (executable=true)",
+    "apps/runner/src/semantic-action-deployment.test.ts > separate exact semantic writers > refuses the reader as a writer before inspection or publication (same_reference)",
+    "apps/runner/src/semantic-action-deployment.test.ts > separate exact semantic writers > refuses the reader as a writer before inspection or publication (same_value)",
+    "apps/runner/src/semantic-action-deployment.test.ts > separate exact semantic writers > exports a stable action-specific writer instead of replacing a connection used by another action",
+    "apps/runner/src/semantic-action-deployment.test.ts > separate exact semantic writers > rejects rebinding another action's writer and offers a per-action repair that can enable both",
+    "apps/runner/src/semantic-action-deployment.test.ts > separate exact semantic writers > keeps shared-connection failure requirements distinct from dedicated replacement instructions",
+    "apps/runner/src/semantic-action-deployment.test.ts > separate exact semantic writers > preserves the first enabled outcome after missing credentials, declined consent, posture drift, or stale config",
+    "apps/runner/src/semantic-action-deployment.test.ts > separate exact semantic writers > enables two outcomes without replacing the first writer or widening either writer's columns"
+  ],
+  "later_targeted_results_do_not_change_this_verdict": true
+}

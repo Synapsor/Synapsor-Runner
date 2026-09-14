@@ -1,0 +1,28 @@
+{
+  "name": "counting-focused02",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-counting-addition.test.ts",
+    "apps/runner/src/authoring-mixed-counting.test.ts",
+    "apps/runner/src/authoring-counting-contract.test.ts",
+    "apps/runner/src/authoring-policy-coverage.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T18:17:20.648187+00:00",
+  "source_head": "16de46592a4e03bf4e6862610b9430ecbebabcc0",
+  "source_diff_sha256": "925ac5568bd22c2d5661534c2c80d613663078a15c2176c95f63f07dd892be0a",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-counting-subjects-16de465-20260914/test-environments/counting-focused02",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/faithful-counting-subjects-20260914/counting-focused02",
+  "source_manifest_sha256": "83ee0b82971e4de9f3db3c1225dcb74d01b2680a3b7faf75e1ef30ae891c752e",
+  "pid": 2358759,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T18:17:26.921434+00:00"
+}

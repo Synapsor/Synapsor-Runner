@@ -1,0 +1,33 @@
+{
+  "at": "2026-09-14T19:10:44.791353+00:00",
+  "source": "58493690e499b0be64c8dc1ec42e31582e1ee690",
+  "state": "FREEZE_NEXT",
+  "suite_pid": 2431695,
+  "wrapper_exec_session": 72085,
+  "suite_exit_file": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/faithful-counting-subjects-20260914/stable-full02-exit.json",
+  "source_changes_allowed_while_running": false,
+  "stable_launches_used": 2,
+  "no_more_stable_launches": true,
+  "remaining": "Collect actual full exit. Commit intended evidence then freeze new complete installation using run-freeze.py. Bind new candidate through bind-final-candidate.mjs (harness metadata only), public tournament recovery add/remove/restart within40calls/75min and60runtimecalls/90min. Software retirement blocked by legal eligible unlinked slot; inspect installed public readiness, do not add Read or issuer. Save owned snapshots/logs; exact-CID cleanup; preservation final; private backup only.",
+  "provider_calls_used": 0,
+  "final_public_timer_started": false,
+  "runtime_calls_used": 0,
+  "new_candidate_frozen": false,
+  "observed_failures": {
+    "semantic-action-deployment.test.ts": 26,
+    "authoring-review-continuation.test.ts": 1
+  },
+  "prepared_not_applied": "apply-test-prerequisites.py; asserts full exit exists before edits",
+  "last_worker": "2466391 policy-authority codec; fresh owned fixture observed at 19:10 UTC, not stalled",
+  "full_suite_exit": 1,
+  "full_suite_counts": {
+    "passed": 6291,
+    "failed": 27,
+    "skipped": 463
+  },
+  "fixture_corrected_targeted": {
+    "passed": 37,
+    "failed": 0
+  },
+  "types_exit": 0
+}

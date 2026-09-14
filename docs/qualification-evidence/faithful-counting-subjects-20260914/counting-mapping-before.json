@@ -1,0 +1,44 @@
+{
+  "classification": "exact captured provider claim, before repair; not host proof",
+  "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+  "source_passage": {
+    "start": 7,
+    "end": 7,
+    "disposition": "implemented",
+    "interpretation": "The retained null capability selectors count the complete automatic-history domain, which contains only league.result_ratification; withdrawal is human-only with no automatic limits. Thus withdrawals neither consume nor expand the ratification allowances. The operator expressly required the null selectors to remain unchanged and confirmed the two-behavior allocation.",
+    "draft_paths": [
+      "/runner_evidence/actions/league.result_ratification/automatic_limits",
+      "/runner_evidence/actions/league.result_withdrawal/automatic_limits",
+      "/runner_evidence/runtime_contract/approval_counter_selection"
+    ],
+    "operator_message_id": 8,
+    "topic": "Ratification-only automatic allowance",
+    "responsibility": "runner",
+    "issue_kind": "coverage_link",
+    "next_step": "Retain the existing null capability selectors while the complete automatic-outcome domain remains ratification only.",
+    "counter_requirements": [
+      {
+        "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+        "current_capability": null,
+        "required_capability": null,
+        "operator_message_id": 5
+      },
+      {
+        "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+        "current_capability": null,
+        "required_capability": null,
+        "operator_message_id": 5
+      }
+    ]
+  },
+  "outcomes": [
+    "league.result_ratification",
+    "league.result_withdrawal"
+  ],
+  "counter_paths": [
+    "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+    "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability"
+  ],
+  "expected": "canonical ratification selector or applicable proof; existing singleton proof cannot support the two-outcome draft",
+  "prior_acceptance": "original absent-selector one-outcome version unchanged"
+}

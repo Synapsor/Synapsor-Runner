@@ -1,0 +1,20 @@
+{
+  "name": "types-dev03",
+  "args": [
+    "corepack",
+    "pnpm",
+    "typecheck"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T18:27:57.264232+00:00",
+  "source_head": "16de46592a4e03bf4e6862610b9430ecbebabcc0",
+  "source_diff_sha256": "d5b63a5028c2be8719ac319bd1f5404ffa1016383e941af6c61c5581e9f4136f",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-counting-subjects-16de465-20260914/test-environments/types-dev03",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/faithful-counting-subjects-20260914/types-dev03",
+  "source_manifest_sha256": "c91e58596cdd5366b47a94f77b9bf5409a8d61372c231609e35abc56737b061d",
+  "pid": 2382520,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T18:28:12.767931+00:00"
+}

@@ -1,0 +1,23 @@
+{
+  "updated_at": "2026-09-14T18:57:52.030501+00:00",
+  "candidate": "pending freeze",
+  "independent_acceptance": "not transferred from historical artifacts",
+  "rows": {
+    "exact_false_equality_replay": "PASS: captured reply refused before save; original accepted attempt retained",
+    "genuine_equal_value_controls": "PASS: boundary-wide null/null and explicit canonical equality",
+    "mixed_passage_isolation": "PASS: unchanged narrow proof resolver and negative controls",
+    "exact_selector_confirmation": "PASS deterministic composed path; installed confirmation PENDING",
+    "subject_compatibility_and_publication_preparation": "PASS deterministic; incompatible disabled draft retained",
+    "software_full_population": "BLOCKED: legal eligible unlinked slot has no permitted reference route",
+    "real_postgres_control_and_source_gate": "PASS:49 tests; separate backend labels in log",
+    "real_postgres_review_gate": "PASS:4 selected /416 excluded by explicit selection",
+    "final_focused": "PASS:141 /1 opt-in skipped",
+    "final_types": "PASS: post-test-correction types exit0",
+    "offline_ten": "PASS all exits0; first trusted-core failure preserved",
+    "stable_full": "FAIL: exit1,6291 passed/27 failed/463 skipped; fixture corrections later37 passed do not change full verdict",
+    "final_installed_identity": "PENDING",
+    "installed_tournament_add_execute_receipt_remove_restart": "PENDING",
+    "installed_software_retirement_lifecycle": "BLOCKED: no population-preserving design under unchanged Read",
+    "original_stage_b": "HISTORICALLY NOT PASSED"
+  }
+}

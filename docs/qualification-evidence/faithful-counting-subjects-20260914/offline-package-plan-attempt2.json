@@ -1,0 +1,127 @@
+{
+  "started_at": "2026-09-14T18:45:03.971738+00:00",
+  "network": "unshared network namespace; npm offline; writable disposable cache copy",
+  "home": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-counting-subjects-16de465-20260914/offline-home",
+  "commands": [
+    {
+      "name": "trusted-core",
+      "args": [
+        "node",
+        "scripts/check-trusted-core-dependencies.mjs"
+      ],
+      "phase": "source",
+      "source_immutable_during_full_suite": true,
+      "started_at": "2026-09-14T18:45:03.971872+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-14T18:45:06.242496+00:00"
+    },
+    {
+      "name": "licenses",
+      "args": [
+        "node",
+        "scripts/check-license-content.mjs"
+      ],
+      "phase": "source",
+      "source_immutable_during_full_suite": true,
+      "started_at": "2026-09-14T18:45:06.242925+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-14T18:45:07.160191+00:00"
+    },
+    {
+      "name": "human-commands",
+      "args": [
+        "node",
+        "scripts/verify-human-command-surface.mjs"
+      ],
+      "phase": "source",
+      "source_immutable_during_full_suite": true,
+      "started_at": "2026-09-14T18:45:07.160520+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-14T18:45:07.926050+00:00"
+    },
+    {
+      "name": "dsl-sources",
+      "args": [
+        "bash",
+        "scripts/verify-dsl-source-paths.sh"
+      ],
+      "phase": "source",
+      "source_immutable_during_full_suite": true,
+      "started_at": "2026-09-14T18:45:07.926490+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-14T18:45:09.197416+00:00"
+    },
+    {
+      "name": "cursor-plugin",
+      "args": [
+        "node",
+        "scripts/verify-cursor-plugin.mjs"
+      ],
+      "phase": "source",
+      "source_immutable_during_full_suite": true,
+      "started_at": "2026-09-14T18:45:09.197792+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-14T18:45:09.312811+00:00"
+    },
+    {
+      "name": "mcp-client-configs",
+      "args": [
+        "node",
+        "scripts/verify-mcp-client-configs.mjs"
+      ],
+      "phase": "source",
+      "source_immutable_during_full_suite": true,
+      "started_at": "2026-09-14T18:45:09.313326+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-14T18:45:43.760043+00:00"
+    },
+    {
+      "name": "local-package",
+      "args": [
+        "bash",
+        "scripts/verify-local-runner.sh"
+      ],
+      "phase": "package",
+      "source_immutable_during_full_suite": false,
+      "started_at": "2026-09-14T18:46:01.058619+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-14T18:46:44.430370+00:00"
+    },
+    {
+      "name": "bundle-freshness",
+      "args": [
+        "node",
+        "scripts/verify-local-runner-bundle-freshness.mjs"
+      ],
+      "phase": "package",
+      "source_immutable_during_full_suite": false,
+      "started_at": "2026-09-14T18:46:44.430890+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-14T18:46:49.958656+00:00"
+    },
+    {
+      "name": "public-commands",
+      "args": [
+        "bash",
+        "scripts/verify-public-commands.sh"
+      ],
+      "phase": "package",
+      "source_immutable_during_full_suite": false,
+      "started_at": "2026-09-14T18:46:49.959096+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-14T18:47:32.072337+00:00"
+    },
+    {
+      "name": "packed-offline",
+      "args": [
+        "bash",
+        "scripts/verify-packed-runner.sh"
+      ],
+      "phase": "package",
+      "source_immutable_during_full_suite": false,
+      "started_at": "2026-09-14T18:47:32.072621+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-14T18:49:33.169982+00:00"
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "name": "final-fixture-corrections02",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/semantic-action-deployment.test.ts",
+    "apps/runner/src/authoring-review-continuation.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T19:16:22.929191+00:00",
+  "source_head": "58493690e499b0be64c8dc1ec42e31582e1ee690",
+  "source_diff_sha256": "95cba575a94eeb59c9174410edbccc191e2c20aa1e467c3d687a76583e39740c",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-counting-subjects-16de465-20260914/test-environments/final-fixture-corrections02",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/faithful-counting-subjects-20260914/final-fixture-corrections02",
+  "source_manifest_sha256": "c31ace6936a452131be4aa4e3325975c7715ea60600893d7e642d56b652cf67b",
+  "pid": 2499970,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T19:16:29.960677+00:00"
+}

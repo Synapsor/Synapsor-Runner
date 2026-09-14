@@ -1,0 +1,29 @@
+{
+  "name": "publication-final",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/action-rule-authority.test.ts",
+    "--testNamePattern",
+    "checks the selected four-tool",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T18:42:33.971337+00:00",
+  "source_head": "16de46592a4e03bf4e6862610b9430ecbebabcc0",
+  "source_diff_sha256": "07b6481cee62a85abc8de181b267c0f02ad11668faa0255fe240df8f94f06751",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-counting-subjects-16de465-20260914/test-environments/publication-final",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/faithful-counting-subjects-20260914/publication-final",
+  "source_manifest_sha256": "7898613e164f45ec7a454c7d5e9eaa738ac4e37504f07528827149ff612ffaa2",
+  "pid": 2413849,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T18:42:39.965045+00:00"
+}

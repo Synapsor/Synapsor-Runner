@@ -1,0 +1,23 @@
+{
+  "at": "2026-09-14T18:51:08.967Z",
+  "classification": "read-only stored-history corroboration; evaluator regression separate",
+  "canonical_outcome": "league.result_ratification",
+  "stored_automatic_rows": [
+    {
+      "proposal_id": "wrp_rule_e3f92f3f4bcc5a0b1ed4b3c11a8302c5",
+      "action_boundary_name": "reviewed_staging_actions",
+      "created_at": "2026-09-14T16:58:17.390Z",
+      "status": "approved",
+      "outcome": "league.result_ratification"
+    }
+  ],
+  "window": {
+    "start": "2026-09-13T18:51:08.967Z",
+    "end": "2026-09-14T18:51:08.967Z",
+    "inclusive": true
+  },
+  "absent_selector_count": 1,
+  "explicit_selector_count": 1,
+  "all_prior_automatic_proposals_match_canonical_outcome": true,
+  "source_or_store_mutation": false
+}

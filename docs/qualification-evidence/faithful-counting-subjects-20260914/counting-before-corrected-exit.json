@@ -1,0 +1,21 @@
+{
+  "name": "counting-before-corrected",
+  "args": [
+    "node",
+    "--import",
+    "tsx",
+    "docs/qualification-evidence/faithful-counting-subjects-20260914/replay-counting.mts"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T18:12:51.827338+00:00",
+  "source_head": "16de46592a4e03bf4e6862610b9430ecbebabcc0",
+  "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-counting-subjects-16de465-20260914/test-environments/counting-before-corrected",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/faithful-counting-subjects-20260914/counting-before-corrected",
+  "source_manifest_sha256": "ad7390d02e0e6c3028847d1802879c99b39168211b1cb0cd9b77a9747596b5ea",
+  "pid": 2348516,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T18:12:52.986921+00:00"
+}

@@ -1,0 +1,63 @@
+{
+  "assignment": "Faithful counting requirements and obtainable Action subjects",
+  "started_at": "2026-09-14T18:07:52.786494+00:00",
+  "baseline": "16de46592a4e03bf4e6862610b9430ecbebabcc0",
+  "branch": "codex/tui-safe-action-control-plane",
+  "owned_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-counting-subjects-16de465-20260914",
+  "evidence_root": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/faithful-counting-subjects-20260914",
+  "previous_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/workflow-evolution-37ec677-20260914",
+  "previous_evidence": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/workflow-evolution-20260914",
+  "frozen_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mixed-counting-review-b655769-20260914/frozen",
+  "artifact_tree": "aff01e8be77d65e614f8b6b283b1692b1a4e663d0240cac2ff9c09a5e2957008",
+  "trial_harness_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/trial-harness",
+  "original_cases_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases",
+  "acceptance": "PASS: independent Claude acceptance, narrow repair only",
+  "acceptance_report": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/mixed-counting-acceptance-20260914/ACCEPTANCE.md",
+  "budgets": {
+    "development_minutes": 180,
+    "fixture_minutes": 40,
+    "stable_verification_minutes": 100,
+    "full_suite_launches": 2,
+    "development_provider_calls": 4,
+    "confirmation_minutes_per_case": 75,
+    "authoring_calls_per_case": 40,
+    "authoring_allocations": {
+      "add": 22,
+      "remove": 12,
+      "restart_reserved": 6
+    },
+    "runtime_minutes_per_case": 90,
+    "runtime_tool_calls_per_case": 60,
+    "worker_invocations_per_case": 3,
+    "closure_minutes": 25
+  },
+  "scope": "Two named composition repairs; no runtime engine or Read expansion; known-case add/remove when prerequisites hold",
+  "known_open_worker": "TRUSTED_BINDING_MISSING worker-retry classification; record if reached, no repair/requeue/refund",
+  "stage_b": "original NOT PASSED",
+  "status": "IN_PROGRESS",
+  "next_step": "Finish composed/publication regressions, explicit owned backend gates and stable verification, then freeze final candidate and recover tournament addition/removal; software target population is blocked on a separate Read/reference decision.",
+  "case_sources": {
+    "recovery-tournament-assisted": {
+      "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/workflow-evolution-37ec677-20260914",
+      "run": "recovery-tournament-assisted",
+      "checkpoint": "add-stopped",
+      "case": "tournament-ratification"
+    },
+    "recovery-software": {
+      "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/workflow-evolution-37ec677-20260914",
+      "run": "recovery-software",
+      "checkpoint": "final-stopped",
+      "case": "software-release-sealing"
+    }
+  },
+  "budget_amendments": [
+    {
+      "at": "2026-09-14T18:47:18.495351+00:00",
+      "field": "full_suite_launches",
+      "before": 1,
+      "after": 2,
+      "used_before": 1,
+      "reason": "First stable command failed the trusted-core prerequisite before any Vitest test ran; type ownership fix is validated. One final actual full-suite attempt, existing 100-minute verification ceiling unchanged. Earlier result retained, no counter reset."
+    }
+  ]
+}

@@ -1,0 +1,20 @@
+{
+  "classification": "derived fixture-owner transaction in a new owned post-effect copy; no application success claim",
+  "source_counts": {
+    "release_slots": 116,
+    "build_candidates": 116,
+    "build_checks": 272
+  },
+  "original_matching_source_sha256": "4e7e55ba0d8f2a4e7c1b7030b8ffdf5889b8e089452292cbf418173fded5d21b",
+  "insert_statement": "INSERT INTO release_ops.release_slots(slot_id,tenant_id,principal_id,slot_ref,slot_state,version) SELECT $1,tenant_id,principal_id,$2,'ready',1 FROM release_ops.release_slots LIMIT 1",
+  "probe": [
+    {
+      "slot_state": "ready",
+      "linked_candidates": 0
+    }
+  ],
+  "rollback": true,
+  "post_rollback_source_sha256": "4e7e55ba0d8f2a4e7c1b7030b8ffdf5889b8e089452292cbf418173fded5d21b",
+  "scope_conclusion": "An eligible own ready slot can exist without any candidate. Candidate-rooted retirement excludes this legal target; no narrowing or Read expansion implemented.",
+  "required_decision": "Explicitly review slot root/reference access or separately authorize an existing-contract-compatible reference capability; four runtime tools and current Read stay unchanged."
+}

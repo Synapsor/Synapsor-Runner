@@ -1,0 +1,20 @@
+{
+  "name": "types-test-prerequisites",
+  "args": [
+    "corepack",
+    "pnpm",
+    "typecheck"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T19:15:16.865071+00:00",
+  "source_head": "58493690e499b0be64c8dc1ec42e31582e1ee690",
+  "source_diff_sha256": "4f202dedccbc92abe219cb7037842600bb8645fd7053113b216bfb6b7bf2d177",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-counting-subjects-16de465-20260914/test-environments/types-test-prerequisites",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/faithful-counting-subjects-20260914/types-test-prerequisites",
+  "source_manifest_sha256": "f4c773f49996bdeb18646da51ada9e118f20fb17739b229139114b70b7f767c8",
+  "pid": 2497434,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T19:15:21.924984+00:00"
+}

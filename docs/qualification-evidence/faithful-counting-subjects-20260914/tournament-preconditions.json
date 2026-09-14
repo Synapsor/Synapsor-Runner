@@ -1,0 +1,74 @@
+{
+  "matching_baseline_sha256": "8d4b92d59d0bb94815e28fbfeb1f0485b7ca4b62306657e5be9421f90dec9f0f",
+  "rows": {
+    "events": 8,
+    "results": 96
+  },
+  "intended_subjects": [
+    {
+      "fixture_ref": "primary-R23",
+      "state": "finished",
+      "integrity_hold": false,
+      "event_state": "open",
+      "version": 1,
+      "same_owner": true
+    },
+    {
+      "fixture_ref": "primary-R24",
+      "state": "finished",
+      "integrity_hold": false,
+      "event_state": "open",
+      "version": 1,
+      "same_owner": true
+    },
+    {
+      "fixture_ref": "colleague-R23",
+      "state": "finished",
+      "integrity_hold": false,
+      "event_state": "open",
+      "version": 1,
+      "same_owner": true
+    },
+    {
+      "fixture_ref": "colleague-R24",
+      "state": "finished",
+      "integrity_hold": false,
+      "event_state": "open",
+      "version": 1,
+      "same_owner": true
+    },
+    {
+      "fixture_ref": "second-org-R23",
+      "state": "finished",
+      "integrity_hold": false,
+      "event_state": "open",
+      "version": 1,
+      "same_owner": true
+    },
+    {
+      "fixture_ref": "second-org-R24",
+      "state": "finished",
+      "integrity_hold": false,
+      "event_state": "open",
+      "version": 1,
+      "same_owner": true
+    },
+    {
+      "fixture_ref": "third-org-R23",
+      "state": "finished",
+      "integrity_hold": false,
+      "event_state": "open",
+      "version": 1,
+      "same_owner": true
+    },
+    {
+      "fixture_ref": "third-org-R24",
+      "state": "finished",
+      "integrity_hold": false,
+      "event_state": "open",
+      "version": 1,
+      "same_owner": true
+    }
+  ],
+  "prepared_before_public_timer": true
+}

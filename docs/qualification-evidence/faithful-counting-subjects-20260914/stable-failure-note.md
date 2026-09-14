@@ -1,0 +1,3 @@
+The single declared stable-full launch exited 1 before Vitest: trusted-core lexical dependency cycle from the new type-only CountingRequirementBinding import. The type is now owned by the policy-source representation, eliminating the cycle. This is a product implementation correction. The failed full command is preserved; no full-suite pass is claimed for the corrected source and the one-launch budget is not reset. Remaining focused/type/backend/offline checks and authorized bounded public confirmation continue.
+
+Explicit amendment before attempt 2: retain attempted pipeline 1 as failed, permit one final actual full-suite execution within the unchanged verification-time budget. Launch counter is 2, not reset to 1.

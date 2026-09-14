@@ -1,0 +1,12 @@
+{
+  "name": "synapsor-faithful-review-tests-f091f412",
+  "id": "fff2ded89d9bc7f21f7419164c8b062229d57fa733bc8e7e3955293d66b6a4fc",
+  "label": "faithful-counting-subjects-20260914",
+  "image": "sha256:1edc8e87e53194e0cc8006c4e9df9b626c6c72cb43ad3385f0f34af7922065b1",
+  "network": "none",
+  "database": "policy_reconciliation_tests",
+  "socket": "/tmp/synapsor-faithful-review-pg-IEh6SJ/socket",
+  "private_configuration": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-counting-subjects-16de465-20260914/private/live-postgres.json",
+  "ready_at": "2026-09-14T18:31:54.947Z",
+  "credentials": "only scoped SYNAPSOR_TEST_POSTGRES_URL, no provider environment"
+}

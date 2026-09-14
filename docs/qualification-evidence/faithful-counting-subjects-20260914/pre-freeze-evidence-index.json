@@ -1,0 +1,53 @@
+{
+  "stage": "pre-freeze, final full-suite still running",
+  "records": [
+    {
+      "path": "counting-before-corrected.log",
+      "sha256": "e3cdae827baace6127e782aea05e0460c83a30e7d7bddaa448a193ed85daa0a7"
+    },
+    {
+      "path": "counting-after-final.log",
+      "sha256": "78e131d9cbd48e0f53700f4064ee4f6a5f9f04264e6437f58c925f553943d08e"
+    },
+    {
+      "path": "counting-mapping-before.json",
+      "sha256": "0ef66750a3f137f4b762126ca2ef0681101cfaa9f42e14e8245eb2a52044ec8c"
+    },
+    {
+      "path": "history-before-selector.json",
+      "sha256": "9c7fd4d0af41cf54f22ed456956272f3c4f316c9f8d66720c6a5ed5e13df54c6"
+    },
+    {
+      "path": "software-domain-result.json",
+      "sha256": "ed99eacb941c9787905ca6e728ba95670724989e58f444c62c8f8cfc9962d977"
+    },
+    {
+      "path": "tournament-preconditions.json",
+      "sha256": "73d79a8b604e1a2d2cc0eb0f799f5b1e1d70d12c4508db5e48c1ec4cb560c0fb"
+    },
+    {
+      "path": "final-focused-exit.json",
+      "sha256": "e1fb7e42c58651af289ef0e7528db80e2ad3608eab5bc663b5a12f830af1b09a"
+    },
+    {
+      "path": "final-postgres-exit.json",
+      "sha256": "bf67afb9c784516c428351721baedaa5fcc6613f9ec33fa13fb140fcedf996c6"
+    },
+    {
+      "path": "final-postgres-review-exit.json",
+      "sha256": "e7db568075f51c0ae03d9ee4d9d52a4a58c5c9ce4ea2ac82dd37450fc5179966"
+    },
+    {
+      "path": "final-types-exit.json",
+      "sha256": "f42382855d208cbc29778fc5168a05a1c5e95ba5494a7386179a8a333d0cd79f"
+    },
+    {
+      "path": "offline-package-plan-attempt2.json",
+      "sha256": "0836077faaf8e81685b5648bd8c36f074c7f3f35c1a2336c9cb5e01742d55c4c"
+    },
+    {
+      "path": "stable-full-exit.json",
+      "sha256": "e91f55a803e990482781b765be1ac9a141d2dd0aebec270f792ef06185967468"
+    }
+  ]
+}

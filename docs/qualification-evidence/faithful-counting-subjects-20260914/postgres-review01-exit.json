@@ -1,0 +1,29 @@
+{
+  "name": "postgres-review01",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/control-policy-authority-codec.test.ts",
+    "--testNamePattern",
+    "postgres validated operator policy transactions.*keeps Action recovery review available with unavailable Read authority:",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": true,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T18:33:35.550654+00:00",
+  "source_head": "16de46592a4e03bf4e6862610b9430ecbebabcc0",
+  "source_diff_sha256": "7d76034d9c8b2d8343aeb5807639f42da28d5878ddd6d233b6e0722e61b514c1",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-counting-subjects-16de465-20260914/test-environments/postgres-review01",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/faithful-counting-subjects-20260914/postgres-review01",
+  "source_manifest_sha256": "debe662a36f26bd541a970931f68677c73de7b0fbcfedcd0d9491fa374fb4080",
+  "pid": 2394874,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T18:33:43.939458+00:00"
+}
