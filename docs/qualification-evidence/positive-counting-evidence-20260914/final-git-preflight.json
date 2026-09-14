@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-14T23:38:51.850952+00:00",
+  "files_checked": 28,
+  "sqlite_archives_and_actual_credential_patterns": false,
+  "code_templates_reviewed": [
+    "docs/qualification-evidence/positive-counting-evidence-20260914/prepare-known-run.mjs",
+    "docs/qualification-evidence/positive-counting-evidence-20260914/prepare-known-run.mjs"
+  ],
+  "initial_scanner_result": "Flagged pre-existing URI construction templates in prepare-known-run.mjs; inspected expressions contain variable interpolation, no literal credentials. No content was hidden or removed.",
+  "raw_state_and_provider_captures": "private external immutable handoff; excluded from Git",
+  "scope": "Only intended evidence/harness/report files changed after final frozen source. No runtime/product/test modification."
+}

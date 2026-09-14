@@ -21,6 +21,7 @@ for R in sorted((O/'runs').iterdir()):
   if p.is_dir():shutil.copytree(p,target/name)
   elif p.is_file():shutil.copy2(p,target/name)
 shutil.copytree(O/'closure',D/'closure')
+if (O/'fixture-failures').exists():shutil.copytree(O/'fixture-failures',D/'fixture-failures')
 for name in ['final-budget.json','preservation-start.json']:
  if (O/name).exists():shutil.copy2(O/name,D/name)
 (D/'README.md').write_text(f'''# Private immutable verifier handoff

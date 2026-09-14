@@ -1,0 +1,31 @@
+{
+  "at": "2026-09-14T23:15:36.033588+00:00",
+  "records": [
+    {
+      "run": "recovery-tournament-assisted",
+      "attempt": 2,
+      "classification": "HARNESS schema-preview command failure; no product open",
+      "before_exit": 1,
+      "corrected_read_only_schema_preview_exit": 0,
+      "partial_dump_exit": 0,
+      "saved": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/fixture-failures/recovery-tournament-assisted-attempt2",
+      "container": "synapsor-positive-recovery-tournament-assisted-00422d7d",
+      "id": "b73b4272c1f3054c421a0e146c52bb66000e1db46da605fa03bb506122b3b1a7",
+      "stopped": true,
+      "provider_calls": 0
+    },
+    {
+      "run": "counting-wording-control",
+      "attempt": 1,
+      "classification": "HARNESS schema-preview command failure; no product open",
+      "before_exit": 1,
+      "corrected_read_only_schema_preview_exit": 0,
+      "partial_dump_exit": 0,
+      "saved": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/fixture-failures/counting-wording-control-attempt1",
+      "container": "synapsor-positive-counting-wording-control-4cf77088",
+      "id": "3e38ae1a3858f04a802f58db68ad41161f49db69bc35698df9791cb5377ff828",
+      "stopped": true,
+      "provider_calls": 0
+    }
+  ]
+}

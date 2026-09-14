@@ -1,6 +1,6 @@
 {
-  "updated_at": "2026-09-14T23:09:05.545813+00:00",
-  "artifact": null,
+  "updated_at": "2026-09-14T23:37:51.376256+00:00",
+  "artifact": "9ed1469c43e8bdd4cfe3401223285d4dfe4f9e93370b9f95143a681cb15cce99",
   "stage_a": "historical artifact-specific acceptance; no new campaign",
   "original_stage_b": "NOT PASSED",
   "rows": {
@@ -63,16 +63,31 @@
       "files_skipped": 21
     },
     "installed_post_removal_review": {
-      "status": "NOT RUN"
+      "status": "PASSED",
+      "calls": 1,
+      "new_counting_questions": 0,
+      "business_ready": true,
+      "privacy_verified": false,
+      "pending_work": [],
+      "evidence": "recovery-tournament-assisted-review-completed-oracle.json + saved-readiness-oracle.json + runs/recovery-tournament-assisted/logs/review01-terminal.log"
     },
     "installed_post_removal_restart_recheck": {
-      "status": "NOT RUN"
+      "status": "INCOMPLETE_STOPPED",
+      "evidence": "remaining-public-recheck.json",
+      "actual": "No-change plan retained pending_job_revision; no coverage call",
+      "calls": 2
     },
     "installed_unknown_to_resolved": {
-      "status": "NOT RUN"
+      "status": "BLOCKED",
+      "evidence": "remaining-wording-review.json",
+      "actual": "Full replacement source was transferred and present in request; provider asked for it again before counting choices",
+      "calls": 2,
+      "counting_choices_reached": false,
+      "new_source_completed_review": false
     },
     "installed_unknown_restart_recheck": {
-      "status": "NOT RUN"
+      "status": "NOT_RUN",
+      "reason": "Stopped before positive recovery"
     },
     "reload_correction": {
       "status": "PASSED_FOCUSED",
@@ -80,7 +95,41 @@
       "skipped": 1,
       "evidence": "reload-focused-after.log",
       "original_metadata_assertion_unchanged": true
+    },
+    "installed_post_removal_restart": {
+      "status": "PASSED",
+      "new_counting_questions": 0,
+      "coverage_provider_calls_during_initial_resume": 0,
+      "limit": "Initial resume only; not the explicit recheck"
+    },
+    "installed_unknown_negative_gate": {
+      "status": "NOT_REACHED",
+      "note": "No positive current-source report, but the public counting gate itself was not exercised. Deterministic negative evidence is separate."
+    },
+    "authority_history_receipts_source": {
+      "status": "PASSED",
+      "evidence": "installed-final-state.json + snapshot/oracle files",
+      "limit": "Review-only, no worker or effect"
+    },
+    "complete_installation": {
+      "status": "PASSED",
+      "entries": 7569,
+      "evidence": "final-artifact.json + installed-verification-after.json"
+    },
+    "originals_and_cleanup": {
+      "status": "PASSED",
+      "original_entries": 247416,
+      "owned_containers_stopped": 8,
+      "evidence": "preservation-final.json + final-owned-resources.json"
     }
   },
-  "verdict": "IN PROGRESS; no final acceptance recommendation before installed rows and complete suite"
+  "verdict": "IMPLEMENTATION GATES PASSED; installed completion INCOMPLETE; independent acceptance PENDING",
+  "provider_calls": {
+    "development": 0,
+    "final": 5,
+    "limit": 25,
+    "restart_recheck_phase": 2,
+    "reserved_restart_recheck": 6,
+    "failed_transports": 0
+  }
 }

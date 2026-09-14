@@ -1,0 +1,39 @@
+{
+  "frozen_at": "2026-09-14T23:09:21.072Z",
+  "purpose": "positive counting requirement evidence and stable attached-policy recheck; review-only confirmation",
+  "cases": [
+    "post-removal tournament review and narrow unknown counting formulation"
+  ],
+  "product_commit": "d9aba4f51c5070d8dff12bf2bb73937826fc9a3b",
+  "test_commit": "d9aba4f51c5070d8dff12bf2bb73937826fc9a3b",
+  "report_commit": "recorded separately after verification",
+  "source_commit": "a09d39a8f66e6f4cd17e24d8709ad7f196a1c969",
+  "source_status": "?? .claude/",
+  "unpackaged_unrelated_directory": ".claude/ (preserved, no contents read)",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/frozen/installed",
+  "installed_tree_sha256": "9ed1469c43e8bdd4cfe3401223285d4dfe4f9e93370b9f95143a681cb15cce99",
+  "node": {
+    "version": "v22.22.2",
+    "executable": "/usr/bin/node",
+    "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+  },
+  "runner_version": "1.8.0",
+  "spec_version": "1.11.0",
+  "package_lock_sha256": "56521d63b8c248b1f8c388864cae8f19c40aab0e8a96890f5fa7076848aab3f4",
+  "tarballs": [
+    {
+      "name": "synapsor-runner-1.8.0.tgz",
+      "sha256": "021dbbaa640e003b735fa8a01b84de91b4166c7ac1cf082280617901c19e41b1"
+    },
+    {
+      "name": "synapsor-spec-1.11.0.tgz",
+      "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+    }
+  ],
+  "entries": 7569,
+  "manifest_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/frozen/installed-artifact-manifest.json",
+  "manifest_sha256": "78cb4412065aa4583e5782c6e7aa588d431c50af159f1b472a95f8d690764baa",
+  "archive_sha256": "e7ce895c4791770bb759de4edb827749009aa33bf2f12b2b57be7c3c9fee2ca7",
+  "stable_source_manifest_sha256": "7e43e57de05814368469e215f91c71481240721feb3ffe640ebafc8d8be1ed07",
+  "freeze_exit": 0
+}

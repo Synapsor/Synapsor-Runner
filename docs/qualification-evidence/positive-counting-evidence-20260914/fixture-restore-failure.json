@@ -1,0 +1,22 @@
+{
+  "at": "2026-09-14T23:12:46.911707+00:00",
+  "classification": "FIXTURE SETUP FAILURE before public application open",
+  "exit": 1,
+  "cause": "A historical generated writer role referenced by the exact source dump was absent; the prior helper created only the currently configured writer.",
+  "preserved_attempt": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/fixture-failures/recovery-tournament-assisted-attempt1",
+  "source_restore_log_sha256": "e746b6cf3272e8a40ca1c816acb7acea03b83dbaba602a06b8c95d7fa1a30f47",
+  "container": "synapsor-positive-recovery-tournament-assisted-a0afe8c3",
+  "container_id": "09b97cded1463df076304f5fa78daef1dd3dee0a65ee8ca8b1e4cd9570a28d00",
+  "stopped": true,
+  "provider_calls": 0,
+  "source_originals_modified": false,
+  "repair": "New whole-project/source restore; recreate historical writer-role prerequisites from the saved schema before restoring its unchanged ACLs.",
+  "forensic_dump": {
+    "exit": 0,
+    "database_resolved_from": "verified owned POSTGRES_DB",
+    "sha256": "79c6b2d32076da2e180146adb06cacd59b3b272fba9745b18cad4d6791cc1bd3",
+    "initial_failed_dump_preserved": true,
+    "temporary_owned_restart_for_read_only_dump": true,
+    "stopped_after": true
+  }
+}

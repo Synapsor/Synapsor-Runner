@@ -1,0 +1,42 @@
+{
+  "at": "2026-09-14T23:31:01.860970+00:00",
+  "records": [
+    {
+      "run": "counting-wording-control",
+      "container": "synapsor-positive-counting-wording-control-7c322b92",
+      "container_id": "b86f1d03fe67ea6e62cf9f537579a038a89ed89bc28f5674c9fd448eed5c2bd2",
+      "label": "positive-counting-evidence-20260914",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "9427e28661224c41fb236b24492ff03ab4c7cd37371a9a220ef91cc85bcba3d6",
+        "postgres.log": "7051d18e7e8d6920e4d974fb1fcd19fed4a90d29d7b4586d0a15b7b99c679939",
+        "source.dump": "fbfe703456bef00c76ca16ec71bf2b2f595f6e8644cbae5dd4343c96f814de54"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/closure/counting-wording-control",
+      "removed": false
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "container": "synapsor-positive-recovery-tournament-assisted-8b269259",
+      "container_id": "8cb9383cd2e35ea0600474acb05238d3d453cf6a5733fe94ae78db0146f4ec23",
+      "label": "positive-counting-evidence-20260914",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "c934c3ba75489b350608da3b4618f3a510a94d0a163254c04f20f35bb0fd06f1",
+        "postgres.log": "824bb490cf118d42eaadb90999332cd1a94fdbb2bec57515574d32833ef9e22c",
+        "source.dump": "53dd449f24d36fe80ab3836cc6d6bc3112480b1d5bdd52f2eef613b3cdd07ebd"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/closure/recovery-tournament-assisted",
+      "removed": false
+    }
+  ],
+  "counts_note": "Actual public CLI and provider invocations retained in each public-invocations.jsonl and meter/events.jsonl. Worker outcomes are recorded separately; this cleanup makes no execution-success claim.",
+  "original_containers_touched": false,
+  "fixture_directories_removed": false
+}

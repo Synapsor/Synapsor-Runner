@@ -1,0 +1,429 @@
+{
+  "at": "2026-09-14T23:32:32.564Z",
+  "evidence": "read-only host oracle over installed checkpoints",
+  "rows": [
+    {
+      "run": "recovery-tournament-assisted",
+      "checkpoint": "review-completed",
+      "current_source_matches_report": true,
+      "report_readiness": {
+        "ready": true,
+        "privacy": false,
+        "items": [
+          {
+            "kind": "deployment_prerequisite",
+            "title": "Authenticated referee identity",
+            "nextStep": "After review, choose a client and configure runtime identity. Use a fixed test identity only for local testing; production identity must come from an authenticated application session. Runtime access remains unavailable without it.",
+            "passages": [
+              {
+                "start": 3,
+                "end": 3,
+                "disposition": "needs_decision",
+                "interpretation": "Authenticated application-session wiring to the already reviewed tenant and principal bindings is not yet verified. This is later deployment wiring, not a missing record-scope rule.",
+                "draft_paths": [
+                  "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+                ],
+                "topic": "Authenticated referee identity",
+                "responsibility": "deployment",
+                "issue_kind": "missing_configuration",
+                "next_step": "After authority review, configure and verify authenticated-session identity for the reviewed tenant and principal bindings.",
+                "deployment_prerequisite": "authenticated_identity"
+              }
+            ],
+            "blocksReview": false
+          },
+          {
+            "kind": "deployment_prerequisite",
+            "title": "Referee result selection",
+            "nextStep": "Assign the client responsibility for capturing the referee’s intended result selection.",
+            "passages": [
+              {
+                "start": 3,
+                "end": 3,
+                "disposition": "needs_decision",
+                "interpretation": "Runner can validate a submitted scoped result reference, but the client must still capture the referee’s intended result selection.",
+                "draft_paths": [
+                  "/runner_evidence/runtime_contract/application_obligations/customer_selection"
+                ],
+                "topic": "Referee result selection",
+                "responsibility": "application",
+                "issue_kind": "missing_configuration",
+                "next_step": "Assign the client responsibility for capturing the referee’s intended result selection.",
+                "application_obligations": [
+                  "customer_selection"
+                ]
+              }
+            ],
+            "blocksReview": false
+          },
+          {
+            "kind": "deployment_prerequisite",
+            "title": "Runner-ledger receipt and execution setup",
+            "nextStep": "After authority review, prepare or verify the dedicated writer, review execution permission, then configure and start the worker. Keep reader credentials separate. Setup and execution remain unverified; no request is completed without a successful receipt.",
+            "passages": [
+              {
+                "start": 7,
+                "end": 7,
+                "disposition": "needs_decision",
+                "interpretation": "A stored Runner-ledger receipt is required, but receipt mode, dedicated writer and grants, execution consent, and worker startup are not checked or verified for the current ratification action.",
+                "draft_paths": [
+                  "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+                ],
+                "topic": "Runner-ledger receipt and execution setup",
+                "responsibility": "deployment",
+                "issue_kind": "missing_configuration",
+                "next_step": "After authority review, configure the writer, Runner-ledger receipt mode, execution consent, and worker for ratification.",
+                "deployment_prerequisite": "runner_execution_setup"
+              }
+            ],
+            "blocksReview": false
+          },
+          {
+            "kind": "deployment_prerequisite",
+            "title": "Independent changed-row verification",
+            "nextStep": "After each applicable execution, independently observe the source and compare it with the exact intended change. This readback remains unverified; a receipt alone is not that observation. No Action-code repair is required for this external step.",
+            "passages": [
+              {
+                "start": 7,
+                "end": 7,
+                "disposition": "needs_decision",
+                "interpretation": "Independently verifying the changed source row is an external after-execution observation and remains unverified; a Runner receipt does not establish it.",
+                "draft_paths": [
+                  "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+                ],
+                "topic": "Independent changed-row verification",
+                "responsibility": "application",
+                "issue_kind": "missing_configuration",
+                "next_step": "Assign who will independently observe each changed source row after execution.",
+                "application_obligations": [
+                  "independent_source_readback"
+                ]
+              }
+            ],
+            "blocksReview": false
+          }
+        ],
+        "summary": [
+          "Attached rules: rules.txt v1; interpretation checked for this revision.",
+          "Client integration still unverified: signed-in customer identity, customer selection. Check these during client setup before customer use.",
+          "Independent source readback remains unverified for each applicable execution. Perform and retain that separate observation after the change; a receipt or completed business review does not prove it.",
+          "Execution setup pending: dedicated writer review, separate execution permission and worker startup. Continue to these checks after authority review; automatic completion is not yet enabled."
+        ]
+      },
+      "residuals": [
+        {
+          "kind": "deployment_prerequisite",
+          "title": "Authenticated referee identity",
+          "nextStep": "After review, choose a client and configure runtime identity. Use a fixed test identity only for local testing; production identity must come from an authenticated application session. Runtime access remains unavailable without it.",
+          "passages": [
+            {
+              "start": 3,
+              "end": 3,
+              "disposition": "needs_decision",
+              "interpretation": "Authenticated application-session wiring to the already reviewed tenant and principal bindings is not yet verified. This is later deployment wiring, not a missing record-scope rule.",
+              "draft_paths": [
+                "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+              ],
+              "topic": "Authenticated referee identity",
+              "responsibility": "deployment",
+              "issue_kind": "missing_configuration",
+              "next_step": "After authority review, configure and verify authenticated-session identity for the reviewed tenant and principal bindings.",
+              "deployment_prerequisite": "authenticated_identity"
+            }
+          ],
+          "blocksReview": false
+        },
+        {
+          "kind": "deployment_prerequisite",
+          "title": "Referee result selection",
+          "nextStep": "Assign the client responsibility for capturing the referee’s intended result selection.",
+          "passages": [
+            {
+              "start": 3,
+              "end": 3,
+              "disposition": "needs_decision",
+              "interpretation": "Runner can validate a submitted scoped result reference, but the client must still capture the referee’s intended result selection.",
+              "draft_paths": [
+                "/runner_evidence/runtime_contract/application_obligations/customer_selection"
+              ],
+              "topic": "Referee result selection",
+              "responsibility": "application",
+              "issue_kind": "missing_configuration",
+              "next_step": "Assign the client responsibility for capturing the referee’s intended result selection.",
+              "application_obligations": [
+                "customer_selection"
+              ]
+            }
+          ],
+          "blocksReview": false
+        },
+        {
+          "kind": "deployment_prerequisite",
+          "title": "Runner-ledger receipt and execution setup",
+          "nextStep": "After authority review, prepare or verify the dedicated writer, review execution permission, then configure and start the worker. Keep reader credentials separate. Setup and execution remain unverified; no request is completed without a successful receipt.",
+          "passages": [
+            {
+              "start": 7,
+              "end": 7,
+              "disposition": "needs_decision",
+              "interpretation": "A stored Runner-ledger receipt is required, but receipt mode, dedicated writer and grants, execution consent, and worker startup are not checked or verified for the current ratification action.",
+              "draft_paths": [
+                "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+              ],
+              "topic": "Runner-ledger receipt and execution setup",
+              "responsibility": "deployment",
+              "issue_kind": "missing_configuration",
+              "next_step": "After authority review, configure the writer, Runner-ledger receipt mode, execution consent, and worker for ratification.",
+              "deployment_prerequisite": "runner_execution_setup"
+            }
+          ],
+          "blocksReview": false
+        },
+        {
+          "kind": "deployment_prerequisite",
+          "title": "Independent changed-row verification",
+          "nextStep": "After each applicable execution, independently observe the source and compare it with the exact intended change. This readback remains unverified; a receipt alone is not that observation. No Action-code repair is required for this external step.",
+          "passages": [
+            {
+              "start": 7,
+              "end": 7,
+              "disposition": "needs_decision",
+              "interpretation": "Independently verifying the changed source row is an external after-execution observation and remains unverified; a Runner receipt does not establish it.",
+              "draft_paths": [
+                "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+              ],
+              "topic": "Independent changed-row verification",
+              "responsibility": "application",
+              "issue_kind": "missing_configuration",
+              "next_step": "Assign who will independently observe each changed source row after execution.",
+              "application_obligations": [
+                "independent_source_readback"
+              ]
+            }
+          ],
+          "blocksReview": false
+        }
+      ],
+      "pending": [],
+      "limitation": "Stored-report host evaluation only. Full current authority/domain/context revalidation belongs to the real public path; this does not substitute for the stopped explicit recheck."
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "checkpoint": "recheck-requested",
+      "current_source_matches_report": true,
+      "report_readiness": {
+        "ready": true,
+        "privacy": false,
+        "items": [
+          {
+            "kind": "deployment_prerequisite",
+            "title": "Authenticated referee identity",
+            "nextStep": "After review, choose a client and configure runtime identity. Use a fixed test identity only for local testing; production identity must come from an authenticated application session. Runtime access remains unavailable without it.",
+            "passages": [
+              {
+                "start": 3,
+                "end": 3,
+                "disposition": "needs_decision",
+                "interpretation": "Authenticated application-session wiring to the already reviewed tenant and principal bindings is not yet verified. This is later deployment wiring, not a missing record-scope rule.",
+                "draft_paths": [
+                  "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+                ],
+                "topic": "Authenticated referee identity",
+                "responsibility": "deployment",
+                "issue_kind": "missing_configuration",
+                "next_step": "After authority review, configure and verify authenticated-session identity for the reviewed tenant and principal bindings.",
+                "deployment_prerequisite": "authenticated_identity"
+              }
+            ],
+            "blocksReview": false
+          },
+          {
+            "kind": "deployment_prerequisite",
+            "title": "Referee result selection",
+            "nextStep": "Assign the client responsibility for capturing the referee’s intended result selection.",
+            "passages": [
+              {
+                "start": 3,
+                "end": 3,
+                "disposition": "needs_decision",
+                "interpretation": "Runner can validate a submitted scoped result reference, but the client must still capture the referee’s intended result selection.",
+                "draft_paths": [
+                  "/runner_evidence/runtime_contract/application_obligations/customer_selection"
+                ],
+                "topic": "Referee result selection",
+                "responsibility": "application",
+                "issue_kind": "missing_configuration",
+                "next_step": "Assign the client responsibility for capturing the referee’s intended result selection.",
+                "application_obligations": [
+                  "customer_selection"
+                ]
+              }
+            ],
+            "blocksReview": false
+          },
+          {
+            "kind": "deployment_prerequisite",
+            "title": "Runner-ledger receipt and execution setup",
+            "nextStep": "After authority review, prepare or verify the dedicated writer, review execution permission, then configure and start the worker. Keep reader credentials separate. Setup and execution remain unverified; no request is completed without a successful receipt.",
+            "passages": [
+              {
+                "start": 7,
+                "end": 7,
+                "disposition": "needs_decision",
+                "interpretation": "A stored Runner-ledger receipt is required, but receipt mode, dedicated writer and grants, execution consent, and worker startup are not checked or verified for the current ratification action.",
+                "draft_paths": [
+                  "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+                ],
+                "topic": "Runner-ledger receipt and execution setup",
+                "responsibility": "deployment",
+                "issue_kind": "missing_configuration",
+                "next_step": "After authority review, configure the writer, Runner-ledger receipt mode, execution consent, and worker for ratification.",
+                "deployment_prerequisite": "runner_execution_setup"
+              }
+            ],
+            "blocksReview": false
+          },
+          {
+            "kind": "deployment_prerequisite",
+            "title": "Independent changed-row verification",
+            "nextStep": "After each applicable execution, independently observe the source and compare it with the exact intended change. This readback remains unverified; a receipt alone is not that observation. No Action-code repair is required for this external step.",
+            "passages": [
+              {
+                "start": 7,
+                "end": 7,
+                "disposition": "needs_decision",
+                "interpretation": "Independently verifying the changed source row is an external after-execution observation and remains unverified; a Runner receipt does not establish it.",
+                "draft_paths": [
+                  "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+                ],
+                "topic": "Independent changed-row verification",
+                "responsibility": "application",
+                "issue_kind": "missing_configuration",
+                "next_step": "Assign who will independently observe each changed source row after execution.",
+                "application_obligations": [
+                  "independent_source_readback"
+                ]
+              }
+            ],
+            "blocksReview": false
+          }
+        ],
+        "summary": [
+          "Attached rules: rules.txt v1; interpretation checked for this revision.",
+          "Client integration still unverified: signed-in customer identity, customer selection. Check these during client setup before customer use.",
+          "Independent source readback remains unverified for each applicable execution. Perform and retain that separate observation after the change; a receipt or completed business review does not prove it.",
+          "Execution setup pending: dedicated writer review, separate execution permission and worker startup. Continue to these checks after authority review; automatic completion is not yet enabled."
+        ]
+      },
+      "residuals": [
+        {
+          "kind": "deployment_prerequisite",
+          "title": "Authenticated referee identity",
+          "nextStep": "After review, choose a client and configure runtime identity. Use a fixed test identity only for local testing; production identity must come from an authenticated application session. Runtime access remains unavailable without it.",
+          "passages": [
+            {
+              "start": 3,
+              "end": 3,
+              "disposition": "needs_decision",
+              "interpretation": "Authenticated application-session wiring to the already reviewed tenant and principal bindings is not yet verified. This is later deployment wiring, not a missing record-scope rule.",
+              "draft_paths": [
+                "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+              ],
+              "topic": "Authenticated referee identity",
+              "responsibility": "deployment",
+              "issue_kind": "missing_configuration",
+              "next_step": "After authority review, configure and verify authenticated-session identity for the reviewed tenant and principal bindings.",
+              "deployment_prerequisite": "authenticated_identity"
+            }
+          ],
+          "blocksReview": false
+        },
+        {
+          "kind": "deployment_prerequisite",
+          "title": "Referee result selection",
+          "nextStep": "Assign the client responsibility for capturing the referee’s intended result selection.",
+          "passages": [
+            {
+              "start": 3,
+              "end": 3,
+              "disposition": "needs_decision",
+              "interpretation": "Runner can validate a submitted scoped result reference, but the client must still capture the referee’s intended result selection.",
+              "draft_paths": [
+                "/runner_evidence/runtime_contract/application_obligations/customer_selection"
+              ],
+              "topic": "Referee result selection",
+              "responsibility": "application",
+              "issue_kind": "missing_configuration",
+              "next_step": "Assign the client responsibility for capturing the referee’s intended result selection.",
+              "application_obligations": [
+                "customer_selection"
+              ]
+            }
+          ],
+          "blocksReview": false
+        },
+        {
+          "kind": "deployment_prerequisite",
+          "title": "Runner-ledger receipt and execution setup",
+          "nextStep": "After authority review, prepare or verify the dedicated writer, review execution permission, then configure and start the worker. Keep reader credentials separate. Setup and execution remain unverified; no request is completed without a successful receipt.",
+          "passages": [
+            {
+              "start": 7,
+              "end": 7,
+              "disposition": "needs_decision",
+              "interpretation": "A stored Runner-ledger receipt is required, but receipt mode, dedicated writer and grants, execution consent, and worker startup are not checked or verified for the current ratification action.",
+              "draft_paths": [
+                "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+              ],
+              "topic": "Runner-ledger receipt and execution setup",
+              "responsibility": "deployment",
+              "issue_kind": "missing_configuration",
+              "next_step": "After authority review, configure the writer, Runner-ledger receipt mode, execution consent, and worker for ratification.",
+              "deployment_prerequisite": "runner_execution_setup"
+            }
+          ],
+          "blocksReview": false
+        },
+        {
+          "kind": "deployment_prerequisite",
+          "title": "Independent changed-row verification",
+          "nextStep": "After each applicable execution, independently observe the source and compare it with the exact intended change. This readback remains unverified; a receipt alone is not that observation. No Action-code repair is required for this external step.",
+          "passages": [
+            {
+              "start": 7,
+              "end": 7,
+              "disposition": "needs_decision",
+              "interpretation": "Independently verifying the changed source row is an external after-execution observation and remains unverified; a Runner receipt does not establish it.",
+              "draft_paths": [
+                "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+              ],
+              "topic": "Independent changed-row verification",
+              "responsibility": "application",
+              "issue_kind": "missing_configuration",
+              "next_step": "Assign who will independently observe each changed source row after execution.",
+              "application_obligations": [
+                "independent_source_readback"
+              ]
+            }
+          ],
+          "blocksReview": false
+        }
+      ],
+      "pending": [
+        "pending_job_revision"
+      ],
+      "limitation": "Stored-report host evaluation only. Full current authority/domain/context revalidation belongs to the real public path; this does not substitute for the stopped explicit recheck."
+    },
+    {
+      "run": "counting-wording-control",
+      "checkpoint": "wording-stopped",
+      "current_source_matches_report": false,
+      "report_readiness": null,
+      "residuals": null,
+      "pending": [
+        "pending_job_revision"
+      ],
+      "limitation": "Stored-report host evaluation only. Full current authority/domain/context revalidation belongs to the real public path; this does not substitute for the stopped explicit recheck."
+    }
+  ]
+}

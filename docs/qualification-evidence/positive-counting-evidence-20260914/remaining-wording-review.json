@@ -1,0 +1,29 @@
+{
+  "at": "2026-09-14T23:31:01.780599+00:00",
+  "classification": "INSTALLED_WORDING_REVIEW_BLOCKED_BEFORE_COUNTING_CHOICES",
+  "artifact": "9ed1469c43e8bdd4cfe3401223285d4dfe4f9e93370b9f95143a681cb15cce99",
+  "source": {
+    "version": 2,
+    "digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+    "name": "wording-control-rules.txt",
+    "lines": 10
+  },
+  "public_transfer": "/attach wording-control-rules.txt -> Use this complete text with the named model",
+  "normal_owner_instruction": "Use the attached replacement text for this same saved job and review whether the current rules satisfy it. Preserve the existing business behavior and authority.",
+  "actual_provider_response": "Please provide the updated replacement rules text (or identify the changes from the currently attached version). I need it to assess whether the saved Read and ratification rules still satisfy the replacement while preserving existing behavior and authority.",
+  "source_present_in_actual_request": true,
+  "request": "runs/counting-wording-control/meter/input-0002.json",
+  "request_sha256": "5c05e6c2671943a109efe46f1b6bdf5f9d2388551992af37352a8e6f208f02dc",
+  "response": "runs/counting-wording-control/meter/output-0002.txt",
+  "response_sha256": "3d8192be52da0bd0eb10f10b45e5abc1fd02a1b2a82daa0351595713e3be6289",
+  "calls": 2,
+  "counting_choices_reached": false,
+  "counting_decisions_saved": 0,
+  "new_source_coverage_complete": false,
+  "resume_stage": "planning",
+  "pending_keys": [
+    "pending_job_revision"
+  ],
+  "diagnosis": "The complete attached text is present in the actual planner request. This is not demonstrated missing host context. The provider asked for information already supplied. No counting review or positive recovery was reached, so no installed correctness or unknown-to-resolved pass is claimed.",
+  "stop": "Paused with Esc and Q, exit0; preserved all original/current text and pending work. No rescue restatement, payload replacement, retry for another opinion, source/authority edit, activation or worker."
+}

@@ -1,0 +1,272 @@
+{
+  "at": "2026-09-14T23:33:18.579903+00:00",
+  "artifact": "9ed1469c43e8bdd4cfe3401223285d4dfe4f9e93370b9f95143a681cb15cce99",
+  "records": [
+    {
+      "run": "recovery-tournament-assisted",
+      "authority": [
+        {
+          "revision": "policy:c8b226e2bf929536af8ba758fe58f154509f791bcd6d58aade666b6405fe96e9",
+          "authority_digest": "sha256:3431e33b5c7ef594c67b545c33ae8285cbd919ff01c91bf35f5d72581ad2ea3e",
+          "action_boundary_digest": "sha256:b4f9042107daa40454f6285ddd21b483ded78e5554a35bf4226855e743232768",
+          "outcomes": [
+            "league.result_ratification"
+          ],
+          "limits": [
+            {
+              "capability": "league.result_ratification",
+              "id": "league_automatic_ratifications_24h",
+              "kind": "count",
+              "maximum": 2,
+              "scope": "tenant",
+              "window_seconds": 86400
+            },
+            {
+              "capability": "league.result_ratification",
+              "id": "overall_automatic_ratifications_24h",
+              "kind": "count",
+              "maximum": 6,
+              "scope": "boundary",
+              "window_seconds": 86400
+            }
+          ]
+        },
+        {
+          "revision": "policy:cf7a22b24ddaa1e357c72cbfe1a01fe1b4c0e08c264a8a54c988ab829082a931",
+          "authority_digest": "sha256:3431e33b5c7ef594c67b545c33ae8285cbd919ff01c91bf35f5d72581ad2ea3e",
+          "action_boundary_digest": "sha256:b4f9042107daa40454f6285ddd21b483ded78e5554a35bf4226855e743232768",
+          "outcomes": [
+            "league.result_ratification"
+          ],
+          "limits": [
+            {
+              "capability": "league.result_ratification",
+              "id": "league_automatic_ratifications_24h",
+              "kind": "count",
+              "maximum": 2,
+              "scope": "tenant",
+              "window_seconds": 86400
+            },
+            {
+              "capability": "league.result_ratification",
+              "id": "overall_automatic_ratifications_24h",
+              "kind": "count",
+              "maximum": 6,
+              "scope": "boundary",
+              "window_seconds": 86400
+            }
+          ]
+        }
+      ],
+      "counts": {
+        "proposals": 6,
+        "approvals": 4,
+        "worker_queue": 4,
+        "writeback_receipts": 2
+      },
+      "receipts": [
+        {
+          "receipt_id": 1,
+          "proposal_id": "wrp_rule_e3f92f3f4bcc5a0b1ed4b3c11a8302c5",
+          "bytes_sha256": "f8e17417dc106e18cd2986b2c026457b14f8918eafb87479eea850623d1d7102",
+          "status": "applied"
+        },
+        {
+          "receipt_id": 2,
+          "proposal_id": "wrp_rule_c04a2efc2a19f084802302b589bf7d47",
+          "bytes_sha256": "bda7a5adc5c037ad3c374ea747716f555ca4cd06b11c7d4190d659f9e63c0975",
+          "status": "applied"
+        }
+      ],
+      "new_management_events": [
+        {
+          "epoch": 43,
+          "occurred_at": "2026-09-14T23:18:14.366Z",
+          "receipt": {
+            "after": "policy:c8b226e2bf929536af8ba758fe58f154509f791bcd6d58aade666b6405fe96e9",
+            "before": "policy:c8b226e2bf929536af8ba758fe58f154509f791bcd6d58aade666b6405fe96e9",
+            "name": "reviewed_staging_rules",
+            "operation": "save_disabled_action",
+            "source_database_changed": false
+          }
+        },
+        {
+          "epoch": 44,
+          "occurred_at": "2026-09-14T23:25:32.970Z",
+          "receipt": {
+            "after": "policy:c8b226e2bf929536af8ba758fe58f154509f791bcd6d58aade666b6405fe96e9",
+            "before": "policy:c8b226e2bf929536af8ba758fe58f154509f791bcd6d58aade666b6405fe96e9",
+            "name": "reviewed_staging_rules",
+            "operation": "save_disabled_action",
+            "source_database_changed": false
+          }
+        }
+      ],
+      "public_exits": [
+        {
+          "at": "2026-09-14T23:19:17.607Z",
+          "event": "exit",
+          "code": 0,
+          "signal": null
+        },
+        {
+          "at": "2026-09-14T23:26:58.178Z",
+          "event": "exit",
+          "code": 0,
+          "signal": null
+        }
+      ],
+      "provider_transports": [
+        {
+          "at": "2026-09-14T23:18:15.588Z",
+          "pid": 10,
+          "ppid": 2,
+          "type": "transport_attempt",
+          "index": 1,
+          "transport": "node.request",
+          "host": "api.openai.com",
+          "pathname": "/v1/responses"
+        },
+        {
+          "at": "2026-09-14T23:26:06.097Z",
+          "pid": 10,
+          "ppid": 2,
+          "type": "transport_attempt",
+          "index": 2,
+          "transport": "node.request",
+          "host": "api.openai.com",
+          "pathname": "/v1/responses"
+        },
+        {
+          "at": "2026-09-14T23:26:27.240Z",
+          "pid": 10,
+          "ppid": 2,
+          "type": "transport_attempt",
+          "index": 3,
+          "transport": "node.request",
+          "host": "api.openai.com",
+          "pathname": "/v1/responses"
+        }
+      ],
+      "source_rows": 104,
+      "source_comparison": "snapshot-known-run independent readback; unchanged",
+      "stored_business_records_comparison": "review-oracle, row bytes unchanged including proposals/approvals/queues/receipts",
+      "activation_or_worker_executed": false
+    },
+    {
+      "run": "counting-wording-control",
+      "authority": [
+        {
+          "revision": "policy:c8b226e2bf929536af8ba758fe58f154509f791bcd6d58aade666b6405fe96e9",
+          "authority_digest": "sha256:3431e33b5c7ef594c67b545c33ae8285cbd919ff01c91bf35f5d72581ad2ea3e",
+          "action_boundary_digest": "sha256:b4f9042107daa40454f6285ddd21b483ded78e5554a35bf4226855e743232768",
+          "outcomes": [
+            "league.result_ratification"
+          ],
+          "limits": [
+            {
+              "capability": "league.result_ratification",
+              "id": "league_automatic_ratifications_24h",
+              "kind": "count",
+              "maximum": 2,
+              "scope": "tenant",
+              "window_seconds": 86400
+            },
+            {
+              "capability": "league.result_ratification",
+              "id": "overall_automatic_ratifications_24h",
+              "kind": "count",
+              "maximum": 6,
+              "scope": "boundary",
+              "window_seconds": 86400
+            }
+          ]
+        },
+        {
+          "revision": "policy:cf7a22b24ddaa1e357c72cbfe1a01fe1b4c0e08c264a8a54c988ab829082a931",
+          "authority_digest": "sha256:3431e33b5c7ef594c67b545c33ae8285cbd919ff01c91bf35f5d72581ad2ea3e",
+          "action_boundary_digest": "sha256:b4f9042107daa40454f6285ddd21b483ded78e5554a35bf4226855e743232768",
+          "outcomes": [
+            "league.result_ratification"
+          ],
+          "limits": [
+            {
+              "capability": "league.result_ratification",
+              "id": "league_automatic_ratifications_24h",
+              "kind": "count",
+              "maximum": 2,
+              "scope": "tenant",
+              "window_seconds": 86400
+            },
+            {
+              "capability": "league.result_ratification",
+              "id": "overall_automatic_ratifications_24h",
+              "kind": "count",
+              "maximum": 6,
+              "scope": "boundary",
+              "window_seconds": 86400
+            }
+          ]
+        }
+      ],
+      "counts": {
+        "proposals": 6,
+        "approvals": 4,
+        "worker_queue": 4,
+        "writeback_receipts": 2
+      },
+      "receipts": [
+        {
+          "receipt_id": 1,
+          "proposal_id": "wrp_rule_e3f92f3f4bcc5a0b1ed4b3c11a8302c5",
+          "bytes_sha256": "f8e17417dc106e18cd2986b2c026457b14f8918eafb87479eea850623d1d7102",
+          "status": "applied"
+        },
+        {
+          "receipt_id": 2,
+          "proposal_id": "wrp_rule_c04a2efc2a19f084802302b589bf7d47",
+          "bytes_sha256": "bda7a5adc5c037ad3c374ea747716f555ca4cd06b11c7d4190d659f9e63c0975",
+          "status": "applied"
+        }
+      ],
+      "new_management_events": [],
+      "public_exits": [
+        {
+          "at": "2026-09-14T23:29:39.629Z",
+          "event": "exit",
+          "code": 0,
+          "signal": null
+        }
+      ],
+      "provider_transports": [
+        {
+          "at": "2026-09-14T23:28:20.597Z",
+          "pid": 10,
+          "ppid": 2,
+          "type": "transport_attempt",
+          "index": 1,
+          "transport": "node.request",
+          "host": "api.openai.com",
+          "pathname": "/v1/responses"
+        },
+        {
+          "at": "2026-09-14T23:29:00.277Z",
+          "pid": 10,
+          "ppid": 2,
+          "type": "transport_attempt",
+          "index": 2,
+          "transport": "node.request",
+          "host": "api.openai.com",
+          "pathname": "/v1/responses"
+        }
+      ],
+      "source_rows": 104,
+      "source_comparison": "snapshot-known-run independent readback; unchanged",
+      "stored_business_records_comparison": "review-oracle, row bytes unchanged including proposals/approvals/queues/receipts",
+      "activation_or_worker_executed": false
+    }
+  ],
+  "total_actual_provider_transports": 5,
+  "development_transports": 0,
+  "original_evidence": "preservation-final.json,247416entries unchanged"
+}

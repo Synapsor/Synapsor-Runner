@@ -51,15 +51,28 @@ try {
  // Every recovery uses the matching whole-project checkpoint and source dump.
  // Original seed rows must never be restored beside a post-effect ledger.
  const reader=c.reader_role, writerEnv=oldConnection.env.WRITER_DATABASE_URL??oldConnection.env.SYNAPSOR_DATABASE_WRITE_URL;
+ const checkpointRoot=path.join(previousRun,'checkpoints',checkpoint);
+ const dump=await fs.readFile(path.join(checkpointRoot,'source.dump'));
+ const schemaView=spawnSync('docker',['exec','-i',name,'pg_restore','--schema-only','--file=-'],{input:dump});
+ await fs.writeFile(path.join(owned,'logs/schema-preview.log'),schemaView.stderr,{flag:'wx'});
+ assert.equal(schemaView.status,0,'Inspect the exact saved schema before creating its role prerequisites');
+ await fs.writeFile(path.join(owned,'fixture-state/restored-schema.sql'),schemaView.stdout,{flag:'wx'});
+ // pg_dump omits cluster roles. Retained ACLs can still name an older reviewed
+ // writer after an outcome was removed; restore those prerequisites as well.
+ // The original operator setup creates these roles, then explicitly enables
+ // local login. Restoring the unchanged dump supplies their exact narrow ACLs.
+ const writers=new Set([...schemaView.stdout.toString('utf8').matchAll(/\brunner_writer_[a-f0-9]+\b/g)].map(m=>m[0]));
  assert(/^[a-z_][a-z0-9_]+$/.test(reader));
  await source.query(`CREATE ROLE "${reader}" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT NOBYPASSRLS`);
  if(writerEnv) {
   const writer=new URL(writerEnv).searchParams.get('user');
   assert(/^runner_writer_[a-f0-9]+$/.test(writer));
+  writers.add(writer);
+ }
+ for(const writer of writers) {
   await source.query(`CREATE ROLE "${writer}" LOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS`);
  }
- const checkpointRoot=path.join(previousRun,'checkpoints',checkpoint);
- const dump=await fs.readFile(path.join(checkpointRoot,'source.dump'));
+ await fs.writeFile(path.join(owned,'fixture-state/source-role-prerequisites.json'),JSON.stringify({reader,writers:[...writers],basis:'exact saved schema ACLs and reviewed writer connection; unchanged dump restores permissions'},null,2)+'\n',{flag:'wx'});
  await fs.writeFile(path.join(owned,'fixture-state/restored-source.dump'),dump,{flag:'wx'});
  const restored=spawnSync('docker',['exec','-i',name,'pg_restore','-U','postgres','-d',database,'--exit-on-error'],{input:dump});
  await fs.writeFile(path.join(owned,'logs/source-restore.log'),Buffer.concat([restored.stdout,restored.stderr]));assert.equal(restored.status,0);

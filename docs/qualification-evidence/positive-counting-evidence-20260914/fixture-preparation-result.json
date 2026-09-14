@@ -1,0 +1,82 @@
+{
+  "at": "2026-09-14T23:17:16.676436+00:00",
+  "status": "PREPARED_NOT_EXECUTED",
+  "runs": [
+    {
+      "runId": "recovery-tournament-assisted",
+      "caseId": "tournament-ratification",
+      "classification": "KNOWN-CASE checkpoint recovery",
+      "checkpoint": "final-stopped",
+      "original": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases/tournament-ratification",
+      "owned": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/runs/recovery-tournament-assisted",
+      "logicalCase": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases/tournament-ratification",
+      "logicalProject": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases/tournament-ratification/project",
+      "prior_authoring_calls": "historical counters retained in previous run; this is a separately bounded task",
+      "prior_run": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-counting-subjects-16de465-20260914/runs/recovery-tournament-assisted",
+      "original_stage_b": "NOT_PASSED",
+      "artifact_tree": "9ed1469c43e8bdd4cfe3401223285d4dfe4f9e93370b9f95143a681cb15cce99",
+      "product_commit": "d9aba4f51c5070d8dff12bf2bb73937826fc9a3b",
+      "artifact_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/frozen",
+      "development_only": false,
+      "fixture_prepared_at": "2026-09-14T23:16:09.114Z",
+      "source_rows_unchanged": true,
+      "source_baseline": "matching source.dump/source-readback and whole project checkpoint; original frozen inputs preserved separately",
+      "counts": {
+        "events": 8,
+        "results": 96
+      },
+      "initial_authoring_calls": 0,
+      "maximum_initial_calls": 19,
+      "maximum_total_shared_calls": 25,
+      "reserved_restart_calls": 6,
+      "reserved_editing_calls": 0,
+      "phase": "setup",
+      "first_public_start": null,
+      "status": "PREPARED_NOT_EXECUTED"
+    },
+    {
+      "runId": "counting-wording-control",
+      "caseId": "tournament-ratification",
+      "classification": "KNOWN-CASE checkpoint recovery",
+      "checkpoint": "final-stopped",
+      "original": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases/tournament-ratification",
+      "owned": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/runs/counting-wording-control",
+      "logicalCase": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases/tournament-ratification",
+      "logicalProject": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases/tournament-ratification/project",
+      "prior_authoring_calls": "historical counters retained in previous run; this is a separately bounded task",
+      "prior_run": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-counting-subjects-16de465-20260914/runs/recovery-tournament-assisted",
+      "original_stage_b": "NOT_PASSED",
+      "artifact_tree": "9ed1469c43e8bdd4cfe3401223285d4dfe4f9e93370b9f95143a681cb15cce99",
+      "product_commit": "d9aba4f51c5070d8dff12bf2bb73937826fc9a3b",
+      "artifact_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/frozen",
+      "development_only": false,
+      "fixture_prepared_at": "2026-09-14T23:16:39.093Z",
+      "source_rows_unchanged": true,
+      "source_baseline": "matching source.dump/source-readback and whole project checkpoint; original frozen inputs preserved separately",
+      "counts": {
+        "events": 8,
+        "results": 96
+      },
+      "initial_authoring_calls": 0,
+      "maximum_initial_calls": 19,
+      "maximum_total_shared_calls": 25,
+      "reserved_restart_calls": 6,
+      "reserved_editing_calls": 0,
+      "phase": "setup",
+      "first_public_start": null,
+      "status": "PREPARED_NOT_EXECUTED"
+    }
+  ],
+  "corrections": [
+    "historical generated writer-role prerequisites restored from exact saved schema; unchanged dump supplies exact ACLs",
+    "pg_restore schema-only preview explicitly writes to stdout with --file=-"
+  ],
+  "failed_attempts": [
+    "fixture-restore-failure.json",
+    "fixture-schema-preview-failures.json"
+  ],
+  "all_rows_match_preserved_checkpoint": true,
+  "business_rows_per_run": 104,
+  "provider_calls": 0,
+  "wording_file_sha256": "43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa"
+}

@@ -1,7 +1,7 @@
 {
-  "at": "2026-09-14T21:17:47.358118+00:00",
-  "product": "408264f",
-  "tests": "1cdc92e",
+  "at": "2026-09-14T23:37:51.376256+00:00",
+  "product": "d9aba4f51c5070d8dff12bf2bb73937826fc9a3b",
+  "tests": "d9aba4f51c5070d8dff12bf2bb73937826fc9a3b",
   "types_exit": 0,
   "combined": {
     "passed": 338,
@@ -171,10 +171,10 @@
     }
   },
   "full_suite_command": "corepack pnpm exec vitest run --maxWorkers=2 --minWorkers=1 --testTimeout=30000 --hookTimeout=120000",
-  "provider_calls": 0,
-  "next": "After coherent evidence commit, python3 E/run-freeze.py. Record complete manifest/tree/archive/lock identities and update plan.artifact_tree. Prepare both known-run fixtures (no worker), then execute PUBLIC-SCHEDULE.md. Public/provider calls0.",
-  "updated_at": "2026-09-14T21:38:20.507651+00:00",
-  "status": "GATES_PASSED_FREEZE_PENDING",
+  "provider_calls": 5,
+  "next": "STOP for independent review. Exact delivered commit and handoff digest are in the external delivery.json and immutable handoff README. No further provider calls, workers, activation, test campaign or Stage B are scheduled.",
+  "updated_at": "2026-09-14T23:37:51.376256+00:00",
+  "status": "STOPPED_FOR_REVIEW_INSTALLED_COMPLETION_INCOMPLETE",
   "product_revision": "d9aba4f51c5070d8dff12bf2bb73937826fc9a3b",
   "test_revision": "d9aba4f51c5070d8dff12bf2bb73937826fc9a3b",
   "source_manifest_sha256": "7e43e57de05814368469e215f91c71481240721feb3ffe640ebafc8d8be1ed07",
@@ -206,5 +206,11 @@
     "skipped": 1,
     "exit": 0
   },
-  "reload_types_exit": 0
+  "reload_types_exit": 0,
+  "artifact_tree": "9ed1469c43e8bdd4cfe3401223285d4dfe4f9e93370b9f95143a681cb15cce99",
+  "installed_results": "SCORECARD.json",
+  "preservation": "247416 unchanged originals;8 owned containers saved/stopped",
+  "final_full_suite": "6341 passed /463 skipped,exit0; source unchanged; earlier attempts separate",
+  "delivery_record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/delivery.json",
+  "delivery_at_this_report_commit": "Final report snapshot; delivery record written after clean-tree handoff and private push"
 }

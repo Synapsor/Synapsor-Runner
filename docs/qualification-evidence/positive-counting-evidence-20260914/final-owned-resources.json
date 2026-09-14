@@ -1,0 +1,233 @@
+{
+  "at": "2026-09-14T23:34:15.324359+00:00",
+  "recorded_processes": [
+    {
+      "pid": 2683782,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2686031,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2691536,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2697058,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2699434,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2700857,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2702197,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2705930,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2708712,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2712563,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2718798,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2734254,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2745403,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2749158,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2752613,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2754688,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2756993,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2760162,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2765382,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2767275,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2767335,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2781354,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2846625,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2856621,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2858348,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2860240,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2860988,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2939591,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2944521,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2977113,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2977195,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2981838,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2981963,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2994871,
+      "exists": false,
+      "still_task_owned": false
+    },
+    {
+      "pid": 2995039,
+      "exists": false,
+      "still_task_owned": false
+    }
+  ],
+  "owned_containers": [
+    {
+      "id": "b86f1d03fe67ea6e62cf9f537579a038a89ed89bc28f5674c9fd448eed5c2bd2",
+      "name": "synapsor-positive-counting-wording-control-7c322b92",
+      "running": false,
+      "network": "none"
+    },
+    {
+      "id": "8cb9383cd2e35ea0600474acb05238d3d453cf6a5733fe94ae78db0146f4ec23",
+      "name": "synapsor-positive-recovery-tournament-assisted-8b269259",
+      "running": false,
+      "network": "none"
+    },
+    {
+      "id": "3e38ae1a3858f04a802f58db68ad41161f49db69bc35698df9791cb5377ff828",
+      "name": "synapsor-positive-counting-wording-control-4cf77088",
+      "running": false,
+      "network": "none"
+    },
+    {
+      "id": "b73b4272c1f3054c421a0e146c52bb66000e1db46da605fa03bb506122b3b1a7",
+      "name": "synapsor-positive-recovery-tournament-assisted-00422d7d",
+      "running": false,
+      "network": "none"
+    },
+    {
+      "id": "09b97cded1463df076304f5fa78daef1dd3dee0a65ee8ca8b1e4cd9570a28d00",
+      "name": "synapsor-positive-recovery-tournament-assisted-a0afe8c3",
+      "running": false,
+      "network": "none"
+    },
+    {
+      "id": "fe0e7a0e480a79354d1af57f07407bcd6e9f37b97aa55c77b9efc9dbb44b5885",
+      "name": "synapsor-positive-review-tests-b1bbf5eb",
+      "running": false,
+      "network": "none"
+    },
+    {
+      "id": "ccba18a7298a6af08e37c8a41c92d401b36b1eff8717df1e63f3822eb51fa7a3",
+      "name": "synapsor-positive-review-tests-38dee983",
+      "running": false,
+      "network": "none"
+    },
+    {
+      "id": "2bb4627224611210dfb4ef3d500df6b86983b6c4b5918e8bb25c51623ab2e61a",
+      "name": "synapsor-positive-review-tests-032c136c",
+      "running": false,
+      "network": "none"
+    }
+  ],
+  "containers_removed": false,
+  "unrelated_processes_stopped": false,
+  "public_lock_absent": true
+}

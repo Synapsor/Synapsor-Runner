@@ -1,0 +1,27 @@
+{
+  "at": "2026-09-14T23:27:53.500060+00:00",
+  "classification": "INSTALLED_PUBLIC_RECHECK_ROUTING_INCOMPLETE",
+  "artifact": "9ed1469c43e8bdd4cfe3401223285d4dfe4f9e93370b9f95143a681cb15cce99",
+  "initial_review": "BUSINESS completed in one provider call, existing decision support; no counting question",
+  "restart": "Resumed client setup without counting question; not itself an explicit recheck",
+  "request": "Recheck the current saved rules against the attached policy and existing decisions without changing the rules or authority.",
+  "route": [
+    "start --project-root . --cli",
+    "Edit rules with model",
+    "Resume the interrupted job returned to client setup",
+    "Edit rules with model",
+    "Draft a change with the configured model",
+    "Explicit reviewed structural-context consent",
+    "ordinary unchanged recheck request"
+  ],
+  "actual": "Planner returned no change; public UI retained request as pending_job_revision at planning; C said no access changes to review; Q exited0. No new counting-coverage provider call was executed. Existing report remains saved; no counting refusal or policy contradiction occurred.",
+  "expected": "Explicit unchanged review and coherent pending work after recheck",
+  "calls": {
+    "initial_review": 1,
+    "recheck_navigation_and_planner": 2,
+    "total": 3
+  },
+  "state": "recovery-tournament-assisted-recheck-requested-oracle.json",
+  "log": "runs/recovery-tournament-assisted/logs/recheck01-terminal.log",
+  "decision": "Stopped this path after the observed routing limitation. No repeated request for a favorable result, source change or patch to frozen candidate."
+}

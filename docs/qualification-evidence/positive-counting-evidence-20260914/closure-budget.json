@@ -1,0 +1,8 @@
+{
+  "started_at": "2026-09-14T23:31:01.781135+00:00",
+  "maximum_minutes": 25,
+  "provider_calls_used": 5,
+  "maximum_calls": 25,
+  "development_calls": 0,
+  "reason_early_stop": "Two recorded public-path limitations before required recheck/unknown positive recovery; no repeated favorable-opinion selection."
+}
