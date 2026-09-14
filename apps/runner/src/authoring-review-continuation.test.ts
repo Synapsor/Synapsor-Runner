@@ -1,3 +1,7 @@
+import { explorationBoundaryCandidateDigest } from "./auto-boundary.js";
+import { withCountingOutcomeDomain } from "./authoring-counting-domain.js";
+import { migrateProjectControlPolicies } from "./control-policy-store.js";
+import { ProposalStore } from "@synapsor-runner/proposal-store";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -48,7 +52,8 @@ describe("saved policy review continuation", () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-review-sequence-"));
     try {
       const input = { read: baseline.read, authority: baseline.authority, actions: [], decisions: [] } as unknown as Parameters<typeof policyCoverageDraft>[0];
-      const original = structuredClone(input), draft = policyCoverageDraft(input);
+      const original = structuredClone(input); let draft = policyCoverageDraft(input);
+      const coverageAuthority = canonicalJsonDigest({ read: explorationBoundaryCandidateDigest(baseline.read), action: baseline.authority.digest });
       const source = policyTextSnapshot(Buffer.from(baseline.policy_excerpt), "quota-and-verification-excerpt.txt");
       const session = newPolicySourceSession(); session.snapshots = [source]; session.active = source.version;
       session.approvals = [{ digest: source.digest, destination: authoringDestination({ provider: "openai", model: "fixture" }) }];
@@ -63,7 +68,7 @@ describe("saved policy review continuation", () => {
           interpretation: "The exact saved quota pair retains its accepted history selection; adding a filter is not required by the applicable clarification.",
           operator_message_id: ownerMessage, draft_paths: [`/runner_evidence/actions/${outcome}/automatic_limits`],
           counter_requirements: automatic.map((limit, index) => ({ path: `/runner_evidence/actions/${outcome}/automatic_limits/${index}/history_selector/capability`,
-            current_capability: limit.history_selector.capability, required_capability: capability })) },
+            current_capability: limit.history_selector.capability, required_capability: outcome })) },
         { start: 1, end: 1, disposition: "needs_decision", responsibility: "deployment", issue_kind: "missing_configuration",
           interpretation: "Dedicated deployment must be separately inspected and reviewed; a prepared effect is not a completed execution.",
           deployment_prerequisite: "runner_execution_setup", draft_paths: ["/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"] },
@@ -71,6 +76,28 @@ describe("saved policy review continuation", () => {
           interpretation: "Independent source readback is required after each applicable execution and remains unverified here.",
           application_obligations: ["independent_source_readback"], draft_paths: [readbackPath] },
       ];
+      if (baseline.case === "assisted") {
+        // The old controlled null/null reply omitted the accepted conditional
+        // proof. Preserve the absent program, but supply its actual requirement
+        // and establish complete domain evidence through a real owned store.
+        const counter = passages[0]!;
+        const conflict = parsePolicyCoverage({ passages: [{ ...counter, disposition: "conflict" }, ...passages.slice(1)] }, source, draft, session.operator_messages);
+        bindPolicyCoverage(session, conflict, coverageAuthority);
+        const config = JSON.parse(readFileSync(new URL("../../../examples/reference-support-billing-app/synapsor.runner.json", import.meta.url), "utf8"));
+        config.capabilities = config.capabilities.filter((c: {kind:string}) => c.kind === "read").slice(0, 1);
+        config.storage = { sqlite_path: ".synapsor/local.db" };
+        await fs.writeFile(path.join(root, "synapsor.runner.json"), JSON.stringify(config));
+        new ProposalStore(path.join(root, ".synapsor/local.db")).close();
+        const migrated = await migrateProjectControlPolicies({ projectRoot: root, config, storePath: path.join(root, ".synapsor/local.db"), actor: "fixture reviewer",
+          readLegacySnapshot: async () => ({ revisions: [], active: [], drafts: [], provenance: [] }), validateSnapshot: async () => {} });
+        await migrated.binding.close();
+        const domain = await withCountingOutcomeDomain(root, baseline.authority, async value => value);
+        const captured = JSON.parse(readFileSync(new URL("./fixtures/mixed-counting-review.json", import.meta.url), "utf8"));
+        const support = captured.drafts[0].runner_evidence.counting_interpretations[0].operator_support;
+        expect(support.answer).toBe(session.operator_messages![ownerMessage - 1]);
+        draft = policyCoverageDraft({ ...input, policySources: session, operatorClarifications: [support], countingDomain: domain });
+        expect(draft.runner_evidence.counting_interpretations).toHaveLength(1);
+      }
       const requests: string[] = [];
       const conversation = createModelAuthoringConversation(); conversation.policySources = session;
       const review = async (previousReport?: typeof session.coverage) => reviewPolicyCoverage({ source, draft,
@@ -79,11 +106,12 @@ describe("saved policy review continuation", () => {
             return { status: 200, body: { output: [{ type: "function_call", call_id: `review_${requests.length}`,
               name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages }) }] } }; } } } });
       const coverage = await review();
+      if (baseline.case === "assisted") expect(coverage.passages[0]?.counting_resolution?.kind).toBe("conditional_singleton_equivalence");
       expect(coverage.passages[0]!.operator_clarification).toBe(baseline.operator_messages[ownerMessage - 1]);
       expect(coverage.passages.some(p => p.disposition === "overridden")).toBe(false);
       expect(policyReviewReadiness(source, coverage, session)).toMatchObject({ ready: true });
       expect(coverage.passages.slice(1).every(p => p.disposition === "needs_decision")).toBe(true);
-      bindPolicyCoverage(session, coverage, baseline.authority.digest);
+      bindPolicyCoverage(session, coverage, coverageAuthority);
       await savePolicySources(root, session);
       conversation.policySources = await loadPolicySources(root, session.id);
       expect(activePolicySource(conversation.policySources)).toEqual(source);

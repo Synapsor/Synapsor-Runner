@@ -505,8 +505,9 @@ async function activeProject(approvalMode: "human" | "policy" = "human", twoOutc
     deployment_profile: "staging", source: "local_postgres", compiler_version: "test", spec_version: "test",
     trusted_context: { provider: "environment", tenant_env: "SYNAPSOR_TENANT_ID", principal_env: "SYNAPSOR_PRINCIPAL" },
     generation_lock_fingerprint: lock, role_posture_fingerprint: `sha256:${"b".repeat(64)}`,
-    pack: { name: "reviewed_billing", resources: [{ id: "billing.preferences", tenant_key: "account_id", principal_key: "principal_id",
-      rls_session: { tenant_setting: "synapsor.tenant_id" } }] }, budgets: {} };
+    pack: { name: "reviewed_billing", resources: [{ id: "billing.preferences", schema: "billing", table: "preferences", primary_key: "preference_id", tenant_key: "account_id", principal_key: "principal_id",
+      field_types: { status: "text", version: "integer" }, field_enums: {}, selectable_fields: ["status"], filterable_fields: {}, sortable_fields: [], groupable_fields: [], aggregate_measures: [], count_distinct_fields: [], time_bucket_fields: {}, kept_out_fields: ["preference_id", "account_id", "principal_id", "version"], relationships: [], minimum_cohort_size: 1, suppression_aware_totals: true as const,
+      rls_session: { tenant_setting: "synapsor.tenant_id" } }] }, budgets: { max_rows: 50, max_response_cells: 500 } };
   const digest = canonicalJsonDigest(read);
   const activeRead = { ...read, activation: { state: "active", digest, actor: "test", activated_at: "2026-09-08T19:00:00.000Z",
     generation_lock_fingerprint: lock, reviewed_decisions: [] } };
