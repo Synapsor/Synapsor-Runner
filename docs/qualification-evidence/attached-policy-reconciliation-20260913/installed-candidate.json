@@ -1,0 +1,40 @@
+{
+  "frozen_at": "2026-09-14T08:04:40.432Z",
+  "purpose": "attached-policy meaning, responsibility and pending-work reconciliation; bounded known-case review confirmation",
+  "cases": [
+    "assisted exact disabled review / restart",
+    "original post-receipt pending review / separate disabled edit",
+    "software source_db responsibility control"
+  ],
+  "product_commit": "af0df52896337c7aafcf13ea99c0828f10afe605",
+  "test_commit": "af0df52896337c7aafcf13ea99c0828f10afe605",
+  "report_commit": "recorded separately after verification",
+  "source_commit": "c28dc09d75475323811b8db09aebbe12dec566b3",
+  "source_status": "?? .claude/",
+  "unpackaged_unrelated_directory": ".claude/ (preserved, no contents read)",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/frozen/installed",
+  "installed_tree_sha256": "e4a0689b104b39aed7db7a2053a135e3265459d0df58e7378d7efb01c62ba829",
+  "node": {
+    "version": "v22.22.2",
+    "executable": "/usr/bin/node",
+    "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+  },
+  "runner_version": "1.8.0",
+  "spec_version": "1.11.0",
+  "package_lock_sha256": "4dfd96d3d3c6e868c28f566463bedd3b0dde66038513e7a610385d944b647354",
+  "tarballs": [
+    {
+      "name": "synapsor-runner-1.8.0.tgz",
+      "sha256": "41fcfe22be5cc2ac1099b938613b7922ab918215fb33e1b65d263a216476acec"
+    },
+    {
+      "name": "synapsor-spec-1.11.0.tgz",
+      "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+    }
+  ],
+  "entries": 7569,
+  "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/frozen/installed-artifact-manifest.json",
+  "manifest_sha256": "643d90ea1704b063786d2bb08f200df047bdb6fa3e24a664ab68265fd7d705a7",
+  "archive_sha256": "05d83ad7b3a672c0a82a71dc7b6f85ecfc5ac2faa3b7ceae6a0a70baf542147d",
+  "freeze_exit_code": 0
+}

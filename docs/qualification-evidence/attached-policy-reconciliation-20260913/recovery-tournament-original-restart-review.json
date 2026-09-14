@@ -1,0 +1,120 @@
+{
+  "at": "2026-09-14T08:11:09.554Z",
+  "run": "recovery-tournament-original",
+  "label": "restart",
+  "mode": "reviewed",
+  "artifact_tree": "e4a0689b104b39aed7db7a2053a135e3265459d0df58e7378d7efb01c62ba829",
+  "classification": "read-only host verifier of persisted installed public-path state; no status setters or external-observation import",
+  "snapshot": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/runs/recovery-tournament-original/deterministic/review-restart-state.json",
+  "snapshot_sha256": "c9b3c19d159d65cfee9cdb75f2c0b101907e58991b4090331e5dc4c06534b239",
+  "business_review_ready": true,
+  "readiness_summary": [
+    "Attached rules: rules.txt v1; interpretation checked for this revision.",
+    "Client integration still unverified: signed-in customer identity. Check these during client setup before customer use.",
+    "Independent source readback remains unverified for each applicable execution. Perform and retain that separate observation after the change; a receipt or completed business review does not prove it.",
+    "Execution setup pending: dedicated writer review, separate execution permission and worker startup. Continue to these checks after authority review; automatic completion is not yet enabled."
+  ],
+  "resume_stage": "client_setup",
+  "pending_instruction": null,
+  "reconciliations": [
+    {
+      "pending": {
+        "outcome": "league.ratify_result",
+        "instruction": "Implement this already supplied business requirement in the same disabled action. Do not ask the operator to repair generated permissions or repeat consent for a draft change. Recorded requirement at lines 7-7: The source requires a stored Runner-ledger receipt and an independent changed-source-row readback, but neither is configured by this disabled Action. Runtime distinguishes receipt authority from independent readback; the operator retained both for separately reviewed deployment and execution and did not request unsupported business-Action fields. Preserve all other rules, approval limits and requested execution. If success requires changing and consuming related records together, use supported atomic_updates; do not replace consumption with plan mismatch or split requests. If an exact version-guarded field or relationship is unavailable, explain that concrete prerequisite. Activation and writer authorization remain separate.",
+        "baseline_digest": "sha256:681e3bd86de950f11da78d870005e4682541c29d00522568c6dee69a97c44dcf",
+        "operator_statements": [
+          "Help league referees read their assigned match results and request ratification, following the complete attached business rules.",
+          "# League result ratification\n\nHelp a league referee ratify completed best-of-three match results. A referee may see and act only on results assigned to that referee within that league. The referee can read result reference, event name, stage, recorded wins/losses and result state, including a related event's operating state. Do not expose database identities, conflict counters, integrity_hold or referee_private_note as public data. Never reveal, filter, sort, group or aggregate by the private fields; the host may use the hold privately to verify a request.\n\nRatification is valid only while the related event is open, the result is finished, the winner has exactly two game wins, the loser has zero or one game wins, and there is no integrity hold. Do not correct scores or move a result to another person, event or league. An invalid result is refused, not routed into approval as if valid. A successful ratification changes only result state to ratified, plus the maintained conflict counter.\n\nValid qualifying-stage results may be approved automatically, with at most six automatic ratifications overall and two per league in the inclusive rolling 24-hour window. Qualifying results beyond either cap go to human review. Every valid championship-stage result requires the league supervisor's human review. Counts are shared across that league's referees; creating a local client does not create more allowance. Explicit supervised execution follows approval. Request a stored Runner-ledger receipt and independently verify the changed source row. No match server or external system is contacted.\n\nPublic reads must retain these restrictions as jobs are edited. Ratification never grants a referee permission to change the recorded winner or score.\n",
+          "Yes. Each tenant is exactly one league, and each principal is an assigned referee within that league. Referees in the same league share the limit of two automatic ratifications in the rolling 24 hours; all leagues share the overall limit of six.",
+          "This is an owned synthetic local-development database, not a production system. As its source owner I confirm the existing application maintains every integer version on every INSERT or UPDATE of mutable records, including status, scope and relationship changes. Fixture-owner updates follow the same contract. Keep the existing reviewed business rules unchanged. The stored Runner-ledger receipt and independent changed-row readback remain required during separately reviewed deployment and execution; they are not a request to add unsupported fields to the business Action draft.",
+          "Claude Code"
+        ]
+      },
+      "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+      "report_digest": "sha256:cec6ec9b7827dbd1a46b6891b4e69c0ad5a25ce43bc2582002a5391172c4d8aa",
+      "draft_digest": "sha256:29d09a4dfd926946c87fbccc44f40d021f023d3ac02e9171e974b1c767109478",
+      "reason": "current_review_requires_no_action_edit",
+      "confirmed_by": "operator"
+    }
+  ],
+  "coverage_digest": "sha256:cec6ec9b7827dbd1a46b6891b4e69c0ad5a25ce43bc2582002a5391172c4d8aa",
+  "pending_responsibilities": [
+    {
+      "start": 3,
+      "end": 3,
+      "disposition": "needs_decision",
+      "interpretation": "Connecting an authenticated referee session to the already reviewed tenant and principal scope is not yet verified. This later wiring does not alter the prepared record-scope restrictions.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+      ],
+      "topic": "Authenticated referee identity",
+      "responsibility": "deployment",
+      "issue_kind": "missing_configuration",
+      "next_step": "After authority review, configure authenticated session identity for the reviewed tenant and referee scope.",
+      "deployment_prerequisite": "authenticated_identity"
+    },
+    {
+      "start": 7,
+      "end": 7,
+      "disposition": "needs_decision",
+      "interpretation": "Dedicated writer review, grants, receipt-mode review, execution enablement, and worker startup remain unverified. Operator message 3 retains the Runner-ledger receipt requirement for separately reviewed deployment and execution.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+      ],
+      "operator_clarification": "This is an owned synthetic local-development database, not a production system. As its source owner I confirm the existing application maintains every integer version on every INSERT or UPDATE of mutable records, including status, scope and relationship changes. Fixture-owner updates follow the same contract. Keep the existing reviewed business rules unchanged. The stored Runner-ledger receipt and independent changed-row readback remain required during separately reviewed deployment and execution; they are not a request to add unsupported fields to the business Action draft.",
+      "supporting_dependencies_digest": "sha256:290f89afd003d73039b8aa0983b2c59adb7e311c7c875ac0e6b30f2972dccf8a",
+      "topic": "Execution and Runner-ledger receipt setup",
+      "responsibility": "deployment",
+      "issue_kind": "missing_configuration",
+      "next_step": "After authority review, configure the dedicated writer, required Runner-ledger receipt mode, execution consent, and worker.",
+      "deployment_prerequisite": "runner_execution_setup"
+    },
+    {
+      "start": 7,
+      "end": 7,
+      "disposition": "needs_decision",
+      "interpretation": "An independent observation of the changed source row after each applicable execution remains required by the policy and operator message 3, but is external client or source-owner work and is unverified here. It is distinct from a Runner-ledger receipt.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+      ],
+      "operator_clarification": "This is an owned synthetic local-development database, not a production system. As its source owner I confirm the existing application maintains every integer version on every INSERT or UPDATE of mutable records, including status, scope and relationship changes. Fixture-owner updates follow the same contract. Keep the existing reviewed business rules unchanged. The stored Runner-ledger receipt and independent changed-row readback remain required during separately reviewed deployment and execution; they are not a request to add unsupported fields to the business Action draft.",
+      "supporting_dependencies_digest": "sha256:bf4466bb15172d4a7f440b129a95ec67dd0e273f131266ff06dd1b010d9122c8",
+      "topic": "Independent changed-row verification",
+      "responsibility": "application",
+      "issue_kind": "missing_configuration",
+      "next_step": "Assign who will independently verify the changed source row after each ratification execution.",
+      "application_obligations": [
+        "independent_source_readback"
+      ]
+    }
+  ],
+  "source_rows_in_authoring": false,
+  "source_readback_as_application_evidence": false,
+  "authority_revision": "policy:c735400b91d56c09ac8195cb4a97645390c74a810717af73fd3ec3781b5c2dc0",
+  "history": {
+    "proposals": {
+      "rows": 1,
+      "digest": "sha256:493fdaf19a5f0d3294870e1230eb1c902197c46c5192acca0fcd5da38741b5ac"
+    },
+    "approvals": {
+      "rows": 1,
+      "digest": "sha256:a41e1a9407de27ca6059f1d370e251203e7377aa1c86dcca44530cd010a9a647"
+    },
+    "worker_queue": {
+      "rows": 1,
+      "digest": "sha256:e52430e4fdc2c946247b6f8565067b0cec199c1293be95b6cc719872fa74a637"
+    },
+    "writeback_receipts": {
+      "rows": 1,
+      "digest": "sha256:2f6164ad2c4b4d0050f0ff7db5bde8c32d3eb70e3ac524da57c3436ec61ef65f"
+    },
+    "writeback_jobs": {
+      "rows": 1,
+      "digest": "sha256:9f56a94be0d688286da39152cac0c0a06d2e1eaa72a276518fff4c38161c428b"
+    }
+  },
+  "configured_receipt_modes": [
+    "runner_ledger"
+  ],
+  "status": "passed_reviewed"
+}

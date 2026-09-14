@@ -1,0 +1,129 @@
+{
+  "at": "2026-09-14T08:17:02.407Z",
+  "run": "recovery-software",
+  "label": "final",
+  "mode": "observe",
+  "artifact_tree": "e4a0689b104b39aed7db7a2053a135e3265459d0df58e7378d7efb01c62ba829",
+  "classification": "read-only host verifier of persisted installed public-path state; no status setters or external-observation import",
+  "snapshot": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/runs/recovery-software/deterministic/review-final-state.json",
+  "snapshot_sha256": "437d4b9eb16685716020176244db554bf28d513288f1a4a5c442ac3d5ae52e21",
+  "business_review_ready": true,
+  "readiness_summary": [
+    "Attached rules: rules.txt v1; interpretation checked for this revision.",
+    "Client integration still unverified: customer selection, signed-in customer identity, accurate status messages. Check these during client setup before customer use.",
+    "Independent source readback remains unverified for each applicable execution. Perform and retain that separate observation after the change; a receipt or completed business review does not prove it.",
+    "Execution setup pending: dedicated writer review, separate execution permission and worker startup. Continue to these checks after authority review; automatic completion is not yet enabled."
+  ],
+  "resume_stage": "client_setup",
+  "pending_instruction": null,
+  "reconciliations": [],
+  "coverage_digest": "sha256:d995b4e7266d35f3e1beff8feb75149f2f68b5356123f88d9a816e6e4409c010",
+  "pending_responsibilities": [
+    {
+      "start": 3,
+      "end": 3,
+      "disposition": "needs_decision",
+      "interpretation": "Runner verifies the scoped subject reference but cannot prove that the coordinator intentionally selected the candidate or slot in a client.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/application_obligations/customer_selection"
+      ],
+      "topic": "Coordinator selection",
+      "responsibility": "application",
+      "issue_kind": "missing_configuration",
+      "next_step": "Assign the client to capture the coordinator’s intended candidate selection.",
+      "application_obligations": [
+        "customer_selection"
+      ]
+    },
+    {
+      "start": 3,
+      "end": 3,
+      "disposition": "needs_decision",
+      "interpretation": "The reviewed tenant/principal record restriction is implemented, but authenticated application-session wiring to those trusted bindings remains unverified deployment setup.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+      ],
+      "topic": "Authenticated scoped identity",
+      "responsibility": "deployment",
+      "issue_kind": "missing_configuration",
+      "next_step": "After authority review, configure authenticated session identity for the reviewed tenant and principal scope.",
+      "deployment_prerequisite": "authenticated_identity"
+    },
+    {
+      "start": 7,
+      "end": 7,
+      "disposition": "needs_decision",
+      "interpretation": "The prepared direct-SQL behavior supports a same-source transaction and source_db receipts, but receipt objects and grants, dedicated writer review, execution consent, and worker startup are not verified. Source-counter maintenance is an owner-confirmed operating prerequisite, while external-writer verification remains false. This is later deployment work, not a missing Action expression.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+      ],
+      "topic": "Source receipt and supervised execution setup",
+      "responsibility": "deployment",
+      "issue_kind": "missing_configuration",
+      "next_step": "After authority review, configure the source-database receipt, dedicated writer, execution consent, and worker.",
+      "deployment_prerequisite": "runner_execution_setup"
+    },
+    {
+      "start": 9,
+      "end": 9,
+      "disposition": "needs_decision",
+      "interpretation": "Independent post-execution readback of both changed rows is required by the source, but external observation is explicitly unverified and cannot be guaranteed by the Action or receipt.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+      ],
+      "topic": "Independent changed-row readback",
+      "responsibility": "application",
+      "issue_kind": "missing_configuration",
+      "next_step": "Assign an independent client or source owner to read back both rows after each execution.",
+      "application_obligations": [
+        "independent_source_readback"
+      ]
+    },
+    {
+      "start": 9,
+      "end": 9,
+      "disposition": "needs_decision",
+      "interpretation": "Runner returns statuses and receipts but cannot prove that the client accurately presents approval, queued, failed, completed, receipt, and readback status to coordinators.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/application_obligations/status_presentation"
+      ],
+      "topic": "Truthful sealing status presentation",
+      "responsibility": "application",
+      "issue_kind": "missing_configuration",
+      "next_step": "Assign the client to present request status and receipts accurately.",
+      "application_obligations": [
+        "status_presentation"
+      ]
+    }
+  ],
+  "source_rows_in_authoring": false,
+  "source_readback_as_application_evidence": false,
+  "authority_revision": "policy:b21a4451585f6ceb5a8afac3b75b6766314af85b0e4bd7c9906d8339e0812ba7",
+  "history": {
+    "proposals": {
+      "rows": 5,
+      "digest": "sha256:33fd092e4af0c6e5f7b5e3c48c35b4b47ddcae15d2270f206667662804f42eed"
+    },
+    "approvals": {
+      "rows": 3,
+      "digest": "sha256:26ff9c612e91f49c2f48906aeea5410cb94bf11edbbf641907e72cc7aa8ced6e"
+    },
+    "worker_queue": {
+      "rows": 3,
+      "digest": "sha256:2e5019810d88ab77f9b555182567df457c98fc23cf76f5c62c899ab882ecd989"
+    },
+    "writeback_receipts": {
+      "rows": 1,
+      "digest": "sha256:78b0f819db828bb7093b1148d530681de01cb56be83b387743177609b00d261d"
+    },
+    "writeback_jobs": {
+      "rows": 1,
+      "digest": "sha256:5b94fcb0c21dee9ae75a5ba6a90525d7f945b46ea58159faa16895041e7d2cf7"
+    }
+  },
+  "configured_receipt_modes": [
+    "source_db"
+  ],
+  "status": "failed_or_incomplete",
+  "error": "AssertionError [ERR_ASSERTION]: Keep exact saved Action program\n+ actual - expected\n... Skipped lines\n\n  {\n    authority: {\n-     activated_at: '2026-09-14T01:59:13.064Z',\n-     actor: 'local-developer',\n      authority: {\n        action_boundary: {\n          digest: 'sha256:1160ff545423729caeb6f7228dd57e3382b8d9c83e3bcb6edb0f8b51dde7c170',\n          name: 'reviewed_staging_actions',\n          rules: [\n...\n      },\n+     created_at: '2026-09-14T01:56:44.839Z',\n      digest: 'sha256:2ecc622218a58f830fc1da0eae5f43ca5357906e091bdbb5052d887249325853',\n      reviews: [\n        {\n          examples: [\n            {\n...\n      ],\n+     schema_version: 'synapsor.action-rule-authority-draft.v1',\n+     state: 'disabled'\n-     schema_version: 'synapsor.action-rule-authority-activation.v1',\n-     state: 'active'\n    },\n    schema_version: 'synapsor.stored-operator-authority/v1',\n    type: 'action'\n  }\n"
+}

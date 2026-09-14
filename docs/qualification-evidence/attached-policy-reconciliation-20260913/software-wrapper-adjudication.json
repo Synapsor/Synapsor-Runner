@@ -1,0 +1,21 @@
+{
+  "at": "2026-09-14T08:19:03.254008+00:00",
+  "artifact_tree": "e4a0689b104b39aed7db7a2053a135e3265459d0df58e7378d7efb01c62ba829",
+  "status": "passed_existing_saved_record_selection_and_responsibility_control",
+  "original_failed_verifier": "software-public-review-exit.json (exit 1 retained)",
+  "cause": "The generic host verifier compared the selected active wrapper with the pre-existing disabled wrapper. Inner business authority, digest and reviews are byte-equivalent JSON; the whole selected disabled record already existed before this run.",
+  "selected_existing_revision": "policy:b21a4451585f6ceb5a8afac3b75b6766314af85b0e4bd7c9906d8339e0812ba7",
+  "all_stored_policy_revisions_unchanged": true,
+  "active_authority_unchanged": true,
+  "execution_configuration_unchanged": true,
+  "approval_receipt_queue_history_unchanged": true,
+  "same_source_and_source_receipt_preserved": true,
+  "business_review_ready": true,
+  "source_db_and_independent_observation_remain_separate": true,
+  "fresh_writer_worker_or_per_execution_readback_verified": false,
+  "application_rerun_or_status_edits": false,
+  "snapshot_hashes": {
+    "review-baseline-state.json": "940e790eee9f7941c8c2cc0f8c8d51199539816b5eb46fe5e1f185daef3407a2",
+    "review-final-state.json": "437d4b9eb16685716020176244db554bf28d513288f1a4a5c442ac3d5ae52e21"
+  }
+}

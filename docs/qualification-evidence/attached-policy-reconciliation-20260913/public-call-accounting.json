@@ -1,0 +1,178 @@
+{
+  "at": "2026-09-14T08:21:17.205241+00:00",
+  "rows": [
+    {
+      "run": "recovery-tournament-assisted",
+      "actual_calls": 2,
+      "completed_captured_responses": 2,
+      "allowed_calls": 25,
+      "first_public_start": "2026-09-14T08:05:17.772Z",
+      "deadline": "2026-09-14T08:50:17.772Z",
+      "elapsed_to_first_saved_checkpoint_seconds": 113.496,
+      "time_measurement": "upper-bound wall interval includes operator interaction, verification and assistant pauses; not model-only or hands-on time",
+      "hands_on_time_seconds": null,
+      "purposes": [
+        {
+          "input": "input-0001.json",
+          "sha256": "54b9c5b51ad12c854c82d498b8f1d7678b7544c24cd6922cbdfa7a68eb0b90f3",
+          "model": "gpt-5.6-terra",
+          "purpose": "coverage review"
+        },
+        {
+          "input": "input-0002.json",
+          "sha256": "5662b163e75ceb5b86355c84c303520d1f5d35f46002c20b554d7314e181e414",
+          "model": "gpt-5.6-terra",
+          "purpose": "coverage review"
+        }
+      ],
+      "transport_statuses": [
+        200,
+        200
+      ],
+      "public_cli_exits": [
+        0
+      ],
+      "preflight_exits": [
+        0
+      ],
+      "provider_switched": false
+    },
+    {
+      "run": "recovery-tournament-original",
+      "actual_calls": 1,
+      "completed_captured_responses": 1,
+      "allowed_calls": 15,
+      "first_public_start": "2026-09-14T08:07:25.300Z",
+      "deadline": "2026-09-14T08:52:25.300Z",
+      "elapsed_to_first_saved_checkpoint_seconds": 159.296,
+      "time_measurement": "upper-bound wall interval includes operator interaction, verification and assistant pauses; not model-only or hands-on time",
+      "hands_on_time_seconds": null,
+      "purposes": [
+        {
+          "input": "input-0001.json",
+          "sha256": "60e0c00ec9b4c9ea33ce93f26e47cd24e55290843e66cb2b7233dfe910e27b86",
+          "model": "gpt-5.6-terra",
+          "purpose": "coverage review"
+        }
+      ],
+      "transport_statuses": [
+        200
+      ],
+      "public_cli_exits": [
+        0,
+        0
+      ],
+      "preflight_exits": [
+        0,
+        0
+      ],
+      "provider_switched": false
+    },
+    {
+      "run": "edit-tournament",
+      "actual_calls": 6,
+      "completed_captured_responses": 6,
+      "allowed_calls": 12,
+      "first_public_start": "2026-09-14T08:11:49.017Z",
+      "deadline": "2026-09-14T08:41:49.017Z",
+      "elapsed_to_first_saved_checkpoint_seconds": 140.185,
+      "time_measurement": "upper-bound wall interval includes operator interaction, verification and assistant pauses; not model-only or hands-on time",
+      "hands_on_time_seconds": null,
+      "purposes": [
+        {
+          "input": "input-0001.json",
+          "sha256": "2c274c4d9b472afdf86b75fb283e5936f7e8051f0da16071b71278e41cda74d8",
+          "model": "gpt-5.6-terra",
+          "purpose": "initial greeting"
+        },
+        {
+          "input": "input-0002.json",
+          "sha256": "a233643a71771a92e2bbe25815c51ab4f7137c78c6ea90e4b6c5338cf1f3f336",
+          "model": "gpt-5.6-terra",
+          "purpose": "job planning"
+        },
+        {
+          "input": "input-0003.json",
+          "sha256": "3a6c4cf439f0397e696b1a505d21cf75e725c1e446eec1d85fb1363d09e33b69",
+          "model": "gpt-5.6-terra",
+          "purpose": "disabled Action revision generation/validation"
+        },
+        {
+          "input": "input-0004.json",
+          "sha256": "ccd522d016233b7852d5a092ffc4f279ec0c5b9ae3e59b2dbe094143bb763da2",
+          "model": "gpt-5.6-terra",
+          "purpose": "disabled Action revision generation/validation"
+        },
+        {
+          "input": "input-0005.json",
+          "sha256": "cf063353b242ae19de8be60b902057f29ffc9ddb88f70bda415982d8c3a9ae9a",
+          "model": "gpt-5.6-terra",
+          "purpose": "disabled Action revision generation/validation"
+        },
+        {
+          "input": "input-0006.json",
+          "sha256": "5651ac9122f77ec9476a1956569adecebf7b79223433bdac292f0de8840db93b",
+          "model": "gpt-5.6-terra",
+          "purpose": "coverage review"
+        }
+      ],
+      "transport_statuses": [
+        200,
+        200,
+        200,
+        200,
+        200,
+        200
+      ],
+      "public_cli_exits": [
+        0,
+        0
+      ],
+      "preflight_exits": [
+        0,
+        0
+      ],
+      "provider_switched": false
+    },
+    {
+      "run": "recovery-software",
+      "actual_calls": 1,
+      "completed_captured_responses": 1,
+      "allowed_calls": 8,
+      "first_public_start": "2026-09-14T08:15:27.836Z",
+      "deadline": "2026-09-14T08:45:27.836Z",
+      "elapsed_to_first_saved_checkpoint_seconds": 93.079,
+      "time_measurement": "upper-bound wall interval includes operator interaction, verification and assistant pauses; not model-only or hands-on time",
+      "hands_on_time_seconds": null,
+      "purposes": [
+        {
+          "input": "input-0001.json",
+          "sha256": "7f6c95bfd57b28510c1d64208f3a7138eec3854e2adeee72ffe2e220618d378e",
+          "model": "gpt-5.6-terra",
+          "purpose": "coverage review"
+        }
+      ],
+      "transport_statuses": [
+        200
+      ],
+      "public_cli_exits": [
+        0
+      ],
+      "preflight_exits": [
+        0
+      ],
+      "provider_switched": false
+    }
+  ],
+  "total_actual_calls": 10,
+  "historical_counters_reset": false,
+  "business_statements_added": {
+    "assisted": 0,
+    "original": 0,
+    "edit": "one ordinary-language two-to-one request; existing metadata consent reviewed",
+    "software": 0
+  },
+  "repeated_questions": "No owner policy answer was repeated. Original legacy generated-origin routing required one explicit operator selection. The edit activation question appeared again on restart and was declined both times.",
+  "assisted_structural_correction": "Call 2 corrected an invalid evidence pointer from call 1; it was not a second unchanged semantic-review retry. Counted-history conflict persisted in final validated coverage.",
+  "assistance": "Engineering restored isolated whole projects/databases, ran normal public UI and read-only verifiers. No JSON authority/configuration injection, new business clarification, administrator provisioning or worker/source execution during these public runs."
+}

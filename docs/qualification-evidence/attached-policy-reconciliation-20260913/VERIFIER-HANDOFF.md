@@ -1,6 +1,6 @@
 # Attached-policy reconciliation — working verifier handoff
 
-Status: implementation, focused checks and final stable suite complete (6,238 passed / 461 skipped, exit 0); all ten offline package checks passed. No final installed/public verdict yet. This file is updated at closure rather than treating prepared harnesses as results.
+Status: **NOT COMPLETE**. Final suite/types/backend/offline gates pass. Public B/C/D pass; required A fails on the accepted absent-selector meaning. See `FINAL-REPORT.md`, `scorecard.json` and `remaining-assisted-review.md`.
 
 Repository: `/home/sandesh-tiwari/Desktop/C++/synapsor-runner`, canonical branch `codex/tui-safe-action-control-plane`, baseline `9ca8a480b5a6aa8b8f49a44ce2a32e902c17e591`. `assignment-plan.json` fixes budgets and exact evidence roots. Prior tree `9e88145ed118e5e1f87f5dc0c55fe19197299dd9913633917c2b07c085cb3367` is historical and read-only. The prior report and raw index resolve all originals; `initial-saved-review-trace.json` preserves the actual accepted statements, reviewer calls, classifications and pending instructions.
 
@@ -27,14 +27,22 @@ All commands below run from the repository. The wrappers establish controlled HO
 - Only after B passes and its quiescent `reconciled-before-edit` checkpoint exists, prepare `edit-tournament`. Its independent 12-call allowance does not alter A/B counters. Request only the original two-to-one disabled edit; save/pause/restart. No publication or source execution is scheduled by this assignment.
 - D preserves source_db and existing configuration/history. `software-preservation-check.mjs before` / `after-review` are independent read-only owned-source inspections, never application proof that all future observations occurred.
 
-## Results still required on the final candidate
+## Final one-artifact results
 
-| Row | Required durable result | Current status |
-|---|---|---|
-| A | Assisted business review complete, absent selectors, deployment/readback honestly pending, restart plus unchanged recheck | NOT RUN |
-| B | Original generated pending repair reconciled, original selectors and post-effect history retained, restart coherent | NOT RUN |
-| C | Separate disabled two-to-one edit, exact unrelated semantics and duties retained, save/restart | NOT RUN |
-| D | Existing software source_db configuration and history preserved; shared review responsibility checked | NOT RUN |
+Tree `e4a0689b104b39aed7db7a2053a135e3265459d0df58e7378d7efb01c62ba829`; full manifest and hashes in `installed-candidate.json`. `installed-after-public-verify.json` confirms unchanged bytes after all public checks. Product/test commit af0df52896337c7aafcf13ea99c0828f10afe605; frozen source c28dc09d75475323811b8db09aebbe12dec566b3. The delivery report commit is recorded separately.
+
+| Row | Result | Authoring calls |
+|---|---|---:|
+| A | FAILED: accepted absent selectors remain conflicted; completed-review restart/recheck blocked | 2/25 |
+| B | PASSED: generated task archived with explicit legacy-origin choice; exact original program/history and restart retained | 1/15 |
+| C | PASSED: separate disabled 2→1 edit only, saved/reopened, unrelated semantics retained | 6/12 |
+| D | PASSED: source_db/observation distinction and source/history preserved; original generic wrapper-comparison failure separately adjudicated | 1/8 |
+
+The public commands above are **recorded commands**, not permission to run preserved stores in place. All task-owned databases are stopped and their final dumps/whole-project checkpoints saved. A new reproduction must use a separately owned root and a whole-project copy with its matching source dump. Change only harness locations/owned resource names, never reviewed project/identity bindings. Preserve original inputs and verify the complete frozen tree before using it. The wrappers' refusal to re-prepare an existing run is intentional.
+
+Current snapshots/captures resolve through `raw-evidence-index-pointer.json`. Each run's `public-invocations.jsonl`, `meter/input-*.json`, `meter/output-*.txt`, `meter/events.jsonl` and recorded PTY logs retain actual inputs, outputs, calls and process exits. Deterministic host exports are measurement evidence only. `software-wrapper-adjudication.py` compares the already-saved before/after snapshots; it does not rerun the app or modify state. Its original exit-1 wrapper comparison remains in `software-public-review-exit.json`.
+
+The final full suite actually exited 0 with 6,238 passes/461 skips; final types, 4 named management-review cases, 43 shared backend tests and all ten offline checks separately exited 0. Use their exact exit JSON/logs rather than combining targeted counts. Four owned case containers plus the separate backend fixture were saved/stopped; `preservation-final.json` reports 185,837 original entries unchanged.
 
 Failed development attempts remain retained, including the introduced nested-lock correction and source-race test. They are not silently converted into passes. Controlled response tests are not live model completion. Raw original captures are not reconstructed inputs. `prompt-change-audit.json` links exact before/after text to traced calls and records the fixture-term scan.
 

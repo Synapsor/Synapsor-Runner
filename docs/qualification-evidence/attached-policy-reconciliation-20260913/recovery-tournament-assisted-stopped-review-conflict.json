@@ -1,0 +1,74 @@
+{
+  "at": "2026-09-14T08:07:11.268Z",
+  "runId": "recovery-tournament-assisted",
+  "label": "stopped-review-conflict",
+  "classification": "KNOWN-CASE checkpoint recovery",
+  "artifact_tree": "e4a0689b104b39aed7db7a2053a135e3265459d0df58e7378d7efb01c62ba829",
+  "prior_calls": "historical counters retained in previous run; this is a separately bounded task",
+  "new_authoring_calls": 2,
+  "complete_response_captures": 2,
+  "response_capture_files": 2,
+  "cli_exits": [
+    0
+  ],
+  "preflight_exits": [
+    0
+  ],
+  "resume_stage": "authority_review",
+  "exact_original_answer_paths": [
+    ".pending_action_revision.operator_statements[3]"
+  ],
+  "stores": {
+    ".synapsor/local.db": {
+      "proposal_store_schema": 1,
+      "proposals": 0,
+      "proposal_events": 0,
+      "approvals": 0,
+      "writeback_receipts": 0,
+      "evidence_bundles": 0,
+      "evidence_items": 0,
+      "observed_subject_references": 0,
+      "query_audit": 0,
+      "explore_privacy_releases": 0,
+      "explore_budget_reservations": 0,
+      "writeback_jobs": 0,
+      "idempotency_receipts": 0,
+      "writeback_intents": 0,
+      "replay_records": 0,
+      "shadow_human_actions": 0,
+      "shadow_studies": 0,
+      "shadow_study_cases": 0,
+      "shadow_outcomes": 0,
+      "runner_state": 0,
+      "cloud_outbox": 0,
+      "cloud_governance_events": 0,
+      "policy_recommendations": 0,
+      "attention_events": 0,
+      "attention_items": 0,
+      "notification_deliveries": 0,
+      "worker_queue": 0,
+      "control_policy_identity": 1,
+      "control_policy_deployments": 1,
+      "control_policy_revisions": 13,
+      "control_policy_active": 2,
+      "control_policy_drafts": 2,
+      "control_policy_events": 16,
+      "control_policy_reviews": 0,
+      "control_policy_budget_accounts": 0,
+      "control_policy_budget_requests": 0,
+      "control_policy_budget_entries": 0,
+      "control_policy_budget_receipts": 0,
+      "control_policy_effect_admissions": 0,
+      "control_policy_effect_receipts": 0,
+      "control_policy_runtime_proofs": 0
+    }
+  },
+  "source_counts": {
+    "events": 8,
+    "results": 96
+  },
+  "source_unchanged_relative_to_matching_task_baseline": true,
+  "source_oracle": "matching restored checkpoint source-readback, not the original seed facts",
+  "project_copy_sha256": "4cfa0716877eb69bbba4d85262a071fc886f7c0c85124b1a948127ae2505e1f8",
+  "checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/runs/recovery-tournament-assisted/checkpoints/stopped-review-conflict"
+}

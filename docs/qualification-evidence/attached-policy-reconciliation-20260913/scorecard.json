@@ -1,0 +1,58 @@
+{
+  "at": "2026-09-14T08:26:06.536880+00:00",
+  "artifact_tree": "e4a0689b104b39aed7db7a2053a135e3265459d0df58e7378d7efb01c62ba829",
+  "product_commit": "af0df52896337c7aafcf13ea99c0828f10afe605",
+  "frozen_source_commit": "c28dc09d75475323811b8db09aebbe12dec566b3",
+  "overall": "NOT_COMPLETE",
+  "rows": [
+    {
+      "id": "A",
+      "status": "FAILED",
+      "reason": "Accepted absent-selector meaning still treated as conflict; business review incomplete",
+      "calls": 2,
+      "evidence": [
+        "assisted-current-review-failure.json",
+        "recovery-tournament-assisted-stopped-review.json"
+      ],
+      "restart_unchanged_recheck": "BLOCKED by failed completion prerequisite"
+    },
+    {
+      "id": "B",
+      "status": "PASSED",
+      "reason": "Generated pending repair reconciled, exact original program/history preserved; normal restart coherent",
+      "calls": 1,
+      "evidence": [
+        "recovery-tournament-original-initial-review.json",
+        "recovery-tournament-original-restart-review.json"
+      ]
+    },
+    {
+      "id": "C",
+      "status": "PASSED",
+      "reason": "Separate disabled 2-to-1 edit only; exact selectors/history/source preserved; normal restart coherent",
+      "calls": 6,
+      "evidence": [
+        "edit-tournament-initial-review.json",
+        "edit-tournament-restart-review.json"
+      ]
+    },
+    {
+      "id": "D",
+      "status": "PASSED",
+      "reason": "Focused public review and exact source_db/history/source control; wrapper selection measurement adjudicated separately",
+      "calls": 1,
+      "evidence": [
+        "recovery-software-final-review.json",
+        "software-wrapper-adjudication.json",
+        "software-after-review-preservation.json"
+      ],
+      "original_measurement_failure_preserved": true
+    }
+  ],
+  "total_authoring_calls": 10,
+  "historical_stage_a_acceptance": "unchanged and artifact-specific",
+  "original_stage_b": "NOT_PASSED",
+  "unseen_qualification": "NOT_STARTED",
+  "add_remove_unrun_rows": "remain unrun",
+  "next_repair_decision": "remaining-assisted-review.md"
+}

@@ -1,0 +1,75 @@
+{
+  "at": "2026-09-14T08:10:04.596Z",
+  "runId": "recovery-tournament-original",
+  "label": "reconciled-initial",
+  "classification": "KNOWN-CASE checkpoint recovery",
+  "artifact_tree": "e4a0689b104b39aed7db7a2053a135e3265459d0df58e7378d7efb01c62ba829",
+  "prior_calls": "historical counters retained in previous run; this is a separately bounded task",
+  "new_authoring_calls": 1,
+  "complete_response_captures": 1,
+  "response_capture_files": 1,
+  "cli_exits": [
+    0
+  ],
+  "preflight_exits": [
+    0
+  ],
+  "resume_stage": "client_setup",
+  "exact_original_answer_paths": [
+    ".conversation[6].answer",
+    ".reconciled_action_revisions[0].pending.operator_statements[2]"
+  ],
+  "stores": {
+    ".synapsor/local.db": {
+      "proposal_store_schema": 1,
+      "proposals": 1,
+      "proposal_events": 13,
+      "approvals": 1,
+      "writeback_receipts": 1,
+      "evidence_bundles": 3,
+      "evidence_items": 1,
+      "observed_subject_references": 48,
+      "query_audit": 3,
+      "explore_privacy_releases": 0,
+      "explore_budget_reservations": 2,
+      "writeback_jobs": 1,
+      "idempotency_receipts": 1,
+      "writeback_intents": 1,
+      "replay_records": 0,
+      "shadow_human_actions": 0,
+      "shadow_studies": 0,
+      "shadow_study_cases": 0,
+      "shadow_outcomes": 0,
+      "runner_state": 3,
+      "cloud_outbox": 0,
+      "cloud_governance_events": 0,
+      "policy_recommendations": 0,
+      "attention_events": 8,
+      "attention_items": 0,
+      "notification_deliveries": 0,
+      "worker_queue": 1,
+      "control_policy_identity": 1,
+      "control_policy_deployments": 1,
+      "control_policy_revisions": 16,
+      "control_policy_active": 6,
+      "control_policy_drafts": 2,
+      "control_policy_events": 15,
+      "control_policy_reviews": 0,
+      "control_policy_budget_accounts": 0,
+      "control_policy_budget_requests": 0,
+      "control_policy_budget_entries": 0,
+      "control_policy_budget_receipts": 0,
+      "control_policy_effect_admissions": 0,
+      "control_policy_effect_receipts": 0,
+      "control_policy_runtime_proofs": 0
+    }
+  },
+  "source_counts": {
+    "events": 8,
+    "results": 96
+  },
+  "source_unchanged_relative_to_matching_task_baseline": true,
+  "source_oracle": "matching restored checkpoint source-readback, not the original seed facts",
+  "project_copy_sha256": "c2e73656da2f99f0ff149fcbf9581b5322f319bf42426bc93288d738abd5c459",
+  "checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/runs/recovery-tournament-original/checkpoints/reconciled-initial"
+}

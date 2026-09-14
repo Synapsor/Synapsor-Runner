@@ -1,0 +1,25 @@
+{
+  "name": "edit-public-restart",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "tsx",
+    "docs/qualification-evidence/attached-policy-reconciliation-20260913/verify-saved-review.mts",
+    "edit-tournament",
+    "restart",
+    "edited"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T08:15:04.559078+00:00",
+  "source_head": "c28dc09d75475323811b8db09aebbe12dec566b3",
+  "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/test-environments/edit-public-restart",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/attached-policy-reconciliation-20260913/edit-public-restart",
+  "source_manifest_sha256": "4909e4fc1bee1ac4a1eb7f4effba80d0c5b1bdbd10c8ccf9bea84346f2d6690d",
+  "pid": 1094082,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T08:15:06.115931+00:00"
+}

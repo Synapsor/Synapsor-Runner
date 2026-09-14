@@ -1,0 +1,11 @@
+{
+  "at": "2026-09-14T08:08:54.638Z",
+  "artifact_tree": "e4a0689b104b39aed7db7a2053a135e3265459d0df58e7378d7efb01c62ba829",
+  "phase": "before",
+  "snapshot": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/runs/recovery-software/deterministic/software-before-state.json",
+  "snapshot_sha256": "62d5182e0cb0e97a09fd1be70af284e7b78c2c4d6794b84bbf2d7b6a0460c187",
+  "status": "saved_matching_working_job_baseline",
+  "source_receipts": 1,
+  "control_receipts": 1,
+  "no_worker_invoked": true
+}

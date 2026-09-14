@@ -1,0 +1,48 @@
+{
+  "at": "2026-09-14T08:08:16.146492+00:00",
+  "artifact_tree": "e4a0689b104b39aed7db7a2053a135e3265459d0df58e7378d7efb01c62ba829",
+  "row": "A",
+  "verdict": "FAILED \u2014 business interpretation remains conflicted",
+  "existing_defect_not_new_unrelated_issue": true,
+  "calls": 2,
+  "allowance": 25,
+  "no_policy_clarification_or_edit_submitted": true,
+  "program_authority_history_preservation_assertions_passed": true,
+  "failed_assertion": "AssertionError [ERR_ASSERTION]: Business review must really finish; an unchanged program or guard refusal is not a pass",
+  "conflicts": [
+    {
+      "start": 7,
+      "end": 7,
+      "disposition": "conflict",
+      "interpretation": "Both retained limits select approved history with capability=null, so they count all approved outcomes in this Action Boundary rather than only automatic league.result_ratification outcomes. The source caps automatic ratifications; operator message 5 directs retaining the unfiltered selectors, while maxima, scopes, windows, and approval-status filters otherwise match.",
+      "draft_paths": [
+        "/runner_evidence/actions/league.result_ratification/automatic_limits",
+        "/runner_evidence/runtime_contract/approval_counter_selection"
+      ],
+      "operator_clarification": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change.",
+      "supporting_dependencies_digest": "sha256:9025cb94d236480aa4d3bc8792ab55b2b12f2a3c93053ca9b356e435d5b7205c",
+      "topic": "Counted approval history",
+      "responsibility": "runner",
+      "issue_kind": "contradiction",
+      "next_step": "Should the automatic-ratification caps instead count all approved outcomes in this Action Boundary?",
+      "counter_requirements": [
+        {
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+          "current_capability": null,
+          "required_capability": "league.result_ratification"
+        },
+        {
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+          "current_capability": null,
+          "required_capability": "league.result_ratification"
+        }
+      ]
+    }
+  ],
+  "readback_improvement": "Persisted separate unverified after-execution application obligation; no unsupported Action post-write expression",
+  "pending": "Original generated readback instruction remains retained because current business readiness is false",
+  "next_step": "Preserve failed path without trying repeated unchanged reviews for a favorable model reply; independent B/C/D continue on the same frozen candidate",
+  "snapshot": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/runs/recovery-tournament-assisted/checkpoints/stopped-review-conflict",
+  "meter": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/runs/recovery-tournament-assisted/meter",
+  "recheck_and_restart": "Not run as a successful review; blocked by this failed prerequisite"
+}

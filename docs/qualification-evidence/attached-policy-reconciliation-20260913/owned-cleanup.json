@@ -1,0 +1,76 @@
+{
+  "at": "2026-09-14T08:20:27.598041+00:00",
+  "records": [
+    {
+      "run": "edit-tournament",
+      "container": "synapsor-policy-reconcile-edit-tournament-8e54f0fd",
+      "container_id": "e5e6d0b71c041605bb88433b6329711dbd821dfe6c2a09de19dda21eab626588",
+      "label": "attached-policy-reconciliation-20260913",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "f938eb66970550a5da30e59884324331b2aa40e9ac23d704d389701e4e7c7b4c",
+        "postgres.log": "eba376ac40af7ef36c9fd79cd0c6d06f572b1d51904bb9173917b56905d28bd6",
+        "source.dump": "60176647567f521ba283dc6eea6478fb62ddac11c19bae99581ae83a2c5def8e"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/closure/edit-tournament",
+      "removed": false
+    },
+    {
+      "run": "recovery-software",
+      "container": "synapsor-policy-reconcile-recovery-software-54aae4e0",
+      "container_id": "f1004f04a3ee9a462d05fbbae504346200311416ddbf926de5ece6ccaa531d1d",
+      "label": "attached-policy-reconciliation-20260913",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "dd60b79a4b424fb8fa72fddc6b6fa1cb71855bc2bd779b525e447c0bc0bfebec",
+        "postgres.log": "b74b50e34d8c06d6f24c29c45f4740f9de12cef218a57f929dff6ac55795ebbc",
+        "source.dump": "885cf317997968b1b8c6ecf2cfd342d189b00a5915a75c3857790d107fb24b8f"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/closure/recovery-software",
+      "removed": false
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "container": "synapsor-policy-reconcile-recovery-tournament-assisted-ed3679fc",
+      "container_id": "7f44b79c169d95cd27f74575837ba1d87b36058b6ecbeebc9cd7bdaf977322ac",
+      "label": "attached-policy-reconciliation-20260913",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "615c320afff155e9f56d797bad39fb65c8469588366efd0adab816ee7ad6291c",
+        "postgres.log": "5cd1fc792e85904d36be16c098717af3c66e29acd8dc75c884ec98ea98236004",
+        "source.dump": "208c0cefddf4cd3068327852996a7a1ed30b2a1635b330dc6541a50273170b17"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/closure/recovery-tournament-assisted",
+      "removed": false
+    },
+    {
+      "run": "recovery-tournament-original",
+      "container": "synapsor-policy-reconcile-recovery-tournament-original-08146370",
+      "container_id": "a26dcafcf383b046de23c280c5acd6d6dcbcb54616522caadb953eefcff3afa1",
+      "label": "attached-policy-reconciliation-20260913",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "175532de2bd711f79c095c1cd04fe58c04fe24c4e85effe9d177ff388156fa1c",
+        "postgres.log": "254650328d0c519dc32ff19b6f9954201bc45da6353772b3ddbe4a3d32c5b283",
+        "source.dump": "53768c8b90cea3305578c2f121a0465486389a9f86bffb47505b0aeedb4d3eb2"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913/closure/recovery-tournament-original",
+      "removed": false
+    }
+  ],
+  "counts_note": "Actual public CLI and provider invocations retained in each public-invocations.jsonl and meter/events.jsonl. No worker or source execution is scheduled by this assignment.",
+  "original_containers_touched": false,
+  "fixture_directories_removed": false
+}
