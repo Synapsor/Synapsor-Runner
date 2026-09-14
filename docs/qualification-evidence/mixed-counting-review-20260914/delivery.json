@@ -1,0 +1,22 @@
+{
+  "at": "2026-09-14T16:00:21.143414+00:00",
+  "classification": "implementation-owned named repair completed; independent review pending",
+  "branch": "codex/tui-safe-action-control-plane",
+  "product_commit": "32f12a050b6eed7ebc5406e3baab00160590b43d",
+  "test_commit": "32f12a050b6eed7ebc5406e3baab00160590b43d",
+  "frozen_source_commit": "a021a8407db088fc975301c400eb5145e838775e",
+  "artifact_tree": "aff01e8be77d65e614f8b6b283b1692b1a4e663d0240cac2ff9c09a5e2957008",
+  "final_report": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mixed-counting-review-20260914/FINAL-REPORT.md",
+  "reviewer_handoff": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mixed-counting-review-20260914/REVIEWER-HANDOFF.md",
+  "scorecard": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mixed-counting-review-20260914/SCORECARD.json",
+  "external_final_git_receipt": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mixed-counting-review-b655769-20260914/delivery.json",
+  "remote": "backup",
+  "destination": "https://github.com/Synapsor/Synapsor-Runner-Backup.git",
+  "private_verified": true,
+  "public_release": false,
+  "product_unchanged_since_test_commit": true,
+  "post_freeze_changes": "harness measurement correction and report/evidence only; frozen installation unmodified",
+  "stage_a": "historical artifact-specific acceptance unchanged",
+  "original_stage_b": "NOT PASSED",
+  "stop": "STOP for independent review"
+}

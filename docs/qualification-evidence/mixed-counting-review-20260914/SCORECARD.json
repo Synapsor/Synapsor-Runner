@@ -1,8 +1,8 @@
 {
-  "at": "2026-09-14T15:27:35.275589+00:00",
+  "at": "2026-09-14T15:59:10.141582+00:00",
   "product_commit": "32f12a050b6eed7ebc5406e3baab00160590b43d",
-  "artifact_tree": null,
-  "classification": "implementation-owned known-case repair; installed confirmation pending",
+  "artifact_tree": "aff01e8be77d65e614f8b6b283b1692b1a4e663d0240cac2ff9c09a5e2957008",
+  "classification": "implementer-owned known-case repair; all named repair/review rows passed",
   "rows": {
     "both_exact_response_composed_replays": "PASSED",
     "derived_broad_pointer_before_refusal": "PRESERVED",
@@ -13,12 +13,15 @@
     "types_same_source": "PASSED",
     "full_suite": "PASSED: 6289 passed / 463 skipped, 303 files passed / 21 skipped, exit 0",
     "offline_checks": "PASSED: all 10 checks, each exit 0",
-    "installed_business_review": "NOT RUN",
-    "installed_save_restart": "NOT RUN",
-    "installed_explicit_unchanged_recheck": "NOT RUN"
+    "installed_business_review": "PASSED: persisted complete BUSINESS review, exact program, two component proofs",
+    "installed_save_restart": "PASSED: CLI exits 0, source and business authority unchanged",
+    "installed_explicit_unchanged_recheck": "PASSED: explicitly selected public path, current-domain validated reuse; no new provider call"
   },
   "stage_a": "historical artifact-specific acceptance unchanged",
   "original_stage_b": "NOT PASSED",
   "development_provider_calls": 0,
-  "source_manifest_sha256": "1ae0c8cc96164cf6f7a9fa907fa52e33ab5ee00d061bc11bf6cf9cbd9dbc8923"
+  "source_manifest_sha256": "1ae0c8cc96164cf6f7a9fa907fa52e33ab5ee00d061bc11bf6cf9cbd9dbc8923",
+  "final_authoring_calls": 1,
+  "restart_recheck_provider_calls": 0,
+  "remaining_deployment_duties": "Pending and accurately reported; not executed in this bounded review assignment"
 }

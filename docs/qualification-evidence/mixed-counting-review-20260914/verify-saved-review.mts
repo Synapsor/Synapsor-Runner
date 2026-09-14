@@ -51,7 +51,25 @@ try {
  if(mode!=='baseline') {
   const before=JSON.parse(await fs.readFile(path.join(D,'review-baseline-state.json'),'utf8'));
   for(const table of ['proposals','approvals','worker_queue','writeback_receipts','writeback_jobs'])assert.deepEqual(ledger[table],before.ledger[table],`Preserve exact durable ${table}`);
-  assert.deepEqual(active,before.active,'No active authority publication is scheduled');
+  assert.deepEqual(active.filter(p=>p.pointer.kind!=='management'),before.active.filter((p:any)=>p.pointer.kind!=='management'),'No business authority publication is scheduled');
+  assert.deepEqual(drafts,before.drafts,'Disabled business authority revisions remain exact');
+  const management=active.filter(p=>p.pointer.kind==='management'),priorManagement=before.active.filter((p:any)=>p.pointer.kind==='management');
+  assert.equal(management.length,priorManagement.length);
+  for(const current of management) {
+   const prior=priorManagement.find((p:any)=>p.pointer.name===current.pointer.name);assert(prior);
+   for(const key of ['deployment_id','scope_key','kind','name'])assert.equal(current.pointer[key],prior.pointer[key]);
+   const a=JSON.parse(prior.record.content_json),b=JSON.parse(current.record.content_json);
+   if(current.pointer.name==='read_authoring') {
+    assert.equal(a.entries.length,b.entries.length);
+    for(let i=0;i<a.entries.length;i++) {
+     assert(Number.isSafeInteger(b.entries[i].progress.revision)&&b.entries[i].progress.revision>=a.entries[i].progress.revision);
+     assert(Number.isFinite(Date.parse(b.entries[i].progress.updated_at)));
+     delete a.entries[i].progress.revision;delete b.entries[i].progress.revision;
+     delete a.entries[i].progress.updated_at;delete b.entries[i].progress.updated_at;
+    }
+   }
+   assert.deepEqual(b,a,'Only recorded management review progress revision/time may change');
+  }
   assert.deepEqual(config,before.config,'No execution or identity setup is scheduled');
   assert.deepEqual(sources.snapshots,before.sources.snapshots,'Original attached policy versions are unchanged');
   assert.deepEqual((sources.operator_messages??[]).slice(0,before.sources.operator_messages?.length??0),before.sources.operator_messages??[],'Retain accepted owner messages');

@@ -1,0 +1,25 @@
+{
+  "at": "2026-09-14T15:53:46.659724+00:00",
+  "records": [
+    {
+      "run": "recovery-tournament-assisted",
+      "container": "synapsor-mixed-review-recovery-tournament-assisted-33d3b44b",
+      "container_id": "4219b777371a9550e45d366d86ae0fa3f178d7db50d653effd4eff3ccc118edc",
+      "label": "mixed-counting-review-20260914",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "ffb53fe41656b42971c3bd85ba4689daf719428c539c32ba76a274ad3f0487b1",
+        "postgres.log": "6317cf70e5c326cf7552dc13b43983396fbbb21ad32355a590f826de005289a8",
+        "source.dump": "46b5a3165796793d9c2bbe37d29c7cc90fcc0964afb17ce82ace93b6b59ea6af"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mixed-counting-review-b655769-20260914/closure/recovery-tournament-assisted",
+      "removed": false
+    }
+  ],
+  "counts_note": "Actual public CLI and provider invocations retained in each public-invocations.jsonl and meter/events.jsonl. No worker or source execution is scheduled by this assignment.",
+  "original_containers_touched": false,
+  "fixture_directories_removed": false
+}

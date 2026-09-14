@@ -1,0 +1,82 @@
+{
+  "at": "2026-09-14T15:55:57.677065+00:00",
+  "classification": "implementer-owned installed known-case BUSINESS review; no runtime/deployment qualification",
+  "artifact_tree": "aff01e8be77d65e614f8b6b283b1692b1a4e663d0240cac2ff9c09a5e2957008",
+  "provider": "openai",
+  "model": "gpt-5.6-terra",
+  "development_provider_calls": 0,
+  "final_actual_authoring_calls": 1,
+  "failed_transports": 0,
+  "restart_and_explicit_recheck_provider_calls": 0,
+  "reuse": "saved coverage parsed and rebound after current selected-store domain refresh; explicit public menu invokes ensurePolicyCoverage before and after inspection",
+  "coverage_unchanged_across_restart_and_recheck": true,
+  "business_review_persisted": true,
+  "host_resolved_components": 2,
+  "pending_generated_action_repair": false,
+  "old_instruction_preserved_in_reconciliation_history": true,
+  "owner_policy_restatement_or_override": false,
+  "operator_routing_confirmation": "Confirmed preserved legacy pending instruction was a generated repair; current validated review requires no Action edit. No policy change was requested.",
+  "program": "policy:3a09a1839a9483abcaef6352720ea800a9a0cf154ab9e3d19d0145781a98cb87",
+  "tenant_maximum": 2,
+  "boundary_maximum": 6,
+  "window_seconds": 86400,
+  "bounds": "inclusive",
+  "capability_selectors": "absent",
+  "new_principal_cap": false,
+  "CLI_exits": [
+    0,
+    0
+  ],
+  "preflight_exits": [
+    0,
+    0
+  ],
+  "source_rows": 104,
+  "source_rows_changed": 0,
+  "approvals_proposals_queues_receipts": 0,
+  "activated": false,
+  "worker_started": false,
+  "readiness_summary": [
+    "Attached rules: rules.txt v1; interpretation checked for this revision.",
+    "Client integration still unverified: signed-in customer identity, customer selection, Runner client connection, accurate status messages. Check these during client setup before customer use.",
+    "Independent source readback remains unverified for each applicable execution. Perform and retain that separate observation after the change; a receipt or completed business review does not prove it.",
+    "Execution setup pending: dedicated writer review, separate execution permission and worker startup. Continue to these checks after authority review; automatic completion is not yet enabled."
+  ],
+  "public_sequence": [
+    "start --project-root . --cli",
+    "Resume the interrupted job",
+    "Complete attached review using one unchanged provider response",
+    "Confirm generated-repair routing",
+    "Save without enabling access and finish",
+    "Quit",
+    "start --project-root . --cli",
+    "Resume the interrupted job",
+    "More review options",
+    "Review attached rules and unresolved decisions",
+    "Inspect Shared automatic ratification caps overview and exact configuration evidence",
+    "Return; Save without enabling access and finish; Quit"
+  ],
+  "observed_transport_times": {
+    "transport_attempt": "2026-09-14T15:43:45.592Z",
+    "response_complete": "2026-09-14T15:44:22.728Z"
+  },
+  "call_duration_seconds": 37.136,
+  "end_to_end_interview_or_first_receipt_timing": "not measured; this was saved-review recovery, no interview or receipt run",
+  "ledger_epochs": {
+    "historical_preserved_same_revision_save": [
+      16,
+      17
+    ],
+    "owned_first_review": [
+      17,
+      19
+    ],
+    "owned_restart_save": [
+      19,
+      21
+    ]
+  },
+  "management_changes": "two exact same-revision disabled Action saves; Read review progress revision 6 -> 7 -> 8 and timestamps only; no business authority change",
+  "measurement_correction": "VERIFIER-CORRECTION.md; first too-broad active-record assertion retained as failed measurement, corrected verifier passed on identical saved state without another authoring run",
+  "remaining_duties": "Read/Action/execution reviews, writer/worker/client readiness, independent readback; privacy-verification-unavailable warning retained"
+}

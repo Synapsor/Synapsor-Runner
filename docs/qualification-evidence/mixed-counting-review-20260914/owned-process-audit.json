@@ -1,0 +1,118 @@
+{
+  "at": "2026-09-14T15:55:57.677065+00:00",
+  "processes": [
+    {
+      "pid": 1924413,
+      "record": "before-replay-exit.json",
+      "exists": false
+    },
+    {
+      "pid": 1935833,
+      "record": "focused01-exit.json",
+      "exists": false
+    },
+    {
+      "pid": 1936026,
+      "record": "types01-exit.json",
+      "exists": false
+    },
+    {
+      "pid": 1938797,
+      "record": "focused02-exit.json",
+      "exists": false
+    },
+    {
+      "pid": 1941573,
+      "record": "focused03-exit.json",
+      "exists": false
+    },
+    {
+      "pid": 1941747,
+      "record": "types02-exit.json",
+      "exists": false
+    },
+    {
+      "pid": 1944989,
+      "record": "focused04-exit.json",
+      "exists": false
+    },
+    {
+      "pid": 1948496,
+      "record": "after-replay-exit.json",
+      "exists": false
+    },
+    {
+      "pid": 1948650,
+      "record": "backend-focused-exit.json",
+      "exists": false
+    },
+    {
+      "pid": 1948693,
+      "record": "combined-focused-exit.json",
+      "exists": false
+    },
+    {
+      "pid": 1956194,
+      "record": "freshness-focused-exit.json",
+      "exists": false
+    },
+    {
+      "pid": 1956367,
+      "record": "types03-exit.json",
+      "exists": false
+    },
+    {
+      "pid": 1957818,
+      "record": "dependency-prestable-exit.json",
+      "exists": false
+    },
+    {
+      "pid": 1958772,
+      "record": "freshness-diagnostic-exit.json",
+      "exists": false
+    },
+    {
+      "pid": 1960531,
+      "record": "freshness-final-exit.json",
+      "exists": false
+    },
+    {
+      "pid": 1963113,
+      "record": "types-final-exit.json",
+      "exists": false
+    },
+    {
+      "pid": 1963229,
+      "record": "structured-saved-focused-exit.json",
+      "exists": false
+    },
+    {
+      "pid": 1968654,
+      "record": "stable-full-exit.json",
+      "exists": false
+    },
+    {
+      "pid": 1968863,
+      "record": "final-postgres-exit.json",
+      "exists": false
+    },
+    {
+      "pid": 1977200,
+      "record": "final-review-postgres-exit.json",
+      "exists": false
+    },
+    {
+      "pid": 2040570,
+      "record": "public-invocations.jsonl",
+      "exists": false
+    },
+    {
+      "pid": 2048969,
+      "record": "public-invocations.jsonl",
+      "exists": false
+    }
+  ],
+  "remaining_owned_recorded_processes": 0,
+  "namespace_meter_pids": "not interpreted as host pids",
+  "unrelated_processes_signalled": false
+}

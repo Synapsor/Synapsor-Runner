@@ -15,13 +15,18 @@
     "final_authoring_calls": 25,
     "reserved_restart_recheck_calls": 6
   },
-  "status": "FREEZE_READY",
-  "next_step": "Freeze the complete installation from committed source/evidence, verify all files, bind the prepared whole-project recovery, then run installed public review/restart/recheck.",
+  "status": "COMPLETE_STOP_FOR_REVIEW",
+  "next_step": "No further authoring or runtime work. Independent verifier reviews FINAL-REPORT.md and exact artifacts. Private delivery receipt is recorded in owned_root/delivery.json after the final evidence commit.",
   "trial_harness_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/trial-harness",
   "original_cases_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases",
   "evidence_root": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mixed-counting-review-20260914",
   "previous_candidate_tree": "3a871a30a8e226ad60928290bb387fa2a4432cc32400ed164db8ef780b3f3b75",
   "product_revision": "32f12a050b6eed7ebc5406e3baab00160590b43d",
   "verification_phase_started_at": "2026-09-14T15:16:51.010956+00:00",
-  "verification_phase_deadline": "2026-09-14T17:16:51.010956+00:00"
+  "verification_phase_deadline": "2026-09-14T17:16:51.010956+00:00",
+  "final_candidate_tree": "aff01e8be77d65e614f8b6b283b1692b1a4e663d0240cac2ff9c09a5e2957008",
+  "public_confirmation_completed_at": "2026-09-14T15:52:54.912Z",
+  "final_authoring_calls": 1,
+  "development_provider_calls_used": 0,
+  "full_suite_launches_used": 1
 }

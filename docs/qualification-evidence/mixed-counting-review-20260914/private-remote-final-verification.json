@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-14T15:59:40.417046+00:00",
+  "remote": "backup",
+  "fetch": "https://github.com/Synapsor/Synapsor-Runner-Backup.git",
+  "push": [
+    "https://github.com/Synapsor/Synapsor-Runner-Backup.git"
+  ],
+  "repository": {
+    "default_branch": "main",
+    "full_name": "Synapsor/Synapsor-Runner-Backup",
+    "html_url": "https://github.com/Synapsor/Synapsor-Runner-Backup",
+    "private": true
+  }
+}

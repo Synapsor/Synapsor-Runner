@@ -1,0 +1,74 @@
+{
+  "at": "2026-09-14T15:45:03.869Z",
+  "runId": "recovery-tournament-assisted",
+  "label": "after-review",
+  "classification": "KNOWN-CASE checkpoint recovery",
+  "artifact_tree": "aff01e8be77d65e614f8b6b283b1692b1a4e663d0240cac2ff9c09a5e2957008",
+  "prior_calls": "historical counters retained in previous run; this is a separately bounded task",
+  "new_authoring_calls": 1,
+  "complete_response_captures": 1,
+  "response_capture_files": 1,
+  "cli_exits": [
+    0
+  ],
+  "preflight_exits": [
+    0
+  ],
+  "resume_stage": "authority_review",
+  "exact_original_answer_paths": [
+    ".reconciled_action_revisions[0].pending.operator_statements[3]"
+  ],
+  "stores": {
+    ".synapsor/local.db": {
+      "proposal_store_schema": 1,
+      "proposals": 0,
+      "proposal_events": 0,
+      "approvals": 0,
+      "writeback_receipts": 0,
+      "evidence_bundles": 0,
+      "evidence_items": 0,
+      "observed_subject_references": 0,
+      "query_audit": 0,
+      "explore_privacy_releases": 0,
+      "explore_budget_reservations": 0,
+      "writeback_jobs": 0,
+      "idempotency_receipts": 0,
+      "writeback_intents": 0,
+      "replay_records": 0,
+      "shadow_human_actions": 0,
+      "shadow_studies": 0,
+      "shadow_study_cases": 0,
+      "shadow_outcomes": 0,
+      "runner_state": 0,
+      "cloud_outbox": 0,
+      "cloud_governance_events": 0,
+      "policy_recommendations": 0,
+      "attention_events": 0,
+      "attention_items": 0,
+      "notification_deliveries": 0,
+      "worker_queue": 0,
+      "control_policy_identity": 1,
+      "control_policy_deployments": 1,
+      "control_policy_revisions": 14,
+      "control_policy_active": 2,
+      "control_policy_drafts": 2,
+      "control_policy_events": 19,
+      "control_policy_reviews": 0,
+      "control_policy_budget_accounts": 0,
+      "control_policy_budget_requests": 0,
+      "control_policy_budget_entries": 0,
+      "control_policy_budget_receipts": 0,
+      "control_policy_effect_admissions": 0,
+      "control_policy_effect_receipts": 0,
+      "control_policy_runtime_proofs": 0
+    }
+  },
+  "source_counts": {
+    "events": 8,
+    "results": 96
+  },
+  "source_unchanged_relative_to_matching_task_baseline": true,
+  "source_oracle": "matching restored checkpoint source-readback, not the original seed facts",
+  "project_copy_sha256": "a8507ea76ee7320fbf7266b9a75d4180f137e0b76f86eed868c18b9d3ef51e23",
+  "checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mixed-counting-review-b655769-20260914/runs/recovery-tournament-assisted/checkpoints/after-review"
+}

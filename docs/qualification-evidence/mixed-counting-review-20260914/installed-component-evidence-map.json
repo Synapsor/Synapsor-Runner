@@ -1,0 +1,291 @@
+{
+  "at": "2026-09-14T15:55:57.677065+00:00",
+  "artifact_tree": "aff01e8be77d65e614f8b6b283b1692b1a4e663d0240cac2ff9c09a5e2957008",
+  "components": [
+    {
+      "passage": {
+        "start": 7,
+        "end": 7,
+        "disposition": "implemented",
+        "interpretation": "Qualifying-stage requests are the only auto-approval candidates. The retained limits are inclusive rolling 24-hour counts with maximum two for the trusted tenant and six for the boundary. Operator message 3 confirms each tenant is one league and the tenant limit is shared across that league's referees. Although both history selectors have capability=null, the complete current outcome domain contains only league.result_ratification and no retained automatic outcomes, so the unfiltered selectors currently count the same automatic outcome history required by the source; operator message 5 expressly retains them.",
+        "draft_paths": [
+          "/actions/0/approval",
+          "/runner_evidence/actions/league.result_ratification/automatic_limits",
+          "/runner_evidence/runtime_contract/approval_counter_selection"
+        ],
+        "operator_clarification": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change.",
+        "supporting_dependencies_digest": "sha256:5eb4807a6fd666148e748003f01afb5b3d1549cb02b5a7763302761eb1d9b17c",
+        "topic": "Shared automatic ratification caps",
+        "responsibility": "runner",
+        "issue_kind": "coverage_link",
+        "next_step": "Revalidate this equivalence if another automatic outcome is retained or added to the boundary.",
+        "counter_requirements": [
+          {
+            "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+            "current_capability": null,
+            "required_capability": "league.result_ratification",
+            "operator_clarification": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change."
+          },
+          {
+            "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+            "current_capability": null,
+            "required_capability": "league.result_ratification",
+            "operator_clarification": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change."
+          }
+        ]
+      },
+      "components": [
+        {
+          "origin": "HOST-RESOLVED",
+          "submitted_support": {
+            "paragraph": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change.",
+            "operator_message_id": 5,
+            "counter": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change."
+          },
+          "interpretation": {
+            "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+            "start": 7,
+            "end": 7,
+            "authority_digest": "sha256:8a792071d88822ce66e1d67c6acc3b4b9abb6d2da4c7a093f1c51de280ac6ab4",
+            "operator_support": {
+              "question": "There is a conflict to resolve before changing the saved limits:\n\n- Your accepted clarification says to keep both limits\u2019 existing counted-history selectors unchanged.\n- The requested repair would change each selector from no outcome filter to `league.result_ratification`.\n\nShould I explicitly revise both limits so they count only automatic **result-ratification** approvals, while keeping their 2-per-league, 6-overall, and rolling-24-hour settings unchanged?",
+              "answer": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change."
+            },
+            "operator_history_digest": "sha256:d98ebd75e4f022036ef5e62e20753ee06d5288c242a1c28247a83eb9b637b76b",
+            "comparisons": [
+              {
+                "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+                "current_capability": null,
+                "required_capability": "league.result_ratification"
+              },
+              {
+                "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+                "current_capability": null,
+                "required_capability": "league.result_ratification"
+              }
+            ],
+            "source_passage": {
+              "start": 7,
+              "end": 7,
+              "draft_paths": [
+                "/runner_evidence/actions/league.result_ratification/automatic_limits",
+                "/runner_evidence/runtime_contract/approval_counter_selection"
+              ],
+              "operator_clarification": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change.",
+              "counter_requirements": [
+                {
+                  "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+                  "current_capability": null,
+                  "required_capability": "league.result_ratification"
+                },
+                {
+                  "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+                  "current_capability": null,
+                  "required_capability": "league.result_ratification"
+                }
+              ],
+              "responsibility": "runner",
+              "disposition": "conflict",
+              "interpretation": "Both retained limits select approved history with capability=null, so they count all approved outcomes in this Action Boundary rather than only automatic league.result_ratification outcomes. The source caps automatic ratifications; operator message 5 directs retaining the unfiltered selectors, while maxima, scopes, windows, and approval-status filters otherwise match.",
+              "issue_kind": "contradiction",
+              "next_step": "Should the automatic-ratification caps instead count all approved outcomes in this Action Boundary?"
+            }
+          },
+          "resolution": {
+            "kind": "conditional_singleton_equivalence",
+            "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+            "source_lines": [
+              7,
+              7
+            ],
+            "source_excerpt": "Valid qualifying-stage results may be approved automatically, with at most six automatic ratifications overall and two per league in the inclusive rolling 24-hour window. Qualifying results beyond either cap go to human review. Every valid championship-stage result requires the league supervisor's human review. Counts are shared across that league's referees; creating a local client does not create more allowance. Explicit supervised execution follows approval. Request a stored Runner-ledger receipt and independently verify the changed source row. No match server or external system is contacted.",
+            "operator_support": {
+              "question": "There is a conflict to resolve before changing the saved limits:\n\n- Your accepted clarification says to keep both limits\u2019 existing counted-history selectors unchanged.\n- The requested repair would change each selector from no outcome filter to `league.result_ratification`.\n\nShould I explicitly revise both limits so they count only automatic **result-ratification** approvals, while keeping their 2-per-league, 6-overall, and rolling-24-hour settings unchanged?",
+              "answer": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change."
+            },
+            "operator_history_digest": "sha256:d98ebd75e4f022036ef5e62e20753ee06d5288c242a1c28247a83eb9b637b76b",
+            "comparisons": [
+              {
+                "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+                "retained_capability": null,
+                "required_capability": "league.result_ratification",
+                "actual_predicate": {
+                  "action_boundary_name": "reviewed_staging_actions",
+                  "approval_status": "approved",
+                  "approval_kind": "boundary_automatic",
+                  "window_seconds": 86400,
+                  "time_bounds": "inclusive: now - window_seconds through now",
+                  "capability": null,
+                  "tenant": "current_proposal.tenant_id",
+                  "principal": null,
+                  "business_object": null,
+                  "object_id": null
+                },
+                "configured_limit": {
+                  "kind": "count",
+                  "scope": "tenant",
+                  "maximum": 2,
+                  "window_seconds": 86400
+                }
+              }
+            ],
+            "domain": {
+              "boundary_name": "reviewed_staging_actions",
+              "proposed_revision": "sha256:9162f744949333859637dac4209b9bc34ed4bdc55707ba10f4fd45b2c6d03752",
+              "proposed_outcomes": [
+                "league.result_ratification"
+              ],
+              "current_revision": null,
+              "current_outcomes": [],
+              "retained_automatic_outcomes": [],
+              "complete": true,
+              "store_binding_digest": "sha256:181d96574619fa3620812be284453fc94de3fef383fb7ced39c253117c154d78",
+              "history_scope": "all_retained_boundary_automatic_approvals"
+            },
+            "dependencies_digest": "sha256:933cb639945e88a51dd1a9d22f23d17e243e1412f67e5ce66c5fb254d15aa0e4",
+            "reason": "Only the proposed outcome occurs in the complete proposed/current domain and retained automatic-approval history. Human approvals have no Action Boundary tag and do not count. Retaining the absent filter therefore selects the same automatic history here. A changed requirement, decision, selector, authority, store binding or outcome/history domain requires revalidation; this is not general equivalence or an operator override.",
+            "claim_origin": "submitted_passage",
+            "established_claim": {
+              "disposition": "conflict",
+              "interpretation": "Both retained limits select approved history with capability=null, so they count all approved outcomes in this Action Boundary rather than only automatic league.result_ratification outcomes. The source caps automatic ratifications; operator message 5 directs retaining the unfiltered selectors, while maxima, scopes, windows, and approval-status filters otherwise match.",
+              "issue_kind": "contradiction",
+              "next_step": "Should the automatic-ratification caps instead count all approved outcomes in this Action Boundary?"
+            },
+            "submitted_claim": {
+              "disposition": "implemented",
+              "interpretation": "Qualifying-stage requests are the only auto-approval candidates. The retained limits are inclusive rolling 24-hour counts with maximum two for the trusted tenant and six for the boundary. Operator message 3 confirms each tenant is one league and the tenant limit is shared across that league's referees. Although both history selectors have capability=null, the complete current outcome domain contains only league.result_ratification and no retained automatic outcomes, so the unfiltered selectors currently count the same automatic outcome history required by the source; operator message 5 expressly retains them.",
+              "issue_kind": "coverage_link",
+              "next_step": "Revalidate this equivalence if another automatic outcome is retained or added to the boundary."
+            }
+          }
+        },
+        {
+          "origin": "HOST-RESOLVED",
+          "submitted_support": {
+            "paragraph": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change.",
+            "operator_message_id": 5,
+            "counter": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change."
+          },
+          "interpretation": {
+            "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+            "start": 7,
+            "end": 7,
+            "authority_digest": "sha256:8a792071d88822ce66e1d67c6acc3b4b9abb6d2da4c7a093f1c51de280ac6ab4",
+            "operator_support": {
+              "question": "There is a conflict to resolve before changing the saved limits:\n\n- Your accepted clarification says to keep both limits\u2019 existing counted-history selectors unchanged.\n- The requested repair would change each selector from no outcome filter to `league.result_ratification`.\n\nShould I explicitly revise both limits so they count only automatic **result-ratification** approvals, while keeping their 2-per-league, 6-overall, and rolling-24-hour settings unchanged?",
+              "answer": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change."
+            },
+            "operator_history_digest": "sha256:d98ebd75e4f022036ef5e62e20753ee06d5288c242a1c28247a83eb9b637b76b",
+            "comparisons": [
+              {
+                "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+                "current_capability": null,
+                "required_capability": "league.result_ratification"
+              },
+              {
+                "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+                "current_capability": null,
+                "required_capability": "league.result_ratification"
+              }
+            ],
+            "source_passage": {
+              "start": 7,
+              "end": 7,
+              "draft_paths": [
+                "/runner_evidence/actions/league.result_ratification/automatic_limits",
+                "/runner_evidence/runtime_contract/approval_counter_selection"
+              ],
+              "operator_clarification": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change.",
+              "counter_requirements": [
+                {
+                  "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+                  "current_capability": null,
+                  "required_capability": "league.result_ratification"
+                },
+                {
+                  "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+                  "current_capability": null,
+                  "required_capability": "league.result_ratification"
+                }
+              ],
+              "responsibility": "runner",
+              "disposition": "conflict",
+              "interpretation": "Both retained limits select approved history with capability=null, so they count all approved outcomes in this Action Boundary rather than only automatic league.result_ratification outcomes. The source caps automatic ratifications; operator message 5 directs retaining the unfiltered selectors, while maxima, scopes, windows, and approval-status filters otherwise match.",
+              "issue_kind": "contradiction",
+              "next_step": "Should the automatic-ratification caps instead count all approved outcomes in this Action Boundary?"
+            }
+          },
+          "resolution": {
+            "kind": "conditional_singleton_equivalence",
+            "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+            "source_lines": [
+              7,
+              7
+            ],
+            "source_excerpt": "Valid qualifying-stage results may be approved automatically, with at most six automatic ratifications overall and two per league in the inclusive rolling 24-hour window. Qualifying results beyond either cap go to human review. Every valid championship-stage result requires the league supervisor's human review. Counts are shared across that league's referees; creating a local client does not create more allowance. Explicit supervised execution follows approval. Request a stored Runner-ledger receipt and independently verify the changed source row. No match server or external system is contacted.",
+            "operator_support": {
+              "question": "There is a conflict to resolve before changing the saved limits:\n\n- Your accepted clarification says to keep both limits\u2019 existing counted-history selectors unchanged.\n- The requested repair would change each selector from no outcome filter to `league.result_ratification`.\n\nShould I explicitly revise both limits so they count only automatic **result-ratification** approvals, while keeping their 2-per-league, 6-overall, and rolling-24-hour settings unchanged?",
+              "answer": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change."
+            },
+            "operator_history_digest": "sha256:d98ebd75e4f022036ef5e62e20753ee06d5288c242a1c28247a83eb9b637b76b",
+            "comparisons": [
+              {
+                "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+                "retained_capability": null,
+                "required_capability": "league.result_ratification",
+                "actual_predicate": {
+                  "action_boundary_name": "reviewed_staging_actions",
+                  "approval_status": "approved",
+                  "approval_kind": "boundary_automatic",
+                  "window_seconds": 86400,
+                  "time_bounds": "inclusive: now - window_seconds through now",
+                  "capability": null,
+                  "tenant": null,
+                  "principal": null,
+                  "business_object": null,
+                  "object_id": null
+                },
+                "configured_limit": {
+                  "kind": "count",
+                  "scope": "boundary",
+                  "maximum": 6,
+                  "window_seconds": 86400
+                }
+              }
+            ],
+            "domain": {
+              "boundary_name": "reviewed_staging_actions",
+              "proposed_revision": "sha256:9162f744949333859637dac4209b9bc34ed4bdc55707ba10f4fd45b2c6d03752",
+              "proposed_outcomes": [
+                "league.result_ratification"
+              ],
+              "current_revision": null,
+              "current_outcomes": [],
+              "retained_automatic_outcomes": [],
+              "complete": true,
+              "store_binding_digest": "sha256:181d96574619fa3620812be284453fc94de3fef383fb7ced39c253117c154d78",
+              "history_scope": "all_retained_boundary_automatic_approvals"
+            },
+            "dependencies_digest": "sha256:8d2a20a518392bf4bf74877e36ea0144d8f1a459e8300723fc1773db727a2dc7",
+            "reason": "Only the proposed outcome occurs in the complete proposed/current domain and retained automatic-approval history. Human approvals have no Action Boundary tag and do not count. Retaining the absent filter therefore selects the same automatic history here. A changed requirement, decision, selector, authority, store binding or outcome/history domain requires revalidation; this is not general equivalence or an operator override.",
+            "claim_origin": "submitted_passage",
+            "established_claim": {
+              "disposition": "conflict",
+              "interpretation": "Both retained limits select approved history with capability=null, so they count all approved outcomes in this Action Boundary rather than only automatic league.result_ratification outcomes. The source caps automatic ratifications; operator message 5 directs retaining the unfiltered selectors, while maxima, scopes, windows, and approval-status filters otherwise match.",
+              "issue_kind": "contradiction",
+              "next_step": "Should the automatic-ratification caps instead count all approved outcomes in this Action Boundary?"
+            },
+            "submitted_claim": {
+              "disposition": "implemented",
+              "interpretation": "Qualifying-stage requests are the only auto-approval candidates. The retained limits are inclusive rolling 24-hour counts with maximum two for the trusted tenant and six for the boundary. Operator message 3 confirms each tenant is one league and the tenant limit is shared across that league's referees. Although both history selectors have capability=null, the complete current outcome domain contains only league.result_ratification and no retained automatic outcomes, so the unfiltered selectors currently count the same automatic outcome history required by the source; operator message 5 expressly retains them.",
+              "issue_kind": "coverage_link",
+              "next_step": "Revalidate this equivalence if another automatic outcome is retained or added to the boundary."
+            }
+          }
+        }
+      ]
+    }
+  ],
+  "provider_original": "docs/qualification-evidence/mixed-counting-review-20260914/installed-public-trace.json",
+  "coverage_unchanged_across_restart_and_recheck": true
+}

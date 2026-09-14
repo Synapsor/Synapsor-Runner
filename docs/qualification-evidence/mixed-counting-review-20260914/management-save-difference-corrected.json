@@ -1,0 +1,15 @@
+{
+  "classification": "Both management records compared by exact name; first inspection selected unchanged read_selection only",
+  "differences": [
+    [
+      "read_authoring/entries/0/progress/updated_at",
+      "2026-09-14T01:38:10.050Z",
+      "2026-09-14T15:44:47.206Z"
+    ],
+    [
+      "read_authoring/entries/0/progress/revision",
+      6,
+      7
+    ]
+  ]
+}

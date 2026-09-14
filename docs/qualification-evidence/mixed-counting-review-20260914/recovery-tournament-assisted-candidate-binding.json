@@ -1,0 +1,10 @@
+{
+  "run": "recovery-tournament-assisted",
+  "candidate_bound_at": "2026-09-14T15:43:02.962Z",
+  "artifact_tree": "aff01e8be77d65e614f8b6b283b1692b1a4e663d0240cac2ff9c09a5e2957008",
+  "product_commit": "32f12a050b6eed7ebc5406e3baab00160590b43d",
+  "fixture_prepared_at": "2026-09-14T14:57:58.391Z",
+  "project_baseline_unchanged": true,
+  "public_calls": 0,
+  "authority_or_identity_changed": false
+}

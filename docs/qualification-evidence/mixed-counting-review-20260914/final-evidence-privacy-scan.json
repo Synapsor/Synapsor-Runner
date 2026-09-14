@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-14T15:55:57.677065+00:00",
+  "private_source_values_checked": 103,
+  "private_source_value_matches": [],
+  "source_checked_files": [
+    "docs/qualification-evidence/mixed-counting-review-20260914/installed-public-trace.json",
+    "apps/runner/src/fixtures/mixed-counting-review.json"
+  ],
+  "configured_secret_values_checked": 2,
+  "evidence_secret_matches": [],
+  "values_disclosed": false
+}

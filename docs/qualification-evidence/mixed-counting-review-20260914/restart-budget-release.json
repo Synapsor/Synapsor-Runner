@@ -1,0 +1,31 @@
+{
+  "at": "2026-09-14T15:47:22.563841+00:00",
+  "before": {
+    "started_at": "2026-09-14T15:43:25.351Z",
+    "maximum_attempts": 19,
+    "maximum_case_attempts": 25,
+    "reserved_editing_attempts": 0,
+    "deadline": "2026-09-14T16:28:25.351Z",
+    "hosts": [
+      "api.openai.com"
+    ],
+    "capture_sanitized_inputs": true,
+    "private_values_file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mixed-counting-review-b655769-20260914/runs/recovery-tournament-assisted/private/forbidden-provider-values.json"
+  },
+  "after": {
+    "started_at": "2026-09-14T15:43:25.351Z",
+    "maximum_attempts": 25,
+    "maximum_case_attempts": 25,
+    "reserved_editing_attempts": 0,
+    "deadline": "2026-09-14T16:28:25.351Z",
+    "hosts": [
+      "api.openai.com"
+    ],
+    "capture_sanitized_inputs": true,
+    "private_values_file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mixed-counting-review-b655769-20260914/runs/recovery-tournament-assisted/private/forbidden-provider-values.json"
+  },
+  "calls_already_spent": 1,
+  "deadline_unchanged": true,
+  "history_and_counters_reset": false,
+  "reason": "Initial business review saved and verified; release six reserved restart/recheck calls within unchanged total ceiling25."
+}
