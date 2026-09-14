@@ -1,0 +1,56 @@
+{
+  "assignment": "Exact saved-job recovery and explicit review context; three historical literal-identity triggers, exact selectors, four PG review paths, non-TTY diagnostics/docs",
+  "started_at": "2026-09-13T23:57:41.626339+00:00",
+  "baseline": "218dd24edac652446058d0cf79e262957d600a54",
+  "ancestors": {
+    "eda73ae": "eda73ae035272335f70507824e9ee0250e9ff97c",
+    "48728e0": "48728e01ab16c59742a45e0020e65801e6884bf5",
+    "fbf5efd": "fbf5efdab77fa5011544524592d58fa007388e95",
+    "codex/model-free-reviewed-counter": "7431f89ad0c05d927e23c5241be6788249d0a536"
+  },
+  "branch": "codex/tui-safe-action-control-plane",
+  "owned_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913",
+  "evidence_root": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-job-recovery-20260913",
+  "previous_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913",
+  "previous_evidence": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/quota-receipt-repair-20260913",
+  "previous_candidate_tree": "432ed6f05baa07c0d755b3b569ea45ae0b2972cdabcca5cb218ca344234b70ef",
+  "budgets": {
+    "implementation_minutes": 180,
+    "local_backend_minutes": 60,
+    "stable_suite_and_package_minutes": 120,
+    "complete_suite_attempts": 1,
+    "tournament_recoveries": 2,
+    "recovery_calls_each": 25,
+    "recovery_minutes_each": 45,
+    "recovered_edit_calls": 15,
+    "recovered_edit_minutes": 45,
+    "runtime_provider_calls": 30,
+    "runtime_minutes": 60,
+    "software_focused_calls": 10,
+    "software_focused_minutes": 30,
+    "explained_transient_retries_per_path": 1,
+    "operator_setup_minutes_per_case": 60
+  },
+  "original_stage_b": "NOT_PASSED",
+  "next_step": "Preserve prior roots and exact stopped records; capture current-code failures with actual candidate fields and live owned PostgreSQL before edits.",
+  "original_cases_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases",
+  "recovery_source_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913",
+  "trial_harness_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/trial-harness",
+  "accepted_candidate_tree": "278b66c357a94d3b0dc1a67300976b69b66b5ac026a0f84077660670600d30d2",
+  "budget_updates": [
+    {
+      "at": "2026-09-14T00:34:20.405830+00:00",
+      "field": "full_suite_launches",
+      "original": 1,
+      "maximum": 2,
+      "maximum_completed_full_runs": 1,
+      "reason": "Interrupted the incomplete first launch before editing a demonstrated quoted-identity exception introduced during this named repair. No final gate result was obtained; one replacement run remains within the original120-minute time budget. Counters and original logs retained."
+    },
+    {
+      "at": "2026-09-14T00:50:59.985631+00:00",
+      "field": "operator_setup_minutes_per_case",
+      "maximum": 60,
+      "reason": "Declared before any public fixture/setup invocation; copied harness30-minute default would otherwise compete with the45-minute recovery window. No started timer or provider allowance is reset."
+    }
+  ]
+}

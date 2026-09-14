@@ -1,0 +1,29 @@
+{
+  "name": "pg-four-before",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/control-policy-authority-codec.test.ts",
+    "--testNamePattern",
+    "postgres validated operator policy transactions.*keeps Action recovery review available with unavailable Read authority:",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": true,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T00:00:10.280262+00:00",
+  "source_head": "218dd24edac652446058d0cf79e262957d600a54",
+  "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/test-environments/pg-four-before",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-job-recovery-20260913/pg-four-before",
+  "source_manifest_sha256": "678492f45d206f42ced972bf17551a9130b89c81f46a6fba8d70d084149ef889",
+  "pid": 21181,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T00:00:26.684984+00:00"
+}

@@ -1,0 +1,10 @@
+{
+  "static_authoring_prompt_changed": false,
+  "case_names_or_rescue_sentences_in_product": false,
+  "new_generated_feedback": {
+    "before": "No separate history-filter preservation diagnostic during a coarse shared_limits edit.",
+    "after": "ACTION_RULE_HISTORY_SELECTOR_REVIEW_REQUIRED: Preserve each existing shared limit's exact capability filter, including its absence. A quota or recovery edit does not authorize changing counted history. Restore the saved filters; a deliberate filter change requires a separate exact structured draft and operator review.",
+    "basis": "selector-producer-trace.json: retained absent filters in captured submission 0003, unrelated added filters in 0010. Generated repair output is not acceptance."
+  },
+  "other_case_regressions": "Existing scope, source_db setup and saved-edit tests retained; final installed software regression pending."
+}

@@ -1,0 +1,30 @@
+{
+  "name": "focused-after01",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/action-rule-model.test.ts",
+    "apps/runner/src/boundary-authoring-resume.test.ts",
+    "apps/runner/src/saved-action-job-review.test.ts",
+    "apps/runner/src/structured-counter-review.integration.test.ts",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T00:12:00.563552+00:00",
+  "source_head": "218dd24edac652446058d0cf79e262957d600a54",
+  "source_diff_sha256": "b9fcae0a51d7cf00b1e1c4df7af2cc002dc5f10f0ab96dbfb90bf382a17c6605",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/test-environments/focused-after01",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-job-recovery-20260913/focused-after01",
+  "source_manifest_sha256": "f52cd295d4cad348a121681068d184369f4ae6dc24df2a6900645e857b06f136",
+  "pid": 46315,
+  "source_unchanged": false,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T00:13:00.212723+00:00"
+}

@@ -1,0 +1,31 @@
+{
+  "baseline_revision": "218dd24edac652446058d0cf79e262957d600a54",
+  "candidate_input_sha256": "dac786691da36a78f0d773152386ba8e748f69c48c5c09be8f8b50add6d8e75c",
+  "historical": [
+    {
+      "text": "Yes. Each tenant is exactly one league, and each principal is an assigned referee within that league. Referees in the same league share the limit of two automatic ratifications in the rolling 24 hours; all leagues share the overall limit of six.",
+      "accepted": false,
+      "error": "BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED: concrete tenant or principal values cannot be saved in Boundary-authoring state."
+    },
+    {
+      "text": "Before fixing the validation error, answer one question exactly. In the reviewed scope right now, which column is bound as the tenant - carrier_id or account_id? And is that 10-per-24-hours cap counted per carrier organisation or per customer account? If the tenant is bound to account_id then the cap is per account, which is not what I required.",
+      "accepted": false,
+      "error": "BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED: concrete tenant or principal values cannot be saved in Boundary-authoring state."
+    },
+    {
+      "text": "The existing disabled draft already represents the supplied policy, so no edit was needed.\n\n- The per-league limit is scoped to the tenant: maximum **2** in **86,400 seconds**, shared across referees in that league.\n- The overall shared boundary limit remains **6** in the same rolling window.\n- Both limits select only `league.ratify_result`.\n- Completion remains supervised; no authority was activated or source data changed.\n\nThe requested receipt and independent changed-row verification are not configurable in the current Action draft components, so they remain execution-time requirements rather than typed draft settings.",
+      "accepted": false,
+      "error": "BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED: concrete tenant or principal values cannot be saved in Boundary-authoring state."
+    }
+  ],
+  "baseline": {
+    "accepted": false,
+    "error": "BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED: concrete tenant or principal values cannot be saved in Boundary-authoring state."
+  },
+  "current": {
+    "accepted": true,
+    "revision_digest": "sha256:7dcac4968fe206c05bf95601807b84501fafa1fe8e25d188571685adeb4c3390",
+    "full_checkpoint_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/captured-composed-checkpoint/.synapsor/boundary-authoring/resume.json",
+    "all_carried_fields_retained": true
+  }
+}

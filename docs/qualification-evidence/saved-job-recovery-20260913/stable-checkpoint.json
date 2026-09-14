@@ -1,0 +1,18 @@
+{
+  "at": "2026-09-14T01:09:56.577322+00:00",
+  "head": "e425aad05add8842a78886c4ed1d452cca546c68",
+  "full_vitest": {
+    "exit_code": 0,
+    "passed": 6215,
+    "skipped": 461,
+    "files_passed": 298,
+    "files_skipped": 21,
+    "source_unchanged": true,
+    "elapsed_seconds": 1640.25
+  },
+  "types": {
+    "exit_code": 0,
+    "source_unchanged": true
+  },
+  "next": "Final scoped live PostgreSQL and ten offline gates, then commit evidence and freeze a new complete installation. Public recovery harnesses remain prepared, not executed."
+}

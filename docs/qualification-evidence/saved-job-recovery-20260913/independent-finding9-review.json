@@ -1,0 +1,8 @@
+{
+  "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/stage-a-acceptance-review-20260913/FINDING9-REVIEW.md",
+  "sha256": "39faee36337c7af994d461533087a747ae5bff33a46619422c3f932a1ed5e216",
+  "verdict": "CAPABILITY_CONFIRMED independently on merged432ed6f...",
+  "exercised": "provider-free atomic two-row disabled authoring, both reviewed counters, cancel, non-TTY refusal",
+  "not_exercised": "activation/writer/execution/receipts/readback/model paths",
+  "diagnostic_defect": "non-TTY correctly refuses exit2/no save but misclassifies draft; CLIhelp already says real terminal"
+}

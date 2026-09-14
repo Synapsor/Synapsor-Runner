@@ -1,0 +1,12 @@
+{
+  "name": "synapsor-saved-recovery-tests-7c810610",
+  "id": "c546ae455f0bd96d83de1a0bfc3bede933d30b4ddbdee52890e0e6cf91cc7b8b",
+  "label": "saved-job-recovery-20260913",
+  "image": "sha256:1edc8e87e53194e0cc8006c4e9df9b626c6c72cb43ad3385f0f34af7922065b1",
+  "network": "none",
+  "database": "saved_recovery_tests",
+  "socket": "/tmp/synapsor-saved-recovery-pg-lkB4Wq/socket",
+  "private_configuration": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/private/live-postgres.json",
+  "ready_at": "2026-09-13T23:59:42.687Z",
+  "credentials": "only scoped SYNAPSOR_TEST_POSTGRES_URL, no provider environment"
+}

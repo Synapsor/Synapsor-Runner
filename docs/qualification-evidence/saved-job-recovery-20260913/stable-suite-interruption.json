@@ -1,0 +1,16 @@
+{
+  "at": "2026-09-14T00:32:17.875648+00:00",
+  "reason": "Review found that quoted literal tenant: \"maximum 2\" could receive the new descriptive-quota exception. Named guard correction needed before freezing. No source edited during this run.",
+  "pid": 76555,
+  "original_complete_suite_attempt_budget": 1,
+  "actual_full_launches": 1,
+  "maximum_completed_full_runs": 1,
+  "verification_time_budget_minutes_unchanged": 120,
+  "public_runs_started": false,
+  "replacement_full_launches_declared": 1,
+  "actual_test_process_exit": -2,
+  "source_unchanged_before_exit": true,
+  "elapsed_minutes": 7.48,
+  "remaining_declared_verification_minutes": 112.52,
+  "quoted_value_regression": "quoted-identity-before: five constructed cases fail at the mixed quoted-value assertion; after correction preserves quoted strings/code values as literal assignments, never a descriptive heading."
+}

@@ -1,0 +1,12 @@
+{
+  "original_checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/checkpoints/stopped-review-prose/project/.synapsor/boundary-authoring/resume.json",
+  "checkpoint_sha256": "421832e20df74d3a184672d8caf4ec2dada6c3a435cc0ef52691b7d29cc2d3b5",
+  "captured_response": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/quota-receipt-454a0d2-20260913/runs/recovery-tournament-original/meter/output-0002.txt",
+  "captured_response_sha256": "2ea7f2933ed5c9fc811edb473175341afea44917c84631bc08a82defcee93da4",
+  "producer": "action-rule-model.ts rememberResponse -> rememberModelAuthoringTurn(session.conversation, operatorMessage, response) -> boundary-commands.ts persistAuthoringResume -> buildBoundaryAuthoringResumeState -> assertBoundaryAuthoringResumeMaterial",
+  "field": "conversation[7].answer (reconstructed appended turn; prior turns retained)",
+  "category": "model-generated explanation; not operator policy or host-rendered quota",
+  "answer": "The existing disabled draft already represents the supplied policy, so no edit was needed.\n\n- The per-league limit is scoped to the tenant: maximum **2** in **86,400 seconds**, shared across referees in that league.\n- The overall shared boundary limit remains **6** in the same rolling window.\n- Both limits select only `league.ratify_result`.\n- Completion remains supervised; no authority was activated or source data changed.\n\nThe requested receipt and independent changed-row verification are not configurable in the current Action draft components, so they remain execution-time requirements rather than typed draft settings.",
+  "historical_guard_revision": "961d98c69b5829b1677342b84e2a4ef4aa8832e4",
+  "candidate_note": "The refused checkpoint was not saved. This reconstructs its full last-acknowledged state plus the exact captured response through the actual conversation producer and resume builder, without claiming an unavailable byte-exact rejected file."
+}

@@ -1,0 +1,26 @@
+{
+  "name": "small-before",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/saved-action-job-review.test.ts",
+    "apps/runner/src/structured-counter-review.integration.test.ts",
+    "--maxWorkers=1",
+    "--minWorkers=1"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T00:07:07.034770+00:00",
+  "source_head": "218dd24edac652446058d0cf79e262957d600a54",
+  "source_diff_sha256": "27dfedbc5c1e0911d98624f92b7f827ac742835121943928b6a9fbf2b2595079",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/test-environments/small-before",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-job-recovery-20260913/small-before",
+  "source_manifest_sha256": "f818dc2e777e8ee94a5ad7383ffdd59b457d47c0232f8950ec603431c9d629ce",
+  "pid": 35930,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T00:07:59.984102+00:00"
+}

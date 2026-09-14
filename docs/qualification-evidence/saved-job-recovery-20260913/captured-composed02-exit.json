@@ -1,0 +1,21 @@
+{
+  "name": "captured-composed02",
+  "args": [
+    "node",
+    "--import",
+    "tsx",
+    "docs/qualification-evidence/saved-job-recovery-20260913/captured-composed-repro.mjs"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T00:17:44.571170+00:00",
+  "source_head": "218dd24edac652446058d0cf79e262957d600a54",
+  "source_diff_sha256": "2f34876b3a1814827650fa3e01a0da2662ee83241c14e771018af436ec8614c2",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/test-environments/captured-composed02",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-job-recovery-20260913/captured-composed02",
+  "source_manifest_sha256": "b618d144daaa8ec5a177312a5409c9be3a43b42d758bc1a9db68abab4c78b9f0",
+  "pid": 59242,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T00:17:45.498578+00:00"
+}

@@ -1,0 +1,29 @@
+{
+  "name": "failed-save-host-before",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/boundary-cli.test.ts",
+    "--testNamePattern",
+    "resumes disabled Read and saves a semantic clarification without remapping",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T00:12:37.545446+00:00",
+  "source_head": "218dd24edac652446058d0cf79e262957d600a54",
+  "source_diff_sha256": "f50bc6f316b4da66e82247e91292336f70a54c7c1505f5b02279fdfe282bd707",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/test-environments/failed-save-host-before",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-job-recovery-20260913/failed-save-host-before",
+  "source_manifest_sha256": "1ea5c4439fe28104aeee8e4c49837bd947fd2377959571b6b390adf3a4b1ccdc",
+  "pid": 47702,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T00:12:55.545197+00:00"
+}

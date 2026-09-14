@@ -1,0 +1,28 @@
+{
+  "name": "selector-checkpoint-before",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/action-rule-model.test.ts",
+    "apps/runner/src/boundary-authoring-resume.test.ts",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testNamePattern",
+    "refuses model-added history filters|saves complete quota-description"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T00:09:50.888855+00:00",
+  "source_head": "218dd24edac652446058d0cf79e262957d600a54",
+  "source_diff_sha256": "70abc8d696f2ab842e876928606a44baa18ad86c9fdec301e05da7110ba1986a",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/test-environments/selector-checkpoint-before",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-job-recovery-20260913/selector-checkpoint-before",
+  "source_manifest_sha256": "035fd842d409e5df2dc6652dd9268627f4d52dbc854a310077af097f2e15cdd3",
+  "pid": 41868,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T00:09:58.719581+00:00"
+}

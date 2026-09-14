@@ -1,0 +1,14 @@
+// Normal installed public routes with closed or redirected stdin; no fake TTY.
+import fs from 'node:fs/promises';import path from 'node:path';import {spawnSync} from 'node:child_process';import assert from 'node:assert/strict';import {createHash} from 'node:crypto';
+const E=path.dirname(new URL(import.meta.url).pathname),plan=JSON.parse(await fs.readFile(path.join(E,'assignment-plan.json'))),id=process.argv[2];assert(id==='recovery-tournament-original');
+const R=path.join(plan.owned_root,'runs',id),P=path.join(R,'project'),state=JSON.parse(await fs.readFile(path.join(R,'run-state.json')));
+const run=(args,input)=>spawnSync(process.execPath,[path.join(E,'run-known-command.mjs'),id,...args],{encoding:'utf8',timeout:90000,...(input===undefined?{stdio:['ignore','pipe','pipe']}:{input})});
+const exported=run(['start','--project-root','.','--export-draft','counter-diagnostic.json','--json']);await fs.writeFile(path.join(R,'logs/counter-diagnostic-export.log'),exported.stdout+exported.stderr,{flag:'wx'});assert.equal(exported.status,0);
+async function manifest(root){const entries=[];async function walk(dir){for(const name of (await fs.readdir(dir)).sort()){const p=path.join(dir,name),s=await fs.lstat(p),r={path:path.relative(root,p),mode:s.mode&0o777};if(s.isSymbolicLink())entries.push({...r,target:await fs.readlink(p)});else if(s.isDirectory()){entries.push({...r,directory:true});await walk(p);}else entries.push({...r,sha256:createHash('sha256').update(await fs.readFile(p)).digest('hex')});}}await walk(root);return entries;}
+const before=await manifest(P),results=[];
+for(const route of [['start'],['onboard','db']])for(const mode of ['closed','redirected']){
+ const args=[...route,'--project-root','.','--draft','counter-diagnostic.json','--review-counters','--json'],name=route[0]+'-'+mode;
+ const result=run(args,mode==='redirected'?'yes\n':undefined);await fs.writeFile(path.join(R,'logs/counter-diagnostic-'+name+'.log'),result.stdout+result.stderr,{flag:'wx'});
+ const output=JSON.parse(result.stdout),after=await manifest(P);assert.equal(result.status,2);assert.equal(output.code,'ACTION_VERSION_REVIEW_TERMINAL_REQUIRED');assert(output.next_action.includes('real operator terminal'));assert(!output.next_action.includes('Correct the reported draft field'));assert.equal(output.disabled_authority_changed,false);assert.equal(output.active_authority_changed,false);assert.deepEqual(after,before);results.push({args,input:mode,exit:result.status,output,whole_project_unchanged:true});
+}
+await fs.writeFile(path.join(E,'installed-counter-terminal-diagnostic.json'),JSON.stringify({artifact_tree:state.artifact_tree,status:'passed',provider_calls:0,results},null,2)+'\n',{flag:'wx'});console.log(JSON.stringify({status:'passed',routes:2,stdin_modes:2,whole_project_unchanged:true}));

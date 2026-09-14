@@ -1,0 +1,7 @@
+# Separate follow-up: non-interactive source-counter attestation
+
+Not implemented or an acceptance condition of this repair. The existing model-free counter route requires an operator terminal. Existing generic signed activation is not a signed counter-review route.
+
+A future design should reuse enrolled operator identity verification and exact review digest machinery, but define an operation-specific authorization to attest the counter's maintenance contract for each exact inspected UPDATE target. The signed payload must bind project/deployment, source/metadata identity, target/key/counter, current disabled revision and the complete displayed maintenance contract. Verify the signer is authorized to make that source-owner attestation. Include freshness, expiry, audience, nonce/replay treatment, expected-revision CAS and cancellation/failure semantics; do not accept an arbitrary draft author's signature as ownership.
+
+Saving may prepare only a disabled mapping. Read, Action and execution activation remain separate exact reviews. Tests would need wrong signer/operation/project/metadata/counter, stale revision, expiry/replay, concurrent save, failed save and restart, as well as a valid disabled-only save. The signature proves an authorized attestation, not independent observation that every external writer maintains the counter. No flags or supported CLI syntax are proposed in this note.

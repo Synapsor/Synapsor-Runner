@@ -1,0 +1,27 @@
+{
+  "name": "quoted-identity-before",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/boundary-authoring-resume.test.ts",
+    "--testNamePattern",
+    "saves complete quota-description",
+    "--maxWorkers=1",
+    "--minWorkers=1"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T00:32:47.958905+00:00",
+  "source_head": "4613c51ec46780949f118219ad94a48da9f5a1cf",
+  "source_diff_sha256": "d58f9169a18d914c4740e814895e5a66b7bb20c92eccef8c02304982e8c54245",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-job-recovery-218dd24-20260913/test-environments/quoted-identity-before",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-job-recovery-20260913/quoted-identity-before",
+  "source_manifest_sha256": "c2711ab7a1cefa7bf37f37ee10e44784bd19bb197df6d90f6996eeb48e309a4c",
+  "pid": 93231,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T00:32:50.904970+00:00"
+}
