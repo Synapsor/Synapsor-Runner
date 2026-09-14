@@ -1,0 +1,21 @@
+{
+  "name": "reload-independent",
+  "args": [
+    "node",
+    "--import",
+    "tsx",
+    "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/faithful-counting-subjects-review-20260914/controls-v2.mts"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T22:18:29.138651+00:00",
+  "source_head": "d9aba4f51c5070d8dff12bf2bb73937826fc9a3b",
+  "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/test-environments/reload-independent",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/positive-counting-evidence-20260914/reload-independent",
+  "source_manifest_sha256": "7e43e57de05814368469e215f91c71481240721feb3ffe640ebafc8d8be1ed07",
+  "pid": 2860240,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T22:18:29.914560+00:00"
+}

@@ -1,0 +1,20 @@
+{
+  "name": "stable-types",
+  "args": [
+    "corepack",
+    "pnpm",
+    "typecheck"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T21:08:43.830587+00:00",
+  "source_head": "1019a23224f93d4c826089defabf504c7cae8042",
+  "source_diff_sha256": "f18b34adb885386f6a1175cefc09416d430822c69852220e8d9ce21fb07010f0",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/test-environments/stable-types",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/positive-counting-evidence-20260914/stable-types",
+  "source_manifest_sha256": "01494224f4b5a04842d2ddba80557eb7661ce4d1364f45e9b3e4693b83e8bcbb",
+  "pid": 2708712,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T21:08:47.884011+00:00"
+}

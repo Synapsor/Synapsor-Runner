@@ -1,0 +1,8 @@
+{
+  "commit": "d9aba4f51c5070d8dff12bf2bb73937826fc9a3b",
+  "test_revision": "d9aba4f51c5070d8dff12bf2bb73937826fc9a3b",
+  "initial_product_commit": "408264f90e003a39d11bc3f946c8dd0e0f3f9d7f",
+  "initial_test_commit": "1cdc92ebcc0d495b87e6a3d20a8312ca3a31a14e",
+  "pre_reload_product": "ec429df54b5017ab88ef0b504638fc54287bf4ad",
+  "pre_reload_tests": "fd2a441040da1d15fc5c0e03a2c9f7c86b704f7f"
+}

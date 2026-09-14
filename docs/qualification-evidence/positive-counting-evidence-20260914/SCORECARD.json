@@ -1,0 +1,86 @@
+{
+  "updated_at": "2026-09-14T23:09:05.545813+00:00",
+  "artifact": null,
+  "stage_a": "historical artifact-specific acceptance; no new campaign",
+  "original_stage_b": "NOT PASSED",
+  "rows": {
+    "positive_inventory_exact_paraphrases": {
+      "status": "PASSED",
+      "evidence": "reload-independent.log",
+      "limit": "bounded configured/represented obligations, not arbitrary prose completeness"
+    },
+    "operator_review_composed": {
+      "status": "PASSED",
+      "evidence": "citation-focused.log",
+      "provider_calls": 0
+    },
+    "legacy_recheck_captures": {
+      "status": "PRECISE_REFUSAL",
+      "evidence": "before-recheck.log + authoring-counting-positive.test.ts",
+      "reason": "No durable selector-confirmation edge exists; exact existing support is named for structural correction, without new owner consent"
+    },
+    "subject_compatibility_controls": {
+      "status": "PASSED",
+      "evidence": "combined02.log",
+      "scope": "unchanged accepted subject-compatibility boundary"
+    },
+    "types": {
+      "status": "PASSED",
+      "exit": 0,
+      "evidence": "reload-types-exit.json"
+    },
+    "postgres_control_and_receipt": {
+      "status": "PASSED",
+      "tests": 49,
+      "evidence": "reload-postgres-exit.json"
+    },
+    "postgres_review": {
+      "status": "PASSED",
+      "tests": 4,
+      "excluded_by_name": 416,
+      "evidence": "reload-postgres-review-exit.json"
+    },
+    "offline": {
+      "status": "PASSED",
+      "checks": 10,
+      "evidence": "offline-package-plan-attempt3.json"
+    },
+    "full_suite": {
+      "status": "PASSED",
+      "evidence": "stable-full03-exit.json",
+      "previous_completed_attempt": {
+        "exit": 1,
+        "passed": 6340,
+        "failed": 1,
+        "skipped": 463,
+        "evidence": "stable-full02-exit.json"
+      },
+      "first_attempt": "Interrupted -15",
+      "exit": 0,
+      "passed": 6341,
+      "skipped": 463,
+      "files_passed": 307,
+      "files_skipped": 21
+    },
+    "installed_post_removal_review": {
+      "status": "NOT RUN"
+    },
+    "installed_post_removal_restart_recheck": {
+      "status": "NOT RUN"
+    },
+    "installed_unknown_to_resolved": {
+      "status": "NOT RUN"
+    },
+    "installed_unknown_restart_recheck": {
+      "status": "NOT RUN"
+    },
+    "reload_correction": {
+      "status": "PASSED_FOCUSED",
+      "passed": 182,
+      "skipped": 1,
+      "evidence": "reload-focused-after.log",
+      "original_metadata_assertion_unchanged": true
+    }
+  },
+  "verdict": "IN PROGRESS; no final acceptance recommendation before installed rows and complete suite"
+}

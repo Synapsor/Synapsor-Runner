@@ -1,0 +1,69 @@
+{
+  "assignment": "Positive counting evidence and stable authoring recheck",
+  "started_at": "2026-09-14T20:54:59.119616+00:00",
+  "baseline": "1019a23224f93d4c826089defabf504c7cae8042",
+  "branch": "codex/tui-safe-action-control-plane",
+  "owned_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914",
+  "evidence_root": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/positive-counting-evidence-20260914",
+  "previous_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-counting-subjects-16de465-20260914",
+  "previous_evidence": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/faithful-counting-subjects-20260914",
+  "frozen_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/frozen",
+  "artifact_tree": null,
+  "trial_harness_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/trial-harness",
+  "original_cases_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases",
+  "acceptance": "Historical narrow independent acceptance only; not transferred to current candidate",
+  "acceptance_report": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/mixed-counting-acceptance-20260914/ACCEPTANCE.md",
+  "budgets": {
+    "development_minutes": 180,
+    "fixture_minutes": 35,
+    "stable_verification_minutes": 140,
+    "full_suite_launches": 3,
+    "test_file_workers": 2,
+    "outer_test_timeout_ms": 30000,
+    "outer_hook_timeout_ms": 120000,
+    "development_provider_calls": 3,
+    "final_authoring_calls": 25,
+    "restart_recheck_reserved_calls": 6,
+    "final_confirmation_minutes": 75,
+    "closure_minutes": 25
+  },
+  "scope": "Counting requirement/provenance, coverage persistence and review-only confirmation; no runtime or subject expansion",
+  "known_open_worker": "TRUSTED_BINDING_MISSING worker-retry classification; record if reached, no repair/requeue/refund",
+  "stage_b": "original NOT PASSED",
+  "status": "GATES_PASSED_FREEZE_PENDING",
+  "next_step": "Commit evidence checkpoint, run-freeze.py, record full artifact identity, prepare both owned public fixtures, execute review/restart/recheck within shared25 calls/75 minutes.",
+  "case_sources": {
+    "recovery-tournament-assisted": {
+      "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-counting-subjects-16de465-20260914",
+      "run": "recovery-tournament-assisted",
+      "checkpoint": "final-stopped",
+      "case": "tournament-ratification"
+    },
+    "counting-wording-control": {
+      "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-counting-subjects-16de465-20260914",
+      "run": "recovery-tournament-assisted",
+      "checkpoint": "final-stopped",
+      "case": "tournament-ratification"
+    }
+  },
+  "budget_amendments": [
+    {
+      "at": "2026-09-14T21:23:19.936532+00:00",
+      "field": "full_suite_launches",
+      "before": 1,
+      "after": 2,
+      "used_before": 1,
+      "reason": "A separately saved focused negative probe found explicitly unrelated counter support accepted after the new operator review. Interrupt this unfinished suite without editing its source, retain actual exit and log, fix the in-scope provenance gate, then run one final stable suite. Stable verification ceiling remains 140 minutes; no counters reset."
+    },
+    {
+      "at": "2026-09-14T22:17:21.452585+00:00",
+      "field": "full_suite_launches",
+      "before": 2,
+      "after": 3,
+      "used_before": 2,
+      "reason": "Completed suite exit1, 6340 passed/1 failed/463 skipped. The unchanged exact metadata roundtrip test independently reproduces duplicate unresolved counting obligations on reload. Repair this in-scope persistence defect, preserve that assertion, then run one final stable full suite. The original 140-minute verification ceiling remains; no counters reset."
+    }
+  ],
+  "stable_verification_started_at": "2026-09-14T21:08:43.830587+00:00",
+  "stable_verification_deadline": "2026-09-14T23:28:43.830587+00:00"
+}

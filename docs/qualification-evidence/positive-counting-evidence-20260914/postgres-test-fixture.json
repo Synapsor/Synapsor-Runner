@@ -1,0 +1,12 @@
+{
+  "name": "synapsor-positive-review-tests-032c136c",
+  "id": "2bb4627224611210dfb4ef3d500df6b86983b6c4b5918e8bb25c51623ab2e61a",
+  "label": "positive-counting-evidence-20260914",
+  "image": "sha256:1edc8e87e53194e0cc8006c4e9df9b626c6c72cb43ad3385f0f34af7922065b1",
+  "network": "none",
+  "database": "policy_reconciliation_tests",
+  "socket": "/tmp/synapsor-positive-review-pg-sTM28M/socket",
+  "private_configuration": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/private/live-postgres.json",
+  "ready_at": "2026-09-14T21:09:50.828Z",
+  "credentials": "only scoped SYNAPSOR_TEST_POSTGRES_URL, no provider environment"
+}

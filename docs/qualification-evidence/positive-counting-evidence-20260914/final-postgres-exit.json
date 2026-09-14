@@ -1,0 +1,31 @@
+{
+  "name": "final-postgres",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-counting-domain.test.ts",
+    "apps/runner/src/authoring-counting-freshness.test.ts",
+    "apps/runner/src/semantic-admission-publication.test.ts",
+    "packages/proposal-store/src/automatic-approval-admission.test.ts",
+    "apps/runner/src/semantic-atomic-postgres.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=30000",
+    "--hookTimeout=120000"
+  ],
+  "owned_postgres_database_url_enabled": true,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T21:30:59.809949+00:00",
+  "source_head": "fd2a441040da1d15fc5c0e03a2c9f7c86b704f7f",
+  "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/test-environments/final-postgres",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/positive-counting-evidence-20260914/final-postgres",
+  "source_manifest_sha256": "3774c988f36b5b6fdaf85169ff34da380724702e0429f927caf9323313bcf317",
+  "pid": 2760162,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T21:32:21.711899+00:00"
+}

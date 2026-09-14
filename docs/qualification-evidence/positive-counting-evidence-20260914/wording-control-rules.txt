@@ -1,0 +1,9 @@
+# League result ratification
+
+Help a league referee ratify completed best-of-three match results. A referee may see and act only on results assigned to that referee within that league. The referee can read result reference, event name, stage, recorded wins/losses and result state, including a related event's operating state. Do not expose database identities, conflict counters, integrity_hold or referee_private_note as public data. Never reveal, filter, sort, group or aggregate by the private fields; the host may use the hold privately to verify a request.
+
+Ratification is valid only while the related event is open, the result is finished, the winner has exactly two game wins, the loser has zero or one game wins, and there is no integrity hold. Do not correct scores or move a result to another person, event or league. An invalid result is refused, not routed into approval as if valid. A successful ratification changes only result state to ratified, plus the maintained conflict counter.
+
+Valid qualifying-stage results may be approved automatically, but no more than two ratifications may be auto-approved per league per day and no more than six overall, using the inclusive rolling 24-hour window. Qualifying results beyond either cap go to human review. Every valid championship-stage result requires the league supervisor's human review. Counts are shared across that league's referees; creating a local client does not create more allowance. Explicit supervised execution follows approval. Request a stored Runner-ledger receipt and independently verify the changed source row. No match server or external system is contacted.
+
+Public reads must retain these restrictions as jobs are edited. Ratification never grants a referee permission to change the recorded winner or score.

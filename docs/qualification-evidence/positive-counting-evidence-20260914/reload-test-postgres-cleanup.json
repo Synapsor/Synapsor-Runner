@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-14T23:03:47.009750+00:00",
+  "name": "synapsor-positive-review-tests-b1bbf5eb",
+  "id": "fe0e7a0e480a79354d1af57f07407bcd6e9f37b97aa55c77b9efc9dbb44b5885",
+  "saved": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/closure/test-postgres-reload",
+  "before_stop_hashes": {
+    "postgres.log": "fca6207354573bb2d4890838ade9f1855b4441ad08be093afde223e32e3b65b6",
+    "source.dump": "5c537469e80327a7bafd7edf421a07cf4ba4ad35cdcbbb01519fe0412c1890e2"
+  },
+  "removed": false,
+  "running_after": false
+}

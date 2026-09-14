@@ -1,0 +1,29 @@
+{
+  "name": "stable-postgres-review",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/control-policy-authority-codec.test.ts",
+    "--testNamePattern",
+    "postgres validated operator policy transactions.*keeps Action recovery review available with unavailable Read authority:",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=30000",
+    "--hookTimeout=120000"
+  ],
+  "owned_postgres_database_url_enabled": true,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T21:12:28.263551+00:00",
+  "source_head": "1cdc92ebcc0d495b87e6a3d20a8312ca3a31a14e",
+  "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/test-environments/stable-postgres-review",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/positive-counting-evidence-20260914/stable-postgres-review",
+  "source_manifest_sha256": "01494224f4b5a04842d2ddba80557eb7661ce4d1364f45e9b3e4693b83e8bcbb",
+  "pid": 2718798,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T21:12:46.395166+00:00"
+}

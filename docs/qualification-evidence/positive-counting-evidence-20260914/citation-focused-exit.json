@@ -1,0 +1,33 @@
+{
+  "name": "citation-focused",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-counting-positive.test.ts",
+    "apps/runner/src/authoring-counting-addition.test.ts",
+    "apps/runner/src/authoring-mixed-counting.test.ts",
+    "apps/runner/src/authoring-counting-contract.test.ts",
+    "apps/runner/src/authoring-policy-coverage.test.ts",
+    "apps/runner/src/authoring-policy-source.test.ts",
+    "apps/runner/src/authoring-review-continuation.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=30000",
+    "--hookTimeout=120000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T21:24:11.519384+00:00",
+  "source_head": "1cdc92ebcc0d495b87e6a3d20a8312ca3a31a14e",
+  "source_diff_sha256": "4b2078d2594c76376bef182bbbd3bbadec758044bab02c31c3ba3815df262ebd",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/test-environments/citation-focused",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/positive-counting-evidence-20260914/citation-focused",
+  "source_manifest_sha256": "99cf3463e4b840da327b48bfde008f241456d709ed446d9453054d8f4138def6",
+  "pid": 2745403,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T21:24:21.313512+00:00"
+}

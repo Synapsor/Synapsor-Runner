@@ -1,0 +1,29 @@
+{
+  "name": "public-routing-focused02",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/boundary-cli.test.ts",
+    "--testNamePattern",
+    "attached|policy|rules|recheck|count",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=30000",
+    "--hookTimeout=120000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T21:27:35.042610+00:00",
+  "source_head": "ec429df54b5017ab88ef0b504638fc54287bf4ad",
+  "source_diff_sha256": "cc44127a2806dd5e206a1b8a45393ea09f51579ae9399fda3fc48a060d9de930",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/test-environments/public-routing-focused02",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/positive-counting-evidence-20260914/public-routing-focused02",
+  "source_manifest_sha256": "35f17d7db654f94f39bfe0218de66c6e260a49ffbdb4537a591e180fffe6d2b6",
+  "pid": 2752613,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T21:28:05.392272+00:00"
+}

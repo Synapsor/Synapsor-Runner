@@ -1,0 +1,20 @@
+{
+  "at": "2026-09-14T22:12:37.896759+00:00",
+  "status": "REPRODUCED BEFORE FIX; full suite still running; no source edits",
+  "test": "exact inspected Action source constraints > carries exact non-key column nullability through review and rejects changed or missing inspection",
+  "file": "apps/runner/src/action-rule-source-evidence.test.ts",
+  "line": 41,
+  "exit": 1,
+  "log": "reload-failure-before.log",
+  "source_manifest_sha256": "3774c988f36b5b6fdaf85169ff34da380724702e0429f927caf9323313bcf317",
+  "classification": "in-scope counting obligation reload regression; not a metadata safety failure",
+  "observed": "On the second parse, two prior needs_decision counting passages lose their internal bindings and remain alongside two regenerated copies. Unknown meaning remains blocked but saved coverage is not idempotent.",
+  "planned_correction": "Reuse only an exact canonical match to a newly derived pure inventory passage, reattaching its freshly computed requirement binding. No vague text association, no residual claim stripping, no acceptance of stale proof. Retain the original metadata assertion and add repeated parse/reload checks.",
+  "after": {
+    "focused_passed": 182,
+    "skipped": 1,
+    "exit": 0,
+    "log": "reload-focused-after.log",
+    "original_metadata_assertion_changed": false
+  }
+}

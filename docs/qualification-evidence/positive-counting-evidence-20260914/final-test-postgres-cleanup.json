@@ -1,0 +1,10 @@
+{
+  "id": "ccba18a7298a6af08e37c8a41c92d401b36b1eff8717df1e63f3822eb51fa7a3",
+  "label": "positive-counting-evidence-20260914",
+  "saved_before_stop": {
+    "postgres.log": "48e197c994901df665c3b99e249a7de3861d9f54d691c2969dd2a8a182c5694d",
+    "source.dump": "c90e6bb2bd172b25b60c830d72df85c6a73163d137b2274a9afe11a2b23fc4f5"
+  },
+  "running_after": false,
+  "removed": false
+}

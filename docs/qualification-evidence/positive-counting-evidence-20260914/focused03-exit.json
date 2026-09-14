@@ -1,0 +1,31 @@
+{
+  "name": "focused03",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-counting-positive.test.ts",
+    "apps/runner/src/authoring-counting-addition.test.ts",
+    "apps/runner/src/authoring-mixed-counting.test.ts",
+    "apps/runner/src/authoring-counting-contract.test.ts",
+    "apps/runner/src/authoring-review-continuation.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=30000",
+    "--hookTimeout=120000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T21:04:16.384769+00:00",
+  "source_head": "1019a23224f93d4c826089defabf504c7cae8042",
+  "source_diff_sha256": "ca8e7be3a95d01663827b6c9c2580fcd0a50f718d50d8075018ece59dad824b0",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/test-environments/focused03",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/positive-counting-evidence-20260914/focused03",
+  "source_manifest_sha256": "0a4567994df8f89faec64cd44b3005e0c401ff272b8f6e5f79585bc6cda5d006",
+  "pid": 2699434,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T21:04:23.280802+00:00"
+}

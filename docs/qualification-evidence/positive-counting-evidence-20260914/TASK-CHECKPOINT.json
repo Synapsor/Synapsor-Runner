@@ -1,0 +1,210 @@
+{
+  "at": "2026-09-14T21:17:47.358118+00:00",
+  "product": "408264f",
+  "tests": "1cdc92e",
+  "types_exit": 0,
+  "combined": {
+    "passed": 338,
+    "skipped": 3
+  },
+  "postgres": {
+    "passed": 49,
+    "exit": 0
+  },
+  "postgres_review": {
+    "passed": 4,
+    "excluded_by_selection": 416,
+    "exit": 0
+  },
+  "offline": {
+    "started_at": "2026-09-14T21:13:03.306951+00:00",
+    "network": "unshared network namespace; npm offline; writable disposable cache copy",
+    "home": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/offline-home",
+    "commands": [
+      {
+        "name": "trusted-core",
+        "args": [
+          "node",
+          "scripts/check-trusted-core-dependencies.mjs"
+        ],
+        "phase": "all",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-14T21:13:03.307191+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-14T21:13:05.930416+00:00"
+      },
+      {
+        "name": "licenses",
+        "args": [
+          "node",
+          "scripts/check-license-content.mjs"
+        ],
+        "phase": "all",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-14T21:13:05.931118+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-14T21:13:07.652043+00:00"
+      },
+      {
+        "name": "human-commands",
+        "args": [
+          "node",
+          "scripts/verify-human-command-surface.mjs"
+        ],
+        "phase": "all",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-14T21:13:07.652785+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-14T21:13:08.821699+00:00"
+      },
+      {
+        "name": "dsl-sources",
+        "args": [
+          "bash",
+          "scripts/verify-dsl-source-paths.sh"
+        ],
+        "phase": "all",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-14T21:13:08.822377+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-14T21:13:10.502989+00:00"
+      },
+      {
+        "name": "cursor-plugin",
+        "args": [
+          "node",
+          "scripts/verify-cursor-plugin.mjs"
+        ],
+        "phase": "all",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-14T21:13:10.503403+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-14T21:13:10.668483+00:00"
+      },
+      {
+        "name": "mcp-client-configs",
+        "args": [
+          "node",
+          "scripts/verify-mcp-client-configs.mjs"
+        ],
+        "phase": "all",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-14T21:13:10.669338+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-14T21:13:41.584409+00:00"
+      },
+      {
+        "name": "local-package",
+        "args": [
+          "bash",
+          "scripts/verify-local-runner.sh"
+        ],
+        "phase": "all",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-14T21:13:41.585376+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-14T21:14:44.556905+00:00"
+      },
+      {
+        "name": "bundle-freshness",
+        "args": [
+          "node",
+          "scripts/verify-local-runner-bundle-freshness.mjs"
+        ],
+        "phase": "all",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-14T21:14:44.557523+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-14T21:14:54.455792+00:00"
+      },
+      {
+        "name": "public-commands",
+        "args": [
+          "bash",
+          "scripts/verify-public-commands.sh"
+        ],
+        "phase": "all",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-14T21:14:54.456969+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-14T21:15:37.834816+00:00"
+      },
+      {
+        "name": "packed-offline",
+        "args": [
+          "bash",
+          "scripts/verify-packed-runner.sh"
+        ],
+        "phase": "all",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-14T21:15:37.835938+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-14T21:17:30.542881+00:00"
+      }
+    ]
+  },
+  "full_suite": {
+    "first": {
+      "exit_code": -15,
+      "classification": "INTERRUPTED for saved in-scope citation gap; source unchanged",
+      "record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/positive-counting-evidence-20260914/stable-full-exit.json"
+    },
+    "second": {
+      "exit": 1,
+      "passed": 6340,
+      "failed": 1,
+      "skipped": 463,
+      "source_unchanged": true,
+      "evidence": "stable-full02-exit.json"
+    },
+    "launches_used": 3,
+    "launches_budget": 3,
+    "third": {
+      "exit": 0,
+      "passed": 6341,
+      "skipped": 463,
+      "files_passed": 307,
+      "files_skipped": 21,
+      "source_unchanged": true,
+      "duration_seconds": 2498.24,
+      "evidence": "stable-full03-exit.json"
+    }
+  },
+  "full_suite_command": "corepack pnpm exec vitest run --maxWorkers=2 --minWorkers=1 --testTimeout=30000 --hookTimeout=120000",
+  "provider_calls": 0,
+  "next": "After coherent evidence commit, python3 E/run-freeze.py. Record complete manifest/tree/archive/lock identities and update plan.artifact_tree. Prepare both known-run fixtures (no worker), then execute PUBLIC-SCHEDULE.md. Public/provider calls0.",
+  "updated_at": "2026-09-14T21:38:20.507651+00:00",
+  "status": "GATES_PASSED_FREEZE_PENDING",
+  "product_revision": "d9aba4f51c5070d8dff12bf2bb73937826fc9a3b",
+  "test_revision": "d9aba4f51c5070d8dff12bf2bb73937826fc9a3b",
+  "source_manifest_sha256": "7e43e57de05814368469e215f91c71481240721feb3ffe640ebafc8d8be1ed07",
+  "citation_focused": {
+    "passed": 199,
+    "skipped": 1
+  },
+  "cli_routing_focused": {
+    "passed": 53,
+    "excluded_by_name": 228
+  },
+  "final_types_exit": 0,
+  "final_postgres": {
+    "passed": 49,
+    "exit": 0,
+    "evidence": "reload-postgres-exit.json"
+  },
+  "final_postgres_review": {
+    "passed": 4,
+    "excluded_by_name": 416,
+    "exit": 0,
+    "evidence": "reload-postgres-review-exit.json"
+  },
+  "current_process": null,
+  "final_offline": "all10 attempt3 exits0 on d9aba4f",
+  "observed_at": "2026-09-14T23:01:40.030699+00:00",
+  "reload_focused": {
+    "passed": 182,
+    "skipped": 1,
+    "exit": 0
+  },
+  "reload_types_exit": 0
+}

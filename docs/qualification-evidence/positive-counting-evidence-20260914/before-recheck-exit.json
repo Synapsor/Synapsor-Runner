@@ -1,0 +1,21 @@
+{
+  "name": "before-recheck",
+  "args": [
+    "node",
+    "--import",
+    "tsx",
+    "docs/qualification-evidence/positive-counting-evidence-20260914/replay-recheck.mts"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T20:56:48.764367+00:00",
+  "source_head": "1019a23224f93d4c826089defabf504c7cae8042",
+  "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/test-environments/before-recheck",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/positive-counting-evidence-20260914/before-recheck",
+  "source_manifest_sha256": "c4d1245c75249647265885346dd7ae2d839ea7bb14338cdc7cbddffd9760ddef",
+  "pid": 2686031,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-14T20:56:50.019950+00:00"
+}
