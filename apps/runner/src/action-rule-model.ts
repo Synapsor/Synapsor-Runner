@@ -583,6 +583,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
           const joint = explicitJointApprovalLimits([operatorJob, ...statements]).length > 0;
           assertJointApprovalLimitsPreserved([operatorJob, ...statements], draft.approval);
           assertExplicitApprovalIntentPreserved(statements, draft.approval, joint);
+          if (baseline) assertApprovalHistorySelectorsPreserved(baseline.approval, draft.approval, baseline.outcome);
           if (input.approvalLimitsOnly) assertOnlyApprovalLimitsChanged(baseline, draft);
           assertActionExecutionIntentPreserved(statements, draft.effect.writeback);
           const result = compileActionRuleModelDraft({ draft, ...context });
@@ -1009,6 +1010,21 @@ function assertExplicitApprovalIntentPreserved(
     throw new Error(
       `ACTION_RULE_DRAFT_INVALID: approval.shared_limits must preserve the operator's exact ${missingLimit.scope} count limit of ${missingLimit.maximum} in a rolling ${formatPolicyDuration(missingLimit.window_seconds)} window (${missingLimit.phrase}); repair the model draft from the existing intent without asking the operator to repeat it.`,
     );
+  }
+}
+
+/** A coarse quota edit must not narrow or widen existing counted history.
+ * Deliberate filter changes use the separate exact structured draft/review path. */
+function assertApprovalHistorySelectorsPreserved(before: ApprovalSubmission, after: ApprovalSubmission, outcome: string): void {
+  for (const limit of after.shared_limits) {
+    const previous = before.shared_limits.find(item => item.id === limit.id);
+    // The existing capability scope implicitly selects the current outcome;
+    // boundary and tenant scopes have no such default filter.
+    const selected = (item: ApprovalSubmission["shared_limits"][number]) => item.capability
+      ?? (item.scope === "capability" ? outcome : undefined);
+    if (previous && selected(previous) !== selected(limit)) {
+      throw new Error("ACTION_RULE_HISTORY_SELECTOR_REVIEW_REQUIRED: Preserve each existing shared limit's exact capability filter, including its absence. A quota or recovery edit does not authorize changing counted history. Restore the saved filters; a deliberate filter change requires a separate exact structured draft and operator review.");
+    }
   }
 }
 
@@ -2346,7 +2362,10 @@ function mergeRevisionSubmission(input: {
   }
   if (input.changedFields.includes("required_role")) current.required_role = candidate.required_role;
   if (input.changedFields.includes("required_approvals")) current.required_approvals = candidate.required_approvals;
-  if (input.changedFields.includes("shared_limits")) current.shared_limits = structuredClone(candidate.shared_limits);
+  if (input.changedFields.includes("shared_limits")) {
+    assertApprovalHistorySelectorsPreserved(input.baseline.approval, candidate, input.baseline.outcome);
+    current.shared_limits = structuredClone(candidate.shared_limits);
+  }
   current.class_name = input.baseline.approval.class_name;
   return current;
 }

@@ -366,14 +366,55 @@ describe("conversational Action authoring tools", () => {
     expect(steps).toEqual([]);
   });
 
+  it.each(["remove_extra", "numeric_edit", "noop"] as const)("refuses model-added history filters during %s and retains the exact existing selectors", async kind => {
+    const baseline = policyModelDraft();
+    baseline.approval.shared_limits = [
+      { id: "overall", kind: "count", scope: "boundary", maximum: 6, window_seconds: 86400 },
+      { id: "tenant", kind: "count", scope: "tenant", maximum: 2, window_seconds: 86400 },
+      ...(kind === "remove_extra" ? [{ id: "extra", kind: "count" as const, scope: "tenant_principal" as const, maximum: 2, window_seconds: 86400 }] : []),
+    ];
+    const requested = { ...baseline.approval, shared_limits: baseline.approval.shared_limits.slice(0, 2)
+      .map(limit => kind === "numeric_edit" && limit.id === "tenant" ? { ...limit, maximum: 1 } : limit) };
+    const narrowed = { ...requested, shared_limits: requested.shared_limits.map(limit => ({ ...limit, capability: baseline.outcome })) };
+    const requests: string[] = [];
+    const steps = [call("runner.submit_approval_policy_draft", { status: "draft", ...narrowed, changed_fields: ["shared_limits"] }),
+      call("runner.submit_approval_policy_draft", { status: "draft", ...requested, changed_fields: ["shared_limits"] }),
+      call("runner.validate_action_draft", {}), say("The requested correction preserves the saved history selectors.")];
+    const result = await converseActionRuleDraft({ ...requestInput(async request => {
+      requests.push(JSON.stringify(request.body));
+      if (!steps.length) throw new Error("Unexpected additional provider call");
+      return steps.shift()!;
+    }), existingDraft: baseline, intent: kind === "numeric_edit" ? "Change the tenant allowance to one, keeping all other rules." : "Remove only the unrequested extra principal cap. Keep the two original limits.",
+      operatorStatements: [kind === "numeric_edit" ? "Allow 6 overall and 1 per tenant in a rolling 24-hour window."
+        : "Allow 6 overall and 2 per tenant in a rolling 24-hour window."] });
+    expect(requests[1]).toContain("ACTION_RULE_HISTORY_SELECTOR_REVIEW_REQUIRED");
+    expect(result.compiled.draft.approval).toEqual(requested);
+    expect(result.compiled.draft.effect).toEqual(baseline.effect);
+    expect(result.compiled.draft.require).toEqual(baseline.require);
+  });
+
+  it("recognizes the existing implicit current-outcome filter of capability scope", async () => {
+    const baseline = policyModelDraft();
+    delete baseline.approval.shared_limits[0]!.capability;
+    const approval = { ...baseline.approval, shared_limits: baseline.approval.shared_limits.map((limit, index) =>
+      index === 0 ? { ...limit, capability: baseline.outcome } : limit) };
+    const steps = [call("runner.submit_approval_policy_draft", { status: "draft", ...approval, changed_fields: ["shared_limits"] }),
+      call("runner.validate_action_draft", {}), say("The effective history selection is unchanged.")];
+    const result = await converseActionRuleDraft({ ...requestInput(async () => {
+      if (!steps.length) throw new Error("Equivalent capability scope was refused");
+      return steps.shift()!;
+    }), existingDraft: baseline, intent: "Retain the saved automatic limits." });
+    expect(result.compiled.draft.approval).toEqual(approval);
+  });
+
   it("corrects an unaccepted extra quota through disabled revision, with restart and stale-save protection", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-role-quota-revision-"));
     try {
       const original = policyModelDraft();
       original.approval.shared_limits = [
-        { id: "overall", kind: "count", scope: "boundary", maximum: 6, window_seconds: 86400, capability: original.outcome },
-        { id: "tenant", kind: "count", scope: "tenant", maximum: 2, window_seconds: 86400, capability: original.outcome },
-        { id: "unrequested", kind: "count", scope: "tenant_principal", maximum: 2, window_seconds: 86400, capability: original.outcome },
+        { id: "overall", kind: "count", scope: "boundary", maximum: 6, window_seconds: 86400 },
+        { id: "tenant", kind: "count", scope: "tenant", maximum: 2, window_seconds: 86400 },
+        { id: "unrequested", kind: "count", scope: "tenant_principal", maximum: 2, window_seconds: 86400 },
       ];
       const toStored = (compiled: ReturnType<typeof compileActionRuleModelDraft>) => buildActionRuleAuthorityDraft({
         name: "saved_rules", action_boundary_name: "saved_actions", catalog: compiled.loaded.authority.catalog,
@@ -400,6 +441,9 @@ describe("conversational Action authoring tools", () => {
       expect(result.compiled.draft.approval).toEqual(requested);
       expect(result.compiled.draft.require).toEqual(original.require);
       expect(result.compiled.draft.effect).toEqual(original.effect);
+      const normalizedOriginal = compileActionRuleModelDraft({ draft: original, builtCatalog: builtCatalog(),
+        readBoundary: boundary(), readBoundaryDigest: readDigest }).draft;
+      expect({ ...result.compiled.draft, approval: normalizedOriginal.approval, review: normalizedOriginal.review }).toEqual(normalizedOriginal);
       const corrected = toStored(result.compiled);
       await writeActionRuleAuthorityDraftIfCurrent(root, corrected, baseline);
       const restarted = await readActionRuleAuthorityDraft(root, corrected.authority.name);

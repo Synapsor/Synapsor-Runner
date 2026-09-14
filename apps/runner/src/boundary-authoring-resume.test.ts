@@ -539,6 +539,37 @@ describe("Boundary authoring resume state", () => {
     }]);
   });
 
+  // Constructed formatting variants of the captured generated explanation.
+  it.each([
+    "The allowance is scoped to the tenant: maximum **2** in **86,400 seconds**, shared across principals.",
+    "Tenant: maximum 2; boundary: maximum 6, within 86400 seconds.",
+    "**tenant**: **at most 2** automatic approvals per day.",
+    "principal: limit of two approvals per day; tenant: up to six.",
+    "tenant: maximum 2\nprincipal: at most 1 per day",
+  ])("saves complete quota-description checkpoints and retains meanings on restart: %s", async answer => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-quota-description-"));
+    try {
+      const input = { binding, stage: "authority_review" as const, jobIntent: "Maintain reviewed limits.",
+        provider: "openai" as const, model: "gpt-test" };
+      const initial = buildBoundaryAuthoringResumeState({ ...input, conversation: [{ question: "Meaning?",
+        answer: "Each tenant is exactly one organization; each principal is an assigned reviewer.", kind: "clarification" }] });
+      await writeBoundaryAuthoringResumeState(root, initial);
+      const next = buildBoundaryAuthoringResumeState({ ...input, previous: initial,
+        conversation: [...initial.conversation, { question: "Describe the saved policy.", answer }],
+        pendingActionRevision: { outcome: "operations.review", instruction: "Retain the original quotas.",
+          baseline_digest: canonicalJsonDigest("baseline"), operator_statements: [initial.conversation[0]!.answer],
+          checkpoint: actionRuleAuthoringCheckpoint({ intent_digest: canonicalJsonDigest("intent"),
+            context_digest: canonicalJsonDigest("context"), components: {}, operator_messages: [answer] }) } });
+      await writeBoundaryAuthoringResumeState(root, next, { expectedRevisionDigest: initial.revision_digest });
+      expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: next });
+      for (const prohibited of ["tenant: 2", "principal_id = 17", "tenant: customer123", "principal is a7", "api_key=private"]) {
+        expect(() => buildBoundaryAuthoringResumeState({ ...input, previous: next,
+          conversation: [...next.conversation, { question: "Mixed material", answer: `${answer}; ${prohibited}` }] })).toThrow(/BLOCKED/);
+        expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: next });
+      }
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
   it.each([
     "Yes. Each tenant is exactly one league, and each principal is an assigned referee within that league. Referees in the same league share the limit of two automatic ratifications in the rolling 24 hours; all leagues share the overall limit of six.",
     "Each tenant is one organization. Each principal is a member of that organization; allow four approvals per day across members.",

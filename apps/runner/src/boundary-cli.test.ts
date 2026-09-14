@@ -5649,6 +5649,10 @@ describe("boundary operator-plane CLI", () => {
           "What is the maximum number of automatically approved follow-ups in a rolling 24-hour window?",
         );
         expect(answer).toBe(scopeAnswer);
+        // Exercise a rejected generated transcript as well as a rejected component.
+        // Retrying must not replay this unsaved response before corrected input.
+        const acknowledgedTurns = structuredClone(input.session.conversation!.turns);
+        input.session.conversation!.turns.push({ question: "Explain the current policy.", answer: "principal_id: actual-private-user" });
         const refused = actionRuleAuthoringCheckpoint({
           intent_digest: canonicalJsonDigest(input.intent),
           context_digest: canonicalJsonDigest({ catalog: input.builtCatalog.catalog, read: input.readBoundaryDigest, baseline: null }),
@@ -5659,6 +5663,7 @@ describe("boundary operator-plane CLI", () => {
         );
         const beforeCorrection = await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8");
         expect(beforeCorrection).not.toContain("actual-private-user");
+        expect(input.session.conversation!.turns).toEqual(acknowledgedTurns);
         await input.onCheckpoint?.(actionRuleAuthoringCheckpoint({
           intent_digest: canonicalJsonDigest(input.intent),
           context_digest: canonicalJsonDigest({ catalog: input.builtCatalog.catalog, read: input.readBoundaryDigest, baseline: null }),

@@ -4407,11 +4407,20 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           "Reopen the saved job. This session will not overwrite another session's work or restore a removed action."]);
         throw error;
       }
+      const prohibitedMaterial = /^BOUNDARY_AUTHORING_RESUME_(?:PRIVATE_MATERIAL|TRUSTED_IDENTITY)_BLOCKED:/u.test(resumePersistenceFailure);
+      if (prohibitedMaterial && authoringConversation) {
+        // The rejected turn was never acknowledged. Restore only transcript
+        // material, leaving saved authority and exact pending revisions intact.
+        // A subsequent corrected checkpoint must still pass validation and CAS.
+        authoringConversation.turns.splice(0, authoringConversation.turns.length,
+          ...structuredClone(activeResume?.conversation ?? []));
+      }
       if (resumePersistenceBlocked) return;
       resumePersistenceBlocked = true;
       input.authoringChat.rememberDetails("BOUNDARY JOB RESUME WAS NOT SAVED", [
         resumePersistenceFailure,
-        "The current in-memory setup may continue, but Runner will not persist prohibited or invalid transcript material.",
+        ...(prohibitedMaterial ? ["The rejected transcript was not saved. The last acknowledged conversation is retained; continue with corrected input. Pending work still needs a successful save."]
+          : ["The current in-memory setup may continue, but Runner will not persist prohibited or invalid transcript material."]),
         "No authority or source data changed.",
       ]);
     }

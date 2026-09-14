@@ -647,38 +647,55 @@ export function assertBoundaryAuthoringResumeMaterial(value: unknown): void {
       "BOUNDARY_AUTHORING_RESUME_PRIVATE_MATERIAL_BLOCKED: credentials, endpoint URLs, and private keys cannot be saved in Boundary-authoring state.",
     );
   }
-  const concreteIdentity = [...serialized.matchAll(
-    /\b(?:tenant|principal)(?:[_ -]?id)?\s*(=|:|is)\s*["']?([A-Za-z0-9_-]{3,})/giu,
-  )].some((match) => {
-    if (/^(?:runner(?:-injected)?|trusted|runtime|environment|injected|symbolic|reviewed|unknown|unset|required|outside)$/iu.test(match[2]!)) return false;
-    // A quantified role definition describes cardinality, not a runtime value.
-    // Limit this to the bare role and natural-language copula; literal id/value
-    // assignments and every other match in the composed checkpoint still fail.
-    if (/^(?:tenant|principal)\s+is\s+(?:exactly|one)$/iu.test(match[0])) {
-      const tail = serialized.slice(match.index! + match[0].length);
-      if ((match[2]!.toLowerCase() === "exactly" ? /^\s+one\s+[A-Za-z]+(?=\s|[.,;!?\\"])/u
-        : /^\s+[A-Za-z]+(?=\s|[.,;!?\\"])/u).test(tail)) return false;
+  for (const { text, category } of resumeMaterialText(value)) {
+    // Markdown presentation does not decide whether a value is an identity.
+    const plain = text.replace(/[*`]/gu, "");
+    const concreteIdentity = [...plain.matchAll(
+      /\b(?:tenant|principal)(?:[_ -]?id)?\s*(=|:|is)\s*["']?([A-Za-z0-9_-]+)/giu,
+    )].some((match) => {
+      if (/^(?:runner(?:-injected)?|trusted|runtime|environment|injected|symbolic|reviewed|unknown|unset|required|outside)$/iu.test(match[2]!)) return false;
+      const tail = plain.slice(match.index! + match[0].length);
+      // A descriptive quota heading has an explicit limiting operator and a
+      // quantity. Neither a literal id assignment nor a number alone qualifies.
+      if (/^(?:tenant|principal)\s*:/iu.test(match[0])
+        && /^(?:maximum(?:\s+of)?|limit(?:\s+of)?|at\s+most|up\s+to)\s+(?:\d+(?:,\d{3})*|one|two|three|four|five|six|seven|eight|nine|ten)\b/iu
+          .test(`${match[2]}${tail}`)) return false;
+      // Quantified role definitions describe cardinality, not runtime values.
+      // Keep this limited to bare roles and a natural-language copula.
+      if (/^(?:tenant|principal)\s+is\s+(?:exactly|one|a|an)$/iu.test(match[0])) {
+        if ((match[2]!.toLowerCase() === "exactly" ? /^\s+one\s+[A-Za-z]+(?=\s|[.,;!?]|$)/u
+          : /^\s+[A-Za-z]+(?=\s|[.,;!?]|$)/u).test(tail)) return false;
+      }
+      // An explicit column-choice reference names metadata, not an identity.
+      if (match[1]!.toLowerCase() === "is" && match[2]!.toLowerCase() === "bound") {
+        const field = /^\s+to\s+([A-Za-z_][A-Za-z0-9_]{0,127})(?=\s|[?.;,]|$)/u.exec(tail)?.[1];
+        const question = plain.slice(Math.max(0, match.index! - 512), match.index!);
+        const choices = [...question.matchAll(/\bwhich column\b[^?"\\]{0,160}?\b([A-Za-z_][A-Za-z0-9_]{0,127})\s+or\s+([A-Za-z_][A-Za-z0-9_]{0,127})\s*\?/giu)];
+        if (field && choices.some(choice => choice[1] === field || choice[2] === field)) return false;
+      }
+      return !(match[1]!.toLowerCase() === "is" && match[2]!.toLowerCase() === "the"
+        && /^\s+(?:runner(?:-injected)?|trusted|runtime|environment|injected|symbolic|reviewed)\b/iu.test(tail));
+    });
+    if (concreteIdentity) {
+      throw new Error(
+        `BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED: concrete tenant or principal values cannot be saved in Boundary-authoring state (field category: ${category}).`,
+      );
     }
-    // In a column-choice question, "is bound to <one of those columns>" names
-    // a schema binding, not an identity value. Only that explicit reference is
-    // exempt; assignments, unlisted values and other identities still fail.
-    if (match[1]!.toLowerCase() === "is" && match[2]!.toLowerCase() === "bound") {
-      const tail = serialized.slice(match.index! + match[0].length);
-      const field = /^\s+to\s+([A-Za-z_][A-Za-z0-9_]{0,127})(?=\s|[?.;,\\"])/u.exec(tail)?.[1];
-      const question = serialized.slice(Math.max(0, match.index! - 512), match.index!);
-      const choices = [...question.matchAll(/\bwhich column\b[^?"\\]{0,160}?\b([A-Za-z_][A-Za-z0-9_]{0,127})\s+or\s+([A-Za-z_][A-Za-z0-9_]{0,127})\s*\?/giu)];
-      if (field && choices.some(choice => choice[1] === field || choice[2] === field)) return false;
+  }
+}
+
+/** Categories are host constants, never rejected content or arbitrary keys. */
+function* resumeMaterialText(value: unknown, category = "material"): Generator<{ text: string; category: string }> {
+  if (typeof value === "string") yield { text: value, category };
+  else if (Array.isArray(value)) {
+    for (const item of value) yield* resumeMaterialText(item, category);
+  } else if (value && typeof value === "object") {
+    for (const [key, item] of Object.entries(value)) {
+      const next = ["conversation", "operator_messages", "operator_statements", "job_intent", "read_intent",
+        "pending_action_revision", "action", "question", "answer", "instruction"].includes(key) ? key : category;
+      yield { text: key, category: "field name" };
+      yield* resumeMaterialText(item, next);
     }
-    // A descriptive "is the trusted ..." sentence is not a concrete value.
-    // Keep literal assignments and other values subject to the existing guard.
-    return !(match[1]!.toLowerCase() === "is" && match[2]!.toLowerCase() === "the"
-      && /^\s+(?:runner(?:-injected)?|trusted|runtime|environment|injected|symbolic|reviewed)\b/iu
-        .test(serialized.slice(match.index! + match[0].length)));
-  });
-  if (concreteIdentity) {
-    throw new Error(
-      "BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED: concrete tenant or principal values cannot be saved in Boundary-authoring state.",
-    );
   }
 }
 

@@ -16,9 +16,9 @@ const boundary: ActionBoundaryApprovalContext = { name: "reviewed_insurance", di
 ] };
 const time = (second: number) => new Date(Date.parse("2026-09-12T12:00:00.000Z") + second * 1000).toISOString();
 
-async function proposal(store: ProposalRuntimeStore, id: string, tenant = "insurer-a", principal = "adjuster-a") {
+async function proposal(store: ProposalRuntimeStore, id: string, tenant = "insurer-a", principal = "adjuster-a", action = outcome) {
   const input = JSON.parse(await fs.readFile(new URL("../../../fixtures/protocol/change-set.late-fee-waiver.v1.json", import.meta.url), "utf8"));
-  input.proposal_id = id; input.action = outcome; input.principal.id = principal;
+  input.proposal_id = id; input.action = action; input.principal.id = principal;
   input.scope.tenant_id = tenant; input.guards.tenant.value = tenant;
   input.scope.object_id = id; input.source.primary_key.value = id;
   input.integrity.proposal_hash = `sha256:${id}`;
@@ -68,6 +68,28 @@ describe("durable automatic approval admission", () => {
       expect(automatic).toHaveLength(9);
       expect(store.receipts(human.proposal_id)).toEqual([]);
     } finally { store.close(); await fs.rm(directory, { recursive: true, force: true }); }
+  });
+
+  it("counts other outcomes when boundary and tenant selectors omit capability; adding a filter changes history", async () => {
+    for (const narrowed of [false, true]) {
+      const store = new ProposalStore();
+      const shared: ActionBoundaryApprovalContext = { name: boundary.name, digest: boundary.digest, limits: [
+        { id: "overall", kind: "count", scope: "boundary", maximum: 1, window_seconds: 86400 },
+        { id: "insurer", kind: "count", scope: "tenant", maximum: 1, window_seconds: 86400 },
+      ] };
+      try {
+        const prior = await proposal(store, "wrp_history_other", "insurer-a", "person-a", "reserve_ops.review_claim");
+        expect(store.approveProposalByPolicy(prior.proposal_id, options(prior, time(0), shared)).approved).toBe(true);
+        const next = await proposal(store, "wrp_history_current", "insurer-a", "person-b");
+        const reviewed = narrowed ? { ...shared, limits: shared.limits.map(limit => ({ ...limit, capability: outcome })) } : shared;
+        const result = store.approveProposalByPolicy(next.proposal_id, options(next, time(1), reviewed));
+        expect(result.approved).toBe(narrowed);
+        if (!narrowed) expect(result).toMatchObject({ proposal: { state: "pending_review" },
+          tripped_limits: [expect.objectContaining({ id: "overall", observed: 1 }), expect.objectContaining({ id: "insurer", observed: 1 })] });
+        expect(store.approvals(prior.proposal_id)).toHaveLength(1);
+        expect(store.approvals(next.proposal_id)).toHaveLength(narrowed ? 1 : 0);
+      } finally { store.close(); }
+    }
   });
 
   it("preserves the inclusive rolling-window boundary, then releases capacity only after expiry", async () => {
