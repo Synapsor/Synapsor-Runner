@@ -57,6 +57,10 @@ describe("positive counting requirement inventory",()=>{
     const report=await produce(f),{loaded,again}=await record(f,report);
     expect(report.passages.filter(p=>p.counting_requirement_bindings?.some(r=>r.state==="unknown"))).toHaveLength(2);
     expect(policyReviewReadiness(f.source,again,loaded).ready).toBe(false);
+    expect(again).toEqual(report);
+    const recheck=parsePolicyCoverage({passages:again.passages},f.source,f.d,f.state.operator_messages);
+    expect(recheck).toEqual(report);
+    expect(policyReviewReadiness(f.source,recheck,loaded).ready).toBe(false);
   });
   it("keeps empty comparisons refused and historical zero-proof coverage unready",()=>{
     const f=fixture();counter(f.r).counter_requirements=[];

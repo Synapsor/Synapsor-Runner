@@ -536,7 +536,7 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
       || p.counting_components?.some(c => c.resolution.comparisons.some(v => v.path === requirement.path && v.required_capability === requirement.required_capability)));
     if (coveredRequirement) continue;
     const matches = requirement.state === "established" && draftValue(draft, requirement.path) === requirement.required_capability;
-    passages.push({ start: requirement.start, end: requirement.end,
+    const inventoryPassage: PolicyPassage = { start: requirement.start, end: requirement.end,
       responsibility: requirement.state === "unknown" ? "operator" : "runner",
       disposition: matches ? "implemented" : requirement.state === "unknown" ? "needs_decision" : "conflict",
       issue_kind: requirement.state === "unknown" ? "business_choice" : "coverage_link",
@@ -549,7 +549,14 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
       ...(!matches ? { next_step: requirement.state === "unknown"
         ? "Use Review counted automatic approvals to confirm which automatic decisions consume this allowance. The saved policy and program are unchanged."
         : "Supply the actual and source-required capability values with applicable support and validate their comparison; do not change policy to repair a citation." } : {}),
-    });
+    };
+    // Reload revalidates host bindings rather than trusting submitted copies.
+    // Reuse only the exact, complete pure inventory passage we just derived;
+    // a passage with any additional claim remains separate and fully checked.
+    const claimsDigest = ({ counting_requirement_bindings: _bindings, ...claims }: PolicyPassage) => canonicalJsonDigest(claims);
+    const existing = passages.find(p => claimsDigest(p) === claimsDigest(inventoryPassage));
+    if (existing) existing.counting_requirement_bindings = [requirement];
+    else passages.push(inventoryPassage);
   }
   const subjectCompatibility = evidenceRecord(evidenceRecord(evidenceRecord(draft)?.runner_evidence)?.action_subject_compatibility);
   if (subjectCompatibility?.compatible === false) {
