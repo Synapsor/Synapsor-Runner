@@ -1,0 +1,22 @@
+{
+  "name": "final-runtime-oracle",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "tsx",
+    "docs/qualification-evidence/faithful-counting-subjects-20260914/final-runtime-oracle.mts"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T20:00:23.468411+00:00",
+  "source_head": "111c86d60bb023b5751a74c56ba5cd093de595ab",
+  "source_diff_sha256": "e71e2ca9b6b1b2bb79d17eb03c2f5890da07adb74c4c19cd4a5c833c73b8ded5",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-counting-subjects-16de465-20260914/test-environments/final-runtime-oracle",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/faithful-counting-subjects-20260914/final-runtime-oracle",
+  "source_manifest_sha256": "c31ace6936a452131be4aa4e3325975c7715ea60600893d7e642d56b652cf67b",
+  "pid": 2578259,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T20:00:24.754211+00:00"
+}

@@ -1,0 +1,27 @@
+{
+  "active_revision": "policy:6fa4f3dbd82d1ebedb331101a1ee9cc654033d5abce9dd7359779660a6bf9054",
+  "disabled_revision": "policy:c8b226e2bf929536af8ba758fe58f154509f791bcd6d58aade666b6405fe96e9",
+  "disabled_authority_digest": "sha256:3431e33b5c7ef594c67b545c33ae8285cbd919ff01c91bf35f5d72581ad2ea3e",
+  "disabled_boundary_digest": "sha256:b4f9042107daa40454f6285ddd21b483ded78e5554a35bf4226855e743232768",
+  "removed_only": "league.result_withdrawal",
+  "ratification_rule_class_catalog_unchanged_except_generated_timestamp": true,
+  "limits": [
+    {
+      "capability": "league.result_ratification",
+      "id": "league_automatic_ratifications_24h",
+      "kind": "count",
+      "maximum": 2,
+      "scope": "tenant",
+      "window_seconds": 86400
+    },
+    {
+      "capability": "league.result_ratification",
+      "id": "overall_automatic_ratifications_24h",
+      "kind": "count",
+      "maximum": 6,
+      "scope": "boundary",
+      "window_seconds": 86400
+    }
+  ],
+  "preliminary_inspection_error": "First inspection assumed name on activation wrapper; KeyError before assertions. Corrected reader uses nested rule; no product changes."
+}

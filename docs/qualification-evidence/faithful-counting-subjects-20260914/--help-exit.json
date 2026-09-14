@@ -1,0 +1,16 @@
+{
+  "name": "--help",
+  "args": [],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-14T19:52:44.778335+00:00",
+  "source_head": "111c86d60bb023b5751a74c56ba5cd093de595ab",
+  "source_diff_sha256": "63c5d140036b87353bbbdfc15019c0b28c6905e89c517927cce9f3a4a63f2f2b",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-counting-subjects-16de465-20260914/test-environments/--help",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/faithful-counting-subjects-20260914/--help",
+  "source_manifest_sha256": "c31ace6936a452131be4aa4e3325975c7715ea60600893d7e642d56b652cf67b",
+  "pid": 2564538,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-14T19:52:45.040161+00:00"
+}

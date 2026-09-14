@@ -1,0 +1,29 @@
+{
+  "frozen_at": "2026-09-14T19:17:51.053Z",
+  "installed_tree_sha256": "69df512e1208c6599f1d42dfd15e039643d220585a0f55ca99e4e5111d9eef71",
+  "product_commit": "58493690e499b0be64c8dc1ec42e31582e1ee690",
+  "test_commit": "05e5d2848272979a9c4aa0777ec7653bf1c94224",
+  "source_commit": "111c86d60bb023b5751a74c56ba5cd093de595ab",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-counting-subjects-16de465-20260914/frozen/installed",
+  "node": {
+    "version": "v22.22.2",
+    "executable": "/usr/bin/node",
+    "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+  },
+  "runner_version": "1.8.0",
+  "spec_version": "1.11.0",
+  "package_lock_sha256": "10fc7061cfb7fb4c97216f2ec0e024025665079dd590c3068304c18606d253bb",
+  "tarballs": [
+    {
+      "name": "synapsor-runner-1.8.0.tgz",
+      "sha256": "763b20606458e65d0570054cc949b5ef548690553539198dcde1cc0aee49b11b"
+    },
+    {
+      "name": "synapsor-spec-1.11.0.tgz",
+      "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+    }
+  ],
+  "entries": 7569,
+  "manifest_sha256": "dac212fcd6b68a4c5e1deb563d988cfb672e5ad77d0c18674dc52110e3ba7525",
+  "archive_sha256": "7706557a220f616221940677eb9912ece2ad04db7afb279f918fbed7453ca6dc"
+}

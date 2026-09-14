@@ -1,0 +1,158 @@
+{
+  "artifact_tree": "69df512e1208c6599f1d42dfd15e039643d220585a0f55ca99e4e5111d9eef71",
+  "before_digest": "sha256:7301513cc954d42a32eb1d48c97a662d9a6c20b4b59da6f21e5c40c6a1169496",
+  "disabled_digest": "sha256:2d503db684cebe2e3094f4479289689b6d585d6fb4dc6cbb91fabc769846add0",
+  "boundary_digest": "sha256:b15fb93d4e4fc766ef1fed3d8e99ed05b50919602163b7eb99cd9fd563fe034e",
+  "active_digest_unchanged": "sha256:9162f744949333859637dac4209b9bc34ed4bdc55707ba10f4fd45b2c6d03752",
+  "changes": [
+    "/authority/action_boundary/digest",
+    "/authority/action_boundary/rules/0/approval_policy_digest",
+    "/authority/approval_classes/0/shared_limits/0/capability",
+    "/authority/approval_classes/0/shared_limits/1/capability",
+    "/authority/digest",
+    "/authority/rules/0/activated_at",
+    "/authority/rules/1/activated_at",
+    "/created_at",
+    "/digest"
+  ],
+  "limits": [
+    {
+      "capability": "league.result_ratification",
+      "id": "league_automatic_ratifications_24h",
+      "kind": "count",
+      "maximum": 2,
+      "scope": "tenant",
+      "window_seconds": 86400
+    },
+    {
+      "capability": "league.result_ratification",
+      "id": "overall_automatic_ratifications_24h",
+      "kind": "count",
+      "maximum": 6,
+      "scope": "boundary",
+      "window_seconds": 86400
+    }
+  ],
+  "rules_and_catalog_unchanged_except_generated_timestamps": true,
+  "counter_passages": [
+    {
+      "start": 7,
+      "end": 7,
+      "disposition": "implemented",
+      "interpretation": "Qualifying ratifications alone are candidates for automatic approval. The tenant-scoped maximum of two and boundary-wide maximum of six use inclusive 86,400-second windows and select approved automatic ratification history. The tenant is the reviewed league value shared across its referees. Championship requests and qualifying requests over either limit use one league-supervisor approval.",
+      "draft_paths": [
+        "/actions/0/approval",
+        "/runner_evidence/actions/league.result_ratification/automatic_limits",
+        "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+        "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+        "/runner_evidence/runtime_contract/approval",
+        "/runner_evidence/runtime_contract/approval_counter_selection"
+      ],
+      "operator_clarification": "For this new two-behavior revision, apply the automatic limits only to ratifications: two per league and six overall in the rolling 24 hours, retaining the existing ratification approval history. Withdrawals always require supervisor review and do not consume or expand those automatic ratification allowances. Keep every other ratification, withdrawal and Read requirement unchanged.",
+      "supporting_dependencies_digest": "sha256:7e723592adf42be361482b948c89cbe941a25e1c7fee07e232a5a015e2bb3b9c",
+      "topic": "Ratification approval limits and review",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "Retain both ratification-only history selectors, scopes, maxima, and inclusive rolling windows.",
+      "counter_requirements": [
+        {
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+          "current_capability": "league.result_ratification",
+          "required_capability": "league.result_ratification"
+        },
+        {
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+          "current_capability": "league.result_ratification",
+          "required_capability": "league.result_ratification"
+        }
+      ],
+      "counting_requirement_bindings": [
+        {
+          "origin": "HOST-SOURCE-ASSOCIATION",
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+          "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+          "start": 7,
+          "end": 7,
+          "required_capability": "league.result_ratification",
+          "source_excerpt": "Valid qualifying-stage results may be approved automatically, with at most six automatic ratifications overall and two per league in the inclusive rolling 24-hour window. Qualifying results beyond either cap go to human review. Every valid championship-stage result requires the league supervisor's human review. Counts are shared across that league's referees; creating a local client does not create more allowance. Explicit supervised execution follows approval. Request a stored Runner-ledger receipt and independently verify the changed source row. No match server or external system is contacted.",
+          "operator_clarification": "For this new two-behavior revision, apply the automatic limits only to ratifications: two per league and six overall in the rolling 24 hours, retaining the existing ratification approval history. Withdrawals always require supervisor review and do not consume or expand those automatic ratification allowances. Keep every other ratification, withdrawal and Read requirement unchanged."
+        },
+        {
+          "origin": "HOST-SOURCE-ASSOCIATION",
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+          "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+          "start": 7,
+          "end": 7,
+          "required_capability": "league.result_ratification",
+          "source_excerpt": "Valid qualifying-stage results may be approved automatically, with at most six automatic ratifications overall and two per league in the inclusive rolling 24-hour window. Qualifying results beyond either cap go to human review. Every valid championship-stage result requires the league supervisor's human review. Counts are shared across that league's referees; creating a local client does not create more allowance. Explicit supervised execution follows approval. Request a stored Runner-ledger receipt and independently verify the changed source row. No match server or external system is contacted.",
+          "operator_clarification": "For this new two-behavior revision, apply the automatic limits only to ratifications: two per league and six overall in the rolling 24 hours, retaining the existing ratification approval history. Withdrawals always require supervisor review and do not consume or expand those automatic ratification allowances. Keep every other ratification, withdrawal and Read requirement unchanged."
+        }
+      ]
+    }
+  ],
+  "pending_duties": [
+    {
+      "start": 3,
+      "end": 3,
+      "disposition": "needs_decision",
+      "interpretation": "The reviewed record scope is configured, but authenticated application-session wiring to the reviewed tenant and principal bindings is not verified. This is deployment wiring, not a missing action predicate.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+      ],
+      "topic": "Authenticated referee identity",
+      "responsibility": "deployment",
+      "issue_kind": "missing_configuration",
+      "next_step": "After authority review, configure and verify authenticated-session identity for the reviewed tenant and principal bindings.",
+      "deployment_prerequisite": "authenticated_identity"
+    },
+    {
+      "start": 3,
+      "end": 3,
+      "disposition": "needs_decision",
+      "interpretation": "The client must capture the referee's intended result selection and submit its reviewed subject reference; Runner independently scopes that reference but cannot establish that a person made the selection.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/application_obligations/customer_selection"
+      ],
+      "topic": "Referee result selection",
+      "responsibility": "application",
+      "issue_kind": "missing_configuration",
+      "next_step": "Assign the client responsibility for capturing the referee's intended result selection.",
+      "application_obligations": [
+        "customer_selection"
+      ]
+    },
+    {
+      "start": 7,
+      "end": 7,
+      "disposition": "needs_decision",
+      "interpretation": "A stored Runner-ledger receipt is requested, but dedicated writer and grant review, receipt-mode review, execution enablement, and worker startup remain unconfigured and unverified for both prepared outcomes.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+      ],
+      "topic": "Execution and Runner-ledger receipt setup",
+      "responsibility": "deployment",
+      "issue_kind": "missing_configuration",
+      "next_step": "After authority review, configure the writer, Runner-ledger receipt mode, execution consent, and worker for both Action revisions.",
+      "deployment_prerequisite": "runner_execution_setup"
+    },
+    {
+      "start": 7,
+      "end": 7,
+      "disposition": "needs_decision",
+      "interpretation": "Independently verifying the changed source row after execution is an external per-execution observation and remains unverified. A Runner-ledger receipt does not prove that observation.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+      ],
+      "topic": "Independent changed-row verification",
+      "responsibility": "application",
+      "issue_kind": "missing_configuration",
+      "next_step": "Assign who will independently observe each changed source row after execution.",
+      "application_obligations": [
+        "independent_source_readback"
+      ]
+    }
+  ],
+  "business_review_reaches_public_activation_gate": true,
+  "published": false,
+  "provider_payloads_not_modified": true
+}

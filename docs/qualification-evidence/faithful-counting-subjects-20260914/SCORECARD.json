@@ -1,12 +1,12 @@
 {
-  "updated_at": "2026-09-14T18:57:52.030501+00:00",
-  "candidate": "pending freeze",
+  "updated_at": "2026-09-14T20:06:22.205908+00:00",
+  "candidate": "69df512e1208c6599f1d42dfd15e039643d220585a0f55ca99e4e5111d9eef71",
   "independent_acceptance": "not transferred from historical artifacts",
   "rows": {
     "exact_false_equality_replay": "PASS: captured reply refused before save; original accepted attempt retained",
     "genuine_equal_value_controls": "PASS: boundary-wide null/null and explicit canonical equality",
     "mixed_passage_isolation": "PASS: unchanged narrow proof resolver and negative controls",
-    "exact_selector_confirmation": "PASS deterministic composed path; installed confirmation PENDING",
+    "exact_selector_confirmation": "PASS deterministic and installed public exact review, disabled save, separate publication",
     "subject_compatibility_and_publication_preparation": "PASS deterministic; incompatible disabled draft retained",
     "software_full_population": "BLOCKED: legal eligible unlinked slot has no permitted reference route",
     "real_postgres_control_and_source_gate": "PASS:49 tests; separate backend labels in log",
@@ -15,9 +15,16 @@
     "final_types": "PASS: post-test-correction types exit0",
     "offline_ten": "PASS all exits0; first trusted-core failure preserved",
     "stable_full": "FAIL: exit1,6291 passed/27 failed/463 skipped; fixture corrections later37 passed do not change full verdict",
-    "final_installed_identity": "PENDING",
-    "installed_tournament_add_execute_receipt_remove_restart": "PENDING",
+    "final_installed_identity": "PASS full7569-entry final verification; no installation edits",
+    "installed_tournament_add_execute_receipt_remove_restart": "PARTIAL: add/effect/receipt/remove/runtime restart pass; authoring restart/recheck FAILED",
     "installed_software_retirement_lifecycle": "BLOCKED: no population-preserving design under unchanged Read",
-    "original_stage_b": "HISTORICALLY NOT PASSED"
-  }
+    "original_stage_b": "HISTORICALLY NOT PASSED",
+    "installed_tournament_authoring_recheck": "FAILED COUNTING_SUPPORT_MISMATCH: provider cites exact implementation decision9; host requires counting-set decision8; no contrary meaning demonstrated",
+    "source_wording_generalization": "FAILED:2 of4 derived controls silently persisted false null/null as implemented; safety assertion exit1",
+    "installed_software_detection": "PASS public action review reports ACTION_SUBJECT_RELATIONSHIP_ONLY; existing records unchanged",
+    "final_runtime_oracle": "PASS exit0 after recorded disabled-versus-active revision measurement correction",
+    "historical_original_preservation": "PASS232321 entries unchanged; new installation7569 entries unchanged",
+    "cleanup": "PASS exact3 owned containers stopped after dumps/logs; no originals touched"
+  },
+  "verdict": "NOT ESTABLISHED: no overall completion/acceptance recommendation"
 }

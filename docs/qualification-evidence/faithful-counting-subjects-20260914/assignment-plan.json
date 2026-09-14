@@ -7,11 +7,11 @@
   "evidence_root": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/faithful-counting-subjects-20260914",
   "previous_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/workflow-evolution-37ec677-20260914",
   "previous_evidence": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/workflow-evolution-20260914",
-  "frozen_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mixed-counting-review-b655769-20260914/frozen",
-  "artifact_tree": "aff01e8be77d65e614f8b6b283b1692b1a4e663d0240cac2ff9c09a5e2957008",
+  "frozen_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-counting-subjects-16de465-20260914/frozen",
+  "artifact_tree": "69df512e1208c6599f1d42dfd15e039643d220585a0f55ca99e4e5111d9eef71",
   "trial_harness_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/trial-harness",
   "original_cases_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases",
-  "acceptance": "PASS: independent Claude acceptance, narrow repair only",
+  "acceptance": "Historical narrow independent acceptance only; not transferred to current candidate",
   "acceptance_report": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/mixed-counting-acceptance-20260914/ACCEPTANCE.md",
   "budgets": {
     "development_minutes": 180,
@@ -34,8 +34,8 @@
   "scope": "Two named composition repairs; no runtime engine or Read expansion; known-case add/remove when prerequisites hold",
   "known_open_worker": "TRUSTED_BINDING_MISSING worker-retry classification; record if reached, no repair/requeue/refund",
   "stage_b": "original NOT PASSED",
-  "status": "IN_PROGRESS",
-  "next_step": "Finish composed/publication regressions, explicit owned backend gates and stable verification, then freeze final candidate and recover tournament addition/removal; software target population is blocked on a separate Read/reference decision.",
+  "status": "STOPPED_FOR_REVIEW",
+  "next_step": "Independent verifier reviews frozen handoff. Counting wording/support bounds and software target-reference decision remain; no further model/runtime attempts authorized by this closure.",
   "case_sources": {
     "recovery-tournament-assisted": {
       "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/workflow-evolution-37ec677-20260914",
@@ -59,5 +59,9 @@
       "used_before": 1,
       "reason": "First stable command failed the trusted-core prerequisite before any Vitest test ran; type ownership fix is validated. One final actual full-suite attempt, existing 100-minute verification ceiling unchanged. Earlier result retained, no counter reset."
     }
-  ]
+  ],
+  "historical_preparation_artifact": {
+    "directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mixed-counting-review-b655769-20260914/frozen",
+    "tree": "aff01e8be77d65e614f8b6b283b1692b1a4e663d0240cac2ff9c09a5e2957008"
+  }
 }

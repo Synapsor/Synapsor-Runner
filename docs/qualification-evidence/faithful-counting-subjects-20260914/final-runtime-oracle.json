@@ -1,0 +1,97 @@
+{
+  "artifact_tree": "69df512e1208c6599f1d42dfd15e039643d220585a0f55ca99e4e5111d9eef71",
+  "source_changes": [
+    {
+      "table": "results",
+      "subject": "primary-R24",
+      "fields": [
+        "result_state",
+        "version",
+        "withdrawal_reason"
+      ]
+    }
+  ],
+  "source_unchanged_before_human_approval_and_worker": true,
+  "receipt_records": [
+    {
+      "proposal_id": "wrp_rule_e3f92f3f4bcc5a0b1ed4b3c11a8302c5",
+      "authority": "runner_ledger",
+      "status": "applied",
+      "canonical_core_hash": "sha256:563017df3b8b249856470ac27cdadcff97b542c7932ea5f7fbb16b612311047d",
+      "stored_bytes_sha256": "f8e17417dc106e18cd2986b2c026457b14f8918eafb87479eea850623d1d7102",
+      "source_mutated": true,
+      "rows_affected": 1
+    },
+    {
+      "proposal_id": "wrp_rule_c04a2efc2a19f084802302b589bf7d47",
+      "authority": "runner_ledger",
+      "status": "applied",
+      "canonical_core_hash": "sha256:d0b53eba50a0763600e4134b4a9e16a2603ea0d008ad3890f0876e8040a09653",
+      "stored_bytes_sha256": "bda7a5adc5c037ad3c374ea747716f555ca4cd06b11c7d4190d659f9e63c0975",
+      "source_mutated": true,
+      "rows_affected": 1
+    }
+  ],
+  "worker_diagnostic_hash": "sha256:407362a2191debdcc8504e3552c061f4c3eba60cba41801dcdfe0381e1be3f7e",
+  "old_receipt_bytes_and_approvals_retained": true,
+  "old_automatic": [
+    {
+      "proposal_id": "wrp_rule_e3f92f3f4bcc5a0b1ed4b3c11a8302c5",
+      "created_at": "2026-09-14T16:58:17.390Z",
+      "boundary": "reviewed_staging_actions",
+      "outcome": "league.result_ratification"
+    }
+  ],
+  "final_automatic": [
+    {
+      "proposal_id": "wrp_rule_e3f92f3f4bcc5a0b1ed4b3c11a8302c5",
+      "created_at": "2026-09-14T16:58:17.390Z",
+      "boundary": "reviewed_staging_actions",
+      "outcome": "league.result_ratification"
+    },
+    {
+      "proposal_id": "wrp_rule_9261a446c7396cfb548e5a35ee7da7ad",
+      "created_at": "2026-09-14T19:54:37.195Z",
+      "boundary": "reviewed_staging_actions",
+      "outcome": "league.result_ratification"
+    }
+  ],
+  "canonical_filter": "league.result_ratification",
+  "limits": [
+    {
+      "capability": "league.result_ratification",
+      "id": "league_automatic_ratifications_24h",
+      "kind": "count",
+      "maximum": 2,
+      "scope": "tenant",
+      "window_seconds": 86400
+    },
+    {
+      "capability": "league.result_ratification",
+      "id": "overall_automatic_ratifications_24h",
+      "kind": "count",
+      "maximum": 6,
+      "scope": "boundary",
+      "window_seconds": 86400
+    }
+  ],
+  "history_control": "One old automatic plus one fresh automatic reaches tenant maximum2; distinct eligible R16 persists human review; human withdrawals do not consume this count",
+  "active_revisions": {
+    "before": "policy:7e51d6f26cd2403f2709033825f154a19157234be5718c6bdad0016d80e6ca20",
+    "addition": "policy:6fa4f3dbd82d1ebedb331101a1ee9cc654033d5abce9dd7359779660a6bf9054",
+    "removal": "policy:cf7a22b24ddaa1e357c72cbfe1a01fe1b4c0e08c264a8a54c988ab829082a931"
+  },
+  "unstarted_removed_work": {
+    "proposal_id": "wrp_rule_af24597a6a5232f0ef52d69fd3a174a5",
+    "status": "queued",
+    "attempts": 0,
+    "lease_id": null,
+    "worker_exit": 0,
+    "source_changed": false
+  },
+  "continuous_client_pid": 2531497,
+  "restarted_client_pid": 2574854,
+  "read_rows_after_restart": 24,
+  "original_source_receipt_engine_claim": "none; tournament uses Runner ledger, not atomic source receipt",
+  "topology": "single-host PostgreSQL source / SQLite control store; one continuing MCP process then explicit restart; two finite worker invocations"
+}

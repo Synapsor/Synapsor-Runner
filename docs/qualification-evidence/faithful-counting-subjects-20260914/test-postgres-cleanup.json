@@ -1,0 +1,16 @@
+{
+  "at": "2026-09-14T20:02:35.176616+00:00",
+  "container": "synapsor-faithful-review-tests-f091f412",
+  "id": "fff2ded89d9bc7f21f7419164c8b062229d57fa733bc8e7e3955293d66b6a4fc",
+  "label": "faithful-counting-subjects-20260914",
+  "active_clients_before_stop": 0,
+  "saved_before_stop": {
+    "container-before.json": "2d27e814ce96ac4f493c8eb54cd39895c261d48f4964945f670495a879ab7ebe",
+    "postgres.log": "a33537a57c9d10d209ef9061f691461c04254c93b9f98e4ec82b7cf7169ab375",
+    "source.dump": "27f1ba10a0800ff806e49ca9092958a80df6c4acfdd020bf2193fbc58aaf07cb"
+  },
+  "directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-counting-subjects-16de465-20260914/closure/live-postgres-tests",
+  "stop_exit": 0,
+  "running_after": false,
+  "removed": false
+}

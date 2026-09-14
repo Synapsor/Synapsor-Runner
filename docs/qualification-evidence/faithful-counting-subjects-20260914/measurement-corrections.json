@@ -1,0 +1,18 @@
+{
+  "public_launches": [
+    {
+      "log": "final-add-terminal.log",
+      "failure": "heredoc stdin did not supply interactive TTY;0 calls; direct script(1) launch restored stdin, timer retained"
+    },
+    {
+      "log": "final-publication-terminal.log",
+      "failure": "bounded180-second operator wrapper expired at unconfirmed default-No prompt;signal exit retained; resumed actual same state and confirmed once"
+    }
+  ],
+  "wording_probe_attempt1": "Derived source text was not installed as the synthetic approved source snapshot;POLICY_TEXT_EGRESS_REQUIRED before producer;corrected only test snapshot/approval fixture, original kept",
+  "inspection_attempt1": "Activation wrapper has nested rule.name; initial top-level name read KeyError; reader corrected, no application writes",
+  "runtime_oracle_attempt1": "Expected disabled policy revision as active; observed published wrapper has a distinct revision. Corrected to assert unchanged actual published revision/content across restart and exact reviewed authority digest; receipt/source assertions unchanged",
+  "harness_help_invocation": "run-local.py has positional label/command, no --help. Empty command exited1; --help-* evidence retained; no tests or product work executed",
+  "writer_blank_input": "Displayed Enter-keeps default returned to menu; typing exact displayed variable proceeded; no diagnostic repair made",
+  "preservation_recheck_label": "Attempt to reuse final label refused exclusive-create after recomputation; original final record preserved. Separate post-cleanup label records the later verification."
+}

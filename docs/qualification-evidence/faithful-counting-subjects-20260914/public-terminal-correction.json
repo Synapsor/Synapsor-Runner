@@ -1,0 +1,11 @@
+{
+  "attempt": "final-add-terminal.log",
+  "cause": "Python heredoc launcher inherited EOF stdin into script(1), so outer PTY input could not reach the initial menu. Child stdin was tty, but parent script input was not the controlling terminal.",
+  "provider_calls": 0,
+  "phase": "initial Resume menu, selection not delivered",
+  "owned_wrapper_stopped": 2504996,
+  "child": 2505137,
+  "replacement": "Direct script(1) invocation with inherited real PTY stdin; final-add-terminal02.log",
+  "timer_or_counter_reset": false,
+  "product_change": false
+}

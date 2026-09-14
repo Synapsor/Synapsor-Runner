@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-14T19:43:34.732Z",
+  "artifact_tree": "69df512e1208c6599f1d42dfd15e039643d220585a0f55ca99e4e5111d9eef71",
+  "container": "synapsor-workflow-recovery-tournament-assisted-408615b1",
+  "container_id": "73270d535e31f8e9bcfd3fac54e2b8f4d6265993f49a12bcffc7097bbde51a5f",
+  "sql_file": ".synapsor/writer-handoffs/review-Rvi7TQ/grants.sql",
+  "sql_sha256": "79179362f84b499c72cbe3628b97f312e19e410514ebfb9bcc60cef10dde99a9",
+  "administrator": "authorized synthetic fixture owner",
+  "local_authentication": "network none, private Unix socket, dedicated LOGIN role",
+  "business_rows_and_original_policies_unchanged": true,
+  "baseline_sha256": "5ed286cc32838b314795956c5ec8ca50a3ae0a79d48a8f8df3f917a4104fd279",
+  "writer_reinspection": "PENDING",
+  "execution_enabled": false,
+  "source_execution": "NOT_RUN"
+}

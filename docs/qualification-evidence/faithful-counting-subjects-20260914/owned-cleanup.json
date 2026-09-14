@@ -1,0 +1,42 @@
+{
+  "at": "2026-09-14T20:02:34.355882+00:00",
+  "records": [
+    {
+      "run": "recovery-software",
+      "container": "synapsor-workflow-recovery-software-e55ce206",
+      "container_id": "cd55d5ff7a647d79a10b8e58b9a4dc05d8c6fdf575071b507c643bf274e1f005",
+      "label": "workflow-evolution-20260914",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "f901e8586d5526207e34f1a087aa534289886319ab3f12557b4c8d48fe58ae28",
+        "postgres.log": "7e09935ff4a78fd3aa1d74cda1e0e9c5b46bf4debba65123432803210f28161b",
+        "source.dump": "3bc5e24da87926d99ee8ea98bb5e96cc13726f09f8120eeb4a2f6d17b2c8d106"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-counting-subjects-16de465-20260914/closure/recovery-software",
+      "removed": false
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "container": "synapsor-workflow-recovery-tournament-assisted-408615b1",
+      "container_id": "73270d535e31f8e9bcfd3fac54e2b8f4d6265993f49a12bcffc7097bbde51a5f",
+      "label": "workflow-evolution-20260914",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "f79b3432be45ab0b994615d5c86a7794ab805c68f6957dd3695214d7b6bb93b5",
+        "postgres.log": "e9994c1c27c8547d2fe18db8d90354e708c8507c53d0cddf2220392770e7cb8a",
+        "source.dump": "11e0a4a4dec28a99374d895cebde07d765dda1198172f082dfdf8e46ad7fa07e"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-counting-subjects-16de465-20260914/closure/recovery-tournament-assisted",
+      "removed": false
+    }
+  ],
+  "counts_note": "Actual public CLI and provider invocations retained in each public-invocations.jsonl and meter/events.jsonl. Worker outcomes are recorded separately; this cleanup makes no execution-success claim.",
+  "original_containers_touched": false,
+  "fixture_directories_removed": false
+}

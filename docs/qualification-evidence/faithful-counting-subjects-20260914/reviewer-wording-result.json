@@ -1,0 +1,107 @@
+{
+  "classification": "Derived full producer/parser/save/reload controls; same frozen product source; no provider, authority or source writes",
+  "results": [
+    {
+      "name": "auto-approved wording",
+      "requirement_text": "No more than two ratifications may be auto-approved per league per day, and no more than six overall. ",
+      "alias": null,
+      "bindings": [],
+      "expected_for_outcome_specific_null_claim": "REFUSE or independently validated applicable proof; equality alone must not suffice",
+      "accepted": true,
+      "persisted": true,
+      "disposition": "implemented",
+      "counter_requirements": [
+        {
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+          "current_capability": null,
+          "required_capability": null,
+          "operator_clarification": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change."
+        },
+        {
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+          "current_capability": null,
+          "required_capability": null,
+          "operator_clarification": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change."
+        }
+      ],
+      "components": [],
+      "host_bindings": [],
+      "captured_producer_calls": 1,
+      "actual_provider_calls": 0,
+      "silent_fallthrough": true
+    },
+    {
+      "name": "allowance covers only",
+      "requirement_text": "The automatic allowance covers ratification only. Six approvals overall and two per league within the inclusive rolling 24-hour window. ",
+      "alias": null,
+      "bindings": [
+        {
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+          "required": null,
+          "ambiguity": "outcome_reference_unresolved"
+        },
+        {
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+          "required": null,
+          "ambiguity": "outcome_reference_unresolved"
+        }
+      ],
+      "expected_for_outcome_specific_null_claim": "REFUSE or independently validated applicable proof; equality alone must not suffice",
+      "accepted": false,
+      "error": "Error: POLICY_COVERAGE_INVALID: COUNTING_REQUIREMENT_AMBIGUOUS: /runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability cannot be uniquely associated with the explicit source counting set. Supply a precise source/outcome interpretation; equality is not evidence.",
+      "captured_producer_calls": 2,
+      "actual_provider_calls": 0,
+      "silent_fallthrough": false
+    },
+    {
+      "name": "split across lines",
+      "requirement_text": "Valid qualifying-stage results may be approved automatically, with at most six automatic\nratifications overall and two per league in the inclusive rolling 24-hour window. ",
+      "alias": null,
+      "bindings": [],
+      "expected_for_outcome_specific_null_claim": "REFUSE or independently validated applicable proof; equality alone must not suffice",
+      "accepted": true,
+      "persisted": true,
+      "disposition": "implemented",
+      "counter_requirements": [
+        {
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+          "current_capability": null,
+          "required_capability": null,
+          "operator_clarification": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change."
+        },
+        {
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+          "current_capability": null,
+          "required_capability": null,
+          "operator_clarification": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change."
+        }
+      ],
+      "components": [],
+      "host_bindings": [],
+      "captured_producer_calls": 1,
+      "actual_provider_calls": 0,
+      "silent_fallthrough": true
+    },
+    {
+      "name": "non-stem alias",
+      "requirement_text": "At most six automatic greenlights overall and two per league in the inclusive rolling 24-hour window. ",
+      "alias": "greenlight",
+      "bindings": [
+        {
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+          "required": "league.result_ratification"
+        },
+        {
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+          "required": "league.result_ratification"
+        }
+      ],
+      "expected_for_outcome_specific_null_claim": "REFUSE or independently validated applicable proof; equality alone must not suffice",
+      "accepted": false,
+      "error": "Error: POLICY_COVERAGE_INVALID: COUNTING_REQUIREMENT_MISMATCH: /runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability compares a provider-supplied required value inconsistent with source lines 7-7. Use required_capability=\"league.result_ratification\"; equality with the saved selector is not source equivalence. Keep the provider claim separate; use an exact reviewed selector change or the existing applicable domain proof, never an old configuration-preservation answer as a new counting requirement.",
+      "captured_producer_calls": 2,
+      "actual_provider_calls": 0,
+      "silent_fallthrough": false
+    }
+  ]
+}

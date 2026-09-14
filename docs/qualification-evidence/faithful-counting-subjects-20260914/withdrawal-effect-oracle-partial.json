@@ -1,0 +1,16 @@
+{
+  "no_effect_before_approval_and_worker": true,
+  "changes": [
+    {
+      "table": "results",
+      "subject": "primary-R24",
+      "fields": [
+        "result_state",
+        "withdrawal_reason",
+        "version"
+      ]
+    }
+  ],
+  "old_approvals_and_receipt_exactly_retained": true,
+  "new_receipt_count": 1
+}

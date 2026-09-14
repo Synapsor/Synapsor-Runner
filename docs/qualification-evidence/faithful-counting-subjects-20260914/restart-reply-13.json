@@ -1,0 +1,322 @@
+{
+  "passages": [
+    {
+      "start": 1,
+      "end": 1,
+      "disposition": "background",
+      "interpretation": "Title only; it introduces the ratification policy without an additional operational requirement.",
+      "draft_paths": [
+        "/actions/0/name"
+      ],
+      "topic": "Policy heading",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "No action is needed."
+    },
+    {
+      "start": 3,
+      "end": 3,
+      "disposition": "implemented",
+      "interpretation": "Result and related-event access is restricted to the reviewed trusted tenant and assigned-principal scope on every loaded Action binding; the related event relationship carries the same tenant and principal keys. This implements the referee-within-league record restriction in the prepared draft.",
+      "draft_paths": [
+        "/runner_evidence/actions/league.result_ratification/scoped_bindings/result",
+        "/runner_evidence/actions/league.result_ratification/scoped_bindings/event",
+        "/runner_evidence/read_access/tournament_ops.results",
+        "/runner_evidence/read_access/tournament_ops.events"
+      ],
+      "topic": "Assigned league record scope",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "Retain the reviewed tenant and principal mappings when this rule is activated."
+    },
+    {
+      "start": 3,
+      "end": 3,
+      "disposition": "needs_decision",
+      "interpretation": "The reviewed record scope exists, but connection of an authenticated application session to those tenant and principal bindings is not verified. This is later deployment wiring, not a missing Action predicate.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+      ],
+      "topic": "Authenticated referee identity",
+      "responsibility": "deployment",
+      "issue_kind": "missing_configuration",
+      "next_step": "After authority review, configure and verify authenticated-session identity for the reviewed tenant and principal bindings.",
+      "deployment_prerequisite": "authenticated_identity"
+    },
+    {
+      "start": 3,
+      "end": 3,
+      "disposition": "needs_decision",
+      "interpretation": "The client must capture the referee\u2019s intended result selection and submit its reviewed subject reference; Runner scopes that reference but cannot prove that a person made the selection.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/application_obligations/customer_selection"
+      ],
+      "topic": "Referee result selection",
+      "responsibility": "application",
+      "issue_kind": "missing_configuration",
+      "next_step": "Assign the client responsibility for capturing the referee\u2019s intended result selection.",
+      "application_obligations": [
+        "customer_selection"
+      ]
+    },
+    {
+      "start": 3,
+      "end": 3,
+      "disposition": "implemented",
+      "interpretation": "Public Read returns result reference, stage, winner and loser game wins, result state, and related event name and operating state, matching the stated readable match information. The operator confirmed that result_ref is the public human-readable match label while the stable identity remains internal.",
+      "draft_paths": [
+        "/read",
+        "/runner_evidence/read_access/tournament_ops.results/fields/result_ref",
+        "/runner_evidence/read_access/tournament_ops.results/fields/stage",
+        "/runner_evidence/read_access/tournament_ops.results/fields/winner_game_wins",
+        "/runner_evidence/read_access/tournament_ops.results/fields/loser_game_wins",
+        "/runner_evidence/read_access/tournament_ops.results/fields/result_state",
+        "/runner_evidence/read_access/tournament_ops.events/fields/event_name",
+        "/runner_evidence/read_access/tournament_ops.events/fields/operating_state"
+      ],
+      "topic": "Permitted match-result reads",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "Keep these public fields and the related-event path unchanged."
+    },
+    {
+      "start": 3,
+      "end": 3,
+      "disposition": "implemented",
+      "interpretation": "Database identities, conflict versions, integrity hold, and referee private notes have no public values or model analysis permissions. Integrity_hold remains available only as private Action verification, as permitted by the policy.",
+      "draft_paths": [
+        "/runner_evidence/read_access/tournament_ops.results/fields/result_id",
+        "/runner_evidence/read_access/tournament_ops.results/fields/event_id",
+        "/runner_evidence/read_access/tournament_ops.results/fields/tenant_id",
+        "/runner_evidence/read_access/tournament_ops.results/fields/principal_id",
+        "/runner_evidence/read_access/tournament_ops.results/fields/version",
+        "/runner_evidence/read_access/tournament_ops.results/fields/integrity_hold",
+        "/runner_evidence/read_access/tournament_ops.results/fields/referee_private_note",
+        "/runner_evidence/read_access/tournament_ops.events/fields/event_id",
+        "/runner_evidence/read_access/tournament_ops.events/fields/tenant_id",
+        "/runner_evidence/read_access/tournament_ops.events/fields/principal_id",
+        "/runner_evidence/read_access/tournament_ops.events/fields/version",
+        "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/integrity_hold"
+      ],
+      "topic": "Private identities and verification facts",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "Retain the current no-value and no-analysis treatment of these private fields.",
+      "field_checks": [
+        {
+          "resource": "tournament_ops.results",
+          "field": "result_id",
+          "expectation": "private"
+        },
+        {
+          "resource": "tournament_ops.results",
+          "field": "event_id",
+          "expectation": "private"
+        },
+        {
+          "resource": "tournament_ops.results",
+          "field": "tenant_id",
+          "expectation": "private"
+        },
+        {
+          "resource": "tournament_ops.results",
+          "field": "principal_id",
+          "expectation": "private"
+        },
+        {
+          "resource": "tournament_ops.results",
+          "field": "version",
+          "expectation": "private"
+        },
+        {
+          "resource": "tournament_ops.results",
+          "field": "integrity_hold",
+          "expectation": "private"
+        },
+        {
+          "resource": "tournament_ops.results",
+          "field": "referee_private_note",
+          "expectation": "private"
+        },
+        {
+          "resource": "tournament_ops.events",
+          "field": "event_id",
+          "expectation": "private"
+        },
+        {
+          "resource": "tournament_ops.events",
+          "field": "tenant_id",
+          "expectation": "private"
+        },
+        {
+          "resource": "tournament_ops.events",
+          "field": "principal_id",
+          "expectation": "private"
+        },
+        {
+          "resource": "tournament_ops.events",
+          "field": "version",
+          "expectation": "private"
+        }
+      ]
+    },
+    {
+      "start": 5,
+      "end": 5,
+      "disposition": "implemented",
+      "interpretation": "The prepared ratification Action privately verifies an open related event, finished result, exactly two winner wins, zero or one loser wins, and no integrity hold before a proposal can proceed.",
+      "draft_paths": [
+        "/actions/0/verification",
+        "/actions/0/require",
+        "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/integrity_hold",
+        "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/winner_game_wins",
+        "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/loser_game_wins",
+        "/runner_evidence/actions/league.result_ratification/scoped_bindings/event/fields/operating_state"
+      ],
+      "topic": "Ratification eligibility",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "Retain these eligibility conditions in the disabled revision."
+    },
+    {
+      "start": 5,
+      "end": 5,
+      "disposition": "implemented",
+      "interpretation": "Invalid eligibility is refused before approval. The compiled effect modifies result_state only to ratified, with Runner-owned guarded version advancement; winner, loser, assignment, event, and league fields are outside the modification envelope.",
+      "draft_paths": [
+        "/actions/0/require",
+        "/actions/0/effect",
+        "/actions/0/review",
+        "/runner_evidence/actions/league.result_ratification/effect",
+        "/runner_evidence/runtime_contract/conflict_protection",
+        "/runner_evidence/runtime_contract/version_advancement",
+        "/runner_evidence/runtime_contract/source_counter_maintenance"
+      ],
+      "topic": "Refusal and limited ratification effect",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "Retain the state-only effect and Runner-owned version advancement."
+    },
+    {
+      "start": 7,
+      "end": 7,
+      "disposition": "implemented",
+      "interpretation": "Qualifying-stage requests are the only candidates for automatic approval. The two tenant-scoped and six boundary-scoped inclusive 86400-second limits use the canonical league.result_ratification selector. The operator explicitly established that each tenant is one league and that the tenant limit is shared by its referees; the later selector decision applies only to ratifications, while withdrawal was removed.",
+      "draft_paths": [
+        "/actions/0/approval",
+        "/runner_evidence/actions/league.result_ratification/automatic_limits",
+        "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+        "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+        "/runner_evidence/runtime_contract/approval_counter_selection"
+      ],
+      "topic": "Shared automatic ratification limits",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "Retain both maxima, scopes, inclusive windows, and ratification-only history selectors.",
+      "counter_requirements": [
+        {
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+          "current_capability": "league.result_ratification",
+          "required_capability": "league.result_ratification",
+          "operator_message_id": 9
+        },
+        {
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+          "current_capability": "league.result_ratification",
+          "required_capability": "league.result_ratification",
+          "operator_message_id": 9
+        }
+      ]
+    },
+    {
+      "start": 7,
+      "end": 7,
+      "disposition": "implemented",
+      "interpretation": "Championship requests cannot satisfy the qualifying auto-approval condition, and qualifying requests that fail either shared limit use the configured league-supervisor, one-approval human fallback. The removed withdrawal outcome has no current dispatch authority and cannot consume or expand these ratification allowances.",
+      "draft_paths": [
+        "/actions/0/approval",
+        "/actions/0/review",
+        "/runner_evidence/actions/league.result_ratification/outcome",
+        "/runner_evidence/runtime_contract/approval"
+      ],
+      "topic": "Human review routing",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "Retain the league-supervisor fallback for championship and limit-overrun requests."
+    },
+    {
+      "start": 7,
+      "end": 7,
+      "disposition": "implemented",
+      "interpretation": "The compiled direct-SQL supervised effect supports the required post-approval supervised completion as prepared behavior. It is not live execution: separate writer review, execution enablement, and worker startup remain later prerequisites.",
+      "draft_paths": [
+        "/actions/0/effect",
+        "/runner_evidence/actions/league.result_ratification/execution"
+      ],
+      "topic": "Supervised ratification completion",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "After authority review, complete the separate execution handoff before any completion is possible."
+    },
+    {
+      "start": 7,
+      "end": 7,
+      "disposition": "needs_decision",
+      "interpretation": "The requested stored Runner-ledger receipt is not configured or verified. Dedicated writer and grant review, receipt-mode review, execution enablement, and worker startup remain outstanding for the prepared ratification effect.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+      ],
+      "topic": "Execution and Runner-ledger receipt setup",
+      "responsibility": "deployment",
+      "issue_kind": "missing_configuration",
+      "next_step": "After authority review, configure the writer, Runner-ledger receipt mode, execution consent, and worker for this Action revision.",
+      "deployment_prerequisite": "runner_execution_setup"
+    },
+    {
+      "start": 7,
+      "end": 7,
+      "disposition": "needs_decision",
+      "interpretation": "Independently verifying the changed source row after execution is an external per-execution observation and remains unverified. A Runner receipt does not prove that observation.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+      ],
+      "topic": "Independent changed-row verification",
+      "responsibility": "application",
+      "issue_kind": "missing_configuration",
+      "next_step": "Assign who will independently observe each changed source row after execution.",
+      "application_obligations": [
+        "independent_source_readback"
+      ]
+    },
+    {
+      "start": 7,
+      "end": 7,
+      "disposition": "implemented",
+      "interpretation": "The Action has a direct database update effect only; no external-system contact is represented.",
+      "draft_paths": [
+        "/actions/0/effect",
+        "/runner_evidence/actions/league.result_ratification/execution"
+      ],
+      "topic": "No external match-system contact",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "Retain the direct database-only effect."
+    },
+    {
+      "start": 9,
+      "end": 9,
+      "disposition": "implemented",
+      "interpretation": "The current Read boundary preserves the reviewed public fields and private-field restrictions independently of the Action revision. The ratification effect authorizes only result_state and Runner-owned version advancement, not winner or score changes.",
+      "draft_paths": [
+        "/read",
+        "/actions/0/effect",
+        "/runner_evidence/actions/league.result_ratification/effect",
+        "/runner_evidence/read_access"
+      ],
+      "topic": "Preserved reads and scores",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "Keep the Read boundary and state-only effect unchanged when jobs are edited."
+    }
+  ]
+}

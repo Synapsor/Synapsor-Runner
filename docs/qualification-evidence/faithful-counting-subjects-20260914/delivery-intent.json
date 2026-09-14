@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-14T20:06:22.205908+00:00",
+  "branch": "codex/tui-safe-action-control-plane",
+  "backup_remote": "https://github.com/Synapsor/Synapsor-Runner-Backup.git",
+  "private_repository_verified": true,
+  "public_release": false,
+  "product_revision": "58493690e499b0be64c8dc1ec42e31582e1ee690",
+  "test_revision": "05e5d2848272979a9c4aa0777ec7653bf1c94224",
+  "frozen_source_checkpoint": "111c86d60bb023b5751a74c56ba5cd093de595ab",
+  "installed_tree": "69df512e1208c6599f1d42dfd15e039643d220585a0f55ca99e4e5111d9eef71",
+  "final_delivery_record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-counting-subjects-16de465-20260914/delivery.json",
+  "immutable_handoff": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-counting-subjects-16de465-20260914/reviewer-handoff"
+}
