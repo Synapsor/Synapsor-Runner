@@ -1,0 +1,26 @@
+{
+  "at": "2026-09-14T17:00:11.358734+00:00",
+  "artifact_tree": "aff01e8be77d65e614f8b6b283b1692b1a4e663d0240cac2ff9c09a5e2957008",
+  "status": "PASSED",
+  "classification": "installed public assisted deployment; deterministic normal four-tool MCP; supervised local worker; fixture-owner independent readback",
+  "receipt_mode": "runner_ledger",
+  "canonical_receipt_bytes_sha256": "f8e17417dc106e18cd2986b2c026457b14f8918eafb87479eea850623d1d7102",
+  "worker_diagnostic_hash_is_not_receipt_byte_hash": true,
+  "source_effect": "only primary-R01 result_state ratified and version +1; all other 103 rows unchanged",
+  "valid_human_review": "primary-R17 pending_review, no execution",
+  "invalid_control": "primary-R18 SEMANTIC_ACTION_NOT_ELIGIBLE; no proposal",
+  "replay": "completed, already_recorded, verified execution_receipt",
+  "durable_counts": {
+    "proposals": 2,
+    "approvals": 1,
+    "worker_queue": 1,
+    "writeback_receipts": 1
+  },
+  "client_pid": 2190759,
+  "client_stays_connected_for_edit": true,
+  "authoring_provider_calls": 0,
+  "source_readback_not_imported_as_authoring_attestation": true,
+  "privacy_verification_warning": "retained; no general certification claimed",
+  "known_worker_defect_reached": false,
+  "raw_state": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/workflow-evolution-37ec677-20260914/runs/recovery-tournament-assisted/deterministic"
+}

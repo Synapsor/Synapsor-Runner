@@ -1,0 +1,84 @@
+{
+  "at": "2026-09-14T16:46:53.995075+00:00",
+  "installation": {
+    "verified_at": "2026-09-14T16:46:53.879Z",
+    "installed_tree_sha256": "aff01e8be77d65e614f8b6b283b1692b1a4e663d0240cac2ff9c09a5e2957008",
+    "entries": 7569
+  },
+  "manifest_and_archive": {
+    "installed-artifact-manifest.json": "69790aed4c5da2f577a60396038fb344d5384f24d29e7260bc0982b52b606769",
+    "installed-artifact.tar.gz": "c1c6a5ae69bea22b0582c22de93123921b1e61cfc5feee0a1ffc00436fa86e4f"
+  },
+  "prior_index_entries": 296,
+  "prior_index_mismatches": [],
+  "source_files": 982,
+  "prior_delivery": {
+    "started_at": "2026-09-14T16:01:23.030893+00:00",
+    "completed_at": "2026-09-14T16:01:26.425504+00:00",
+    "branch": "codex/tui-safe-action-control-plane",
+    "head": "37ec677e641762f1031561bca1aeb9e5448b6ec9",
+    "product_commit": "32f12a050b6eed7ebc5406e3baab00160590b43d",
+    "frozen_source_commit": "a021a8407db088fc975301c400eb5145e838775e",
+    "artifact_tree": "aff01e8be77d65e614f8b6b283b1692b1a4e663d0240cac2ff9c09a5e2957008",
+    "remote": "backup",
+    "destination": "https://github.com/Synapsor/Synapsor-Runner-Backup.git",
+    "private_repository_verification": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mixed-counting-review-20260914/private-remote-final-verification.json",
+    "push_args": [
+      "git",
+      "push",
+      "backup",
+      "HEAD:refs/heads/codex/tui-safe-action-control-plane"
+    ],
+    "push_exit": 0,
+    "remote_branch_head": "37ec677e641762f1031561bca1aeb9e5448b6ec9",
+    "working_tree_clean": true,
+    "push_log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mixed-counting-review-b655769-20260914/closure/private-backup-push.log",
+    "push_log_sha256": "47ce6a8dbcaa52ff109319a6f375c8635397f803d1a432b156e650074aa3acb2",
+    "stop": "STOP for independent review",
+    "original_stage_b": "NOT PASSED"
+  },
+  "old_checkpoint_resolved": {
+    "at": "2026-09-14T15:43:02.057565+00:00",
+    "source_commit": "a021a8407db088fc975301c400eb5145e838775e",
+    "product_commit": "32f12a050b6eed7ebc5406e3baab00160590b43d",
+    "test_commit": "32f12a050b6eed7ebc5406e3baab00160590b43d",
+    "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mixed-counting-review-b655769-20260914/frozen/installed",
+    "installed_tree_sha256": "aff01e8be77d65e614f8b6b283b1692b1a4e663d0240cac2ff9c09a5e2957008",
+    "entries": 7569,
+    "runner_version": "1.8.0",
+    "spec_version": "1.11.0",
+    "package_lock_sha256": "06a2dde98c00f9e590094edab1c782033bc47db132e3d91603506d5777f8caa9",
+    "node": {
+      "version": "v22.22.2",
+      "executable": "/usr/bin/node",
+      "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+    },
+    "verification": {
+      "verified_at": "2026-09-14T15:43:01.995Z",
+      "installed_tree_sha256": "aff01e8be77d65e614f8b6b283b1692b1a4e663d0240cac2ff9c09a5e2957008",
+      "entries": 7569
+    },
+    "files": {
+      "installed-artifact-manifest.json": "69790aed4c5da2f577a60396038fb344d5384f24d29e7260bc0982b52b606769",
+      "installed-dependency-tree.json": "44a0bc1c51def2fb3b8a57f26131d04dd156a52ebd294c64b73f255e08486492",
+      "installed-artifact.tar.gz": "c1c6a5ae69bea22b0582c22de93123921b1e61cfc5feee0a1ffc00436fa86e4f",
+      "synapsor-runner-1.8.0.tgz": "9951e33b0feaf4816da9397aeb33ff2c0eb001b4262f8ede66c8d9af9e02a84d",
+      "synapsor-spec-1.11.0.tgz": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+    },
+    "entrypoints": {
+      "node_modules/@synapsor/runner/dist/authoring.mjs": "b82d745464b0e275993266d6eff074f4e0752a69117e75e8166a3f9d5b177116",
+      "node_modules/@synapsor/runner/dist/cli.js": "fd5383c5bd241f7c1f917ee548bc679b00a188ebeac0f117ac3e6224a7ea6acc",
+      "node_modules/@synapsor/runner/dist/runner.mjs": "7abd6642571e224c08f01602bcab149a65dde5051039db9f35c38abeae326997",
+      "node_modules/@synapsor/runner/dist/runtime.mjs": "2af5a8ad545507eee4e2e480d9dfb7c3df046b0ea9fede6a837247a01ed17848",
+      "node_modules/@synapsor/runner/dist/shadow.mjs": "b77c62f1e28a8aa637f62a0c03477d8b897ae15c5f1720be07804f86be0fa932"
+    },
+    "installed_component_and_prompt_code_present": {
+      "HOST-RESOLVED": [
+        "node_modules/@synapsor/runner/dist/runner.mjs"
+      ],
+      "A paragraph operator_message_id supports that passage": [
+        "node_modules/@synapsor/runner/dist/runner.mjs"
+      ]
+    }
+  }
+}

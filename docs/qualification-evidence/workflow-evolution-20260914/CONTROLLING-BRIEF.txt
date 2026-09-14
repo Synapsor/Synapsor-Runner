@@ -1,0 +1,178 @@
+Synapsor: accept the review repair, then qualify model-assisted workflow evolution
+
+I maintain this repository and authorize the bounded verification below:
+
+/home/sandesh-tiwari/Desktop/C++/synapsor-runner/
+
+Objective and authorization
+
+The mixed-counting repair has completed its named implementation checks. Do not reopen the implementation or treat ordinary pending deployment as a newly discovered defect.
+
+This assignment has two parts:
+
+A focused independent acceptance review of this repair.
+
+If that review finds no material blocker, complete the named known-case deployment and model-assisted add/remove checks on the SAME frozen installation.
+
+Part 2 is conditionally authorized here; no additional permission is needed once the separate review clears it. This is verification, not an open-ended product-repair assignment. Product code, product prompts, dependencies and validators must remain unchanged. Only owned test preparation, harness corrections and reports are writable within this scope.
+
+Keep original Stage B NOT PASSED as a historical verdict. Report the new review acceptance and known-case results separately. No new unseen-domain campaign or production release is authorized.
+
+1. Verify the candidate and preserve the working baseline
+
+Start from the actual canonical checkout following 37ec677 on codex/tui-safe-action-control-plane. Verify its relationship to product/regression commit 32f12a050b6eed7ebc5406e3baab00160590b43d and frozen checkpoint a021a8407db088fc975301c400eb5145e838775e. Preserve unrelated work; no reset or feature merge.
+
+Read:
+
+docs/qualification-evidence/mixed-counting-review-20260914/FINAL-REPORT.md
+
+Its REVIEWER-HANDOFF.md, EVIDENCE-INDEX.json, implementation note, component maps, diagnostic controls and delivery receipt.
+
+The original Stage B case plans, owner-answer sheets, planned add/remove requirements and scorecard.
+
+The latest successful tournament/software execution/edit checkpoints, with matching source dumps and their actual receipt modes.
+
+The existing onboarding-domain audit and tracker, to preserve requirements rather than reopen historical work.
+
+Use this complete installation unchanged:
+aff01e8be77d65e614f8b6b283b1692b1a4e663d0240cac2ff9c09a5e2957008
+
+Manifest:
+69790aed4c5da2f577a60396038fb344d5384f24d29e7260bc0982b52b606769
+
+Archive:
+c1c6a5ae69bea22b0582c22de93123921b1e61cfc5feee0a1ffc00436fa86e4f
+
+Verify all installed entries, modes, symlink targets, local Spec, lockfile and entrypoints. Do not rebuild or switch packages merely because a report commit is newer. If identity differs, stop and resolve the discrepancy before attributing results to this candidate.
+
+Preserve original projects, stopped failures, historical approval queues and all earlier installations. Use new owned whole-project copies with matching source state, enforced read-only originals and effective-store preflight. Do not invent authority bindings to relocate a copy. Never execute the preserved excess-approval queues.
+
+2. Focused independent acceptance review
+
+The user's separate Claude reviewer should perform this part. Prepare its bounded handoff and accept the resulting report; do not call implementer self-review independent. No second full Stage A campaign or routine full-suite rerun is needed.
+
+The reviewer should independently verify the candidate/evidence identity and inspect the narrow design change:
+
+HOST-RESOLVED support attaches to the exact typed counting component, not the entire paragraph.
+
+Wrong explicit component support, ambiguous/missing decisions and broad-only pointers remain rejected.
+
+A valid counting comparison cannot establish a maximum, eligibility condition, privacy control or unrelated obligation.
+
+Conditional equivalence remains dependent on the complete proposed/current authority and applicable retained automatic-history domain.
+
+Domain-dependent evidence is checked at the relevant save, reuse, status and publication-preparation boundaries, not merely when a model reply first arrives.
+
+Execute a small independent positive/negative sample using existing tests and a new owned copy: the mixed passage completes, a residual genuine conflict remains blocking, and a relevant outcome-domain change invalidates the narrow proof. Label controlled-response tests separately from real-model public observations.
+
+Independently observe the public assisted review/save/restart/unchanged recheck if practical within the review budget. Check actual saved readiness, pending duties, accepted decisions and unchanged business program—not just an exit code. One public resume may reuse validated evidence; do not describe reuse as another provider opinion.
+
+The assisted baseline has absent selectors; the original tournament has explicit selectors. Do not make them identical for this review. Management progress/epoch changes may be legitimate and must be recorded separately from business authority and policy changes.
+
+While waiting for the reviewer, Codex may prepare the finite test plan, prerequisite checks and owned fixture copies. Do not launch dependent deployment/execution trials before acceptance. If no separate reviewer is available, provide the handoff and report that dependency as pending rather than inventing clearance.
+
+On a material discrepancy, preserve the result and stop dependent work. On clearance, record this repair's bounded acceptance and proceed directly below. Do not convert that acceptance into a new full Stage A acceptance or an unseen Stage B pass.
+
+3. Declare the workflow-evolution cases before model calls
+
+Use tournament first, then software. They are known cases. Do not repeat two fresh onboarding interviews or choose additional business domains.
+
+Recover the original planned add/remove requirements. If an operation was never specified precisely, define a small explicitly synthetic evolution scenario before testing, using only the existing supported schema/effects. Record its input, intended scope, eligibility, exact quotas/history meaning, human review, receipt mode and expected differences. Label it as a newly specified known-case extension, not the unchanged original plan.
+
+A meaningful added behavior is a distinct supported business outcome, not another name for the existing rule. Removing a behavior removes permission to request that outcome; it does not delete business records or remove one required leg of software's atomic candidate/slot operation.
+
+Preflight enough distinct eligible subjects and the actual remaining approval history before scheduling requests. Use matching saved source/ledger state. Do not seed original rows beside a post-effect ledger, edit timestamps, reset allowances or change business facts midway to obtain an eligible request. Any necessary synthetic fixture additions must be separate, minimal, recorded and fixed before the trial; existing original rows and policies remain preserved.
+
+Prepare a narrow expected-difference record for each planned business change. Legitimate new operator requirements in an evolution scenario are allowed and must be explicitly reviewed. They are not retrospective corrections to the original accepted policy or evidence.
+
+4. Complete the repaired assisted job's ordinary deployment
+
+Use an owned copy of the latest completed assisted BUSINESS-review checkpoint with its matching 104-row source state. Resume through the public model-assisted path. Preserve its exact original absent-selector program until an explicitly requested evolution is reviewed.
+
+Finish the existing deployment requirements: exact Read/Action reviews, Runner-ledger receipt selection, generated narrow writer handoff, separately authorized administrator application in the owned fixture, rescan/revalidation, execution review, reviewed local client and supervised worker setup.
+
+Those obligations are genuinely pending, not waived by business_review_ready. Renew evidence/reviews where their dependencies changed, but do not rewrite business logic solely to repair infrastructure or ask for unchanged meanings without a reason.
+
+Obtain an eligible request through the actual four-tool client, execute it through the normal supervised worker, and verify the stored canonical receipt and independent source readback. Include one valid-human-review and one invalid control using distinct appropriate subjects. An approval or handshake is not completion.
+
+Record independent observation as test evidence; do not mark it verified inside authoring unless an existing legitimate application evidence/attestation operation actually establishes that state. The visible privacy-verification warning must also be handled according to its actual contract, not silently cleared by the test harness.
+
+If deployment surfaces a new product blocker, preserve the precise state and stop that path without starting a repair. The independent software path may continue within budget.
+
+5. Exercise add/remove through the authoring assistant
+
+For each prepared job, use ordinary business-language requests and the existing public reviews. Read-only exports are permitted for verification; hand-edited JSON, internal setters or supplied finished authority cannot substitute for model-assisted authoring.
+
+Keep one runtime client connected through the claimed editing sequence when its connection configuration is unchanged. If a genuinely necessary identity/configuration review changes the connection contract, report and perform the required step rather than suppressing it or claiming same-client continuity that did not occur.
+
+For tournament, continue from its newly working assisted job. For software, restore its already-working job with the matching post-effect source and receipt state, validate the current bindings and demonstrate current baseline operation without another full interview. Preserve its source_db requirement, private check collection and atomic original effect.
+
+For BOTH cases:
+
+Ask the assistant to add the predeclared supported behavior while retaining unrelated existing rules.
+
+Inspect the exact disabled difference; pause/save/restart once during one case's edit. Existing live authority must not change merely because a draft was saved.
+
+Complete the required authority/deployment reviews, including any real narrow writer/receipt prerequisite for the new outcome.
+
+Verify the new behavior is discoverable and that a valid request follows its declared approval path. Obtain an actual permitted execution and the required receipt/readback where the plan requires execution. A discovery-only result does not demonstrate the added operation works.
+
+Ask the assistant to remove that added behavior, preserving the original operation, reads, history and receipts. Complete the exact removal/publication steps.
+
+Verify new requests for the removed behavior are unavailable, the original behavior and allowed reads still work, and restart does not resurrect the removed behavior or its generated pending instruction.
+
+Inspect old pending/unstarted work under the existing revision/dispatch contract. Preserve prior approvals, receipts and counted history. Do not delete historical decisions, refund capacity, auto-retarget or requeue work as part of removal.
+
+Do not automatically insist on byte-identical wrappers or no renewed reviews when a legitimate dependency changed. Compare business meaning, permissions and exact historical records, documenting permitted review/lifecycle metadata changes separately.
+
+6. Explicitly check the conditional counting proof during evolution
+
+This is a required part of the tournament evolution, not another argument about the original selector decision.
+
+The current absent-selector proof is valid under a complete single-outcome domain. Preparing or adding another relevant outcome may invalidate that condition. Observe the actual candidate/domain change through normal authoring, review, status and publication preparation. The product must not reuse the old proof as unconditional approval of the new multi-outcome program.
+
+A precise new counting-scope question caused by a real domain change is legitimate. It is different from repeatedly asking the old settled question on an unchanged job. Use the predeclared evolution requirements to answer through normal operator review. Do not add selectors, widen a budget's meaning or mark an override accepted silently. If the existing public route cannot express the required new decision, report that exact limitation rather than hand-editing the rule.
+
+Keep the stages distinct: review detects the changed condition; the operator resolves any genuinely new requirement; the revised program and its evidence are validated; separate publication follows. Correctly blocking a stale proof is a passed negative check but not successful completion of add/remove.
+
+When the added outcome is removed, do not assume its previous automatic approvals disappear from history or that equivalence automatically returns. Re-evaluate the actual retained domain and accounting contract. The original filtered tournament and software programs are separate controls, not evidence that unfiltered counting is always equivalent.
+
+Do not relax the selector-preservation guard, erase a condition, or manufacture an empty history/domain to advance.
+
+7. Measure user effort and report the actual qualification scope
+
+The initial operator should rely on the ordinary policy/owner facts, product prompts and public documentation. Keep implementation debugging separate. Necessary operator decisions and administrator work are allowed; internal-code guidance, special correction sentences and engineering recovery are separately disclosed.
+
+Use the existing configured authoring provider and real runtime client with normal disclosure and secret handling. Keep credentials, concrete trusted identities and private source rows out of authoring. No provider switch or repeated opinion sampling to find a favorable run.
+
+Declare finite reviewer, deployment, authoring-edit and runtime budgets before starting, reserving enough for removal and restart. Count failed transports and all retries. Distinguish setup, add and remove calls; repeated unchanged decisions; exact-review effort; navigation detours; administrator work; and engineering help. Measure time-to-draft and time-to-working-change where possible; unknown hands-on time stays unknown. One-call saved-review recovery is not a measurement of full onboarding speed.
+
+This is not the entire new Stage B qualification. Preserve the original scorecard and mark each previously unrun add/remove row only with the evidence actually obtained. Other case-specific concurrency/privacy and fresh-installation receipt-failure checks remain visible if not exercised here. Prior engine/Stage A results remain labeled by artifact and topology, not copied into new rows as fresh observations.
+
+Do not rerun the full unchanged product suite or rebuild the package solely because a report/harness commit is new. Run harness checks appropriate to actual changes, and reverify the frozen artifact before/after application trials.
+
+8. Failure handling, delivery and stopping point
+
+No product-code or product-prompt repairs during this qualification. A concrete harness mistake may receive one bounded correction with its original attempt preserved and assertions intact. Stop the affected path on a demonstrated product failure; retain the minimal reproduction and actual installed state. Independent safe checks may finish within budget. No third case or endless restart loop.
+
+Keep the four runtime tools, exact consent/reviews, scoped identity, privacy, accounting, publication coordination, narrow writers, receipt modes and dispatch semantics. No new signed headless-counter feature, worker recovery project, UI framework, runtime grammar or production authentication work.
+
+Deliver:
+
+Independent review's actual verdict and scope.
+
+Repaired assisted job's deployment/execution result.
+
+Model-assisted add/remove results for each known case, with semantic differences, current runtime outcomes, history and receipt evidence.
+
+What happened to the conditional counting proof before addition and after removal.
+
+Measured effort and disclosed assistance.
+
+A compact per-artifact coverage map separating completed repairs, known-case lifecycle checks and remaining unseen qualification.
+
+Do not relabel the original failed Stage B as passed. If this milestone succeeds, recommend a separately authorized fresh two-layout Stage B attempt on an unchanged candidate; do not start it here. If it fails, propose at most two evidence-supported next decisions without implementing them.
+
+Save owned logs, database state and exact commands for the verifier before cleanup. Stop only owned resources and verify original evidence and installation unchanged. Commit only intended test/harness/report changes and push only to the verified private backup remote. No public publication or deployment.
+
+Then STOP for review.

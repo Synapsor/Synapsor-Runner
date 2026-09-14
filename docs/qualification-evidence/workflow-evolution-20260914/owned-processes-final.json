@@ -1,0 +1,72 @@
+{
+  "at": "2026-09-14T17:30:02.981307+00:00",
+  "records": [
+    {
+      "run": "recovery-tournament-assisted",
+      "owned_pids": [
+        2179590,
+        2179779,
+        2186337,
+        2186483,
+        2188305,
+        2188433,
+        2189100,
+        2189240,
+        2190759,
+        2193678,
+        2196811,
+        2197050,
+        2214312,
+        2214494
+      ],
+      "remaining": [],
+      "mcp_exits": [
+        {
+          "at": "2026-09-14T17:13:17.075Z",
+          "event": "mcp_exit",
+          "code": 0,
+          "signal": null
+        }
+      ],
+      "worker_exits": [
+        {
+          "code": 0,
+          "signal": null
+        }
+      ]
+    },
+    {
+      "run": "recovery-software",
+      "owned_pids": [
+        2222768,
+        2222973,
+        2224183,
+        2224283,
+        2229219,
+        2232411,
+        2232495,
+        2233478,
+        2233578,
+        2235269,
+        2237636,
+        2237811
+      ],
+      "remaining": [],
+      "mcp_exits": [
+        {
+          "at": "2026-09-14T17:27:03.535Z",
+          "event": "mcp_exit",
+          "code": 0,
+          "signal": null
+        }
+      ],
+      "worker_exits": [
+        {
+          "code": 0,
+          "signal": null
+        }
+      ]
+    }
+  ],
+  "unrelated_processes_untouched": true
+}

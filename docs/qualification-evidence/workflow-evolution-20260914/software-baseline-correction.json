@@ -1,0 +1,11 @@
+{
+  "at": "2026-09-14T17:14:32.271140+00:00",
+  "type": "pre-runtime measurement correction",
+  "original_assumption": "active automatic threshold60 and B03 current-contract approval",
+  "observed": "active threshold50, same prepared baseline policy:41f7c0475cb6ae357ec96f10fcc4c64518b8897d469233ca3f6f92deb70ac6f7",
+  "historical_source": "docs/qualification-evidence/saved-job-recovery-20260913/FINAL-REPORT.md",
+  "fixture_mutations": 0,
+  "provider_calls": 0,
+  "worker_runs": 0,
+  "next": "Review/install current client; issue fresh current-policy B04 with human review because history retains three automatic approvals."
+}

@@ -1,0 +1,20 @@
+{
+  "original_rule_exactly_retained": false,
+  "added_outcome": "league.result_withdrawal",
+  "source_rows_unchanged_since_actual_baseline_execution": true,
+  "durable_proposals_approvals_queue_receipts_unchanged": true,
+  "read_action_execution_active_pointers_unchanged": true,
+  "disabled_program_change_keys": [
+    "action_boundary",
+    "rules",
+    "approval_classes",
+    "digest"
+  ],
+  "original_rule_business_fields_exactly_retained": true,
+  "permitted_rule_metadata_change": {
+    "field": "activated_at",
+    "before": "2026-09-14T01:30:08.850Z",
+    "after": "2026-09-14T17:01:38.528Z",
+    "note": "compiled draft field timestamp; no active pointer change"
+  }
+}

@@ -1,0 +1,142 @@
+{
+  "at": "2026-09-14T17:30:24.935999+00:00",
+  "results": [
+    {
+      "command": [
+        "node",
+        "--check",
+        "docs/qualification-evidence/workflow-evolution-20260914/known-runtime.mjs"
+      ],
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "command": [
+        "node",
+        "--check",
+        "docs/qualification-evidence/workflow-evolution-20260914/live-client.mjs"
+      ],
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "command": [
+        "node",
+        "--check",
+        "docs/qualification-evidence/workflow-evolution-20260914/phase-budget.mjs"
+      ],
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "command": [
+        "node",
+        "--check",
+        "docs/qualification-evidence/workflow-evolution-20260914/preflight-known.mjs"
+      ],
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "command": [
+        "node",
+        "--check",
+        "docs/qualification-evidence/workflow-evolution-20260914/prepare-known-run.mjs"
+      ],
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "command": [
+        "node",
+        "--check",
+        "docs/qualification-evidence/workflow-evolution-20260914/provision-known-writer.mjs"
+      ],
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "command": [
+        "node",
+        "--check",
+        "docs/qualification-evidence/workflow-evolution-20260914/run-known-command.mjs"
+      ],
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "command": [
+        "node",
+        "--check",
+        "docs/qualification-evidence/workflow-evolution-20260914/run-public-known.mjs"
+      ],
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "command": [
+        "node",
+        "--check",
+        "docs/qualification-evidence/workflow-evolution-20260914/snapshot-known-run.mjs"
+      ],
+      "exit": 0,
+      "output": ""
+    },
+    {
+      "command": [
+        "python3",
+        "compile-without-writing-pyc",
+        "docs/qualification-evidence/workflow-evolution-20260914/inspect-tournament-add.py"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "python3",
+        "compile-without-writing-pyc",
+        "docs/qualification-evidence/workflow-evolution-20260914/prepare-known-client.py"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "python3",
+        "compile-without-writing-pyc",
+        "docs/qualification-evidence/workflow-evolution-20260914/preserve.py"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "python3",
+        "compile-without-writing-pyc",
+        "docs/qualification-evidence/workflow-evolution-20260914/record-software-stop.py"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "python3",
+        "compile-without-writing-pyc",
+        "docs/qualification-evidence/workflow-evolution-20260914/record-tournament-stop.py"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "python3",
+        "compile-without-writing-pyc",
+        "docs/qualification-evidence/workflow-evolution-20260914/save-stop-owned.py"
+      ],
+      "exit": 0
+    },
+    {
+      "command": [
+        "python3",
+        "compile-without-writing-pyc",
+        "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/workflow-evolution-20260914/verify-evidence.py"
+      ],
+      "exit": 0
+    }
+  ]
+}

@@ -1,0 +1,64 @@
+{
+  "assignment": "Accepted mixed-counting repair; known-case deployment and model-assisted workflow addition/removal",
+  "started_at": "2026-09-14T16:46:24.104797+00:00",
+  "baseline": "37ec677e641762f1031561bca1aeb9e5448b6ec9",
+  "branch": "codex/tui-safe-action-control-plane",
+  "owned_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/workflow-evolution-37ec677-20260914",
+  "evidence_root": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/workflow-evolution-20260914",
+  "previous_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mixed-counting-review-b655769-20260914",
+  "previous_evidence": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mixed-counting-review-20260914",
+  "frozen_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mixed-counting-review-b655769-20260914/frozen",
+  "artifact_tree": "aff01e8be77d65e614f8b6b283b1692b1a4e663d0240cac2ff9c09a5e2957008",
+  "trial_harness_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/trial-harness",
+  "original_cases_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases",
+  "acceptance": "PASS: independent Claude acceptance, narrow repair only",
+  "acceptance_report": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/mixed-counting-acceptance-20260914/ACCEPTANCE.md",
+  "budgets": {
+    "overall_minutes": 250,
+    "acceptance_identity_minutes": 10,
+    "fixture_preparation_minutes": 40,
+    "deployment_minutes_tournament": 60,
+    "software_baseline_minutes": 30,
+    "evolution_minutes_per_case": 65,
+    "runtime_minutes_per_case": 90,
+    "closure_minutes": 20,
+    "authoring_calls_per_case": 50,
+    "authoring_allocations": {
+      "setup": 12,
+      "add": 22,
+      "remove": 12,
+      "restart_reserved": 4
+    },
+    "runtime_tool_calls_per_case": 60,
+    "worker_invocations_per_case": 3,
+    "harness_corrections_per_demonstrated_mistake": 1,
+    "product_repairs": 0,
+    "full_suite_launches": 0,
+    "builds": 0
+  },
+  "scope": "verification only; product/prompts/dependencies/validators immutable; no fresh interviews, no new domains; explicitly predeclare small synthetic add/remove scenario if original requirement absent",
+  "known_open_worker": "TRUSTED_BINDING_MISSING worker-retry classification; record if reached, no repair/requeue/refund",
+  "stage_b": "original NOT PASSED",
+  "status": "CLOSED_FOR_REVIEW_WITH_BLOCKED_EVOLUTION_ROWS",
+  "next_step": "No further runs. Separate decisions in FINAL-REPORT; final private delivery only.",
+  "case_sources": {
+    "recovery-tournament-assisted": {
+      "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mixed-counting-review-b655769-20260914",
+      "run": "recovery-tournament-assisted",
+      "checkpoint": "after-recheck",
+      "case": "tournament-ratification"
+    },
+    "recovery-software": {
+      "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913",
+      "run": "recovery-software",
+      "checkpoint": "final-focused-review",
+      "case": "software-release-sealing"
+    }
+  },
+  "prelaunch_budget_amendment": {
+    "at": "2026-09-14T16:48:46.324788+00:00",
+    "provider_calls_already_spent": 0,
+    "change": "Runtime wall ceiling 25 -> 90 minutes because one persistent client must span the 65-minute add/remove schedule; overall250min, authoring calls and all other ceilings unchanged."
+  },
+  "checks_finished_at": "2026-09-14T17:35:38.239719+00:00"
+}

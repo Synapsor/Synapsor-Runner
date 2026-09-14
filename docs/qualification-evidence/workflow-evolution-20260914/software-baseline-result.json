@@ -1,0 +1,18 @@
+{
+  "artifact_tree": "aff01e8be77d65e614f8b6b283b1692b1a4e663d0240cac2ff9c09a5e2957008",
+  "status": "passed_baseline_source_db_execution",
+  "proposal": "wrp_rule_9ee4a4e6270fb6b8cfecee506c86ef38",
+  "active_threshold_seconds": 50,
+  "human_approval": true,
+  "worker_exit": 0,
+  "rows_changed": 2,
+  "other502_business_rows_unchanged": true,
+  "receipt_sha256": "4f9bf5974ee3f3d08600cbeccd76ba309d1c823beb451235a4f2825adaf0ffbb",
+  "source_receipts_before": 1,
+  "source_receipts_after": 2,
+  "prior_source_receipt_retained": true,
+  "approval_history_unchanged_by_execution": true,
+  "replay": "completed_verified_receipt",
+  "new_rollback_test": "not_run; not claimed",
+  "known_worker_bug": "not observed"
+}

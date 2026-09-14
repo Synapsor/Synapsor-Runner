@@ -1,0 +1,19 @@
+{
+  "note": "Exact failed inspection operations are recorded here; no product state was altered by them. Raw fixture/call evidence remains in the indexed stopped states. Each received one bounded correction.",
+  "errors": [
+    {
+      "operation": "software disabled diff compared a.rules[0] with b.rules[0]",
+      "observed": "AssertionError; changes verification_boundary/effect_envelope/rule/activated_at",
+      "cause": "retire_unused_slot sorts before seal_candidate",
+      "corrected": "compare exact outcome and approval-class IDs; only activated_at differs for original rule",
+      "result": "PASS on same unchanged saved program"
+    },
+    {
+      "operation": "assert doc['receipt_hash']==receipt['result_hash']",
+      "observed": "AssertionError; source ab37f7\u2026 versus control897831\u2026",
+      "cause": "distinct documented hash inputs",
+      "corrected": "separate hashes, matching semantic proof, independently recomputed control canonical core, exact source rows",
+      "result": "PASS on same unchanged receipt/source records"
+    }
+  ]
+}

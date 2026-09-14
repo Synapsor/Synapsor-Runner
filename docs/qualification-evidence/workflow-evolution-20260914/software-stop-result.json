@@ -1,0 +1,91 @@
+{
+  "artifact_tree": "aff01e8be77d65e614f8b6b283b1692b1a4e663d0240cac2ff9c09a5e2957008",
+  "verdict": "ADDITION_PUBLISHED_BUT_PUBLIC_SUBJECT_PREREQUISITE_BLOCKED",
+  "baseline_execution": "PASS: fresh current-policy B04, public human approval, actual2-row source_db execution and replay",
+  "old_source_receipt_retained": true,
+  "baseline_receipt": {
+    "canonical_control_receipt_bytes_sha256": "4f9bf5974ee3f3d08600cbeccd76ba309d1c823beb451235a4f2825adaf0ffbb",
+    "source_result_hash": "sha256:ab37f7dea04c52014d9f2c43caadb2b5b438c024d945d6a705e9f571954336f8",
+    "source_status": "applied",
+    "source_created_at": "2026-09-14T17:18:39.043Z",
+    "control_document_receipt_hash": "sha256:89783196f1721cdfd8835d5d8ab8e826e7f7c94f4cd60f7e69729e9cc35480ba",
+    "hashes_have_distinct_contracts": true
+  },
+  "add_authoring_calls": 11,
+  "calls": {
+    "authoring_pipeline_and_coverage": 9,
+    "execution_permission_explanations": 2
+  },
+  "authority_before": {
+    "management:read_selection": "policy:0bd56b95268f1bfc4356f205f7ff572ecbbfa1dd4fb7dbb9467272eff61685d8",
+    "management:read_authoring": "policy:637ec924777883a4ab21fb73617784f9f13ce542045e511b07aa2a7af0b00caf",
+    "read:reviewed_staging": "policy:aab58322e968d1275ee0ac1d3969a33bfb0b3cd64b7b11db0466105cb9972c73",
+    "action:reviewed_staging_rules": "policy:41f7c0475cb6ae357ec96f10fcc4c64518b8897d469233ca3f6f92deb70ac6f7",
+    "management:semantic_receipts_49b457c7c7ca29d9947c5f9da542ac092087ed7a45e8ef3797f45a5bc1f80ba4": "policy:821012b1def326bc2e33f8908f410e90edaee70cad806260aced97ddb5dc24fc",
+    "execution:supervised_worker": "policy:8557f6307ad89d8ee5db07cdee7ce30cdd62f202afd0e46c7621dfda1fc68804"
+  },
+  "authority_after": {
+    "management:read_selection": "policy:0bd56b95268f1bfc4356f205f7ff572ecbbfa1dd4fb7dbb9467272eff61685d8",
+    "management:read_authoring": "policy:637ec924777883a4ab21fb73617784f9f13ce542045e511b07aa2a7af0b00caf",
+    "read:reviewed_staging": "policy:aab58322e968d1275ee0ac1d3969a33bfb0b3cd64b7b11db0466105cb9972c73",
+    "action:reviewed_staging_rules": "policy:633f6f7e5f7bea143b3e20b147806b635a8b1f5cba3371953d146f2bd839af12",
+    "management:semantic_receipts_49b457c7c7ca29d9947c5f9da542ac092087ed7a45e8ef3797f45a5bc1f80ba4": "policy:821012b1def326bc2e33f8908f410e90edaee70cad806260aced97ddb5dc24fc",
+    "execution:supervised_worker": "policy:a406da2e286d92b99f991383755656b38e60c6ed1e861cb7527441247239cbc2",
+    "management:semantic_receipts_74c5acadf4fe34209fdbe11454e027c2b6abc0ac05c5ecffa17dc507d7d3176c": "policy:93238f5db96e93cf07343d1b4b7c7cda23173a8ca494ec4e98a7a596fc0982d3"
+  },
+  "execution_outcomes": [
+    {
+      "outcome": "release_ops.seal_candidate",
+      "concurrency": 1,
+      "max_attempts": 5,
+      "action_boundary_digest": "sha256:f9c348b5bdbfa69dc0a5313e8de086e82fef7be28b732c0bbaf7bb715aeb90c6",
+      "writer_posture_fingerprint": "sha256:c58844a92eb69286b40eda33c6186f17d8b0f9e04af75ba29692169eccf6afd5"
+    },
+    {
+      "outcome": "release_ops.retire_unused_slot",
+      "concurrency": 1,
+      "max_attempts": 5,
+      "action_boundary_digest": "sha256:f9c348b5bdbfa69dc0a5313e8de086e82fef7be28b732c0bbaf7bb715aeb90c6",
+      "writer_posture_fingerprint": "sha256:c58844a92eb69286b40eda33c6186f17d8b0f9e04af75ba29692169eccf6afd5"
+    }
+  ],
+  "receipt_mode": {
+    "authority": "source_db",
+    "provisioning": "precreated",
+    "schema": "synapsor_receipts",
+    "table": "synapsor_writeback_receipts"
+  },
+  "published_subject_requirement": [
+    {
+      "binding": "slot",
+      "resource": "release_ops.release_slots",
+      "reference": "opaque Explore subject reference"
+    }
+  ],
+  "public_root_detail_refusal": "EXPLORE_RESOURCE_FORBIDDEN: related-only resource",
+  "permitted_related_read": {
+    "returned_rows": 29,
+    "returned_subject_refs": 29,
+    "subject_resource": "release_ops.build_candidates",
+    "target_refs": 0
+  },
+  "source_receipts_and_history_unchanged_since_baseline_effect": true,
+  "original_read_authority_unchanged": true,
+  "original_after_add_valid_request": "B06 pending_human_review; fourth approval not automatic, existing three automatic records retained",
+  "retirement_proposals": 0,
+  "retirement_execution": "BLOCKED_NO_PUBLIC_SLOT_REFERENCE",
+  "retirement_removal": "NOT_RUN_DEPENDENT_PATH_STOPPED",
+  "old_unstarted_work": "Two historical superseded approvals stayed queued with zero attempts during baseline worker; no refund/rewrite. No removal-specific old retirement was prepared.",
+  "same_runtime_process": 2229219,
+  "checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/workflow-evolution-37ec677-20260914/runs/recovery-software/checkpoints/final-stopped",
+  "bounded_read_only_trace": [
+    "apps/runner/src/scoped-explore.ts:1285 issues refs for plan.resource only",
+    "apps/runner/src/scoped-explore.ts:5943 refuses relationship_only query roots"
+  ],
+  "not_claimed": [
+    "No fabricated or internally issued slot reference",
+    "No unauthorized source write observed",
+    "No new receipt-failure/rollback or concurrency qualification",
+    "No general impossibility claim for other authored subject structures"
+  ]
+}

@@ -1,0 +1,282 @@
+{
+  "recovery-tournament-assisted": {
+    "artifact_tree": "aff01e8be77d65e614f8b6b283b1692b1a4e663d0240cac2ff9c09a5e2957008",
+    "source_counts": {
+      "events": 8,
+      "results": 96
+    },
+    "matching_project_and_source_checkpoint": {
+      "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mixed-counting-review-b655769-20260914",
+      "run": "recovery-tournament-assisted",
+      "checkpoint": "after-recheck",
+      "case": "tournament-ratification"
+    },
+    "eligible_subject_preflight": [
+      {
+        "result_ref": "primary-R01",
+        "stage": "qualifying",
+        "winner_game_wins": 2,
+        "loser_game_wins": 1,
+        "result_state": "finished",
+        "integrity_hold": false,
+        "version": 1,
+        "event_open": true
+      },
+      {
+        "result_ref": "primary-R17",
+        "stage": "championship",
+        "winner_game_wins": 2,
+        "loser_game_wins": 1,
+        "result_state": "finished",
+        "integrity_hold": false,
+        "version": 1,
+        "event_open": true
+      },
+      {
+        "result_ref": "primary-R18",
+        "stage": "qualifying",
+        "winner_game_wins": 1,
+        "loser_game_wins": 1,
+        "result_state": "finished",
+        "integrity_hold": false,
+        "version": 1,
+        "event_open": true
+      },
+      {
+        "result_ref": "primary-R23",
+        "stage": "qualifying",
+        "winner_game_wins": 2,
+        "loser_game_wins": 1,
+        "result_state": "finished",
+        "integrity_hold": false,
+        "version": 1,
+        "event_open": true
+      },
+      {
+        "result_ref": "primary-R24",
+        "stage": "qualifying",
+        "winner_game_wins": 2,
+        "loser_game_wins": 1,
+        "result_state": "finished",
+        "integrity_hold": false,
+        "version": 1,
+        "event_open": true
+      }
+    ],
+    "durable_counts": {
+      "proposals": 0,
+      "approvals": 0,
+      "worker_queue": 0,
+      "writeback_receipts": 0
+    },
+    "proposals": [],
+    "worker_queue": [],
+    "approvals": [],
+    "automatic_count_observed_at": "2026-09-14T16:51:50.890747+00:00",
+    "receipt_modes_from_review": "runner_ledger",
+    "no_fixture_extension_needed": true,
+    "rows_or_authority_modified": false
+  },
+  "recovery-software": {
+    "artifact_tree": "aff01e8be77d65e614f8b6b283b1692b1a4e663d0240cac2ff9c09a5e2957008",
+    "source_counts": {
+      "release_slots": 116,
+      "build_candidates": 116,
+      "build_checks": 272
+    },
+    "matching_project_and_source_checkpoint": {
+      "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/attached-policy-reconciliation-9ca8a48-20260913",
+      "run": "recovery-software",
+      "checkpoint": "final-focused-review",
+      "case": "software-release-sealing"
+    },
+    "eligible_subject_preflight": [
+      {
+        "candidate_ref": "primary-B03",
+        "candidate_state": "staged",
+        "security_hold": false,
+        "version": 1,
+        "slot_state": "ready"
+      },
+      {
+        "candidate_ref": "primary-B04",
+        "candidate_state": "staged",
+        "security_hold": false,
+        "version": 1,
+        "slot_state": "ready"
+      },
+      {
+        "candidate_ref": "primary-B28",
+        "candidate_state": "staged",
+        "security_hold": false,
+        "version": 1,
+        "slot_state": "ready"
+      },
+      {
+        "candidate_ref": "primary-B29",
+        "candidate_state": "staged",
+        "security_hold": false,
+        "version": 1,
+        "slot_state": "ready"
+      },
+      {
+        "candidate_ref": "primary-B01",
+        "candidate_state": "sealed",
+        "security_hold": false,
+        "version": 2,
+        "slot_state": "consumed"
+      }
+    ],
+    "durable_counts": {
+      "proposals": 5,
+      "approvals": 3,
+      "worker_queue": 3,
+      "writeback_receipts": 1
+    },
+    "proposals": [
+      {
+        "id": "wrp_rule_d7fa9b3a91963159fab334011f0a97de",
+        "state": "applied",
+        "capability": "release_ops.seal_candidate",
+        "object_id": "cdf6c2f4-6c07-4003-8cc3-145a3c8f3eea"
+      },
+      {
+        "id": "wrp_rule_7158ce3a7c71c2ae5c5ada95f40ebf59",
+        "state": "pending_review",
+        "capability": "release_ops.seal_candidate",
+        "object_id": "62d2c0df-5d48-4dd9-b0a1-001fc50fcc80"
+      },
+      {
+        "id": "wrp_rule_6428d557b3ab620a8c6ee12d5f617850",
+        "state": "approved",
+        "capability": "release_ops.seal_candidate",
+        "object_id": "0323419e-621b-4849-bdc0-a8c28fd29849"
+      },
+      {
+        "id": "wrp_rule_132b396afd2f82c9e12540e575786891",
+        "state": "pending_review",
+        "capability": "release_ops.seal_candidate",
+        "object_id": "9f591709-f268-4328-875e-b226c4eff6de"
+      },
+      {
+        "id": "wrp_rule_2fd165ad92443f28c19f0b464f8cfaf1",
+        "state": "approved",
+        "capability": "release_ops.seal_candidate",
+        "object_id": "dbf8dced-5c52-4662-9a14-e66838e9e69c"
+      }
+    ],
+    "worker_queue": [
+      {
+        "proposal_id": "wrp_rule_d7fa9b3a91963159fab334011f0a97de",
+        "status": "completed",
+        "execution_mode": "supervised_worker",
+        "contract_digest": "sha256:d73691ab2a054255134579a5aaa50201e2303bd8a9845dbed9d5636bffc59710",
+        "cancellation_control_role": null,
+        "cancellation_control_role_present": 1,
+        "attempts": 1,
+        "max_attempts": 5,
+        "next_attempt_at": "2026-09-13T21:25:29.830Z",
+        "lease_owner": null,
+        "lease_id": null,
+        "lease_expires_at": null,
+        "last_error_code": null,
+        "terminal_outcome": "applied",
+        "created_at": "2026-09-13T21:25:29.830Z",
+        "updated_at": "2026-09-13T21:26:09.752Z"
+      },
+      {
+        "proposal_id": "wrp_rule_6428d557b3ab620a8c6ee12d5f617850",
+        "status": "queued",
+        "execution_mode": "supervised_worker",
+        "contract_digest": "sha256:d73691ab2a054255134579a5aaa50201e2303bd8a9845dbed9d5636bffc59710",
+        "cancellation_control_role": null,
+        "cancellation_control_role_present": 1,
+        "attempts": 0,
+        "max_attempts": 5,
+        "next_attempt_at": "2026-09-13T21:26:47.025Z",
+        "lease_owner": null,
+        "lease_id": null,
+        "lease_expires_at": null,
+        "last_error_code": null,
+        "terminal_outcome": null,
+        "created_at": "2026-09-13T21:26:47.025Z",
+        "updated_at": "2026-09-13T21:26:47.025Z"
+      },
+      {
+        "proposal_id": "wrp_rule_2fd165ad92443f28c19f0b464f8cfaf1",
+        "status": "queued",
+        "execution_mode": "supervised_worker",
+        "contract_digest": "sha256:e6910aa733e2ba0cfcc36c75180f760de624ec102a1ea3afae2cc13db2bf6f42",
+        "cancellation_control_role": null,
+        "cancellation_control_role_present": 1,
+        "attempts": 0,
+        "max_attempts": 5,
+        "next_attempt_at": "2026-09-13T21:32:08.828Z",
+        "lease_owner": null,
+        "lease_id": null,
+        "lease_expires_at": null,
+        "last_error_code": null,
+        "terminal_outcome": null,
+        "created_at": "2026-09-13T21:32:08.828Z",
+        "updated_at": "2026-09-13T21:32:08.828Z"
+      }
+    ],
+    "approvals": [
+      {
+        "approval_id": 1,
+        "proposal_id": "wrp_rule_d7fa9b3a91963159fab334011f0a97de",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:bfd5b4c9bfe2f6d2f8b87d36689a99af641ab6035f58f6a3175021f4c73ba3ec",
+        "approver": "policy:release_ops.seal_candidate_approval",
+        "status": "approved",
+        "reason": "Exact semantic Action Rule and reviewed automatic-approval policy matched current authoritative facts.",
+        "identity_json": null,
+        "decision_hash": null,
+        "signature": null,
+        "integrity_hash": null,
+        "freshness_proof_digest": null,
+        "action_boundary_name": "reviewed_staging_actions",
+        "action_boundary_digest": "sha256:d73691ab2a054255134579a5aaa50201e2303bd8a9845dbed9d5636bffc59710",
+        "created_at": "2026-09-13T21:25:29.790Z"
+      },
+      {
+        "approval_id": 2,
+        "proposal_id": "wrp_rule_6428d557b3ab620a8c6ee12d5f617850",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:280f8bd328c957048230b18e5966dc7065e3ba2ae24167436841fd233fb4f3f3",
+        "approver": "policy:release_ops.seal_candidate_approval",
+        "status": "approved",
+        "reason": "Exact semantic Action Rule and reviewed automatic-approval policy matched current authoritative facts.",
+        "identity_json": null,
+        "decision_hash": null,
+        "signature": null,
+        "integrity_hash": null,
+        "freshness_proof_digest": null,
+        "action_boundary_name": "reviewed_staging_actions",
+        "action_boundary_digest": "sha256:d73691ab2a054255134579a5aaa50201e2303bd8a9845dbed9d5636bffc59710",
+        "created_at": "2026-09-13T21:26:46.989Z"
+      },
+      {
+        "approval_id": 3,
+        "proposal_id": "wrp_rule_2fd165ad92443f28c19f0b464f8cfaf1",
+        "proposal_version": 1,
+        "proposal_hash": "sha256:a9dca799e317a4227011f11c4df66b9ca1cd897c86c0af6ca6fb50153df380a4",
+        "approver": "policy:release_ops.seal_candidate_approval",
+        "status": "approved",
+        "reason": "Exact semantic Action Rule and reviewed automatic-approval policy matched current authoritative facts.",
+        "identity_json": null,
+        "decision_hash": null,
+        "signature": null,
+        "integrity_hash": null,
+        "freshness_proof_digest": null,
+        "action_boundary_name": "reviewed_staging_actions",
+        "action_boundary_digest": "sha256:e6910aa733e2ba0cfcc36c75180f760de624ec102a1ea3afae2cc13db2bf6f42",
+        "created_at": "2026-09-13T21:32:08.795Z"
+      }
+    ],
+    "automatic_count_observed_at": "2026-09-14T16:51:50.908522+00:00",
+    "receipt_modes_from_review": "source_db",
+    "no_fixture_extension_needed": true,
+    "rows_or_authority_modified": false
+  }
+}

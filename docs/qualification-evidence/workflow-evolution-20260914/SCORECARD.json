@@ -1,0 +1,63 @@
+{
+  "artifact_tree": "aff01e8be77d65e614f8b6b283b1692b1a4e663d0240cac2ff9c09a5e2957008",
+  "original_stage_b": "NOT PASSED",
+  "part2": "INCOMPLETE",
+  "rows": [
+    {
+      "check": "independent review acceptance",
+      "tournament_assisted": "PASS",
+      "software": "PASS"
+    },
+    {
+      "check": "baseline setup and execution/receipt/readback",
+      "tournament_assisted": "PASS",
+      "software": "PASS"
+    },
+    {
+      "check": "human and invalid controls",
+      "tournament_assisted": "PASS",
+      "software": "PASS_WITH_RECORDED_HARNESS_CORRECTION"
+    },
+    {
+      "check": "identical request replay",
+      "tournament_assisted": "PASS",
+      "software": "PASS"
+    },
+    {
+      "check": "model assisted addition drafted",
+      "tournament_assisted": "PASS_DISABLED",
+      "software": "PASS_PUBLISHED"
+    },
+    {
+      "check": "required changed-domain counting evidence",
+      "tournament_assisted": "FAILED_AFTER_INITIAL_CORRECT_REFUSAL",
+      "software": "EXPLICIT_SELECTORS_RETAINED"
+    },
+    {
+      "check": "added behavior permitted execution and receipt",
+      "tournament_assisted": "NOT_RUN_REVIEW_STOP",
+      "software": "BLOCKED_SUBJECT_REFERENCE"
+    },
+    {
+      "check": "edit pause/save/restart",
+      "tournament_assisted": "PASS",
+      "software": "NOT_REPEATED_REQUIREMENT_MET_IN_TOURNAMENT"
+    },
+    {
+      "check": "same runtime client through actual edit",
+      "tournament_assisted": "PASS_DISABLED_ONLY",
+      "software": "PASS_PUBLISHED"
+    },
+    {
+      "check": "removal/publication/refusal/old unstarted/restart",
+      "tournament_assisted": "NOT_RUN_DEPENDENT",
+      "software": "NOT_RUN_DEPENDENT"
+    }
+  ],
+  "still_unrun": [
+    "case-specific concurrency/privacy campaign",
+    "new installed receipt-persistence failure/rollback",
+    "fresh unseen onboarding qualification"
+  ],
+  "known_case_only": true
+}

@@ -1,0 +1,8 @@
+{
+  "initial_attempt": "baseline-invalid-B07",
+  "classification": "harness subject-selection error",
+  "actual_fixture": "B07 has two passed checks total40, staged, no hold, ready slot; legitimately eligible and human pending because budget full",
+  "preservation": "Its new pending proposal is retained; not cancelled or executed",
+  "single_correction": "Use B21, verified failed check plus passed check in unchanged source, as invalid control",
+  "source_mutations": 0
+}

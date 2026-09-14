@@ -1,0 +1,8 @@
+{
+  "initial_assertion": "source result_hash == control document receipt_hash",
+  "result": "failed; assumption conflated distinct hash contracts",
+  "source": "packages/postgres/src/index.ts:1963 hashes job/status/effect/atomic-effects; apps/runner/src/writeback-domain.ts:170 hashes complete control receipt core",
+  "single_correction": "Verify actual source applied record and equal semantic proof, job/proposal linkage; independently recompute control document canonical hash, and record stored byte hash separately. Do not change any receipt or source.",
+  "original_source_result_hash": "sha256:ab37f7dea04c52014d9f2c43caadb2b5b438c024d945d6a705e9f571954336f8",
+  "control_document_receipt_hash": "sha256:89783196f1721cdfd8835d5d8ab8e826e7f7c94f4cd60f7e69729e9cc35480ba"
+}

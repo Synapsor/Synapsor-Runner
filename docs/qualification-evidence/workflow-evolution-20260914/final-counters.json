@@ -1,0 +1,87 @@
+{
+  "recovery-tournament-assisted": {
+    "transport_attempts": 16,
+    "response_complete": 16,
+    "first_provider": "2026-09-14T17:00:42.725Z",
+    "last_provider_complete": "2026-09-14T17:11:32.491Z",
+    "public_starts": 6,
+    "public_exits": [
+      {
+        "at": "2026-09-14T16:54:55.009Z",
+        "code": 0,
+        "signal": null
+      },
+      {
+        "at": "2026-09-14T16:56:20.209Z",
+        "code": 0,
+        "signal": null
+      },
+      {
+        "at": "2026-09-14T16:56:26.639Z",
+        "code": 0,
+        "signal": null
+      },
+      {
+        "at": "2026-09-14T16:56:42.525Z",
+        "code": 0,
+        "signal": null
+      },
+      {
+        "at": "2026-09-14T17:03:31.333Z",
+        "code": 0,
+        "signal": null
+      },
+      {
+        "at": "2026-09-14T17:13:06.625Z",
+        "code": 0,
+        "signal": null
+      }
+    ],
+    "runtime": {
+      "started_at": "2026-09-14T16:57:21.795Z",
+      "deadline": "2026-09-14T18:27:21.795Z",
+      "mcp_calls": 9,
+      "worker_invocations": 1
+    }
+  },
+  "recovery-software": {
+    "transport_attempts": 11,
+    "response_complete": 11,
+    "first_provider": "2026-09-14T17:20:16.168Z",
+    "last_provider_complete": "2026-09-14T17:25:03.648Z",
+    "public_starts": 5,
+    "public_exits": [
+      {
+        "at": "2026-09-14T17:13:13.019Z",
+        "code": 0,
+        "signal": null
+      },
+      {
+        "at": "2026-09-14T17:15:49.802Z",
+        "code": 0,
+        "signal": null
+      },
+      {
+        "at": "2026-09-14T17:17:22.013Z",
+        "code": 0,
+        "signal": null
+      },
+      {
+        "at": "2026-09-14T17:17:49.024Z",
+        "code": 0,
+        "signal": null
+      },
+      {
+        "at": "2026-09-14T17:25:48.912Z",
+        "code": 0,
+        "signal": null
+      }
+    ],
+    "runtime": {
+      "started_at": "2026-09-14T17:15:49.961Z",
+      "deadline": "2026-09-14T18:45:49.961Z",
+      "mcp_calls": 13,
+      "worker_invocations": 1
+    }
+  }
+}

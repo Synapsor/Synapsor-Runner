@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-14T16:46:24.104797+00:00",
+  "verdict": "PASS",
+  "reviewer": "Claude, independent from implementation",
+  "report": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/mixed-counting-acceptance-20260914/ACCEPTANCE.md",
+  "report_sha256": "05ee7edb7860164d250a6c9c42f610c1340609a4bebb3217cba967ba4a6003ff",
+  "scope": "narrow counting review repair, independent 14 probes and 7569-entry artifact walk; inspected durable snapshots and provider accounting",
+  "not_reexecuted": "deployment/execution/receipts/add-remove/Stage B; public review result independently inspected, not a new public model run",
+  "nonblocking_notes": [
+    "broad-only public reference may reject before specific COUNTING_REFERENCE_OVERBROAD diagnostic",
+    "conflict disposition preserves refusal but may swallow precise association error"
+  ],
+  "known_open_excluded": "TRUSTED_BINDING_MISSING worker-retry defect",
+  "part_2_authorized": true
+}

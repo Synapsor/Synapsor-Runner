@@ -1,0 +1,42 @@
+{
+  "at": "2026-09-14T17:30:03.934362+00:00",
+  "records": [
+    {
+      "run": "recovery-software",
+      "container": "synapsor-workflow-recovery-software-3d386cf7",
+      "container_id": "91e0b3fb55ffff3dead254cb831f2a3655f6ada47b9c5b3f3be9bd16f749671c",
+      "label": "workflow-evolution-20260914",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "4caac54b0233d7abb55b53b46afeacdace7c5530bab0272ee9c9b7b0d4062d59",
+        "postgres.log": "fa7c17bb054f64908419bbbea9d1c8737f2bfb10b61ccf0c09518c6f4ec16336",
+        "source.dump": "964634dc25eb3d6acb9ed2c34a7cdbe1f4a22edfd5054de640be59e8bdb06452"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/workflow-evolution-37ec677-20260914/closure/recovery-software",
+      "removed": false
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "container": "synapsor-workflow-recovery-tournament-assisted-4775cb38",
+      "container_id": "431bb2c40f9706c3026f838a4b32d87469bc793bbc6c1e9385021790f9f0cc1d",
+      "label": "workflow-evolution-20260914",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "31c5ef683170369a721c8b54071bf60844f7c51ec58e3d545131b279107cfae1",
+        "postgres.log": "b28d183d595855b137c304d1e354ea0d47114a1a0bf58460bd7acaaed13a6bd3",
+        "source.dump": "0127282389594bb182601e49d6df15724fe290aaabd2efa9fc315d0c4daac3b0"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/workflow-evolution-37ec677-20260914/closure/recovery-tournament-assisted",
+      "removed": false
+    }
+  ],
+  "counts_note": "Actual public CLI and provider invocations retained in each public-invocations.jsonl and meter/events.jsonl. Both finite baseline worker runs completed. No further authoring, runtime request or source execution is scheduled.",
+  "original_containers_touched": false,
+  "fixture_directories_removed": false
+}

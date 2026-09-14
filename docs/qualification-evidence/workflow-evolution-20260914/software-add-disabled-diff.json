@@ -1,0 +1,134 @@
+{
+  "measurement_correction": "First inspection compared array positions0; new outcome sorts before original. Original assertion failure retained; one correction compares exact outcome and approval-class IDs. No authority changes.",
+  "original_business_rule_unchanged": true,
+  "original_approval_unchanged": true,
+  "original_threshold": 50,
+  "source_db_retained": true,
+  "new_rule": {
+    "approval_class": "release_ops.retire_unused_slot_review",
+    "context": "trusted_context",
+    "derive": {},
+    "effect": {
+      "operation": "update",
+      "set": {
+        "slot_state": {
+          "kind": "literal",
+          "value": "retired",
+          "value_type": {
+            "comparison": "exact",
+            "enum": [
+              "consumed",
+              "ready",
+              "retired"
+            ],
+            "kind": "string",
+            "max_length": 8
+          }
+        }
+      },
+      "target_binding": "slot",
+      "target_resource": "release_ops.release_slots"
+    },
+    "effect_envelope_ref": "release_ops.retire_unused_slot.effect",
+    "name": "release_ops.retire_unused_slot",
+    "outcome": "release_ops.retire_unused_slot",
+    "require": {
+      "kind": "compare",
+      "left": {
+        "binding": "slot",
+        "field": "slot_state",
+        "kind": "field"
+      },
+      "operator": "eq",
+      "right": {
+        "kind": "literal",
+        "value": "ready",
+        "value_type": {
+          "comparison": "exact",
+          "enum": [
+            "consumed",
+            "ready",
+            "retired"
+          ],
+          "kind": "string",
+          "max_length": 8
+        }
+      }
+    },
+    "schema_version": "synapsor.action-rule.v1",
+    "source": "local_postgres",
+    "subjects": [
+      {
+        "binding": "slot",
+        "input": "opaque_subject_ref",
+        "resource": "release_ops.release_slots"
+      }
+    ],
+    "ttl_seconds": 300,
+    "verification_boundary_ref": "release_ops.retire_unused_slot.verification",
+    "x-runner-discovery": {
+      "aliases": [
+        "retire release slot",
+        "retire unused slot",
+        "release slot retirement"
+      ],
+      "summary": "Request retirement of a ready release slot assigned to you.",
+      "title": "Retire unused release slot"
+    }
+  },
+  "new_approval": {
+    "name": "release_ops.retire_unused_slot_review",
+    "mode": "human",
+    "rules": [
+      {
+        "outcome": "release_ops.retire_unused_slot"
+      }
+    ],
+    "required_role": "release_supervisor",
+    "required_approvals": 1,
+    "shared_limits": []
+  },
+  "new_envelope": {
+    "allowed_fields": [
+      {
+        "name": "slot_state",
+        "type": {
+          "comparison": "exact",
+          "enum": [
+            "consumed",
+            "ready",
+            "retired"
+          ],
+          "kind": "string",
+          "max_length": 8
+        },
+        "values": [
+          "retired"
+        ]
+      }
+    ],
+    "approval_classes": [
+      "release_ops.retire_unused_slot_review"
+    ],
+    "conflict_key": "version",
+    "max_rows": 1,
+    "name": "release_ops.retire_unused_slot.effect",
+    "operation": "update",
+    "primary_key": "slot_id",
+    "principal_scope_key": "principal_id",
+    "schema_version": "synapsor.derived-effect-envelope.v1",
+    "source": "local_postgres",
+    "target_binding": "slot",
+    "target_resource": "release_ops.release_slots",
+    "tenant_key": "tenant_id",
+    "version_advance": {
+      "column": "version",
+      "strategy": "integer_increment"
+    },
+    "writeback": {
+      "mode": "direct_sql",
+      "supervised_worker": "allowed"
+    }
+  },
+  "disabled_authority_digest": "sha256:7d5eb041fd76142ef44221387eb9ea935a504d85c66a2b0d6b84fce027c532ab"
+}

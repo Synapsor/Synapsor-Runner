@@ -1,0 +1,444 @@
+{
+  "artifact_tree": "aff01e8be77d65e614f8b6b283b1692b1a4e663d0240cac2ff9c09a5e2957008",
+  "verdict": "STOPPED_REVIEW_EVIDENCE_FAILURE_BEFORE_PUBLICATION",
+  "not_a_measured_runtime_miscount": true,
+  "initial_negative": "Initial exact null-versus-ratification comparison refused after two-outcome domain removed singleton interpretation. Both original replies retained.",
+  "new_operator_decision": "For this new two-behavior revision, apply the automatic limits only to ratifications: two per league and six overall in the rolling 24 hours, retaining the existing ratification approval history. Withdrawals always require supervisor review and do not consume or expand those automatic ratification allowances. Keep every other ratification, withdrawal and Read requirement unchanged.",
+  "accepted_counting_passage": {
+    "start": 7,
+    "end": 7,
+    "disposition": "implemented",
+    "interpretation": "The retained null capability selectors count the complete automatic-history domain, which contains only league.result_ratification; withdrawal is human-only with no automatic limits. Thus withdrawals neither consume nor expand the ratification allowances. The operator expressly required the null selectors to remain unchanged and confirmed the two-behavior allocation.",
+    "draft_paths": [
+      "/runner_evidence/actions/league.result_ratification/automatic_limits",
+      "/runner_evidence/actions/league.result_withdrawal/automatic_limits",
+      "/runner_evidence/runtime_contract/approval_counter_selection"
+    ],
+    "operator_clarification": "For this new two-behavior revision, apply the automatic limits only to ratifications: two per league and six overall in the rolling 24 hours, retaining the existing ratification approval history. Withdrawals always require supervisor review and do not consume or expand those automatic ratification allowances. Keep every other ratification, withdrawal and Read requirement unchanged.",
+    "supporting_dependencies_digest": "sha256:e0473cf388f0f5c2cb07752dc8811699da5527b43970ab7d374a0d2d71f669f5",
+    "topic": "Ratification-only automatic allowance",
+    "responsibility": "runner",
+    "issue_kind": "coverage_link",
+    "next_step": "Retain the existing null capability selectors while the complete automatic-outcome domain remains ratification only.",
+    "counter_requirements": [
+      {
+        "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+        "current_capability": null,
+        "required_capability": null,
+        "operator_clarification": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change."
+      },
+      {
+        "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+        "current_capability": null,
+        "required_capability": null,
+        "operator_clarification": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change."
+      }
+    ]
+  },
+  "raw_provider_call_16": [
+    {
+      "name": "runner__review_policy_coverage",
+      "arguments": {
+        "passages": [
+          {
+            "start": 1,
+            "end": 1,
+            "disposition": "background",
+            "interpretation": "Document heading only.",
+            "draft_paths": [],
+            "topic": "Policy heading",
+            "responsibility": "runner",
+            "issue_kind": "coverage_link",
+            "next_step": "No action is required."
+          },
+          {
+            "start": 3,
+            "end": 3,
+            "disposition": "implemented",
+            "interpretation": "Both result and related-event bindings enforce the reviewed tenant and assigned-principal scope on every loaded row, so referees are restricted to their assigned results within their league. The operator clarified that each tenant is one league and each principal is an assigned referee.",
+            "draft_paths": [
+              "/runner_evidence/actions/league.result_ratification/scoped_bindings",
+              "/runner_evidence/actions/league.result_withdrawal/scoped_bindings",
+              "/runner_evidence/read_access/tournament_ops.results",
+              "/runner_evidence/read_access/tournament_ops.events"
+            ],
+            "operator_message_id": 3,
+            "topic": "Assigned referee and league scope",
+            "responsibility": "runner",
+            "issue_kind": "coverage_link",
+            "next_step": "Retain the reviewed tenant and principal bindings in both outcomes and Reads."
+          },
+          {
+            "start": 3,
+            "end": 3,
+            "disposition": "needs_decision",
+            "interpretation": "The reviewed record scope is prepared, but authenticated-session wiring to the reviewed tenant and principal bindings is not yet verified.",
+            "draft_paths": [
+              "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+            ],
+            "topic": "Authenticated referee identity",
+            "responsibility": "deployment",
+            "issue_kind": "missing_configuration",
+            "next_step": "After authority review, configure and verify authenticated-session identity for the reviewed tenant and principal bindings.",
+            "deployment_prerequisite": "authenticated_identity"
+          },
+          {
+            "start": 3,
+            "end": 3,
+            "disposition": "needs_decision",
+            "interpretation": "The client must capture the referee's intended result selection and submit the reviewed subject reference; Runner cannot establish that a person made that selection.",
+            "draft_paths": [
+              "/runner_evidence/runtime_contract/application_obligations/customer_selection"
+            ],
+            "topic": "Referee result selection",
+            "responsibility": "application",
+            "issue_kind": "missing_configuration",
+            "next_step": "Assign the client responsibility for capturing the referee's intended result selection.",
+            "application_obligations": [
+              "customer_selection"
+            ]
+          },
+          {
+            "start": 3,
+            "end": 3,
+            "disposition": "implemented",
+            "interpretation": "Public Read returns result reference, stage, recorded winner and loser game wins, result state, and related event name and operating state; the operator confirmed result_ref is the public human-readable match-result label.",
+            "draft_paths": [
+              "/read",
+              "/runner_evidence/read_access/tournament_ops.results/fields/result_ref",
+              "/runner_evidence/read_access/tournament_ops.results/fields/stage",
+              "/runner_evidence/read_access/tournament_ops.results/fields/winner_game_wins",
+              "/runner_evidence/read_access/tournament_ops.results/fields/loser_game_wins",
+              "/runner_evidence/read_access/tournament_ops.results/fields/result_state",
+              "/runner_evidence/read_access/tournament_ops.events/fields/event_name",
+              "/runner_evidence/read_access/tournament_ops.events/fields/operating_state"
+            ],
+            "operator_message_id": 2,
+            "topic": "Permitted public result details",
+            "responsibility": "runner",
+            "issue_kind": "coverage_link",
+            "next_step": "Retain these public Read fields and their current no-analysis permissions."
+          },
+          {
+            "start": 3,
+            "end": 3,
+            "disposition": "implemented",
+            "interpretation": "Database identities, conflict/version counters, integrity_hold, and referee_private_note have no public values and no model analysis, filtering, sorting, grouping, or aggregation permission. integrity_hold remains Runner-private verification for both outcomes.",
+            "draft_paths": [
+              "/runner_evidence/read_access/tournament_ops.events/fields/event_id",
+              "/runner_evidence/read_access/tournament_ops.events/fields/tenant_id",
+              "/runner_evidence/read_access/tournament_ops.events/fields/principal_id",
+              "/runner_evidence/read_access/tournament_ops.events/fields/version",
+              "/runner_evidence/read_access/tournament_ops.results/fields/event_id",
+              "/runner_evidence/read_access/tournament_ops.results/fields/result_id",
+              "/runner_evidence/read_access/tournament_ops.results/fields/tenant_id",
+              "/runner_evidence/read_access/tournament_ops.results/fields/principal_id",
+              "/runner_evidence/read_access/tournament_ops.results/fields/version",
+              "/runner_evidence/read_access/tournament_ops.results/fields/integrity_hold",
+              "/runner_evidence/read_access/tournament_ops.results/fields/referee_private_note",
+              "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/integrity_hold",
+              "/runner_evidence/actions/league.result_withdrawal/scoped_bindings/result/fields/integrity_hold"
+            ],
+            "topic": "Public-read privacy",
+            "responsibility": "runner",
+            "issue_kind": "coverage_link",
+            "next_step": "Retain the private-field boundary across future Read revisions.",
+            "field_checks": [
+              {
+                "resource": "tournament_ops.events",
+                "field": "event_id",
+                "expectation": "private"
+              },
+              {
+                "resource": "tournament_ops.events",
+                "field": "tenant_id",
+                "expectation": "private"
+              },
+              {
+                "resource": "tournament_ops.events",
+                "field": "principal_id",
+                "expectation": "private"
+              },
+              {
+                "resource": "tournament_ops.events",
+                "field": "version",
+                "expectation": "private"
+              },
+              {
+                "resource": "tournament_ops.results",
+                "field": "event_id",
+                "expectation": "private"
+              },
+              {
+                "resource": "tournament_ops.results",
+                "field": "result_id",
+                "expectation": "private"
+              },
+              {
+                "resource": "tournament_ops.results",
+                "field": "tenant_id",
+                "expectation": "private"
+              },
+              {
+                "resource": "tournament_ops.results",
+                "field": "principal_id",
+                "expectation": "private"
+              },
+              {
+                "resource": "tournament_ops.results",
+                "field": "version",
+                "expectation": "private"
+              },
+              {
+                "resource": "tournament_ops.results",
+                "field": "integrity_hold",
+                "expectation": "private"
+              },
+              {
+                "resource": "tournament_ops.results",
+                "field": "referee_private_note",
+                "expectation": "private"
+              }
+            ]
+          },
+          {
+            "start": 5,
+            "end": 5,
+            "disposition": "implemented",
+            "interpretation": "Ratification requires an open related event, finished result, exactly two winner wins, zero or one loser wins, and no integrity hold; withdrawal separately requires its stated open-event, finished-result, and no-hold conditions. Invalid requests are refused before approval.",
+            "draft_paths": [
+              "/actions/0/require",
+              "/actions/0/review",
+              "/actions/1/require",
+              "/actions/1/review",
+              "/runner_evidence/actions/league.result_ratification/scoped_bindings",
+              "/runner_evidence/actions/league.result_withdrawal/scoped_bindings"
+            ],
+            "topic": "Valid result conditions",
+            "responsibility": "runner",
+            "issue_kind": "coverage_link",
+            "next_step": "Retain the compiled refusal conditions and private verification bindings."
+          },
+          {
+            "start": 5,
+            "end": 5,
+            "disposition": "implemented",
+            "interpretation": "Ratification modifies only result_state to ratified, and withdrawal modifies only result_state to withdrawn plus withdrawal_reason. The compiled effects also atomically advance the private version conflict field; scores, winner, assignment, event, and league are outside authorized modified fields.",
+            "draft_paths": [
+              "/actions/0/effect",
+              "/actions/1/effect",
+              "/runner_evidence/actions/league.result_ratification/effect",
+              "/runner_evidence/actions/league.result_withdrawal/effect"
+            ],
+            "topic": "Limited result changes",
+            "responsibility": "runner",
+            "issue_kind": "coverage_link",
+            "next_step": "Retain the compiled field envelopes and Runner-owned version advancement."
+          },
+          {
+            "start": 7,
+            "end": 7,
+            "disposition": "implemented",
+            "interpretation": "Qualifying ratifications are eligible for automatic approval subject to the retained inclusive rolling 24-hour limits of two for the same league tenant and six boundary-wide; qualifying overruns and every championship request use the league-supervisor human fallback. The operator confirmed tenant means league and the shared league cap spans its referees.",
+            "draft_paths": [
+              "/actions/0/approval",
+              "/runner_evidence/actions/league.result_ratification/automatic_limits",
+              "/runner_evidence/runtime_contract/approval",
+              "/runner_evidence/runtime_contract/approval_counter_selection"
+            ],
+            "operator_message_id": 3,
+            "topic": "Ratification approval limits",
+            "responsibility": "runner",
+            "issue_kind": "coverage_link",
+            "next_step": "Retain the two shared limits, their inclusive 24-hour windows, and supervisor fallback."
+          },
+          {
+            "start": 7,
+            "end": 7,
+            "disposition": "implemented",
+            "interpretation": "The retained null capability selectors count the complete automatic-history domain, which contains only league.result_ratification; withdrawal is human-only with no automatic limits. Thus withdrawals neither consume nor expand the ratification allowances. The operator expressly required the null selectors to remain unchanged and confirmed the two-behavior allocation.",
+            "draft_paths": [
+              "/runner_evidence/actions/league.result_ratification/automatic_limits",
+              "/runner_evidence/actions/league.result_withdrawal/automatic_limits",
+              "/runner_evidence/runtime_contract/approval_counter_selection"
+            ],
+            "operator_message_id": 8,
+            "topic": "Ratification-only automatic allowance",
+            "responsibility": "runner",
+            "issue_kind": "coverage_link",
+            "next_step": "Retain the existing null capability selectors while the complete automatic-outcome domain remains ratification only.",
+            "counter_requirements": [
+              {
+                "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+                "current_capability": null,
+                "required_capability": null,
+                "operator_message_id": 5
+              },
+              {
+                "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+                "current_capability": null,
+                "required_capability": null,
+                "operator_message_id": 5
+              }
+            ]
+          },
+          {
+            "start": 7,
+            "end": 7,
+            "disposition": "implemented",
+            "interpretation": "Every valid withdrawal request is human-only, requires one league supervisor approval, and has no automatic limit, preserving the operator's instruction that withdrawals do not consume or expand ratification allowance.",
+            "draft_paths": [
+              "/actions/1/approval",
+              "/runner_evidence/actions/league.result_withdrawal/automatic_limits",
+              "/runner_evidence/runtime_contract/approval_counter_selection"
+            ],
+            "operator_message_id": 8,
+            "topic": "Withdrawal supervisor review",
+            "responsibility": "runner",
+            "issue_kind": "coverage_link",
+            "next_step": "Retain human-only withdrawal approval and no withdrawal automatic limits."
+          },
+          {
+            "start": 7,
+            "end": 7,
+            "disposition": "implemented",
+            "interpretation": "Both compiled direct-SQL effects support supervised completion after approval. The draft is correctly prepared but remains disabled; dedicated writer review, execution enablement, and worker startup are later deployment prerequisites.",
+            "draft_paths": [
+              "/runner_evidence/actions/league.result_ratification/execution",
+              "/runner_evidence/actions/league.result_withdrawal/execution",
+              "/runner_evidence/runtime_contract/approval"
+            ],
+            "topic": "Supervised completion",
+            "responsibility": "runner",
+            "issue_kind": "coverage_link",
+            "next_step": "After authority review, complete separate writer, enablement, and worker setup before any execution."
+          },
+          {
+            "start": 7,
+            "end": 7,
+            "disposition": "needs_decision",
+            "interpretation": "Dedicated writer review, grants, execution enablement, worker startup, and review of the requested Runner-ledger receipt mode remain unconfigured and unverified for both prepared outcomes.",
+            "draft_paths": [
+              "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+            ],
+            "topic": "Execution and Runner-ledger receipt setup",
+            "responsibility": "deployment",
+            "issue_kind": "missing_configuration",
+            "next_step": "After authority review, configure the dedicated writer, Runner-ledger receipt mode, execution consent, and worker for both Action revisions.",
+            "deployment_prerequisite": "runner_execution_setup"
+          },
+          {
+            "start": 7,
+            "end": 7,
+            "disposition": "needs_decision",
+            "interpretation": "Independently observing the changed source row after each execution is an external required step and remains unverified; a Runner-ledger receipt is not that observation.",
+            "draft_paths": [
+              "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+            ],
+            "topic": "Independent changed-row verification",
+            "responsibility": "application",
+            "issue_kind": "missing_configuration",
+            "next_step": "Assign who will independently observe each changed source row after execution.",
+            "application_obligations": [
+              "independent_source_readback"
+            ]
+          },
+          {
+            "start": 7,
+            "end": 7,
+            "disposition": "implemented",
+            "interpretation": "Neither compiled outcome contains an external-system effect; the prepared behavior is limited to the reviewed source update.",
+            "draft_paths": [
+              "/actions/0/effect",
+              "/actions/1/effect",
+              "/runner_evidence/actions/league.result_ratification/effect",
+              "/runner_evidence/actions/league.result_withdrawal/effect"
+            ],
+            "topic": "No external system contact",
+            "responsibility": "runner",
+            "issue_kind": "coverage_link",
+            "next_step": "Retain the source-only effects."
+          },
+          {
+            "start": 7,
+            "end": 7,
+            "disposition": "needs_decision",
+            "interpretation": "Claude Code is a supported managed local-stdio client, but its installation and connection have not been checked or verified.",
+            "draft_paths": [
+              "/runner_evidence/runtime_contract/deployment_prerequisites/runner_client_connection"
+            ],
+            "topic": "Claude Code connection",
+            "responsibility": "deployment",
+            "issue_kind": "missing_configuration",
+            "next_step": "After authority review, install and verify the Claude Code local client connection.",
+            "deployment_prerequisite": "runner_client_connection"
+          },
+          {
+            "start": 7,
+            "end": 7,
+            "disposition": "needs_decision",
+            "interpretation": "The client must present returned statuses and receipts truthfully; approval, queuing, or failure must not be represented as completed ratification or withdrawal.",
+            "draft_paths": [
+              "/runner_evidence/runtime_contract/application_obligations/status_presentation"
+            ],
+            "topic": "Action status presentation",
+            "responsibility": "application",
+            "issue_kind": "missing_configuration",
+            "next_step": "Assign the client responsibility for accurately presenting action statuses and receipts.",
+            "application_obligations": [
+              "status_presentation"
+            ]
+          },
+          {
+            "start": 9,
+            "end": 9,
+            "disposition": "implemented",
+            "interpretation": "The reviewed public Read boundary and its private-field restrictions are retained alongside both outcomes.",
+            "draft_paths": [
+              "/read",
+              "/runner_evidence/read_review",
+              "/runner_evidence/read_access"
+            ],
+            "topic": "Preserved public-read restrictions",
+            "responsibility": "runner",
+            "issue_kind": "coverage_link",
+            "next_step": "Revalidate this Read boundary if its schema or permissions change."
+          },
+          {
+            "start": 9,
+            "end": 9,
+            "disposition": "implemented",
+            "interpretation": "Ratification's compiled effect permits only result_state and Runner-owned version advancement, not recorded winner or either score field.",
+            "draft_paths": [
+              "/actions/0/effect",
+              "/runner_evidence/actions/league.result_ratification/effect"
+            ],
+            "topic": "Ratification preserves winner and score",
+            "responsibility": "runner",
+            "issue_kind": "coverage_link",
+            "next_step": "Retain the ratification effect envelope."
+          }
+        ]
+      }
+    }
+  ],
+  "old_support_statement_5": "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change.",
+  "coverage_source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+  "coverage_draft_digest": "sha256:8bfdb08f0ad47de6bc323d301d7f6edf588375cc8894ee435e6a215b0d28869d",
+  "coverage_authority_digest": "sha256:bf5a61b7eac7f8ebd8e92fa8c8bc5a4478749df7b4cce31b91836f106fca1a67",
+  "coverage_context_digest": "sha256:681ced9dee0b447744981ca58fe29f24008392824015fb872afb9afc9198e1a2",
+  "authority_offer_observed_in": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/workflow-evolution-37ec677-20260914/runs/recovery-tournament-assisted/logs/add-resume.tty",
+  "operator_decision": "Not now; keep authority unchanged",
+  "durable_history_and_post_effect_source_unchanged": true,
+  "same_client_catalog_retained_original_only": true,
+  "authoring_calls": 16,
+  "provider_calls_by_step": {
+    "add_pipeline_and_initial_review": 12,
+    "automatic_restart_review": 2,
+    "clarification_question": 1,
+    "new_requirement_review": 1
+  },
+  "remove": "NOT_RUN_DEPENDS_ON_SUCCESSFUL_ADDITION",
+  "checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/workflow-evolution-37ec677-20260914/runs/recovery-tournament-assisted/checkpoints/add-stopped",
+  "scope_of_finding": "The narrow component now compares null with null, not the source-required ratification outcome; the accompanying ratification-only/domain claim has no corresponding validated conditional proof. No selector change was prepared. Withdrawal is human-only; ratification can receive automatic approval. Current histories therefore do not demonstrate an incorrect count. This case fails the predeclared evidence/revalidation criterion, not an observed runtime safety assertion."
+}
