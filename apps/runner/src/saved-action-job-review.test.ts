@@ -41,6 +41,27 @@ describe("saved Action job review", () => {
       expect(reader).not.toHaveBeenCalled();
     });
 
+  it("keeps concurrent explicit review environments separate without consulting ambient credentials", async () => {
+    const ambient = process.env.TEST_POLICY_URL;
+    const first = { TEST_POLICY_URL: "first scoped store" };
+    const second = { TEST_POLICY_URL: "second scoped store" };
+    const seen: Array<NodeJS.ProcessEnv | undefined> = [];
+    vi.spyOn(readStore, "readProjectReadAuthoring").mockImplementation(async (_root, env) => {
+      await Promise.resolve();
+      seen.push(env);
+      if (env !== first && env !== second) throw new Error("explicit review environment lost");
+      return undefined;
+    });
+    const input = { projectRoot: "/test-project", boundaryName: binding.boundary_name, currentOutcomes: outcomes };
+    await expect(Promise.all([readSavedActionJobReview({ ...input, env: first }),
+      readSavedActionJobReview({ ...input, env: second })])).resolves.toEqual([
+      { summary: [], details: [] }, { summary: [], details: [] },
+    ]);
+    expect(seen).toEqual([first, second]);
+    expect(process.env.TEST_POLICY_URL).toBe(ambient);
+    await expect(readSavedActionJobReview({ ...input, env: {} })).rejects.toThrow("explicit review environment lost");
+  });
+
   it("distinguishes two prepared outcomes from an unfinished third request without changing the checkpoint", () => {
     const saved = state();
     const before = structuredClone(saved);

@@ -30,11 +30,11 @@ export function unfinishedActionIntents(resume: BoundaryAuthoringResumeState, cu
 }
 
 export async function readSavedActionJobReview(input: {
-  projectRoot: string; boundaryName: string; currentOutcomes: readonly string[];
+  projectRoot: string; boundaryName: string; currentOutcomes: readonly string[]; env?: NodeJS.ProcessEnv;
 }): Promise<SavedActionJobReview> {
   let selected;
   try {
-    selected = (await readProjectReadAuthoring(input.projectRoot))?.selected;
+    selected = (await readProjectReadAuthoring(input.projectRoot, input.env))?.selected;
   } catch (error) {
     // Guided history is optional for migrated authority, not a substitute for its validation.
     if (!(error instanceof Error) || !("code" in error) || error.code !== "POLICY_READ_AUTHORING_MISSING") throw error;

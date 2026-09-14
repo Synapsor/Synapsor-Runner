@@ -128,7 +128,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
     read.pack.name === rule.read_boundary_name && read.activation.digest === rule.read_boundary_digest));
   const oneReadDependency = current.authority.rules.every(rule => rule.read_boundary_name === input.boundaryName);
   const readReviewState = oneReadDependency
-    ? await savedActionReadReviewState(input.projectRoot, input.boundaryName, activeReads) : "unavailable";
+    ? await savedActionReadReviewState(input.projectRoot, input.boundaryName, activeReads, input.env) : "unavailable";
   const canRecheckRead = needsReadRecheck && readReviewState === "active";
   const needsReadReview = readReviewState === "pending";
   let executionState = await readSemanticSupervisedExecutionState({
@@ -164,7 +164,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
     : [];
   const requestImpact = await reviewActionRevisionImpact(input);
   const jobReview = await readSavedActionJobReview({ projectRoot: input.projectRoot, boundaryName: input.boundaryName,
-    currentOutcomes: current.authority.rules.map((rule) => rule.rule.outcome) });
+    currentOutcomes: current.authority.rules.map((rule) => rule.rule.outcome), env: input.env });
   const reviewedNotice = (value: ActionRuleAuthorityDraftV1 | ActionRuleAuthorityActivationV1, active: boolean, configPath?: string) => {
     const notice = verifiedActionNotice(value, active, configPath);
     return { ...notice, lines: [...jobReview.summary, ...notice.lines] };

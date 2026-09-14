@@ -10,8 +10,8 @@ import { readProjectReadAuthoring } from "./control-policy-read-authoring-projec
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 
 export async function savedActionReadReviewState(projectRoot: string, boundaryName: string,
-  activeReads: ActivatedExplorationBoundary[]): Promise<"unavailable" | "pending" | "active"> {
-  const authoring = await readProjectReadAuthoring(projectRoot).catch(error => {
+  activeReads: ActivatedExplorationBoundary[], env?: NodeJS.ProcessEnv): Promise<"unavailable" | "pending" | "active"> {
+  const authoring = await readProjectReadAuthoring(projectRoot, env).catch(error => {
     if (error instanceof Error && (error as Error & { code?: string }).code === "POLICY_READ_AUTHORING_MISSING") return undefined;
     throw error;
   });

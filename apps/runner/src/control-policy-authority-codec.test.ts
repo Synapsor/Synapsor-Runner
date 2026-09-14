@@ -1,3 +1,4 @@
+import { readSavedActionJobReview } from "./saved-action-job-review.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -3171,6 +3172,16 @@ for (const backend of ["sqlite", "postgres"] as const) {
         if (backend === "postgres") delete process.env.TEST_POLICY_URL;
         const before = await binding.repository.scopeSnapshot({ deployment_id: binding.deployment_id,
           scope: { level: "operator" }, kinds: ["read", "action", "execution"] });
+        if (backend === "postgres") {
+          const review = { projectRoot, boundaryName: fixture().boundary.pack.name, currentOutcomes: ["inventory.replenish"] };
+          // An explicit empty context must not inherit even a usable ambient URL.
+          process.env.TEST_POLICY_URL = env.TEST_POLICY_URL;
+          await expect(readSavedActionJobReview({ ...review, env: {} })).rejects.toHaveProperty("code", "POSTGRES_RUNTIME_STORE_URL_MISSING");
+          const wrong = new URL(env.TEST_POLICY_URL!); wrong.pathname = "/missing_owned_review_database";
+          await expect(readSavedActionJobReview({ ...review, env: { TEST_POLICY_URL: wrong.toString() } })).rejects.toThrow();
+          // The real review below must use the supplied context despite this unrelated ambient destination.
+          process.env.TEST_POLICY_URL = wrong.toString();
+        }
         const recovered = await recoverSemanticActionRuntime({ projectRoot, draftName: draft.authority.name, env });
         expect(recovered).toMatchObject({ state: mode === "revoked_unconfirmed" ? "committed" : "none", readBoundaries: [], authority: {
           draft: mode === "disabled" ? draft : undefined,
