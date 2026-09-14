@@ -332,6 +332,7 @@ describe("model-authored Action Rule draft compilation", () => {
       expect(first.id).not.toBe(second.id);
       expect(first.history_selector).toEqual({
         action_boundary_name: actions[0]!.loaded.authority.action_boundary.name, approval_status: "approved",
+        approval_kind: "boundary_automatic",
         window_seconds: 86_400, time_bounds: "inclusive: now - window_seconds through now",
         capability: scope === "capability" ? "billing.first" : null,
         tenant: scope === "boundary" || scope === "capability" ? null : "current_proposal.tenant_id",
