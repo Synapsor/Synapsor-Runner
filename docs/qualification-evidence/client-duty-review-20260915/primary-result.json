@@ -1,0 +1,445 @@
+{
+  "at": "2026-09-15T22:33:08.803739+00:00",
+  "artifact_tree": "ff9a030cdb353ec56b9f4f048d40df60e3bb49f77d224eac675ba2b4c1a29568",
+  "outcome": "A ownership/restart PASS; required primary B BLOCKED before ownership; overall acceptance NOT RECOMMENDED",
+  "actual_final_calls": 3,
+  "ceiling": 25,
+  "restart_reserved": 6,
+  "actual_restart_calls": 0,
+  "development_calls": 0,
+  "development_max": 4,
+  "dollar_spend": "Unknown billing total; declared ceiling15USD, no credits purchased",
+  "results": [
+    {
+      "case": "B",
+      "run": "counting-wording-control",
+      "status": "BLOCKED before ownership: initial missing pointer, bounded correction then unsupported counter citation; no further sampling",
+      "route": "matched direct Review; no planning call",
+      "calls": [
+        {
+          "index": 1,
+          "started_at": "2026-09-15T22:20:09.856Z",
+          "completed_at": "2026-09-15T22:20:38.358Z",
+          "model": "gpt-5.6-terra",
+          "reasoning": {
+            "effort": "low"
+          },
+          "max_output_tokens": 12000,
+          "store": false,
+          "tools": [
+            {
+              "name": "runner__review_policy_coverage",
+              "argument_sha256": "6e2edcd66b68ee5ef246a29fd9507ea3ed469053156c769ded831b8fd04312d0",
+              "passages": 16,
+              "provider_named_client_duties": []
+            }
+          ],
+          "usage": {
+            "input_tokens": 29704,
+            "input_tokens_details": {
+              "cache_write_tokens": 29571,
+              "cached_tokens": 0
+            },
+            "output_tokens": 2547,
+            "output_tokens_details": {
+              "reasoning_tokens": 302
+            },
+            "total_tokens": 32251
+          },
+          "correction": [],
+          "input": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/runs/counting-wording-control/meter/input-0001.json",
+          "input_sha256": "8cbc79f01fbac4c23a2fe73506da038d246ecf80d6bdb5f4fbe1681a60e30d3f",
+          "output": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/runs/counting-wording-control/meter/output-0001.txt",
+          "output_sha256": "c2743eb4398e722fa26cad8eac2946fc4b58449fd6537ebd0a4078923d19e2fd",
+          "actual_prepared_limits": [
+            {
+              "outcome": "league.result_ratification",
+              "shared_limits": [
+                {
+                  "id": "league_automatic_ratifications_24h",
+                  "kind": "count",
+                  "scope": "tenant",
+                  "maximum": 2,
+                  "window_seconds": 86400,
+                  "capability": "league.result_ratification"
+                },
+                {
+                  "id": "overall_automatic_ratifications_24h",
+                  "kind": "count",
+                  "scope": "boundary",
+                  "maximum": 6,
+                  "window_seconds": 86400,
+                  "capability": "league.result_ratification"
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "index": 2,
+          "started_at": "2026-09-15T22:20:38.405Z",
+          "completed_at": "2026-09-15T22:20:59.841Z",
+          "model": "gpt-5.6-terra",
+          "reasoning": {
+            "effort": "low"
+          },
+          "max_output_tokens": 12000,
+          "store": false,
+          "tools": [
+            {
+              "name": "runner__review_policy_coverage",
+              "argument_sha256": "ee044481863f64c64a2a3f157e908d5fd00ca2f6a8e951c2b93015c527a0e689",
+              "passages": 16,
+              "provider_named_client_duties": []
+            }
+          ],
+          "usage": {
+            "input_tokens": 32088,
+            "input_tokens_details": {
+              "cache_write_tokens": 22663,
+              "cached_tokens": 9292
+            },
+            "output_tokens": 2579,
+            "output_tokens_details": {
+              "reasoning_tokens": 263
+            },
+            "total_tokens": 34667
+          },
+          "correction": [
+            "Correct this structural coverage problem: Draft pointer(s) not present: /runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/referee_private_note. Use the supplied exact coverage references; do not invent a missing setting or edit a rule to repair a link. Private verification-only fields are under /runner_evidence/actions/<outcome>/scoped_bindings/<binding>/fields/<field>, not nonexistent read_access resources. Select an existing exact path; no missing Read path is redirected."
+          ],
+          "input": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/runs/counting-wording-control/meter/input-0002.json",
+          "input_sha256": "c8d6f2b47b25326147d222661305372bd309f444db54cd4472f27a1cbd8d423b",
+          "output": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/runs/counting-wording-control/meter/output-0002.txt",
+          "output_sha256": "d2ccba521f10a9aa5f56b1742e04287c849c735fc6256d48ef598f234a1e120d",
+          "actual_prepared_limits": [
+            {
+              "outcome": "league.result_ratification",
+              "shared_limits": [
+                {
+                  "id": "league_automatic_ratifications_24h",
+                  "kind": "count",
+                  "scope": "tenant",
+                  "maximum": 2,
+                  "window_seconds": 86400,
+                  "capability": "league.result_ratification"
+                },
+                {
+                  "id": "overall_automatic_ratifications_24h",
+                  "kind": "count",
+                  "scope": "boundary",
+                  "maximum": 6,
+                  "window_seconds": 86400,
+                  "capability": "league.result_ratification"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "actual_calls": 2,
+      "source": {
+        "digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+        "version": 2
+      },
+      "client_duties": null,
+      "current_intrinsic_assignments": [],
+      "historical_assignment_count": 1,
+      "readiness": {
+        "ready": false,
+        "privacy": false,
+        "summary": [
+          "Before activation: recheck the attached rules. Activation is unavailable; the saved draft and exact details remain available."
+        ]
+      },
+      "completed_reviews": [],
+      "pending_business_work": [
+        "pending_job_revision",
+        "pending_policy_review"
+      ],
+      "all_ledger_tables_unchanged": true,
+      "source_rows": {
+        "events": 8,
+        "results": 96
+      },
+      "source_and_authority_configuration_unchanged": true,
+      "cli_exits": [
+        0
+      ],
+      "checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/runs/counting-wording-control/checkpoints/business-review-stopped",
+      "restart_recheck": "NOT RUN; prerequisite review failed"
+    },
+    {
+      "case": "A",
+      "run": "recovery-tournament-assisted",
+      "status": "PASS after preserved harness-observation cancellation; current public ownership and explicit restart/recheck completed",
+      "route": "matched direct Review; no planning call",
+      "calls": [
+        {
+          "index": 1,
+          "started_at": "2026-09-15T22:23:23.358Z",
+          "completed_at": "2026-09-15T22:23:59.448Z",
+          "model": "gpt-5.6-terra",
+          "reasoning": {
+            "effort": "low"
+          },
+          "max_output_tokens": 12000,
+          "store": false,
+          "tools": [
+            {
+              "name": "runner__review_policy_coverage",
+              "argument_sha256": "c2fb66b67bb9c1b617e033395fd56c02f7a3c3906a21946ad72bd5d48bd887f7",
+              "passages": 17,
+              "provider_named_client_duties": [
+                "customer_selection"
+              ]
+            }
+          ],
+          "usage": {
+            "input_tokens": 29112,
+            "input_tokens_details": {
+              "cache_write_tokens": 19687,
+              "cached_tokens": 9292
+            },
+            "output_tokens": 3426,
+            "output_tokens_details": {
+              "reasoning_tokens": 699
+            },
+            "total_tokens": 32538
+          },
+          "correction": [],
+          "input": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/runs/recovery-tournament-assisted/meter/input-0001.json",
+          "input_sha256": "0dc76594ca6b144cd9d1f01bc4cd48efc93a821dc90dc3d2f54f6f4aaaf3d9f8",
+          "output": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/runs/recovery-tournament-assisted/meter/output-0001.txt",
+          "output_sha256": "5893213b188df282c40ff336871aa876be57724c252fdbe793d9f66000677400",
+          "actual_prepared_limits": [
+            {
+              "outcome": "league.result_ratification",
+              "shared_limits": [
+                {
+                  "id": "league_automatic_ratifications_24h",
+                  "kind": "count",
+                  "scope": "tenant",
+                  "maximum": 2,
+                  "window_seconds": 86400,
+                  "capability": "league.result_ratification"
+                },
+                {
+                  "id": "overall_automatic_ratifications_24h",
+                  "kind": "count",
+                  "scope": "boundary",
+                  "maximum": 6,
+                  "window_seconds": 86400,
+                  "capability": "league.result_ratification"
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "actual_calls": 1,
+      "source": {
+        "digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+        "version": 1
+      },
+      "client_duties": {
+        "version": 1,
+        "origin": "PRODUCT-CLIENT-CONTRACT",
+        "mode": "interactive_subject_action",
+        "client": "claude-code",
+        "duties": [
+          "customer_selection",
+          "status_presentation"
+        ],
+        "contract_digest": "sha256:cb86267d06a0abce531eeff8d61d11aab59ea72f1c4247bca2e45d647fe5c941"
+      },
+      "current_intrinsic_assignments": [
+        {
+          "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+          "draft_digest": "sha256:ca14cf3864f79098598d9c895ea4e246e23a74a5fec4923b57c3c4e9be514601",
+          "origin": "PRODUCT-CLIENT-CONTRACT",
+          "contract_digest": "sha256:cb86267d06a0abce531eeff8d61d11aab59ea72f1c4247bca2e45d647fe5c941",
+          "obligations": [
+            "customer_selection",
+            "status_presentation"
+          ],
+          "assigned_at": "2026-09-15T22:29:35.212Z",
+          "owner": "client_application",
+          "verified": false
+        }
+      ],
+      "historical_assignment_count": 2,
+      "readiness": {
+        "ready": true,
+        "privacy": false,
+        "items": [
+          {
+            "kind": "deployment_prerequisite",
+            "clientDuty": "customer_selection",
+            "title": "Client target selection",
+            "nextStep": "Use the client integration responsibilities review to accept current ownership. Implementation and per-operation assurance remain unverified.",
+            "passages": [
+              {
+                "start": 3,
+                "end": 3,
+                "disposition": "needs_decision",
+                "interpretation": "Runner verifies the submitted scoped result reference, but the client must capture the referee's intended result selection.",
+                "draft_paths": [
+                  "/runner_evidence/runtime_contract/application_obligations/customer_selection"
+                ],
+                "topic": "Referee result selection",
+                "responsibility": "application",
+                "issue_kind": "missing_configuration",
+                "next_step": "Assign the client responsibility for capturing the referee's intended result selection.",
+                "application_obligations": [
+                  "customer_selection"
+                ]
+              }
+            ],
+            "blocksReview": false
+          },
+          {
+            "kind": "deployment_prerequisite",
+            "clientDuty": "status_presentation",
+            "title": "Client status presentation",
+            "nextStep": "Use the client integration responsibilities review to accept current ownership. Implementation and per-operation assurance remain unverified.",
+            "passages": [],
+            "blocksReview": false
+          },
+          {
+            "kind": "deployment_prerequisite",
+            "title": "Authenticated referee identity",
+            "nextStep": "After review, choose a client and configure runtime identity. Use a fixed test identity only for local testing; production identity must come from an authenticated application session. Runtime access remains unavailable without it.",
+            "passages": [
+              {
+                "start": 3,
+                "end": 3,
+                "disposition": "needs_decision",
+                "interpretation": "The reviewed scope controls are configured, but connecting an authenticated application session to those tenant and principal bindings is not verified.",
+                "draft_paths": [
+                  "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+                ],
+                "topic": "Authenticated referee identity",
+                "responsibility": "deployment",
+                "issue_kind": "missing_configuration",
+                "next_step": "After authority review, configure and verify authenticated-session identity for the reviewed tenant and principal bindings.",
+                "deployment_prerequisite": "authenticated_identity"
+              }
+            ],
+            "blocksReview": false
+          },
+          {
+            "kind": "deployment_prerequisite",
+            "title": "Ratification execution setup",
+            "nextStep": "After authority review, prepare or verify the dedicated writer, review execution permission, then configure and start the worker. Keep reader credentials separate. Setup and execution remain unverified; no request is completed without a successful receipt.",
+            "passages": [
+              {
+                "start": 7,
+                "end": 7,
+                "disposition": "needs_decision",
+                "interpretation": "A Runner-ledger receipt mode is currently configured, but dedicated-writer review, grants, execution enablement, and worker startup for the prepared direct-SQL action are not verified.",
+                "draft_paths": [
+                  "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+                ],
+                "topic": "Ratification execution setup",
+                "responsibility": "deployment",
+                "issue_kind": "missing_configuration",
+                "next_step": "After authority review, complete writer, grant, execution-consent, receipt, and worker setup for ratification.",
+                "deployment_prerequisite": "runner_execution_setup"
+              }
+            ],
+            "blocksReview": false
+          },
+          {
+            "kind": "deployment_prerequisite",
+            "title": "Independent changed-row verification",
+            "nextStep": "After each applicable execution, independently observe the source and compare it with the exact intended change. This readback remains unverified; a receipt alone is not that observation. No Action-code repair is required for this external step.",
+            "passages": [
+              {
+                "obligation_assessment": {
+                  "origin": "HOST-RESOLVED",
+                  "family": "independent_source_readback",
+                  "path": "/runner_evidence/runtime_contract/application_obligations/independent_source_readback",
+                  "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+                  "requirement": "independent_source_readback",
+                  "phase": "after_execution",
+                  "state": "pending",
+                  "verified": false,
+                  "dependencies_digest": "sha256:954740fdc118d2992905a649de24f49a1e3c62b6b34fc4b7e0c6f21db0d5242c"
+                },
+                "start": 7,
+                "end": 7,
+                "disposition": "needs_decision",
+                "interpretation": "Independently verifying the changed source row is a separate after-execution observation. It remains unverified; a Runner-ledger receipt is not that observation.",
+                "draft_paths": [
+                  "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+                ],
+                "topic": "Independent changed-row verification",
+                "responsibility": "application",
+                "issue_kind": "missing_configuration",
+                "next_step": "Assign who will independently observe each changed source row after execution.",
+                "application_obligations": [
+                  "independent_source_readback"
+                ]
+              }
+            ],
+            "blocksReview": false
+          }
+        ],
+        "summary": [
+          "Attached rules: rules.txt v1; interpretation checked for this revision.",
+          "Client integration still unverified: Client target selection, Client status presentation, customer selection, signed-in customer identity. Check these during client setup before customer use.",
+          "Independent source readback remains unverified for each applicable execution. Perform and retain that separate observation after the change; a receipt or completed business review does not prove it.",
+          "Execution setup pending: dedicated writer review, separate execution permission and worker startup. Continue to these checks after authority review; automatic completion is not yet enabled."
+        ]
+      },
+      "completed_reviews": [
+        {
+          "request": {
+            "operation": "review_rules",
+            "request": "Review attached rules and unresolved decisions",
+            "source_session": "a6d8098e-7f74-4c80-bcc2-728ba936ef7a",
+            "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+            "read_digest": "sha256:6c6196b167fe621caf480cd2b2a4449ef083315cebaf044cc5bcb1660985efd3",
+            "action_name": "reviewed_staging_rules",
+            "action_digest": "sha256:3431e33b5c7ef594c67b545c33ae8285cbd919ff01c91bf35f5d72581ad2ea3e",
+            "supersedes_pending_job_revision": "Recheck the current saved rules against the attached policy and existing decisions without changing the rules or authority."
+          },
+          "report_digest": "sha256:1699a845ac8b9a4ae0f2f477d01e5a9aca48e0378779ec73ee49560fe612e019",
+          "context_digest": "sha256:a011a6cbb06ecc13052c1a884f6340bc86965032505aed1bc7003b828d4f915b",
+          "activity": "validated_reuse",
+          "completed_at": "2026-09-15T22:29:35.902Z"
+        },
+        {
+          "request": {
+            "operation": "review_rules",
+            "request": "Review attached rules and unresolved decisions",
+            "source_session": "a6d8098e-7f74-4c80-bcc2-728ba936ef7a",
+            "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+            "read_digest": "sha256:6c6196b167fe621caf480cd2b2a4449ef083315cebaf044cc5bcb1660985efd3",
+            "action_name": "reviewed_staging_rules",
+            "action_digest": "sha256:3431e33b5c7ef594c67b545c33ae8285cbd919ff01c91bf35f5d72581ad2ea3e"
+          },
+          "report_digest": "sha256:1699a845ac8b9a4ae0f2f477d01e5a9aca48e0378779ec73ee49560fe612e019",
+          "context_digest": "sha256:a011a6cbb06ecc13052c1a884f6340bc86965032505aed1bc7003b828d4f915b",
+          "activity": "validated_reuse",
+          "completed_at": "2026-09-15T22:30:18.624Z"
+        }
+      ],
+      "pending_business_work": [],
+      "all_ledger_tables_unchanged": true,
+      "source_rows": {
+        "events": 8,
+        "results": 96
+      },
+      "source_and_authority_configuration_unchanged": true,
+      "cli_exits": [
+        0,
+        0,
+        0
+      ],
+      "checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/runs/recovery-tournament-assisted/checkpoints/rechecked",
+      "restart_recheck": "PASS, no new call or repeated question"
+    }
+  ]
+}

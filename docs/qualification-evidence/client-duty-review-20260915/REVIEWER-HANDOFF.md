@@ -1,6 +1,6 @@
-# Client duty review — handoff in preparation
+# Client duty review — frozen handoff; primary B remains blocked
 
-Status: current stable verification is running; no installed primary result or independent acceptance is claimed yet. This file will be completed against the final manifest and public observations. Stage A remains historical and artifact-specific. Original Stage B remains ATTEMPTED NOT PASSED.
+Status: implementation/stable gates PASS; installed A ownership/restart PASS; required primary B BLOCKED before ownership. Overall acceptance is not recommended. Independent Claude Grok B and narrow acceptance review are PENDING EXTERNALLY. Stage A remains historical and artifact-specific. Original Stage B remains ATTEMPTED NOT PASSED.
 
 Product is `68775b51b18292e8b461116cec6c33b278ef41cb`; final tests are `3e7fde650def99b7f2a4745c499bb147fdf45bb6`, retaining initial repair `03f26a059ed6bb40acac9fc10468a0ddf005e90a` and baseline `f60dfa1214e99aa912fad3d2306da95a1151f5ae`. The prior immutable tree `8c75b859c4220585ccb07fb28723c3c27fed9881417740f61310938481658362` remains historical. Its matched Terra B result was qualified by omitted duties; Grok B had an outstanding ownership step that was not executed. Neither observation is relabeled as a runtime failure.
 
@@ -15,3 +15,41 @@ Restore a NEW whole-project copy plus matching source.dump into an owned network
 The required matched B route is `start --project-root . --cli` -> **Review attached rules and unresolved decisions**. Do not enter free-form planning and call it the same route. The exact stored request is review-only; use its existing explicit confirmation. Confirm the two genuine counting choices using normal controls, then explicitly accept current client ownership. Exit, restart, and explicitly recheck current saved rules. Inspect persisted completed BUSINESS review, current contract/source/draft-bound assignments with verified:false, unchanged canonical programs and ledgers, and all remaining deployment/observation duties. A CLI exit zero alone is insufficient.
 
 Independent Claude Grok B must use the same final installation and its own clean start/finite budget. No pre-repair repeat, secondary substitution or new vendor matrix is required. This assignment performs no activation, worker, proposal, receipt provisioning or source mutation. Do not execute any historical queues.
+
+
+## Final immutable identity
+
+Installed tree `ff9a030cdb353ec56b9f4f048d40df60e3bb49f77d224eac675ba2b4c1a29568`;7569entries. Product `68775b51b18292e8b461116cec6c33b278ef41cb`, tests `3e7fde650def99b7f2a4745c499bb147fdf45bb6`, frozen source `76f412d01358afab584c51837dce3d6d243e11b2`. Manifest `/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/frozen/installed-artifact-manifest.json` SHA256`faaae6cd232dc4c0db55746e436657ac22480d0e440662132ce4e7082c02ec80`. Installed archive `/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/frozen/installed-artifact.tar.gz` SHA256`6a02685451e5710421fcee838f36805b9b85b81512cedfd5b7988a658d33fcb0`. Source archive `/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/frozen/source-checkpoint.tar.gz` SHA256`5c40428876d906e3c49e240f422b413f29ac4c298a8e3267560f36d0866c5ce6`. Lock SHA256`ad3db81bc663001f36a7b3c2d7dd6fc6a1d3ca5fbd99f68b3a60e85ebaea7fcb`. Runner1.8.0 and local Spec1.11.0, Node22.22.2; complete dependency/tarball/entrypoint identities in `final-artifact.json`. Later commits contain report/harness/evidence only.
+
+```sh
+node "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/frozen/freeze-repair.mjs" --verify
+```
+
+`final-artifact-after.json` verifies the same tree after public runs. `preservation-closure.json` verifies the prior8c75installation, original session projects/captures and untouched reviewer starts. Three exact owned containers were dumped/logged then stopped, not removed; no old container or queue was executed. Public projects/snapshots and captures are sealed read-only, indexed by `public-evidence-index.json` and `/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/public-evidence-manifest.json`.
+
+## Current results and actual commands
+
+`SCORECARD.json` is the single per-artifact scorecard. Full stable suite6499pass/464skip, exit0, unchanged source; types and ten offline gates0. Final explicit domain/freshness5 and assignment/recovery6 selections pass, with SQLite and real PostgreSQL CONTROL-store cases labeled in exact logs. Full-suite skips are not backend passes. Exact command arrays and all exits are in `verification-summary.json`. Raw logs: `/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs`; source inventories: `/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-source-manifests`; generated test observations: `/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-observations`. Their three repo indexes preserve every hash and original attempt association, including both interrupted suites and the isolated fixture failure. Frozen source is complete, but the newest report/handoff must be read from the delivery revision.
+
+Executed primary commands, from the repository root, were:
+
+```sh
+node docs/qualification-evidence/client-duty-review-20260915/run-public-known.mjs counting-wording-control start --project-root . --cli
+node docs/qualification-evidence/client-duty-review-20260915/run-public-known.mjs recovery-tournament-assisted start --project-root . --cli
+node docs/qualification-evidence/client-duty-review-20260915/phase-budget.mjs recovery-tournament-assisted recheck
+node docs/qualification-evidence/client-duty-review-20260915/run-public-known.mjs recovery-tournament-assisted start --project-root . --cli
+```
+
+The original B and first A used `script -q -e` real PTYs. A ownership continuation and final recheck used `script -q -f -e`; use `-f` for live logfile observation and do not discard the returned PTY text. The extra A continuation is recorded, not hidden. The old buffered log plus discarded polling output caused a false suspicion of a hang; the complete transcript contains the menu, Escape declined it, and the positive continuation used current validated reuse. There was no product patch or replacement provider reply.
+
+B exact first/rejection ordering and decision: `PRIMARY-B-BLOCKER.md` and `primary-B-stopped.json`. Two complete16-passage replies; first failed a nonexistent private-field pointer, correction failed counter-specific message9 support. The product had sent a pointer correction, not yet a counting-specific correction. Neither reply saved coverage; no client ownership step was completed. Current v2 counting decisions and pending review remain. Do not change selectors or ask the owner to restate a settled policy. No B restart/recheck or favorable sampling follows this stop.
+
+A: one complete17-passage provider reply, customer_selection mentioned and status_presentation omitted. The host inventory required both. Initial Escape left both unassigned/ BUSINESS pending; next direct Review used validated reuse and explicit current ownership, then another exit/restart/direct Review reused it without another question or call. `primary-result.json` plus the cancellation/business-reviewed/rechecked oracles show source/draft/contract-bound current ownership verified:false, old history retained, and the separate identity/execution/readback duties still unverified. Actual current baseline selectors are canonical `league.result_ratification` on tenant2/boundary6/inclusive86400; these starts are not the older selector-absent program. Exact programs, all ledger tables and104source rows are unchanged in both fixtures.
+
+Total authoring calls3: B2/A1, all openai/gpt-5.6-terra low, complete transports, store:false. Development0; additional resume/recheck0; ceiling25/six reserved retained. No switch, fallback or credit purchase. `primary-budget-closure.json` records the actual window; billing dollars remain unknown. The installed A positive is implementer evidence, not the missing matched B result.
+
+## Independent clean start and next decision
+
+The sealed starts documented above remain untouched. Extract the frozen source archive into a NEW reviewer-owned source directory to preserve relative helper imports. Give the helper plan a NEW owned output root and point its frozen_root/artifact_tree at this exact installation; keep case_sources original root/run mappings for logical-path/socket isolation and checkpoint_root at the sealed reviewer start. Do not replay the delivered plan against completed implementer fixtures. Reuse the established whole-directory/dump restoration and effective-store preflight; never edit reviewed bindings. The primary observer is OpenAI-only; Claude's independently established Grok launcher/configuration and exact provider/model/source consent remain necessary for that lane. Do not relax privacy restrictions or enter free-form planning and call it matched direct Review.
+
+Independent Grok B may proceed on this same candidate, but it does not replace the blocked primary row. The bounded next repair/confirmation decision is the structural pointer/citation failure captured in `PRIMARY-B-BLOCKER.md`. Withhold next-two-layout qualification recommendation until required B and independent named checks are established. Real client selection/status implementation is a separate integration responsibility; this repair establishes unverified ownership only. No new vendor matrix, runtime campaign or unseen case is authorized by this handoff.

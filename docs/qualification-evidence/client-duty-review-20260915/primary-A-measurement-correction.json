@@ -1,0 +1,9 @@
+{
+  "at": "2026-09-15T22:28:51.672354+00:00",
+  "original_observation": "primary-A-unresponsive-observation.json",
+  "classification": "Harness observation error; no product hang established",
+  "evidence": "Complete final-review-terminal.log contains CLIENT INTEGRATION RESPONSIBILITIES, both choices and default pending. The polling wrapper discarded returned PTY output and read a script logfile without -f; the logfile had not flushed. Escape cancelled the pending public choice, after which review persisted as pending.",
+  "correction": "Use script -f and retain PTY outputs. Reopen existing validated report for current ownership; do not solicit a favorable replacement provider reply.",
+  "new_provider_calls_authorized_for_this_measurement_correction": 0,
+  "original_attempt_preserved": true
+}

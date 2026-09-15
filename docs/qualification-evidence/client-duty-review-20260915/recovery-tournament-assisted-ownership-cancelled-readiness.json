@@ -1,0 +1,169 @@
+{
+  "at": "2026-09-15T22:28:51.600Z",
+  "run": "recovery-tournament-assisted",
+  "label": "ownership-cancelled",
+  "artifact_tree": "ff9a030cdb353ec56b9f4f048d40df60e3bb49f77d224eac675ba2b4c1a29568",
+  "kind": "Read-only pure implementation oracle over the installed-run snapshot; not a separate public operation",
+  "modules": [
+    {
+      "name": "authoring-review-readiness.ts",
+      "sha256": "66803f23846f157d40d4acbe9ea631c0a2e761d75ffa04062413f0c15d54c34f"
+    },
+    {
+      "name": "authoring-client-duties.ts",
+      "sha256": "21a9c333f5270d3b88b1cde0c475a49debefa97d143bb43358259dd15970eb13"
+    },
+    {
+      "name": "authoring-policy-source.ts",
+      "sha256": "1198552f2848448970ccf39d13427fa6bf7cb10446e216f96565cebb7b7a84e5"
+    }
+  ],
+  "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+  "coverage_draft_digest": "sha256:ca14cf3864f79098598d9c895ea4e246e23a74a5fec4923b57c3c4e9be514601",
+  "client_duties": {
+    "version": 1,
+    "origin": "PRODUCT-CLIENT-CONTRACT",
+    "mode": "interactive_subject_action",
+    "client": "claude-code",
+    "duties": [
+      "customer_selection",
+      "status_presentation"
+    ],
+    "contract_digest": "sha256:cb86267d06a0abce531eeff8d61d11aab59ea72f1c4247bca2e45d647fe5c941"
+  },
+  "ownership": [
+    {
+      "duty": "customer_selection",
+      "assigned": false
+    },
+    {
+      "duty": "status_presentation",
+      "assigned": false
+    }
+  ],
+  "readiness": {
+    "ready": false,
+    "privacy": false,
+    "items": [
+      {
+        "kind": "deployment_prerequisite",
+        "clientDuty": "customer_selection",
+        "title": "Client target selection",
+        "nextStep": "Use the client integration responsibilities review to accept current ownership. Implementation and per-operation assurance remain unverified.",
+        "passages": [
+          {
+            "start": 3,
+            "end": 3,
+            "disposition": "needs_decision",
+            "interpretation": "Runner verifies the submitted scoped result reference, but the client must capture the referee's intended result selection.",
+            "draft_paths": [
+              "/runner_evidence/runtime_contract/application_obligations/customer_selection"
+            ],
+            "topic": "Referee result selection",
+            "responsibility": "application",
+            "issue_kind": "missing_configuration",
+            "next_step": "Assign the client responsibility for capturing the referee's intended result selection.",
+            "application_obligations": [
+              "customer_selection"
+            ]
+          }
+        ],
+        "blocksReview": true
+      },
+      {
+        "kind": "deployment_prerequisite",
+        "clientDuty": "status_presentation",
+        "title": "Client status presentation",
+        "nextStep": "Use the client integration responsibilities review to accept current ownership. Implementation and per-operation assurance remain unverified.",
+        "passages": [],
+        "blocksReview": true
+      },
+      {
+        "kind": "deployment_prerequisite",
+        "title": "Authenticated referee identity",
+        "nextStep": "After review, choose a client and configure runtime identity. Use a fixed test identity only for local testing; production identity must come from an authenticated application session. Runtime access remains unavailable without it.",
+        "passages": [
+          {
+            "start": 3,
+            "end": 3,
+            "disposition": "needs_decision",
+            "interpretation": "The reviewed scope controls are configured, but connecting an authenticated application session to those tenant and principal bindings is not verified.",
+            "draft_paths": [
+              "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+            ],
+            "topic": "Authenticated referee identity",
+            "responsibility": "deployment",
+            "issue_kind": "missing_configuration",
+            "next_step": "After authority review, configure and verify authenticated-session identity for the reviewed tenant and principal bindings.",
+            "deployment_prerequisite": "authenticated_identity"
+          }
+        ],
+        "blocksReview": false
+      },
+      {
+        "kind": "deployment_prerequisite",
+        "title": "Ratification execution setup",
+        "nextStep": "After authority review, prepare or verify the dedicated writer, review execution permission, then configure and start the worker. Keep reader credentials separate. Setup and execution remain unverified; no request is completed without a successful receipt.",
+        "passages": [
+          {
+            "start": 7,
+            "end": 7,
+            "disposition": "needs_decision",
+            "interpretation": "A Runner-ledger receipt mode is currently configured, but dedicated-writer review, grants, execution enablement, and worker startup for the prepared direct-SQL action are not verified.",
+            "draft_paths": [
+              "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+            ],
+            "topic": "Ratification execution setup",
+            "responsibility": "deployment",
+            "issue_kind": "missing_configuration",
+            "next_step": "After authority review, complete writer, grant, execution-consent, receipt, and worker setup for ratification.",
+            "deployment_prerequisite": "runner_execution_setup"
+          }
+        ],
+        "blocksReview": false
+      },
+      {
+        "kind": "deployment_prerequisite",
+        "title": "Independent changed-row verification",
+        "nextStep": "After each applicable execution, independently observe the source and compare it with the exact intended change. This readback remains unverified; a receipt alone is not that observation. No Action-code repair is required for this external step.",
+        "passages": [
+          {
+            "obligation_assessment": {
+              "origin": "HOST-RESOLVED",
+              "family": "independent_source_readback",
+              "path": "/runner_evidence/runtime_contract/application_obligations/independent_source_readback",
+              "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+              "requirement": "independent_source_readback",
+              "phase": "after_execution",
+              "state": "pending",
+              "verified": false,
+              "dependencies_digest": "sha256:954740fdc118d2992905a649de24f49a1e3c62b6b34fc4b7e0c6f21db0d5242c"
+            },
+            "start": 7,
+            "end": 7,
+            "disposition": "needs_decision",
+            "interpretation": "Independently verifying the changed source row is a separate after-execution observation. It remains unverified; a Runner-ledger receipt is not that observation.",
+            "draft_paths": [
+              "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+            ],
+            "topic": "Independent changed-row verification",
+            "responsibility": "application",
+            "issue_kind": "missing_configuration",
+            "next_step": "Assign who will independently observe each changed source row after execution.",
+            "application_obligations": [
+              "independent_source_readback"
+            ]
+          }
+        ],
+        "blocksReview": false
+      }
+    ],
+    "summary": [
+      "Before activation: Client target selection; Client status presentation. These are required decisions, not optional recommendations.",
+      "Use the applicable review controls to resolve these decisions in this saved draft. Activation is unavailable until the checks pass.",
+      "Client integration still unverified: signed-in customer identity. Check these during client setup before customer use.",
+      "Independent source readback remains unverified for each applicable execution. Perform and retain that separate observation after the change; a receipt or completed business review does not prove it.",
+      "Execution setup pending: dedicated writer review, separate execution permission and worker startup. Continue to these checks after authority review; automatic completion is not yet enabled."
+    ]
+  }
+}

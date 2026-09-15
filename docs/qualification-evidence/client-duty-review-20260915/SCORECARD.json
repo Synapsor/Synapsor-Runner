@@ -1,6 +1,6 @@
 {
-  "at": "2026-09-15T22:17:19.538075+00:00",
-  "artifact_tree": null,
+  "at": "2026-09-15T22:35:30.029274+00:00",
+  "artifact_tree": "ff9a030cdb353ec56b9f4f048d40df60e3bb49f77d224eac675ba2b4c1a29568",
   "product": "68775b51b18292e8b461116cec6c33b278ef41cb",
   "tests": "3e7fde650def99b7f2a4745c499bb147fdf45bb6",
   "rows": [
@@ -47,12 +47,30 @@
       "exit": 0
     },
     {
+      "check": "Saved Terra/Grok omission, ownership and negative controls",
+      "status": "PASS",
+      "evidence": "authoring-client-duties.test.ts; stable-full03",
+      "limitation": "Grok replay uses authentic complete saved normalized report; raw provider envelope unavailable."
+    },
+    {
       "check": "Final installed primary direct-Review B, assignment, restart/recheck",
-      "status": "NOT RUN"
+      "status": "BLOCKED",
+      "actual_calls": 2,
+      "evidence": "primary-B-stopped.json",
+      "detail": "Initial missing pointer, then counter support mismatch in bounded correction; no ownership/restart completion."
     },
     {
       "check": "Final installed settled-A recheck control",
-      "status": "NOT RUN"
+      "status": "PASS",
+      "actual_calls": 1,
+      "additional_calls_on_resume_or_recheck": 0,
+      "evidence": "primary-result.json",
+      "detail": "Initial ownership choice cancelled because of buffered-log observation error; public resumed consent and explicit restart/recheck pass with validated reuse."
+    },
+    {
+      "check": "Primary B restart/recheck after completed BUSINESS review",
+      "status": "NOT RUN",
+      "reason": "Prerequisite review failed; no repeated favorable-response sampling."
     },
     {
       "check": "Independent Claude Grok B on matching candidate/start",
@@ -62,8 +80,15 @@
       "check": "Actual client selection/status implementation assurance",
       "status": "NOT ESTABLISHED",
       "scope": "Ownership review only; no runtime integration implemented or observed."
+    },
+    {
+      "check": "New two-layout qualification",
+      "status": "NOT STARTED",
+      "reason": "Required primary B completion and independent review remain outstanding."
     }
   ],
   "historical_stage_a": "Accepted for its own artifact only",
-  "original_stage_b": "ATTEMPTED NOT PASSED"
+  "original_stage_b": "ATTEMPTED NOT PASSED",
+  "frozen_source": "76f412d01358afab584c51837dce3d6d243e11b2",
+  "overall": "NOT RECOMMENDED FOR ACCEPTANCE: required primary B is blocked before client ownership"
 }

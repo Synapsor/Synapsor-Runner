@@ -1,0 +1,12 @@
+{
+  "started_at": "2026-09-15T22:18:52.552Z",
+  "deadline": "2026-09-15T23:03:52.552Z",
+  "maximum_calls": 25,
+  "reserved_recheck_calls": 6,
+  "closed_at": "2026-09-15T22:33:08.803739+00:00",
+  "actual_calls": 3,
+  "actual_restart_calls": 0,
+  "development_calls": 0,
+  "closed_before_deadline": true,
+  "remaining_allowance_not_used_for_repeat_sampling": true
+}

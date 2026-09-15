@@ -1,0 +1,2872 @@
+{
+  "at": "2026-09-15T22:37:24.238457+00:00",
+  "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915",
+  "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/public-evidence-manifest.json",
+  "manifest_sha256": "fe59d2d1e6fafe3f5696570adda1bc774d04fe65b96aeeb91a83a060cf5e371e",
+  "files": 409,
+  "records": [
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.env.example",
+      "sha256": "2b30a7bd5066bfda2cacc26ea268175eae5accdee67b7fd2d7ae4220fb81667c",
+      "bytes": 247,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.mcp.json",
+      "sha256": "a0c6e5c61920baf48d02f82308ba1a9e4cbd65c73a078a709c21d725e939d207",
+      "bytes": 546,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.mcp.json.bak.2026-09-14T19-33-23-640Z",
+      "sha256": "ffb9e3923371fbab426c90d0335deea27e32a921fcd8f6cc2a4a6d0543a73e09",
+      "bytes": 541,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/action-rules/drafts/reviewed_staging_rules/authority.json",
+      "sha256": "9b9961dbcbb6b01ad708e56492323f76ced7c1afe2649ee8fc762ae8b505effd",
+      "bytes": 25113,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/authority-write-lock.sqlite",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/boundary-authoring/diagnostics/planning-0bc068bb-9d8f-4df8-a5a1-9600a7efcb59.json",
+      "sha256": "2ddd1c2015e9ca371b8e1a42c9f0b11ec62ca574e0563ba9c5970cbf1a81b3de",
+      "bytes": 815,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/boundary-authoring/diagnostics/planning-1cb9b035-c5ea-4a3c-97de-909e11848882.json",
+      "sha256": "d807481d62bc88418a567c9000ee0eafdb1c2744da9aaa5dcb241b4bd187bcf5",
+      "bytes": 819,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/boundary-authoring/diagnostics/planning-38ac11c1-530b-47e2-9425-fe81c8769879.json",
+      "sha256": "959d9dea8beacc7d52fe119496da0d6a1a2b809e5982a410e623a3d244b27779",
+      "bytes": 766,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/boundary-authoring/diagnostics/planning-50df8961-3d6d-48fb-acaf-e59e88fe800e.json",
+      "sha256": "236e82528b6bc4476daaebf0beb349a87fd31dbb83eadcf99d19739865e73d19",
+      "bytes": 818,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/boundary-authoring/diagnostics/planning-bff231c8-9c6f-432c-b268-c6e43861ca51.json",
+      "sha256": "d029295746f4ab8a3899fa653485945faf9defea20661cd4a35d81ba34ce456d",
+      "bytes": 783,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/boundary-authoring/policy-sources/a6d8098e-7f74-4c80-bcc2-728ba936ef7a.json",
+      "sha256": "f2f0e9891a9c4ae13ff3499c111af32706db4097afecb0177628edc55245f5b8",
+      "bytes": 25702,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/boundary-authoring/resume.json",
+      "sha256": "3d5104367bab25d66df51856c73cc97c1601763b06fb3587a536ab2bf2904057",
+      "bytes": 17707,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/claude-code-project.json",
+      "sha256": "8f3a8ede92ea20c78a957b69c8d0b388a22be55fdf22030bbb5c4ba29470a631",
+      "bytes": 339,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/control-policy/fc7bf0729d70f53a8da21b4bf4d7a2080849ad837fd87b0ab7d6441cd246784a.snapshot.json",
+      "sha256": "fc7bf0729d70f53a8da21b4bf4d7a2080849ad837fd87b0ab7d6441cd246784a",
+      "bytes": 69890,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/control-policy/migration.json",
+      "sha256": "72d23b35379efb981d985699d208cbe0fa5f0a4bdbb94ac123e78e3da882d0d0",
+      "bytes": 579,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/draft.json",
+      "sha256": "938b81316c11a52c76af818b6e2dd29cb965ec7d4fb9a133e134848e7f251824",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/1d67ecff9b2eef8a6a7360fd77c2c2a05b6b172fe294cf5a4b54a5c483f9fd54/delegation.json",
+      "sha256": "aca0c84a463a29665cf0b24b15ff54b89ecd84d15deba73d603c0d1acb61b5a1",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/1e0bbccd8a37ba04a4f66eb9e9ee78ccd13cd215455059dedf0fa042c816f7c9/delegation.json",
+      "sha256": "4ad225cca243dcf7d4a2a695264b43daab9ecf2bc07c616dee949b1bce410790",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/1e278f021e4959bc714ccff171ae435c1aea30d65a824b0cbff086b7a1302800/delegation.json",
+      "sha256": "22599e0ea03400fdc067be18bc6fa16d020617f3a525d62905b0ec18fc0c451a",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/21cbaa8fcffbcc93a906c7e26379604c8d27559500d72b0ea66e6c0a3cd96edd/delegation.json",
+      "sha256": "fcec5d08df1830069368e1f4258691e84f78e4b9faaaaad9f7567c4203026d28",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/3121ad167b528a3932b22f1cb1dcb272a30d6f7b95cb9c07bbb163c029ed6fc1/delegation.json",
+      "sha256": "1bfc932697bab50f18d9e2a75a3ca9f57e006bc3466f594e7285514dabc9070c",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/43e6929e54eac8be0560bd52956fe44b9fda381efd7ee084e68ee920ef6b78bd/delegation.json",
+      "sha256": "44335847109d5ddc915fb7f4064c9104c806b5b7f5a231b579c9275ccfb8ad14",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/50d11de2ede76a172b43bfa668c594452cc685991d6fc48d250ecaca0fccbc3f/delegation.json",
+      "sha256": "b254873b6736f0d0f0b7abfdcde47840dc3b4bcbe20e3a0dc50231981f75f421",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/52d6275d9b9893136de8d7ff583630862ce0f04cc594906508fc4b5df28198ae/delegation.json",
+      "sha256": "8b66417ea45c50959609255bc7aa3e6d61529bd8cc182cc3a3e95921ddf0d5b5",
+      "bytes": 2186,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/59b5730bf1f6b499a0834e0608284e5c995f416a64f1d731d2b6507f813a1c77/delegation.json",
+      "sha256": "7ee4ae243088075c8a918b454bfb640111d2a494eb679c08d309121d4f141e23",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/5dd9fb562b76a8d0a01d78604bba2b94021f0d5559371360d9ba2b6fe0923c0d/delegation.json",
+      "sha256": "9adcfe41ba9cc6f80a4309e9312c2521efe94597e5ad454a0cc33543675e9bb2",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/63ff035987583ab0b922c49488627f1932c1a6d8915974d0d1e053d37db1bd88/delegation.json",
+      "sha256": "39d320b63366a881ad31df630be48bd61e8b12e4cfebeb01e2a3157fc7ee8e1d",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/64f5cc847a8fa4039c34629fad05831f057846309146378ec3672f5e3a07133d/delegation.json",
+      "sha256": "28f89186cb2069cb1d4c88c51f774a9cdc2d06f3af77f4510aab121cab16ffee",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/67f76af2502a98aba4f327ce4f39905f71c4e8b9f763185b3889867c275cd260/delegation.json",
+      "sha256": "938b81316c11a52c76af818b6e2dd29cb965ec7d4fb9a133e134848e7f251824",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/6e114a9b366a538ef1dd224c9c7774a89c6244fa7aa143b0e22cb7b816951b19/delegation.json",
+      "sha256": "6ad86db5f193dd7f6171f4a12576160f935607a88fbc819b6ce937c06895a5f2",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/8dff28b1f26d83df65d5778d05e8909a171f39a7516a152740e730c2d904b775/delegation.json",
+      "sha256": "2b23a04ef628659808825ff54018db046af69b3fa2ca4f194000962da02294ab",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/aa4e195db9c660da92dd61ec02466ae0527371c1298122a8c9ba99127eac9829/delegation.json",
+      "sha256": "aff5703348f157edf27fe0d3f3ac0983d31a768e6e7ba8fd3f1fa087f741b889",
+      "bytes": 2186,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/aad5ee20342a751805c8a4989ee5ab2a54596460d0363acfde9564d01cd4a2a0/delegation.json",
+      "sha256": "1949c59435b88fc68578de26172fd9deaa5249ccbedeb504e27bdcc31ea5c54f",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/c5c0be5c94697b8a2d36db416eeb34953dfa866e03d0a4d7e95dc7407a6e6f7d/delegation.json",
+      "sha256": "c496bf7591fc9039a443ca822fb7660f761f3606885a495c16a984bdcf037b47",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/c67aee2e96fe09429938287b5673b438d6e3d5e35893832aa130ac3c6aad1ace/delegation.json",
+      "sha256": "5aa2ecbf3fc837291580502206edb3508949e7c04b6ea6ce19625475369189fe",
+      "bytes": 2186,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/f4882700b81e82ecc8a60dbc0eb18aefe660fee4cf432666a9a60f8c743b4636/delegation.json",
+      "sha256": "12190632eef95a7510bbc8200703e1b39a3df45a92c0bccc15061faba00ebe16",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/exploration-locks/5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6.json",
+      "sha256": "096c4f382b2221190414daeebebc047d72e67e6f781f7546d5c09d47f7fb6eb1",
+      "bytes": 4094,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/explore-audit.key",
+      "sha256": "d2727eca34a52159ff94522bb2ae60fb8fad27ee11ef6bad0ab5798d038bd85c",
+      "bytes": 43,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/fresh-governed-authoring.json",
+      "sha256": "9c41a19b7898bbafc3817fc3def4d3c33ff6da5a0bb21540f961016b4a6b4b84",
+      "bytes": 70050,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/guided-action-drafts.json",
+      "sha256": "89337d65f591dc161db2fd208c3bb10c1f4fce9b6a308d3bfcedd960e98f911b",
+      "bytes": 223,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/guided-onboarding.json",
+      "sha256": "881dfe2b4940ea7fb0bd5572ce6dec4fb64135a57358fa102d5160f305119629",
+      "bytes": 1200,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/local-test-runtime.json",
+      "sha256": "7ba832ed3b8ac78dede451b4300442cab65900eb9451366120916ff2c55b27d9",
+      "bytes": 446,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/local.db",
+      "sha256": "d1601c721c047ca153ad85000916cff91b43f5ab52ad2ad762756e55f0f40a65",
+      "bytes": 1982464,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/mcp/claude.json",
+      "sha256": "f6573c39b842f46813c64b2ec1140c71ed0f2a27bdfab92af11c89a6aabcbe4f",
+      "bytes": 249,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/mcp/codex.toml",
+      "sha256": "a6a7c4246556014a37d4d439e9b605517c4e556384a34801cd86104845bf184c",
+      "bytes": 137,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/mcp/cursor.json",
+      "sha256": "f6573c39b842f46813c64b2ec1140c71ed0f2a27bdfab92af11c89a6aabcbe4f",
+      "bytes": 249,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/mcp/generic-stdio.json",
+      "sha256": "f6573c39b842f46813c64b2ec1140c71ed0f2a27bdfab92af11c89a6aabcbe4f",
+      "bytes": 249,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/protect-state.json",
+      "sha256": "38eb65e739677e089b8b88ffcaf66144ed3dc94d6a48748b63b101f20b9b205a",
+      "bytes": 2136,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/read-workloads/rw_63a147ea2e52e149a4b89b457142fdbd.json",
+      "sha256": "d9a00a285006e98c1e87f6275d0f2c69a65ccd7d0ff8399beb0052b6ad901517",
+      "bytes": 16789,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/read-workloads/rw_63a147ea2e52e149a4b89b457142fdbd.review.json",
+      "sha256": "787f3cf72d24d81dfcd05c258ade9743aa4741db764303c772418b60b048f1e7",
+      "bytes": 551,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/runtime-admission.sqlite",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/writeback-setup-plan.json",
+      "sha256": "80565f0cdba2266ab5653b999e266426df7bf7ef32ffef56916e52776ae10d3d",
+      "bytes": 286,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/writer-handoffs/review-Rvi7TQ/README.md",
+      "sha256": "1b2cbb6c96c55dd9cadd69c76cd5ef4828f94abb18cee932a3b643e0910921b5",
+      "bytes": 3030,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/writer-handoffs/review-Rvi7TQ/grants.sql",
+      "sha256": "79179362f84b499c72cbe3628b97f312e19e410514ebfb9bcc60cef10dde99a9",
+      "bytes": 1726,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/writer-handoffs/review-Rvi7TQ/requirements.json",
+      "sha256": "f8df2ad42ff35647e1c11b569e42a8906966eb368140ebb436068e8e8f69519d",
+      "bytes": 2939,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/writer-handoffs/review-lA0OjQ/README.md",
+      "sha256": "e9b9ba97632413922cea5a08caca0d132e974c02c545728b9f289e57b60ba72b",
+      "bytes": 2974,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/writer-handoffs/review-lA0OjQ/grants.sql",
+      "sha256": "6d9c388e795269fc81d178f8626a284efbad9a856d5a257ce53496ca2be6da4b",
+      "bytes": 1705,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/.synapsor/writer-handoffs/review-lA0OjQ/requirements.json",
+      "sha256": "2c1c9a0cfc59cfe0bfc0eed7acfd58ceba9b204dc5026ce7e5306ab900a72bdf",
+      "bytes": 2885,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/rules.txt",
+      "sha256": "2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+      "bytes": 1757,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/synapsor.actions.runner.json",
+      "sha256": "38a8da6669909bb1238975b86f6039d7c12bfb9459484db43e7122a8addbd329",
+      "bytes": 2352,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project/synapsor.runner.json",
+      "sha256": "0525cc73b2a63ead11b721d3e2d341d302c8254d625245fa2ed076226dde7488",
+      "bytes": 706,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/project-manifest.json",
+      "sha256": "fed37efabe24ac93f30d7612ad5dbda99b42a2d3c3d344675d9c39c867cc57d8",
+      "bytes": 13156,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/result.json",
+      "sha256": "cf6929e0e36c5155932640a0aafa5164095affb7e2e94743ffe63daaf322b27d",
+      "bytes": 2650,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/source-readback.json",
+      "sha256": "4c28dccd5d440f1798ace4882a0441cdbce3bc9613d42e02037c82168405e44e",
+      "bytes": 56635,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/business-reviewed/source.dump",
+      "sha256": "7cfb41a33f22e8f1e17747bccf40119a0b18ae7f0dfeab3bb883079ed27ecc2e",
+      "bytes": 15315,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.env.example",
+      "sha256": "2b30a7bd5066bfda2cacc26ea268175eae5accdee67b7fd2d7ae4220fb81667c",
+      "bytes": 247,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.mcp.json",
+      "sha256": "a0c6e5c61920baf48d02f82308ba1a9e4cbd65c73a078a709c21d725e939d207",
+      "bytes": 546,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.mcp.json.bak.2026-09-14T19-33-23-640Z",
+      "sha256": "ffb9e3923371fbab426c90d0335deea27e32a921fcd8f6cc2a4a6d0543a73e09",
+      "bytes": 541,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/action-rules/drafts/reviewed_staging_rules/authority.json",
+      "sha256": "9b9961dbcbb6b01ad708e56492323f76ced7c1afe2649ee8fc762ae8b505effd",
+      "bytes": 25113,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/authority-write-lock.sqlite",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/boundary-authoring/diagnostics/planning-0bc068bb-9d8f-4df8-a5a1-9600a7efcb59.json",
+      "sha256": "2ddd1c2015e9ca371b8e1a42c9f0b11ec62ca574e0563ba9c5970cbf1a81b3de",
+      "bytes": 815,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/boundary-authoring/diagnostics/planning-1cb9b035-c5ea-4a3c-97de-909e11848882.json",
+      "sha256": "d807481d62bc88418a567c9000ee0eafdb1c2744da9aaa5dcb241b4bd187bcf5",
+      "bytes": 819,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/boundary-authoring/diagnostics/planning-38ac11c1-530b-47e2-9425-fe81c8769879.json",
+      "sha256": "959d9dea8beacc7d52fe119496da0d6a1a2b809e5982a410e623a3d244b27779",
+      "bytes": 766,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/boundary-authoring/diagnostics/planning-50df8961-3d6d-48fb-acaf-e59e88fe800e.json",
+      "sha256": "236e82528b6bc4476daaebf0beb349a87fd31dbb83eadcf99d19739865e73d19",
+      "bytes": 818,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/boundary-authoring/diagnostics/planning-bff231c8-9c6f-432c-b268-c6e43861ca51.json",
+      "sha256": "d029295746f4ab8a3899fa653485945faf9defea20661cd4a35d81ba34ce456d",
+      "bytes": 783,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/boundary-authoring/policy-sources/a6d8098e-7f74-4c80-bcc2-728ba936ef7a.json",
+      "sha256": "7efbf6786f90bd52c689e1eff9dee4d174314d47cac61ad899129a70863a3606",
+      "bytes": 25248,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/boundary-authoring/resume.json",
+      "sha256": "a5e9f48e71a50a00f6324ef4e5318a795fd35eaaee5a50def79ddb73a3f289cb",
+      "bytes": 17494,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/claude-code-project.json",
+      "sha256": "8f3a8ede92ea20c78a957b69c8d0b388a22be55fdf22030bbb5c4ba29470a631",
+      "bytes": 339,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/control-policy/fc7bf0729d70f53a8da21b4bf4d7a2080849ad837fd87b0ab7d6441cd246784a.snapshot.json",
+      "sha256": "fc7bf0729d70f53a8da21b4bf4d7a2080849ad837fd87b0ab7d6441cd246784a",
+      "bytes": 69890,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/control-policy/migration.json",
+      "sha256": "72d23b35379efb981d985699d208cbe0fa5f0a4bdbb94ac123e78e3da882d0d0",
+      "bytes": 579,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/draft.json",
+      "sha256": "938b81316c11a52c76af818b6e2dd29cb965ec7d4fb9a133e134848e7f251824",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/1d67ecff9b2eef8a6a7360fd77c2c2a05b6b172fe294cf5a4b54a5c483f9fd54/delegation.json",
+      "sha256": "aca0c84a463a29665cf0b24b15ff54b89ecd84d15deba73d603c0d1acb61b5a1",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/1e0bbccd8a37ba04a4f66eb9e9ee78ccd13cd215455059dedf0fa042c816f7c9/delegation.json",
+      "sha256": "4ad225cca243dcf7d4a2a695264b43daab9ecf2bc07c616dee949b1bce410790",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/1e278f021e4959bc714ccff171ae435c1aea30d65a824b0cbff086b7a1302800/delegation.json",
+      "sha256": "22599e0ea03400fdc067be18bc6fa16d020617f3a525d62905b0ec18fc0c451a",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/21cbaa8fcffbcc93a906c7e26379604c8d27559500d72b0ea66e6c0a3cd96edd/delegation.json",
+      "sha256": "fcec5d08df1830069368e1f4258691e84f78e4b9faaaaad9f7567c4203026d28",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/3121ad167b528a3932b22f1cb1dcb272a30d6f7b95cb9c07bbb163c029ed6fc1/delegation.json",
+      "sha256": "1bfc932697bab50f18d9e2a75a3ca9f57e006bc3466f594e7285514dabc9070c",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/43e6929e54eac8be0560bd52956fe44b9fda381efd7ee084e68ee920ef6b78bd/delegation.json",
+      "sha256": "44335847109d5ddc915fb7f4064c9104c806b5b7f5a231b579c9275ccfb8ad14",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/50d11de2ede76a172b43bfa668c594452cc685991d6fc48d250ecaca0fccbc3f/delegation.json",
+      "sha256": "b254873b6736f0d0f0b7abfdcde47840dc3b4bcbe20e3a0dc50231981f75f421",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/52d6275d9b9893136de8d7ff583630862ce0f04cc594906508fc4b5df28198ae/delegation.json",
+      "sha256": "8b66417ea45c50959609255bc7aa3e6d61529bd8cc182cc3a3e95921ddf0d5b5",
+      "bytes": 2186,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/59b5730bf1f6b499a0834e0608284e5c995f416a64f1d731d2b6507f813a1c77/delegation.json",
+      "sha256": "7ee4ae243088075c8a918b454bfb640111d2a494eb679c08d309121d4f141e23",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/5dd9fb562b76a8d0a01d78604bba2b94021f0d5559371360d9ba2b6fe0923c0d/delegation.json",
+      "sha256": "9adcfe41ba9cc6f80a4309e9312c2521efe94597e5ad454a0cc33543675e9bb2",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/63ff035987583ab0b922c49488627f1932c1a6d8915974d0d1e053d37db1bd88/delegation.json",
+      "sha256": "39d320b63366a881ad31df630be48bd61e8b12e4cfebeb01e2a3157fc7ee8e1d",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/64f5cc847a8fa4039c34629fad05831f057846309146378ec3672f5e3a07133d/delegation.json",
+      "sha256": "28f89186cb2069cb1d4c88c51f774a9cdc2d06f3af77f4510aab121cab16ffee",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/67f76af2502a98aba4f327ce4f39905f71c4e8b9f763185b3889867c275cd260/delegation.json",
+      "sha256": "938b81316c11a52c76af818b6e2dd29cb965ec7d4fb9a133e134848e7f251824",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/6e114a9b366a538ef1dd224c9c7774a89c6244fa7aa143b0e22cb7b816951b19/delegation.json",
+      "sha256": "6ad86db5f193dd7f6171f4a12576160f935607a88fbc819b6ce937c06895a5f2",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/8dff28b1f26d83df65d5778d05e8909a171f39a7516a152740e730c2d904b775/delegation.json",
+      "sha256": "2b23a04ef628659808825ff54018db046af69b3fa2ca4f194000962da02294ab",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/aa4e195db9c660da92dd61ec02466ae0527371c1298122a8c9ba99127eac9829/delegation.json",
+      "sha256": "aff5703348f157edf27fe0d3f3ac0983d31a768e6e7ba8fd3f1fa087f741b889",
+      "bytes": 2186,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/aad5ee20342a751805c8a4989ee5ab2a54596460d0363acfde9564d01cd4a2a0/delegation.json",
+      "sha256": "1949c59435b88fc68578de26172fd9deaa5249ccbedeb504e27bdcc31ea5c54f",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/c5c0be5c94697b8a2d36db416eeb34953dfa866e03d0a4d7e95dc7407a6e6f7d/delegation.json",
+      "sha256": "c496bf7591fc9039a443ca822fb7660f761f3606885a495c16a984bdcf037b47",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/c67aee2e96fe09429938287b5673b438d6e3d5e35893832aa130ac3c6aad1ace/delegation.json",
+      "sha256": "5aa2ecbf3fc837291580502206edb3508949e7c04b6ea6ce19625475369189fe",
+      "bytes": 2186,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/f4882700b81e82ecc8a60dbc0eb18aefe660fee4cf432666a9a60f8c743b4636/delegation.json",
+      "sha256": "12190632eef95a7510bbc8200703e1b39a3df45a92c0bccc15061faba00ebe16",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/exploration-locks/5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6.json",
+      "sha256": "096c4f382b2221190414daeebebc047d72e67e6f781f7546d5c09d47f7fb6eb1",
+      "bytes": 4094,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/explore-audit.key",
+      "sha256": "d2727eca34a52159ff94522bb2ae60fb8fad27ee11ef6bad0ab5798d038bd85c",
+      "bytes": 43,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/fresh-governed-authoring.json",
+      "sha256": "9c41a19b7898bbafc3817fc3def4d3c33ff6da5a0bb21540f961016b4a6b4b84",
+      "bytes": 70050,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/guided-action-drafts.json",
+      "sha256": "89337d65f591dc161db2fd208c3bb10c1f4fce9b6a308d3bfcedd960e98f911b",
+      "bytes": 223,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/guided-onboarding.json",
+      "sha256": "881dfe2b4940ea7fb0bd5572ce6dec4fb64135a57358fa102d5160f305119629",
+      "bytes": 1200,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/local-test-runtime.json",
+      "sha256": "7ba832ed3b8ac78dede451b4300442cab65900eb9451366120916ff2c55b27d9",
+      "bytes": 446,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/local.db",
+      "sha256": "5b65a12d57c762d722986ec597688f842fc595adea6cb03279ea53a336136e7c",
+      "bytes": 1982464,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/mcp/claude.json",
+      "sha256": "f6573c39b842f46813c64b2ec1140c71ed0f2a27bdfab92af11c89a6aabcbe4f",
+      "bytes": 249,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/mcp/codex.toml",
+      "sha256": "a6a7c4246556014a37d4d439e9b605517c4e556384a34801cd86104845bf184c",
+      "bytes": 137,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/mcp/cursor.json",
+      "sha256": "f6573c39b842f46813c64b2ec1140c71ed0f2a27bdfab92af11c89a6aabcbe4f",
+      "bytes": 249,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/mcp/generic-stdio.json",
+      "sha256": "f6573c39b842f46813c64b2ec1140c71ed0f2a27bdfab92af11c89a6aabcbe4f",
+      "bytes": 249,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/protect-state.json",
+      "sha256": "38eb65e739677e089b8b88ffcaf66144ed3dc94d6a48748b63b101f20b9b205a",
+      "bytes": 2136,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/read-workloads/rw_63a147ea2e52e149a4b89b457142fdbd.json",
+      "sha256": "d9a00a285006e98c1e87f6275d0f2c69a65ccd7d0ff8399beb0052b6ad901517",
+      "bytes": 16789,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/read-workloads/rw_63a147ea2e52e149a4b89b457142fdbd.review.json",
+      "sha256": "787f3cf72d24d81dfcd05c258ade9743aa4741db764303c772418b60b048f1e7",
+      "bytes": 551,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/runtime-admission.sqlite",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/writeback-setup-plan.json",
+      "sha256": "80565f0cdba2266ab5653b999e266426df7bf7ef32ffef56916e52776ae10d3d",
+      "bytes": 286,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/writer-handoffs/review-Rvi7TQ/README.md",
+      "sha256": "1b2cbb6c96c55dd9cadd69c76cd5ef4828f94abb18cee932a3b643e0910921b5",
+      "bytes": 3030,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/writer-handoffs/review-Rvi7TQ/grants.sql",
+      "sha256": "79179362f84b499c72cbe3628b97f312e19e410514ebfb9bcc60cef10dde99a9",
+      "bytes": 1726,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/writer-handoffs/review-Rvi7TQ/requirements.json",
+      "sha256": "f8df2ad42ff35647e1c11b569e42a8906966eb368140ebb436068e8e8f69519d",
+      "bytes": 2939,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/writer-handoffs/review-lA0OjQ/README.md",
+      "sha256": "e9b9ba97632413922cea5a08caca0d132e974c02c545728b9f289e57b60ba72b",
+      "bytes": 2974,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/writer-handoffs/review-lA0OjQ/grants.sql",
+      "sha256": "6d9c388e795269fc81d178f8626a284efbad9a856d5a257ce53496ca2be6da4b",
+      "bytes": 1705,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/.synapsor/writer-handoffs/review-lA0OjQ/requirements.json",
+      "sha256": "2c1c9a0cfc59cfe0bfc0eed7acfd58ceba9b204dc5026ce7e5306ab900a72bdf",
+      "bytes": 2885,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/rules.txt",
+      "sha256": "2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+      "bytes": 1757,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/synapsor.actions.runner.json",
+      "sha256": "38a8da6669909bb1238975b86f6039d7c12bfb9459484db43e7122a8addbd329",
+      "bytes": 2352,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project/synapsor.runner.json",
+      "sha256": "0525cc73b2a63ead11b721d3e2d341d302c8254d625245fa2ed076226dde7488",
+      "bytes": 706,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/project-manifest.json",
+      "sha256": "261c32739890b937bb3098f7b615108e746950dcd8a1e70e64631d177eace6c7",
+      "bytes": 13156,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/result.json",
+      "sha256": "ab2ebec2b87bbea694f431b42159c8877d8ed5479820c588e1f6f89ac797c7c3",
+      "bytes": 2632,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/source-readback.json",
+      "sha256": "4c28dccd5d440f1798ace4882a0441cdbce3bc9613d42e02037c82168405e44e",
+      "bytes": 56635,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/ownership-cancelled/source.dump",
+      "sha256": "ca6100d9ae288c04afe2f638ad0e34a02c860e93bd6c8daa00844d6df3d669bf",
+      "bytes": 15315,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.env.example",
+      "sha256": "2b30a7bd5066bfda2cacc26ea268175eae5accdee67b7fd2d7ae4220fb81667c",
+      "bytes": 247,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.mcp.json",
+      "sha256": "a0c6e5c61920baf48d02f82308ba1a9e4cbd65c73a078a709c21d725e939d207",
+      "bytes": 546,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.mcp.json.bak.2026-09-14T19-33-23-640Z",
+      "sha256": "ffb9e3923371fbab426c90d0335deea27e32a921fcd8f6cc2a4a6d0543a73e09",
+      "bytes": 541,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/action-rules/drafts/reviewed_staging_rules/authority.json",
+      "sha256": "9b9961dbcbb6b01ad708e56492323f76ced7c1afe2649ee8fc762ae8b505effd",
+      "bytes": 25113,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/authority-write-lock.sqlite",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/boundary-authoring/diagnostics/planning-0bc068bb-9d8f-4df8-a5a1-9600a7efcb59.json",
+      "sha256": "2ddd1c2015e9ca371b8e1a42c9f0b11ec62ca574e0563ba9c5970cbf1a81b3de",
+      "bytes": 815,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/boundary-authoring/diagnostics/planning-1cb9b035-c5ea-4a3c-97de-909e11848882.json",
+      "sha256": "d807481d62bc88418a567c9000ee0eafdb1c2744da9aaa5dcb241b4bd187bcf5",
+      "bytes": 819,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/boundary-authoring/diagnostics/planning-38ac11c1-530b-47e2-9425-fe81c8769879.json",
+      "sha256": "959d9dea8beacc7d52fe119496da0d6a1a2b809e5982a410e623a3d244b27779",
+      "bytes": 766,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/boundary-authoring/diagnostics/planning-50df8961-3d6d-48fb-acaf-e59e88fe800e.json",
+      "sha256": "236e82528b6bc4476daaebf0beb349a87fd31dbb83eadcf99d19739865e73d19",
+      "bytes": 818,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/boundary-authoring/diagnostics/planning-bff231c8-9c6f-432c-b268-c6e43861ca51.json",
+      "sha256": "d029295746f4ab8a3899fa653485945faf9defea20661cd4a35d81ba34ce456d",
+      "bytes": 783,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/boundary-authoring/policy-sources/a6d8098e-7f74-4c80-bcc2-728ba936ef7a.json",
+      "sha256": "f2f0e9891a9c4ae13ff3499c111af32706db4097afecb0177628edc55245f5b8",
+      "bytes": 25702,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/boundary-authoring/resume.json",
+      "sha256": "bb60e3c5ef31eb9a086ec7f6c160a0b80688e8a45ba618c842741e3180cbfbee",
+      "bytes": 18549,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/claude-code-project.json",
+      "sha256": "8f3a8ede92ea20c78a957b69c8d0b388a22be55fdf22030bbb5c4ba29470a631",
+      "bytes": 339,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/control-policy/fc7bf0729d70f53a8da21b4bf4d7a2080849ad837fd87b0ab7d6441cd246784a.snapshot.json",
+      "sha256": "fc7bf0729d70f53a8da21b4bf4d7a2080849ad837fd87b0ab7d6441cd246784a",
+      "bytes": 69890,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/control-policy/migration.json",
+      "sha256": "72d23b35379efb981d985699d208cbe0fa5f0a4bdbb94ac123e78e3da882d0d0",
+      "bytes": 579,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/draft.json",
+      "sha256": "938b81316c11a52c76af818b6e2dd29cb965ec7d4fb9a133e134848e7f251824",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/1d67ecff9b2eef8a6a7360fd77c2c2a05b6b172fe294cf5a4b54a5c483f9fd54/delegation.json",
+      "sha256": "aca0c84a463a29665cf0b24b15ff54b89ecd84d15deba73d603c0d1acb61b5a1",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/1e0bbccd8a37ba04a4f66eb9e9ee78ccd13cd215455059dedf0fa042c816f7c9/delegation.json",
+      "sha256": "4ad225cca243dcf7d4a2a695264b43daab9ecf2bc07c616dee949b1bce410790",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/1e278f021e4959bc714ccff171ae435c1aea30d65a824b0cbff086b7a1302800/delegation.json",
+      "sha256": "22599e0ea03400fdc067be18bc6fa16d020617f3a525d62905b0ec18fc0c451a",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/21cbaa8fcffbcc93a906c7e26379604c8d27559500d72b0ea66e6c0a3cd96edd/delegation.json",
+      "sha256": "fcec5d08df1830069368e1f4258691e84f78e4b9faaaaad9f7567c4203026d28",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/3121ad167b528a3932b22f1cb1dcb272a30d6f7b95cb9c07bbb163c029ed6fc1/delegation.json",
+      "sha256": "1bfc932697bab50f18d9e2a75a3ca9f57e006bc3466f594e7285514dabc9070c",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/43e6929e54eac8be0560bd52956fe44b9fda381efd7ee084e68ee920ef6b78bd/delegation.json",
+      "sha256": "44335847109d5ddc915fb7f4064c9104c806b5b7f5a231b579c9275ccfb8ad14",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/50d11de2ede76a172b43bfa668c594452cc685991d6fc48d250ecaca0fccbc3f/delegation.json",
+      "sha256": "b254873b6736f0d0f0b7abfdcde47840dc3b4bcbe20e3a0dc50231981f75f421",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/52d6275d9b9893136de8d7ff583630862ce0f04cc594906508fc4b5df28198ae/delegation.json",
+      "sha256": "8b66417ea45c50959609255bc7aa3e6d61529bd8cc182cc3a3e95921ddf0d5b5",
+      "bytes": 2186,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/59b5730bf1f6b499a0834e0608284e5c995f416a64f1d731d2b6507f813a1c77/delegation.json",
+      "sha256": "7ee4ae243088075c8a918b454bfb640111d2a494eb679c08d309121d4f141e23",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/5dd9fb562b76a8d0a01d78604bba2b94021f0d5559371360d9ba2b6fe0923c0d/delegation.json",
+      "sha256": "9adcfe41ba9cc6f80a4309e9312c2521efe94597e5ad454a0cc33543675e9bb2",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/63ff035987583ab0b922c49488627f1932c1a6d8915974d0d1e053d37db1bd88/delegation.json",
+      "sha256": "39d320b63366a881ad31df630be48bd61e8b12e4cfebeb01e2a3157fc7ee8e1d",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/64f5cc847a8fa4039c34629fad05831f057846309146378ec3672f5e3a07133d/delegation.json",
+      "sha256": "28f89186cb2069cb1d4c88c51f774a9cdc2d06f3af77f4510aab121cab16ffee",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/67f76af2502a98aba4f327ce4f39905f71c4e8b9f763185b3889867c275cd260/delegation.json",
+      "sha256": "938b81316c11a52c76af818b6e2dd29cb965ec7d4fb9a133e134848e7f251824",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/6e114a9b366a538ef1dd224c9c7774a89c6244fa7aa143b0e22cb7b816951b19/delegation.json",
+      "sha256": "6ad86db5f193dd7f6171f4a12576160f935607a88fbc819b6ce937c06895a5f2",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/8dff28b1f26d83df65d5778d05e8909a171f39a7516a152740e730c2d904b775/delegation.json",
+      "sha256": "2b23a04ef628659808825ff54018db046af69b3fa2ca4f194000962da02294ab",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/aa4e195db9c660da92dd61ec02466ae0527371c1298122a8c9ba99127eac9829/delegation.json",
+      "sha256": "aff5703348f157edf27fe0d3f3ac0983d31a768e6e7ba8fd3f1fa087f741b889",
+      "bytes": 2186,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/aad5ee20342a751805c8a4989ee5ab2a54596460d0363acfde9564d01cd4a2a0/delegation.json",
+      "sha256": "1949c59435b88fc68578de26172fd9deaa5249ccbedeb504e27bdcc31ea5c54f",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/c5c0be5c94697b8a2d36db416eeb34953dfa866e03d0a4d7e95dc7407a6e6f7d/delegation.json",
+      "sha256": "c496bf7591fc9039a443ca822fb7660f761f3606885a495c16a984bdcf037b47",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/c67aee2e96fe09429938287b5673b438d6e3d5e35893832aa130ac3c6aad1ace/delegation.json",
+      "sha256": "5aa2ecbf3fc837291580502206edb3508949e7c04b6ea6ce19625475369189fe",
+      "bytes": 2186,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/f4882700b81e82ecc8a60dbc0eb18aefe660fee4cf432666a9a60f8c743b4636/delegation.json",
+      "sha256": "12190632eef95a7510bbc8200703e1b39a3df45a92c0bccc15061faba00ebe16",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/exploration-locks/5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6.json",
+      "sha256": "096c4f382b2221190414daeebebc047d72e67e6f781f7546d5c09d47f7fb6eb1",
+      "bytes": 4094,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/explore-audit.key",
+      "sha256": "d2727eca34a52159ff94522bb2ae60fb8fad27ee11ef6bad0ab5798d038bd85c",
+      "bytes": 43,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/fresh-governed-authoring.json",
+      "sha256": "9c41a19b7898bbafc3817fc3def4d3c33ff6da5a0bb21540f961016b4a6b4b84",
+      "bytes": 70050,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/guided-action-drafts.json",
+      "sha256": "89337d65f591dc161db2fd208c3bb10c1f4fce9b6a308d3bfcedd960e98f911b",
+      "bytes": 223,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/guided-onboarding.json",
+      "sha256": "881dfe2b4940ea7fb0bd5572ce6dec4fb64135a57358fa102d5160f305119629",
+      "bytes": 1200,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/local-test-runtime.json",
+      "sha256": "7ba832ed3b8ac78dede451b4300442cab65900eb9451366120916ff2c55b27d9",
+      "bytes": 446,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/local.db",
+      "sha256": "6183938650093c13c06c45005a157cbe07bb1175d1a388e32a6a7d825513f702",
+      "bytes": 1982464,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/mcp/claude.json",
+      "sha256": "f6573c39b842f46813c64b2ec1140c71ed0f2a27bdfab92af11c89a6aabcbe4f",
+      "bytes": 249,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/mcp/codex.toml",
+      "sha256": "a6a7c4246556014a37d4d439e9b605517c4e556384a34801cd86104845bf184c",
+      "bytes": 137,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/mcp/cursor.json",
+      "sha256": "f6573c39b842f46813c64b2ec1140c71ed0f2a27bdfab92af11c89a6aabcbe4f",
+      "bytes": 249,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/mcp/generic-stdio.json",
+      "sha256": "f6573c39b842f46813c64b2ec1140c71ed0f2a27bdfab92af11c89a6aabcbe4f",
+      "bytes": 249,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/protect-state.json",
+      "sha256": "38eb65e739677e089b8b88ffcaf66144ed3dc94d6a48748b63b101f20b9b205a",
+      "bytes": 2136,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/read-workloads/rw_63a147ea2e52e149a4b89b457142fdbd.json",
+      "sha256": "d9a00a285006e98c1e87f6275d0f2c69a65ccd7d0ff8399beb0052b6ad901517",
+      "bytes": 16789,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/read-workloads/rw_63a147ea2e52e149a4b89b457142fdbd.review.json",
+      "sha256": "787f3cf72d24d81dfcd05c258ade9743aa4741db764303c772418b60b048f1e7",
+      "bytes": 551,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/runtime-admission.sqlite",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/writeback-setup-plan.json",
+      "sha256": "80565f0cdba2266ab5653b999e266426df7bf7ef32ffef56916e52776ae10d3d",
+      "bytes": 286,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/writer-handoffs/review-Rvi7TQ/README.md",
+      "sha256": "1b2cbb6c96c55dd9cadd69c76cd5ef4828f94abb18cee932a3b643e0910921b5",
+      "bytes": 3030,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/writer-handoffs/review-Rvi7TQ/grants.sql",
+      "sha256": "79179362f84b499c72cbe3628b97f312e19e410514ebfb9bcc60cef10dde99a9",
+      "bytes": 1726,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/writer-handoffs/review-Rvi7TQ/requirements.json",
+      "sha256": "f8df2ad42ff35647e1c11b569e42a8906966eb368140ebb436068e8e8f69519d",
+      "bytes": 2939,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/writer-handoffs/review-lA0OjQ/README.md",
+      "sha256": "e9b9ba97632413922cea5a08caca0d132e974c02c545728b9f289e57b60ba72b",
+      "bytes": 2974,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/writer-handoffs/review-lA0OjQ/grants.sql",
+      "sha256": "6d9c388e795269fc81d178f8626a284efbad9a856d5a257ce53496ca2be6da4b",
+      "bytes": 1705,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/.synapsor/writer-handoffs/review-lA0OjQ/requirements.json",
+      "sha256": "2c1c9a0cfc59cfe0bfc0eed7acfd58ceba9b204dc5026ce7e5306ab900a72bdf",
+      "bytes": 2885,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/rules.txt",
+      "sha256": "2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+      "bytes": 1757,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/synapsor.actions.runner.json",
+      "sha256": "38a8da6669909bb1238975b86f6039d7c12bfb9459484db43e7122a8addbd329",
+      "bytes": 2352,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project/synapsor.runner.json",
+      "sha256": "0525cc73b2a63ead11b721d3e2d341d302c8254d625245fa2ed076226dde7488",
+      "bytes": 706,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/project-manifest.json",
+      "sha256": "f065166a152d3a806f8731efaa116cc15f2b555c953ae964ac7fd8cb35556781",
+      "bytes": 13156,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/result.json",
+      "sha256": "8df7adf2efb6a58fa637e31bd0475de99f84ef63a6cbeea3904b4a9a043735b4",
+      "bytes": 2648,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/source-readback.json",
+      "sha256": "4c28dccd5d440f1798ace4882a0441cdbce3bc9613d42e02037c82168405e44e",
+      "bytes": 56635,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/checkpoints/rechecked/source.dump",
+      "sha256": "c25d06293016d5fc0ccdaeceb9a9867dc084fe4204524b534219ceb1613611c2",
+      "bytes": 15315,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/logs/final-recheck-terminal.log",
+      "sha256": "3105311c5d72061cd926227f6dc2e3fa6ff02b954d06d6f53f202ee62cb3ca95",
+      "bytes": 3574,
+      "mode": 292
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/logs/final-review-terminal.log",
+      "sha256": "02523dc337e5f6f638df7e83a93206e65e43f821dc6beeaaaa086b82e1053d83",
+      "bytes": 56480,
+      "mode": 292
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/logs/ownership-resume-terminal.log",
+      "sha256": "70fcc3473d1ca75323c24a1ce576fb029e56f6e9c978a5d1997eb9415588a346",
+      "bytes": 6605,
+      "mode": 292
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/logs/postgres-startup.log",
+      "sha256": "ac9fec458d3786029f8168b3335180bdf45e01b33fed3bf814ed5d5142ea441b",
+      "bytes": 3813,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/logs/schema-preview.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/logs/source-restore.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/meter/attempt-0001.json",
+      "sha256": "4226262d6861aa1f4b9b0c18495d649c141c7982954896d87dd79a4d2485207d",
+      "bytes": 130,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/meter/events.jsonl",
+      "sha256": "d9cae2d577a644a8a1f2ef61814392435dcea1d92affd0f755f5cf8f4dba2ae8",
+      "bytes": 1069,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/meter/input-0001.json",
+      "sha256": "0dc76594ca6b144cd9d1f01bc4cd48efc93a821dc90dc3d2f54f6f4aaaf3d9f8",
+      "bytes": 162659,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/meter/output-0001.txt",
+      "sha256": "5893213b188df282c40ff336871aa876be57724c252fdbe793d9f66000677400",
+      "bytes": 907596,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/meter/plan.json",
+      "sha256": "2c01787e86517692e4d758bbe8daa9dc8e452c90624945d09ad26164d0098f18",
+      "bytes": 431,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/phase-budget-events.jsonl",
+      "sha256": "f464d9a22478b45a855035c2949dd16e303ac363743ef7ce3d59747007dfc02d",
+      "bytes": 550,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.env.example",
+      "sha256": "2b30a7bd5066bfda2cacc26ea268175eae5accdee67b7fd2d7ae4220fb81667c",
+      "bytes": 247,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.mcp.json",
+      "sha256": "a0c6e5c61920baf48d02f82308ba1a9e4cbd65c73a078a709c21d725e939d207",
+      "bytes": 546,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.mcp.json.bak.2026-09-14T19-33-23-640Z",
+      "sha256": "ffb9e3923371fbab426c90d0335deea27e32a921fcd8f6cc2a4a6d0543a73e09",
+      "bytes": 541,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/action-rules/drafts/reviewed_staging_rules/authority.json",
+      "sha256": "9b9961dbcbb6b01ad708e56492323f76ced7c1afe2649ee8fc762ae8b505effd",
+      "bytes": 25113,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/authority-write-lock.sqlite",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/boundary-authoring/diagnostics/planning-0bc068bb-9d8f-4df8-a5a1-9600a7efcb59.json",
+      "sha256": "2ddd1c2015e9ca371b8e1a42c9f0b11ec62ca574e0563ba9c5970cbf1a81b3de",
+      "bytes": 815,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/boundary-authoring/diagnostics/planning-1cb9b035-c5ea-4a3c-97de-909e11848882.json",
+      "sha256": "d807481d62bc88418a567c9000ee0eafdb1c2744da9aaa5dcb241b4bd187bcf5",
+      "bytes": 819,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/boundary-authoring/diagnostics/planning-38ac11c1-530b-47e2-9425-fe81c8769879.json",
+      "sha256": "959d9dea8beacc7d52fe119496da0d6a1a2b809e5982a410e623a3d244b27779",
+      "bytes": 766,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/boundary-authoring/diagnostics/planning-50df8961-3d6d-48fb-acaf-e59e88fe800e.json",
+      "sha256": "236e82528b6bc4476daaebf0beb349a87fd31dbb83eadcf99d19739865e73d19",
+      "bytes": 818,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/boundary-authoring/diagnostics/planning-bff231c8-9c6f-432c-b268-c6e43861ca51.json",
+      "sha256": "d029295746f4ab8a3899fa653485945faf9defea20661cd4a35d81ba34ce456d",
+      "bytes": 783,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/boundary-authoring/policy-sources/a6d8098e-7f74-4c80-bcc2-728ba936ef7a.json",
+      "sha256": "f2f0e9891a9c4ae13ff3499c111af32706db4097afecb0177628edc55245f5b8",
+      "bytes": 25702,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/boundary-authoring/resume.json",
+      "sha256": "bb60e3c5ef31eb9a086ec7f6c160a0b80688e8a45ba618c842741e3180cbfbee",
+      "bytes": 18549,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/claude-code-project.json",
+      "sha256": "8f3a8ede92ea20c78a957b69c8d0b388a22be55fdf22030bbb5c4ba29470a631",
+      "bytes": 339,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/control-policy/fc7bf0729d70f53a8da21b4bf4d7a2080849ad837fd87b0ab7d6441cd246784a.snapshot.json",
+      "sha256": "fc7bf0729d70f53a8da21b4bf4d7a2080849ad837fd87b0ab7d6441cd246784a",
+      "bytes": 69890,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/control-policy/migration.json",
+      "sha256": "72d23b35379efb981d985699d208cbe0fa5f0a4bdbb94ac123e78e3da882d0d0",
+      "bytes": 579,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/draft.json",
+      "sha256": "938b81316c11a52c76af818b6e2dd29cb965ec7d4fb9a133e134848e7f251824",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/1d67ecff9b2eef8a6a7360fd77c2c2a05b6b172fe294cf5a4b54a5c483f9fd54/delegation.json",
+      "sha256": "aca0c84a463a29665cf0b24b15ff54b89ecd84d15deba73d603c0d1acb61b5a1",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/1e0bbccd8a37ba04a4f66eb9e9ee78ccd13cd215455059dedf0fa042c816f7c9/delegation.json",
+      "sha256": "4ad225cca243dcf7d4a2a695264b43daab9ecf2bc07c616dee949b1bce410790",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/1e278f021e4959bc714ccff171ae435c1aea30d65a824b0cbff086b7a1302800/delegation.json",
+      "sha256": "22599e0ea03400fdc067be18bc6fa16d020617f3a525d62905b0ec18fc0c451a",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/21cbaa8fcffbcc93a906c7e26379604c8d27559500d72b0ea66e6c0a3cd96edd/delegation.json",
+      "sha256": "fcec5d08df1830069368e1f4258691e84f78e4b9faaaaad9f7567c4203026d28",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/3121ad167b528a3932b22f1cb1dcb272a30d6f7b95cb9c07bbb163c029ed6fc1/delegation.json",
+      "sha256": "1bfc932697bab50f18d9e2a75a3ca9f57e006bc3466f594e7285514dabc9070c",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/43e6929e54eac8be0560bd52956fe44b9fda381efd7ee084e68ee920ef6b78bd/delegation.json",
+      "sha256": "44335847109d5ddc915fb7f4064c9104c806b5b7f5a231b579c9275ccfb8ad14",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/50d11de2ede76a172b43bfa668c594452cc685991d6fc48d250ecaca0fccbc3f/delegation.json",
+      "sha256": "b254873b6736f0d0f0b7abfdcde47840dc3b4bcbe20e3a0dc50231981f75f421",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/52d6275d9b9893136de8d7ff583630862ce0f04cc594906508fc4b5df28198ae/delegation.json",
+      "sha256": "8b66417ea45c50959609255bc7aa3e6d61529bd8cc182cc3a3e95921ddf0d5b5",
+      "bytes": 2186,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/59b5730bf1f6b499a0834e0608284e5c995f416a64f1d731d2b6507f813a1c77/delegation.json",
+      "sha256": "7ee4ae243088075c8a918b454bfb640111d2a494eb679c08d309121d4f141e23",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/5dd9fb562b76a8d0a01d78604bba2b94021f0d5559371360d9ba2b6fe0923c0d/delegation.json",
+      "sha256": "9adcfe41ba9cc6f80a4309e9312c2521efe94597e5ad454a0cc33543675e9bb2",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/63ff035987583ab0b922c49488627f1932c1a6d8915974d0d1e053d37db1bd88/delegation.json",
+      "sha256": "39d320b63366a881ad31df630be48bd61e8b12e4cfebeb01e2a3157fc7ee8e1d",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/64f5cc847a8fa4039c34629fad05831f057846309146378ec3672f5e3a07133d/delegation.json",
+      "sha256": "28f89186cb2069cb1d4c88c51f774a9cdc2d06f3af77f4510aab121cab16ffee",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/67f76af2502a98aba4f327ce4f39905f71c4e8b9f763185b3889867c275cd260/delegation.json",
+      "sha256": "938b81316c11a52c76af818b6e2dd29cb965ec7d4fb9a133e134848e7f251824",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/6e114a9b366a538ef1dd224c9c7774a89c6244fa7aa143b0e22cb7b816951b19/delegation.json",
+      "sha256": "6ad86db5f193dd7f6171f4a12576160f935607a88fbc819b6ce937c06895a5f2",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/8dff28b1f26d83df65d5778d05e8909a171f39a7516a152740e730c2d904b775/delegation.json",
+      "sha256": "2b23a04ef628659808825ff54018db046af69b3fa2ca4f194000962da02294ab",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/aa4e195db9c660da92dd61ec02466ae0527371c1298122a8c9ba99127eac9829/delegation.json",
+      "sha256": "aff5703348f157edf27fe0d3f3ac0983d31a768e6e7ba8fd3f1fa087f741b889",
+      "bytes": 2186,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/aad5ee20342a751805c8a4989ee5ab2a54596460d0363acfde9564d01cd4a2a0/delegation.json",
+      "sha256": "1949c59435b88fc68578de26172fd9deaa5249ccbedeb504e27bdcc31ea5c54f",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/c5c0be5c94697b8a2d36db416eeb34953dfa866e03d0a4d7e95dc7407a6e6f7d/delegation.json",
+      "sha256": "c496bf7591fc9039a443ca822fb7660f761f3606885a495c16a984bdcf037b47",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/c67aee2e96fe09429938287b5673b438d6e3d5e35893832aa130ac3c6aad1ace/delegation.json",
+      "sha256": "5aa2ecbf3fc837291580502206edb3508949e7c04b6ea6ce19625475369189fe",
+      "bytes": 2186,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/f4882700b81e82ecc8a60dbc0eb18aefe660fee4cf432666a9a60f8c743b4636/delegation.json",
+      "sha256": "12190632eef95a7510bbc8200703e1b39a3df45a92c0bccc15061faba00ebe16",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/exploration-locks/5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6.json",
+      "sha256": "096c4f382b2221190414daeebebc047d72e67e6f781f7546d5c09d47f7fb6eb1",
+      "bytes": 4094,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/explore-audit.key",
+      "sha256": "d2727eca34a52159ff94522bb2ae60fb8fad27ee11ef6bad0ab5798d038bd85c",
+      "bytes": 43,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/fresh-governed-authoring.json",
+      "sha256": "9c41a19b7898bbafc3817fc3def4d3c33ff6da5a0bb21540f961016b4a6b4b84",
+      "bytes": 70050,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/guided-action-drafts.json",
+      "sha256": "89337d65f591dc161db2fd208c3bb10c1f4fce9b6a308d3bfcedd960e98f911b",
+      "bytes": 223,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/guided-onboarding.json",
+      "sha256": "881dfe2b4940ea7fb0bd5572ce6dec4fb64135a57358fa102d5160f305119629",
+      "bytes": 1200,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/local-test-runtime.json",
+      "sha256": "7ba832ed3b8ac78dede451b4300442cab65900eb9451366120916ff2c55b27d9",
+      "bytes": 446,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/local.db",
+      "sha256": "6183938650093c13c06c45005a157cbe07bb1175d1a388e32a6a7d825513f702",
+      "bytes": 1982464,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/mcp/claude.json",
+      "sha256": "f6573c39b842f46813c64b2ec1140c71ed0f2a27bdfab92af11c89a6aabcbe4f",
+      "bytes": 249,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/mcp/codex.toml",
+      "sha256": "a6a7c4246556014a37d4d439e9b605517c4e556384a34801cd86104845bf184c",
+      "bytes": 137,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/mcp/cursor.json",
+      "sha256": "f6573c39b842f46813c64b2ec1140c71ed0f2a27bdfab92af11c89a6aabcbe4f",
+      "bytes": 249,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/mcp/generic-stdio.json",
+      "sha256": "f6573c39b842f46813c64b2ec1140c71ed0f2a27bdfab92af11c89a6aabcbe4f",
+      "bytes": 249,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/protect-state.json",
+      "sha256": "38eb65e739677e089b8b88ffcaf66144ed3dc94d6a48748b63b101f20b9b205a",
+      "bytes": 2136,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/read-workloads/rw_63a147ea2e52e149a4b89b457142fdbd.json",
+      "sha256": "d9a00a285006e98c1e87f6275d0f2c69a65ccd7d0ff8399beb0052b6ad901517",
+      "bytes": 16789,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/read-workloads/rw_63a147ea2e52e149a4b89b457142fdbd.review.json",
+      "sha256": "787f3cf72d24d81dfcd05c258ade9743aa4741db764303c772418b60b048f1e7",
+      "bytes": 551,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/runtime-admission.sqlite",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/writeback-setup-plan.json",
+      "sha256": "80565f0cdba2266ab5653b999e266426df7bf7ef32ffef56916e52776ae10d3d",
+      "bytes": 286,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/writer-handoffs/review-Rvi7TQ/README.md",
+      "sha256": "1b2cbb6c96c55dd9cadd69c76cd5ef4828f94abb18cee932a3b643e0910921b5",
+      "bytes": 3030,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/writer-handoffs/review-Rvi7TQ/grants.sql",
+      "sha256": "79179362f84b499c72cbe3628b97f312e19e410514ebfb9bcc60cef10dde99a9",
+      "bytes": 1726,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/writer-handoffs/review-Rvi7TQ/requirements.json",
+      "sha256": "f8df2ad42ff35647e1c11b569e42a8906966eb368140ebb436068e8e8f69519d",
+      "bytes": 2939,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/writer-handoffs/review-lA0OjQ/README.md",
+      "sha256": "e9b9ba97632413922cea5a08caca0d132e974c02c545728b9f289e57b60ba72b",
+      "bytes": 2974,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/writer-handoffs/review-lA0OjQ/grants.sql",
+      "sha256": "6d9c388e795269fc81d178f8626a284efbad9a856d5a257ce53496ca2be6da4b",
+      "bytes": 1705,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/.synapsor/writer-handoffs/review-lA0OjQ/requirements.json",
+      "sha256": "2c1c9a0cfc59cfe0bfc0eed7acfd58ceba9b204dc5026ce7e5306ab900a72bdf",
+      "bytes": 2885,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/rules.txt",
+      "sha256": "2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+      "bytes": 1757,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/synapsor.actions.runner.json",
+      "sha256": "38a8da6669909bb1238975b86f6039d7c12bfb9459484db43e7122a8addbd329",
+      "bytes": 2352,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/project/synapsor.runner.json",
+      "sha256": "0525cc73b2a63ead11b721d3e2d341d302c8254d625245fa2ed076226dde7488",
+      "bytes": 706,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/public-invocations.jsonl",
+      "sha256": "34250947cb0833fe93edf04cee73647e00f998e7ce37a7fe0209527bfb4d94cf",
+      "bytes": 7438,
+      "mode": 256
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "path": "runs/recovery-tournament-assisted/run-state.json",
+      "sha256": "11dc017b5d24e053982340dc247a1470ef628660375223dcccd168f0e09183c2",
+      "bytes": 2078,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.env.example",
+      "sha256": "2b30a7bd5066bfda2cacc26ea268175eae5accdee67b7fd2d7ae4220fb81667c",
+      "bytes": 247,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.mcp.json",
+      "sha256": "a0c6e5c61920baf48d02f82308ba1a9e4cbd65c73a078a709c21d725e939d207",
+      "bytes": 546,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.mcp.json.bak.2026-09-14T19-33-23-640Z",
+      "sha256": "ffb9e3923371fbab426c90d0335deea27e32a921fcd8f6cc2a4a6d0543a73e09",
+      "bytes": 541,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/action-rules/drafts/reviewed_staging_rules/authority.json",
+      "sha256": "9b9961dbcbb6b01ad708e56492323f76ced7c1afe2649ee8fc762ae8b505effd",
+      "bytes": 25113,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/authority-write-lock.sqlite",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/boundary-authoring/diagnostics/planning-0bc068bb-9d8f-4df8-a5a1-9600a7efcb59.json",
+      "sha256": "2ddd1c2015e9ca371b8e1a42c9f0b11ec62ca574e0563ba9c5970cbf1a81b3de",
+      "bytes": 815,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/boundary-authoring/diagnostics/planning-1cb9b035-c5ea-4a3c-97de-909e11848882.json",
+      "sha256": "d807481d62bc88418a567c9000ee0eafdb1c2744da9aaa5dcb241b4bd187bcf5",
+      "bytes": 819,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/boundary-authoring/diagnostics/planning-4a7a0c3f-0fb0-4a2c-9681-68572999108f.json",
+      "sha256": "45c9d311505780e34d242203dd00f2692f7f9f01ff7cfd304dd487a19d32fb15",
+      "bytes": 741,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/boundary-authoring/diagnostics/planning-50df8961-3d6d-48fb-acaf-e59e88fe800e.json",
+      "sha256": "236e82528b6bc4476daaebf0beb349a87fd31dbb83eadcf99d19739865e73d19",
+      "bytes": 818,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/boundary-authoring/diagnostics/planning-bff231c8-9c6f-432c-b268-c6e43861ca51.json",
+      "sha256": "d029295746f4ab8a3899fa653485945faf9defea20661cd4a35d81ba34ce456d",
+      "bytes": 783,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/boundary-authoring/policy-sources/a6d8098e-7f74-4c80-bcc2-728ba936ef7a.json",
+      "sha256": "3cade634d5642538c2254a94f65ba6edf1fd983525bbba2cc4f6f238ca3bce34",
+      "bytes": 25979,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/boundary-authoring/resume.json",
+      "sha256": "9fb09dcb1a352125e3334cc90d43f92f9a9a3c681af3bf3fe7e41a5bd5a77468",
+      "bytes": 17854,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/claude-code-project.json",
+      "sha256": "8f3a8ede92ea20c78a957b69c8d0b388a22be55fdf22030bbb5c4ba29470a631",
+      "bytes": 339,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/control-policy/fc7bf0729d70f53a8da21b4bf4d7a2080849ad837fd87b0ab7d6441cd246784a.snapshot.json",
+      "sha256": "fc7bf0729d70f53a8da21b4bf4d7a2080849ad837fd87b0ab7d6441cd246784a",
+      "bytes": 69890,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/control-policy/migration.json",
+      "sha256": "72d23b35379efb981d985699d208cbe0fa5f0a4bdbb94ac123e78e3da882d0d0",
+      "bytes": 579,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/draft.json",
+      "sha256": "12190632eef95a7510bbc8200703e1b39a3df45a92c0bccc15061faba00ebe16",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/1d67ecff9b2eef8a6a7360fd77c2c2a05b6b172fe294cf5a4b54a5c483f9fd54/delegation.json",
+      "sha256": "aca0c84a463a29665cf0b24b15ff54b89ecd84d15deba73d603c0d1acb61b5a1",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/1e0bbccd8a37ba04a4f66eb9e9ee78ccd13cd215455059dedf0fa042c816f7c9/delegation.json",
+      "sha256": "4ad225cca243dcf7d4a2a695264b43daab9ecf2bc07c616dee949b1bce410790",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/1e278f021e4959bc714ccff171ae435c1aea30d65a824b0cbff086b7a1302800/delegation.json",
+      "sha256": "22599e0ea03400fdc067be18bc6fa16d020617f3a525d62905b0ec18fc0c451a",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/21cbaa8fcffbcc93a906c7e26379604c8d27559500d72b0ea66e6c0a3cd96edd/delegation.json",
+      "sha256": "fcec5d08df1830069368e1f4258691e84f78e4b9faaaaad9f7567c4203026d28",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/3121ad167b528a3932b22f1cb1dcb272a30d6f7b95cb9c07bbb163c029ed6fc1/delegation.json",
+      "sha256": "1bfc932697bab50f18d9e2a75a3ca9f57e006bc3466f594e7285514dabc9070c",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/43e6929e54eac8be0560bd52956fe44b9fda381efd7ee084e68ee920ef6b78bd/delegation.json",
+      "sha256": "44335847109d5ddc915fb7f4064c9104c806b5b7f5a231b579c9275ccfb8ad14",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/50d11de2ede76a172b43bfa668c594452cc685991d6fc48d250ecaca0fccbc3f/delegation.json",
+      "sha256": "b254873b6736f0d0f0b7abfdcde47840dc3b4bcbe20e3a0dc50231981f75f421",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/52d6275d9b9893136de8d7ff583630862ce0f04cc594906508fc4b5df28198ae/delegation.json",
+      "sha256": "8b66417ea45c50959609255bc7aa3e6d61529bd8cc182cc3a3e95921ddf0d5b5",
+      "bytes": 2186,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/59b5730bf1f6b499a0834e0608284e5c995f416a64f1d731d2b6507f813a1c77/delegation.json",
+      "sha256": "7ee4ae243088075c8a918b454bfb640111d2a494eb679c08d309121d4f141e23",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/5dd9fb562b76a8d0a01d78604bba2b94021f0d5559371360d9ba2b6fe0923c0d/delegation.json",
+      "sha256": "9adcfe41ba9cc6f80a4309e9312c2521efe94597e5ad454a0cc33543675e9bb2",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/63ff035987583ab0b922c49488627f1932c1a6d8915974d0d1e053d37db1bd88/delegation.json",
+      "sha256": "39d320b63366a881ad31df630be48bd61e8b12e4cfebeb01e2a3157fc7ee8e1d",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/64f5cc847a8fa4039c34629fad05831f057846309146378ec3672f5e3a07133d/delegation.json",
+      "sha256": "28f89186cb2069cb1d4c88c51f774a9cdc2d06f3af77f4510aab121cab16ffee",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/6e114a9b366a538ef1dd224c9c7774a89c6244fa7aa143b0e22cb7b816951b19/delegation.json",
+      "sha256": "6ad86db5f193dd7f6171f4a12576160f935607a88fbc819b6ce937c06895a5f2",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/8dff28b1f26d83df65d5778d05e8909a171f39a7516a152740e730c2d904b775/delegation.json",
+      "sha256": "2b23a04ef628659808825ff54018db046af69b3fa2ca4f194000962da02294ab",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/aa4e195db9c660da92dd61ec02466ae0527371c1298122a8c9ba99127eac9829/delegation.json",
+      "sha256": "aff5703348f157edf27fe0d3f3ac0983d31a768e6e7ba8fd3f1fa087f741b889",
+      "bytes": 2186,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/c5c0be5c94697b8a2d36db416eeb34953dfa866e03d0a4d7e95dc7407a6e6f7d/delegation.json",
+      "sha256": "c496bf7591fc9039a443ca822fb7660f761f3606885a495c16a984bdcf037b47",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/c67aee2e96fe09429938287b5673b438d6e3d5e35893832aa130ac3c6aad1ace/delegation.json",
+      "sha256": "5aa2ecbf3fc837291580502206edb3508949e7c04b6ea6ce19625475369189fe",
+      "bytes": 2186,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/f4882700b81e82ecc8a60dbc0eb18aefe660fee4cf432666a9a60f8c743b4636/delegation.json",
+      "sha256": "12190632eef95a7510bbc8200703e1b39a3df45a92c0bccc15061faba00ebe16",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/exploration-locks/5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6.json",
+      "sha256": "096c4f382b2221190414daeebebc047d72e67e6f781f7546d5c09d47f7fb6eb1",
+      "bytes": 4094,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/explore-audit.key",
+      "sha256": "d2727eca34a52159ff94522bb2ae60fb8fad27ee11ef6bad0ab5798d038bd85c",
+      "bytes": 43,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/fresh-governed-authoring.json",
+      "sha256": "9c41a19b7898bbafc3817fc3def4d3c33ff6da5a0bb21540f961016b4a6b4b84",
+      "bytes": 70050,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/guided-action-drafts.json",
+      "sha256": "89337d65f591dc161db2fd208c3bb10c1f4fce9b6a308d3bfcedd960e98f911b",
+      "bytes": 223,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/guided-onboarding.json",
+      "sha256": "881dfe2b4940ea7fb0bd5572ce6dec4fb64135a57358fa102d5160f305119629",
+      "bytes": 1200,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/local-test-runtime.json",
+      "sha256": "7ba832ed3b8ac78dede451b4300442cab65900eb9451366120916ff2c55b27d9",
+      "bytes": 446,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/local.db",
+      "sha256": "fe960bc1f2b38555226ac4d55d79e1c79b853b0202af130217e97aed7a319562",
+      "bytes": 1982464,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/mcp/claude.json",
+      "sha256": "f6573c39b842f46813c64b2ec1140c71ed0f2a27bdfab92af11c89a6aabcbe4f",
+      "bytes": 249,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/mcp/codex.toml",
+      "sha256": "a6a7c4246556014a37d4d439e9b605517c4e556384a34801cd86104845bf184c",
+      "bytes": 137,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/mcp/cursor.json",
+      "sha256": "f6573c39b842f46813c64b2ec1140c71ed0f2a27bdfab92af11c89a6aabcbe4f",
+      "bytes": 249,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/mcp/generic-stdio.json",
+      "sha256": "f6573c39b842f46813c64b2ec1140c71ed0f2a27bdfab92af11c89a6aabcbe4f",
+      "bytes": 249,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/protect-state.json",
+      "sha256": "38eb65e739677e089b8b88ffcaf66144ed3dc94d6a48748b63b101f20b9b205a",
+      "bytes": 2136,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/read-workloads/rw_63a147ea2e52e149a4b89b457142fdbd.json",
+      "sha256": "d9a00a285006e98c1e87f6275d0f2c69a65ccd7d0ff8399beb0052b6ad901517",
+      "bytes": 16789,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/read-workloads/rw_63a147ea2e52e149a4b89b457142fdbd.review.json",
+      "sha256": "787f3cf72d24d81dfcd05c258ade9743aa4741db764303c772418b60b048f1e7",
+      "bytes": 551,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/runtime-admission.sqlite",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/writeback-setup-plan.json",
+      "sha256": "80565f0cdba2266ab5653b999e266426df7bf7ef32ffef56916e52776ae10d3d",
+      "bytes": 286,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/writer-handoffs/review-Rvi7TQ/README.md",
+      "sha256": "1b2cbb6c96c55dd9cadd69c76cd5ef4828f94abb18cee932a3b643e0910921b5",
+      "bytes": 3030,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/writer-handoffs/review-Rvi7TQ/grants.sql",
+      "sha256": "79179362f84b499c72cbe3628b97f312e19e410514ebfb9bcc60cef10dde99a9",
+      "bytes": 1726,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/writer-handoffs/review-Rvi7TQ/requirements.json",
+      "sha256": "f8df2ad42ff35647e1c11b569e42a8906966eb368140ebb436068e8e8f69519d",
+      "bytes": 2939,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/writer-handoffs/review-lA0OjQ/README.md",
+      "sha256": "e9b9ba97632413922cea5a08caca0d132e974c02c545728b9f289e57b60ba72b",
+      "bytes": 2974,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/writer-handoffs/review-lA0OjQ/grants.sql",
+      "sha256": "6d9c388e795269fc81d178f8626a284efbad9a856d5a257ce53496ca2be6da4b",
+      "bytes": 1705,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/.synapsor/writer-handoffs/review-lA0OjQ/requirements.json",
+      "sha256": "2c1c9a0cfc59cfe0bfc0eed7acfd58ceba9b204dc5026ce7e5306ab900a72bdf",
+      "bytes": 2885,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/rules.txt",
+      "sha256": "2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+      "bytes": 1757,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/synapsor.actions.runner.json",
+      "sha256": "38a8da6669909bb1238975b86f6039d7c12bfb9459484db43e7122a8addbd329",
+      "bytes": 2352,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/synapsor.runner.json",
+      "sha256": "0525cc73b2a63ead11b721d3e2d341d302c8254d625245fa2ed076226dde7488",
+      "bytes": 706,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project/wording-control-rules.txt",
+      "sha256": "43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+      "bytes": 1797,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/project-manifest.json",
+      "sha256": "ebd973155e680c3d8f11ead9f60151bdc9e8ca9f5c80d2e5c3e80d5a0c57be57",
+      "bytes": 12702,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/result.json",
+      "sha256": "af09fb05b85011c48f419bcf79437078bcb5d5860cfe88f04c819fea9cb81b41",
+      "bytes": 2632,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/source-readback.json",
+      "sha256": "4c28dccd5d440f1798ace4882a0441cdbce3bc9613d42e02037c82168405e44e",
+      "bytes": 56635,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/checkpoints/business-review-stopped/source.dump",
+      "sha256": "5a4736a9b0b1e822523f049a8659bd329a43d0e4c08a02a07fff4c8c96d74c35",
+      "bytes": 15315,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/logs/final-review-terminal.log",
+      "sha256": "7be49bc0e76cf3545df33eadcc171f6b06b7dfd3164a3253484727bb15176148",
+      "bytes": 108276,
+      "mode": 292
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/logs/postgres-startup.log",
+      "sha256": "00c652ac3fd8c0b233d2abaa0242988283f1fba8fda2b5cd0d69fcc86670988d",
+      "bytes": 3813,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/logs/schema-preview.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/logs/source-restore.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/meter/attempt-0001.json",
+      "sha256": "69d6d1e828e378e39f68aa60037a1fc11f772aa04f6e090aa4227a1b5c032fe4",
+      "bytes": 130,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/meter/attempt-0002.json",
+      "sha256": "14065f0ee327e391cc3372caa3cc6f26cdb4a956491c411a47b6939eb0338318",
+      "bytes": 130,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/meter/events.jsonl",
+      "sha256": "3ca5d03be416ed47be19f660c3ffaaa891a6ff34d727c8bf88cdcd2054117d84",
+      "bytes": 963,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/meter/input-0001.json",
+      "sha256": "8cbc79f01fbac4c23a2fe73506da038d246ecf80d6bdb5f4fbe1681a60e30d3f",
+      "bytes": 163302,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/meter/input-0002.json",
+      "sha256": "c8d6f2b47b25326147d222661305372bd309f444db54cd4472f27a1cbd8d423b",
+      "bytes": 175967,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/meter/output-0001.txt",
+      "sha256": "c2743eb4398e722fa26cad8eac2946fc4b58449fd6537ebd0a4078923d19e2fd",
+      "bytes": 767542,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/meter/output-0002.txt",
+      "sha256": "d2ccba521f10a9aa5f56b1742e04287c849c735fc6256d48ef598f234a1e120d",
+      "bytes": 786119,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/meter/plan.json",
+      "sha256": "2b70eb1f292c524dd981c57ceabf9ac2055a6230e97ce91a97b9c08a49717cbd",
+      "bytes": 427,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/phase-budget-events.jsonl",
+      "sha256": "867f394cbaaae575e267baee117bd153681a22f95b4e1715703c0590d57c0cae",
+      "bytes": 137,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.env.example",
+      "sha256": "2b30a7bd5066bfda2cacc26ea268175eae5accdee67b7fd2d7ae4220fb81667c",
+      "bytes": 247,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.mcp.json",
+      "sha256": "a0c6e5c61920baf48d02f82308ba1a9e4cbd65c73a078a709c21d725e939d207",
+      "bytes": 546,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.mcp.json.bak.2026-09-14T19-33-23-640Z",
+      "sha256": "ffb9e3923371fbab426c90d0335deea27e32a921fcd8f6cc2a4a6d0543a73e09",
+      "bytes": 541,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/action-rules/drafts/reviewed_staging_rules/authority.json",
+      "sha256": "9b9961dbcbb6b01ad708e56492323f76ced7c1afe2649ee8fc762ae8b505effd",
+      "bytes": 25113,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/authority-write-lock.sqlite",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/boundary-authoring/diagnostics/planning-0bc068bb-9d8f-4df8-a5a1-9600a7efcb59.json",
+      "sha256": "2ddd1c2015e9ca371b8e1a42c9f0b11ec62ca574e0563ba9c5970cbf1a81b3de",
+      "bytes": 815,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/boundary-authoring/diagnostics/planning-1cb9b035-c5ea-4a3c-97de-909e11848882.json",
+      "sha256": "d807481d62bc88418a567c9000ee0eafdb1c2744da9aaa5dcb241b4bd187bcf5",
+      "bytes": 819,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/boundary-authoring/diagnostics/planning-4a7a0c3f-0fb0-4a2c-9681-68572999108f.json",
+      "sha256": "45c9d311505780e34d242203dd00f2692f7f9f01ff7cfd304dd487a19d32fb15",
+      "bytes": 741,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/boundary-authoring/diagnostics/planning-50df8961-3d6d-48fb-acaf-e59e88fe800e.json",
+      "sha256": "236e82528b6bc4476daaebf0beb349a87fd31dbb83eadcf99d19739865e73d19",
+      "bytes": 818,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/boundary-authoring/diagnostics/planning-bff231c8-9c6f-432c-b268-c6e43861ca51.json",
+      "sha256": "d029295746f4ab8a3899fa653485945faf9defea20661cd4a35d81ba34ce456d",
+      "bytes": 783,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/boundary-authoring/policy-sources/a6d8098e-7f74-4c80-bcc2-728ba936ef7a.json",
+      "sha256": "3cade634d5642538c2254a94f65ba6edf1fd983525bbba2cc4f6f238ca3bce34",
+      "bytes": 25979,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/boundary-authoring/resume.json",
+      "sha256": "9fb09dcb1a352125e3334cc90d43f92f9a9a3c681af3bf3fe7e41a5bd5a77468",
+      "bytes": 17854,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/claude-code-project.json",
+      "sha256": "8f3a8ede92ea20c78a957b69c8d0b388a22be55fdf22030bbb5c4ba29470a631",
+      "bytes": 339,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/control-policy/fc7bf0729d70f53a8da21b4bf4d7a2080849ad837fd87b0ab7d6441cd246784a.snapshot.json",
+      "sha256": "fc7bf0729d70f53a8da21b4bf4d7a2080849ad837fd87b0ab7d6441cd246784a",
+      "bytes": 69890,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/control-policy/migration.json",
+      "sha256": "72d23b35379efb981d985699d208cbe0fa5f0a4bdbb94ac123e78e3da882d0d0",
+      "bytes": 579,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/draft.json",
+      "sha256": "12190632eef95a7510bbc8200703e1b39a3df45a92c0bccc15061faba00ebe16",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/1d67ecff9b2eef8a6a7360fd77c2c2a05b6b172fe294cf5a4b54a5c483f9fd54/delegation.json",
+      "sha256": "aca0c84a463a29665cf0b24b15ff54b89ecd84d15deba73d603c0d1acb61b5a1",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/1e0bbccd8a37ba04a4f66eb9e9ee78ccd13cd215455059dedf0fa042c816f7c9/delegation.json",
+      "sha256": "4ad225cca243dcf7d4a2a695264b43daab9ecf2bc07c616dee949b1bce410790",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/1e278f021e4959bc714ccff171ae435c1aea30d65a824b0cbff086b7a1302800/delegation.json",
+      "sha256": "22599e0ea03400fdc067be18bc6fa16d020617f3a525d62905b0ec18fc0c451a",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/21cbaa8fcffbcc93a906c7e26379604c8d27559500d72b0ea66e6c0a3cd96edd/delegation.json",
+      "sha256": "fcec5d08df1830069368e1f4258691e84f78e4b9faaaaad9f7567c4203026d28",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/3121ad167b528a3932b22f1cb1dcb272a30d6f7b95cb9c07bbb163c029ed6fc1/delegation.json",
+      "sha256": "1bfc932697bab50f18d9e2a75a3ca9f57e006bc3466f594e7285514dabc9070c",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/43e6929e54eac8be0560bd52956fe44b9fda381efd7ee084e68ee920ef6b78bd/delegation.json",
+      "sha256": "44335847109d5ddc915fb7f4064c9104c806b5b7f5a231b579c9275ccfb8ad14",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/50d11de2ede76a172b43bfa668c594452cc685991d6fc48d250ecaca0fccbc3f/delegation.json",
+      "sha256": "b254873b6736f0d0f0b7abfdcde47840dc3b4bcbe20e3a0dc50231981f75f421",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/52d6275d9b9893136de8d7ff583630862ce0f04cc594906508fc4b5df28198ae/delegation.json",
+      "sha256": "8b66417ea45c50959609255bc7aa3e6d61529bd8cc182cc3a3e95921ddf0d5b5",
+      "bytes": 2186,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/59b5730bf1f6b499a0834e0608284e5c995f416a64f1d731d2b6507f813a1c77/delegation.json",
+      "sha256": "7ee4ae243088075c8a918b454bfb640111d2a494eb679c08d309121d4f141e23",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/5dd9fb562b76a8d0a01d78604bba2b94021f0d5559371360d9ba2b6fe0923c0d/delegation.json",
+      "sha256": "9adcfe41ba9cc6f80a4309e9312c2521efe94597e5ad454a0cc33543675e9bb2",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/63ff035987583ab0b922c49488627f1932c1a6d8915974d0d1e053d37db1bd88/delegation.json",
+      "sha256": "39d320b63366a881ad31df630be48bd61e8b12e4cfebeb01e2a3157fc7ee8e1d",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/64f5cc847a8fa4039c34629fad05831f057846309146378ec3672f5e3a07133d/delegation.json",
+      "sha256": "28f89186cb2069cb1d4c88c51f774a9cdc2d06f3af77f4510aab121cab16ffee",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/6e114a9b366a538ef1dd224c9c7774a89c6244fa7aa143b0e22cb7b816951b19/delegation.json",
+      "sha256": "6ad86db5f193dd7f6171f4a12576160f935607a88fbc819b6ce937c06895a5f2",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/8dff28b1f26d83df65d5778d05e8909a171f39a7516a152740e730c2d904b775/delegation.json",
+      "sha256": "2b23a04ef628659808825ff54018db046af69b3fa2ca4f194000962da02294ab",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/aa4e195db9c660da92dd61ec02466ae0527371c1298122a8c9ba99127eac9829/delegation.json",
+      "sha256": "aff5703348f157edf27fe0d3f3ac0983d31a768e6e7ba8fd3f1fa087f741b889",
+      "bytes": 2186,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/c5c0be5c94697b8a2d36db416eeb34953dfa866e03d0a4d7e95dc7407a6e6f7d/delegation.json",
+      "sha256": "c496bf7591fc9039a443ca822fb7660f761f3606885a495c16a984bdcf037b47",
+      "bytes": 2548,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/c67aee2e96fe09429938287b5673b438d6e3d5e35893832aa130ac3c6aad1ace/delegation.json",
+      "sha256": "5aa2ecbf3fc837291580502206edb3508949e7c04b6ea6ce19625475369189fe",
+      "bytes": 2186,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/delegations/help_league_referees_read_their_assigned_match_results_and_reque/revisions/f4882700b81e82ecc8a60dbc0eb18aefe660fee4cf432666a9a60f8c743b4636/delegation.json",
+      "sha256": "12190632eef95a7510bbc8200703e1b39a3df45a92c0bccc15061faba00ebe16",
+      "bytes": 2255,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/exploration-locks/5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6.json",
+      "sha256": "096c4f382b2221190414daeebebc047d72e67e6f781f7546d5c09d47f7fb6eb1",
+      "bytes": 4094,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/explore-audit.key",
+      "sha256": "d2727eca34a52159ff94522bb2ae60fb8fad27ee11ef6bad0ab5798d038bd85c",
+      "bytes": 43,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/fresh-governed-authoring.json",
+      "sha256": "9c41a19b7898bbafc3817fc3def4d3c33ff6da5a0bb21540f961016b4a6b4b84",
+      "bytes": 70050,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/guided-action-drafts.json",
+      "sha256": "89337d65f591dc161db2fd208c3bb10c1f4fce9b6a308d3bfcedd960e98f911b",
+      "bytes": 223,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/guided-onboarding.json",
+      "sha256": "881dfe2b4940ea7fb0bd5572ce6dec4fb64135a57358fa102d5160f305119629",
+      "bytes": 1200,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/local-test-runtime.json",
+      "sha256": "7ba832ed3b8ac78dede451b4300442cab65900eb9451366120916ff2c55b27d9",
+      "bytes": 446,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/local.db",
+      "sha256": "fe960bc1f2b38555226ac4d55d79e1c79b853b0202af130217e97aed7a319562",
+      "bytes": 1982464,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/mcp/claude.json",
+      "sha256": "f6573c39b842f46813c64b2ec1140c71ed0f2a27bdfab92af11c89a6aabcbe4f",
+      "bytes": 249,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/mcp/codex.toml",
+      "sha256": "a6a7c4246556014a37d4d439e9b605517c4e556384a34801cd86104845bf184c",
+      "bytes": 137,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/mcp/cursor.json",
+      "sha256": "f6573c39b842f46813c64b2ec1140c71ed0f2a27bdfab92af11c89a6aabcbe4f",
+      "bytes": 249,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/mcp/generic-stdio.json",
+      "sha256": "f6573c39b842f46813c64b2ec1140c71ed0f2a27bdfab92af11c89a6aabcbe4f",
+      "bytes": 249,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/protect-state.json",
+      "sha256": "38eb65e739677e089b8b88ffcaf66144ed3dc94d6a48748b63b101f20b9b205a",
+      "bytes": 2136,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/read-workloads/rw_63a147ea2e52e149a4b89b457142fdbd.json",
+      "sha256": "d9a00a285006e98c1e87f6275d0f2c69a65ccd7d0ff8399beb0052b6ad901517",
+      "bytes": 16789,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/read-workloads/rw_63a147ea2e52e149a4b89b457142fdbd.review.json",
+      "sha256": "787f3cf72d24d81dfcd05c258ade9743aa4741db764303c772418b60b048f1e7",
+      "bytes": 551,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/runtime-admission.sqlite",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/writeback-setup-plan.json",
+      "sha256": "80565f0cdba2266ab5653b999e266426df7bf7ef32ffef56916e52776ae10d3d",
+      "bytes": 286,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/writer-handoffs/review-Rvi7TQ/README.md",
+      "sha256": "1b2cbb6c96c55dd9cadd69c76cd5ef4828f94abb18cee932a3b643e0910921b5",
+      "bytes": 3030,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/writer-handoffs/review-Rvi7TQ/grants.sql",
+      "sha256": "79179362f84b499c72cbe3628b97f312e19e410514ebfb9bcc60cef10dde99a9",
+      "bytes": 1726,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/writer-handoffs/review-Rvi7TQ/requirements.json",
+      "sha256": "f8df2ad42ff35647e1c11b569e42a8906966eb368140ebb436068e8e8f69519d",
+      "bytes": 2939,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/writer-handoffs/review-lA0OjQ/README.md",
+      "sha256": "e9b9ba97632413922cea5a08caca0d132e974c02c545728b9f289e57b60ba72b",
+      "bytes": 2974,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/writer-handoffs/review-lA0OjQ/grants.sql",
+      "sha256": "6d9c388e795269fc81d178f8626a284efbad9a856d5a257ce53496ca2be6da4b",
+      "bytes": 1705,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/.synapsor/writer-handoffs/review-lA0OjQ/requirements.json",
+      "sha256": "2c1c9a0cfc59cfe0bfc0eed7acfd58ceba9b204dc5026ce7e5306ab900a72bdf",
+      "bytes": 2885,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/rules.txt",
+      "sha256": "2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+      "bytes": 1757,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/synapsor.actions.runner.json",
+      "sha256": "38a8da6669909bb1238975b86f6039d7c12bfb9459484db43e7122a8addbd329",
+      "bytes": 2352,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/synapsor.runner.json",
+      "sha256": "0525cc73b2a63ead11b721d3e2d341d302c8254d625245fa2ed076226dde7488",
+      "bytes": 706,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/project/wording-control-rules.txt",
+      "sha256": "43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+      "bytes": 1797,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/public-invocations.jsonl",
+      "sha256": "06f37f8856b87c5110f8474174bc2d427e380f6ab405985dd890f4765c50f55a",
+      "bytes": 2479,
+      "mode": 256
+    },
+    {
+      "run": "counting-wording-control",
+      "path": "runs/counting-wording-control/run-state.json",
+      "sha256": "13b8fce8419e9be2432cf6394270dab9b12f03bc8464ff179a8c307a30a0ae02",
+      "bytes": 2059,
+      "mode": 256
+    }
+  ]
+}

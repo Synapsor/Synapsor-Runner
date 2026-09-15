@@ -1,0 +1,591 @@
+{
+  "at": "2026-09-15T22:28:49.757Z",
+  "artifact_tree": "ff9a030cdb353ec56b9f4f048d40df60e3bb49f77d224eac675ba2b4c1a29568",
+  "runId": "recovery-tournament-assisted",
+  "label": "ownership-cancelled",
+  "source": {
+    "digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+    "version": 1
+  },
+  "coverage_authority_digest": "sha256:3e5107f6ab9adec10ad3eb8bdf9b76e4ba7f838052b82c95a5798053eb841032",
+  "coverage_source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+  "coverage_draft_digest": "sha256:ca14cf3864f79098598d9c895ea4e246e23a74a5fec4923b57c3c4e9be514601",
+  "counting_inventory": {
+    "version": 1,
+    "digest": "sha256:f80656c26b70badf27c3fbbee90c17435ba80191e2d146944f70466e6f58ac1c",
+    "paths": [
+      "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+      "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability"
+    ]
+  },
+  "client_duties": {
+    "version": 1,
+    "origin": "PRODUCT-CLIENT-CONTRACT",
+    "mode": "interactive_subject_action",
+    "client": "claude-code",
+    "duties": [
+      "customer_selection",
+      "status_presentation"
+    ],
+    "contract_digest": "sha256:cb86267d06a0abce531eeff8d61d11aab59ea72f1c4247bca2e45d647fe5c941"
+  },
+  "counting_decisions": [],
+  "counting_passages": [
+    {
+      "start": 7,
+      "end": 7,
+      "disposition": "implemented",
+      "interpretation": "Qualifying-stage automatic approval is bounded by an inclusive 24-hour tenant limit of two and boundary-wide limit of six; both select only approved boundary-automatic ratification outcomes. The tenant field is the reviewed league identifier and is shared across its assigned referees, while the boundary limit covers all leagues.",
+      "draft_paths": [
+        "/actions/0/approval",
+        "/runner_evidence/actions/league.result_ratification/automatic_limits",
+        "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+        "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+        "/runner_evidence/runtime_contract/approval_counter_selection"
+      ],
+      "topic": "Shared automatic ratification limits",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "Retain both ratification-only history selectors, scopes, maxima, and inclusive rolling windows.",
+      "counter_requirements": [
+        {
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+          "current_capability": "league.result_ratification",
+          "required_capability": "league.result_ratification",
+          "operator_clarification": "For this new two-behavior revision, apply the automatic limits only to ratifications: two per league and six overall in the rolling 24 hours, retaining the existing ratification approval history. Withdrawals always require supervisor review and do not consume or expand those automatic ratification allowances. Keep every other ratification, withdrawal and Read requirement unchanged."
+        },
+        {
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+          "current_capability": "league.result_ratification",
+          "required_capability": "league.result_ratification",
+          "operator_clarification": "For this new two-behavior revision, apply the automatic limits only to ratifications: two per league and six overall in the rolling 24 hours, retaining the existing ratification approval history. Withdrawals always require supervisor review and do not consume or expand those automatic ratification allowances. Keep every other ratification, withdrawal and Read requirement unchanged."
+        }
+      ],
+      "counting_requirement_bindings": [
+        {
+          "origin": "HOST-SOURCE-ASSOCIATION",
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+          "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+          "start": 7,
+          "end": 7,
+          "source_excerpt": "Valid qualifying-stage results may be approved automatically, with at most six automatic ratifications overall and two per league in the inclusive rolling 24-hour window. Qualifying results beyond either cap go to human review. Every valid championship-stage result requires the league supervisor's human review. Counts are shared across that league's referees; creating a local client does not create more allowance. Explicit supervised execution follows approval. Request a stored Runner-ledger receipt and independently verify the changed source row. No match server or external system is contacted.",
+          "state": "established",
+          "required_capability": "league.result_ratification",
+          "operator_clarification": "For this new two-behavior revision, apply the automatic limits only to ratifications: two per league and six overall in the rolling 24 hours, retaining the existing ratification approval history. Withdrawals always require supervisor review and do not consume or expand those automatic ratification allowances. Keep every other ratification, withdrawal and Read requirement unchanged.",
+          "accepted_support": [
+            "For this new two-behavior revision, apply the automatic limits only to ratifications: two per league and six overall in the rolling 24 hours, retaining the existing ratification approval history. Withdrawals always require supervisor review and do not consume or expand those automatic ratification allowances. Keep every other ratification, withdrawal and Read requirement unchanged."
+          ],
+          "configuration_digest": "sha256:05e206f813c21d8b29241ff4eae0d4d9add1b62618028b3b41c2f1d0106ecb6c"
+        },
+        {
+          "origin": "HOST-SOURCE-ASSOCIATION",
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+          "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+          "start": 7,
+          "end": 7,
+          "source_excerpt": "Valid qualifying-stage results may be approved automatically, with at most six automatic ratifications overall and two per league in the inclusive rolling 24-hour window. Qualifying results beyond either cap go to human review. Every valid championship-stage result requires the league supervisor's human review. Counts are shared across that league's referees; creating a local client does not create more allowance. Explicit supervised execution follows approval. Request a stored Runner-ledger receipt and independently verify the changed source row. No match server or external system is contacted.",
+          "state": "established",
+          "required_capability": "league.result_ratification",
+          "operator_clarification": "For this new two-behavior revision, apply the automatic limits only to ratifications: two per league and six overall in the rolling 24 hours, retaining the existing ratification approval history. Withdrawals always require supervisor review and do not consume or expand those automatic ratification allowances. Keep every other ratification, withdrawal and Read requirement unchanged.",
+          "accepted_support": [
+            "For this new two-behavior revision, apply the automatic limits only to ratifications: two per league and six overall in the rolling 24 hours, retaining the existing ratification approval history. Withdrawals always require supervisor review and do not consume or expand those automatic ratification allowances. Keep every other ratification, withdrawal and Read requirement unchanged."
+          ],
+          "configuration_digest": "sha256:8502bca55a9ce7d5be7ea761bef9193edc93a88f5bf4bcd5255ce01bb27cf4d2"
+        }
+      ]
+    }
+  ],
+  "nonimplemented_passages": [
+    {
+      "start": 3,
+      "end": 3,
+      "disposition": "needs_decision",
+      "interpretation": "The reviewed scope controls are configured, but connecting an authenticated application session to those tenant and principal bindings is not verified.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+      ],
+      "topic": "Authenticated referee identity",
+      "responsibility": "deployment",
+      "issue_kind": "missing_configuration",
+      "next_step": "After authority review, configure and verify authenticated-session identity for the reviewed tenant and principal bindings.",
+      "deployment_prerequisite": "authenticated_identity"
+    },
+    {
+      "start": 3,
+      "end": 3,
+      "disposition": "needs_decision",
+      "interpretation": "Runner verifies the submitted scoped result reference, but the client must capture the referee's intended result selection.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/application_obligations/customer_selection"
+      ],
+      "topic": "Referee result selection",
+      "responsibility": "application",
+      "issue_kind": "missing_configuration",
+      "next_step": "Assign the client responsibility for capturing the referee's intended result selection.",
+      "application_obligations": [
+        "customer_selection"
+      ]
+    },
+    {
+      "start": 7,
+      "end": 7,
+      "disposition": "needs_decision",
+      "interpretation": "A Runner-ledger receipt mode is currently configured, but dedicated-writer review, grants, execution enablement, and worker startup for the prepared direct-SQL action are not verified.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+      ],
+      "topic": "Ratification execution setup",
+      "responsibility": "deployment",
+      "issue_kind": "missing_configuration",
+      "next_step": "After authority review, complete writer, grant, execution-consent, receipt, and worker setup for ratification.",
+      "deployment_prerequisite": "runner_execution_setup"
+    },
+    {
+      "obligation_assessment": {
+        "origin": "HOST-RESOLVED",
+        "family": "independent_source_readback",
+        "path": "/runner_evidence/runtime_contract/application_obligations/independent_source_readback",
+        "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+        "requirement": "independent_source_readback",
+        "phase": "after_execution",
+        "state": "pending",
+        "verified": false,
+        "dependencies_digest": "sha256:954740fdc118d2992905a649de24f49a1e3c62b6b34fc4b7e0c6f21db0d5242c"
+      },
+      "start": 7,
+      "end": 7,
+      "disposition": "needs_decision",
+      "interpretation": "Independently verifying the changed source row is a separate after-execution observation. It remains unverified; a Runner-ledger receipt is not that observation.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+      ],
+      "topic": "Independent changed-row verification",
+      "responsibility": "application",
+      "issue_kind": "missing_configuration",
+      "next_step": "Assign who will independently observe each changed source row after execution.",
+      "application_obligations": [
+        "independent_source_readback"
+      ]
+    }
+  ],
+  "application_assignments": [
+    {
+      "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+      "draft_digest": "sha256:75ee86fcf9f5e7eadba61c7c027a0a09f37de305d38b7c5442934df37b5211fa",
+      "start": 3,
+      "end": 3,
+      "obligations": [
+        "customer_selection"
+      ],
+      "assigned_at": "2026-09-14T23:18:46.352Z",
+      "owner": "client_application",
+      "verified": false
+    },
+    {
+      "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+      "draft_digest": "sha256:ca14cf3864f79098598d9c895ea4e246e23a74a5fec4923b57c3c4e9be514601",
+      "start": 3,
+      "end": 3,
+      "obligations": [
+        "customer_selection"
+      ],
+      "assigned_at": "2026-09-14T23:18:46.352Z",
+      "owner": "client_application",
+      "verified": false
+    }
+  ],
+  "obligation_passages": [
+    {
+      "obligation_assessment": {
+        "origin": "HOST-RESOLVED",
+        "family": "independent_source_readback",
+        "path": "/runner_evidence/runtime_contract/application_obligations/independent_source_readback",
+        "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+        "requirement": "independent_source_readback",
+        "phase": "after_execution",
+        "state": "pending",
+        "verified": false,
+        "dependencies_digest": "sha256:954740fdc118d2992905a649de24f49a1e3c62b6b34fc4b7e0c6f21db0d5242c"
+      },
+      "start": 7,
+      "end": 7,
+      "disposition": "needs_decision",
+      "interpretation": "Independently verifying the changed source row is a separate after-execution observation. It remains unverified; a Runner-ledger receipt is not that observation.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+      ],
+      "topic": "Independent changed-row verification",
+      "responsibility": "application",
+      "issue_kind": "missing_configuration",
+      "next_step": "Assign who will independently observe each changed source row after execution.",
+      "application_obligations": [
+        "independent_source_readback"
+      ]
+    }
+  ],
+  "maintenance_passages": [
+    {
+      "start": 5,
+      "end": 5,
+      "disposition": "implemented",
+      "interpretation": "The compiled effect modifies result_state to ratified and Runner atomically increments the guarded version counter; it authorizes no score, referee, event, league, or other business-field change. The host has confirmed the source-owner all-writers counter-maintenance operating prerequisite for this current effect.",
+      "draft_paths": [
+        "/actions/0/effect",
+        "/runner_evidence/actions/league.result_ratification/effect",
+        "/runner_evidence/actions/league.result_ratification/effect/source_counter_maintenance"
+      ],
+      "topic": "Ratification-only write effect",
+      "responsibility": "runner",
+      "issue_kind": "coverage_link",
+      "next_step": "Retain the compiled guarded state change and Runner-owned version advancement."
+    }
+  ],
+  "resume_model": {
+    "provider": "openai",
+    "name": "gpt-5.6-terra",
+    "structural_metadata_egress_acknowledged": true
+  },
+  "resume_stage": "planning",
+  "pending": [
+    "pending_job_revision",
+    "pending_policy_review"
+  ],
+  "ledgers": [
+    {
+      "path": ".synapsor/local.db",
+      "tables": [
+        {
+          "table": "proposal_store_schema",
+          "before_rows": 1,
+          "after_rows": 1,
+          "before_sha256": "79b2d26d096281b92462ca28274a133f03e5c5e3c4cbd7fbe8b704a046c46041",
+          "after_sha256": "79b2d26d096281b92462ca28274a133f03e5c5e3c4cbd7fbe8b704a046c46041",
+          "unchanged": true
+        },
+        {
+          "table": "proposals",
+          "before_rows": 6,
+          "after_rows": 6,
+          "before_sha256": "875db4d77cd6e837ffb31bc86e96a9e5859f9fb4979dbd9f992d12e4c51bd59c",
+          "after_sha256": "875db4d77cd6e837ffb31bc86e96a9e5859f9fb4979dbd9f992d12e4c51bd59c",
+          "unchanged": true
+        },
+        {
+          "table": "proposal_events",
+          "before_rows": 40,
+          "after_rows": 40,
+          "before_sha256": "bb6f0f322295f9a54dba5890ad1b90694707c39c09d1a21b491d6f3ee7c70113",
+          "after_sha256": "bb6f0f322295f9a54dba5890ad1b90694707c39c09d1a21b491d6f3ee7c70113",
+          "unchanged": true
+        },
+        {
+          "table": "approvals",
+          "before_rows": 4,
+          "after_rows": 4,
+          "before_sha256": "c9df29143638d49f82975fc94bcbb65a4d3e2aea4517a0277aefffd0d2123287",
+          "after_sha256": "c9df29143638d49f82975fc94bcbb65a4d3e2aea4517a0277aefffd0d2123287",
+          "unchanged": true
+        },
+        {
+          "table": "writeback_receipts",
+          "before_rows": 2,
+          "after_rows": 2,
+          "before_sha256": "ca24566eb0a1c9de02611e3caf820f09cd8d09ef701f97eedf2b7cb315f824d8",
+          "after_sha256": "ca24566eb0a1c9de02611e3caf820f09cd8d09ef701f97eedf2b7cb315f824d8",
+          "unchanged": true
+        },
+        {
+          "table": "evidence_bundles",
+          "before_rows": 11,
+          "after_rows": 11,
+          "before_sha256": "b90ed9aa19465ea08639c926aa8f79ea2784a58360963ce449c44c7477177aeb",
+          "after_sha256": "b90ed9aa19465ea08639c926aa8f79ea2784a58360963ce449c44c7477177aeb",
+          "unchanged": true
+        },
+        {
+          "table": "evidence_items",
+          "before_rows": 6,
+          "after_rows": 6,
+          "before_sha256": "9c54ddae72ba07fd17a4b6269f09e123d1b109fc600c1cc9e156237927aec12c",
+          "after_sha256": "9c54ddae72ba07fd17a4b6269f09e123d1b109fc600c1cc9e156237927aec12c",
+          "unchanged": true
+        },
+        {
+          "table": "observed_subject_references",
+          "before_rows": 120,
+          "after_rows": 120,
+          "before_sha256": "94ef389f7c61d60dfe0a7a61783c1cdb4bd4482b7dea27f8c66f1d8e0bce4f28",
+          "after_sha256": "94ef389f7c61d60dfe0a7a61783c1cdb4bd4482b7dea27f8c66f1d8e0bce4f28",
+          "unchanged": true
+        },
+        {
+          "table": "query_audit",
+          "before_rows": 12,
+          "after_rows": 12,
+          "before_sha256": "0acb46a08fc74f8bef39b81e232ba55b34f121476e7042d89752759788d7cc7c",
+          "after_sha256": "0acb46a08fc74f8bef39b81e232ba55b34f121476e7042d89752759788d7cc7c",
+          "unchanged": true
+        },
+        {
+          "table": "explore_privacy_releases",
+          "before_rows": 0,
+          "after_rows": 0,
+          "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "unchanged": true
+        },
+        {
+          "table": "explore_budget_reservations",
+          "before_rows": 5,
+          "after_rows": 5,
+          "before_sha256": "760d8c57e29dff1d2c261efdb82ba1ce8fcda58a816dfa523c55e1597483a3ec",
+          "after_sha256": "760d8c57e29dff1d2c261efdb82ba1ce8fcda58a816dfa523c55e1597483a3ec",
+          "unchanged": true
+        },
+        {
+          "table": "writeback_jobs",
+          "before_rows": 2,
+          "after_rows": 2,
+          "before_sha256": "67bc855c9f2bc17a202d6f834deb6e84ee364e8b4e4a51434f64fdf16c6be487",
+          "after_sha256": "67bc855c9f2bc17a202d6f834deb6e84ee364e8b4e4a51434f64fdf16c6be487",
+          "unchanged": true
+        },
+        {
+          "table": "idempotency_receipts",
+          "before_rows": 2,
+          "after_rows": 2,
+          "before_sha256": "ba17af106d47863cc742cb7cd22c48d166ee72d821093977d19b8a84b08d3dff",
+          "after_sha256": "ba17af106d47863cc742cb7cd22c48d166ee72d821093977d19b8a84b08d3dff",
+          "unchanged": true
+        },
+        {
+          "table": "writeback_intents",
+          "before_rows": 2,
+          "after_rows": 2,
+          "before_sha256": "88958b39ea4c73144b30a2a857d385950252444b74960a6c905683a63207196a",
+          "after_sha256": "88958b39ea4c73144b30a2a857d385950252444b74960a6c905683a63207196a",
+          "unchanged": true
+        },
+        {
+          "table": "replay_records",
+          "before_rows": 0,
+          "after_rows": 0,
+          "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "unchanged": true
+        },
+        {
+          "table": "shadow_human_actions",
+          "before_rows": 0,
+          "after_rows": 0,
+          "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "unchanged": true
+        },
+        {
+          "table": "shadow_studies",
+          "before_rows": 0,
+          "after_rows": 0,
+          "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "unchanged": true
+        },
+        {
+          "table": "shadow_study_cases",
+          "before_rows": 0,
+          "after_rows": 0,
+          "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "unchanged": true
+        },
+        {
+          "table": "shadow_outcomes",
+          "before_rows": 0,
+          "after_rows": 0,
+          "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "unchanged": true
+        },
+        {
+          "table": "runner_state",
+          "before_rows": 9,
+          "after_rows": 9,
+          "before_sha256": "8d01948a95658e43eccf1ad6551858a8af35a4953e24b83aec603bb14c6d6c71",
+          "after_sha256": "8d01948a95658e43eccf1ad6551858a8af35a4953e24b83aec603bb14c6d6c71",
+          "unchanged": true
+        },
+        {
+          "table": "cloud_outbox",
+          "before_rows": 0,
+          "after_rows": 0,
+          "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "unchanged": true
+        },
+        {
+          "table": "cloud_governance_events",
+          "before_rows": 0,
+          "after_rows": 0,
+          "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "unchanged": true
+        },
+        {
+          "table": "policy_recommendations",
+          "before_rows": 0,
+          "after_rows": 0,
+          "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "unchanged": true
+        },
+        {
+          "table": "attention_events",
+          "before_rows": 29,
+          "after_rows": 29,
+          "before_sha256": "2680c5540efcb8c160b22749ef5a871d5412eb0782b4925b546026ecf3be6975",
+          "after_sha256": "2680c5540efcb8c160b22749ef5a871d5412eb0782b4925b546026ecf3be6975",
+          "unchanged": true
+        },
+        {
+          "table": "attention_items",
+          "before_rows": 2,
+          "after_rows": 2,
+          "before_sha256": "350c85e17593150fd33be19130f57cf299e5c8087eb5127806e888014e6e50c3",
+          "after_sha256": "350c85e17593150fd33be19130f57cf299e5c8087eb5127806e888014e6e50c3",
+          "unchanged": true
+        },
+        {
+          "table": "notification_deliveries",
+          "before_rows": 0,
+          "after_rows": 0,
+          "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "unchanged": true
+        },
+        {
+          "table": "worker_queue",
+          "before_rows": 4,
+          "after_rows": 4,
+          "before_sha256": "42f266de0a4f0ad3c1f310b9da7abef290bfab40d65d35308311b296f69ef112",
+          "after_sha256": "42f266de0a4f0ad3c1f310b9da7abef290bfab40d65d35308311b296f69ef112",
+          "unchanged": true
+        },
+        {
+          "table": "control_policy_identity",
+          "before_rows": 1,
+          "after_rows": 1,
+          "before_sha256": "d2fc0c53aa8f4a0d864de0d03110548e3b1d3694ac7f2f08adcb0d817139c087",
+          "after_sha256": "d2fc0c53aa8f4a0d864de0d03110548e3b1d3694ac7f2f08adcb0d817139c087",
+          "unchanged": true
+        },
+        {
+          "table": "control_policy_deployments",
+          "before_rows": 1,
+          "after_rows": 1,
+          "before_sha256": "f72dfe8499f7c1364e5829078e45a77fb90c6bef8d244bd6266fc223492e00d9",
+          "after_sha256": "f72dfe8499f7c1364e5829078e45a77fb90c6bef8d244bd6266fc223492e00d9",
+          "unchanged": true
+        },
+        {
+          "table": "control_policy_revisions",
+          "before_rows": 31,
+          "after_rows": 31,
+          "before_sha256": "6211fdee3debcfab97a153156e1c9a1cf5a61892c35c4b22a6b9a58822eeb89e",
+          "after_sha256": "6211fdee3debcfab97a153156e1c9a1cf5a61892c35c4b22a6b9a58822eeb89e",
+          "unchanged": true
+        },
+        {
+          "table": "control_policy_active",
+          "before_rows": 7,
+          "after_rows": 7,
+          "before_sha256": "7f2fa1294abd8d67e4a8afbc8b5dfe6404a7cdc1f8340caff625747f00b7ffd5",
+          "after_sha256": "7f2fa1294abd8d67e4a8afbc8b5dfe6404a7cdc1f8340caff625747f00b7ffd5",
+          "unchanged": true
+        },
+        {
+          "table": "control_policy_drafts",
+          "before_rows": 2,
+          "after_rows": 2,
+          "before_sha256": "5aaa3809ba024d89d8251c392b1645a7e4badc0793872d68aad56d2876235d40",
+          "after_sha256": "5aaa3809ba024d89d8251c392b1645a7e4badc0793872d68aad56d2876235d40",
+          "unchanged": true
+        },
+        {
+          "table": "control_policy_events",
+          "before_rows": 44,
+          "after_rows": 44,
+          "before_sha256": "f8489daf4e5c2c51fa4df420ddacd6a5713a81c3cdc9e93eb0b51671c6cfba56",
+          "after_sha256": "f8489daf4e5c2c51fa4df420ddacd6a5713a81c3cdc9e93eb0b51671c6cfba56",
+          "unchanged": true
+        },
+        {
+          "table": "control_policy_reviews",
+          "before_rows": 0,
+          "after_rows": 0,
+          "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "unchanged": true
+        },
+        {
+          "table": "control_policy_budget_accounts",
+          "before_rows": 0,
+          "after_rows": 0,
+          "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "unchanged": true
+        },
+        {
+          "table": "control_policy_budget_requests",
+          "before_rows": 0,
+          "after_rows": 0,
+          "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "unchanged": true
+        },
+        {
+          "table": "control_policy_budget_entries",
+          "before_rows": 0,
+          "after_rows": 0,
+          "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "unchanged": true
+        },
+        {
+          "table": "control_policy_budget_receipts",
+          "before_rows": 0,
+          "after_rows": 0,
+          "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "unchanged": true
+        },
+        {
+          "table": "control_policy_effect_admissions",
+          "before_rows": 0,
+          "after_rows": 0,
+          "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "unchanged": true
+        },
+        {
+          "table": "control_policy_effect_receipts",
+          "before_rows": 0,
+          "after_rows": 0,
+          "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "unchanged": true
+        },
+        {
+          "table": "control_policy_runtime_proofs",
+          "before_rows": 0,
+          "after_rows": 0,
+          "before_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "after_sha256": "4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+          "unchanged": true
+        }
+      ]
+    }
+  ],
+  "actual_authoring_calls": 1,
+  "public_effects_or_workers_run": false,
+  "readiness": "Inspect public review result together with these persisted records; this oracle grants no application attestation."
+}

@@ -1,0 +1,114 @@
+{
+  "at": "2026-09-15T22:31:07.914906+00:00",
+  "label": "closure",
+  "captures": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/runs/counting-wording-control/meter/input-0001.json",
+      "bytes": 163010,
+      "sha256": "c3d78ecdf36bc7e6e0637b0088cc039a07d60fcd2c24b41ddb5eb42f9e10b7c0",
+      "current_sha256": "c3d78ecdf36bc7e6e0637b0088cc039a07d60fcd2c24b41ddb5eb42f9e10b7c0",
+      "unchanged": true,
+      "handling": "Immutable captured evidence"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/runs/counting-wording-control/meter/output-0001.txt",
+      "bytes": 890024,
+      "sha256": "f0f6d7c9fbda1242e3e13f4da81834902643f4ef6108a76e73ea7dcdc4d482ae",
+      "current_sha256": "f0f6d7c9fbda1242e3e13f4da81834902643f4ef6108a76e73ea7dcdc4d482ae",
+      "unchanged": true,
+      "handling": "Immutable captured evidence"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/runs/counting-wording-control/meter/input-0002.json",
+      "bytes": 178135,
+      "sha256": "b30f2692b929a227a5cc7e684bcc6dd475fb666733b9e0d8df791692cc07bd18",
+      "current_sha256": "b30f2692b929a227a5cc7e684bcc6dd475fb666733b9e0d8df791692cc07bd18",
+      "unchanged": true,
+      "handling": "Immutable captured evidence"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/runs/counting-wording-control/meter/output-0002.txt",
+      "bytes": 887150,
+      "sha256": "7ae413d2e2b3207f00cbd1f0b09860530b68c2baf08d7db58befd1c8384ed105",
+      "current_sha256": "7ae413d2e2b3207f00cbd1f0b09860530b68c2baf08d7db58befd1c8384ed105",
+      "unchanged": true,
+      "handling": "Immutable captured evidence"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/original-observations/terra/policy-source.json",
+      "bytes": 31088,
+      "sha256": "0d4970139e54ea79b50e9a1aa2f6fb7560187e54e8e025280cfdd4b94bd047e6",
+      "current_sha256": "0d4970139e54ea79b50e9a1aa2f6fb7560187e54e8e025280cfdd4b94bd047e6",
+      "unchanged": true,
+      "handling": "Immutable captured evidence"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/original-observations/grok/policy-source.json",
+      "bytes": 39597,
+      "sha256": "ad776ec5ee5db46ad219e59e704a7b8f1ed9d60356ef6a5e74b6bb6625dd26f9",
+      "current_sha256": "ad776ec5ee5db46ad219e59e704a7b8f1ed9d60356ef6a5e74b6bb6625dd26f9",
+      "unchanged": true,
+      "handling": "Immutable captured evidence"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/obligation-review-20260915/REVIEW.md",
+      "bytes": 8470,
+      "sha256": "9c978488a31ed8c90219637c108a1fd5372dca3ff991ce0c96e281f7b0b0aa25",
+      "current_sha256": "9c978488a31ed8c90219637c108a1fd5372dca3ff991ce0c96e281f7b0b0aa25",
+      "unchanged": true,
+      "handling": "Independent authored updates reported separately; original recorded hash retained."
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/obligation-review-20260915/readiness-compare.mts",
+      "bytes": 1453,
+      "sha256": "ef2430a2eb432f9069936fc1f8264ad281c0c8b70f2bec3a96da1a58a55ab6fe",
+      "current_sha256": "ef2430a2eb432f9069936fc1f8264ad281c0c8b70f2bec3a96da1a58a55ab6fe",
+      "unchanged": true,
+      "handling": "Immutable captured evidence"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/obligation-review-20260915/grokB-terminal.log",
+      "bytes": 4099,
+      "sha256": "4e48a2674d03ded7b5cc4b9a376ade82d039930719233ae30712053a5fa3195b",
+      "current_sha256": "4e48a2674d03ded7b5cc4b9a376ade82d039930719233ae30712053a5fa3195b",
+      "unchanged": true,
+      "handling": "Immutable captured evidence"
+    }
+  ],
+  "projects": [
+    {
+      "provider": "terra",
+      "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/runs/counting-wording-control/project",
+      "files": 60,
+      "bytes_and_modes_unchanged": true
+    },
+    {
+      "provider": "grok",
+      "root": "/tmp/claude-1000/-home-sandesh-tiwari-Desktop-Synapsor-Tutorials-test-1-8-0-claude-student-registration/ee3004ea-e045-4e35-ace9-fb0c709213e9/scratchpad/xv/stageGB/project",
+      "files": 61,
+      "bytes_and_modes_unchanged": true
+    },
+    {
+      "case": "recovery-tournament-assisted",
+      "checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/runs/recovery-tournament-assisted/checkpoints/recheck-requested",
+      "files": 61,
+      "bytes_unchanged": true
+    },
+    {
+      "case": "counting-wording-control",
+      "checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/runs/counting-wording-control/checkpoints/wording-stopped",
+      "files": 60,
+      "bytes_unchanged": true
+    }
+  ],
+  "clean_starts": {
+    "entries": 207,
+    "manifest_sha256": "a37fe3bdd53313a598889837b867a480750e2488ae258f758295dd8f94de0e9d",
+    "unchanged": true
+  },
+  "prior_installed": {
+    "verified_at": "2026-09-15T22:31:09.437Z",
+    "installed_tree_sha256": "8c75b859c4220585ccb07fb28723c3c27fed9881417740f61310938481658362",
+    "entries": 7569
+  }
+}

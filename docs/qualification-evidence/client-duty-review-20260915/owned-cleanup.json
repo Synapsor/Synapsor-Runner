@@ -1,0 +1,42 @@
+{
+  "at": "2026-09-15T22:31:08.757454+00:00",
+  "records": [
+    {
+      "run": "counting-wording-control",
+      "container": "synapsor-obligation-readiness-counting-wording-control-3aa975d1",
+      "container_id": "66316e1d25381744d6998a03f8ac7b2d8a093be3f987416bda4f94a209537a9a",
+      "label": "client-duty-review-20260915",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "31b7089c33b8e0e6bae9f4e61582996875e5cf4143bc36af7ec4a5b213381aec",
+        "postgres.log": "45e3d3a10ece18672cb7f1bc800a26bfe643fe9e7b89e2bcdea0d22ec67dac42",
+        "source.dump": "c466ff502f3d51c7dd46de6d769217032e618b67b02167e51c79cc7f53d2045e"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/closure/counting-wording-control",
+      "removed": false
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "container": "synapsor-obligation-readiness-recovery-tournament-assisted-a810825a",
+      "container_id": "fae3d9b9d17d7d9aeb5b51b136b2d66a8f1e24f8f00e325a48cd5c70a4a06ec3",
+      "label": "client-duty-review-20260915",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "3c783d70c14ecf7a3bb4e053a1a8d267facbddea4e149b91889c2905f9ea21c5",
+        "postgres.log": "280c0320501166fa342e1454aad917ddbe828ec67183165751bf948f379c43f6",
+        "source.dump": "c466ff502f3d51c7dd46de6d769217032e618b67b02167e51c79cc7f53d2045e"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/closure/recovery-tournament-assisted",
+      "removed": false
+    }
+  ],
+  "counts_note": "Actual public CLI and provider invocations retained in each public-invocations.jsonl and meter/events.jsonl. Worker outcomes are recorded separately; this cleanup makes no execution-success claim.",
+  "original_containers_touched": false,
+  "fixture_directories_removed": false
+}

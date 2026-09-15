@@ -1,0 +1,31 @@
+{
+  "at": "2026-09-15T22:21:37.058Z",
+  "run": "counting-wording-control",
+  "label": "business-review-stopped",
+  "artifact_tree": "ff9a030cdb353ec56b9f4f048d40df60e3bb49f77d224eac675ba2b4c1a29568",
+  "kind": "Read-only pure implementation oracle over the installed-run snapshot; not a separate public operation",
+  "modules": [
+    {
+      "name": "authoring-review-readiness.ts",
+      "sha256": "66803f23846f157d40d4acbe9ea631c0a2e761d75ffa04062413f0c15d54c34f"
+    },
+    {
+      "name": "authoring-client-duties.ts",
+      "sha256": "21a9c333f5270d3b88b1cde0c475a49debefa97d143bb43358259dd15970eb13"
+    },
+    {
+      "name": "authoring-policy-source.ts",
+      "sha256": "1198552f2848448970ccf39d13427fa6bf7cb10446e216f96565cebb7b7a84e5"
+    }
+  ],
+  "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+  "coverage_draft_digest": "sha256:6a49093a3cb1a0329c870dde41a319ad823b50743cb3df71bfbcc0c29363e008",
+  "ownership": [],
+  "readiness": {
+    "ready": false,
+    "privacy": false,
+    "summary": [
+      "Before activation: recheck the attached rules. Activation is unavailable; the saved draft and exact details remain available."
+    ]
+  }
+}

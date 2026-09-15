@@ -42,8 +42,10 @@
   },
   "provider_spend_ceiling_usd": 15,
   "scope": "Two intrinsic client duties; explicit unverified ownership; review-only B then small A. No runtime or receipt engine changes.",
-  "status": "STABLE_GATES_PASSED_FREEZE_NEXT",
+  "status": "CLOSED_FOR_REVIEW_PRIMARY_B_BLOCKED",
   "evidence_root": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/client-duty-review-20260915",
-  "next_step": "Collect final PostgreSQL/offline package exits, archive evidence, commit checkpoint, freeze one installation, direct-Review B/A",
-  "trial_harness_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/trial-harness"
+  "next_step": "Independent review of frozen repair; bounded decision on PRIMARY-B-BLOCKER.md. No further sampling or new qualification.",
+  "trial_harness_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/trial-harness",
+  "artifact_tree": "ff9a030cdb353ec56b9f4f048d40df60e3bb49f77d224eac675ba2b4c1a29568",
+  "closed_at": "2026-09-15T22:37:24.267287+00:00"
 }

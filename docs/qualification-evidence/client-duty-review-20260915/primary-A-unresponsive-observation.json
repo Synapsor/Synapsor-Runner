@@ -1,0 +1,23 @@
+{
+  "at": "2026-09-15T22:27:40.366464+00:00",
+  "artifact_tree": "ff9a030cdb353ec56b9f4f048d40df60e3bb49f77d224eac675ba2b4c1a29568",
+  "last_terminal_write": "2026-09-15T22:23:59.456290+00:00",
+  "last_terminal_text": "characters \u2026\n  \u2022 Working (35s \u2022 esc to interrupt) \u00b7 Checking attached rules against this exact draft \u00b7 openai[gpt-5.6-terra] is responding... 13,491 characters \u2026\n  \u2022 Working (35s \u2022 esc to interrupt) \u00b7 Checking attached rules against this exact draft \u00b7 openai[gpt-5.6-terra] is responding... 13,543 characters \u2026\n  \u2022 Working (36s \u2022 esc to interrupt) \u00b7 Checking attached rules against this exact draft \u00b7 openai[gpt-5.6-terra] is responding... 13,543 characters \u2026\n  \u2022 Working (36s \u2022 esc to interrupt) \u00b7 Checking attached rules against this exact draft \u00b7 Runner is validating the complete streamed draft..",
+  "events": [
+    {
+      "type": "transport_attempt",
+      "index": 1,
+      "at": "2026-09-15T22:23:23.358Z",
+      "status": null
+    },
+    {
+      "type": "response_complete",
+      "index": 1,
+      "at": "2026-09-15T22:23:59.448Z",
+      "status": null
+    }
+  ],
+  "owned_processes": "    PID    PPID STAT     ELAPSED     TIME %CPU WCHAN                    COMMAND\n1178319 1178200 S+         04:54 00:00:00  0.0 poll_schedule_timeout.co bwrap\n1178320 1178319 S+         04:54 00:00:00  0.0 do_wait                  bwrap\n1178323 1178320 Sl+        04:54 00:00:00  0.0 ep_poll                  node\n1178335 1178323 Sl+        04:54 00:00:04  1.4 ep_poll                  node\n",
+  "next_action": "Existing Escape cancellation; no acceptance inferred or entered",
+  "cause": "Not yet established; complete response captured, no visible ownership/review completion"
+}

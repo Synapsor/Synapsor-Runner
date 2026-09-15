@@ -1,0 +1,177 @@
+{
+  "at": "2026-09-15T22:22:02.029366+00:00",
+  "artifact_tree": "ff9a030cdb353ec56b9f4f048d40df60e3bb49f77d224eac675ba2b4c1a29568",
+  "status": "BLOCKED BEFORE OWNERSHIP",
+  "calls": [
+    {
+      "index": "0001",
+      "model": "gpt-5.6-terra",
+      "reasoning": {
+        "effort": "low"
+      },
+      "max_output_tokens": 12000,
+      "correction": [],
+      "tools": [
+        {
+          "name": "runner__review_policy_coverage",
+          "counter_passages": [
+            {
+              "start": 7,
+              "end": 7,
+              "disposition": "implemented",
+              "interpretation": "Both approval histories filter to automatic approvals for league.result_ratification, matching the established source association and accepted ratification-only counting decision; the two limits otherwise retain their separate tenant and boundary scopes, maxima, and inclusive windows.",
+              "draft_paths": [
+                "/runner_evidence/actions/league.result_ratification/automatic_limits",
+                "/runner_evidence/counting_decisions",
+                "/runner_evidence/runtime_contract/approval_counter_selection"
+              ],
+              "operator_message_id": 9,
+              "topic": "Ratification approval history",
+              "responsibility": "runner",
+              "issue_kind": "coverage_link",
+              "next_step": "Retain the canonical ratification-only history selectors.",
+              "counter_requirements": [
+                {
+                  "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+                  "current_capability": "league.result_ratification",
+                  "required_capability": "league.result_ratification",
+                  "operator_message_id": 9
+                },
+                {
+                  "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+                  "current_capability": "league.result_ratification",
+                  "required_capability": "league.result_ratification",
+                  "operator_message_id": 9
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 29704,
+        "input_tokens_details": {
+          "cache_write_tokens": 29571,
+          "cached_tokens": 0
+        },
+        "output_tokens": 2547,
+        "output_tokens_details": {
+          "reasoning_tokens": 302
+        },
+        "total_tokens": 32251
+      },
+      "input": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/runs/counting-wording-control/meter/input-0001.json",
+      "input_sha256": "8cbc79f01fbac4c23a2fe73506da038d246ecf80d6bdb5f4fbe1681a60e30d3f",
+      "output": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/runs/counting-wording-control/meter/output-0001.txt",
+      "output_sha256": "c2743eb4398e722fa26cad8eac2946fc4b58449fd6537ebd0a4078923d19e2fd"
+    },
+    {
+      "index": "0002",
+      "model": "gpt-5.6-terra",
+      "reasoning": {
+        "effort": "low"
+      },
+      "max_output_tokens": 12000,
+      "correction": [
+        "Correct this structural coverage problem: Draft pointer(s) not present: /runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/referee_private_note. Use the supplied exact coverage references; do not invent a missing setting or edit a rule to repair a link. Private verification-only fields are under /runner_evidence/actions/<outcome>/scoped_bindings/<binding>/fields/<field>, not nonexistent read_access resources. Select an existing exact path; no missing Read path is redirected."
+      ],
+      "tools": [
+        {
+          "name": "runner__review_policy_coverage",
+          "counter_passages": [
+            {
+              "start": 7,
+              "end": 7,
+              "disposition": "implemented",
+              "interpretation": "Both approval histories select automatic approvals for league.result_ratification, matching the established source association and accepted ratification-only counting decision. The limits retain their distinct tenant and boundary scopes, maxima, and inclusive windows.",
+              "draft_paths": [
+                "/runner_evidence/actions/league.result_ratification/automatic_limits",
+                "/runner_evidence/counting_decisions",
+                "/runner_evidence/runtime_contract/approval_counter_selection"
+              ],
+              "operator_message_id": 9,
+              "topic": "Ratification approval history",
+              "responsibility": "runner",
+              "issue_kind": "coverage_link",
+              "next_step": "Retain the canonical ratification-only history selectors.",
+              "counter_requirements": [
+                {
+                  "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+                  "current_capability": "league.result_ratification",
+                  "required_capability": "league.result_ratification",
+                  "operator_message_id": 9
+                },
+                {
+                  "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+                  "current_capability": "league.result_ratification",
+                  "required_capability": "league.result_ratification",
+                  "operator_message_id": 9
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "usage": {
+        "input_tokens": 32088,
+        "input_tokens_details": {
+          "cache_write_tokens": 22663,
+          "cached_tokens": 9292
+        },
+        "output_tokens": 2579,
+        "output_tokens_details": {
+          "reasoning_tokens": 263
+        },
+        "total_tokens": 34667
+      },
+      "input": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/runs/counting-wording-control/meter/input-0002.json",
+      "input_sha256": "c8d6f2b47b25326147d222661305372bd309f444db54cd4472f27a1cbd8d423b",
+      "output": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/runs/counting-wording-control/meter/output-0002.txt",
+      "output_sha256": "d2ccba521f10a9aa5f56b1742e04287c849c735fc6256d48ef598f234a1e120d"
+    }
+  ],
+  "actual_calls": 2,
+  "code": "POLICY_COVERAGE_INVALID / COUNTING_SUPPORT_MISMATCH",
+  "cli_exit": 0,
+  "business_review_completed": false,
+  "current_client_ownership_review_executed": false,
+  "same_path_retried_after_bounded_failure": false,
+  "source_and_all_ledger_tables_unchanged": true,
+  "checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/runs/counting-wording-control/checkpoints/business-review-stopped",
+  "validation_order": [
+    {
+      "call": 1,
+      "first_rejection": "Draft pointer(s) not present: /runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/referee_private_note",
+      "bounded_correction": "Correct existing exact pointer; no missing Read path redirected."
+    },
+    {
+      "call": 2,
+      "first_rejection": "COUNTING_SUPPORT_MISMATCH for limit0 capability citation operator_message_id9",
+      "remaining_calls_not_used": "Stop substantive path; no repeat sampling."
+    }
+  ],
+  "actual_prepared_limits": [
+    {
+      "outcome": "league.result_ratification",
+      "shared_limits": [
+        {
+          "id": "league_automatic_ratifications_24h",
+          "kind": "count",
+          "scope": "tenant",
+          "maximum": 2,
+          "window_seconds": 86400,
+          "capability": "league.result_ratification"
+        },
+        {
+          "id": "overall_automatic_ratifications_24h",
+          "kind": "count",
+          "scope": "boundary",
+          "maximum": 6,
+          "window_seconds": 86400,
+          "capability": "league.result_ratification"
+        }
+      ]
+    }
+  ],
+  "actual_operator_message9": null
+}
