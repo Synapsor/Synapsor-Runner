@@ -16311,9 +16311,10 @@ function stripAnsi(value: string): string {
 }
 
 describe("saved review operation dispatch and persistence", () => {
-  it.each(["menu", "no-change", "typed-review", "redundant-source", "unknown", "declined", "source-race", "resume-race", "unrelated-edit", "provider-refusal", "semantic-question", "genuine-noop"])("reviews without entering editors: %s", async mode => {
+  it.each(["menu", "no-change", "typed-review", "redundant-source", "unknown", "declined", "choice-save-race", "source-race", "resume-race", "unrelated-edit", "provider-refusal", "semantic-question", "genuine-noop"])("reviews without entering editors: %s", async mode => {
     const fixture = await staleSemanticRevalidationFixture({ outcomes: ["maintenance.complete_visit"] });
     const { root, inspection } = fixture;
+    let sourceReadSpy: { mockRestore(): void } | undefined;
     try {
       const initial = await loadBoundaryReviewContext(root);
       await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({ draft: initial.draft, candidate: initial.candidate,
@@ -16324,7 +16325,7 @@ describe("saved review operation dispatch and persistence", () => {
         schema_fingerprint: context.bundle.authority.schema_fingerprint,
         role_posture_fingerprint: context.bundle.authority.role_posture_fingerprint };
       let authority = (await readActionRuleAuthorityDraft(root, "reviewed_staging_rules"))!;
-      const counting = mode === "unknown" || mode === "declined";
+      const counting = mode === "unknown" || mode === "declined" || mode === "choice-save-race";
       if (counting) {
         const draft = actionRuleModelDraftFromAuthority({ authority: authority.authority, outcome: authority.reviews[0]!.outcome,
           review: authority.reviews[0]!, preserveVerificationFields: true });
@@ -16352,12 +16353,32 @@ describe("saved review operation dispatch and persistence", () => {
       await writeBoundaryAuthoringResumeState(root, resume, { expectedRevisionDigest: null });
       const authorityBefore = canonicalJsonDigest(authority), readBefore = canonicalJsonDigest(context.candidate);
       const menus: string[] = [], notices: string[][] = []; let choices = 0, confirmations = 0, providerCalls = 0, plannerCalls = 0;
+      let choiceSaveInterleaved = false;
+      const competingNote = "Retain this independently saved owner decision.";
+      if (mode === "choice-save-race") {
+        const readFile = fs.readFile;
+        const sourcePath = path.join(root, ".synapsor/boundary-authoring/policy-sources", source.id + ".json");
+        sourceReadSpy = vi.spyOn(fs, "readFile").mockImplementation(async (...args: any[]) => {
+          const bytes = await (readFile as any)(...args);
+          if (!choiceSaveInterleaved && String(args[0]) === sourcePath) {
+            const current = JSON.parse(String(bytes));
+            if (current.counting_decisions?.length && !current.coverage) {
+              choiceSaveInterleaved = true;
+              const expectedDigest = canonicalJsonDigest(current);
+              current.operator_messages = [...(current.operator_messages ?? []), competingNote];
+              await savePolicySources(root, current, { expectedDigest });
+              return (readFile as any)(...args);
+            }
+          }
+          return bytes;
+        });
+      }
       let restarted = false;
       const session: BoundaryReviewInteractiveSession = { ...fixture.session,
         rememberDetails: (_title, lines) => { notices.push(lines); },
         chooseOption: async title => {
           menus.push(title);
-          if (title === "START BOUNDARY DRAFTING") return restarted || ["menu", "unknown", "declined", "source-race", "resume-race", "unrelated-edit", "provider-refusal"].includes(mode) ? "review_rules" : "resume";
+          if (title === "START BOUNDARY DRAFTING") return restarted || ["menu", "unknown", "declined", "choice-save-race", "source-race", "resume-race", "unrelated-edit", "provider-refusal"].includes(mode) ? "review_rules" : "resume";
           if (title === "CHOOSE THE SAVED JOB OPERATION") return ["semantic-question", "genuine-noop"].includes(mode) ? "continue" : "review";
           if (title === "REVIEW OR UNFINISHED EDIT?") return mode === "unrelated-edit" ? "keep" : "review";
           if (title === "REVIEW COUNTED AUTOMATIC APPROVALS") { choices++; return "boundary"; }
@@ -16372,6 +16393,15 @@ describe("saved review operation dispatch and persistence", () => {
         exitAfterAgentJob: true, actionProjectInspector: async () => inspection,
         modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "captured-only", dependencies: { requestJson: async () => {
           providerCalls++;
+          // After removal of the unsafe acknowledgement read, preserve the same
+          // competing save at the next outside-lock provider boundary.
+          if (mode === "choice-save-race" && !choiceSaveInterleaved) {
+            choiceSaveInterleaved = true;
+            const current = await loadPolicySources(root, source.id);
+            const expectedDigest = canonicalJsonDigest(current);
+            current.operator_messages = [...(current.operator_messages ?? []), competingNote];
+            await savePolicySources(root, current, { expectedDigest });
+          }
           if (mode === "source-race") {
             const competing = await loadPolicySources(root, source.id); competing.operator_messages = ["Retain this newer decision."]; await savePolicySources(root, competing);
           }
@@ -16416,9 +16446,14 @@ describe("saved review operation dispatch and persistence", () => {
         expect(resume.pending_job_revision).toBe(mode === "genuine-noop" ? "Change the maximum to four." : exact);
         expect(providerCalls).toBe(0); expect(plannerCalls).toBe(1); return;
       }
-      if (["declined", "source-race", "resume-race", "provider-refusal"].includes(mode)) {
+      if (["declined", "choice-save-race", "source-race", "resume-race", "provider-refusal"].includes(mode)) {
         expect(resume.pending_policy_review?.operation).toBe("review_rules"); expect(resume.completed_policy_reviews).toBeUndefined();
         if (mode === "declined") { expect(stored.counting_decisions).toBeUndefined(); expect(providerCalls).toBe(0); }
+        if (mode === "choice-save-race") {
+          expect(choiceSaveInterleaved).toBe(true); expect(choices).toBe(2); expect(confirmations).toBe(2);
+          expect(stored.operator_messages).toEqual([competingNote]); expect(stored.coverage).toBeUndefined();
+          expect(notices.flat().join("\n")).toContain("POLICY_SOURCE_CHANGED");
+        }
         if (mode === "source-race") expect(stored.operator_messages).toEqual(["Retain this newer decision."]);
         if (mode === "resume-race") expect(resume.pending_job_revision).toBe("A genuine competing edit.");
       } else {
@@ -16434,6 +16469,6 @@ describe("saved review operation dispatch and persistence", () => {
         expect(providerCalls).toBe(calls); expect(choices).toBe(counting ? 2 : 0);
       }
       expect(plannerCalls).toBe(["no-change", "typed-review", "redundant-source"].includes(mode) ? 1 : 0);
-    } finally { await fixture.dispose(); }
+    } finally { sourceReadSpy?.mockRestore(); await fixture.dispose(); }
   });
 });

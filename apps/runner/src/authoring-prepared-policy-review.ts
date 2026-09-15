@@ -71,9 +71,12 @@ export async function ensurePreparedPolicyCoverage(input: {
     await coordinated(async permit => {
       await assertCurrent(permit);
       await savePolicySources(input.projectRoot, staged, { expectedDigest: expectedSource, permit });
+      // Later coverage must compare against our own committed snapshot. Reading
+      // "latest" after releasing the lock could adopt a competing writer's digest
+      // while retaining this older in-memory source and overwrite that writer.
+      expectedSource = canonicalJsonDigest(staged);
     });
     Object.assign(sources, staged);
-    expectedSource = await policySourceSavedDigest(input.projectRoot, sources.id);
     draftRecord = input.currentDraft();
   }
   const key = canonicalJsonDigest({ source: source.digest, draft: draftRecord, messages: sources.operator_messages ?? [],
