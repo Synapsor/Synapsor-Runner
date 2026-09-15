@@ -1,3 +1,4 @@
+import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { assertReviewOperationShape, planningFieldShape, REVIEW_OPERATION_GUIDANCE, REVIEW_PLAN_FIELDS } from "./boundary-job-operation-contract.js";
 import { BoundaryJobPlanningError, planningErrorDiagnostic, planningResponseDiagnostic,
@@ -856,7 +857,7 @@ function planningConfiguration(
         : {}),
     authority_digest: authorityDigest,
     egress_acknowledged: egressAcknowledged,
-    request_timeout_seconds: 120,
+    request_timeout_seconds: authoringRequestTimeoutSeconds(),
     max_output_tokens: 4_000,
   }, env, new Date());
 }

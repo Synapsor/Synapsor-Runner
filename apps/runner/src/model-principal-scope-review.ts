@@ -1,3 +1,4 @@
+import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { runRequiredAuthoringToolCall } from "./authoring-tool-call.js";
 import {
@@ -237,7 +238,7 @@ function principalScopeConfiguration(
         : {}),
     authority_digest: authorityDigest,
     egress_acknowledged: egressAcknowledged,
-    request_timeout_seconds: 120,
+    request_timeout_seconds: authoringRequestTimeoutSeconds(),
     max_output_tokens: 800,
   }, env, new Date());
 }

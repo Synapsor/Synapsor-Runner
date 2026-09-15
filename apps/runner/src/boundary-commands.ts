@@ -2725,6 +2725,7 @@ export async function promptBoundaryMappingModel(
             requireExplicitSelection: true,
             context: [
               "Choose the exact model/provider for this job; Runner does not select one for you.",
+              ...draftingModelEligibilityGuidance(currentModel.provider),
               "The choice affects only this untrusted drafting request. No model can activate either Boundary.",
             ],
           },
@@ -2733,6 +2734,7 @@ export async function promptBoundaryMappingModel(
       const answer = await session.promptText("Choice (1-3)", {
         context: [
           "MODEL FOR BOUNDARY DRAFTING",
+          ...draftingModelEligibilityGuidance(currentModel.provider),
           `1  Use ${currentLabel}`,
           `2  Change the model for ${currentModel.provider}`,
           "3  Choose another provider",
@@ -2915,6 +2917,14 @@ export async function promptBoundaryMappingModel(
   };
 }
 
+function draftingModelEligibilityGuidance(provider: ActionModelSuggestionSession["provider"]): string[] {
+  return provider === "openrouter" ? [
+    "OpenRouter catalog entries are candidates; serving eligibility is not verified by this list.",
+    "Runner requires parameter support, denies provider data collection, and disables serving-provider fallback. These restrictions can leave a listed model with no eligible endpoint.",
+    "A request with no eligible endpoint is refused as ASK_PROVIDER_MODEL_UNAVAILABLE. Choose another model or retry later; Runner will not relax privacy restrictions or switch models.",
+  ] : [];
+}
+
 async function chooseBoundaryDraftingModel(input: {
   session: Pick<BoundaryReviewInteractiveSession, "promptText"> & Partial<Pick<BoundaryReviewInteractiveSession, "chooseOption">>;
   provider: ActionModelSuggestionSession["provider"];
@@ -2942,7 +2952,7 @@ async function chooseBoundaryDraftingModel(input: {
                 : ""}`,
           detail: model === input.currentModel
             ? "Keep the currently configured exact model."
-            : `Available from ${input.provider === "openai_compatible" ? "the selected loopback endpoint" : `${input.provider}'s model catalog`}.`,
+            : `Listed by ${input.provider === "openai_compatible" ? "the selected loopback endpoint" : `${input.provider}'s model catalog`}.${input.provider === "openrouter" ? " Serving eligibility is not verified." : ""}`,
         })),
         {
           value: exactValue,
@@ -2953,7 +2963,8 @@ async function chooseBoundaryDraftingModel(input: {
       {
         initialValue: input.currentModel,
         context: [
-          "Use Up/Down and Enter. Runner lists only bounded compatible candidates returned by the selected provider.",
+          "Use Up/Down and Enter. Runner lists bounded text/tool candidates returned by the selected provider.",
+          ...draftingModelEligibilityGuidance(input.provider),
           "The choice affects drafting only and grants no Boundary authority.",
         ],
       },
@@ -2962,12 +2973,13 @@ async function chooseBoundaryDraftingModel(input: {
     if (selected !== exactValue) return selected;
   }
   const exact = await input.session.promptText(`Exact model ID [${input.currentModel}]`, {
-    context: input.available.length
-      ? ["ADVANCED MODEL ID", "Enter an exact compatible model ID, or leave blank to keep the current model."]
-      : [
-          "MODEL CATALOG UNAVAILABLE",
-          "Runner could not list models from the selected provider. Enter an exact compatible model ID or keep the current model.",
-        ],
+    context: [
+      ...draftingModelEligibilityGuidance(input.provider),
+      ...(input.available.length
+        ? ["ADVANCED MODEL ID", "Enter an exact compatible model ID, or leave blank to keep the current model."]
+        : ["MODEL CATALOG UNAVAILABLE",
+          "Runner could not list models from the selected provider. Enter an exact compatible model ID or keep the current model."]),
+    ],
   });
   return exact === undefined ? undefined : exact.trim() || input.currentModel;
 }

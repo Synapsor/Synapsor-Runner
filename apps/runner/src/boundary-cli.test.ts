@@ -695,6 +695,26 @@ describe("boundary operator-plane CLI", () => {
     }]);
   });
 
+  it.each(["listed", "current", "exact"])("explains OpenRouter serving eligibility before %s selection", async route => {
+    const screens: string[] = [];
+    let choices = 0;
+    const result = await promptBoundaryMappingModel({
+      chooseOption: async (_title, options, context) => {
+        screens.push(JSON.stringify({ options, context }));
+        if (++choices === 1) return route === "current" ? "current" : "change_model";
+        return route === "exact" ? "__exact_model_id__" : "vendor/listed";
+      },
+      promptText: async (_label, context) => { screens.push(JSON.stringify(context)); return "vendor/exact"; },
+    }, { provider: "openrouter", model: "vendor/current", apiKey: "fixture-secret" }, {
+      discoverHostedModels: async () => ["vendor/listed"], env: {},
+    });
+    expect(result?.provider).toBe("openrouter");
+    expect(screens.join(" ")).toContain("data collection");
+    expect(screens.join(" ")).toContain("fallback");
+    expect(screens.join(" ")).toContain("eligibility is not verified");
+    expect(screens.join(" ")).not.toContain("fixture-secret");
+  });
+
   it("lists compatible hosted models in an Up/Down picker after the credential source is chosen", async () => {
     const titles: string[] = [];
     await expect(promptBoundaryMappingModel({

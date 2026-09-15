@@ -1,3 +1,4 @@
+import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { associateCountingRequirements, countingSourceRequirements, configuredCountingLimits } from "./authoring-counting-requirements.js";
 import { associateCountingComponents, resolveCountingComparison } from "./authoring-counting-review.js";
 import { resolveSourceCounterObligation, sourceCounterMaintenanceReferences, SOURCE_COUNTER_CLASSIFICATION_GUIDANCE } from "./authoring-counter-maintenance-review.js";
@@ -664,7 +665,7 @@ export async function reviewPolicyCoverage(input: {
   const configuration = resolveAskProviderConfiguration({ provider: session.provider, model: session.model,
     ...(session.baseUrl ? { base_url: session.baseUrl } : {}), ...(session.apiKey ? { api_key: session.apiKey }
       : { api_key_env: session.apiKeyEnv ?? defaultProviderKeyEnv(session.provider) }),
-    authority_digest: authorityDigest, egress_acknowledged: true, request_timeout_seconds: 120, max_output_tokens: 12_000,
+    authority_digest: authorityDigest, egress_acknowledged: true, request_timeout_seconds: authoringRequestTimeoutSeconds(), max_output_tokens: 12_000,
   }, input.env ?? process.env, new Date());
   try {
     for (let attempt = 0; attempt < 2; attempt++) {

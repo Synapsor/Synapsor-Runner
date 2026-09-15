@@ -1,3 +1,4 @@
+import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
 import { reviewedModelAnalysisOperations } from "./read-field-privacy.js";
@@ -122,7 +123,7 @@ export async function generateModelReadBoundaryRevision(input: {
         : {}),
     authority_digest: authorityDigest,
     egress_acknowledged: input.egressAcknowledged,
-    request_timeout_seconds: 120,
+    request_timeout_seconds: authoringRequestTimeoutSeconds(),
     max_output_tokens: 2_000,
   }, input.env ?? process.env, new Date());
 

@@ -13,6 +13,27 @@ access and compatible serving-provider availability are checked on a request.
 When discovery fails, the current model remains selected and exact-ID entry is
 available. Runner does not silently switch providers or models.
 
+The chooser explains that serving eligibility is not verified by the catalog.
+Required parameter support, denied data collection and disabled provider fallback
+can leave a listed model with zero eligible endpoints. The request then refuses
+with `ASK_PROVIDER_MODEL_UNAVAILABLE`; choosing a catalog entry does not waive
+those restrictions. Runner does not claim a successful eligibility preflight.
+
+For a slower authoring model, resume with an explicit per-call deadline:
+
+```bash
+synapsor-runner start --project-root . --cli --timeout 300
+# The same control is available on onboard db --cli.
+```
+
+The authoring default remains 120 seconds. `--timeout` accepts whole seconds
+from 1 through 600; invalid values are refused. It covers drafting, policy review,
+narration and bounded correction calls, including after changing the model.
+Re-supply it on restart; it is not saved as business policy. A correction gets
+its own deadline, so this is not a total-session time or spending limit. Catalog
+discovery retains its separate short deadline. Increasing the timeout does not
+make privacy-ineligible endpoints available or permit incomplete tool calls.
+
 To use the same provider in local Ask after reviewing database access:
 
 ```bash

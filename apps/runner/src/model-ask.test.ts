@@ -9008,7 +9008,7 @@ describe("Workbench BYOM Ask", () => {
       body: { model: "local", messages: [] },
       signal: new AbortController().signal,
       timeoutMs: 1_000,
-    })).rejects.toMatchObject({ code: "ASK_PROVIDER_TIMEOUT" });
+    })).rejects.toMatchObject({ code: "ASK_PROVIDER_TIMEOUT", message: expect.stringContaining("Set --timeout <seconds> (1 through 600) on start --cli, onboard db --cli, or try ask") });
 
     const oversized = createServer((_request, response) => {
       response.statusCode = 200;

@@ -1,3 +1,4 @@
+import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { CompiledActionRuleV1 } from "@synapsor-runner/action-rules";
 import {
@@ -359,7 +360,7 @@ function providerConfiguration(session: BoundaryJobPlanningSession, authorityDig
   return resolveAskProviderConfiguration({ provider: session.provider, model: session.model,
     ...(session.baseUrl ? { base_url: session.baseUrl } : {}), ...(session.apiKey ? { api_key: session.apiKey }
       : session.apiKeyEnv ?? defaultKeyEnv ? { api_key_env: session.apiKeyEnv ?? defaultKeyEnv } : {}),
-    authority_digest: authorityDigest, egress_acknowledged: egressAcknowledged, request_timeout_seconds: 120, max_output_tokens: 6_000,
+    authority_digest: authorityDigest, egress_acknowledged: egressAcknowledged, request_timeout_seconds: authoringRequestTimeoutSeconds(), max_output_tokens: 6_000,
   }, env ?? process.env, new Date());
 }
 

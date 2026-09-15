@@ -1,3 +1,4 @@
+import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import {
   AskError,
   askToolSurfaceDigest,
@@ -111,7 +112,7 @@ export async function narrateValidatedAuthoringStep(input: {
           : {}),
       authority_digest: authorityDigest,
       egress_acknowledged: input.egressAcknowledged,
-      request_timeout_seconds: 120,
+      request_timeout_seconds: authoringRequestTimeoutSeconds(),
       max_output_tokens: 800,
     }, input.env ?? process.env, new Date());
     const result = await runAskProviderTurn({

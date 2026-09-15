@@ -1,3 +1,4 @@
+import { planModelBoundaryJob } from "./boundary-job-model.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -101,6 +102,42 @@ describe("guided start surfaces", () => {
 
   const entry = (command: string, args: string[], dependencies: GuidedStartDependencies) => command === "start"
     ? start(args, dependencies) : onboard(["db", ...args], dependencies);
+
+  it.each(["start", "onboard"])("%s threads the selected timeout into actual authoring transport and its correction", async command => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "authoring-timeout-handoff-"));
+    vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const observed: number[] = [];
+    const runBoundaryReview = async () => {
+      let calls = 0;
+      await planModelBoundaryJob({
+        session: { provider: "openai", model: "fixture-model", apiKey: "fixture-key", dependencies: {
+          requestJson: async request => {
+            observed.push(request.timeoutMs!);
+            return { status: 200, body: { output: [{ type: "function_call", call_id: `call_${++calls}`,
+              name: "runner__plan_boundary_job", arguments: JSON.stringify(calls === 1 ? {} : {
+                status: "planned", operation: "review_rules", read_mode: "reuse", action_mode: "none", summary: "Review current rules." }) }] } };
+          },
+        } },
+        jobIntent: "Review current rules without changing them.", egressAcknowledged: true,
+        currentState: { read: { boundary_name: "fixture", authority: "disabled", fully_reviewed: true,
+          resource_ids: ["public.orders"], exact_reusable_revision_count: 1 }, actions: [],
+          control_plane: { trusted_scope: "runner_injected", approval_history: "runner_proposal_ledger",
+            model_may_supply_scope_values: false, model_may_supply_approval_history: false } },
+      });
+      return 0;
+    };
+    try {
+      const schemaInspector = vi.fn(async () => inspection());
+      for (const seconds of [300, undefined, 600, 1]) {
+        observed.length = 0;
+        await expect(entry(command, ["--project-root", root, "--from-env", "DATABASE_URL", "--cli",
+          ...(seconds === undefined ? [] : ["--timeout", String(seconds)])],
+          { interactive: true, schemaInspector, runBoundaryReview })).resolves.toBe(0);
+        expect(observed).toEqual([(seconds ?? 120) * 1000, (seconds ?? 120) * 1000]);
+      }
+      expect(schemaInspector).toHaveBeenCalledOnce(); // subsequent starts use the saved metadata
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
 
   it.each(["start", "onboard"])("%s defaults to current job-first terminal review without opening Workbench", async (command) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-current-terminal-"));

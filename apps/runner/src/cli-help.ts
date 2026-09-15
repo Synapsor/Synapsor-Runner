@@ -477,8 +477,13 @@ predicate, still applies reviewed principal scope when present, and refuses the
 mode if inspection finds evidence that the source is actually multi-tenant.
 
 For the terminal model handoff, \`--timeout <seconds>\` sets the per-provider-call
-timeout from 1 through 600 seconds. Without an override, hosted and remote
-providers use 30 seconds while a loopback OpenAI-compatible model uses 120.
+timeout from 1 through 600 seconds for drafting, review, narration and their
+bounded corrections, and for the later terminal Ask handoff. Authoring defaults
+to 120 seconds for every provider. After activation, Ask defaults to 30 seconds
+for hosted/remote providers and 120 for loopback. Re-supply --timeout on restart;
+it is an invocation setting, not a saved job or policy setting. The same option
+works with onboard db --cli. Each call has its own deadline, not a total journey
+budget. Catalog discovery keeps its separate short deadline.
 The same terminal handoff accepts \`--session-token-budget <tokens>\` and
 \`--max-output-tokens <tokens>\`; Workbench exposes parallel Ask-limit fields.
 These bound the local model client and provider spend/context only. They do not

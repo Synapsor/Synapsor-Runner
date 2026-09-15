@@ -1,3 +1,4 @@
+import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { isDeepStrictEqual } from "node:util";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
@@ -320,7 +321,7 @@ export async function generateModelReadPrerequisite(input: GenerateModelReadPrer
   const keyEnv = input.apiKeyEnv ?? ({ openai: "OPENAI_API_KEY", anthropic: "ANTHROPIC_API_KEY", openrouter: "OPENROUTER_API_KEY", openai_compatible: undefined }[input.provider]);
   const configuration = resolveAskProviderConfiguration({ provider: input.provider, model: input.model,
     ...(input.baseUrl ? { base_url: input.baseUrl } : {}), ...(input.apiKey ? { api_key: input.apiKey } : keyEnv ? { api_key_env: keyEnv } : {}),
-    authority_digest: authorityDigest, egress_acknowledged: true, request_timeout_seconds: 120, max_output_tokens: 2000,
+    authority_digest: authorityDigest, egress_acknowledged: true, request_timeout_seconds: authoringRequestTimeoutSeconds(), max_output_tokens: 2000,
   }, input.env ?? process.env, new Date());
   type Decision = { kind: "proposal"; proposal: ModelReadPrerequisiteProposal }
     | { kind: "clarification"; request: ModelReadPrerequisiteClarification } | { kind: "pending"; reason: string };

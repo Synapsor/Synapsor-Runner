@@ -1,3 +1,4 @@
+import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { historySelectorChanges, type HistorySelectorReview } from "./action-history-selector-review.js";
 import { Buffer } from "node:buffer";
 import { assertActionExecutionIntentPreserved } from "./action-execution-intent.js";
@@ -1610,7 +1611,7 @@ function providerConfiguration(
         : {}),
     authority_digest: authorityDigest,
     egress_acknowledged: input.egressAcknowledged,
-    request_timeout_seconds: 120,
+    request_timeout_seconds: authoringRequestTimeoutSeconds(),
     max_output_tokens: input.session.provider === "openai_compatible" ? 2_048 : 5_000,
   }, input.env ?? process.env, new Date());
 }

@@ -1,3 +1,4 @@
+import { withAuthoringRequestTimeout } from "./authoring-request-timeout.js";
 import {
   inspectDatabase,
   type InspectEngine,
@@ -329,6 +330,15 @@ function structuredBoundaryGuidance(projectRoot: string): string[] {
 async function startAutoBoundary(
   args: string[],
   dependencies: GuidedStartDependencies = {},
+): Promise<number> {
+  const rawTimeout = optionalArg(args, "--timeout");
+  return withAuthoringRequestTimeout(rawTimeout === undefined ? undefined : Number(rawTimeout),
+    () => runAutoBoundary(args, dependencies));
+}
+
+async function runAutoBoundary(
+  args: string[],
+  dependencies: GuidedStartDependencies,
 ): Promise<number> {
   assertKnownOptions(args, new Set(["--from-env", "--project-root", "--engine", "--schema", "--no-open", "--open-ui", "--cli", "--force", "--rescan", "--no-graduation-tip", "--verbose", "--single-tenant", "--organization-id", "--timeout", "--session-token-budget", "--max-output-tokens"]), "start --from-env Auto Boundary");
   const cliMode = args.includes("--cli");

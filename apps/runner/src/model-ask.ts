@@ -785,12 +785,12 @@ export async function secureAskJsonRequest(input: ProviderHttpInput): Promise<Pr
     deadline = setTimeout(
       () => request.destroy(new AskError(
         "ASK_PROVIDER_TIMEOUT",
-        `The provider did not respond within ${Math.ceil(timeoutMs / 1_000)} seconds. Increase the model request timeout for a slower local model.`,
+        `The provider did not respond within ${Math.ceil(timeoutMs / 1_000)} seconds. Set --timeout <seconds> (1 through 600) on start --cli, onboard db --cli, or try ask. Workbench has its own Ask timeout setting.`,
         504,
       )),
       timeoutMs,
     );
-    request.setTimeout(timeoutMs, () => request.destroy(new AskError("ASK_PROVIDER_TIMEOUT", "The provider did not respond within the Ask timeout.", 504)));
+    request.setTimeout(timeoutMs, () => request.destroy(new AskError("ASK_PROVIDER_TIMEOUT", `The provider did not respond within ${Math.ceil(timeoutMs / 1_000)} seconds. Set --timeout <seconds> (1 through 600) on start --cli, onboard db --cli, or try ask. Workbench has its own Ask timeout setting.`, 504)));
     request.on("error", finishReject);
     request.on("close", () => input.signal.removeEventListener("abort", abort));
     if (input.signal.aborted) {

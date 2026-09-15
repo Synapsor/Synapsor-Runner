@@ -1,3 +1,4 @@
+import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   AskError,
@@ -156,7 +157,7 @@ export async function generateModelReadWorkload(input: {
         : {}),
     authority_digest: authorityDigest,
     egress_acknowledged: input.egressAcknowledged,
-    request_timeout_seconds: 120,
+    request_timeout_seconds: authoringRequestTimeoutSeconds(),
     max_output_tokens: 4_000,
   }, input.env ?? process.env, new Date());
 

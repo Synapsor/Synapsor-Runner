@@ -1,3 +1,4 @@
+import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { ActionBoundarySharedLimitV1 } from "@synapsor-runner/protocol";
 import type { ArgumentSpec, JsonScalar } from "@synapsor/spec";
@@ -673,7 +674,7 @@ function interviewConfiguration(
         : {}),
     authority_digest: authorityDigest,
     egress_acknowledged: egressAcknowledged,
-    request_timeout_seconds: 120,
+    request_timeout_seconds: authoringRequestTimeoutSeconds(),
     max_output_tokens: 1_600,
   }, env, new Date());
 }

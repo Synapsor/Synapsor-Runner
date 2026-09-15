@@ -1,3 +1,4 @@
+import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   askToolSurfaceDigest,
@@ -93,7 +94,7 @@ export async function generateModelActionSuggestion(input: {
         : {}),
     authority_digest: authorityDigest,
     egress_acknowledged: input.egressAcknowledged,
-    request_timeout_seconds: 120,
+    request_timeout_seconds: authoringRequestTimeoutSeconds(),
     max_output_tokens: 2_400,
   }, input.env ?? process.env, new Date());
 
@@ -258,7 +259,7 @@ export async function generateModelActionSuggestionSet(input: {
         : {}),
     authority_digest: authorityDigest,
     egress_acknowledged: input.egressAcknowledged,
-    request_timeout_seconds: 120,
+    request_timeout_seconds: authoringRequestTimeoutSeconds(),
     max_output_tokens: 4_800,
   }, input.env ?? process.env, new Date());
 
