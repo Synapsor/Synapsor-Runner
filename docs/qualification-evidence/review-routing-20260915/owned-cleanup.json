@@ -1,0 +1,42 @@
+{
+  "at": "2026-09-15T02:44:38.261973+00:00",
+  "records": [
+    {
+      "run": "counting-wording-control",
+      "container": "synapsor-review-routing-counting-wording-control-d42bc604",
+      "container_id": "a99bd5f11a769213c299f8ce5fd8e2c6208f63b923dc542136fa085e9c0fa8e9",
+      "label": "review-routing-20260915",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "61b60f4792f514d5e4ca49d66501400e9b06a3abb2de15465f017bcd3a2c12b0",
+        "postgres.log": "8586a720834b856766c989f2d3495fe3e87944fc121ab3427b8b73cf1d779187",
+        "source.dump": "6fe06f1fbdc3aa75b5bca197499c117d5d6b158a446bab4744e641737136aff9"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/closure/counting-wording-control",
+      "removed": false
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "container": "synapsor-review-routing-recovery-tournament-assisted-34580ed9",
+      "container_id": "877af9eba8733c6261137eccd526c0cae580a24bc1897079b53ea499d939a28a",
+      "label": "review-routing-20260915",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "b2c363bc5928806037864bf16d27b0ebd04a74afccc130a618373161386c2252",
+        "postgres.log": "65118cd571cc6f36c19e2ce5207774e791d2bccff803e1a18dec4670b856e8ff",
+        "source.dump": "6fe06f1fbdc3aa75b5bca197499c117d5d6b158a446bab4744e641737136aff9"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/closure/recovery-tournament-assisted",
+      "removed": false
+    }
+  ],
+  "counts_note": "Actual public CLI and provider invocations retained in each public-invocations.jsonl and meter/events.jsonl. Worker outcomes are recorded separately; this cleanup makes no execution-success claim.",
+  "original_containers_touched": false,
+  "fixture_directories_removed": false
+}

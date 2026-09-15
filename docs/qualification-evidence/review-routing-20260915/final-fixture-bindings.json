@@ -1,0 +1,22 @@
+[
+  {
+    "run": "recovery-tournament-assisted",
+    "artifact_tree": "9faa87dd7e9f22a8ed8e2e8fe41317b6ea47d131465ec1bccac6017b98230de8",
+    "source_counts": {
+      "events": 8,
+      "results": 96
+    },
+    "prior_provider_calls": 0,
+    "project_unchanged": true
+  },
+  {
+    "run": "counting-wording-control",
+    "artifact_tree": "9faa87dd7e9f22a8ed8e2e8fe41317b6ea47d131465ec1bccac6017b98230de8",
+    "source_counts": {
+      "events": 8,
+      "results": 96
+    },
+    "prior_provider_calls": 0,
+    "project_unchanged": true
+  }
+]

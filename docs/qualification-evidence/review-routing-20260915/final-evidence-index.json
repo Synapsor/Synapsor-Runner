@@ -1,0 +1,70 @@
+{
+  "at": "2026-09-15T02:49:37.143643+00:00",
+  "artifact_tree": "9faa87dd7e9f22a8ed8e2e8fe41317b6ea47d131465ec1bccac6017b98230de8",
+  "evidence": [
+    {
+      "path": "counting-wording-control-primary-rechecked-oracle.json",
+      "bytes": 28443,
+      "sha256": "1dcd3ff96a900ee6715d684501b57a4b0671e27fff026afcb373c7520f95daa1"
+    },
+    {
+      "path": "counting-wording-control-primary-rechecked.json",
+      "bytes": 2638,
+      "sha256": "52e0347c6bd2b2ef98f44fc128d55c68547b4bea3fb443a70f32c71482c399b5"
+    },
+    {
+      "path": "counting-wording-control-primary-reviewed-oracle.json",
+      "bytes": 28442,
+      "sha256": "26e54d15aaf04673ea6e1011fb6dba169dafa5c5509b5d39cf21bd3936798dc8"
+    },
+    {
+      "path": "counting-wording-control-primary-reviewed.json",
+      "bytes": 2622,
+      "sha256": "98be1b5f5f7ef399be387615ae4a3cb851a4ed2111ba038209b1f2a095f07177"
+    },
+    {
+      "path": "final-artifact-verification.log",
+      "bytes": 149,
+      "sha256": "556b92a3738ec3822903f0b6dad0f0fc4b6eb07567d7e9b0c177d577efa8016d"
+    },
+    {
+      "path": "installed-artifact.json",
+      "bytes": 1620,
+      "sha256": "753058c3c640871ef4620e8b5931e943721838c1baf22bceae2b759d4049f370"
+    },
+    {
+      "path": "installed-primary-results.json",
+      "bytes": 27110,
+      "sha256": "2779d8951ee0be23426adfeb7a83cfe738c0a2a6b8e2d9006fd4227df5769689"
+    },
+    {
+      "path": "owned-cleanup.json",
+      "bytes": 2175,
+      "sha256": "966a69884b2e0f43b5754bdf5e50b14bdc1be3866f0bad6573433170dfe972d1"
+    },
+    {
+      "path": "preservation-final.json",
+      "bytes": 100,
+      "sha256": "3b780d17208a8a609dbdbfb908637473639576078d25b0e00fa5b156c0365eb5"
+    },
+    {
+      "path": "recovery-tournament-assisted-primary-review-stopped-oracle.json",
+      "bytes": 33266,
+      "sha256": "52d69887343873c5044eb3efe61d4a9b6dc5147b8bb29f71b29da146f2890db7"
+    },
+    {
+      "path": "recovery-tournament-assisted-primary-review-stopped.json",
+      "bytes": 2634,
+      "sha256": "a5d44999c30ea7a9ef69179d9035420d85968fb2f82d0d2a3f2da3c7fb01a366"
+    },
+    {
+      "path": "remaining-counter-maintenance-review.md",
+      "bytes": 6620,
+      "sha256": "b19f2d2960283026fa527fa5e6ec1797ae76496278bda1c15d1afa3ae72cb517"
+    }
+  ],
+  "private_handoff": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/reviewer-handoff",
+  "delivery_record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/delivery.json",
+  "handoff_manifest_record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/handoff-delivery.json",
+  "new_provider_attempts_scheduled": false
+}

@@ -8,7 +8,7 @@
   "previous_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914",
   "previous_evidence": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/positive-counting-evidence-20260914",
   "frozen_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/frozen",
-  "artifact_tree": null,
+  "artifact_tree": "9faa87dd7e9f22a8ed8e2e8fe41317b6ea47d131465ec1bccac6017b98230de8",
   "trial_harness_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/trial-harness",
   "original_cases_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases",
   "acceptance": "Historical narrow independent acceptance only; not transferred to current candidate",
@@ -30,8 +30,8 @@
   "scope": "Explicit review routing, attachment handoff, persistence/continuation only; accepted counting invariant unchanged",
   "known_open_worker": "TRUSTED_BINDING_MISSING worker-retry classification; record if reached, no repair/requeue/refund",
   "stage_b": "original NOT PASSED",
-  "status": "READY_TO_FREEZE",
-  "next_step": "Freeze one complete installed artifact after evidence checkpoint; final A/B calls not started.",
+  "status": "STOP_FOR_REVIEW_PARTIAL",
+  "next_step": "Private delivery and immutable handoff only; no new test or provider campaign. A blocker remains for separate review.",
   "case_sources": {
     "recovery-tournament-assisted": {
       "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914",
@@ -88,7 +88,17 @@
       "source_unchanged": true,
       "basis": "counting-save-race-before and choice-save-cli-before demonstrate in-scope lost update; use remaining declared second slot",
       "deadline_unchanged": "2026-09-15T03:38:51.990570+00:00"
+    },
+    {
+      "at": "2026-09-15T02:45:53.668546+00:00",
+      "event": "Final public confirmation stopped",
+      "A": "BUSINESS blocked at conflict-counter maintenance after 2 calls; no new counting questions; restart not run",
+      "B": "BUSINESS complete and restarted visible recheck validated reuse, 2 calls total, 2 confirmed counting choices",
+      "artifact": "9faa87dd7e9f22a8ed8e2e8fe41317b6ea47d131465ec1bccac6017b98230de8"
     }
   ],
-  "stable_verification_completed_at": "2026-09-15T02:27:49.034016+00:00"
+  "stable_verification_completed_at": "2026-09-15T02:27:49.034016+00:00",
+  "closure_started_at": "2026-09-15T02:45:53.668546+00:00",
+  "final_provider_calls_used": 4,
+  "development_provider_calls_used": 2
 }

@@ -1,0 +1,42 @@
+{
+  "at": "2026-09-15T02:34:14.282976+00:00",
+  "run": "recovery-tournament-assisted",
+  "label": "primary-review-stopped",
+  "classification": "final installed",
+  "changes": [
+    {
+      "path": ".synapsor/boundary-authoring/diagnostics/planning-329985c5-2019-4259-998c-2b0f5cbd3d6e.json",
+      "before_sha256": null,
+      "after_sha256": "6c2c87ff045e934a1caed37eee25ae4a10fb3fd3619394f0ac995c8eef4eee3a",
+      "classification": "new planning diagnostic"
+    },
+    {
+      "path": ".synapsor/boundary-authoring/policy-sources/a6d8098e-7f74-4c80-bcc2-728ba936ef7a.json",
+      "before_sha256": "219c147e25dc64fa3e4554de530a5d28266837b3b54da467828aa99e2121dce0",
+      "after_sha256": "d1cad8a93076a21ef04a7a8920e41f3fc26df53c03ff6e05b7142358336210a5",
+      "classification": "review bookkeeping"
+    },
+    {
+      "path": ".synapsor/boundary-authoring/resume.json",
+      "before_sha256": "1eb635e6af0a9dd20f6d6fac3abcf942ce0f06953650c3d4a99bb789e47b853f",
+      "after_sha256": "efeeeaf0697e06fc5022f755d085d7b22d1497193d94ca57aa2b73db4d8d21f1",
+      "classification": "review bookkeeping"
+    },
+    {
+      "path": ".synapsor/local.db",
+      "before_sha256": "83d9738e52140d44bab54594824d749d6c715d3fd3708f9f6a8f61e636c0d22e",
+      "after_sha256": "5b65a12d57c762d722986ec597688f842fc595adea6cb03279ea53a336136e7c",
+      "classification": "SQLite physical bytes; see independent table oracle"
+    }
+  ],
+  "unexplained_file_changes": [],
+  "source_snapshots_unchanged": true,
+  "original_conversation_entries_missing": 0,
+  "active_authority_and_business_configuration_files_unchanged": true,
+  "completed_policy_reviews": [],
+  "pending": [
+    "pending_job_revision",
+    "pending_policy_review"
+  ],
+  "note": "SQLite byte differences do not establish durable state changes. Pair with review-oracle table hashes and independent source readback."
+}

@@ -1,6 +1,6 @@
 {
-  "updated_at": "2026-09-15T02:29:29.270520+00:00",
-  "artifact_tree": null,
+  "updated_at": "2026-09-15T02:45:53.668546+00:00",
+  "artifact_tree": "9faa87dd7e9f22a8ed8e2e8fe41317b6ea47d131465ec1bccac6017b98230de8",
   "product_revision": "cc149a5fb2edac8545963350f8081423d77a3668",
   "test_revision": "cc149a5fb2edac8545963350f8081423d77a3668",
   "original_stage_b": "NOT PASSED",
@@ -108,7 +108,12 @@
     },
     {
       "name": "new immutable installed artifact",
-      "status": "NOT CREATED"
+      "status": "PASSED",
+      "entries": 7569,
+      "evidence": [
+        "installed-artifact.json",
+        "final-artifact-verification.log"
+      ]
     },
     {
       "name": "development B real-provider review/restart",
@@ -120,11 +125,33 @@
     },
     {
       "name": "installed A ordinary recheck/save/restart/visible recheck",
-      "status": "NOT RUN"
+      "status": "BLOCKED",
+      "calls": 2,
+      "new_counting_questions": 0,
+      "exit_code": 0,
+      "restart": "NOT RUN after substantive blocker",
+      "evidence": [
+        "installed-primary-results.json",
+        "remaining-counter-maintenance-review.md",
+        "recovery-tournament-assisted-primary-review-stopped-oracle.json"
+      ]
     },
     {
       "name": "installed B attached-v2 choice/review/save/restart/recheck",
-      "status": "NOT RUN"
+      "status": "PASSED",
+      "calls": 2,
+      "structural_corrections": 1,
+      "counting_choices": 2,
+      "separate_confirmations": 2,
+      "recheck_additional_calls": 0,
+      "exits": [
+        0,
+        0
+      ],
+      "evidence": [
+        "installed-primary-results.json",
+        "counting-wording-control-primary-rechecked-oracle.json"
+      ]
     },
     {
       "name": "clean independent A/B starts",
@@ -142,5 +169,8 @@
       "status": "BLOCKED",
       "note": "Predeclared missing credential; no new credential discovery"
     }
-  ]
+  ],
+  "frozen_source_revision": "01b6c62af836ec580c86730632274a28faa2d9c8",
+  "overall": "PARTIAL; no full workflow completion claim",
+  "final_actual_calls": 4
 }

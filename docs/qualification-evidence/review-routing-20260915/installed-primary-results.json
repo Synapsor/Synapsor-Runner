@@ -1,0 +1,471 @@
+{
+  "at": "2026-09-15T02:44:15.988Z",
+  "artifact_tree": "9faa87dd7e9f22a8ed8e2e8fe41317b6ea47d131465ec1bccac6017b98230de8",
+  "status": "PARTIAL: B passed, A remains blocked",
+  "primary": {
+    "adapter": "openai",
+    "model": "gpt-5.6-terra",
+    "reasoning": "low",
+    "store": false,
+    "observed_service_tier": "default"
+  },
+  "total_final_calls": 4,
+  "failed_transports": 0,
+  "structural_correction_calls": 1,
+  "final_budget": {
+    "started_at": "2026-09-15T02:31:37.120Z",
+    "deadline": "2026-09-15T03:46:37.120Z",
+    "maximum_calls": 25,
+    "reserved_recheck_calls": 6
+  },
+  "rows": [
+    {
+      "run": "recovery-tournament-assisted",
+      "status": "BLOCKED",
+      "actual_cli_exits": [
+        0
+      ],
+      "source": {
+        "version": 1,
+        "digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7"
+      },
+      "readiness": {
+        "ready": false,
+        "privacy": false,
+        "items": [
+          {
+            "kind": "deployment_prerequisite",
+            "title": "Authenticated referee identity",
+            "nextStep": "After review, choose a client and configure runtime identity. Use a fixed test identity only for local testing; production identity must come from an authenticated application session. Runtime access remains unavailable without it.",
+            "passages": [
+              {
+                "start": 3,
+                "end": 3,
+                "disposition": "needs_decision",
+                "interpretation": "The record-scope rules are reviewed, but connecting an authenticated application session to the trusted tenant and principal bindings is not verified. This is later deployment wiring, not a missing scope rule.",
+                "draft_paths": [
+                  "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+                ],
+                "topic": "Authenticated referee identity",
+                "responsibility": "deployment",
+                "issue_kind": "missing_configuration",
+                "next_step": "After authority review, configure and verify authenticated-session identity for the reviewed tenant and principal bindings.",
+                "deployment_prerequisite": "authenticated_identity"
+              }
+            ],
+            "blocksReview": false
+          },
+          {
+            "kind": "deployment_prerequisite",
+            "title": "Referee result selection",
+            "nextStep": "Assign the client responsibility for capturing the referee's intended result selection.",
+            "passages": [
+              {
+                "start": 3,
+                "end": 3,
+                "disposition": "needs_decision",
+                "interpretation": "Runner verifies a submitted scoped result reference, but the client must still capture the referee's intended result selection.",
+                "draft_paths": [
+                  "/runner_evidence/runtime_contract/application_obligations/customer_selection"
+                ],
+                "topic": "Referee result selection",
+                "responsibility": "application",
+                "issue_kind": "missing_configuration",
+                "next_step": "Assign the client responsibility for capturing the referee's intended result selection.",
+                "application_obligations": [
+                  "customer_selection"
+                ]
+              }
+            ],
+            "blocksReview": false
+          },
+          {
+            "kind": "deployment_prerequisite",
+            "title": "Conflict-counter maintenance",
+            "nextStep": "Verify that every production writer maintains the reviewed version counter before relying on this control.",
+            "passages": [
+              {
+                "start": 5,
+                "end": 5,
+                "disposition": "needs_decision",
+                "interpretation": "The maintained conflict counter is compiled as a private version increment, and the source owner has confirmed the operating prerequisite that all writers increment it; however, external-writer and production-integration verification remain false.",
+                "draft_paths": [
+                  "/runner_evidence/actions/league.result_ratification/effect",
+                  "/runner_evidence/runtime_contract/source_counter_maintenance"
+                ],
+                "topic": "Conflict-counter maintenance",
+                "responsibility": "deployment",
+                "issue_kind": "missing_configuration",
+                "next_step": "Verify that every production writer maintains the reviewed version counter before relying on this control."
+              }
+            ],
+            "blocksReview": true
+          },
+          {
+            "kind": "deployment_prerequisite",
+            "title": "Runner-ledger receipt and execution setup",
+            "nextStep": "After authority review, prepare or verify the dedicated writer, review execution permission, then configure and start the worker. Keep reader credentials separate. Setup and execution remain unverified; no request is completed without a successful receipt.",
+            "passages": [
+              {
+                "start": 7,
+                "end": 7,
+                "disposition": "needs_decision",
+                "interpretation": "A stored Runner-ledger receipt is required, but receipt mode, dedicated writer and grants, execution consent, and worker startup are not checked or verified for the current ratification action.",
+                "draft_paths": [
+                  "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+                ],
+                "topic": "Runner-ledger receipt and execution setup",
+                "responsibility": "deployment",
+                "issue_kind": "missing_configuration",
+                "next_step": "After authority review, configure the writer, Runner-ledger receipt mode, execution consent, and worker for ratification.",
+                "deployment_prerequisite": "runner_execution_setup"
+              }
+            ],
+            "blocksReview": false
+          },
+          {
+            "kind": "deployment_prerequisite",
+            "title": "Independent changed-row verification",
+            "nextStep": "After each applicable execution, independently observe the source and compare it with the exact intended change. This readback remains unverified; a receipt alone is not that observation. No Action-code repair is required for this external step.",
+            "passages": [
+              {
+                "start": 7,
+                "end": 7,
+                "disposition": "needs_decision",
+                "interpretation": "Independently verifying the changed source row is an external after-execution observation and remains unverified; a Runner receipt does not establish it.",
+                "draft_paths": [
+                  "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+                ],
+                "topic": "Independent changed-row verification",
+                "responsibility": "application",
+                "issue_kind": "missing_configuration",
+                "next_step": "Assign who will independently observe each changed source row after execution.",
+                "application_obligations": [
+                  "independent_source_readback"
+                ]
+              }
+            ],
+            "blocksReview": false
+          }
+        ],
+        "summary": [
+          "Before activation: Conflict-counter maintenance. These are required decisions, not optional recommendations.",
+          "Continue with the model to resolve them in this saved draft. Activation is unavailable until the checks pass.",
+          "Client integration still unverified: signed-in customer identity, customer selection. Check these during client setup before customer use.",
+          "Independent source readback remains unverified for each applicable execution. Perform and retain that separate observation after the change; a receipt or completed business review does not prove it.",
+          "Execution setup pending: dedicated writer review, separate execution permission and worker startup. Continue to these checks after authority review; automatic completion is not yet enabled."
+        ]
+      },
+      "readiness_corroboration": "Read-only current-source function over saved installed state; terminal transcript is the installed execution evidence.",
+      "exact_counting_decisions": [],
+      "review_history": [],
+      "pending_review": {
+        "operation": "review_rules",
+        "request": "Recheck the current saved rules against the attached policy and existing decisions without changing the rules or authority.",
+        "source_session": "a6d8098e-7f74-4c80-bcc2-728ba936ef7a",
+        "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+        "read_digest": "sha256:6c6196b167fe621caf480cd2b2a4449ef083315cebaf044cc5bcb1660985efd3",
+        "action_name": "reviewed_staging_rules",
+        "action_digest": "sha256:3431e33b5c7ef594c67b545c33ae8285cbd919ff01c91bf35f5d72581ad2ea3e",
+        "supersedes_pending_job_revision": "Recheck the current saved rules against the attached policy and existing decisions without changing the rules or authority."
+      },
+      "captures": [
+        {
+          "input": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/runs/recovery-tournament-assisted/meter/input-0001.json",
+          "input_sha256": "1812e6cf2a46a090c41d78be4ce49abf8d8e012efa7888c29a1aac456a45ba3f",
+          "output": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/runs/recovery-tournament-assisted/meter/output-0001.txt",
+          "output_sha256": "c4b5de9a81932f343dcc3f4eb3794eaf90f87791b6aadfc182ab168c4a62f98c",
+          "model": "gpt-5.6-terra",
+          "reasoning": {
+            "effort": "low"
+          },
+          "store": false,
+          "service_tier": "default",
+          "functions": [
+            "runner__plan_boundary_job"
+          ],
+          "planner": {
+            "status": "planned",
+            "operation": "review_rules",
+            "read_mode": "reuse",
+            "action_mode": "none",
+            "summary": "Review the current attached policy and existing decisions against the exact reviewed Read revision for tournament_ops.events and tournament_ops.results, preserving its active authority. Review the current league.result_ratification update capability in reviewed_staging_actions (active and disabled reviewed entries) without changing rules or authority."
+          }
+        },
+        {
+          "input": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/runs/recovery-tournament-assisted/meter/input-0002.json",
+          "input_sha256": "1367de8de7126f3f3462fbe1af7486cb8004df1a1f23bfc79c295609f5eecfa9",
+          "output": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/runs/recovery-tournament-assisted/meter/output-0002.txt",
+          "output_sha256": "d7d0078e2a976d6dc411fffb70ea978605520818998ef5930b79c2f079a96d1f",
+          "model": "gpt-5.6-terra",
+          "reasoning": {
+            "effort": "low"
+          },
+          "store": false,
+          "service_tier": "default",
+          "functions": [
+            "runner__review_policy_coverage"
+          ],
+          "exact_owner_counter_evidence": {
+            "status": "owner_confirmed_operating_prerequisite",
+            "resource": "tournament_ops.results",
+            "field": "version",
+            "maintenance": "all_writers_increment",
+            "proof_digest": "sha256:a64444d8c11ed349977baf58b0b194936114c3898e802aeeac70e802a9803bdc",
+            "read_boundary_digest": "sha256:6c6196b167fe621caf480cd2b2a4449ef083315cebaf044cc5bcb1660985efd3",
+            "generation_lock_fingerprint": "sha256:5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6",
+            "role_posture_fingerprint": "sha256:f342a8f34ae5650224a607789616aaa1e12a35b9f5e056aee1bd2a6dc2e464d2",
+            "external_writers_verified": false,
+            "production_integration_verified": false
+          }
+        }
+      ],
+      "actual_calls": 2,
+      "all_ledger_table_contents_unchanged": true,
+      "source_counts": {
+        "events": 8,
+        "results": 96
+      },
+      "counting_questions": 0,
+      "separate_counting_confirmations": 0,
+      "restart": {
+        "status": "NOT RUN",
+        "reason": "Initial substantive BUSINESS blocker preserved; no repeated model attempt for agreement."
+      },
+      "evidence": [
+        "recovery-tournament-assisted-primary-review-stopped.json",
+        "recovery-tournament-assisted-primary-review-stopped-oracle.json",
+        "recovery-tournament-assisted-primary-review-stopped-project-difference.json"
+      ]
+    },
+    {
+      "run": "counting-wording-control",
+      "status": "PASSED",
+      "actual_cli_exits": [
+        0,
+        0
+      ],
+      "source": {
+        "version": 2,
+        "digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa"
+      },
+      "readiness": {
+        "ready": true,
+        "privacy": false,
+        "items": [
+          {
+            "kind": "deployment_prerequisite",
+            "title": "Authenticated referee identity",
+            "nextStep": "After review, choose a client and configure runtime identity. Use a fixed test identity only for local testing; production identity must come from an authenticated application session. Runtime access remains unavailable without it.",
+            "passages": [
+              {
+                "start": 3,
+                "end": 3,
+                "disposition": "needs_decision",
+                "interpretation": "The reviewed bindings enforce permitted-record scope, but connecting an authenticated application session to those bindings remains unverified. This is deployment wiring, not a change to the scope rule.",
+                "draft_paths": [
+                  "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+                ],
+                "topic": "Authenticated referee identity",
+                "responsibility": "deployment",
+                "issue_kind": "missing_configuration",
+                "next_step": "After authority review, configure authenticated session identity for the reviewed tenant and referee scope.",
+                "deployment_prerequisite": "authenticated_identity"
+              }
+            ],
+            "blocksReview": false
+          },
+          {
+            "kind": "deployment_prerequisite",
+            "title": "Runner-ledger receipt setup",
+            "nextStep": "After authority review, prepare or verify the dedicated writer, review execution permission, then configure and start the worker. Keep reader credentials separate. Setup and execution remain unverified; no request is completed without a successful receipt.",
+            "passages": [
+              {
+                "start": 7,
+                "end": 7,
+                "disposition": "needs_decision",
+                "interpretation": "A stored Runner-ledger receipt is required, but receipt mode, writer and grant setup, execution consent, and worker readiness are unverified. The compiled direct-SQL effect is supported; this is later deployment configuration.",
+                "draft_paths": [
+                  "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+                ],
+                "topic": "Runner-ledger receipt setup",
+                "responsibility": "deployment",
+                "issue_kind": "missing_configuration",
+                "next_step": "After authority review, configure the required Runner-ledger receipt mode and the reviewed writer, execution consent, and worker.",
+                "deployment_prerequisite": "runner_execution_setup"
+              }
+            ],
+            "blocksReview": false
+          },
+          {
+            "kind": "deployment_prerequisite",
+            "title": "Independent source verification",
+            "nextStep": "After each applicable execution, independently observe the source and compare it with the exact intended change. This readback remains unverified; a receipt alone is not that observation. No Action-code repair is required for this external step.",
+            "passages": [
+              {
+                "start": 7,
+                "end": 7,
+                "disposition": "needs_decision",
+                "interpretation": "Independently verifying the changed source row is a distinct after-execution observation. It is required but unverified and must be performed by the client or source owner for each applicable execution; neither a receipt nor the draft establishes it.",
+                "draft_paths": [
+                  "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+                ],
+                "topic": "Independent source verification",
+                "responsibility": "application",
+                "issue_kind": "missing_configuration",
+                "next_step": "Who will independently verify the changed source row after each completed ratification?",
+                "application_obligations": [
+                  "independent_source_readback"
+                ]
+              }
+            ],
+            "blocksReview": false
+          }
+        ],
+        "summary": [
+          "Attached rules: wording-control-rules.txt v2; interpretation checked for this revision.",
+          "Client integration still unverified: signed-in customer identity. Check these during client setup before customer use.",
+          "Independent source readback remains unverified for each applicable execution. Perform and retain that separate observation after the change; a receipt or completed business review does not prove it.",
+          "Execution setup pending: dedicated writer review, separate execution permission and worker startup. Continue to these checks after authority review; automatic completion is not yet enabled."
+        ]
+      },
+      "readiness_corroboration": "Read-only current-source function over saved installed state; terminal transcript is the installed execution evidence.",
+      "exact_counting_decisions": [
+        {
+          "origin": "OPERATOR-COUNTING-REVIEW",
+          "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+          "configuration_digest": "sha256:05e206f813c21d8b29241ff4eae0d4d9add1b62618028b3b41c2f1d0106ecb6c",
+          "required_capability": "league.result_ratification",
+          "operator_history_digest": "sha256:e07d7b9b18e40cc36bfe73f9b25483e9bfa9ce4e580d11b8c6ad0bf7ec1bd1fc",
+          "reviewed_at": "2026-09-15T02:39:19.049Z"
+        },
+        {
+          "origin": "OPERATOR-COUNTING-REVIEW",
+          "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+          "configuration_digest": "sha256:8502bca55a9ce7d5be7ea761bef9193edc93a88f5bf4bcd5255ce01bb27cf4d2",
+          "required_capability": "league.result_ratification",
+          "operator_history_digest": "sha256:e07d7b9b18e40cc36bfe73f9b25483e9bfa9ce4e580d11b8c6ad0bf7ec1bd1fc",
+          "reviewed_at": "2026-09-15T02:39:44.101Z"
+        }
+      ],
+      "review_history": [
+        {
+          "request": {
+            "operation": "review_rules",
+            "request": "Review attached rules and unresolved decisions",
+            "source_session": "a6d8098e-7f74-4c80-bcc2-728ba936ef7a",
+            "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+            "read_digest": "sha256:6c6196b167fe621caf480cd2b2a4449ef083315cebaf044cc5bcb1660985efd3",
+            "action_name": "reviewed_staging_rules",
+            "action_digest": "sha256:3431e33b5c7ef594c67b545c33ae8285cbd919ff01c91bf35f5d72581ad2ea3e",
+            "supersedes_pending_job_revision": "Use the updated attached-rules context for this same draft. Operator instruction: Use the attached replacement text for this same saved job and review whether the current rules satisfy it. Preserve the existing business behavior and authority."
+          },
+          "report_digest": "sha256:a1642c2b2a1d48718d72e56dd04e809f0144fcc6eb8412de116c29cea18d83e8",
+          "context_digest": "sha256:67ce9da1698cb5c9b9d9a90b48652469f46edffe3653dd5781fcfcd397be260b",
+          "activity": "provider",
+          "completed_at": "2026-09-15T02:40:34.323Z"
+        },
+        {
+          "request": {
+            "operation": "review_rules",
+            "request": "Review attached rules and unresolved decisions",
+            "source_session": "a6d8098e-7f74-4c80-bcc2-728ba936ef7a",
+            "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+            "read_digest": "sha256:6c6196b167fe621caf480cd2b2a4449ef083315cebaf044cc5bcb1660985efd3",
+            "action_name": "reviewed_staging_rules",
+            "action_digest": "sha256:3431e33b5c7ef594c67b545c33ae8285cbd919ff01c91bf35f5d72581ad2ea3e"
+          },
+          "report_digest": "sha256:a1642c2b2a1d48718d72e56dd04e809f0144fcc6eb8412de116c29cea18d83e8",
+          "context_digest": "sha256:67ce9da1698cb5c9b9d9a90b48652469f46edffe3653dd5781fcfcd397be260b",
+          "activity": "validated_reuse",
+          "completed_at": "2026-09-15T02:41:49.664Z"
+        }
+      ],
+      "pending_review": null,
+      "captures": [
+        {
+          "input": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/runs/counting-wording-control/meter/input-0001.json",
+          "input_sha256": "f174c5899f04aaa5f7577910ffce679b90750fa38d6949cc10724586ef0886fb",
+          "output": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/runs/counting-wording-control/meter/output-0001.txt",
+          "output_sha256": "8f6b9025cf6574693dc6a5cfb2733d38bb5a35cc4d527fb76d09f82b82a07df8",
+          "model": "gpt-5.6-terra",
+          "reasoning": {
+            "effort": "low"
+          },
+          "store": false,
+          "service_tier": "default",
+          "functions": [
+            "runner__review_policy_coverage"
+          ],
+          "exact_owner_counter_evidence": {
+            "status": "owner_confirmed_operating_prerequisite",
+            "resource": "tournament_ops.results",
+            "field": "version",
+            "maintenance": "all_writers_increment",
+            "proof_digest": "sha256:a64444d8c11ed349977baf58b0b194936114c3898e802aeeac70e802a9803bdc",
+            "read_boundary_digest": "sha256:6c6196b167fe621caf480cd2b2a4449ef083315cebaf044cc5bcb1660985efd3",
+            "generation_lock_fingerprint": "sha256:5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6",
+            "role_posture_fingerprint": "sha256:f342a8f34ae5650224a607789616aaa1e12a35b9f5e056aee1bd2a6dc2e464d2",
+            "external_writers_verified": false,
+            "production_integration_verified": false
+          }
+        },
+        {
+          "input": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/runs/counting-wording-control/meter/input-0002.json",
+          "input_sha256": "82e007cd0a48029d6f42484d00dcbfb46768e9d2c711a0079bebce80040145e8",
+          "output": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/runs/counting-wording-control/meter/output-0002.txt",
+          "output_sha256": "3779f31331a442ab830bee1fa47c0535346bf8b38a29c7aa642e7c984de8adca",
+          "model": "gpt-5.6-terra",
+          "reasoning": {
+            "effort": "low"
+          },
+          "store": false,
+          "service_tier": "default",
+          "functions": [
+            "runner__review_policy_coverage"
+          ],
+          "correction": "Correct this structural coverage problem: COUNTING_SUPPORT_MISMATCH: /runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability cites a message with no exact accepted support association. This counting requirement is supported by the explicit host-recorded operator counting review. Omit the unbound counter citation and retain the source/host requirement comparison; keep any paragraph citation separate. No policy change or new owner answer is required.",
+          "exact_owner_counter_evidence": {
+            "status": "owner_confirmed_operating_prerequisite",
+            "resource": "tournament_ops.results",
+            "field": "version",
+            "maintenance": "all_writers_increment",
+            "proof_digest": "sha256:a64444d8c11ed349977baf58b0b194936114c3898e802aeeac70e802a9803bdc",
+            "read_boundary_digest": "sha256:6c6196b167fe621caf480cd2b2a4449ef083315cebaf044cc5bcb1660985efd3",
+            "generation_lock_fingerprint": "sha256:5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6",
+            "role_posture_fingerprint": "sha256:f342a8f34ae5650224a607789616aaa1e12a35b9f5e056aee1bd2a6dc2e464d2",
+            "external_writers_verified": false,
+            "production_integration_verified": false
+          }
+        }
+      ],
+      "actual_calls": 2,
+      "all_ledger_table_contents_unchanged": true,
+      "source_counts": {
+        "events": 8,
+        "results": 96
+      },
+      "counting_questions": 2,
+      "separate_counting_confirmations": 2,
+      "restart": {
+        "status": "PASSED",
+        "activity": "validated_reuse",
+        "additional_calls": 0,
+        "repeated_counting_questions": 0,
+        "coverage_and_decisions_unchanged": true
+      },
+      "evidence": [
+        "counting-wording-control-primary-rechecked.json",
+        "counting-wording-control-primary-rechecked-oracle.json",
+        "counting-wording-control-primary-rechecked-project-difference.json"
+      ]
+    }
+  ],
+  "development_calls_separate": 2,
+  "interventions": "Operator navigation, exact legacy review-only confirmation, two B business selections and their explicit confirmations. No new policy prose, re-upload, source/business edits or provider payload replacement. Existing host correction counted.",
+  "elapsed_measurement": "See exact start/exit and transport timestamps in public-invocations.jsonl and meter/events.jsonl; human navigation time included. No fresh-onboarding or general usability timing measured.",
+  "independent_secondary": "NOT RUN HERE; Claude owns predeclared openai/gpt-5.6-sol lane",
+  "original_stage_b": "NOT PASSED"
+}
