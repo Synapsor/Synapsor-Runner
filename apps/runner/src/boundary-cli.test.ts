@@ -5237,7 +5237,7 @@ describe("boundary operator-plane CLI", () => {
       const lifecycleOverrides: NonNullable<Parameters<typeof boundaryReviewCommandInternal>[4]> = {
         modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "session-secret", dependencies: {
           requestJson: async request => {
-            const fixed = ++coverageCalls > 2;
+            const fixed = ++coverageCalls > 1;
             if (fixed) expect(JSON.stringify(request.body)).toContain(clarification);
             return { status: 200, body: { output: [{ type: "function_call", call_id: `coverage_${coverageCalls}`,
               name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: [{ start: 1, end: 1,
@@ -5255,7 +5255,7 @@ describe("boundary operator-plane CLI", () => {
       const run = (generator: Parameters<typeof fixture.run>[0]) => fixture.run(generator, async () => inspection, lifecycleOverrides);
       const beforeClarification = await readActionRuleAuthorityDraft(root, baseline.authority.name);
       await expect(run(noDrafting)).resolves.toBe(0);
-      expect(answer).toHaveBeenCalledOnce(); expect(coverageCalls).toBe(3);
+      expect(answer).toHaveBeenCalledOnce(); expect(coverageCalls).toBe(2);
       expect(await readActionRuleAuthorityDraft(root, baseline.authority.name)).toEqual(beforeClarification);
       expect(await loadActivatedExplorationBoundaries(root)).toEqual(activeRead);
       expect(await readActionRuleAuthorityActivation(root)).toEqual(activeAction);
@@ -7456,7 +7456,7 @@ describe("boundary operator-plane CLI", () => {
             expect(choiceOptions?.context?.join(" ").replace(/\s+/gu, " "), JSON.stringify(vi.mocked(semanticChat.rememberDetails).mock.calls)).toContain("Activation is unavailable");
             if (coverageFailure) return rulesMenuVisits++ === 0 ? "rules" : "finish";
             if (failedReadCorrection) {
-              expect(coverageRequests).toHaveLength(2);
+              expect(coverageRequests).toHaveLength(1);
               expect(modelReadBoundaryRevisionGenerator).toHaveBeenCalledOnce();
               return posture === "read_correction_retry" && rulesMenuVisits++ === 0 ? "resolve" : "finish";
             }
@@ -7782,7 +7782,7 @@ describe("boundary operator-plane CLI", () => {
           expect(modelActionRuleGenerator).toHaveBeenCalledTimes(2);
           expect(modelReadBoundaryRevisionGenerator).toHaveBeenCalledTimes(posture === "read_correction_retry" ? 2 : 1);
           expect(semanticChat.readOperator).toHaveBeenCalledTimes(mechanicalRead ? 1 : 2);
-          expect(coverageRequests).toHaveLength(posture === "read_correction_failed" ? 2 : mechanicalRead ? 3 : 2);
+          expect(coverageRequests).toHaveLength(posture === "read_correction_failed" ? 1 : 2);
           const context = await loadBoundaryReviewContext(root);
           const visit = context.candidate.pack.resources.find((resource) => resource.id === "public.service_visits")!;
           if (confirmedCurrent) {
@@ -8205,17 +8205,17 @@ describe("boundary operator-plane CLI", () => {
             if (title === "FINISH ATTACHED RULES REVIEW") {
               expect(options?.initialValue).toBe("pause");
               if (counterClarification && menus++ === 0) {
-                expect(calls).toBe(2);
+                expect(calls).toBe(1);
                 expect(_choices.some(choice => choice.value === "clarify")).toBe(true);
                 return "clarify";
               }
               if (!recovery) return "pause";
               menus++;
-              if (menus === 1) { expect(calls).toBe(2); return "details"; }
-              if (menus === 2) { expect(calls).toBe(2); phase = "fail"; return "resolve"; }
-              if (menus === 3) { expect(calls).toBe(3); return "details"; }
-              if (menus === 4) { expect(calls).toBe(3); return "pause"; }
-              expect(calls).toBe(3); phase = "ready"; return "resolve";
+              if (menus === 1) { expect(calls).toBe(1); return "details"; }
+              if (menus === 2) { expect(calls).toBe(1); phase = "fail"; return "resolve"; }
+              if (menus === 3) { expect(calls).toBe(2); return "details"; }
+              if (menus === 4) { expect(calls).toBe(2); return "pause"; }
+              expect(calls).toBe(2); phase = "ready"; return "resolve";
             }
             throw new Error(`Unexpected rules recovery prompt: ${title}; ${JSON.stringify(options?.context)}`);
           },
@@ -8330,12 +8330,12 @@ describe("boundary operator-plane CLI", () => {
                   application_obligations: ["independent_source_readback"],
                   draft_paths: ["/runner_evidence/runtime_contract/application_obligations/independent_source_readback"],
                 }, ...(reconciliationClient ? [{ start: 1, end: 1, disposition: "needs_decision", responsibility: "application", issue_kind: "missing_configuration", interpretation: "The client must capture the selected record and display the exact status; these duties remain unverified.", application_obligations: ["customer_selection", "status_presentation"], draft_paths: ["/runner_evidence/runtime_contract/application_obligations/customer_selection", "/runner_evidence/runtime_contract/application_obligations/status_presentation"] }] : [])] }) }] } };
-              if (explained && calls > (counterClarification ? 2 : 1)) {
+              if (explained && calls > 1) {
                 expect(body).toContain(clarifiedNoChange);
                 if (posture === "policy_target_explained_failure" || posture === "policy_target_counter_clarified_failure") throw new Error("POLICY_TEST_CLARIFICATION_RECHECK_UNAVAILABLE");
               }
               const saved = (await readActionRuleAuthorityDraft(root, combined.authority.name))!;
-              const fixed = explained && calls > (counterClarification ? 2 : 1) || phase === "ready" || saved.authority.approval_classes.find((entry) => entry.name === `${original.outcome}.approval`)!.required_approvals === 2;
+              const fixed = explained && calls > 1 || phase === "ready" || saved.authority.approval_classes.find((entry) => entry.name === `${original.outcome}.approval`)!.required_approvals === 2;
               return { status: 200, body: { output: [{ type: "function_call", call_id: `rules_${calls}`, name: "runner__review_policy_coverage",
                 arguments: JSON.stringify({ passages: [{ start: 1, end: 1, disposition: fixed ? "implemented" : "conflict",
                   topic: recovery ? "Joint automatic-approval limits" : "Reviewer requirement",
@@ -8588,7 +8588,7 @@ describe("boundary operator-plane CLI", () => {
         }
         expect(await run()).toBe(0);
         if (explained) {
-          expect(calls).toBe(counterClarification ? 3 : 2);
+          expect(calls).toBe(2);
           expect(revise).not.toHaveBeenCalled();
           expect(sharedReadRevision).not.toHaveBeenCalled();
           expect(chat.readOperator).toHaveBeenCalledOnce();
@@ -8626,7 +8626,7 @@ describe("boundary operator-plane CLI", () => {
           phase = "blocked";
           expect(await run()).toBe(0);
           expect(menus).toBe(5);
-          expect(calls).toBe(4);
+          expect(calls).toBe(3);
           expect(confirmAction).toHaveBeenCalledOnce();
           expect(revise).not.toHaveBeenCalled();
           expect(chat.readOperator).not.toHaveBeenCalled();
@@ -16350,7 +16350,6 @@ describe("saved review operation dispatch and persistence", () => {
     const solCapture = mode === "captured-contract" ? JSON.parse(await fs.readFile(new URL("./fixtures/review-operation-sol-capture.json", import.meta.url), "utf8")) : undefined;
     const fixture = await staleSemanticRevalidationFixture({ outcomes: [solCapture?.arguments.action_outcome ?? "maintenance.complete_visit"], atomicUpdates: maintenance, ...(receipt ? { writeback: "supervised" as const } : {}) });
     const { root, inspection } = fixture;
-    let sourceReadSpy: { mockRestore(): void } | undefined;
     try {
       const initial = await loadBoundaryReviewContext(root);
       await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({ draft: initial.draft, candidate: initial.candidate,
@@ -16407,24 +16406,9 @@ describe("saved review operation dispatch and persistence", () => {
       const menus: string[] = [], notices: string[][] = []; let choices = 0, confirmations = 0, providerCalls = 0, plannerCalls = 0;
       let choiceSaveInterleaved = false;
       const competingNote = "Retain this independently saved owner decision.";
-      if (mode === "choice-save-race") {
-        const readFile = fs.readFile;
-        const sourcePath = path.join(root, ".synapsor/boundary-authoring/policy-sources", source.id + ".json");
-        sourceReadSpy = vi.spyOn(fs, "readFile").mockImplementation(async (...args: any[]) => {
-          const bytes = await (readFile as any)(...args);
-          if (!choiceSaveInterleaved && String(args[0]) === sourcePath) {
-            const current = JSON.parse(String(bytes));
-            if (current.counting_decisions?.length && !current.coverage) {
-              choiceSaveInterleaved = true;
-              const expectedDigest = canonicalJsonDigest(current);
-              current.operator_messages = [...(current.operator_messages ?? []), competingNote];
-              await savePolicySources(root, current, { expectedDigest });
-              return (readFile as any)(...args);
-            }
-          }
-          return bytes;
-        });
-      }
+      // The completed competing write is scheduled at the outside-lock provider
+      // boundary below. A nested writer from a readFile spy now runs inside the
+      // durable episode lock and would test bounded busy, not a committed race.
       let restarted = false, ownershipReviews = 0;
       const sourceInitial = JSON.stringify(source), resumeInitial = JSON.stringify(resume);
       const session: BoundaryReviewInteractiveSession = { ...fixture.session,
@@ -16600,6 +16584,6 @@ describe("saved review operation dispatch and persistence", () => {
         expect(providerCalls).toBe(calls); expect(choices).toBe(counting ? 2 : 0); expect(ownershipReviews).toBe(1);
       }
       expect(plannerCalls).toBe(["no-change", "typed-review", "redundant-source", "maintenance", "maintenance-missing", "maintenance-source-race", "model-resume", "fallback-review", "captured-contract"].includes(mode) ? 1 : 0);
-    } finally { sourceReadSpy?.mockRestore(); await fixture.dispose(); }
+    } finally { await fixture.dispose(); }
   });
 });

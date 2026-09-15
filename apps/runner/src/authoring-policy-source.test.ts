@@ -270,7 +270,7 @@ describe("complete operator-selected policy text", () => {
     const conversation = createModelAuthoringConversation(); conversation.policySources = approved("Keep the refund bounded.");
     const requestJson = vi.fn(async (request) => {
       if (requestJson.mock.calls.length === 2) {
-        expect(JSON.stringify(request.body)).toContain("unexpected top-level keys: maxItems");
+        expect(JSON.stringify(request.body)).toContain("COVERAGE_STRUCTURE_INVALID");
       }
       return { status: 200, body: { output: [{ type: "function_call", name: "runner__review_policy_coverage", call_id: "coverage",
         arguments: JSON.stringify({ ...(requestJson.mock.calls.length === 1 ? { maxItems: 120 } : {}), passages: [{
@@ -477,9 +477,9 @@ describe("complete operator-selected policy text", () => {
     });
     const result = reviewPolicyCoverage({ session: { ...destination, conversation, dependencies: { requestJson } },
       source: activePolicySource(conversation.policySources)!, draft, env: { OPENAI_API_KEY: "test-key" } });
-    if (submitted) expect((await result).passages[0]!.disposition).toBe("implemented");
-    else await expect(result).rejects.toThrow("provider did not submit");
-    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect((await result).passages[0]!.disposition).toBe("needs_decision");
+    expect(requestJson).toHaveBeenCalledTimes(1); // no retry seeking a favorable policy opinion
+
   });
 });
 

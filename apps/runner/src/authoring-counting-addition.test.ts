@@ -19,7 +19,7 @@ describe("faithful source counting across additions", () => {
       const state=structuredClone(saved.policy_sources);await savePolicySources(root,state,{expectedDigest:null});
       const conversation=createModelAuthoringConversation();conversation.policySources=state;let calls=0;
       await expect(reviewPolicyCoverage({source:saved.source,draft:saved.draft,env:{OPENAI_API_KEY:"captured-only"},session:{provider:"openai",model:"gpt-5.6-terra",conversation,dependencies:{requestJson:async()=>{calls++;return {status:200,body:{output:[{type:"function_call",name:"runner__review_policy_coverage",call_id:"exact16",arguments:JSON.stringify(saved.reply)}]}};}}}})).rejects.toThrow("COUNTING_REQUIREMENT_MISMATCH");
-      expect(calls).toBe(2);expect(await loadPolicySources(root,state.id)).toEqual(saved.policy_sources);
+      expect(calls).toBe(1);expect(await loadPolicySources(root,state.id)).toEqual(saved.policy_sources);
     } finally {await fs.rm(root,{recursive:true,force:true});}
   });
   it("uses canonical vocabulary under a renamed structural variant and refuses ambiguous outcome association", () => {

@@ -293,11 +293,11 @@ describe("private Action field policy evidence", () => {
       } } },
     });
     if (resultKind === "corrected") expect((await run).passages[0]!.disposition).toBe("implemented");
-    else await expect(run).rejects.toThrow("POLICY_COVERAGE_INVALID: Draft pointer");
+    else await expect(run).rejects.toThrow("COVERAGE_REFERENCE_MISSING");
     expect(requests).toHaveLength(2);
     expect(requests[0]).toContain(privatePath);
     expect(requests[0]).toContain("verification-only fields");
-    expect(requests[1]).toContain("Previous untrusted coverage submission");
+    expect(requests[1]).not.toContain("Previous untrusted coverage submission");
     expect(draft).toEqual(before);
   });
 });
@@ -331,11 +331,11 @@ describe("execution setup is not a business-rule revision", () => {
       } } }, env: { OPENAI_API_KEY: "test-key" },
     });
     expect(requests).toHaveLength(2);
-    expect(requests[1]).toContain("Classify the deployment prerequisite");
+    expect(requests[1]).toContain("COVERAGE_DEPLOYMENT_COMPONENT_MIXED");
     expect(requests[1]).toContain("runner_execution_setup");
     expect(requests[0]).not.toContain("Previous untrusted coverage submission");
-    expect(requests[1]).toContain("Previous untrusted coverage submission");
-    expect(requests[1]).toContain(JSON.stringify({ passages: [previous] }).replaceAll('"', '\\"'));
+    expect(requests[1]).not.toContain("Previous untrusted coverage submission");
+    expect(requests[1]).toContain("Split receipt-mode/setup, Read/privacy and business claims");
     expect(policyReviewReadiness(source, result).ready).toBe(false); // Incomplete Action metadata still needs a current client contract.
     expect(policyReadinessItems(result)).toMatchObject([{ kind: "business_decision", blocksReview: true }, { kind: "deployment_prerequisite", blocksReview: false }]);
     expect(policyReviewReadiness(source, result).summary.join("\n")).toContain("writer review");
@@ -398,7 +398,7 @@ describe("policy clarification evidence", () => {
       .toThrow("operator_override disagrees with the indexed message");
   });
 
-  it("corrects a paraphrased override into an unmet requirement without waiving a deferred action", async () => {
+  it("stops an unsupported purported override without asking another opinion", async () => {
     const pending = policyTextSnapshot(Buffer.from("Automatically release an advising hold after a verified recent staff meeting."), "student.txt");
     const conversation = createModelAuthoringConversation();
     conversation.policySources = newPolicySourceSession();
@@ -406,7 +406,7 @@ describe("policy clarification evidence", () => {
     conversation.policySources.operator_messages = ["Leave advising-hold release pending unsupported. Continue only with review of the two prepared actions; do not claim the policy is fully implemented."];
     conversation.policySources.approvals = [{ digest: pending.digest, destination: authoringDestination({ provider: "openai", model: "fixture" }) }];
     const requests: string[] = [];
-    const result = await reviewPolicyCoverage({ source: pending, draft: {},
+    const result = reviewPolicyCoverage({ source: pending, draft: {},
       session: { provider: "openai", model: "fixture", conversation, dependencies: { requestJson: async (request) => {
         requests.push(JSON.stringify(request.body));
         return { status: 200, body: { output: [{ type: "function_call", call_id: `coverage_${requests.length}`,
@@ -417,12 +417,9 @@ describe("policy clarification evidence", () => {
           }] }) }] } };
       } } }, env: { OPENAI_API_KEY: "test-key" },
     });
-    expect(requests).toHaveLength(2);
-    expect(requests[1]).toContain("Source lines 1-1");
-    expect(requests[1]).toContain("operator_message_id");
-    expect(requests[1]).toContain("pending is not an override");
-    expect(result.passages[0]!.disposition).toBe("unsupported");
-    expect(policyReviewReadiness(pending, result).ready).toBe(false);
+    await expect(result).rejects.toThrow("COVERAGE_OVERRIDE_UNESTABLISHED");
+    expect(requests).toHaveLength(1);
+    expect(conversation.policySources.coverage).toBeUndefined();
   });
 });
 
@@ -526,12 +523,12 @@ describe("application obligation correction diagnostics", () => {
       expect(result.passages[2]).toMatchObject({ disposition: "unsupported", responsibility: "operator" });
       expect(policyReviewReadiness(source, result).ready).toBe(false);
     } else {
-      await expect(run).rejects.toThrow(/POLICY_COVERAGE_INVALID:.*Source lines 2-2/s);
+      await expect(run).rejects.toThrow(/POLICY_COVERAGE_INVALID:.*COVERAGE_.*STRUCTURE_INVALID/s);
       expect(requests).toHaveLength(2);
     }
     expect(requests[0]).toContain("Requires responsibility=application and disposition=needs_decision or unsupported");
     expect(requests[0]).toContain("never null or []");
-    expect(requests[1]).toContain("passages[1]");
+    expect(requests[1]).toContain("/passages/1");
     expect(requests[1]).toContain("disposition");
     expect(requests[1]).toContain("Return the complete corrected coverage");
     expect({ draft, conversation }).toEqual(before);
@@ -603,7 +600,7 @@ describe("Runner client connection is a later unverified handoff", () => {
       } } }, env: { OPENAI_API_KEY: "test-key" },
     });
     expect(requests).toHaveLength(2);
-    expect(requests[1]).toContain("Classify the deployment prerequisite");
+    expect(requests[1]).toContain("COVERAGE_DEPLOYMENT_COMPONENT_MIXED");
     expect(requests[1]).toContain("Do not change the draft");
     expect(result.passages[0]).toMatchObject({ disposition: "needs_decision", deployment_prerequisite: "runner_client_connection" });
     expect(policyReviewReadiness(clientSource, result)).toMatchObject({ ready: true, privacy: false });
@@ -907,12 +904,12 @@ describe("counter coverage correction diagnostics", () => {
       expect(report.passages[3]?.field_checks).toHaveLength(1);
       expect(report.passages[4]?.disposition).toBe("unsupported");
       expect(policyReviewReadiness(source, report).ready).toBe(false);
-    } else await expect(run).rejects.toThrow(/POLICY_COVERAGE_INVALID:.*Source lines 2-2/s);
+    } else await expect(run).rejects.toThrow(/POLICY_COVERAGE_INVALID:.*COVERAGE_.*STRUCTURE_INVALID/s);
     expect(requests).toHaveLength(2);
     expect(requests[0]).toContain("Requires responsibility=runner and disposition=implemented or conflict");
     expect(requests[0]).toContain("threshold-only");
-    expect(requests[1]).toContain("passages[1]");
-    expect(requests[1]).toContain("Previous untrusted coverage submission");
+    expect(requests[1]).toContain("/passages/1");
+    expect(requests[1]).not.toContain("Previous untrusted coverage submission");
     expect(requests[1]).toContain("retain every unchanged scope, window, filter and limit");
     expect({ draft, conversation }).toEqual(before);
   });
@@ -1002,10 +999,9 @@ describe("exact approval counter evidence and full-bundle targets", () => {
           }] }) }] } };
       } } }, env: { OPENAI_API_KEY: "test-key" },
     });
-    expect(requests).toHaveLength(2);
-    expect(requests[1]).toContain("history_selector, not limit.id or approval_class");
-    expect(requests[1]).toContain("Do not infer separate counters from ID spelling");
-    expect(policyReadinessItems(report).filter(item => item.passages.length).every(item => !item.blocksReview)).toBe(mode === "corrected");
+    expect(requests).toHaveLength(1);
+    expect(requests[0]).toContain("Do not infer separate counters from ID spelling");
+    expect(policyReadinessItems(report).filter(item => item.passages.length).every(item => !item.blocksReview)).toBe(false);
     expect(policyReviewReadiness(source, report).ready).toBe(false); // Synthetic counter-only metadata does not establish a current client contract.
     expect(draft).toEqual(before);
     expect(isMechanicalApprovalCounterPassage(conflict)).toBe(true);

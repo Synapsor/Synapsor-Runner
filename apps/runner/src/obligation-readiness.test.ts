@@ -104,7 +104,7 @@ describe("host obligation readiness on primary B's exact review", () => {
       const requests: any[] = [];
       const session = { provider: "openai" as const, model: "gpt-test", apiKey: "test-only", conversation,
         dependencies: { requestJson: async (request: any) => {
-          requests.push(request.body);
+          requests.push(structuredClone(request.body));
           const reply = requests.length <= 2 ? captured.arguments[requests.length - 1]
             : { passages: captured.arguments[1].passages.filter((p: any) => !p.draft_paths.includes(receiptPath)
               && !p.application_obligations?.includes("independent_source_readback")) };
@@ -115,7 +115,8 @@ describe("host obligation readiness on primary B's exact review", () => {
       await savePolicySources(root, sources);
       const report = await reviewPolicyCoverage({ session, source: captured.source, draft: captured.draft });
       expect(requests).toHaveLength(2);
-      expect(JSON.stringify(requests[1])).toContain('runner_execution_setup draft_paths must contain only');
+      expect(JSON.stringify(requests[1])).toContain('COVERAGE_DEPLOYMENT_COMPONENT_MIXED');
+      expect(JSON.stringify(requests[1])).toContain('Use only the exact deployment_prerequisites entry');
       bindPolicyCoverage(sources, report, canonicalJsonDigest("unchanged authority"));
       await savePolicySources(root, sources);
       const restored = await loadPolicySources(root, sources.id);

@@ -120,7 +120,9 @@ describe("intrinsic client duties independent of coverage wording", () => {
         currentDraft: () => draft, authorityDigest: sources.coverage_authority_digest!, clarifications: [], assertCurrent: async () => {}, state: {}, onValidated });
       await expect(operation).rejects.toThrow(mode === "source" ? "POLICY_SOURCE_CHANGED" : mode === "client" ? "POLICY_CLIENT_CONTRACT_CHANGED" : "owned save failed");
       expect(onValidated).not.toHaveBeenCalled();
-      expect(sources).toEqual(before);
+      const { coverage_episodes, ...unchanged } = sources;
+      expect(unchanged).toEqual(before);
+      expect(coverage_episodes?.[0]?.submissions).toHaveLength(1); // reserved attempt is durable, no partial ownership
       expect((await loadPolicySources(root, sources.id)).application_assignments).toEqual(before.application_assignments);
     } finally { vi.restoreAllMocks(); await fs.rm(root, { recursive: true, force: true }); }
   });

@@ -140,7 +140,7 @@ describe("actual post-removal recheck provenance",()=>{
   it.each([0,1])("keeps capture %s unchanged and points to the exact existing decision, not a new owner question",async index=>{
     const f={d:structuredClone(restart.draft),r:structuredClone(restart.replies[index]),source:restart.source,state:structuredClone(restart.policy_sources)};
     const before=JSON.stringify(f.r);
-    await expect(produce(f)).rejects.toThrow("Reference the existing exact counting decision");expect(JSON.stringify(f.r)).toBe(before);
+    await expect(produce(f)).rejects.toThrow("supports this comparison without an OPTIONAL counter-specific citation");expect(JSON.stringify(f.r)).toBe(before);
     // Derived structural-only correction. The real installed confirmation must
     // come from the provider; this is not claimed as a completed public run.
     for(const c of counter(f.r).counter_requirements)c.operator_message_id=8;

@@ -1,0 +1,2703 @@
+{
+  "classification": "Exact complete captured arguments and prepared context; controlled future corrected responses must be labeled derived",
+  "sources": {
+    "id": "a6d8098e-7f74-4c80-bcc2-728ba936ef7a",
+    "snapshots": [
+      {
+        "version": 1,
+        "name": "rules.txt",
+        "text": "# League result ratification\n\nHelp a league referee ratify completed best-of-three match results. A referee may see and act only on results assigned to that referee within that league. The referee can read result reference, event name, stage, recorded wins/losses and result state, including a related event's operating state. Do not expose database identities, conflict counters, integrity_hold or referee_private_note as public data. Never reveal, filter, sort, group or aggregate by the private fields; the host may use the hold privately to verify a request.\n\nRatification is valid only while the related event is open, the result is finished, the winner has exactly two game wins, the loser has zero or one game wins, and there is no integrity hold. Do not correct scores or move a result to another person, event or league. An invalid result is refused, not routed into approval as if valid. A successful ratification changes only result state to ratified, plus the maintained conflict counter.\n\nValid qualifying-stage results may be approved automatically, with at most six automatic ratifications overall and two per league in the inclusive rolling 24-hour window. Qualifying results beyond either cap go to human review. Every valid championship-stage result requires the league supervisor's human review. Counts are shared across that league's referees; creating a local client does not create more allowance. Explicit supervised execution follows approval. Request a stored Runner-ledger receipt and independently verify the changed source row. No match server or external system is contacted.\n\nPublic reads must retain these restrictions as jobs are edited. Ratification never grants a referee permission to change the recorded winner or score.\n",
+        "bytes": 1757,
+        "lines": 10,
+        "digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7"
+      },
+      {
+        "version": 2,
+        "name": "wording-control-rules.txt",
+        "text": "# League result ratification\n\nHelp a league referee ratify completed best-of-three match results. A referee may see and act only on results assigned to that referee within that league. The referee can read result reference, event name, stage, recorded wins/losses and result state, including a related event's operating state. Do not expose database identities, conflict counters, integrity_hold or referee_private_note as public data. Never reveal, filter, sort, group or aggregate by the private fields; the host may use the hold privately to verify a request.\n\nRatification is valid only while the related event is open, the result is finished, the winner has exactly two game wins, the loser has zero or one game wins, and there is no integrity hold. Do not correct scores or move a result to another person, event or league. An invalid result is refused, not routed into approval as if valid. A successful ratification changes only result state to ratified, plus the maintained conflict counter.\n\nValid qualifying-stage results may be approved automatically, but no more than two ratifications may be auto-approved per league per day and no more than six overall, using the inclusive rolling 24-hour window. Qualifying results beyond either cap go to human review. Every valid championship-stage result requires the league supervisor's human review. Counts are shared across that league's referees; creating a local client does not create more allowance. Explicit supervised execution follows approval. Request a stored Runner-ledger receipt and independently verify the changed source row. No match server or external system is contacted.\n\nPublic reads must retain these restrictions as jobs are edited. Ratification never grants a referee permission to change the recorded winner or score.\n",
+        "bytes": 1797,
+        "lines": 10,
+        "digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa"
+      }
+    ],
+    "approvals": [
+      {
+        "digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+        "destination": "openai[gpt-5.6-terra] at https://api.openai.com/v1"
+      },
+      {
+        "digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+        "destination": "openai[gpt-5.6-terra] at https://api.openai.com/v1"
+      }
+    ],
+    "active": 2,
+    "operator_messages": [
+      "Help league referees read their assigned match results and request ratification, following the complete attached business rules.",
+      "result_ref is the league's human-readable reference for a match result, so a referee can identify the result they want to ratify. It is a public display label; the stable database identity stays internal.",
+      "Yes. Each tenant is exactly one league, and each principal is an assigned referee within that league. Referees in the same league share the limit of two automatic ratifications in the rolling 24 hours; all leagues share the overall limit of six.",
+      "No. Remove only the unrequested per-referee cap. Keep the existing league maximum of two and overall maximum of six in the inclusive rolling 24 hours, with their existing unchanged counted-history selectors. Keep every other saved rule and permission unchanged.",
+      "No. Keep both existing limits without an outcome filter. Preserve their current counted-history selectors exactly. Only the extra per-referee cap was unrequested and should be removed; do not make the proposed unrelated selector change.",
+      "WRITER_DATABASE_URL",
+      "Add a separate Withdraw unratified result behavior: only a finished result in an open event with no integrity hold; require the supervisor to review every valid request. Change its state to withdrawn and save a nonempty reason of at most 200 characters in the existing withdrawal_reason. Preserve scores, ratification rules and every unrelated Read restriction.",
+      "For this new two-behavior revision, apply the automatic limits only to ratifications: two per league and six overall in the rolling 24 hours, retaining the existing ratification approval history. Withdrawals always require supervisor review and do not consume or expand those automatic ratification allowances. Keep every other ratification, withdrawal and Read requirement unchanged.",
+      "For the pending two-behavior revision, make the exact implementation change already required by the accepted counting decision: set both existing automatic-ratification limit history selectors to league.result_ratification. Keep their tenant and boundary scopes, maxima two and six, inclusive rolling 86400-second windows, and existing ratification approval history. Preserve the saved human-reviewed withdrawal and every other eligibility, effect, privacy, Read and receipt requirement. Present the exact selector edit for operator confirmation, then continue review of this saved job.",
+      "Remove only Withdraw unratified result. Preserve ratification with its current canonical ratification-only selectors, scoped reads, old history and the continuing client. An old unstarted withdrawal must not acquire new dispatch permission after removal.",
+      "Use the attached replacement text for this same saved job and review whether the current rules satisfy it. Preserve the existing business behavior and authority."
+    ],
+    "coverage": {
+      "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+      "draft_digest": "sha256:6a49093a3cb1a0329c870dde41a319ad823b50743cb3df71bfbcc0c29363e008",
+      "passages": [
+        {
+          "start": 1,
+          "end": 1,
+          "disposition": "background",
+          "interpretation": "Document heading only; it adds no control beyond the clauses below.",
+          "draft_paths": [],
+          "topic": "Policy heading",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "No action needed."
+        },
+        {
+          "start": 3,
+          "end": 3,
+          "disposition": "implemented",
+          "interpretation": "Both outcomes use an opaque result subject reference and the reviewed result-to-event relationship. Inspected RLS restricts results and events to the same trusted tenant and assigned principal, preparing the rule that referees see and act only on assigned results in their league. Authenticated-session wiring remains separate.",
+          "draft_paths": [
+            "/runner_evidence/read_access/tournament_ops.results",
+            "/runner_evidence/read_access/tournament_ops.events",
+            "/runner_evidence/actions/league.result_ratification/scoped_bindings",
+            "/runner_evidence/actions/league.result_withdrawal/scoped_bindings"
+          ],
+          "topic": "Assigned referee scope",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain the reviewed tenant and principal bindings for both disabled outcomes."
+        },
+        {
+          "start": 3,
+          "end": 3,
+          "disposition": "needs_decision",
+          "interpretation": "The reviewed record scope is configured, but authenticated application-session wiring to the reviewed tenant and principal bindings is not verified. This is deployment wiring, not a missing action predicate.",
+          "draft_paths": [
+            "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+          ],
+          "topic": "Authenticated referee identity",
+          "responsibility": "deployment",
+          "issue_kind": "missing_configuration",
+          "next_step": "After authority review, configure and verify authenticated-session identity for the reviewed tenant and principal bindings.",
+          "deployment_prerequisite": "authenticated_identity"
+        },
+        {
+          "start": 3,
+          "end": 3,
+          "disposition": "needs_decision",
+          "interpretation": "The client must capture the referee's intended result selection and submit its reviewed subject reference; Runner independently scopes that reference but cannot establish that a person made the selection.",
+          "draft_paths": [
+            "/runner_evidence/runtime_contract/application_obligations/customer_selection"
+          ],
+          "topic": "Referee result selection",
+          "responsibility": "application",
+          "issue_kind": "missing_configuration",
+          "next_step": "Assign the client responsibility for capturing the referee's intended result selection.",
+          "application_obligations": [
+            "customer_selection"
+          ]
+        },
+        {
+          "start": 3,
+          "end": 3,
+          "disposition": "implemented",
+          "interpretation": "Public Read returns result_ref, stage, recorded winner and loser game wins, result state, and related event name and operating state. The operator confirmed that result_ref is the public human-readable label; stable identities remain internal.",
+          "draft_paths": [
+            "/read",
+            "/runner_evidence/read_access/tournament_ops.results/fields/result_ref",
+            "/runner_evidence/read_access/tournament_ops.results/fields/stage",
+            "/runner_evidence/read_access/tournament_ops.results/fields/winner_game_wins",
+            "/runner_evidence/read_access/tournament_ops.results/fields/loser_game_wins",
+            "/runner_evidence/read_access/tournament_ops.results/fields/result_state",
+            "/runner_evidence/read_access/tournament_ops.events/fields/event_name",
+            "/runner_evidence/read_access/tournament_ops.events/fields/operating_state"
+          ],
+          "operator_clarification": "result_ref is the league's human-readable reference for a match result, so a referee can identify the result they want to ratify. It is a public display label; the stable database identity stays internal.",
+          "supporting_dependencies_digest": "sha256:8d657de741fb04789903c9fa8188a790f5b3cec1ab93101376fbf17862c9ce55",
+          "topic": "Permitted referee read fields",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain these bounded public Read fields in later revisions."
+        },
+        {
+          "start": 3,
+          "end": 3,
+          "disposition": "implemented",
+          "interpretation": "Database identities, version conflict counters, integrity_hold, and referee_private_note have neither public values nor model analysis permissions. integrity_hold remains private Action verification only; private fields have no public filtering, sorting, grouping, or aggregation permission.",
+          "draft_paths": [
+            "/runner_evidence/read_access/tournament_ops.events/fields/event_id",
+            "/runner_evidence/read_access/tournament_ops.events/fields/tenant_id",
+            "/runner_evidence/read_access/tournament_ops.events/fields/principal_id",
+            "/runner_evidence/read_access/tournament_ops.events/fields/version",
+            "/runner_evidence/read_access/tournament_ops.results/fields/result_id",
+            "/runner_evidence/read_access/tournament_ops.results/fields/tenant_id",
+            "/runner_evidence/read_access/tournament_ops.results/fields/principal_id",
+            "/runner_evidence/read_access/tournament_ops.results/fields/version",
+            "/runner_evidence/read_access/tournament_ops.results/fields/integrity_hold",
+            "/runner_evidence/read_access/tournament_ops.results/fields/referee_private_note",
+            "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/integrity_hold",
+            "/runner_evidence/actions/league.result_withdrawal/scoped_bindings/result/fields/integrity_hold"
+          ],
+          "topic": "Private result and identity fields",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain the no-value and no-analysis permissions for these private fields.",
+          "field_checks": [
+            {
+              "resource": "tournament_ops.events",
+              "field": "event_id",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.events",
+              "field": "tenant_id",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.events",
+              "field": "principal_id",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.events",
+              "field": "version",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.results",
+              "field": "result_id",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.results",
+              "field": "tenant_id",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.results",
+              "field": "principal_id",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.results",
+              "field": "version",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.results",
+              "field": "integrity_hold",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.results",
+              "field": "referee_private_note",
+              "expectation": "private"
+            }
+          ]
+        },
+        {
+          "start": 5,
+          "end": 5,
+          "disposition": "implemented",
+          "interpretation": "Ratification requires an open related event, finished result, exactly two winner wins, zero or one loser win, and no integrity hold. Failed requirements are refused before approval under reviewed result and event scope.",
+          "draft_paths": [
+            "/actions/0/require",
+            "/actions/0/review",
+            "/runner_evidence/actions/league.result_ratification/scoped_bindings/result",
+            "/runner_evidence/actions/league.result_ratification/scoped_bindings/event"
+          ],
+          "topic": "Ratification eligibility and refusal",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain these refusal conditions in the disabled ratification outcome."
+        },
+        {
+          "start": 5,
+          "end": 5,
+          "disposition": "implemented",
+          "interpretation": "Ratification authorizes only result_state=ratified. Scores and person, event, and league relationship fields are outside its effect envelope. Runner's compiled private integer version increment occurs in the same guarded update, providing maintained conflict-counter advancement without accepting it as a business input.",
+          "draft_paths": [
+            "/actions/0/effect",
+            "/runner_evidence/actions/league.result_ratification/effect",
+            "/runner_evidence/runtime_contract/conflict_protection",
+            "/runner_evidence/runtime_contract/version_advancement"
+          ],
+          "topic": "Ratification-only write effect",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain the limited effect envelope and compiled version advancement."
+        },
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "implemented",
+          "interpretation": "Qualifying ratifications alone are candidates for automatic approval. The tenant-scoped maximum of two and boundary-wide maximum of six use inclusive 86,400-second windows and select approved automatic ratification history. The tenant is the reviewed league value shared across its referees. Championship requests and qualifying requests over either limit use one league-supervisor approval.",
+          "draft_paths": [
+            "/actions/0/approval",
+            "/runner_evidence/actions/league.result_ratification/automatic_limits",
+            "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+            "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+            "/runner_evidence/runtime_contract/approval",
+            "/runner_evidence/runtime_contract/approval_counter_selection"
+          ],
+          "operator_clarification": "For this new two-behavior revision, apply the automatic limits only to ratifications: two per league and six overall in the rolling 24 hours, retaining the existing ratification approval history. Withdrawals always require supervisor review and do not consume or expand those automatic ratification allowances. Keep every other ratification, withdrawal and Read requirement unchanged.",
+          "supporting_dependencies_digest": "sha256:7e723592adf42be361482b948c89cbe941a25e1c7fee07e232a5a015e2bb3b9c",
+          "topic": "Ratification approval limits and review",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain both ratification-only history selectors, scopes, maxima, and inclusive rolling windows.",
+          "counter_requirements": [
+            {
+              "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+              "current_capability": "league.result_ratification",
+              "required_capability": "league.result_ratification"
+            },
+            {
+              "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+              "current_capability": "league.result_ratification",
+              "required_capability": "league.result_ratification"
+            }
+          ],
+          "counting_requirement_bindings": [
+            {
+              "origin": "HOST-SOURCE-ASSOCIATION",
+              "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+              "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+              "start": 7,
+              "end": 7,
+              "required_capability": "league.result_ratification",
+              "source_excerpt": "Valid qualifying-stage results may be approved automatically, with at most six automatic ratifications overall and two per league in the inclusive rolling 24-hour window. Qualifying results beyond either cap go to human review. Every valid championship-stage result requires the league supervisor's human review. Counts are shared across that league's referees; creating a local client does not create more allowance. Explicit supervised execution follows approval. Request a stored Runner-ledger receipt and independently verify the changed source row. No match server or external system is contacted.",
+              "operator_clarification": "For this new two-behavior revision, apply the automatic limits only to ratifications: two per league and six overall in the rolling 24 hours, retaining the existing ratification approval history. Withdrawals always require supervisor review and do not consume or expand those automatic ratification allowances. Keep every other ratification, withdrawal and Read requirement unchanged."
+            },
+            {
+              "origin": "HOST-SOURCE-ASSOCIATION",
+              "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+              "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+              "start": 7,
+              "end": 7,
+              "required_capability": "league.result_ratification",
+              "source_excerpt": "Valid qualifying-stage results may be approved automatically, with at most six automatic ratifications overall and two per league in the inclusive rolling 24-hour window. Qualifying results beyond either cap go to human review. Every valid championship-stage result requires the league supervisor's human review. Counts are shared across that league's referees; creating a local client does not create more allowance. Explicit supervised execution follows approval. Request a stored Runner-ledger receipt and independently verify the changed source row. No match server or external system is contacted.",
+              "operator_clarification": "For this new two-behavior revision, apply the automatic limits only to ratifications: two per league and six overall in the rolling 24 hours, retaining the existing ratification approval history. Withdrawals always require supervisor review and do not consume or expand those automatic ratification allowances. Keep every other ratification, withdrawal and Read requirement unchanged."
+            }
+          ]
+        },
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "implemented",
+          "interpretation": "The later accepted withdrawal behavior is separate: it requires an assigned finished result, open event, no integrity hold, and a nonempty reason of at most 200 characters; invalid requests are refused. Every valid withdrawal requires one league-supervisor approval, has no automatic limits, and supervised completion changes only result_state to withdrawn and withdrawal_reason while preserving scores and ratification rules.",
+          "draft_paths": [
+            "/actions/1",
+            "/actions/1/inputs",
+            "/actions/1/require",
+            "/actions/1/approval",
+            "/actions/1/effect",
+            "/runner_evidence/actions/league.result_withdrawal",
+            "/runner_evidence/actions/league.result_withdrawal/automatic_limits",
+            "/runner_evidence/actions/league.result_withdrawal/effect"
+          ],
+          "operator_clarification": "Add a separate Withdraw unratified result behavior: only a finished result in an open event with no integrity hold; require the supervisor to review every valid request. Change its state to withdrawn and save a nonempty reason of at most 200 characters in the existing withdrawal_reason. Preserve scores, ratification rules and every unrelated Read restriction.",
+          "supporting_dependencies_digest": "sha256:5bdeeec461bb4c81b105b468085c18d984f339ecc964bca16720e5ae48cae736",
+          "topic": "Supervisor-reviewed withdrawal",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain withdrawal as a separate human-reviewed outcome with no automatic-ratification allowance consumption."
+        },
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "implemented",
+          "interpretation": "Both compiled outcomes support direct-SQL supervised completion after approval and have no external-system effect. This is prepared disabled behavior, not live execution; writer review, execution enablement, worker startup, and receipt configuration remain later prerequisites.",
+          "draft_paths": [
+            "/runner_evidence/actions/league.result_ratification/execution",
+            "/runner_evidence/actions/league.result_withdrawal/execution"
+          ],
+          "topic": "Supervised execution without external contact",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain supervised completion and complete deployment setup only after authority review."
+        },
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "needs_decision",
+          "interpretation": "A stored Runner-ledger receipt is requested, but dedicated writer and grant review, receipt-mode review, execution enablement, and worker startup remain unconfigured and unverified for both prepared outcomes.",
+          "draft_paths": [
+            "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+          ],
+          "topic": "Execution and Runner-ledger receipt setup",
+          "responsibility": "deployment",
+          "issue_kind": "missing_configuration",
+          "next_step": "After authority review, configure the writer, Runner-ledger receipt mode, execution consent, and worker for both Action revisions.",
+          "deployment_prerequisite": "runner_execution_setup"
+        },
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "needs_decision",
+          "interpretation": "Independently verifying the changed source row after execution is an external per-execution observation and remains unverified. A Runner-ledger receipt does not prove that observation.",
+          "draft_paths": [
+            "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+          ],
+          "topic": "Independent changed-row verification",
+          "responsibility": "application",
+          "issue_kind": "missing_configuration",
+          "next_step": "Assign who will independently observe each changed source row after execution.",
+          "application_obligations": [
+            "independent_source_readback"
+          ]
+        },
+        {
+          "start": 9,
+          "end": 9,
+          "disposition": "implemented",
+          "interpretation": "The disabled Read boundary retains its bounded public fields and private-field restrictions. The authoring lifecycle preserves the versioned policy snapshot and separates permission revisions from activation; the current Read review has no pending items.",
+          "draft_paths": [
+            "/read",
+            "/runner_evidence/read_review",
+            "/runner_evidence/runtime_contract/authoring_lifecycle"
+          ],
+          "topic": "Read restrictions retained across edits",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Revalidate the bounded Read revision if schema, reader posture, or dependencies change."
+        },
+        {
+          "start": 9,
+          "end": 9,
+          "disposition": "implemented",
+          "interpretation": "Ratification authorizes only result_state=ratified plus Runner-owned version advancement. It cannot write winner_game_wins, loser_game_wins, or another recorded score field.",
+          "draft_paths": [
+            "/actions/0/effect",
+            "/runner_evidence/actions/league.result_ratification/effect"
+          ],
+          "topic": "No score changes through ratification",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain the ratification effect field envelope."
+        }
+      ]
+    },
+    "coverage_authority_digest": "sha256:4bbdabffd23221fc7ce58eb6fedcb81ec192dd7a7927d71eae0b0678b9480667",
+    "coverage_context_digest": "sha256:95e2a98fcf65ee81d48e293d012e8c9b3ce73c5f7e578a362ed2d3df02c01eec",
+    "application_assignments": [
+      {
+        "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+        "draft_digest": "sha256:6a49093a3cb1a0329c870dde41a319ad823b50743cb3df71bfbcc0c29363e008",
+        "start": 3,
+        "end": 3,
+        "obligations": [
+          "customer_selection"
+        ],
+        "assigned_at": "2026-09-14T19:28:29.446Z",
+        "owner": "client_application",
+        "verified": false
+      }
+    ],
+    "counting_decisions": [
+      {
+        "origin": "OPERATOR-COUNTING-REVIEW",
+        "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+        "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+        "configuration_digest": "sha256:05e206f813c21d8b29241ff4eae0d4d9add1b62618028b3b41c2f1d0106ecb6c",
+        "required_capability": "league.result_ratification",
+        "operator_history_digest": "sha256:e07d7b9b18e40cc36bfe73f9b25483e9bfa9ce4e580d11b8c6ad0bf7ec1bd1fc",
+        "reviewed_at": "2026-09-15T22:19:40.625Z"
+      },
+      {
+        "origin": "OPERATOR-COUNTING-REVIEW",
+        "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+        "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+        "configuration_digest": "sha256:8502bca55a9ce7d5be7ea761bef9193edc93a88f5bf4bcd5255ce01bb27cf4d2",
+        "required_capability": "league.result_ratification",
+        "operator_history_digest": "sha256:e07d7b9b18e40cc36bfe73f9b25483e9bfa9ce4e580d11b8c6ad0bf7ec1bd1fc",
+        "reviewed_at": "2026-09-15T22:20:09.118Z"
+      }
+    ]
+  },
+  "draft": {
+    "read": {
+      "activation": "disabled_unreviewed",
+      "budgets": {
+        "max_analysis_relationship_hops": 2,
+        "max_complexity": 24,
+        "max_derived_scope_hops": 2,
+        "max_differencing_queries": 16,
+        "max_dimensions": 3,
+        "max_extracted_cells_per_session": 4000,
+        "max_groups": 50,
+        "max_measures": 3,
+        "max_queries_per_session": 1000,
+        "max_ranked_groups": 500,
+        "max_relationship_hops": 2,
+        "max_response_bytes": 65536,
+        "max_response_cells": 500,
+        "max_rows": 50,
+        "max_time_ranges": 2,
+        "max_top_n": 25,
+        "rate_limit_per_minute": 120,
+        "statement_timeout_ms": 3000
+      },
+      "compiler_version": "1.7.0",
+      "database_server_authority": {
+        "engine": "postgres",
+        "features": {
+          "automatic_numeric_bands": true,
+          "schema_check_constraints": true
+        },
+        "schema_version": "synapsor.database-server-authority.v1",
+        "version_line": "17"
+      },
+      "database_server_tier": "full",
+      "database_server_version": "PostgreSQL 17.10 (Debian 17.10-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+      "deployment_profile": "staging",
+      "generation_lock_fingerprint": "sha256:5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6",
+      "pack": {
+        "name": "reviewed_staging",
+        "resources": [
+          {
+            "aggregate_measures": [],
+            "count_distinct_fields": [],
+            "field_enums": {
+              "operating_state": [
+                "open",
+                "closed"
+              ]
+            },
+            "field_types": {
+              "event_id": "uuid",
+              "event_name": "text",
+              "operating_state": "text",
+              "principal_id": "uuid",
+              "tenant_id": "uuid",
+              "version": "integer"
+            },
+            "filterable_fields": {},
+            "groupable_fields": [],
+            "id": "tournament_ops.events",
+            "kept_out_fields": [
+              "tenant_id",
+              "principal_id"
+            ],
+            "minimum_cohort_size": 5,
+            "primary_key": "event_id",
+            "principal_key": "principal_id",
+            "relationship_only": true,
+            "relationships": [],
+            "rls_session": {
+              "principal_setting": "app.principal_id",
+              "tenant_setting": "app.tenant_id"
+            },
+            "schema": "tournament_ops",
+            "selectable_fields": [
+              "event_name",
+              "operating_state"
+            ],
+            "sortable_fields": [],
+            "suppression_aware_totals": true,
+            "table": "events",
+            "tenant_key": "tenant_id",
+            "time_bucket_fields": {}
+          },
+          {
+            "aggregate_measures": [],
+            "count_distinct_fields": [],
+            "field_enums": {
+              "result_state": [
+                "finished",
+                "ratified",
+                "withdrawn"
+              ],
+              "stage": [
+                "qualifying",
+                "championship"
+              ]
+            },
+            "field_types": {
+              "event_id": "uuid",
+              "integrity_hold": "boolean",
+              "loser_game_wins": "integer",
+              "principal_id": "uuid",
+              "referee_private_note": "text",
+              "result_id": "uuid",
+              "result_ref": "text",
+              "result_state": "text",
+              "stage": "text",
+              "tenant_id": "uuid",
+              "version": "integer",
+              "winner_game_wins": "integer",
+              "withdrawal_reason": "character varying"
+            },
+            "filterable_fields": {},
+            "groupable_fields": [],
+            "id": "tournament_ops.results",
+            "kept_out_fields": [
+              "referee_private_note",
+              "tenant_id",
+              "principal_id"
+            ],
+            "minimum_cohort_size": 5,
+            "primary_key": "result_id",
+            "principal_key": "principal_id",
+            "relationships": [
+              {
+                "cardinality": "many_to_one",
+                "counted_entity": "result_id",
+                "id": "results_event_id_tenant_id_principal_id_fkey",
+                "local_columns": [
+                  "event_id",
+                  "tenant_id",
+                  "principal_id"
+                ],
+                "max_fan_out": 1,
+                "nullable": false,
+                "path_depth": 1,
+                "proof": {
+                  "digest": "sha256:dc5e48fc6fb4e97198acd7622347cc49a3229c59399120cf31c670db7dd018e0",
+                  "links": [
+                    {
+                      "cardinality": "many_to_one",
+                      "constraint_name": "results_event_id_tenant_id_principal_id_fkey",
+                      "max_fan_out": 1,
+                      "nullable": false,
+                      "source_columns": [
+                        "event_id",
+                        "tenant_id",
+                        "principal_id"
+                      ],
+                      "source_resource": "tournament_ops.results",
+                      "target_columns": [
+                        "event_id",
+                        "tenant_id",
+                        "principal_id"
+                      ],
+                      "target_resource": "tournament_ops.events",
+                      "target_uniqueness": {
+                        "columns": [
+                          "event_id",
+                          "tenant_id",
+                          "principal_id"
+                        ],
+                        "kind": "unique_constraint",
+                        "name": "events_event_id_tenant_id_principal_id_key"
+                      }
+                    }
+                  ],
+                  "source": "database_catalog"
+                },
+                "target_columns": [
+                  "event_id",
+                  "tenant_id",
+                  "principal_id"
+                ],
+                "target_resource": "tournament_ops.events",
+                "unmatched_rows": "exclude"
+              }
+            ],
+            "rls_session": {
+              "principal_setting": "app.principal_id",
+              "tenant_setting": "app.tenant_id"
+            },
+            "schema": "tournament_ops",
+            "selectable_fields": [
+              "result_ref",
+              "stage",
+              "winner_game_wins",
+              "loser_game_wins",
+              "result_state"
+            ],
+            "sortable_fields": [],
+            "suppression_aware_totals": true,
+            "table": "results",
+            "tenant_key": "tenant_id",
+            "time_bucket_fields": {}
+          }
+        ]
+      },
+      "reporting_timezone": "UTC",
+      "role_posture_fingerprint": "sha256:f342a8f34ae5650224a607789616aaa1e12a35b9f5e056aee1bd2a6dc2e464d2",
+      "schema_version": "synapsor.exploration-boundary.v1",
+      "source": "local_postgres",
+      "spec_version": "1.9.0",
+      "trusted_context": {
+        "database_role_tenant": {
+          "engine": "postgres",
+          "setting": "app.tenant_id"
+        },
+        "principal_env": "SYNAPSOR_PRINCIPAL",
+        "provider": "environment",
+        "tenant_env": "SYNAPSOR_TENANT_ID"
+      },
+      "unresolved_decisions": [
+        "deployment profile: confirm development or staging authoring-only use",
+        "tournament_ops.events: confirm filter/sort/group/aggregate-only field permissions",
+        "tournament_ops.events: confirm minimum cohort and extraction/differencing budgets",
+        "tournament_ops.events: confirm principal scope principal_id",
+        "tournament_ops.events: confirm tenant key tenant_id",
+        "tournament_ops.events: confirm visible and kept-out fields",
+        "tournament_ops.results: confirm filter/sort/group/aggregate-only field permissions",
+        "tournament_ops.results: confirm minimum cohort and extraction/differencing budgets",
+        "tournament_ops.results: confirm principal scope principal_id",
+        "tournament_ops.results: confirm tenant key tenant_id",
+        "tournament_ops.results: confirm visible and kept-out fields",
+        "tournament_ops.results: review relationship results_event_id_tenant_id_principal_id_fkey cardinality and scope on tournament_ops.events",
+        "trusted context: confirm tenant scope comes from the verified PostgreSQL credential setting app.tenant_id and principal scope remains outside model arguments"
+      ]
+    },
+    "actions": [
+      {
+        "schema_version": "synapsor.action-rule-model-draft.v1",
+        "name": "league.request_result_ratification",
+        "outcome": "league.result_ratification",
+        "discovery": {
+          "aliases": [
+            "ratify match result",
+            "request ratification",
+            "ratify result"
+          ],
+          "summary": "Request ratification for an assigned completed match result.",
+          "title": "Request result ratification"
+        },
+        "verification": {
+          "name": "league.result_ratification_verification",
+          "resources": [
+            {
+              "binding": "result",
+              "resource": "tournament_ops.results",
+              "source": {
+                "kind": "subject_ref"
+              },
+              "fields": [
+                "event_id",
+                "integrity_hold",
+                "loser_game_wins",
+                "result_ref",
+                "result_state",
+                "stage",
+                "winner_game_wins"
+              ]
+            },
+            {
+              "binding": "event",
+              "resource": "tournament_ops.events",
+              "source": {
+                "kind": "relationship",
+                "from_binding": "result",
+                "relationship": "results_event_id_tenant_id_principal_id_fkey",
+                "direction": "forward"
+              },
+              "fields": [
+                "operating_state"
+              ]
+            }
+          ]
+        },
+        "effect": {
+          "name": "league.ratify_result_effect",
+          "operation": "update",
+          "target_resource": "tournament_ops.results",
+          "target_binding": "result",
+          "allowed_fields": [
+            {
+              "name": "result_state",
+              "values": [
+                "ratified"
+              ]
+            }
+          ],
+          "set": {
+            "result_state": {
+              "kind": "literal",
+              "value": "ratified",
+              "value_type": {
+                "comparison": "exact",
+                "enum": [
+                  "finished",
+                  "ratified",
+                  "withdrawn"
+                ],
+                "kind": "string",
+                "max_length": 9
+              }
+            }
+          },
+          "writeback": "supervised"
+        },
+        "require": {
+          "expressions": [
+            {
+              "kind": "compare",
+              "left": {
+                "binding": "event",
+                "field": "operating_state",
+                "kind": "field"
+              },
+              "operator": "eq",
+              "right": {
+                "kind": "literal",
+                "value": "open",
+                "value_type": {
+                  "comparison": "exact",
+                  "enum": [
+                    "closed",
+                    "open"
+                  ],
+                  "kind": "string",
+                  "max_length": 6
+                }
+              }
+            },
+            {
+              "kind": "compare",
+              "left": {
+                "binding": "result",
+                "field": "integrity_hold",
+                "kind": "field"
+              },
+              "operator": "eq",
+              "right": {
+                "kind": "literal",
+                "value": false,
+                "value_type": {
+                  "kind": "boolean"
+                }
+              }
+            },
+            {
+              "kind": "compare",
+              "left": {
+                "binding": "result",
+                "field": "result_state",
+                "kind": "field"
+              },
+              "operator": "eq",
+              "right": {
+                "kind": "literal",
+                "value": "finished",
+                "value_type": {
+                  "comparison": "exact",
+                  "enum": [
+                    "finished",
+                    "ratified",
+                    "withdrawn"
+                  ],
+                  "kind": "string",
+                  "max_length": 9
+                }
+              }
+            },
+            {
+              "kind": "compare",
+              "left": {
+                "binding": "result",
+                "field": "winner_game_wins",
+                "kind": "field"
+              },
+              "operator": "eq",
+              "right": {
+                "kind": "literal",
+                "value": 2,
+                "value_type": {
+                  "kind": "integer"
+                }
+              }
+            },
+            {
+              "kind": "in",
+              "value": {
+                "binding": "result",
+                "field": "loser_game_wins",
+                "kind": "field"
+              },
+              "values": [
+                {
+                  "kind": "literal",
+                  "value": 0,
+                  "value_type": {
+                    "kind": "integer"
+                  }
+                },
+                {
+                  "kind": "literal",
+                  "value": 1,
+                  "value_type": {
+                    "kind": "integer"
+                  }
+                }
+              ]
+            }
+          ],
+          "kind": "all"
+        },
+        "derive": {},
+        "approval": {
+          "class_name": "league.result_ratification_approval",
+          "mode": "policy",
+          "auto_approve_when": {
+            "kind": "compare",
+            "left": {
+              "binding": "result",
+              "field": "stage",
+              "kind": "field"
+            },
+            "operator": "eq",
+            "right": {
+              "kind": "literal",
+              "value": "qualifying",
+              "value_type": {
+                "comparison": "exact",
+                "enum": [
+                  "championship",
+                  "qualifying"
+                ],
+                "kind": "string",
+                "max_length": 12
+              }
+            }
+          },
+          "required_role": "league_supervisor",
+          "required_approvals": 1,
+          "shared_limits": [
+            {
+              "id": "league_automatic_ratifications_24h",
+              "kind": "count",
+              "scope": "tenant",
+              "maximum": 2,
+              "window_seconds": 86400,
+              "capability": "league.result_ratification"
+            },
+            {
+              "id": "overall_automatic_ratifications_24h",
+              "kind": "count",
+              "scope": "boundary",
+              "maximum": 6,
+              "window_seconds": 86400,
+              "capability": "league.result_ratification"
+            }
+          ]
+        },
+        "ttl_seconds": 300,
+        "review": {
+          "when": "The assigned result\u2019s related event is open; the result is finished; it records exactly two winner game wins and zero or one loser game wins; and it has no integrity hold.",
+          "then": "Propose changing only the result state to ratified. Completion requires separate supervised execution after approval.",
+          "refused": [
+            "Refuse if the event is not open.",
+            "Refuse if the result is not finished, its score is not a qualifying best-of-three score, or it has an integrity hold."
+          ],
+          "human_review": "A valid championship-stage request requires league-supervisor review. A valid qualifying-stage request not automatically approved, including a rolling-limit overrun, also requires league-supervisor review.",
+          "examples": [
+            {
+              "kind": "eligible",
+              "scenario": "An assigned qualifying result has an open event, is finished, records 2\u20131, and has no integrity hold.",
+              "result": "The ratification request is valid and may be considered for automatic approval subject to rolling limits."
+            },
+            {
+              "kind": "human_review",
+              "scenario": "An assigned championship result has an open event, is finished, records 2\u20130, and has no integrity hold.",
+              "result": "The valid request requires league-supervisor review."
+            },
+            {
+              "kind": "ineligible",
+              "scenario": "An assigned result is finished with a 2\u20131 score, but its event is closed.",
+              "result": "The request is refused."
+            }
+          ]
+        }
+      }
+    ],
+    "runner_evidence": {
+      "source_constraints": {
+        "generation_lock_fingerprint": "sha256:5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6",
+        "schema_fingerprint": "sha256:9c3c1164081ee2d281ff9f094b87ecf4298cd898b9e57f3e425fe932a415f1d0",
+        "resources": {
+          "tournament_ops.events": {
+            "resource": "tournament_ops.events",
+            "columns": {
+              "event_id": {
+                "nullable": false
+              },
+              "tenant_id": {
+                "nullable": false
+              },
+              "principal_id": {
+                "nullable": false
+              },
+              "event_name": {
+                "nullable": false
+              },
+              "operating_state": {
+                "nullable": false
+              },
+              "version": {
+                "nullable": false
+              }
+            },
+            "primary_key": {
+              "columns": [
+                "event_id"
+              ],
+              "column_count": 1,
+              "non_null_columns": [
+                "event_id"
+              ],
+              "all_columns_non_null": true,
+              "unconditional": true
+            },
+            "unique_constraints": {
+              "events_event_id_tenant_id_principal_id_key": {
+                "columns": [
+                  "event_id",
+                  "tenant_id",
+                  "principal_id"
+                ],
+                "column_count": 3,
+                "non_null_columns": [
+                  "event_id",
+                  "tenant_id",
+                  "principal_id"
+                ],
+                "all_columns_non_null": true,
+                "unconditional": true
+              }
+            },
+            "check_constraints": {
+              "events_operating_state_check": {
+                "definition": "CHECK (operating_state = ANY (ARRAY['open'::text, 'closed'::text]))",
+                "enforced": true
+              },
+              "events_version_check": {
+                "definition": "CHECK (version > 0)",
+                "enforced": true
+              }
+            }
+          },
+          "tournament_ops.results": {
+            "resource": "tournament_ops.results",
+            "columns": {
+              "result_id": {
+                "nullable": false
+              },
+              "tenant_id": {
+                "nullable": false
+              },
+              "principal_id": {
+                "nullable": false
+              },
+              "event_id": {
+                "nullable": false
+              },
+              "result_ref": {
+                "nullable": false
+              },
+              "stage": {
+                "nullable": false
+              },
+              "winner_game_wins": {
+                "nullable": false
+              },
+              "loser_game_wins": {
+                "nullable": false
+              },
+              "result_state": {
+                "nullable": false
+              },
+              "integrity_hold": {
+                "nullable": false
+              },
+              "referee_private_note": {
+                "nullable": false
+              },
+              "withdrawal_reason": {
+                "nullable": true
+              },
+              "version": {
+                "nullable": false
+              }
+            },
+            "primary_key": {
+              "columns": [
+                "result_id"
+              ],
+              "column_count": 1,
+              "non_null_columns": [
+                "result_id"
+              ],
+              "all_columns_non_null": true,
+              "unconditional": true
+            },
+            "unique_constraints": {
+              "results_result_ref_key": {
+                "columns": [
+                  "result_ref"
+                ],
+                "column_count": 1,
+                "non_null_columns": [
+                  "result_ref"
+                ],
+                "all_columns_non_null": true,
+                "unconditional": true
+              }
+            },
+            "check_constraints": {
+              "results_result_state_check": {
+                "definition": "CHECK (result_state = ANY (ARRAY['finished'::text, 'ratified'::text, 'withdrawn'::text]))",
+                "enforced": true
+              },
+              "results_stage_check": {
+                "definition": "CHECK (stage = ANY (ARRAY['qualifying'::text, 'championship'::text]))",
+                "enforced": true
+              },
+              "results_version_check": {
+                "definition": "CHECK (version > 0)",
+                "enforced": true
+              }
+            }
+          }
+        }
+      },
+      "read_review": {
+        "meaning": "read.unresolved_decisions lists candidate review requirements, NOT current outstanding decisions. The following current digest-bound review status is authoritative for their confirmation, not activation.",
+        "confirmed": [
+          "deployment profile: confirm development or staging authoring-only use",
+          "tournament_ops.events: confirm filter/sort/group/aggregate-only field permissions",
+          "tournament_ops.events: confirm minimum cohort and extraction/differencing budgets",
+          "tournament_ops.events: confirm principal scope principal_id",
+          "tournament_ops.events: confirm tenant key tenant_id",
+          "tournament_ops.events: confirm visible and kept-out fields",
+          "tournament_ops.results: confirm filter/sort/group/aggregate-only field permissions",
+          "tournament_ops.results: confirm minimum cohort and extraction/differencing budgets",
+          "tournament_ops.results: confirm principal scope principal_id",
+          "tournament_ops.results: confirm tenant key tenant_id",
+          "tournament_ops.results: confirm visible and kept-out fields",
+          "tournament_ops.results: review relationship results_event_id_tenant_id_principal_id_fkey cardinality and scope on tournament_ops.events",
+          "trusted context: confirm tenant scope comes from the verified PostgreSQL credential setting app.tenant_id and principal scope remains outside model arguments"
+        ],
+        "pending": [],
+        "activation": "separate_operator_review"
+      },
+      "privacy_review": [],
+      "read_access": {
+        "tournament_ops.events": {
+          "resource": "tournament_ops.events",
+          "label": null,
+          "description": null,
+          "trusted_tenant_field": "tenant_id",
+          "trusted_principal_field": "principal_id",
+          "explicit_principal_column": "principal_id",
+          "database_scope_proof": {
+            "resource": "tournament_ops.events",
+            "source": "local_postgres",
+            "schema": "tournament_ops",
+            "table": "events",
+            "operation": "SELECT",
+            "tenant": {
+              "field": "tenant_id",
+              "setting": "app.tenant_id"
+            },
+            "principal": {
+              "field": "principal_id",
+              "setting": "app.principal_id"
+            },
+            "policy_fingerprint": "sha256:a7c97bed9c693f61a59810c4cf2af2bf23c57c68dda352ee49ce00f089e62cf1",
+            "generation_lock_fingerprint": "sha256:5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6",
+            "schema_fingerprint": "sha256:9c3c1164081ee2d281ff9f094b87ecf4298cd898b9e57f3e425fe932a415f1d0",
+            "role_posture_fingerprint": "sha256:f342a8f34ae5650224a607789616aaa1e12a35b9f5e056aee1bd2a6dc2e464d2",
+            "policy_count": 1,
+            "enforcement": "inspected_postgres_rls",
+            "meaning": "Exact current-reader RLS restricts this source to these distinct trusted session identities. The principal field need not be repeated in the compiled SQL column scope or projected for Action verification. This proves record scope only, not an additional business predicate, public field access, authenticated-client wiring, writer readiness, activation or execution. Policy SQL and source rows are not included."
+          },
+          "database_session_scope": {
+            "principal_setting": "app.principal_id",
+            "tenant_setting": "app.tenant_id"
+          },
+          "principal_scope_configured": true,
+          "independently_queryable": false,
+          "reviewed_entry_paths": [
+            {
+              "root_resource": "tournament_ops.results",
+              "relationship": "results_event_id_tenant_id_principal_id_fkey",
+              "customer_scoped_root": true
+            }
+          ],
+          "customer_scoped_access": true,
+          "fields": {
+            "event_id": {
+              "field": "event_id",
+              "label": null,
+              "description": null,
+              "actual_values_returned": false,
+              "model_analysis": [],
+              "private_read_selection": false,
+              "kept_out": false,
+              "role_candidates": [
+                "record_identity",
+                "internal_identifier_candidate"
+              ]
+            },
+            "event_name": {
+              "field": "event_name",
+              "label": null,
+              "description": null,
+              "actual_values_returned": true,
+              "model_analysis": [],
+              "private_read_selection": false,
+              "kept_out": false,
+              "role_candidates": []
+            },
+            "operating_state": {
+              "field": "operating_state",
+              "label": null,
+              "description": null,
+              "actual_values_returned": true,
+              "model_analysis": [],
+              "private_read_selection": false,
+              "kept_out": false,
+              "role_candidates": []
+            },
+            "principal_id": {
+              "field": "principal_id",
+              "label": null,
+              "description": null,
+              "actual_values_returned": false,
+              "model_analysis": [],
+              "private_read_selection": false,
+              "kept_out": true,
+              "role_candidates": [
+                "internal_identifier_candidate",
+                "trusted_scope"
+              ]
+            },
+            "tenant_id": {
+              "field": "tenant_id",
+              "label": null,
+              "description": null,
+              "actual_values_returned": false,
+              "model_analysis": [],
+              "private_read_selection": false,
+              "kept_out": true,
+              "role_candidates": [
+                "internal_identifier_candidate",
+                "trusted_scope"
+              ]
+            },
+            "version": {
+              "field": "version",
+              "label": null,
+              "description": null,
+              "actual_values_returned": false,
+              "model_analysis": [],
+              "private_read_selection": false,
+              "kept_out": false,
+              "role_candidates": [
+                "conflict_or_version_guard"
+              ]
+            }
+          }
+        },
+        "tournament_ops.results": {
+          "resource": "tournament_ops.results",
+          "label": null,
+          "description": null,
+          "trusted_tenant_field": "tenant_id",
+          "trusted_principal_field": "principal_id",
+          "explicit_principal_column": "principal_id",
+          "database_scope_proof": {
+            "resource": "tournament_ops.results",
+            "source": "local_postgres",
+            "schema": "tournament_ops",
+            "table": "results",
+            "operation": "SELECT",
+            "tenant": {
+              "field": "tenant_id",
+              "setting": "app.tenant_id"
+            },
+            "principal": {
+              "field": "principal_id",
+              "setting": "app.principal_id"
+            },
+            "policy_fingerprint": "sha256:67d04414871dcf7e9fce0a66d38c0b318f204be3fb7bf420e99b9b9c60a9d41e",
+            "generation_lock_fingerprint": "sha256:5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6",
+            "schema_fingerprint": "sha256:9c3c1164081ee2d281ff9f094b87ecf4298cd898b9e57f3e425fe932a415f1d0",
+            "role_posture_fingerprint": "sha256:f342a8f34ae5650224a607789616aaa1e12a35b9f5e056aee1bd2a6dc2e464d2",
+            "policy_count": 1,
+            "enforcement": "inspected_postgres_rls",
+            "meaning": "Exact current-reader RLS restricts this source to these distinct trusted session identities. The principal field need not be repeated in the compiled SQL column scope or projected for Action verification. This proves record scope only, not an additional business predicate, public field access, authenticated-client wiring, writer readiness, activation or execution. Policy SQL and source rows are not included."
+          },
+          "database_session_scope": {
+            "principal_setting": "app.principal_id",
+            "tenant_setting": "app.tenant_id"
+          },
+          "principal_scope_configured": true,
+          "independently_queryable": true,
+          "reviewed_entry_paths": [],
+          "customer_scoped_access": true,
+          "fields": {
+            "event_id": {
+              "field": "event_id",
+              "label": null,
+              "description": null,
+              "actual_values_returned": false,
+              "model_analysis": [],
+              "private_read_selection": false,
+              "kept_out": false,
+              "role_candidates": [
+                "internal_identifier_candidate",
+                "relationship_key"
+              ]
+            },
+            "integrity_hold": {
+              "field": "integrity_hold",
+              "label": null,
+              "description": null,
+              "actual_values_returned": false,
+              "model_analysis": [],
+              "private_read_selection": false,
+              "kept_out": false,
+              "role_candidates": []
+            },
+            "loser_game_wins": {
+              "field": "loser_game_wins",
+              "label": null,
+              "description": null,
+              "actual_values_returned": true,
+              "model_analysis": [],
+              "private_read_selection": false,
+              "kept_out": false,
+              "role_candidates": []
+            },
+            "principal_id": {
+              "field": "principal_id",
+              "label": null,
+              "description": null,
+              "actual_values_returned": false,
+              "model_analysis": [],
+              "private_read_selection": false,
+              "kept_out": true,
+              "role_candidates": [
+                "internal_identifier_candidate",
+                "trusted_scope",
+                "relationship_key"
+              ]
+            },
+            "referee_private_note": {
+              "field": "referee_private_note",
+              "label": null,
+              "description": null,
+              "actual_values_returned": false,
+              "model_analysis": [],
+              "private_read_selection": false,
+              "kept_out": true,
+              "role_candidates": [
+                "private_policy_candidate"
+              ]
+            },
+            "result_id": {
+              "field": "result_id",
+              "label": null,
+              "description": null,
+              "actual_values_returned": false,
+              "model_analysis": [],
+              "private_read_selection": false,
+              "kept_out": false,
+              "role_candidates": [
+                "record_identity",
+                "internal_identifier_candidate"
+              ]
+            },
+            "result_ref": {
+              "field": "result_ref",
+              "label": null,
+              "description": null,
+              "actual_values_returned": true,
+              "model_analysis": [],
+              "private_read_selection": false,
+              "kept_out": false,
+              "role_candidates": []
+            },
+            "result_state": {
+              "field": "result_state",
+              "label": null,
+              "description": null,
+              "actual_values_returned": true,
+              "model_analysis": [],
+              "private_read_selection": false,
+              "kept_out": false,
+              "role_candidates": []
+            },
+            "stage": {
+              "field": "stage",
+              "label": null,
+              "description": null,
+              "actual_values_returned": true,
+              "model_analysis": [],
+              "private_read_selection": false,
+              "kept_out": false,
+              "role_candidates": []
+            },
+            "tenant_id": {
+              "field": "tenant_id",
+              "label": null,
+              "description": null,
+              "actual_values_returned": false,
+              "model_analysis": [],
+              "private_read_selection": false,
+              "kept_out": true,
+              "role_candidates": [
+                "internal_identifier_candidate",
+                "trusted_scope",
+                "relationship_key"
+              ]
+            },
+            "version": {
+              "field": "version",
+              "label": null,
+              "description": null,
+              "actual_values_returned": false,
+              "model_analysis": [],
+              "private_read_selection": false,
+              "kept_out": false,
+              "role_candidates": [
+                "conflict_or_version_guard"
+              ]
+            },
+            "winner_game_wins": {
+              "field": "winner_game_wins",
+              "label": null,
+              "description": null,
+              "actual_values_returned": true,
+              "model_analysis": [],
+              "private_read_selection": false,
+              "kept_out": false,
+              "role_candidates": []
+            },
+            "withdrawal_reason": {
+              "field": "withdrawal_reason",
+              "label": null,
+              "description": null,
+              "actual_values_returned": false,
+              "model_analysis": [],
+              "private_read_selection": false,
+              "kept_out": false,
+              "role_candidates": []
+            }
+          }
+        }
+      },
+      "actions": {
+        "league.result_ratification": {
+          "outcome": "league.result_ratification",
+          "scoped_bindings": {
+            "event": {
+              "binding": "event",
+              "resource": "tournament_ops.events",
+              "scope": {
+                "mode": "columns",
+                "principal_field": "principal_id",
+                "tenant_field": "tenant_id"
+              },
+              "source": {
+                "direction": "forward",
+                "field_pairs": [
+                  {
+                    "local_field": "event_id",
+                    "target_field": "event_id"
+                  },
+                  {
+                    "local_field": "tenant_id",
+                    "target_field": "tenant_id"
+                  },
+                  {
+                    "local_field": "principal_id",
+                    "target_field": "principal_id"
+                  }
+                ],
+                "from_binding": "result",
+                "kind": "relationship",
+                "relationship": "results_event_id_tenant_id_principal_id_fkey"
+              },
+              "database_scope_proof": {
+                "resource": "tournament_ops.events",
+                "source": "local_postgres",
+                "schema": "tournament_ops",
+                "table": "events",
+                "operation": "SELECT",
+                "tenant": {
+                  "field": "tenant_id",
+                  "setting": "app.tenant_id"
+                },
+                "principal": {
+                  "field": "principal_id",
+                  "setting": "app.principal_id"
+                },
+                "policy_fingerprint": "sha256:a7c97bed9c693f61a59810c4cf2af2bf23c57c68dda352ee49ce00f089e62cf1",
+                "generation_lock_fingerprint": "sha256:5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6",
+                "schema_fingerprint": "sha256:9c3c1164081ee2d281ff9f094b87ecf4298cd898b9e57f3e425fe932a415f1d0",
+                "role_posture_fingerprint": "sha256:f342a8f34ae5650224a607789616aaa1e12a35b9f5e056aee1bd2a6dc2e464d2",
+                "policy_count": 1,
+                "enforcement": "inspected_postgres_rls",
+                "meaning": "Exact current-reader RLS restricts this source to these distinct trusted session identities. The principal field need not be repeated in the compiled SQL column scope or projected for Action verification. This proves record scope only, not an additional business predicate, public field access, authenticated-client wiring, writer readiness, activation or execution. Policy SQL and source rows are not included."
+              },
+              "row_identity": "event_id",
+              "conflict_field": "version",
+              "fields": {
+                "event_id": {
+                  "name": "event_id",
+                  "type": {
+                    "comparison": "exact",
+                    "kind": "string",
+                    "max_length": 36
+                  },
+                  "nullable": false,
+                  "model_visible": false,
+                  "read_access_present": true,
+                  "actual_values_returned": false,
+                  "model_analysis": [],
+                  "private_read_selection": false,
+                  "private_action_verification": true
+                },
+                "operating_state": {
+                  "name": "operating_state",
+                  "type": {
+                    "comparison": "exact",
+                    "enum": [
+                      "closed",
+                      "open"
+                    ],
+                    "kind": "string",
+                    "max_length": 6
+                  },
+                  "nullable": false,
+                  "model_visible": true,
+                  "read_access_present": true,
+                  "actual_values_returned": true,
+                  "model_analysis": [],
+                  "private_read_selection": false,
+                  "private_action_verification": false
+                },
+                "principal_id": {
+                  "name": "principal_id",
+                  "type": {
+                    "comparison": "exact",
+                    "kind": "string",
+                    "max_length": 36
+                  },
+                  "nullable": false,
+                  "model_visible": false,
+                  "read_access_present": true,
+                  "actual_values_returned": false,
+                  "model_analysis": [],
+                  "private_read_selection": false,
+                  "private_action_verification": true
+                },
+                "tenant_id": {
+                  "name": "tenant_id",
+                  "type": {
+                    "comparison": "exact",
+                    "kind": "string",
+                    "max_length": 36
+                  },
+                  "nullable": false,
+                  "model_visible": false,
+                  "read_access_present": true,
+                  "actual_values_returned": false,
+                  "model_analysis": [],
+                  "private_read_selection": false,
+                  "private_action_verification": true
+                },
+                "version": {
+                  "name": "version",
+                  "type": {
+                    "kind": "integer"
+                  },
+                  "nullable": false,
+                  "model_visible": false,
+                  "read_access_present": true,
+                  "actual_values_returned": false,
+                  "model_analysis": [],
+                  "private_read_selection": false,
+                  "private_action_verification": true
+                }
+              }
+            },
+            "result": {
+              "binding": "result",
+              "resource": "tournament_ops.results",
+              "scope": {
+                "mode": "columns",
+                "principal_field": "principal_id",
+                "tenant_field": "tenant_id"
+              },
+              "source": {
+                "kind": "subject_ref"
+              },
+              "database_scope_proof": {
+                "resource": "tournament_ops.results",
+                "source": "local_postgres",
+                "schema": "tournament_ops",
+                "table": "results",
+                "operation": "SELECT",
+                "tenant": {
+                  "field": "tenant_id",
+                  "setting": "app.tenant_id"
+                },
+                "principal": {
+                  "field": "principal_id",
+                  "setting": "app.principal_id"
+                },
+                "policy_fingerprint": "sha256:67d04414871dcf7e9fce0a66d38c0b318f204be3fb7bf420e99b9b9c60a9d41e",
+                "generation_lock_fingerprint": "sha256:5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6",
+                "schema_fingerprint": "sha256:9c3c1164081ee2d281ff9f094b87ecf4298cd898b9e57f3e425fe932a415f1d0",
+                "role_posture_fingerprint": "sha256:f342a8f34ae5650224a607789616aaa1e12a35b9f5e056aee1bd2a6dc2e464d2",
+                "policy_count": 1,
+                "enforcement": "inspected_postgres_rls",
+                "meaning": "Exact current-reader RLS restricts this source to these distinct trusted session identities. The principal field need not be repeated in the compiled SQL column scope or projected for Action verification. This proves record scope only, not an additional business predicate, public field access, authenticated-client wiring, writer readiness, activation or execution. Policy SQL and source rows are not included."
+              },
+              "row_identity": "result_id",
+              "conflict_field": "version",
+              "fields": {
+                "event_id": {
+                  "name": "event_id",
+                  "type": {
+                    "comparison": "exact",
+                    "kind": "string",
+                    "max_length": 36
+                  },
+                  "nullable": false,
+                  "model_visible": false,
+                  "read_access_present": true,
+                  "actual_values_returned": false,
+                  "model_analysis": [],
+                  "private_read_selection": false,
+                  "private_action_verification": true
+                },
+                "integrity_hold": {
+                  "name": "integrity_hold",
+                  "type": {
+                    "kind": "boolean"
+                  },
+                  "nullable": false,
+                  "model_visible": false,
+                  "read_access_present": true,
+                  "actual_values_returned": false,
+                  "model_analysis": [],
+                  "private_read_selection": false,
+                  "private_action_verification": true
+                },
+                "loser_game_wins": {
+                  "name": "loser_game_wins",
+                  "type": {
+                    "kind": "integer"
+                  },
+                  "nullable": false,
+                  "model_visible": true,
+                  "read_access_present": true,
+                  "actual_values_returned": true,
+                  "model_analysis": [],
+                  "private_read_selection": false,
+                  "private_action_verification": false
+                },
+                "principal_id": {
+                  "name": "principal_id",
+                  "type": {
+                    "comparison": "exact",
+                    "kind": "string",
+                    "max_length": 36
+                  },
+                  "nullable": false,
+                  "model_visible": false,
+                  "read_access_present": true,
+                  "actual_values_returned": false,
+                  "model_analysis": [],
+                  "private_read_selection": false,
+                  "private_action_verification": true
+                },
+                "result_id": {
+                  "name": "result_id",
+                  "type": {
+                    "comparison": "exact",
+                    "kind": "string",
+                    "max_length": 36
+                  },
+                  "nullable": false,
+                  "model_visible": false,
+                  "read_access_present": true,
+                  "actual_values_returned": false,
+                  "model_analysis": [],
+                  "private_read_selection": false,
+                  "private_action_verification": true
+                },
+                "result_ref": {
+                  "name": "result_ref",
+                  "type": {
+                    "comparison": "exact",
+                    "kind": "string",
+                    "max_length": 4096
+                  },
+                  "nullable": false,
+                  "model_visible": true,
+                  "read_access_present": true,
+                  "actual_values_returned": true,
+                  "model_analysis": [],
+                  "private_read_selection": false,
+                  "private_action_verification": false
+                },
+                "result_state": {
+                  "name": "result_state",
+                  "type": {
+                    "comparison": "exact",
+                    "enum": [
+                      "finished",
+                      "ratified",
+                      "withdrawn"
+                    ],
+                    "kind": "string",
+                    "max_length": 9
+                  },
+                  "nullable": false,
+                  "model_visible": true,
+                  "read_access_present": true,
+                  "actual_values_returned": true,
+                  "model_analysis": [],
+                  "private_read_selection": false,
+                  "private_action_verification": false
+                },
+                "stage": {
+                  "name": "stage",
+                  "type": {
+                    "comparison": "exact",
+                    "enum": [
+                      "championship",
+                      "qualifying"
+                    ],
+                    "kind": "string",
+                    "max_length": 12
+                  },
+                  "nullable": false,
+                  "model_visible": true,
+                  "read_access_present": true,
+                  "actual_values_returned": true,
+                  "model_analysis": [],
+                  "private_read_selection": false,
+                  "private_action_verification": false
+                },
+                "tenant_id": {
+                  "name": "tenant_id",
+                  "type": {
+                    "comparison": "exact",
+                    "kind": "string",
+                    "max_length": 36
+                  },
+                  "nullable": false,
+                  "model_visible": false,
+                  "read_access_present": true,
+                  "actual_values_returned": false,
+                  "model_analysis": [],
+                  "private_read_selection": false,
+                  "private_action_verification": true
+                },
+                "version": {
+                  "name": "version",
+                  "type": {
+                    "kind": "integer"
+                  },
+                  "nullable": false,
+                  "model_visible": false,
+                  "read_access_present": true,
+                  "actual_values_returned": false,
+                  "model_analysis": [],
+                  "private_read_selection": false,
+                  "private_action_verification": true
+                },
+                "winner_game_wins": {
+                  "name": "winner_game_wins",
+                  "type": {
+                    "kind": "integer"
+                  },
+                  "nullable": false,
+                  "model_visible": true,
+                  "read_access_present": true,
+                  "actual_values_returned": true,
+                  "model_analysis": [],
+                  "private_read_selection": false,
+                  "private_action_verification": false
+                }
+              }
+            }
+          },
+          "automatic_limits": [
+            {
+              "id": "league_automatic_ratifications_24h",
+              "kind": "count",
+              "scope": "tenant",
+              "maximum": 2,
+              "window_seconds": 86400,
+              "capability": "league.result_ratification",
+              "applies_to_outcome": true,
+              "history_selector": {
+                "action_boundary_name": "reviewed_staging_actions",
+                "approval_status": "approved",
+                "approval_kind": "boundary_automatic",
+                "window_seconds": 86400,
+                "time_bounds": "inclusive: now - window_seconds through now",
+                "capability": "league.result_ratification",
+                "tenant": "current_proposal.tenant_id",
+                "principal": null,
+                "business_object": null,
+                "object_id": null
+              },
+              "tenant_bindings": [
+                {
+                  "resource": "tournament_ops.events",
+                  "field": "tenant_id"
+                },
+                {
+                  "resource": "tournament_ops.results",
+                  "field": "tenant_id"
+                }
+              ],
+              "explanation": "This ledger scope groups by the SAME trusted tenant value used for these exact field bindings. It is not a second or broader business tenant. Use reviewed labels/relationships to interpret its business meaning; do not assume tenant means account in other deployments."
+            },
+            {
+              "id": "overall_automatic_ratifications_24h",
+              "kind": "count",
+              "scope": "boundary",
+              "maximum": 6,
+              "window_seconds": 86400,
+              "capability": "league.result_ratification",
+              "applies_to_outcome": true,
+              "history_selector": {
+                "action_boundary_name": "reviewed_staging_actions",
+                "approval_status": "approved",
+                "approval_kind": "boundary_automatic",
+                "window_seconds": 86400,
+                "time_bounds": "inclusive: now - window_seconds through now",
+                "capability": "league.result_ratification",
+                "tenant": null,
+                "principal": null,
+                "business_object": null,
+                "object_id": null
+              }
+            }
+          ],
+          "effect": {
+            "target_resource": "tournament_ops.results",
+            "target_binding": "result",
+            "operation": "update",
+            "fields": [
+              "result_state"
+            ],
+            "version_advance": {
+              "column": "version",
+              "strategy": "integer_increment"
+            },
+            "source_counter_maintenance": {
+              "status": "owner_confirmed_operating_prerequisite",
+              "resource": "tournament_ops.results",
+              "field": "version",
+              "maintenance": "all_writers_increment",
+              "proof_digest": "sha256:a64444d8c11ed349977baf58b0b194936114c3898e802aeeac70e802a9803bdc",
+              "read_boundary_digest": "sha256:6c6196b167fe621caf480cd2b2a4449ef083315cebaf044cc5bcb1660985efd3",
+              "generation_lock_fingerprint": "sha256:5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6",
+              "role_posture_fingerprint": "sha256:f342a8f34ae5650224a607789616aaa1e12a35b9f5e056aee1bd2a6dc2e464d2",
+              "external_writers_verified": false,
+              "production_integration_verified": false
+            },
+            "source_fields_modified": [
+              "result_state",
+              "version"
+            ],
+            "unrelated_fields": "Fields outside source_fields_modified are not authorized for modification by this envelope. Version advancement is Runner-owned, not a caller-supplied business field."
+          },
+          "execution": {
+            "configured_mode": "direct_sql",
+            "supported_automatic_completion": true,
+            "activation": "separate_operator_review",
+            "prerequisites": [
+              "reviewed writer",
+              "execution enabled for this exact Action revision",
+              "running worker"
+            ],
+            "semantics": "With direct_sql configured and separately enabled, the worker processes approved requests without a per-request staff step. Approval alone is not completion. A disabled configuration is prepared behavior, not missing business logic."
+          }
+        }
+      },
+      "action_subject_compatibility": {
+        "client": "four_tool",
+        "read_digest": "sha256:7b6dffc897485f48021606e8584bed73b3929e1dbf35e660836dbb05c8062b1c",
+        "action_digest": "sha256:3431e33b5c7ef594c67b545c33ae8285cbd919ff01c91bf35f5d72581ad2ea3e",
+        "compatible": true,
+        "subjects": [
+          {
+            "outcome": "league.result_ratification",
+            "binding": "result",
+            "resource": "tournament_ops.results",
+            "obtainable": true
+          }
+        ]
+      },
+      "counting_decisions": [
+        {
+          "origin": "OPERATOR-COUNTING-REVIEW",
+          "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+          "configuration_digest": "sha256:05e206f813c21d8b29241ff4eae0d4d9add1b62618028b3b41c2f1d0106ecb6c",
+          "required_capability": "league.result_ratification",
+          "operator_history_digest": "sha256:e07d7b9b18e40cc36bfe73f9b25483e9bfa9ce4e580d11b8c6ad0bf7ec1bd1fc",
+          "reviewed_at": "2026-09-15T22:19:40.625Z"
+        },
+        {
+          "origin": "OPERATOR-COUNTING-REVIEW",
+          "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+          "configuration_digest": "sha256:8502bca55a9ce7d5be7ea761bef9193edc93a88f5bf4bcd5255ce01bb27cf4d2",
+          "required_capability": "league.result_ratification",
+          "operator_history_digest": "sha256:e07d7b9b18e40cc36bfe73f9b25483e9bfa9ce4e580d11b8c6ad0bf7ec1bd1fc",
+          "reviewed_at": "2026-09-15T22:20:09.118Z"
+        }
+      ],
+      "counting_interpretations": [],
+      "runtime_contract": {
+        "authoring_provider": {
+          "provider": "openai",
+          "model": "gpt-5.6-terra",
+          "purpose": "disabled_policy_authoring",
+          "provider_response_verified": false,
+          "runtime_client_verified": false,
+          "authority_granted": false,
+          "meaning": "The host selected this provider and model for the current authoring session, not a runtime MCP client. This selection does not prove a successful provider response or the semantic correctness of its drafts. Compare an authoring-model requirement here, separately from later managed runtime-client installation and connection. It grants no data, approval, activation or execution authority."
+        },
+        "onboarding_reader": {
+          "source": "local_postgres",
+          "engine": "postgres",
+          "generation_lock_fingerprint": "sha256:5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6",
+          "schema_fingerprint": "sha256:9c3c1164081ee2d281ff9f094b87ecf4298cd898b9e57f3e425fe932a415f1d0",
+          "role_posture_fingerprint": "sha256:f342a8f34ae5650224a607789616aaa1e12a35b9f5e056aee1bd2a6dc2e464d2",
+          "role_verified": true,
+          "read_only": true,
+          "non_owner": true,
+          "non_bypass": true,
+          "live_connection_rechecked": false,
+          "writer_separation_verified": false,
+          "production_integration_verified": false,
+          "meaning": "Current generation-lock-bound metadata establishes only the inspected onboarding reader's role posture, not RLS or additional business predicates. It is not a new live credential check and reveals no credentials. When these exact facts satisfy the requested reader posture, do not ask to provision it again. This does not verify a separate writer, client connection, authenticated identity, grants after inspection, production integration or execution. Compare record scope separately against read_access database_scope_proof."
+        },
+        "trusted_time": {
+          "binding": "transaction_time",
+          "origin": "runner_supplied_evaluation_time",
+          "database_clock_verified": false,
+          "model_supplied": false,
+          "meaning": "Action predicates receive a trusted timestamp from Runner's proposal evaluation or execution re-verification context. The binding name does not establish database-server clock origin, a SQL CURRENT_TIMESTAMP expression or equality to a database transaction-start timestamp. A policy requiring that particular clock origin remains unresolved; do not silently replace it with trusted current UTC evaluation time. This describes only the existing time binding, not a new predicate or execution capability."
+        },
+        "authoring_lifecycle": {
+          "current_policy_snapshot": {
+            "digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+            "version": 2,
+            "bytes": 1797,
+            "lines": 10
+          },
+          "retained_business_answers": 11,
+          "retained_read_interpretations": 0,
+          "sources": "Complete versioned local snapshots are restored on resume, not silently reread from an edited original file. Replacing or removing rules is an explicit operator operation with separate model-transfer consent.",
+          "revisions": "Business and permission edits prepare disabled revisions. Current active authority remains separate until exact operator activation; model prose and saved answers never activate authority.",
+          "resume": "Saved job progress, accepted meanings and existing action revisions are retained. Changed schema, reader posture or Read dependencies require revalidation; unsupported rules and unanswered decisions remain pending. A saved checkpoint is not proof that the entire policy is implemented or a future external client will obey it.",
+          "automatic_activation": false,
+          "external_client_behavior_verified": false
+        },
+        "deployment_profile": {
+          "configured_profile": "staging",
+          "identity_provider": "environment",
+          "local_identity_mode": true,
+          "production_authentication_verified": false,
+          "meaning": "Development and staging are local environment-bound identity profiles. The profile name does not establish whether source data is synthetic, where the system is deployed, or whether a production authentication integration was verified. Compare the actual required identity and deployment controls, not an informal environment label. An explicit requirement for a specific profile still needs review; never downgrade production or waive authentication, privacy or execution requirements."
+        },
+        "agent_interface": {
+          "tools": [
+            "app.describe_data",
+            "app.explore_data",
+            "app.describe_actions",
+            "app.request_change"
+          ],
+          "surface": "fixed_four_tools",
+          "discovery": "Activated reading permissions and business outcomes are discovered through these tools. Supported reviewed rule changes update their catalogs, not the tool list. No per-outcome MCP tool or bespoke runtime adapter is required.",
+          "limits": "Only supported, validated and explicitly activated boundaries are available. A fixed interface does not provide arbitrary SQL, unsupported effects, model-supplied scope, approval or execution authority. New grants and execution policies still require separate review; pending requests retain their reviewed version checks.",
+          "configuration_checked": false,
+          "connection_verified": false,
+          "deployment": "This is Runner's supported interface contract, not proof that a particular client is installed, configured or connected. Use runner_client_connection for the separate later installation and handshake check."
+        },
+        "read_eligibility": {
+          "trusted_record_scope_configured": true,
+          "record_scope_meaning": "customer_scoped_access and the reviewed tenant/principal mappings establish the configured restriction to the customer's permitted records. Runtime enforces these bindings on queries; actual session wiring is a separate deployment check. This is distinct from an additional current business fact such as admission, entitlement status or unrevoked consent. Do not infer that extra fact merely from the words authorized or permitted.",
+          "runner_private_source_predicates_supported": true,
+          "configured_current_state_prerequisite": null,
+          "supported_shape": "One private authoritative status register with a non-null unique trusted tenant/person pair, a reviewed positive enum status, and inclusive-start/exclusive-end UTC effective dates. Other business Read predicates remain unsupported here.",
+          "action_requirements_apply_to_reads": false,
+          "database_business_predicates_verified": false,
+          "database_business_predicates_meaning": "This flag makes no general claim about arbitrary business predicates. It does not negate trusted record-scope enforcement or the exact configured_current_state_prerequisite. Check the specific additional condition required by the source policy, if any, against that exact configuration.",
+          "meaning": "Read scope proves whose records may be accessed, not current eligibility. Only configured_current_state_prerequisite supplies Runner's private current-state Read condition: every data query transaction checks trusted subject, reviewed positive status and the current half-open effective interval; missing or non-qualifying evidence denies. A null configuration means this check is NOT implemented, despite engine support. Field filters, relationships, authentication and Action require conditions do not supply Read eligibility. Tenant/principal RLS metadata is not proof of extra business enforcement.",
+          "next_step": "If required Read evidence matches the supported shape but the configured prerequisite is null, use the model-guided Read revision to review its private source metadata and business meaning. Missing evidence keeps setup pending; unsupported shapes need a concrete support gap. Do not expose the register publicly, infer eligibility, waive the requirement or activate broader access. The disabled prerequisite still needs separate Read activation."
+        },
+        "approval": "Automatic approval counts are taken atomically from Runner's proposal/approval ledger with the configured scope, capability and window. Limits govern automatic approval, not authorized human fallback. Invalid eligibility is refused before approval.",
+        "approval_counter_selection": {
+          "outcome_domain": {
+            "boundary_name": "reviewed_staging_actions",
+            "proposed_revision": "sha256:3431e33b5c7ef594c67b545c33ae8285cbd919ff01c91bf35f5d72581ad2ea3e",
+            "proposed_outcomes": [
+              "league.result_ratification"
+            ],
+            "current_revision": "sha256:3431e33b5c7ef594c67b545c33ae8285cbd919ff01c91bf35f5d72581ad2ea3e",
+            "current_outcomes": [
+              "league.result_ratification"
+            ],
+            "retained_automatic_outcomes": [
+              "league.result_ratification"
+            ],
+            "complete": true,
+            "store_binding_digest": "sha256:181d96574619fa3620812be284453fc94de3fef383fb7ced39c253117c154d78",
+            "history_scope": "all_retained_boundary_automatic_approvals"
+          },
+          "evidence": "Each automatic_limits entry supplies its exact history_selector and applies_to_outcome, derived from the current compiled authority. Null selectors mean no filter, not missing configuration. Tenant/principal/object selectors reference the current trusted proposal; no runtime identity values are supplied here.",
+          "diagnostic_only": [
+            "limit.id"
+          ],
+          "not_history_filters": [
+            "limit.id",
+            "approval_class",
+            "action_boundary_digest"
+          ],
+          "semantics": "The evaluator selects automatic approval records tagged with this Action Boundary name and status approved; human approvals have no boundary tag and are excluded. It filters by inclusive time window and the listed optional capability/tenant/principal/object filters. Different limit IDs or approval classes do NOT create separate counters. The same selectors share the same history across outcomes and authority revisions; matching IDs do not combine different selectors. Compare kind, maximum and optional total field separately from the history selector. A capability filter, capability scope, different trusted scope or different window can change the selected history. Reconcile a false grouping claim in the report; do not rename IDs or change valid business rules to satisfy it."
+        },
+        "request_identity": "The fixed request_change operation accepts outcome, scoped subject_refs and reviewed business inputs, not a client-supplied request ID. Repeating the same claimed references, outcome and inputs reuses the recorded proposal. New references or a different reviewed request are not an unlimited delivery-retry exemption. Execution uses the sealed proposal's idempotency identity.",
+        "conflict_protection": "Runner records immutable eligibility/effect evidence, re-verifies current facts and approved effect at execution, and checks configured version fields. A changed version or changed approved effect refuses stale execution; do not require duplicate equality predicates in require for these Runner-owned checks.",
+        "version_advancement": "Each compiled action effect lists its exact version_advance, or null when none is configured. integer_increment advances that column in the same guarded source transaction as the successful change. Refused, rolled-back and replayed requests do not advance it again. A conflict field alone is not proof of advancement; neither is this contract permission to add an unconfigured version update.",
+        "source_counter_maintenance": "Each effect and atomic_updates entry supplies source_counter_maintenance: an exact host-confirmed operating prerequisite, validated against the current Read dependency, inspection, role posture, generation lock, catalog, compiled update target and saved review digest, or null when no matching current confirmation is available. Cite that exact entry for a source-owner obligation to maintain the counter on every update. This is not independent proof that external writers enforce the obligation: external_writers_verified and production_integration_verified remain false. If the policy requires formal independent enforcement, keep that requirement pending until its actual evidence is supplied. Neither model text, source-policy wording, structural suitability nor compiled version advancement substitutes for host confirmation; a null entry cannot support a positive maintenance claim. This metadata grants no Read visibility, activation or execution authority.",
+        "saved_execution_review": {
+          "action_digest": "sha256:b4f9042107daa40454f6285ddd21b483ded78e5554a35bf4226855e743232768",
+          "policy_digest": "sha256:7820a3188890c6dc6db6cc11db6d3929eca5fa67394bba3e89eee70deb2ade87",
+          "enabled_outcomes": [
+            "league.result_ratification"
+          ],
+          "authority": "existing_operator_execution_policy",
+          "live_writer_rechecked": false,
+          "worker_running_verified": false,
+          "receipt_mode_verified": false,
+          "independent_source_readback_verified": false,
+          "meaning": "These outcomes have an enabled operator execution policy bound to this exact Action revision. This existing record is not a fresh writer/grant check, worker liveness check, receipt mode verification, completed execution or independent observation. Preserve its history without repeating a business Action repair. Inspect remaining setup separately."
+        },
+        "receipt_configuration": {
+          "status": "current",
+          "digest": "sha256:4271bc259e1604d29231176a50fa2ecd959e3b172255b56254ab00c8697ac1a6",
+          "modes": [
+            {
+              "source": "local_postgres",
+              "authority": "runner_ledger",
+              "explicitly_configured": true
+            }
+          ]
+        },
+        "receipts": "Runner supports distinct receipt authorities. runner_ledger records processing and execution receipts in the control ledger, separately from source effects; it is not a source-atomic receipt. For supported direct SQL effects, source_db records the applied receipt in the same source transaction as the guarded effects. It requires separately reviewed receipt objects and writer grants through writeback setup (precreated or reviewed auto-migration), then execution verification and a worker. Receipt mode and readiness are not established by this disabled draft. A source-atomic requirement cannot be satisfied by a control-ledger receipt or by adding a model-authored audit INSERT. Independent source readback is a separate verification step, not an automatic client behavior guarantee. request_change distinguishes queued/human_review/not_enabled/completed; completed requires applied state. Pending/failed is not completed.",
+        "client_responsibilities": "The application authenticates the person, supplies trusted session identity, captures their selection and uses returned execution status/receipts for messages. A scoped subject reference authorizes one reviewed row; it does not prove the human clicked a UI. When an effective date is in the future, recording the change is not proof its benefits are already in force. Boundary rules cannot prove arbitrary client UI wording.",
+        "client_contract": {
+          "mode": "interactive_four_tool",
+          "client": "claude-code",
+          "origin": "PRODUCT-CLIENT-CONTRACT",
+          "ownership": "explicit_unverified"
+        },
+        "application_obligations": {
+          "customer_selection": "The client captures the customer's intended choice and submits that reviewed subject reference. Runner independently verifies its scope and eligibility; it cannot prove the human selected it.",
+          "status_presentation": "The client presents returned statuses and receipts accurately. Approval, a queued request or a failed execution is not completion. A recorded future-effective change does not mean benefits are already in force.",
+          "independent_source_readback": {
+            "phase": "after_execution",
+            "verified": false,
+            "receipt_proves_observation": false,
+            "observation_scope": null,
+            "meaning": "An independent client or source owner observes the source after a particular execution and compares it with that exact intended change. This required observation remains external and unverified here; it cannot be performed before the change exists. Neither a receipt, selected receipt mode, execution setup, past test nor conversation establishes this observation. No private source rows or external verifier files are imported into authoring evidence. Business review may finish while this later obligation remains visible; claiming independently verified completion may not.",
+            "limits": "This is only a separately performed observation, not an automatic runtime postcondition, transactional readback expression or guarantee for every future execution. If the policy requires such an automated guarantee, keep that precise unsupported requirement unresolved rather than assigning it away. Source_db atomic receipt requirements remain distinct."
+          }
+        },
+        "deployment_prerequisites": {
+          "runner_execution_setup": {
+            "supported": true,
+            "receipt_modes_supported": [
+              "runner_ledger",
+              "source_db"
+            ],
+            "receipt_mode_checked": false,
+            "outcomes": [
+              {
+                "outcome": "league.result_ratification",
+                "configured_mode": "direct_sql"
+              }
+            ],
+            "stage": "after_authority_review",
+            "configuration_checked": false,
+            "verified": false,
+            "meaning": "Only deployment of already compiled direct SQL effects: review a separate writer and exact database grants, separately enable execution, review the required receipt authority and its exact source objects/grants if applicable, then configure and start a worker. These are not prerequisites for reviewing disabled business rules. This evidence never asserts that the writer, grants, execution or worker are ready. Reader credentials stay separate. Proposal-only effects, missing actions, unsupported transactions, business eligibility, privacy and approval conditions cannot use this prerequisite.",
+            "next_step": "After authority review, use execution setup to prepare the exact writer handoff or verify an existing dedicated writer. If administration is needed, save and resume this job after the administrator applies only the reviewed requirements. Execution remains off until separately enabled; completion requires a successful receipt."
+          },
+          "runner_client_connection": {
+            "supported": true,
+            "supported_clients": [
+              "claude-code",
+              "cursor",
+              "vscode"
+            ],
+            "transport": "local_stdio",
+            "stage": "after_authority_review",
+            "configuration_checked": false,
+            "verified": false,
+            "meaning": "Runner supports managed local stdio client installation at the later client handoff. This is not external application business implementation or a prerequisite for reviewing disabled authority. It does not prove a client is installed or connected, authenticate a customer, grant authority, or start a worker. Custom clients and production HTTP requirements need their own review.",
+            "next_step": "After authority review, choose a supported client in client setup and review its installation and connection check. Connection, authenticated identity, application responsibilities and execution readiness remain separate and unverified."
+          },
+          "authenticated_identity": {
+            "reviewed_customer_scope": true,
+            "verified": false,
+            "meaning": "Only connecting an authenticated application session to the already reviewed tenant/principal bindings remains a deployment step. Runtime refuses missing identity. This does not settle which customers are authorized or permit weakening database scope. Metadata-only drafting needs no actual identity values.",
+            "next_step": "After authority review, choose a client and configure runtime identity. A local fixed-identity test is not production authentication verification; production must supply identity from its authenticated session, never model arguments."
+          }
+        }
+      }
+    }
+  },
+  "arguments": [
+    {
+      "passages": [
+        {
+          "start": 1,
+          "end": 1,
+          "disposition": "background",
+          "interpretation": "Document heading only.",
+          "draft_paths": [],
+          "topic": "Document heading",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "No action needed."
+        },
+        {
+          "start": 3,
+          "end": 3,
+          "disposition": "implemented",
+          "interpretation": "The result subject and related event are constrained by reviewed tenant and principal bindings, so referees can see and act only on assigned results within their league.",
+          "draft_paths": [
+            "/runner_evidence/read_access/tournament_ops.results",
+            "/runner_evidence/read_access/tournament_ops.events",
+            "/runner_evidence/actions/league.result_ratification/scoped_bindings"
+          ],
+          "topic": "Assigned league scope",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain the reviewed tenant and principal bindings."
+        },
+        {
+          "start": 3,
+          "end": 3,
+          "disposition": "implemented",
+          "interpretation": "Public reads expose result reference, stage, recorded winner and loser wins, result state, event name, and related event operating state; result_ref's public display meaning is confirmed by the operator.",
+          "draft_paths": [
+            "/runner_evidence/read_access/tournament_ops.results",
+            "/runner_evidence/read_access/tournament_ops.events"
+          ],
+          "operator_message_id": 2,
+          "topic": "Permitted result reads",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain the reviewed public fields."
+        },
+        {
+          "start": 3,
+          "end": 3,
+          "disposition": "implemented",
+          "interpretation": "Database identities, version conflict counters, integrity hold, and referee private note are neither publicly returned nor available for model analysis. Integrity hold remains private Action verification only, as the source permits.",
+          "draft_paths": [
+            "/runner_evidence/read_access/tournament_ops.events",
+            "/runner_evidence/read_access/tournament_ops.results",
+            "/runner_evidence/actions/league.result_ratification/scoped_bindings/event/fields/event_id",
+            "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/result_id",
+            "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/integrity_hold",
+            "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/referee_private_note"
+          ],
+          "topic": "Private result data",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain the private-field restrictions.",
+          "field_checks": [
+            {
+              "resource": "tournament_ops.events",
+              "field": "event_id",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.events",
+              "field": "tenant_id",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.events",
+              "field": "principal_id",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.events",
+              "field": "version",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.results",
+              "field": "result_id",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.results",
+              "field": "tenant_id",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.results",
+              "field": "principal_id",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.results",
+              "field": "version",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.results",
+              "field": "integrity_hold",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.results",
+              "field": "referee_private_note",
+              "expectation": "private"
+            }
+          ]
+        },
+        {
+          "start": 5,
+          "end": 5,
+          "disposition": "implemented",
+          "interpretation": "The Action refuses unless the related event is open, the result is finished, winner wins equal two, loser wins are zero or one, and the privately verified integrity hold is false.",
+          "draft_paths": [
+            "/actions/0/require",
+            "/actions/0/review",
+            "/runner_evidence/actions/league.result_ratification/scoped_bindings/event/fields/operating_state",
+            "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/integrity_hold",
+            "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/result_state",
+            "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/winner_game_wins",
+            "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/loser_game_wins"
+          ],
+          "topic": "Ratification validity",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain the compiled refusal conditions."
+        },
+        {
+          "start": 5,
+          "end": 5,
+          "disposition": "implemented",
+          "interpretation": "The compiled effect changes result_state only to ratified, with Runner-owned guarded version advancement; no score, referee, event, tenant, or other business field is authorized for modification.",
+          "draft_paths": [
+            "/actions/0/effect",
+            "/runner_evidence/actions/league.result_ratification/effect",
+            "/runner_evidence/runtime_contract/conflict_protection",
+            "/runner_evidence/runtime_contract/version_advancement"
+          ],
+          "topic": "Ratification-only update",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain the constrained effect and version guard."
+        },
+        {
+          "start": 5,
+          "end": 5,
+          "disposition": "implemented",
+          "interpretation": "The maintained conflict counter is the source version column. Its all-writers increment operating prerequisite is currently host-confirmed for this generation-locked effect; the source does not require an additional independent assurance.",
+          "draft_paths": [
+            "/runner_evidence/actions/league.result_ratification/effect/source_counter_maintenance"
+          ],
+          "topic": "Maintained conflict counter",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Maintain the confirmed all-writers version-increment operating contract.",
+          "source_counter_obligation": {
+            "path": "/runner_evidence/actions/league.result_ratification/effect/source_counter_maintenance",
+            "requirement": "owner_maintenance"
+          }
+        },
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "implemented",
+          "interpretation": "Qualifying-stage requests are eligible for automatic approval subject to both compiled shared limits: two per tenant/league and six boundary-wide, each in the inclusive rolling 86400-second window. Tenant is confirmed to mean one league and principals are assigned referees within it.",
+          "draft_paths": [
+            "/actions/0/approval",
+            "/runner_evidence/actions/league.result_ratification/automatic_limits",
+            "/runner_evidence/runtime_contract/approval_counter_selection"
+          ],
+          "operator_message_id": 3,
+          "topic": "Automatic ratification caps",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain both automatic approval limits and their scopes."
+        },
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "implemented",
+          "interpretation": "Both approval histories filter to automatic approvals for league.result_ratification, matching the established source association and accepted ratification-only counting decision; the two limits otherwise retain their separate tenant and boundary scopes, maxima, and inclusive windows.",
+          "draft_paths": [
+            "/runner_evidence/actions/league.result_ratification/automatic_limits",
+            "/runner_evidence/counting_decisions",
+            "/runner_evidence/runtime_contract/approval_counter_selection"
+          ],
+          "operator_message_id": 9,
+          "topic": "Ratification approval history",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain the canonical ratification-only history selectors.",
+          "counter_requirements": [
+            {
+              "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+              "current_capability": "league.result_ratification",
+              "required_capability": "league.result_ratification",
+              "operator_message_id": 9
+            },
+            {
+              "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+              "current_capability": "league.result_ratification",
+              "required_capability": "league.result_ratification",
+              "operator_message_id": 9
+            }
+          ]
+        },
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "implemented",
+          "interpretation": "Qualifying requests exceeding either automatic cap use the configured league-supervisor human fallback, and championship requests cannot satisfy the qualifying auto-approval condition and therefore require that human review.",
+          "draft_paths": [
+            "/actions/0/approval",
+            "/actions/0/review",
+            "/runner_evidence/runtime_contract/approval"
+          ],
+          "topic": "Human review routing",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain the supervisor fallback and championship routing."
+        },
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "implemented",
+          "interpretation": "The compiled direct-SQL supervised effect represents execution after approval; the disabled draft is prepared behavior, not completed execution.",
+          "draft_paths": [
+            "/actions/0/effect",
+            "/runner_evidence/actions/league.result_ratification/execution"
+          ],
+          "topic": "Supervised completion",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "After authority review, complete separate writer review, execution enablement, and worker startup."
+        },
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "needs_decision",
+          "interpretation": "A stored Runner-ledger receipt is configured, but actual execution receipt readiness remains unverified until deployment setup reviews the writer, grants, receipt mode, and worker.",
+          "draft_paths": [
+            "/runner_evidence/runtime_contract/receipt_configuration",
+            "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+          ],
+          "topic": "Execution receipt setup",
+          "responsibility": "deployment",
+          "issue_kind": "missing_configuration",
+          "next_step": "After authority review, verify the required receipt setup with the dedicated writer and worker.",
+          "deployment_prerequisite": "runner_execution_setup"
+        },
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "needs_decision",
+          "interpretation": "Independent verification of the changed source row is an external after-execution observation and is not verified by the Runner-ledger receipt or this draft.",
+          "draft_paths": [
+            "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+          ],
+          "topic": "Independent source verification",
+          "responsibility": "application",
+          "issue_kind": "missing_configuration",
+          "next_step": "Who will independently verify the changed source row after each completed ratification?",
+          "application_obligations": [
+            "independent_source_readback"
+          ]
+        },
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "implemented",
+          "interpretation": "The prepared effect is a direct SQL update on tournament_ops.results and contains no match-server or external-system contact.",
+          "draft_paths": [
+            "/actions/0/effect",
+            "/runner_evidence/actions/league.result_ratification/effect"
+          ],
+          "topic": "No external contact",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain the direct source-only effect."
+        },
+        {
+          "start": 9,
+          "end": 9,
+          "disposition": "implemented",
+          "interpretation": "The current reviewed Read configuration preserves the required public-field and private-field restrictions across the saved job revision.",
+          "draft_paths": [
+            "/read",
+            "/runner_evidence/read_review",
+            "/runner_evidence/read_access"
+          ],
+          "topic": "Preserved read restrictions",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain the reviewed Read boundary when editing jobs."
+        },
+        {
+          "start": 9,
+          "end": 9,
+          "disposition": "implemented",
+          "interpretation": "Ratification authorizes only result_state and the Runner-owned version increment, not recorded winner or either score field.",
+          "draft_paths": [
+            "/actions/0/effect",
+            "/runner_evidence/actions/league.result_ratification/effect"
+          ],
+          "topic": "Scores remain unchanged",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain the constrained write envelope."
+        }
+      ]
+    },
+    {
+      "passages": [
+        {
+          "start": 1,
+          "end": 1,
+          "disposition": "background",
+          "interpretation": "Document heading only.",
+          "draft_paths": [],
+          "topic": "Document heading",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "No action needed."
+        },
+        {
+          "start": 3,
+          "end": 3,
+          "disposition": "implemented",
+          "interpretation": "Reviewed tenant and principal bindings restrict both reads and the ratification subject to results assigned to the referee within that referee's league; the related event is loaded through the correspondingly scoped relationship.",
+          "draft_paths": [
+            "/runner_evidence/read_access/tournament_ops.results",
+            "/runner_evidence/read_access/tournament_ops.events",
+            "/runner_evidence/actions/league.result_ratification/scoped_bindings"
+          ],
+          "topic": "Assigned league scope",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain the reviewed tenant, principal, and related-event bindings."
+        },
+        {
+          "start": 3,
+          "end": 3,
+          "disposition": "implemented",
+          "interpretation": "Public reads return result reference, stage, recorded winner and loser wins, result state, event name, and the related event operating state. The operator confirmed that result_ref is the public human-readable label while the stable identity remains internal.",
+          "draft_paths": [
+            "/runner_evidence/read_access/tournament_ops.results",
+            "/runner_evidence/read_access/tournament_ops.events"
+          ],
+          "operator_message_id": 2,
+          "topic": "Permitted result reads",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain the reviewed public fields."
+        },
+        {
+          "start": 3,
+          "end": 3,
+          "disposition": "implemented",
+          "interpretation": "Database identities, version conflict counters, integrity hold, and referee private notes are not returned publicly and have no model analysis permission. Integrity hold is retained only for private Action verification, as the source permits.",
+          "draft_paths": [
+            "/runner_evidence/read_access/tournament_ops.events/fields/event_id",
+            "/runner_evidence/read_access/tournament_ops.events/fields/tenant_id",
+            "/runner_evidence/read_access/tournament_ops.events/fields/principal_id",
+            "/runner_evidence/read_access/tournament_ops.events/fields/version",
+            "/runner_evidence/read_access/tournament_ops.results/fields/result_id",
+            "/runner_evidence/read_access/tournament_ops.results/fields/tenant_id",
+            "/runner_evidence/read_access/tournament_ops.results/fields/principal_id",
+            "/runner_evidence/read_access/tournament_ops.results/fields/version",
+            "/runner_evidence/read_access/tournament_ops.results/fields/integrity_hold",
+            "/runner_evidence/read_access/tournament_ops.results/fields/referee_private_note",
+            "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/integrity_hold"
+          ],
+          "topic": "Private result data",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain the private-field restrictions.",
+          "field_checks": [
+            {
+              "resource": "tournament_ops.events",
+              "field": "event_id",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.events",
+              "field": "tenant_id",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.events",
+              "field": "principal_id",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.events",
+              "field": "version",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.results",
+              "field": "result_id",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.results",
+              "field": "tenant_id",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.results",
+              "field": "principal_id",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.results",
+              "field": "version",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.results",
+              "field": "integrity_hold",
+              "expectation": "private"
+            },
+            {
+              "resource": "tournament_ops.results",
+              "field": "referee_private_note",
+              "expectation": "private"
+            }
+          ]
+        },
+        {
+          "start": 5,
+          "end": 5,
+          "disposition": "implemented",
+          "interpretation": "The Action refuses unless the related event is open, the result is finished, winner wins equal two, loser wins are zero or one, and privately verified integrity hold is false.",
+          "draft_paths": [
+            "/actions/0/require",
+            "/actions/0/review",
+            "/runner_evidence/actions/league.result_ratification/scoped_bindings/event/fields/operating_state",
+            "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/integrity_hold",
+            "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/result_state",
+            "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/winner_game_wins",
+            "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/loser_game_wins"
+          ],
+          "topic": "Ratification validity",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain the compiled refusal conditions."
+        },
+        {
+          "start": 5,
+          "end": 5,
+          "disposition": "implemented",
+          "interpretation": "The compiled effect changes result_state only to ratified and includes Runner-owned guarded version advancement. It authorizes no score, referee, event, league, or other business-field change.",
+          "draft_paths": [
+            "/actions/0/effect",
+            "/runner_evidence/actions/league.result_ratification/effect",
+            "/runner_evidence/runtime_contract/conflict_protection",
+            "/runner_evidence/runtime_contract/version_advancement"
+          ],
+          "topic": "Ratification-only update",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain the constrained effect and version advancement."
+        },
+        {
+          "start": 5,
+          "end": 5,
+          "disposition": "implemented",
+          "interpretation": "The maintained conflict counter is the result version column. The exact current generation-locked effect records a host-confirmed all-writers increment operating prerequisite; the source does not state that an additional independent assurance is required.",
+          "draft_paths": [
+            "/runner_evidence/actions/league.result_ratification/effect/source_counter_maintenance"
+          ],
+          "topic": "Maintained conflict counter",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Maintain the confirmed all-writers version-increment operating contract."
+        },
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "implemented",
+          "interpretation": "Qualifying-stage requests may be automatically approved subject to both compiled shared limits: two per tenant, confirmed as one league, and six boundary-wide, each using the inclusive rolling 86400-second window. Principals are assigned referees within that league.",
+          "draft_paths": [
+            "/actions/0/approval",
+            "/runner_evidence/actions/league.result_ratification/automatic_limits",
+            "/runner_evidence/runtime_contract/approval_counter_selection"
+          ],
+          "operator_message_id": 3,
+          "topic": "Automatic ratification caps",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain both automatic approval limits and their scopes."
+        },
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "implemented",
+          "interpretation": "Both approval histories select automatic approvals for league.result_ratification, matching the established source association and accepted ratification-only counting decision. The limits retain their distinct tenant and boundary scopes, maxima, and inclusive windows.",
+          "draft_paths": [
+            "/runner_evidence/actions/league.result_ratification/automatic_limits",
+            "/runner_evidence/counting_decisions",
+            "/runner_evidence/runtime_contract/approval_counter_selection"
+          ],
+          "operator_message_id": 9,
+          "topic": "Ratification approval history",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain the canonical ratification-only history selectors.",
+          "counter_requirements": [
+            {
+              "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+              "current_capability": "league.result_ratification",
+              "required_capability": "league.result_ratification",
+              "operator_message_id": 9
+            },
+            {
+              "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+              "current_capability": "league.result_ratification",
+              "required_capability": "league.result_ratification",
+              "operator_message_id": 9
+            }
+          ]
+        },
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "implemented",
+          "interpretation": "Qualifying requests over either cap use the configured league-supervisor human fallback. Championship requests cannot meet the qualifying automatic condition and therefore require league-supervisor review.",
+          "draft_paths": [
+            "/actions/0/approval",
+            "/actions/0/review",
+            "/runner_evidence/runtime_contract/approval"
+          ],
+          "topic": "Human review routing",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain the supervisor fallback and championship routing."
+        },
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "implemented",
+          "interpretation": "The compiled direct-SQL supervised effect represents the prepared completion behavior after approval. The disabled state does not change its business coverage; writer review, execution enablement, and worker startup remain later deployment prerequisites.",
+          "draft_paths": [
+            "/actions/0/effect",
+            "/runner_evidence/actions/league.result_ratification/execution"
+          ],
+          "topic": "Supervised completion",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "After authority review, complete separate writer review, execution enablement, and worker startup."
+        },
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "needs_decision",
+          "interpretation": "Runner-ledger receipt authority is currently configured, but deployment has not verified the writer, grants, selected receipt readiness, or worker needed for execution receipts.",
+          "draft_paths": [
+            "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+          ],
+          "topic": "Execution receipt setup",
+          "responsibility": "deployment",
+          "issue_kind": "missing_configuration",
+          "next_step": "After authority review, verify the dedicated writer, required grants, receipt setup, execution enablement, and worker.",
+          "deployment_prerequisite": "runner_execution_setup"
+        },
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "needs_decision",
+          "interpretation": "Independent verification of the changed source row is a separate after-execution observation. It is not established by the configured Runner-ledger receipt or by this disabled draft.",
+          "draft_paths": [
+            "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+          ],
+          "topic": "Independent source verification",
+          "responsibility": "application",
+          "issue_kind": "missing_configuration",
+          "next_step": "Arrange an independent observation of the changed source row after each completed ratification.",
+          "application_obligations": [
+            "independent_source_readback"
+          ]
+        },
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "implemented",
+          "interpretation": "The prepared effect is a direct SQL update of tournament_ops.results and contains no match-server or external-system contact.",
+          "draft_paths": [
+            "/actions/0/effect",
+            "/runner_evidence/actions/league.result_ratification/effect"
+          ],
+          "topic": "No external contact",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain the direct source-only effect."
+        },
+        {
+          "start": 9,
+          "end": 9,
+          "disposition": "implemented",
+          "interpretation": "The current reviewed Read configuration preserves the required public-field and private-field restrictions across the saved job revision.",
+          "draft_paths": [
+            "/read",
+            "/runner_evidence/read_review",
+            "/runner_evidence/read_access"
+          ],
+          "topic": "Preserved read restrictions",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain the reviewed Read boundary when editing jobs."
+        },
+        {
+          "start": 9,
+          "end": 9,
+          "disposition": "implemented",
+          "interpretation": "Ratification authorizes only result_state and Runner-owned version advancement, not the recorded winner or either score field.",
+          "draft_paths": [
+            "/actions/0/effect",
+            "/runner_evidence/actions/league.result_ratification/effect"
+          ],
+          "topic": "Scores remain unchanged",
+          "responsibility": "runner",
+          "issue_kind": "coverage_link",
+          "next_step": "Retain the constrained write envelope."
+        }
+      ]
+    }
+  ]
+}
