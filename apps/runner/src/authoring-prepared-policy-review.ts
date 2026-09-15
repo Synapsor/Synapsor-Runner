@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+import type { CoverageReviewEpisode } from "./authoring-policy-source.js";
 import { reviewClientDutyOwnership } from "./authoring-client-duties.js";
 import { authoringReceiptConfiguration } from "./authoring-receipt-configuration.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -96,8 +98,45 @@ export async function ensurePreparedPolicyCoverage(input: {
     return { source, key, draftRecord, report: undefined, activity: state.activity };
   }
   state.attemptKey = key;
-  const produce = () => reviewPolicyCoverage({ session: input.modelSession, source, draft: draftRecord,
-    ...(sources.coverage?.source_digest === source.digest ? { previousReport: sources.coverage } : {}) });
+  let episode: CoverageReviewEpisode;
+  const saveEpisode = async (update: (e: CoverageReviewEpisode) => void) => {
+    await coordinated(async permit => {
+      await assertCurrent(permit);
+      if (canonicalJsonDigest(input.currentDraft()) !== preparedDraftDigest)
+        throw new Error("POLICY_COVERAGE_CONTEXT_CHANGED: Reopen current Review; no stale correction was sent.");
+      const staged = structuredClone(sources);
+      const current = staged.coverage_episodes!.find(e => e.id === episode.id)!;
+      update(current);
+      await savePolicySources(input.projectRoot, staged, { expectedDigest: expectedSource, permit });
+      expectedSource = canonicalJsonDigest(staged);
+      Object.assign(sources,staged); episode = current;
+    });
+  };
+  const produce = async () => {
+    const prior = sources.coverage_episodes?.filter(e=>e.context===key).at(-1);
+    if (prior && !await input.operatorSession.confirm("Start a new bounded review episode?", {
+      defaultValue: false,
+      context: [`The previous episode reserved ${prior.submissions.length} response submissions. Its evidence and unresolved review remain saved. A new episode is separately recorded; it is not an uninterrupted retry or a business edit.`],
+    })) throw new Error("POLICY_COVERAGE_EPISODE_PENDING: Prior attempts are preserved. Review remains pending; no structural retries were replenished.");
+    if ((sources.coverage_episodes?.length ?? 0) >= 120) throw new Error("POLICY_COVERAGE_EPISODE_HISTORY_FULL: Prior attempts are preserved; no provider call was started.");
+    episode = {id:randomUUID(), context:key, started_at:new Date().toISOString(),submissions:[]};
+    await coordinated(async permit=>{
+      await assertCurrent(permit);
+      const staged={...sources,coverage_episodes:[...(sources.coverage_episodes??[]),episode]};
+      await savePolicySources(input.projectRoot,staged,{expectedDigest:expectedSource,permit});
+      expectedSource=canonicalJsonDigest(staged); Object.assign(sources,staged);
+    });
+    return reviewPolicyCoverage({session:input.modelSession,source,draft:draftRecord,
+      ...(sources.coverage?.source_digest===source.digest?{previousReport:sources.coverage}:{}),
+      episode:{beforeSubmission:async number=>saveEpisode(e=>{
+        if(number!==e.submissions.length+1 || number>3) throw new Error("POLICY_COVERAGE_EPISODE_EXHAUSTED");
+        e.submissions.push({number,reserved_at:new Date().toISOString()});
+      }),afterSubmission:async(number,feedback,accepted)=>saveEpisode(e=>{
+        const submission=e.submissions[number-1]!;
+        submission.completed_at=new Date().toISOString(); submission.validated=accepted;
+        if(feedback) submission.diagnostic=JSON.stringify(feedback);
+      })}});
+  };
   const report = reused ?? await (input.progress ? input.progress("Checking attached rules against this exact draft", produce) : produce());
   const staged = structuredClone(sources);
   bindPolicyCoverage(staged, report, input.authorityDigest);

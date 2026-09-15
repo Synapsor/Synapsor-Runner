@@ -175,6 +175,11 @@ const MAX_VERSIONS = 8;
 export type PolicyTextSnapshot = {
   version: number; name: string; text: string; bytes: number; lines: number; digest: string;
 };
+export type CoverageReviewEpisode = {
+  id: string; context: string; started_at: string;
+  submissions: Array<{ number: number; reserved_at: string; completed_at?: string;
+    validated?: boolean; diagnostic?: string }>;
+};
 export type PolicySourceSession = {
   id: string;
   snapshots: PolicyTextSnapshot[];
@@ -183,6 +188,7 @@ export type PolicySourceSession = {
   operator_messages?: string[];
   coverage?: PolicyCoverage;
   counting_decisions?: CountingDecision[];
+  coverage_episodes?: CoverageReviewEpisode[];
   coverage_context_digest?: string;
   coverage_authority_digest?: string;
   /** Interpretation evidence only, never an authority revision or coverage waiver. */
@@ -371,6 +377,16 @@ export async function loadPolicySources(root: string, id: string): Promise<Polic
   if (value.approvals.some((entry) => typeof entry.destination !== "string" || !value.snapshots.some((source) => source.digest === entry.digest))) throw new Error("Saved policy permission is invalid.");
   if (value.operator_messages !== undefined && (!Array.isArray(value.operator_messages) || value.operator_messages.length > 64
     || value.operator_messages.some((message) => typeof message !== "string" || message.length > 4_000))) throw new Error("Saved source-related operator messages exceed supported bounds.");
+  // Corrupt episode accounting must fail closed, never disappear and restore retries.
+  if (value.coverage_episodes !== undefined && (!Array.isArray(value.coverage_episodes) || value.coverage_episodes.length > 120
+    || value.coverage_episodes.some(e => !e || typeof e.id !== "string" || !/^[a-f0-9-]{36}$/u.test(e.id)
+      || !/^sha256:[a-f0-9]{64}$/u.test(e.context) || !Number.isFinite(Date.parse(e.started_at))
+      || !Array.isArray(e.submissions) || e.submissions.length > 3 || e.submissions.some((s,i)=>!s || s.number !== i+1
+        || !Number.isFinite(Date.parse(s.reserved_at)) || s.completed_at !== undefined && !Number.isFinite(Date.parse(s.completed_at))
+        || s.validated !== undefined && typeof s.validated !== "boolean"
+        || s.diagnostic !== undefined && (typeof s.diagnostic !== "string" || Buffer.byteLength(s.diagnostic)>8192))))) {
+    throw new Error("POLICY_COVERAGE_EPISODE_INVALID: Saved review attempt accounting is invalid; no provider call or retry was started.");
+  }
   if (value.counting_decisions && (!Array.isArray(value.counting_decisions) || value.counting_decisions.length > 120
     || value.counting_decisions.some(d => !d || d.origin !== "OPERATOR-COUNTING-REVIEW"
       || !value.snapshots.some(s => s.digest === d.source_digest) || typeof d.path !== "string"
