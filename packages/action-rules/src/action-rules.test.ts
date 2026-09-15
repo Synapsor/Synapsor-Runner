@@ -18,7 +18,7 @@ import {
 } from "./authority.js";
 import { compileActionRule, createActionRuleCompiler } from "./compile.js";
 import { ACTION_AUTHORITY_LIMITS } from "./limits.js";
-import { evaluateActionRule } from "./evaluate.js";
+import { evaluateActionRule, evaluateActionRuleApprovalPredicate } from "./evaluate.js";
 import { loadActionRuleFacts, normalizeActionRuleDatabaseValue, type ActionRuleFactQueryV1 } from "./fact-loader.js";
 import {
   actionRuleDigest,
@@ -1754,5 +1754,22 @@ describe("semantic Action eligibility and transaction re-verification", () => {
       },
     })).rejects.toMatchObject({ code: "ACTION_RULE_AUTHORITY_STALE" });
     expect(factLoads).toBe(0);
+  });
+});
+
+// Synthetic consistency illustration only: the external intended customer is
+// Alvarez, but both the nominated row and corroborating input are model choices.
+describe("corroborating input is consistency, not independent target intent", () => {
+  it.each([["Alvarez", "no_match"], ["Brooks", "match"]] as const)("Brooks row plus %s yields %s", (name, expected) => {
+    const f = fieldServiceFixture();
+    f.rule.inputs = [{ name: "chosen_name", description: "Model-supplied corroborating label", type: stringId }];
+    f.catalog.resources.find(r => r.name === f.boundary.resources[0]!.resource)!.fields.push({ name: "customer_label", type: stringId, nullable: false });
+    f.boundary.resources[0]!.fields.push({ name: "customer_label", type: stringId, nullable: false });
+    f.facts.bindings.appointment!.rows[0]!.customer_label = "Brooks";
+    const compiled = compileActionRule({ rule: f.rule, catalog: f.catalog, verification_boundary: f.boundary, effect_envelope: f.envelope });
+    const result = evaluateActionRuleApprovalPredicate({ compiled, facts: f.facts, inputs: { chosen_name: name }, expression: {
+      kind: "compare", operator: "eq", left: { kind: "field", binding: "appointment", field: "customer_label" }, right: { kind: "input", name: "chosen_name" },
+    } });
+    expect(result.result).toBe(expected);
   });
 });

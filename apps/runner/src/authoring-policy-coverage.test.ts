@@ -16,7 +16,7 @@ import { parseManagedMcpProjectClient } from "./managed-mcp-project.js";
 import type { CompiledActionRuleModelDraftV1 } from "./action-rule-draft.js";
 
 const clientPointer = "/runner_evidence/runtime_contract/deployment_prerequisites/runner_client_connection";
-const clientEvidence = () => ({ runner_evidence: { runtime_contract: { deployment_prerequisites: {
+const clientEvidence = () => ({ actions: [], runner_evidence: { runtime_contract: { deployment_prerequisites: {
   runner_client_connection: { supported: true, stage: "after_authority_review", configuration_checked: false, verified: false },
 } } } });
 const clientSource = policyTextSnapshot(Buffer.from(`${"\n".repeat(10)}Connect my Claude Code client when ready.`), "service-rules.txt");
@@ -336,10 +336,10 @@ describe("execution setup is not a business-rule revision", () => {
     expect(requests[0]).not.toContain("Previous untrusted coverage submission");
     expect(requests[1]).toContain("Previous untrusted coverage submission");
     expect(requests[1]).toContain(JSON.stringify({ passages: [previous] }).replaceAll('"', '\\"'));
-    expect(policyReviewReadiness(source, result).ready).toBe(true);
-    expect(policyReadinessItems(result)).toMatchObject([{ kind: "deployment_prerequisite", blocksReview: false }]);
+    expect(policyReviewReadiness(source, result).ready).toBe(false); // Incomplete Action metadata still needs a current client contract.
+    expect(policyReadinessItems(result)).toMatchObject([{ kind: "business_decision", blocksReview: true }, { kind: "deployment_prerequisite", blocksReview: false }]);
     expect(policyReviewReadiness(source, result).summary.join("\n")).toContain("writer review");
-    expect(policyReadinessItems(result)[0]!.nextStep).toContain("After authority review");
+    expect(policyReadinessItems(result).find(i => i.kind === "deployment_prerequisite")!.nextStep).toContain("After authority review");
     expect(result.passages[0]!.disposition).toBe("needs_decision");
     expect(draft).toEqual(before);
   });
@@ -587,7 +587,7 @@ describe("Runner client connection is a later unverified handoff", () => {
 
   it("rechecks the saved service classification with exact current evidence instead of reopening business authoring", async () => {
     const previousReport = { source_digest: clientSource.digest, draft_digest: `sha256:${"a".repeat(64)}`, passages: [savedClientPassage] };
-    expect(policyReadinessItems(previousReport)).toMatchObject([{ kind: "mechanical_correction", blocksReview: true }]);
+    expect(policyReadinessItems(previousReport)).toMatchObject([{ kind: "business_decision", blocksReview: true }, { kind: "mechanical_correction", blocksReview: true }]);
     const draft = clientEvidence(), before = structuredClone({ draft, previousReport });
     const conversation = createModelAuthoringConversation();
     conversation.policySources = newPolicySourceSession();
@@ -608,7 +608,7 @@ describe("Runner client connection is a later unverified handoff", () => {
     expect(result.passages[0]).toMatchObject({ disposition: "needs_decision", deployment_prerequisite: "runner_client_connection" });
     expect(policyReviewReadiness(clientSource, result)).toMatchObject({ ready: true, privacy: false });
     expect(policyReviewReadiness(clientSource, result).summary.join("\n")).toContain("Runner client connection");
-    expect(policyReadinessItems(result)[0]!.nextStep).toContain("After authority review");
+    expect(policyReadinessItems(result).find(i => i.kind === "deployment_prerequisite")!.nextStep).toContain("After authority review");
     expect(policyCoverageSummary(clientSource, result).join("\n")).not.toContain("needs review before activation");
     expect(policyCoverageSummary(clientSource, result).join("\n")).toContain("1 open check(s)");
     expect({ draft, previousReport }).toEqual(before);
@@ -679,7 +679,7 @@ describe("Read eligibility is not authentication or an Action prerequisite", () 
   it("keeps a missing current-admission Read condition pending after source completion without waiving policy", async () => {
     const source = policyTextSnapshot(Buffer.from("Only currently admitted students may read their registration information."), "university.txt");
     const pointer = "/runner_evidence/runtime_contract/read_eligibility";
-    const draft = { runner_evidence: { runtime_contract: { read_eligibility: {
+    const draft = { actions: [], runner_evidence: { runtime_contract: { read_eligibility: {
       runner_private_source_predicates_supported: false, action_requirements_apply_to_reads: false,
       database_business_predicates_verified: false,
     } } } };
@@ -931,7 +931,7 @@ describe("exact approval counter evidence and full-bundle targets", () => {
     const parse = (item: PolicyPassage) => parsePolicyCoverage({ passages: [item] }, source, draft, []);
     expect(isMechanicalApprovalCounterPassage(parse(passage).passages[0]!)).toBe(false);
     expect(policyReadinessItems(parse(passage)).length).toBeGreaterThan(0);
-    expect(policyReadinessItems(parse(passage)).every(item => item.kind === "mechanical_correction" && item.blocksReview)).toBe(true);
+    expect(policyReadinessItems(parse(passage)).filter(item => item.passages.length).every(item => item.kind === "mechanical_correction" && item.blocksReview)).toBe(true);
     expect(parse(passage).passages[0]?.counter_requirements).toEqual(passage.counter_requirements);
     expect(() => parse({ ...passage, disposition: "implemented" })).toThrow("COUNTING_REQUIREMENT_AMBIGUOUS");
     for (const replacement of [
@@ -1005,7 +1005,8 @@ describe("exact approval counter evidence and full-bundle targets", () => {
     expect(requests).toHaveLength(2);
     expect(requests[1]).toContain("history_selector, not limit.id or approval_class");
     expect(requests[1]).toContain("Do not infer separate counters from ID spelling");
-    expect(policyReviewReadiness(source, report).ready).toBe(mode === "corrected");
+    expect(policyReadinessItems(report).filter(item => item.passages.length).every(item => !item.blocksReview)).toBe(mode === "corrected");
+    expect(policyReviewReadiness(source, report).ready).toBe(false); // Synthetic counter-only metadata does not establish a current client contract.
     expect(draft).toEqual(before);
     expect(isMechanicalApprovalCounterPassage(conflict)).toBe(true);
     expect(isMechanicalApprovalCounterPassage({ ...conflict, responsibility: "operator", issue_kind: "business_choice" })).toBe(false);

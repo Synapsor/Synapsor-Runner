@@ -81,6 +81,7 @@ function inspectedReadScopes(read: ExplorationBoundaryDraft, source?: PolicySour
 /** Evidence for authoring review, derived from the current typed candidates. No
  * runtime identities, rows, credentials or model assertions belong here. */
 export function policyCoverageDraft(input: {
+  client?: string;
   read: ExplorationBoundaryDraft;
   decisions: Array<{ decision: string; confirmed: boolean }>;
   actions: CompiledActionRuleModelDraftV1[];
@@ -433,6 +434,8 @@ export function policyCoverageDraft(input: {
         receipt_configuration: input.receiptConfiguration ?? null,
         receipts: "Runner supports distinct receipt authorities. runner_ledger records processing and execution receipts in the control ledger, separately from source effects; it is not a source-atomic receipt. For supported direct SQL effects, source_db records the applied receipt in the same source transaction as the guarded effects. It requires separately reviewed receipt objects and writer grants through writeback setup (precreated or reviewed auto-migration), then execution verification and a worker. Receipt mode and readiness are not established by this disabled draft. A source-atomic requirement cannot be satisfied by a control-ledger receipt or by adding a model-authored audit INSERT. Independent source readback is a separate verification step, not an automatic client behavior guarantee. request_change distinguishes queued/human_review/not_enabled/completed; completed requires applied state. Pending/failed is not completed.",
         client_responsibilities: "The application authenticates the person, supplies trusted session identity, captures their selection and uses returned execution status/receipts for messages. A scoped subject reference authorizes one reviewed row; it does not prove the human clicked a UI. When an effective date is in the future, recording the change is not proof its benefits are already in force. Boundary rules cannot prove arbitrary client UI wording.",
+        client_contract: { mode: "interactive_four_tool", client: input.client ?? "unselected",
+          origin: "PRODUCT-CLIENT-CONTRACT", ownership: "explicit_unverified" },
         application_obligations: {
           customer_selection: "The client captures the customer's intended choice and submits that reviewed subject reference. Runner independently verifies its scope and eligibility; it cannot prove the human selected it.",
           status_presentation: "The client presents returned statuses and receipts accurately. Approval, a queued request or a failed execution is not completion. A recorded future-effective change does not mean benefits are already in force.",

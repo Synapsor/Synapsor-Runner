@@ -9,6 +9,7 @@ import { readBoundaryAuthoringResumeState, type BoundaryAuthoringResumeBinding }
 import { activePolicySource, loadPolicySources } from "./authoring-policy-source.js";
 import { policyReviewReadiness } from "./authoring-review-readiness.js";
 import { withCountingOutcomeDomain } from "./authoring-counting-domain.js";
+import { clientDutyInventory } from "./authoring-client-duties.js";
 
 /** Status/navigation projection only. Never replaces the current guided
  * coverage check, exact activation review, or runtime admission. */
@@ -38,6 +39,12 @@ export async function savedAuthoringPolicyReview(input: {
     const countingActions = matchingAuthority ? matchingAuthority.authority.rules.map(action => actionRuleModelDraftFromAuthority({
       authority: matchingAuthority.authority, outcome: action.rule.outcome,
       review: matchingAuthority.reviews.find(r => r.outcome === action.rule.outcome)!, preserveVerificationFields: true })) : [];
+    const clientDuties = clientDutyInventory({ actions: countingActions, runner_evidence: { runtime_contract: {
+      client_contract: { mode: "interactive_four_tool", client: saved.intended_client ?? "unselected" },
+    } } });
+    if (!session.coverage.client_duties || canonicalJsonDigest(session.coverage.client_duties) !== canonicalJsonDigest(clientDuties)) {
+      return pending("Client responsibilities need current contract and ownership review. Previous assignments remain unverified history.");
+    }
     const inventory = countingActions.flatMap(action => action.approval.shared_limits.flatMap((limit, index) =>
       limit.kind === "count" ? [{ path: `/runner_evidence/actions/${action.outcome}/automatic_limits/${index}/history_selector/capability`, digest: countingConfigurationDigest(limit) }] : []));
     if (inventory.length && (session.coverage.counting_inventory?.version !== 1

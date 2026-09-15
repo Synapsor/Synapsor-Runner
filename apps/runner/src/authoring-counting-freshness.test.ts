@@ -1,3 +1,4 @@
+import { acceptClientDutyOwnership } from "./test-fixtures/accept-client-duty-ownership.js";
 import fs from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import os from "node:os";
@@ -41,11 +42,19 @@ describe("saved counting review depends on the actual current store", () => {
       expect(authorityDigest).toBe(state.coverage_authority_digest);
       for (const interpretation of draft.runner_evidence.counting_interpretations) interpretation.authority_digest = authorityDigest;
       const report = parsePolicyCoverage(trace.replies[0], source, draft, trace.operator_messages);
+      await acceptClientDutyOwnership(report, state);
       bindPolicyCoverage(state, report, authorityDigest); await savePolicySources(root, state, { expectedDigest: null });
       const binding = { boundary_name: "reviewed_staging", generation_lock_fingerprint: canonicalJsonDigest("lock"), schema_fingerprint: canonicalJsonDigest("schema"), role_posture_fingerprint: canonicalJsonDigest("reader") };
       await writeBoundaryAuthoringResumeState(root, buildBoundaryAuthoringResumeState({ binding, stage: "authority_review", jobIntent: "Review the saved job.", provider: "openai", model: "gpt-5.6-terra", policySourceSession: state.id }), { expectedRevisionDigest: null });
       const ready = await savedAuthoringPolicyReview({ projectRoot: root, binding, readDigest });
       expect(ready, JSON.stringify(ready)).toMatchObject({ ready: true });
+      const resumeInput = { binding, stage: "authority_review" as const, jobIntent: "Review the saved job.", provider: "openai" as const, model: "gpt-5.6-terra", policySourceSession: state.id };
+      await writeBoundaryAuthoringResumeState(root, buildBoundaryAuthoringResumeState({ ...resumeInput, intendedClient: "cursor" }));
+      const changedClient = await savedAuthoringPolicyReview({ projectRoot: root, binding, readDigest });
+      expect(changedClient?.ready).toBe(false);
+      expect(changedClient?.summary.join(" ")).toContain("Client responsibilities need current contract");
+      await writeBoundaryAuthoringResumeState(root, buildBoundaryAuthoringResumeState(resumeInput));
+      expect((await savedAuthoringPolicyReview({ projectRoot: root, binding, readDigest }))?.ready).toBe(true);
       store = await createProjectRuntimeStore({ projectRoot: root, config, storePath: path.join(root, ".synapsor/local.db") });
       const input = JSON.parse(readFileSync(new URL("../../../fixtures/protocol/change-set.late-fee-waiver.v1.json", import.meta.url), "utf8"));
       input.proposal_id = "wrp_competing_outcome"; input.action = "diagnostic.other"; input.integrity.proposal_hash = canonicalJsonDigest("owned competing request");

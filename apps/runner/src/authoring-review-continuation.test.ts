@@ -109,6 +109,10 @@ describe("saved policy review continuation", () => {
       if (baseline.case === "assisted") expect(coverage.passages[0]?.counting_resolution?.kind).toBe("conditional_singleton_equivalence");
       expect(coverage.passages[0]!.operator_clarification).toBe(baseline.operator_messages[ownerMessage - 1]);
       expect(coverage.passages.some(p => p.disposition === "overridden")).toBe(false);
+      expect(policyReviewReadiness(source, coverage, session).items?.filter(i => i.blocksReview).map(i => i.clientDuty)).toEqual(["customer_selection", "status_presentation"]);
+      const { reviewClientDutyOwnership } = await import("./authoring-client-duties.js");
+      session.application_assignments = [...(session.application_assignments ?? []), ...await reviewClientDutyOwnership({ report: coverage, sources: session,
+        session: { chooseOption: async () => "assign" }, assertCurrent: async () => {} })];
       expect(policyReviewReadiness(source, coverage, session)).toMatchObject({ ready: true });
       expect(coverage.passages.slice(1).every(p => p.disposition === "needs_decision")).toBe(true);
       bindPolicyCoverage(session, coverage, coverageAuthority);

@@ -8,7 +8,7 @@ import { parsePolicyCoverage, policyCoverageSection, reviewPolicyCoverage } from
 import { applicationObligationAssigned, policyReadinessItems, policyReviewReadiness } from "./authoring-review-readiness.js";
 
 const source = policyTextSnapshot(Buffer.from("Capture the customer's selected offer.\nReport completion only from receipts."), "service-policy.txt");
-const draft = { runner_evidence: { runtime_contract: { application_obligations: {
+const draft = { actions: [], runner_evidence: { runtime_contract: { application_obligations: {
   customer_selection: "Client captures the selected offer; Runner verifies it.", status_presentation: "Client reports receipt states accurately.",
 } } } };
 function report(): PolicyCoverage {
@@ -61,7 +61,7 @@ describe("one authoritative guided review readiness model", () => {
   it("repairs mixed deployment evidence in the bounded model correction, without changing scope or needing identity values", async () => {
     const identitySource = policyTextSnapshot(Buffer.from("Allow only signed-in customers to see their authorized account."), "identity.txt");
     const pointer = "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity";
-    const evidence = { read: { trusted_scope: true }, runner_evidence: { read_access: {}, runtime_contract: {
+    const evidence = { actions: [], read: { trusted_scope: true }, runner_evidence: { read_access: {}, runtime_contract: {
       deployment_prerequisites: { authenticated_identity: { reviewed_customer_scope: true, verified: false } },
     } } };
     const before = structuredClone(evidence);
@@ -93,7 +93,7 @@ describe("one authoritative guided review readiness model", () => {
   it("carries authenticated identity to deployment without waiving an undecided row scope or claiming authentication", () => {
     const identitySource = policyTextSnapshot(Buffer.from("Authenticate each customer and supply the reviewed trusted session identity."), "identity.txt");
     const pointer = "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity";
-    const evidence = { runner_evidence: { runtime_contract: { deployment_prerequisites: {
+    const evidence = { actions: [], runner_evidence: { runtime_contract: { deployment_prerequisites: {
       authenticated_identity: { reviewed_customer_scope: true, verified: false },
     } } } };
     const passage = { start: 1, end: 1, disposition: "needs_decision", responsibility: "deployment", issue_kind: "missing_configuration",

@@ -1,0 +1,13 @@
+# Client selection and truthful status
+
+Runner checks whether a scoped, reviewed operation is eligible. That does not establish that it is the target the person or task intended. In the interactive Action contract, the client owns intended-target selection and accurate status presentation. Accepting these duties during BUSINESS review records planned ownership, not implementation, verified integration or confirmation of any particular operation.
+
+A useful integration can establish selection through a trusted user choice or transaction confirmation; an authenticated task or trigger specifically bound to the operation; or an explicitly delegated set where every matching eligible member is intended. Model discretion is another possible choice under the owner's risk and approval policy. These are integration design options, not features proven merely by this review. A typed value called a trigger ID is not thereby trusted. Unknown workload semantics need an explicit decision.
+
+Comparing a nominated row with a descriptive input can detect inconsistency. In the existing expression grammar, compare/eq between a field and input rejects a Brooks row with Alvarez text. The same wrong Brooks row with Brooks text passes that comparison if the model supplies both. This is consistency, not independent user intent, error independence or a measured reduction in errors. Opaque references, constraints and receipts do not prove the selection was intended. The synthetic evaluator regression records this limitation; no tournament rule or source row is altered.
+
+Stronger assurance needs an independently controlled application or task expectation/confirmation bound to the actual operation, targets, material inputs and current authorization. Implementing and verifying that integration is a separate task before claiming it for customer automatic writes. A decorative second input is not required on every Action. Review should follow risk and the owner's approval policy; human review is not infallible and this note changes no approval policy.
+
+Assess the complete reviewed effect set: supported atomic operations may update multiple targets. Quotas bound their counted quantity, not every possible impact. A compensating Action preserves the original event and does not guarantee reversal of external consequences.
+
+Use actual host results to distinguish proposed, awaiting approval, approved/queued, applied, refused/failed and unknown. Approval, a queue entry or model narration is not completion. Preserve uncertainty for unresolved outcomes; receipt storage and independent source observation remain distinct. Explain only what the public result permits, without disclosing private refusal details.

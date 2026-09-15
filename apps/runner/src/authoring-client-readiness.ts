@@ -60,10 +60,12 @@ export async function pendingClientResponsibilities(root: string, saved: Boundar
   if (!source || !sources.coverage || sources.coverage.source_digest !== source.digest) {
     return ["Attached rules need a current coverage check. Client behavior has not been verified."];
   }
-  return policyReadinessItems(sources.coverage, sources).filter((item) => item.kind === "deployment_prerequisite"
+  if (sources.coverage.client_duties && sources.coverage.client_duties.client !== (saved.intended_client ?? "unselected"))
+    return ["Selected client changed. Recheck the current client contract and ownership; earlier assignments remain unverified history."];
+  return [...(!sources.coverage.client_duties ? ["Client duty applicability needs current contract review. Prior ownership remains unverified history, not current integration assurance."] : []), ...policyReadinessItems(sources.coverage, sources).filter((item) => item.kind === "deployment_prerequisite"
     || item.passages.some(needsDeploymentCoverageClassification))
     .flatMap((item) => {
-      const assignedClientDuty = item.passages.length > 0
+      const assignedClientDuty = item.clientDuty ? !item.blocksReview : item.passages.length > 0
         && item.passages.every((passage) => applicationObligationAssigned(sources.coverage!, passage, sources));
       return [
         `${item.title}: ${item.passages.some(needsDeploymentCoverageClassification) ? "setup classification pending"
@@ -75,5 +77,5 @@ export async function pendingClientResponsibilities(root: string, saved: Boundar
           ? "Verify the assigned client behavior for this requirement before customer use."
           : item.nextStep,
       ];
-    });
+    })];
 }

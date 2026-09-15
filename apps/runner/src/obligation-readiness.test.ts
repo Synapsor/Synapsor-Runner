@@ -18,7 +18,7 @@ const parse = (args = captured.arguments[1], draft = captured.draft, source = ca
 describe("host obligation readiness on primary B's exact review", () => {
   it.each([0, 1])("preserves development response %i's valid selected-mode claim with separate pending duty", index => {
     const report = parsePolicyCoverage(selectionCapture.arguments[index], captured.source, selectionCapture.draft, selectionCapture.operator_messages);
-    expect(policyReviewReadiness(captured.source, report).ready).toBe(true);
+    expect(policyReviewReadiness(captured.source, report).items?.filter(i => i.blocksReview).map(i => i.clientDuty)).toEqual(["customer_selection", "status_presentation"]);
     expect(report.passages.find(p => p.draft_paths.includes("/runner_evidence/runtime_contract/receipt_configuration"))?.disposition).toBe("implemented");
     const pending = report.passages.find(p => p.obligation_assessment?.family === "receipt_setup")!;
     expect(pending.disposition).toBe("needs_decision");
@@ -123,7 +123,7 @@ describe("host obligation readiness on primary B's exact review", () => {
       const rechecked = parse({ passages: restored.coverage!.passages });
       expect(rechecked).toEqual(report);
       expect(report.passages.find(p => p.draft_paths.length === 1 && p.draft_paths[0] === receiptPath)?.disposition).toBe("needs_decision");
-      expect(policyReviewReadiness(captured.source, rechecked, restored).ready).toBe(true);
+      expect(policyReviewReadiness(captured.source, rechecked, restored).items?.filter(i => i.blocksReview).map(i => i.clientDuty)).toEqual(["customer_selection", "status_presentation"]);
       // Separately labelled synthetic omission after the two exact captures.
       const omitted = await reviewPolicyCoverage({ session, source: captured.source, draft: captured.draft, previousReport: report });
       expect(requests).toHaveLength(3);

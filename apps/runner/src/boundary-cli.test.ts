@@ -6350,6 +6350,7 @@ describe("boundary operator-plane CLI", () => {
       let setupNotice: readonly string[] | undefined;
       const session: BoundaryReviewInteractiveSession = { ...fixture.session,
         chooseOption: async (title, choices, options) => {
+          if (title === "CLIENT INTEGRATION RESPONSIBILITIES") return "assign";
           if (title === "START BOUNDARY DRAFTING") { startChoices++; return "resume"; }
           if (title === "CHOOSE THE ACTION TO REVISE") {
             addMenuSeen = true;
@@ -6443,6 +6444,7 @@ describe("boundary operator-plane CLI", () => {
       let startChoices = 0;
       const session: BoundaryReviewInteractiveSession = { ...fixture.session,
         chooseOption: async (title, choices) => {
+          if (title === "CLIENT INTEGRATION RESPONSIBILITIES") return "assign";
           if (title === "START BOUNDARY DRAFTING") { startChoices++; return "resume"; }
           if (title === "CHOOSE THE ACTION TO REVISE") {
             expect(choices.map((choice) => choice.value)).toEqual(["@add_missing", "back"]);
@@ -7417,6 +7419,11 @@ describe("boundary operator-plane CLI", () => {
         throw new Error(`Unexpected semantic Action text prompt: ${prompt}`);
       },
       chooseOption: async (title, options, choiceOptions) => {
+        if (title === "CLIENT INTEGRATION RESPONSIBILITIES") {
+          expect(choiceOptions?.initialValue).toBe("back");
+          expect(choiceOptions?.context?.join(" ")).toContain("not quotations");
+          return "assign"; // Explicit synthetic operator ownership; client selection alone no longer accepts it.
+        }
         if (cancellation.signal.aborted || dependencyCancellation.signal.aborted) throw new Error(`Unexpected post-cancellation menu: ${title}`);
         if (posture === "proposal_only" && title === "REVIEW CHANGED-RECORD PROTECTION") {
           expect(choiceOptions?.requireExplicitSelection).toBe(true);
@@ -7429,9 +7436,6 @@ describe("boundary operator-plane CLI", () => {
         }
         if (policyText) {
           if (title === "SEND ATTACHED RULES") return "send";
-          if (title === "CLIENT INTEGRATION RESPONSIBILITIES") {
-            throw new Error("An already selected Claude Code client must not require a second duty-assignment decision");
-          }
           if (title === "REVIEW ATTACHED RULES") {
             rulesMenuVisits++;
             if (semanticActionAttempt < 3) {
@@ -8049,6 +8053,7 @@ describe("boundary operator-plane CLI", () => {
           throw new Error(`Unexpected resumed semantic Action text prompt: ${prompt}`);
         },
         chooseOption: async (title, choices, options) => {
+          if (title === "CLIENT INTEGRATION RESPONSIBILITIES") return "assign";
           if (title === "START BOUNDARY DRAFTING") return "resume";
           if (title === "ACTIVATE READ BOUNDARY") {
             if (posture === "repair_on_resume") {
@@ -8144,6 +8149,7 @@ describe("boundary operator-plane CLI", () => {
             diagnostics.push(JSON.stringify(options?.notice)); return undefined;
           },
           chooseOption: async (title, _choices, options) => {
+          if (title === "CLIENT INTEGRATION RESPONSIBILITIES") return "assign";
             if (title === "START BOUNDARY DRAFTING") return "resume";
             if (title === "SETUP NEEDS ATTENTION" && posture === "policy_target_reconcile_concurrent") {
               expect(options?.context?.join(" ")).toContain("BOUNDARY_AUTHORING_RESUME_CHANGED");
@@ -8408,7 +8414,12 @@ describe("boundary operator-plane CLI", () => {
           expect(currentSource.coverage?.passages.filter(p => p.counting_requirement_bindings?.length)).toHaveLength(6);
           expect(currentSource.coverage?.passages.filter(p => p.counting_requirement_bindings?.length).every(p => p.disposition === "implemented"
             && p.counter_requirements?.every(c => c.current_capability === null && c.required_capability === null))).toBe(true);
-          if (reconciliationClient) expect(currentSource.application_assignments).toMatchObject([{ source_digest: currentSource.coverage!.source_digest, draft_digest: currentSource.coverage!.draft_digest, obligations: ["customer_selection", "status_presentation"], owner: "client_application", verified: false }]);
+          if (reconciliationClient) {
+            expect(currentSource.application_assignments).toHaveLength(2);
+            expect(currentSource.application_assignments![0]).toMatchObject({ assigned_at: "2026-09-13T00:00:00Z", verified: false });
+            expect(currentSource.application_assignments![0]).not.toHaveProperty("origin");
+            expect(currentSource.application_assignments![1]).toMatchObject({ origin: "PRODUCT-CLIENT-CONTRACT", source_digest: currentSource.coverage!.source_digest, draft_digest: currentSource.coverage!.draft_digest, obligations: ["customer_selection", "status_presentation"], owner: "client_application", verified: false });
+          }
           return;
         }
         if (postCommitResumeFailure) {
@@ -15937,6 +15948,8 @@ async function staleSemanticRevalidationFixture(options: { writeback?: "proposal
     chooseResource: async () => undefined, editFieldTiers: async () => undefined,
     promptText: async (prompt) => { throw new Error(`Business job must be retained: ${prompt}`); },
     chooseOption: async (title, _options, config) => {
+      if (title === "CLIENT INTEGRATION RESPONSIBILITIES") return "assign";
+
       if (title === "START BOUNDARY DRAFTING") return "resume";
       if (title === "ACTIVATE READ BOUNDARY") return "finish";
       if (title === "FINISH BOUNDARY REVIEW") return "finish";
@@ -16331,7 +16344,7 @@ function stripAnsi(value: string): string {
 }
 
 describe("saved review operation dispatch and persistence", () => {
-  it.each(["menu", "no-change", "typed-review", "redundant-source", "unknown", "declined", "choice-save-race", "source-race", "resume-race", "unrelated-edit", "provider-refusal", "semantic-question", "genuine-noop", "maintenance", "maintenance-missing", "maintenance-source-race", "model-review", "model-resume", "model-review-edit", "model-cancel", "model-declined", "fallback-review", "fallback-edit", "fallback-pause", "captured-contract", "receipt", "receipt-source-race"])("reviews without entering editors: %s", async mode => {
+  it.each(["menu", "no-change", "typed-review", "redundant-source", "unknown", "declined", "choice-save-race", "source-race", "resume-race", "unrelated-edit", "provider-refusal", "semantic-question", "genuine-noop", "maintenance", "maintenance-missing", "maintenance-source-race", "model-review", "model-resume", "model-review-edit", "model-cancel", "model-declined", "fallback-review", "fallback-edit", "fallback-pause", "captured-contract", "receipt", "receipt-source-race", "client-declined", "client-source-race"])("reviews without entering editors: %s", async mode => {
     const receipt = mode.startsWith("receipt");
     const maintenance = mode.startsWith("maintenance"), changingModel = mode.startsWith("model-");
     const solCapture = mode === "captured-contract" ? JSON.parse(await fs.readFile(new URL("./fixtures/review-operation-sol-capture.json", import.meta.url), "utf8")) : undefined;
@@ -16412,12 +16425,20 @@ describe("saved review operation dispatch and persistence", () => {
           return bytes;
         });
       }
-      let restarted = false;
+      let restarted = false, ownershipReviews = 0;
       const sourceInitial = JSON.stringify(source), resumeInitial = JSON.stringify(resume);
       const session: BoundaryReviewInteractiveSession = { ...fixture.session,
         rememberDetails: (_title, lines) => { notices.push(lines); },
         chooseOption: async (title, options) => {
           menus.push(title);
+          if (title === "CLIENT INTEGRATION RESPONSIBILITIES") {
+            ownershipReviews++;
+            if (mode === "client-source-race") {
+              const newer = await loadPolicySources(root, source.id);
+              await savePolicySources(root, { ...newer, operator_messages: [...(newer.operator_messages ?? []), "Concurrent ownership review source change"] }, { expectedDigest: canonicalJsonDigest(newer) });
+            }
+            return mode === "client-declined" ? "back" : "assign";
+          }
           if (title === "START BOUNDARY DRAFTING" && changingModel && !restarted) return "choose_model";
           if (title === "MODEL FOR BOUNDARY DRAFTING") return options.some(o => o.value === "gpt-selected-review") ? "gpt-selected-review" : "change_model";
           if (title === "CONTINUE SAVED JOB WITH SELECTED MODEL") return mode === "model-cancel" ? "back" : mode === "model-resume" ? "resume" : "review_rules";
@@ -16426,7 +16447,7 @@ describe("saved review operation dispatch and persistence", () => {
             expect(options.map(o=>o.value)).toEqual(["review", "edit", "details", "back"]);
             return mode === "fallback-review" ? "review" : mode === "fallback-edit" ? "edit" : "back";
           }
-          if (title === "START BOUNDARY DRAFTING") return restarted || ["menu", "unknown", "declined", "choice-save-race", "source-race", "resume-race", "unrelated-edit", "provider-refusal", "receipt", "receipt-source-race"].includes(mode) ? "review_rules" : "resume";
+          if (title === "START BOUNDARY DRAFTING") return restarted || ["menu", "unknown", "declined", "choice-save-race", "source-race", "resume-race", "unrelated-edit", "provider-refusal", "receipt", "receipt-source-race", "client-declined", "client-source-race"].includes(mode) ? "review_rules" : "resume";
           if (title === "CHOOSE THE SAVED JOB OPERATION") return ["semantic-question", "genuine-noop"].includes(mode) ? "continue" : "review";
           if (title === "REVIEW OR UNFINISHED EDIT?") return ["unrelated-edit", "model-review-edit"].includes(mode) ? "keep" : "review";
           if (title === "REVIEW COUNTED AUTOMATIC APPROVALS") { choices++; return "boundary"; }
@@ -16534,8 +16555,12 @@ describe("saved review operation dispatch and persistence", () => {
         expect(resume.pending_job_revision).toBe(mode === "genuine-noop" ? "Change the maximum to four." : exact);
         expect(providerCalls).toBe(0); expect(plannerCalls).toBe(1); return;
       }
-      if (["declined", "choice-save-race", "source-race", "resume-race", "provider-refusal", "maintenance-missing", "maintenance-source-race", "receipt-source-race"].includes(mode)) {
+      if (["declined", "choice-save-race", "source-race", "resume-race", "provider-refusal", "maintenance-missing", "maintenance-source-race", "receipt-source-race", "client-declined", "client-source-race"].includes(mode)) {
         expect(resume.pending_policy_review?.operation).toBe("review_rules"); expect(resume.completed_policy_reviews).toBeUndefined();
+        if (mode.startsWith("client-")) {
+          expect(ownershipReviews).toBe(1);
+          expect(stored.application_assignments?.some(a => a.origin === "PRODUCT-CLIENT-CONTRACT")).not.toBe(true);
+        }
         if (mode === "declined") { expect(stored.counting_decisions).toBeUndefined(); expect(providerCalls).toBe(0); }
         if (mode === "choice-save-race") {
           expect(choiceSaveInterleaved).toBe(true); expect(choices).toBe(2); expect(confirmations).toBe(2);
@@ -16550,6 +16575,9 @@ describe("saved review operation dispatch and persistence", () => {
         }
       } else {
         expect(resume.pending_policy_review).toBeUndefined(); expect(resume.completed_policy_reviews).toHaveLength(1);
+        expect(stored.application_assignments?.filter(a => a.origin === "PRODUCT-CLIENT-CONTRACT")).toEqual([
+          expect.objectContaining({ obligations: ["customer_selection", "status_presentation"], owner: "client_application", verified: false })]);
+        expect(ownershipReviews).toBe(1);
         expect(resume.pending_job_revision).toBe(["unrelated-edit", "model-review-edit"].includes(mode) ? "Change the maximum to four." : undefined);
         expect(stored.coverage?.passages[0]?.disposition).toBe("implemented");
         if (counting) { expect(choices).toBe(2); expect(confirmations).toBe(2); expect(stored.counting_decisions).toHaveLength(2); }
@@ -16569,7 +16597,7 @@ describe("saved review operation dispatch and persistence", () => {
         const after = await readBoundaryAuthoringResumeState(root, binding); if (after.status !== "ready") throw new Error("restart missing");
         expect(after.value.completed_policy_reviews, JSON.stringify({notices: notices.filter(n => n[0]?.includes("complete") || n.some(l => l.includes("CHANGED") || l.includes("not the current"))), menus})).toHaveLength(2);
         expect(after.value.completed_policy_reviews?.[1]?.activity).toBe("validated_reuse");
-        expect(providerCalls).toBe(calls); expect(choices).toBe(counting ? 2 : 0);
+        expect(providerCalls).toBe(calls); expect(choices).toBe(counting ? 2 : 0); expect(ownershipReviews).toBe(1);
       }
       expect(plannerCalls).toBe(["no-change", "typed-review", "redundant-source", "maintenance", "maintenance-missing", "maintenance-source-race", "model-resume", "fallback-review", "captured-contract"].includes(mode) ? 1 : 0);
     } finally { sourceReadSpy?.mockRestore(); await fixture.dispose(); }

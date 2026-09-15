@@ -1,3 +1,4 @@
+import { acceptClientDutyOwnership } from "./test-fixtures/accept-client-duty-ownership.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import os from "node:os";
@@ -101,6 +102,7 @@ describe("source counter responsibility uses exact owner evidence", () => {
       const tool = requests[0].tools.find((tool: any) => tool.name === "runner__review_policy_coverage");
       expect(tool.parameters.properties.passages.items.properties.draft_paths.items.enum).toContain(pointer);
       expect(JSON.stringify(requests[1])).toContain("SOURCE_COUNTER_CLASSIFICATION_REQUIRED");
+      await acceptClientDutyOwnership(report, sources);
       bindPolicyCoverage(sources, report, canonicalJsonDigest("unchanged authority"));
       await savePolicySources(root, sources);
       const restored = await loadPolicySources(root, sources.id);

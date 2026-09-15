@@ -92,7 +92,7 @@ describe("positive counting requirement inventory",()=>{
     expect(choices).toBe(2);expect(confirms).toBe(2);expect(contexts[0]!.join("\n")).toContain(f.source.text);
     f.d.runner_evidence.counting_decisions=decisions;f.state.counting_decisions=decisions;
     const report=await produce(f),{loaded,again}=await record(f,report);
-    expect(policyReviewReadiness(f.source,again,loaded).ready).toBe(true);
+    expect(policyReviewReadiness(f.source,again,loaded).items?.filter(i=>i.blocksReview).map(i=>i.clientDuty)).toEqual(["customer_selection","status_presentation"]);
     expect(await reviewUnestablishedCounting({source:f.source,draft:f.d,messages:f.state.operator_messages,assertCurrent:async()=>{},session:{confirm:async()=>{throw Error("re-prompt");}}})).toEqual([]);
     expect(f.d.runner_evidence.counting_interpretations).toEqual([]);
     const root=await fs.mkdtemp(path.join(os.tmpdir(),"counting-cas-"));try{

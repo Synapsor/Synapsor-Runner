@@ -1,0 +1,19 @@
+# Intrinsic client duties and ownership
+
+The product decision is narrow: this authoring route's existing interactive four-tool Action contract assigns target selection and truthful operation-status presentation to the client. Applicability uses the complete host-prepared Action inputs, not source keywords, coverage arrays, provider choices or their union.
+
+| Established context | customer_selection | status_presentation | Basis |
+|---|---|---|---|
+| Interactive Action with subject_ref inputs | Required | Required | Exact outcome/resource/binding inventory, selected client, lifecycle and contract revision |
+| Reviewed Read-only candidate with no Actions | No intrinsic mutation duty | No intrinsic mutation duty | Empty Action inventory; actual source requirements remain separately validated |
+| Missing/unknown Action/client contract | Unresolved applicability | Unresolved applicability | Recheck current contract; no invented autonomous mode |
+
+Coverage retains provider passages unmodified. Its additional host client_duties field has PRODUCT-CLIENT-CONTRACT provenance, no fabricated source line, and a canonical contract digest. Intrinsic readiness items exist even without provider passages. Isolated client-duty passages associate with those items. Additional pointers, fields, counting, maintenance, receipt or other claims cannot be discharged through this ownership. Real business blockers remain independently required.
+
+The existing application_assignments record now also supports source/draft/contract-bound intrinsic ownership without policy line numbers. Old source-bound assignments remain historical; they are never rebranded as current intrinsic consent. Both duties save in one policy-source snapshot. The operator must select the explicit assignment option even for an already-selected client. Cancellation defaults pending. Verification always remains false; an unchanged current recheck reuses the saved ownership. Changed source, prepared draft or client contract requires current review.
+
+The common prepared-review path performs the ownership question after provider coverage and outside coordination, then rechecks current source, resume/authority, prepared draft, counting domain and receipt configuration before saving under the existing project-authority permit/store coordination and expected-source digest. The normal direct Review and guided continuation share that path. Failure preserves prior history and unfinished work. No runtime ledger, accounting/publication/receipt or authorization behavior changes. Existing lock order and deadlines remain intact. Historical inspection does not activate, rewrite or deactivate authority.
+
+Prompt/context basis: the matched saved B sessions produce ready=true (Terra omitted both duties) and ready=false (Grok names both, unassigned). No provider prompt instruction is changed. The host evidence adds runtime_contract.client_contract={mode:interactive_four_tool,client:<current operator selection or unselected>,origin:PRODUCT-CLIENT-CONTRACT,ownership:explicit_unverified}; previously that field was absent. The provider retains its separate application-obligation annotation schema and full claim validation. No fixture names, rescue sentences or business policy changes enter product guidance.
+
+Terra raw envelopes are retained externally; Grok evidence currently consists of complete persisted normalized coverage and source/assignment state plus terminal log, not a claimed raw provider envelope. Their replay uses authentic saved decisions, never a fabricated favorable provider statement.

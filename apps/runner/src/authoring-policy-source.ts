@@ -1,3 +1,4 @@
+import { validClientDutyInventory, type ClientDutyInventory } from "./authoring-client-duties.js";
 import fs from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";
@@ -85,7 +86,7 @@ export type PolicyPassage = {
   source_counter_resolution?: { source_digest: string; path: string; dependencies_digest: string;
     proof_digest: string; external_assurance: "unverified" };
 };
-export type PolicyCoverage = { counting_inventory?: { version: 1; digest: string; paths: string[] }; source_digest: string; draft_digest: string; passages: PolicyPassage[] };
+export type PolicyCoverage = { client_duties?: ClientDutyInventory; counting_inventory?: { version: 1; digest: string; paths: string[] }; source_digest: string; draft_digest: string; passages: PolicyPassage[] };
 
 export function isDeferredPolicyDeployment(passage: PolicyPassage): boolean {
   const prerequisite = passage.deployment_prerequisite;
@@ -176,7 +177,8 @@ export type PolicySourceSession = {
   read_interpretations?: ReadInterpretationRecord[];
   /** Operator assignment, not proof of client behavior or an authority grant. */
   application_assignments?: Array<{ source_digest: string; draft_digest: string;
-    start: number; end: number; obligations: NonNullable<PolicyPassage["application_obligations"]>;
+    start?: number; end?: number; origin?: "PRODUCT-CLIENT-CONTRACT"; contract_digest?: string;
+    obligations: NonNullable<PolicyPassage["application_obligations"]>;
     assigned_at: string; owner: "client_application"; verified: false }>;
 };
 export type AuthoringDestination = { provider: string; model: string; baseUrl?: string };
@@ -219,7 +221,8 @@ export function confirmedReadFieldMeanings(session: PolicySourceSession | undefi
 export function bindPolicyCoverage(session: PolicySourceSession, report: PolicyCoverage, authorityDigest: string): void {
   const before = session.coverage;
   if (session.application_assignments && session.coverage_authority_digest === authorityDigest && before?.source_digest === report.source_digest) {
-    session.application_assignments = session.application_assignments?.map((entry) => {
+    const carried = session.application_assignments.flatMap((entry) => {
+      if (entry.origin === "PRODUCT-CLIENT-CONTRACT") return [];
       const passage = report.passages.find((item) => item.start === entry.start && item.end === entry.end
         && item.responsibility === "application" && !item.field_checks?.length
         && item.application_obligations?.length === entry.obligations.length
@@ -228,8 +231,10 @@ export function bindPolicyCoverage(session: PolicySourceSession, report: PolicyC
         && passage?.responsibility === "application" && !passage.field_checks?.length
         && passage.application_obligations?.length === entry.obligations.length
         && entry.obligations.every((obligation) => passage.application_obligations!.includes(obligation));
-      return same ? { ...entry, draft_digest: report.draft_digest } : entry;
+      return same && entry.draft_digest !== report.draft_digest ? [{ ...entry, draft_digest: report.draft_digest }] : [];
     });
+    if (session.application_assignments.length + carried.length > 120) throw new Error("POLICY_CLIENT_ASSIGNMENT_HISTORY_FULL: Ownership history is preserved; no review was saved.");
+    session.application_assignments = [...session.application_assignments, ...carried];
   }
   session.coverage = report;
   session.coverage_authority_digest = authorityDigest;
@@ -366,9 +371,11 @@ export async function loadPolicySources(root: string, id: string): Promise<Polic
   if (value.read_interpretations && (!Array.isArray(value.read_interpretations) || value.read_interpretations.length > 16
     || !value.read_interpretations.every((record) => validReadInterpretation(record, value.snapshots)))) delete value.read_interpretations;
   if (value.application_assignments && (!Array.isArray(value.application_assignments) || value.application_assignments.length > 120
-    || value.application_assignments.some((entry) => !entry || entry.owner !== "client_application" || entry.verified !== false
+    || value.application_assignments.some((entry) => !entry || (entry.origin !== undefined && entry.origin !== "PRODUCT-CLIENT-CONTRACT") || entry.owner !== "client_application" || entry.verified !== false
       || !/^sha256:[a-f0-9]{64}$/u.test(entry.draft_digest) || !value.snapshots.some((source) => source.digest === entry.source_digest
-        && Number.isSafeInteger(entry.start) && entry.start >= 1 && Number.isSafeInteger(entry.end) && entry.end >= entry.start && entry.end <= source.lines)
+        && (entry.origin === "PRODUCT-CLIENT-CONTRACT"
+          ? entry.start === undefined && entry.end === undefined && /^sha256:[a-f0-9]{64}$/u.test(entry.contract_digest ?? "")
+          : Number.isSafeInteger(entry.start) && entry.start! >= 1 && Number.isSafeInteger(entry.end) && entry.end! >= entry.start! && entry.end! <= source.lines))
       || !Number.isFinite(Date.parse(entry.assigned_at)) || !validApplicationObligations(entry.obligations)))) delete value.application_assignments;
   return value;
 }
@@ -381,7 +388,7 @@ export function validApplicationObligations(value: unknown): value is NonNullabl
 
 function validStoredCoverage(report: PolicyCoverage, sources: PolicyTextSnapshot[]): boolean {
   const source = sources.find((entry) => entry.digest === report.source_digest);
-  return Boolean(source && /^sha256:[a-f0-9]{64}$/u.test(report.draft_digest)
+  return Boolean(source && (report.client_duties === undefined || validClientDutyInventory(report.client_duties)) && /^sha256:[a-f0-9]{64}$/u.test(report.draft_digest)
     && Array.isArray(report.passages) && report.passages.length <= 120 && report.passages.every((passage) => passage
       && Number.isSafeInteger(passage.start) && Number.isSafeInteger(passage.end)
       && passage.start >= 1 && passage.end >= passage.start && passage.end <= source.lines

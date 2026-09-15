@@ -8382,7 +8382,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   let receiptConfigurationEvidence: Parameters<typeof policyCoverageDraft>[0]["receiptConfiguration"];
   let executionReviewEvidence: Parameters<typeof policyCoverageDraft>[0]["executionReview"];
   let countingDomain: CountingOutcomeDomain | undefined;
-  const currentPolicyCoverageDraft = () => policyCoverageDraft({ read: context.candidate, decisions: context.bundle.decisions,
+  const currentPolicyCoverageDraft = () => policyCoverageDraft({ client: intendedClient, read: context.candidate, decisions: context.bundle.decisions,
     reviewedVersionFields, policySources: authoringConversation?.policySources, executionReview: executionReviewEvidence, receiptConfiguration: receiptConfigurationEvidence, countingDomain,
     operatorClarifications: authoringConversation?.turns.filter(turn => turn.kind === "clarification"
       && authoringConversation?.policySources?.operator_messages?.includes(turn.answer)).map(turn => ({ question: turn.question, answer: turn.answer })) ?? [],
@@ -8970,58 +8970,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       await reconcileKnownPrivacy();
       return;
     }
-    const clientItems = pending.filter((item) => item.kind === "deployment_prerequisite"
-      && item.passages.every((passage) => passage.application_obligations?.length));
-    if (clientItems.length && input.session.chooseOption) {
-      const passages = clientItems.flatMap((item) => item.passages);
-      const clientFacts = authoringClientSetupFacts(intendedClient);
-      chat.rememberDetails("CLIENT SETUP PLAN", clientFacts);
-      const selectedClient = intendedClient && intendedClient !== "later";
-      if (!selectedClient) await chat.streamModel([
-        ...(intendedClient && intendedClient !== "later" ? [clientFacts[0]!] : []),
-        `Your client needs to ${[...new Set(passages.flatMap((passage) => passage.application_obligations ?? []))]
-          .map((duty) => duty === "customer_selection" ? "capture the user's selected record and requested change"
-            : "show whether the request is awaiting review, approved, waiting for execution, blocked, or completed with a receipt").join(" and ")}.`,
-        "Will your client handle this? Assignment is not verification; test the integration before customer use. Runner keeps enforcing the database rules.",
-        ...(intendedClient && intendedClient !== "later" ? ["Next, after authority review: generated client configuration, trusted test identity, and a connection check. /details explains the setup and behavior checks."] : []),
-      ]);
-      const choice = selectedClient ? "assign" : await input.session.chooseOption("CLIENT INTEGRATION RESPONSIBILITIES", [
-        { value: "assign", label: intendedClient && intendedClient !== "later" ? `Use ${authoringClientLabel(intendedClient)} for these client duties` : "My client application will handle these responsibilities", detail: "Record the assignment for this exact draft; keep client verification outstanding." },
-        { value: "ask", label: "Ask the model about the integration" },
-        { value: "back", label: "Keep this decision pending" },
-      ], { initialValue: "back", reviewOnly: true, explainOnRequest: true,
-        context: [...clientFacts, ...passages.flatMap((passage) => [passage.topic ?? "Client responsibility", passage.next_step ?? passage.interpretation])],
-      });
-      if (choice === "ask") {
-        await chat.streamModel(["What would you like to know about the client integration?"]);
-        const question = await chat.readOperator();
-        if (question?.trim()) {
-          const response = await (input.modelAuthoringNarrator ?? narrateValidatedAuthoringStep)({
-            session: modelAssistSession, operatorMessage: question, egressAcknowledged: true,
-            validatedFacts: [...clientFacts, ...passages.map((passage) => passage.interpretation)],
-            nextQuestion: "Do you want to assign these integration duties to your client, or leave them pending?",
-          }).catch(() => undefined);
-          if (response) await chat.streamModel(response.split(/\r?\n/u));
-          else chat.checkpoint("Integration explanation unavailable", ["Exact responsibilities remain visible. The decision is unchanged; retry or inspect /details."], "warning");
-        }
-        return;
-      }
-      if (choice !== "assign") return;
-      const sources = authoringConversation?.policySources;
-      if (!sources) return;
-      sources.application_assignments = [
-        ...(sources.application_assignments ?? []).filter((entry) => entry.source_digest === current!.report!.source_digest
-          && entry.draft_digest === current!.report!.draft_digest
-          && !passages.some((passage) => passage.start === entry.start && passage.end === entry.end)),
-        ...passages.map((passage) => ({ source_digest: current!.report!.source_digest, draft_digest: current!.report!.draft_digest,
-          start: passage.start, end: passage.end, obligations: [...passage.application_obligations!],
-          assigned_at: new Date().toISOString(), owner: "client_application" as const, verified: false as const })),
-      ];
-      await savePolicySources(input.projectRoot, sources);
-      await persistAuthoringResume("authority_review");
-      if (!selectedClient) chat.checkpoint("Client responsibilities recorded", ["Assigned, not verified. Check these behaviors before customer use. No database permissions or rules changed."]);
-      else chat.rememberDetails("CLIENT SETUP PLAN", [...clientFacts,
-        "The already selected client is assigned record selection and request-status display. These behaviors are not yet verified; no database permissions changed."]);
+    if (pending.some(item => item.clientDuty)) {
+      chat.checkpoint("Client responsibilities remain pending", ["Resume Review attached rules to explicitly assign current ownership. Selection, status presentation and integration remain unverified."], "warning");
       return;
     }
     let item = pending[0]!;
@@ -10538,7 +10488,7 @@ export async function reviewSavedBoundaryPolicy(input: {
           enabled_outcomes: execution.enabled ? matching.map(policy => policy.outcome).sort() : [] };
       } catch { /* Deployment evidence unavailable, not verified. */ }
     }
-    const currentDraft = () => policyCoverageDraft({ read: context.candidate, decisions: context.bundle.decisions,
+    const currentDraft = () => policyCoverageDraft({ client: resume.intended_client, read: context.candidate, decisions: context.bundle.decisions,
       actions: [], authority, source: { inspection, generationLock: context.lock }, reviewedVersionFields: boundaryAuthoringVersionReviews(resume),
       policySources: input.sources, countingDomain: domain, executionReview, receiptConfiguration,
       authoringSession: { provider: input.modelSession.provider, model: input.modelSession.model },

@@ -1,3 +1,4 @@
+import { acceptClientDutyOwnership } from "./test-fixtures/accept-client-duty-ownership.js";
 import fs from "node:fs/promises";
 import { readFileSync } from "node:fs";
 import os from "node:os";
@@ -41,6 +42,7 @@ describe("exact installed mixed counting review", () => {
         expect(component.resolution.operator_support).toEqual(draft.runner_evidence.counting_interpretations[0].operator_support);
         expect(component.resolution.operator_support.answer).not.toBe(passage.operator_clarification);
       }
+      await acceptClientDutyOwnership(report, state);
       bindPolicyCoverage(state, report, state.coverage_authority_digest);
       expect(policyReviewReadiness(source, report, state).ready).toBe(true);
       expect(report.passages.filter(p => p.disposition === "needs_decision").length).toBeGreaterThan(0);
@@ -135,11 +137,12 @@ describe("exact installed mixed counting review", () => {
     expect(() => parsePolicyCoverage({ passages: report.passages }, source, draft, saved.operator_messages)).toThrow();
   });
 
-  it("cannot lose a domain-dependent obligation when a new response omits typed comparisons", () => {
+  it("cannot lose a domain-dependent obligation when a new response omits typed comparisons", async () => {
     const reply = structuredClone(saved.replies[0]), draft = structuredClone(saved.drafts[0]);
     delete counter(reply).counter_requirements;
     const state = structuredClone(saved.policy_sources), first = parse(reply, draft);
     bindPolicyCoverage(state, first, state.coverage_authority_digest);
+    await acceptClientDutyOwnership(first, state);
     expect(policyReviewReadiness(saved.source, first, state).ready).toBe(true);
     draft.runner_evidence.runtime_contract.approval_counter_selection.outcome_domain.retained_automatic_outcomes.push("another.outcome");
     const report = parse(reply, draft);

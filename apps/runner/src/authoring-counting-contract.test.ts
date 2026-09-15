@@ -1,3 +1,4 @@
+import { acceptClientDutyOwnership } from "./test-fixtures/accept-client-duty-ownership.js";
 import { policyCoverageDraft } from "./authoring-policy-evidence.js";
 import { policyCountingInterpretations } from "./authoring-counting-review.js";
 import fs from "node:fs/promises";
@@ -37,6 +38,7 @@ describe("saved counting disagreement", () => {
       const session = structuredClone(saved.policy_sources);
       // A normal source-bound report, not a fabricated successful provider reply.
       const coverage = parsePolicyCoverage(saved.replies[1], source, draft, saved.operator_messages);
+      await acceptClientDutyOwnership(coverage, session);
       bindPolicyCoverage(session, coverage, session.coverage_authority_digest);
       await savePolicySources(root, session);
       const reopened = await loadPolicySources(root, session.id);
@@ -50,7 +52,9 @@ describe("saved counting disagreement", () => {
     expect(raw.passages.find(p => p.counter_requirements)).toMatchObject({ disposition: "conflict" });
     const state = structuredClone(saved.policy_sources);
     bindPolicyCoverage(state, raw, state.coverage_authority_digest);
-    const blocking = policyReviewReadiness(saved.source, raw, state).items!.filter(item => item.blocksReview);
+    const readiness = policyReviewReadiness(saved.source, raw, state);
+    expect(readiness.items!.filter(i => i.clientDuty && i.blocksReview)).toHaveLength(2);
+    const blocking = readiness.items!.filter(item => item.blocksReview && !item.clientDuty);
     expect(blocking).toHaveLength(1);
     expect(blocking[0]?.passages.every(p => p.counter_requirements?.length)).toBe(true);
     expect(() => parsePolicyCoverage(saved.replies[0], saved.source, currentEvidence(), saved.operator_messages)).toThrow("Draft pointer(s) not present");
@@ -162,6 +166,7 @@ describe("saved counting disagreement", () => {
       expect(comparison.counting_resolution?.submitted_claim).toMatchObject({ disposition: "conflict", interpretation: saved.replies[1].passages.find((p: any) => p.counter_requirements).interpretation });
       expect(comparison.counting_resolution?.operator_support).toEqual({ question: saved.clarifications.at(-1).question, answer: saved.operator_messages.at(-1) });
       bindPolicyCoverage(state, report, state.coverage_authority_digest);
+      await acceptClientDutyOwnership(report, state);
       expect(policyReviewReadiness(source, report, state).ready).toBe(true);
       expect(report.passages.filter(p => p.disposition === "needs_decision").map(p => p.deployment_prerequisite ?? p.application_obligations)).toContainEqual(["independent_source_readback"]);
       await savePolicySources(root, state, { expectedDigest: null });

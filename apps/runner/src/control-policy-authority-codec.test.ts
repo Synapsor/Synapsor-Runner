@@ -3159,7 +3159,11 @@ for (const backend of ["sqlite", "postgres"] as const) {
           const evidence = policyCoverageDraft({ read: f.candidate, actions: [], authority: draft, decisions: [], receiptConfiguration: configuration });
           const report = parsePolicyCoverage({ passages: [{ start: 1, end: 1, disposition: "needs_decision", responsibility: "deployment", issue_kind: "missing_configuration",
             interpretation: "The required receipt mode still needs its separate execution setup.", draft_paths: ["/runner_evidence/runtime_contract/receipts"] }] }, source, evidence, []);
-          expect(policyReviewReadiness(source, report).ready).toBe(true);
+          expect(policyReviewReadiness(source, report).ready).toBe(false);
+          const { reviewClientDutyOwnership } = await import("./authoring-client-duties.js");
+          session.application_assignments = await reviewClientDutyOwnership({ report, sources: session,
+            session: { chooseOption: async () => "assign" }, assertCurrent: async () => {} });
+          expect(policyReviewReadiness(source, report, session).ready).toBe(true);
           bindPolicyCoverage(session, report, draft.digest);
           await savePolicySources(projectRoot, session, { expectedDigest: null, permit });
           const restored = await loadPolicySources(projectRoot, session.id);

@@ -1,3 +1,4 @@
+import { validClientDutyInventory, clientDutyAssigned, isClientDutyPassage, type ClientDuty } from "./authoring-client-duties.js";
 import { deferredReviewObligation } from "./authoring-obligation-review.js";
 import { isDeferredPolicyDeployment, isDeferredSourceReadback, isDeferredSourceCounterMaintenance, type PolicyCoverage, type PolicyTextSnapshot, type PolicyPassage, type PolicySourceSession } from "./authoring-policy-source.js";
 import { needsDeploymentCoverageClassification, unresolvedPolicyPassages } from "./authoring-policy-coverage.js";
@@ -7,11 +8,12 @@ import type { CompiledActionRuleModelDraftV1 } from "./action-rule-draft.js";
 
 export type AuthoringReadinessItem = {
   kind: "business_decision" | "mechanical_correction" | "unsupported_runtime" | "deployment_prerequisite" | "provider_failure";
-  title: string; nextStep: string; passages: PolicyPassage[]; blocksReview: boolean;
+  clientDuty?: ClientDuty; title: string; nextStep: string; passages: PolicyPassage[]; blocksReview: boolean;
 };
 
 export function applicationObligationAssigned(report: PolicyCoverage, passage: PolicyPassage, session?: PolicySourceSession): boolean {
-  return passage.responsibility === "application" && !passage.field_checks?.length
+  if (report.client_duties?.mode === "interactive_subject_action") return isClientDutyPassage(passage) && passage.application_obligations!.every(d => clientDutyAssigned(report, d as ClientDuty, session));
+  return isClientDutyPassage(passage)
     && !passage.application_obligations?.includes("independent_source_readback") && Boolean(passage.application_obligations?.length
     && session?.application_assignments?.some((entry) => entry.source_digest === report.source_digest && entry.draft_digest === report.draft_digest
       && entry.start === passage.start && entry.end === passage.end && entry.verified === false && entry.owner === "client_application"
@@ -23,7 +25,18 @@ export function policyReadinessItems(report?: PolicyCoverage, session?: PolicySo
   if (!report) return [{ kind: "provider_failure", title: "Attached rules need checking",
     nextStep: "Retry the coverage check for this saved draft.", passages: [], blocksReview: true }];
   const grouped = new Map<string, AuthoringReadinessItem>();
+  const inventory = report.client_duties && validClientDutyInventory(report.client_duties) ? report.client_duties : undefined;
+  if (!inventory || inventory.mode === "unresolved") grouped.set("client-contract", { kind: "business_decision",
+    title: "Current client contract needs review", nextStep: "Recheck the saved job to establish the applicable client contract. Historical authority is unchanged.", passages: [], blocksReview: true });
+  for (const duty of inventory?.duties ?? []) grouped.set(`client:${duty}`, { kind: "deployment_prerequisite", clientDuty: duty,
+    title: duty === "customer_selection" ? "Client target selection" : "Client status presentation",
+    nextStep: "Use the client integration responsibilities review to accept current ownership. Implementation and per-operation assurance remain unverified.",
+    passages: [], blocksReview: !clientDutyAssigned(report, duty, session) });
   for (const passage of unresolvedPolicyPassages(report)) {
+    if (inventory?.mode === "interactive_subject_action" && isClientDutyPassage(passage)) {
+      for (const duty of passage.application_obligations!) grouped.get(`client:${duty}`)?.passages.push(passage);
+      continue;
+    }
     const needsClassification = needsDeploymentCoverageClassification(passage);
     const obligation = deferredReviewObligation(passage);
     const deferred = isDeferredPolicyDeployment(passage) || Boolean(obligation);
@@ -59,7 +72,7 @@ export function policyReadinessItems(report?: PolicyCoverage, session?: PolicySo
 }
 
 export function policyReviewReadiness(source: PolicyTextSnapshot, report?: PolicyCoverage, session?: PolicySourceSession) {
-  if (!report) return { ready: false, privacy: false, summary: [
+  if (!report || report.source_digest !== source.digest) return { ready: false, privacy: false, summary: [
     "Before activation: recheck the attached rules. Activation is unavailable; the saved draft and exact details remain available.",
   ] };
   if (report.passages.some(p => p.counter_requirements?.length || p.counting_components?.length || p.counting_requirement_bindings?.length)
@@ -69,16 +82,16 @@ export function policyReviewReadiness(source: PolicyTextSnapshot, report?: Polic
   const pending = items.filter((item) => item.blocksReview).flatMap((item) => item.passages);
   const topics = items.filter((item) => item.blocksReview).map((item) => item.title);
   const assigned = items.filter((item) => !item.blocksReview);
-  const clientChecks = [...new Set(assigned.flatMap((item) => item.passages.flatMap((passage) => [
+  const clientChecks = [...new Set([...assigned.filter(i => i.clientDuty).map(i => i.title), ...assigned.flatMap((item) => item.passages.flatMap((passage) => [
     ...(passage.deployment_prerequisite === "authenticated_identity" ? ["signed-in customer identity"] : []),
     ...(passage.deployment_prerequisite === "runner_client_connection" ? ["Runner client connection"] : []),
     ...(passage.application_obligations ?? []).filter(obligation => obligation !== "independent_source_readback").map((obligation) => obligation === "customer_selection"
       ? "customer selection" : "accurate status messages"),
-  ])))];
+  ]))])];
   const privacy = pending.some((passage) => passage.field_checks?.some((check) => check.expectation === "private"));
-  return { ready: !pending.length, privacy, items, summary: [...(pending.length ? [
+  return { ready: !items.some(item => item.blocksReview), privacy, items, summary: [...(items.some(item => item.blocksReview) ? [
     `Before activation: ${topics.join("; ")}. These are required decisions, not optional recommendations.`,
-    "Continue with the model to resolve them in this saved draft. Activation is unavailable until the checks pass.",
+    "Use the applicable review controls to resolve these decisions in this saved draft. Activation is unavailable until the checks pass.",
   ] : [`Attached rules: ${source.name} v${source.version}; interpretation checked for this revision.`]),
     ...(clientChecks.length ? [`Client integration still unverified: ${clientChecks.join(", ")}. Check these during client setup before customer use.`] : []),
     ...(assigned.some(item => item.passages.some(isDeferredSourceReadback))

@@ -1,3 +1,4 @@
+import { clientDutyInventory } from "./authoring-client-duties.js";
 import { assessReviewObligation, deferredReviewObligation, receiptSelectionComponent } from "./authoring-obligation-review.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { associateCountingRequirements, countingSourceRequirements, configuredCountingLimits } from "./authoring-counting-requirements.js";
@@ -596,7 +597,7 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
     passages.push({ ...component, ...(assessment ? { obligation_assessment: assessment } : {}) });
   }
   const inventory = configuredCountingLimits(draft);
-  return { source_digest: source.digest, draft_digest: canonicalJsonDigest(draft), passages,
+  return { source_digest: source.digest, draft_digest: canonicalJsonDigest(draft), passages, client_duties: clientDutyInventory(draft),
     counting_inventory: { version: 1, digest: canonicalJsonDigest(inventory.map(({ path, digest }) => ({ path, digest }))), paths: inventory.map(i => i.path) } };
 }
 

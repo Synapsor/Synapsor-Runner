@@ -1,3 +1,4 @@
+import { reviewClientDutyOwnership } from "./authoring-client-duties.js";
 import { authoringReceiptConfiguration } from "./authoring-receipt-configuration.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";
@@ -80,6 +81,7 @@ export async function ensurePreparedPolicyCoverage(input: {
     Object.assign(sources, staged);
     draftRecord = input.currentDraft();
   }
+  const preparedDraftDigest = canonicalJsonDigest(draftRecord);
   const key = canonicalJsonDigest({ source: source.digest, draft: draftRecord, messages: sources.operator_messages ?? [],
     clarifications: input.clarifications, interpretations: sources.read_interpretations ?? [] });
   let reused: PolicyCoverage | undefined;
@@ -100,10 +102,19 @@ export async function ensurePreparedPolicyCoverage(input: {
   const staged = structuredClone(sources);
   bindPolicyCoverage(staged, report, input.authorityDigest);
   staged.coverage_context_digest = key;
+  const assignments = await reviewClientDutyOwnership({ report, sources: staged, session: input.operatorSession, assertCurrent });
+  if (assignments.length) {
+    if ((staged.application_assignments?.length ?? 0) + assignments.length > 120)
+      throw new Error("POLICY_CLIENT_ASSIGNMENT_HISTORY_FULL: Existing ownership history is preserved. No new acceptance was saved.");
+    staged.application_assignments = [...(staged.application_assignments ?? []), ...assignments];
+  }
   // Reuse has the same source/authority/history serialization as a new review.
   // Provider calls occur above, outside this coordinated section.
   await coordinated(async permit => {
     await assertCurrent(permit);
+    if (canonicalJsonDigest(input.currentDraft()) !== preparedDraftDigest) {
+      throw new Error("POLICY_CLIENT_CONTRACT_CHANGED: The prepared candidate or client contract changed during review. Reopen current Review; no stale ownership was saved.");
+    }
     const capturedConfiguration = draftRecord.runner_evidence.runtime_contract.receipt_configuration;
     if (capturedConfiguration && canonicalJsonDigest(capturedConfiguration) !== canonicalJsonDigest(await authoringReceiptConfiguration(
       input.projectRoot, input.authority?.authority.rules.map(r => r.rule.source) ?? []))) {

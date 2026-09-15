@@ -1,3 +1,4 @@
+import { clientDutyInventory } from "./authoring-client-duties.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -192,6 +193,7 @@ describe("progressive Read authority review", () => {
     report.passages[0]!.issue_kind = "schema_meaning";
     expect(knownPolicyPrivacyReductions({ report, read, actions: [] })).toEqual([]);
     const source = policyTextSnapshot(Buffer.from("Keep internal fields private."), "Rules.txt");
+    report.source_digest = source.digest; report.client_duties = clientDutyInventory({ actions: [] });
     const readiness = policyReviewReadiness(source, report);
     expect(readiness).toMatchObject({ ready: false, privacy: true });
     expect(readiness.summary.join("\n")).toContain("Activation is unavailable");
