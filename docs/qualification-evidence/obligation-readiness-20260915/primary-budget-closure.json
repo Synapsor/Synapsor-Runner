@@ -1,0 +1,28 @@
+{
+  "final": {
+    "started_at": "2026-09-15T19:03:03.736Z",
+    "deadline": "2026-09-15T19:58:03.736Z",
+    "maximum_calls": 25,
+    "reserved_recheck_calls": 6,
+    "closed_at": "2026-09-15T19:15:13.849129+00:00",
+    "actual_calls": 4,
+    "actual_restart_calls": 0,
+    "status": "closed; no additional primary trials"
+  },
+  "development": {
+    "actual": 3,
+    "maximum": 4,
+    "status": "stopped; not reset"
+  },
+  "task_started_at": "2026-09-15T17:55:43.455102+00:00",
+  "task_budget_minutes": {
+    "implementation": 90,
+    "fixture_recovery": 30,
+    "stable_verification_freeze": 65,
+    "primary_final": 55,
+    "delivery": 20
+  },
+  "total_declared_minutes": 260,
+  "elapsed_minutes_to_public_closure": 79.51,
+  "spend_usd": "unknown"
+}

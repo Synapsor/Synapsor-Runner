@@ -1,0 +1,59 @@
+{
+  "at": "2026-09-15T19:14:39.616333+00:00",
+  "records": [
+    {
+      "run": "counting-wording-control",
+      "container": "synapsor-obligation-readiness-counting-wording-control-ee97df1b",
+      "container_id": "d69965eb4ae476b29a751db95bd6fb5e98a44530fb31b26cf9634a4d055bd8c3",
+      "label": "obligation-readiness-20260915",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "38c2b7e16f3d063148ac4f0972ce35e194242045b44788d7997c352fa835a86b",
+        "postgres.log": "2120ab26c8bba687ba6c80c2a6e33989bb41c1edcd903cc441119429c778db6b",
+        "source.dump": "1d36d2a2762a4be9bdc682f89da0f6fff6d47f87d515585523e492d7c9d89694"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/closure/counting-wording-control",
+      "removed": false
+    },
+    {
+      "run": "receipt-replay",
+      "container": "synapsor-obligation-readiness-receipt-replay-14908bf6",
+      "container_id": "1079dca678801c38c984e4187a0bd21446ef39130525e329d395ec3ee266d031",
+      "label": "obligation-readiness-20260915",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "61c1e388c8c9798f340f5d86329ffc1a67d3d61aa6d4621002c48f0df63b5e38",
+        "postgres.log": "6a2740694258b31f0909e1d26a3237f240a5d5f742d48336c5dfc6e07f8f6b35",
+        "source.dump": "1d36d2a2762a4be9bdc682f89da0f6fff6d47f87d515585523e492d7c9d89694"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/closure/receipt-replay",
+      "removed": false
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "container": "synapsor-obligation-readiness-recovery-tournament-assisted-03d059f1",
+      "container_id": "438a82dba8b5727beea251fbb4abea7cf335832665c9f09670685e474f929736",
+      "label": "obligation-readiness-20260915",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "22edd24bf711eb2cb738d01a1d28ef985a657716acdf2b5526b78aaf917e2407",
+        "postgres.log": "93c9c13d75f8399f7f82153577c69d0e7c3339921b22ee0ac11204809794a094",
+        "source.dump": "70fb996d62fc5cdb3bba1cfebd1790b2aa01602899109989473dc13673c341b0"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/closure/recovery-tournament-assisted",
+      "removed": false
+    }
+  ],
+  "counts_note": "Actual public CLI and provider invocations retained in each public-invocations.jsonl and meter/events.jsonl. Worker outcomes are recorded separately; this cleanup makes no execution-success claim.",
+  "original_containers_touched": false,
+  "fixture_directories_removed": false
+}

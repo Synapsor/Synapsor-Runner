@@ -46,8 +46,9 @@
   },
   "provider_spend_ceiling_usd": 15,
   "scope": "Host-backed shared phase assessment for existing receipt, maintained-counter and independent-readback duties; primary review-only B then A, no activation/worker/source effects. Original Stage B NOT PASSED; next unseen attempt NOT STARTED.",
-  "status": "STABLE_GATES_PASSED",
+  "status": "PRIMARY_COMPLETED_EXTERNAL_REVIEW_PENDING",
   "evidence_root": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/obligation-readiness-20260915",
-  "next_step": "Freeze one final artifact, then primary B direct Review and A ordinary no-change route",
-  "trial_harness_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/trial-harness"
+  "next_step": "Preserve and deliver frozen handoff; no more provider trials",
+  "trial_harness_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/trial-harness",
+  "artifact_tree": "8c75b859c4220585ccb07fb28723c3c27fed9881417740f61310938481658362"
 }

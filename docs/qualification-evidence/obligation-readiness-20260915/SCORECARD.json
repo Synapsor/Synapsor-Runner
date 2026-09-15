@@ -1,0 +1,61 @@
+{
+  "at": "2026-09-15T19:14:11.536030+00:00",
+  "artifact_tree": "8c75b859c4220585ccb07fb28723c3c27fed9881417740f61310938481658362",
+  "source_checkpoint": "d631810d647b870eb0885910b8282e36dde78d9b",
+  "product_test_revision": "58c3f7bf5a9997fd966a224694171ba92596b09d",
+  "rows": [
+    {
+      "check": "Exact historical full-response replay",
+      "status": "PASS",
+      "basis": "Initial mixed prerequisite refused; corrected full response persists and becomes BUSINESS ready with pending receipt/readback."
+    },
+    {
+      "check": "Strict shared phase and negative controls",
+      "status": "PASS",
+      "basis": "Receipt shape mutations, mode mismatch, unknown/unsupported association, observation, source/owner/domain changes, omission, failed/concurrent saves; prior maintenance/counting controls retained."
+    },
+    {
+      "check": "Stable full suite",
+      "status": "PASS",
+      "exit_code": 0,
+      "passed": 6467,
+      "skipped": 464
+    },
+    {
+      "check": "Types and ten offline gates",
+      "status": "PASS",
+      "exit_code": 0
+    },
+    {
+      "check": "Real PostgreSQL CONTROL domain/recovery/receipt persistence",
+      "status": "PASS",
+      "basis": "Explicit final-source selections; SQLite controls labeled separately; no receipt execution claim."
+    },
+    {
+      "check": "Primary B direct Review + exit/restart/recheck",
+      "status": "PASS",
+      "actual_calls": 2,
+      "recheck": "validated_reuse, zero calls"
+    },
+    {
+      "check": "Primary A ordinary Resume review + exit/restart/recheck",
+      "status": "PASS",
+      "actual_calls": 2,
+      "recheck": "validated_reuse, zero calls",
+      "new_counting_questions": 0
+    },
+    {
+      "check": "Deployment, execution, actual receipt and independent source observation",
+      "status": "PENDING_OUTSIDE_THIS_REVIEW",
+      "basis": "Duties remain unverified; no activation/worker/source-write/provisioning campaign."
+    },
+    {
+      "check": "Independent Claude Grok B and short A on this candidate",
+      "status": "PENDING_EXTERNAL"
+    }
+  ],
+  "historical_stage_a": "artifact-specific acceptance unchanged",
+  "original_stage_b": "ATTEMPTED_NOT_PASSED",
+  "next_unseen_attempt": "NOT_STARTED",
+  "verdict": "Primary obligation-readiness task passes its named local checks; handoff for independent review. No broader qualification inferred."
+}

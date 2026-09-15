@@ -1,0 +1,10 @@
+{
+  "at": "2026-09-15T19:18:34.945792+00:00",
+  "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/reviewer-evidence",
+  "manifest_sha256": "605516b49da84e5215bde73f92c5f6bb1d6e34a133857453652488624e5314ac",
+  "entries": 923,
+  "archive": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/reviewer-evidence.tar.gz",
+  "archive_sha256": "6bda657a9fd2f56fe1f11b825e3658acb16076b61fb4d630a609d2b10f8d121d",
+  "artifact_tree": "8c75b859c4220585ccb07fb28723c3c27fed9881417740f61310938481658362",
+  "scope": "Immutable local evidence, including private synthetic project checkpoints. Do not execute saved queues. Separate final installation and source archive identities are in final-artifact.json. Delivery-only metadata added later is outside this manifest."
+}

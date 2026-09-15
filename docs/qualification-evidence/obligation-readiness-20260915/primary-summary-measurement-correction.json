@@ -1,0 +1,10 @@
+{
+  "at": "2026-09-15T19:12:54.238637+00:00",
+  "original_exit": 1,
+  "cause": "Summary helper assumed review plans must use action_mode=none. The existing closed review schema also permits reuse for existing authority (boundary-job-model.ts:375-377). Actual unmodified A reply is operation=review_rules, read_mode=reuse, action_mode=reuse, no edit fields; the product accepts that supported review branch.",
+  "original_helper_sha256": "25e1b94065291ad14e35af049b6ff4b0d9fb8eac51df792ac60e8dde9c7cedb0",
+  "corrected_helper_sha256": "f2312faa5aed3c5b799f03c0b7e737ab9be626fefa742ac99d8ac34879430a9d",
+  "product_modified": false,
+  "provider_payload_modified": false,
+  "journey_rerun": false
+}

@@ -1,0 +1,453 @@
+{
+  "at": "2026-09-15T19:12:54.292046+00:00",
+  "artifact_tree": "8c75b859c4220585ccb07fb28723c3c27fed9881417740f61310938481658362",
+  "product": "58c3f7bf5a9997fd966a224694171ba92596b09d",
+  "source_checkpoint": "d631810d647b870eb0885910b8282e36dde78d9b",
+  "actual_final_calls": 4,
+  "ceiling": 25,
+  "restart_reserved": 6,
+  "actual_restart_calls": 0,
+  "development_calls": 3,
+  "development_max": 4,
+  "dollar_spend": "unknown; no priced billing meter available; no credits purchased",
+  "outcome": "Primary B and A BUSINESS review/save/restart/current recheck PASS; independent Grok B/A PENDING",
+  "results": [
+    {
+      "case": "B",
+      "run": "counting-wording-control",
+      "status": "PASS",
+      "scope": "known installed review-only path; no deployment/execution qualification",
+      "route": "direct Review",
+      "legacy_choice": "This saved request was review-only; original request retained in completed review history; no separate real business edit identified or cancelled",
+      "actual_calls": 2,
+      "restart_calls": 0,
+      "calls": [
+        {
+          "index": 1,
+          "started_at": "2026-09-15T19:04:11.461Z",
+          "completed_at": "2026-09-15T19:04:49.312Z",
+          "model": "gpt-5.6-terra",
+          "reasoning": {
+            "effort": "low"
+          },
+          "max_output_tokens": 12000,
+          "store": false,
+          "tools": [
+            {
+              "name": "runner__review_policy_coverage",
+              "argument_sha256": "b305c60394f86735723ef0a994b5aa9d7440e10a69349f386d6ba92a0afa10a8",
+              "operation": null,
+              "status": null,
+              "read_mode": null,
+              "action_mode": null,
+              "passages": 20
+            }
+          ],
+          "usage": {
+            "input_tokens": 29655,
+            "input_tokens_details": {
+              "cache_write_tokens": 29522,
+              "cached_tokens": 0
+            },
+            "output_tokens": 3202,
+            "output_tokens_details": {
+              "reasoning_tokens": 516
+            },
+            "total_tokens": 32857
+          },
+          "correction": [],
+          "input": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/runs/counting-wording-control/meter/input-0001.json",
+          "input_sha256": "c3d78ecdf36bc7e6e0637b0088cc039a07d60fcd2c24b41ddb5eb42f9e10b7c0",
+          "output": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/runs/counting-wording-control/meter/output-0001.txt",
+          "output_sha256": "f0f6d7c9fbda1242e3e13f4da81834902643f4ef6108a76e73ea7dcdc4d482ae"
+        },
+        {
+          "index": 2,
+          "started_at": "2026-09-15T19:04:49.398Z",
+          "completed_at": "2026-09-15T19:05:16.730Z",
+          "model": "gpt-5.6-terra",
+          "reasoning": {
+            "effort": "low"
+          },
+          "max_output_tokens": 12000,
+          "store": false,
+          "tools": [
+            {
+              "name": "runner__review_policy_coverage",
+              "argument_sha256": "9f1161405a88554fd0ae3f4e5b3e845dd19fb31097b48ed3886c24a8eb8755c2",
+              "operation": null,
+              "status": null,
+              "read_mode": null,
+              "action_mode": null,
+              "passages": 20
+            }
+          ],
+          "usage": {
+            "input_tokens": 32468,
+            "input_tokens_details": {
+              "cache_write_tokens": 23053,
+              "cached_tokens": 9282
+            },
+            "output_tokens": 3076,
+            "output_tokens_details": {
+              "reasoning_tokens": 393
+            },
+            "total_tokens": 35544
+          },
+          "correction": [
+            "Correct this structural coverage problem: COUNTING_SUPPORT_MISMATCH: /runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability cites a message with no exact accepted support association. This counting requirement is supported by the explicit host-recorded operator counting review. Omit the unbound counter citation and retain the source/host requirement comparison; keep any paragraph citation separate. No policy change or new owner answer is required."
+          ],
+          "input": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/runs/counting-wording-control/meter/input-0002.json",
+          "input_sha256": "b30f2692b929a227a5cc7e684bcc6dd475fb666733b9e0d8df791692cc07bd18",
+          "output": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/runs/counting-wording-control/meter/output-0002.txt",
+          "output_sha256": "7ae413d2e2b3207f00cbd1f0b09860530b68c2baf08d7db58befd1c8384ed105"
+        }
+      ],
+      "review_and_recheck": [
+        {
+          "request": {
+            "operation": "review_rules",
+            "request": "Review attached rules and unresolved decisions",
+            "source_session": "a6d8098e-7f74-4c80-bcc2-728ba936ef7a",
+            "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+            "read_digest": "sha256:6c6196b167fe621caf480cd2b2a4449ef083315cebaf044cc5bcb1660985efd3",
+            "action_name": "reviewed_staging_rules",
+            "action_digest": "sha256:3431e33b5c7ef594c67b545c33ae8285cbd919ff01c91bf35f5d72581ad2ea3e",
+            "supersedes_pending_job_revision": "Use the updated attached-rules context for this same draft. Operator instruction: Use the attached replacement text for this same saved job and review whether the current rules satisfy it. Preserve the existing business behavior and authority."
+          },
+          "report_digest": "sha256:202c09eb949bc32b134db4d6bc187c4bc8d74641adda40a9977a22986c720546",
+          "context_digest": "sha256:f0c14f7162612a43e992f0b3b145095b0b3203a5d8755ce0f8b4ca14ad056804",
+          "activity": "provider",
+          "completed_at": "2026-09-15T19:05:17.494Z"
+        },
+        {
+          "request": {
+            "operation": "review_rules",
+            "request": "Review attached rules and unresolved decisions",
+            "source_session": "a6d8098e-7f74-4c80-bcc2-728ba936ef7a",
+            "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+            "read_digest": "sha256:6c6196b167fe621caf480cd2b2a4449ef083315cebaf044cc5bcb1660985efd3",
+            "action_name": "reviewed_staging_rules",
+            "action_digest": "sha256:3431e33b5c7ef594c67b545c33ae8285cbd919ff01c91bf35f5d72581ad2ea3e"
+          },
+          "report_digest": "sha256:202c09eb949bc32b134db4d6bc187c4bc8d74641adda40a9977a22986c720546",
+          "context_digest": "sha256:f0c14f7162612a43e992f0b3b145095b0b3203a5d8755ce0f8b4ca14ad056804",
+          "activity": "validated_reuse",
+          "completed_at": "2026-09-15T19:06:19.340Z"
+        }
+      ],
+      "source": {
+        "digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+        "version": 2
+      },
+      "pending_business_items": [],
+      "pending_coverage": [
+        {
+          "topic": "Execution deployment setup",
+          "paths": [
+            "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+          ],
+          "disposition": "needs_decision",
+          "responsibility": "deployment",
+          "host_assessment": null
+        },
+        {
+          "topic": "Independent source verification",
+          "paths": [
+            "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+          ],
+          "disposition": "needs_decision",
+          "responsibility": "application",
+          "host_assessment": {
+            "origin": "HOST-RESOLVED",
+            "family": "independent_source_readback",
+            "path": "/runner_evidence/runtime_contract/application_obligations/independent_source_readback",
+            "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+            "requirement": "independent_source_readback",
+            "phase": "after_execution",
+            "state": "pending",
+            "verified": false,
+            "dependencies_digest": "sha256:3b50fea76a7508eefe7b4e7f163d7d7da3cc07b76bc868f2b17c0591dbe06637"
+          }
+        },
+        {
+          "topic": "Receipt/execution setup",
+          "paths": [
+            "/runner_evidence/runtime_contract/receipts"
+          ],
+          "disposition": "needs_decision",
+          "responsibility": "deployment",
+          "host_assessment": {
+            "configuration_digest": "sha256:4271bc259e1604d29231176a50fa2ecd959e3b172255b56254ab00c8697ac1a6",
+            "origin": "HOST-RESOLVED",
+            "family": "receipt_setup",
+            "path": "/runner_evidence/runtime_contract/receipts",
+            "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+            "requirement": "runner_ledger",
+            "phase": "after_authority_review",
+            "state": "pending",
+            "verified": false,
+            "dependencies_digest": "sha256:9cd773c8fb81f87730b1beaa40bfae317e17e89da852ddb73c887b7524487b1d"
+          }
+        }
+      ],
+      "counter_maintenance_evidence": {
+        "status": "owner_confirmed_operating_prerequisite",
+        "resource": "tournament_ops.results",
+        "field": "version",
+        "maintenance": "all_writers_increment",
+        "proof_digest": "sha256:a64444d8c11ed349977baf58b0b194936114c3898e802aeeac70e802a9803bdc",
+        "read_boundary_digest": "sha256:6c6196b167fe621caf480cd2b2a4449ef083315cebaf044cc5bcb1660985efd3",
+        "generation_lock_fingerprint": "sha256:5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6",
+        "role_posture_fingerprint": "sha256:f342a8f34ae5650224a607789616aaa1e12a35b9f5e056aee1bd2a6dc2e464d2",
+        "external_writers_verified": false,
+        "production_integration_verified": false
+      },
+      "counting_decisions": [
+        {
+          "origin": "OPERATOR-COUNTING-REVIEW",
+          "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+          "configuration_digest": "sha256:05e206f813c21d8b29241ff4eae0d4d9add1b62618028b3b41c2f1d0106ecb6c",
+          "required_capability": "league.result_ratification",
+          "operator_history_digest": "sha256:e07d7b9b18e40cc36bfe73f9b25483e9bfa9ce4e580d11b8c6ad0bf7ec1bd1fc",
+          "reviewed_at": "2026-09-15T19:03:49.246Z"
+        },
+        {
+          "origin": "OPERATOR-COUNTING-REVIEW",
+          "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+          "path": "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability",
+          "configuration_digest": "sha256:8502bca55a9ce7d5be7ea761bef9193edc93a88f5bf4bcd5255ce01bb27cf4d2",
+          "required_capability": "league.result_ratification",
+          "operator_history_digest": "sha256:e07d7b9b18e40cc36bfe73f9b25483e9bfa9ce4e580d11b8c6ad0bf7ec1bd1fc",
+          "reviewed_at": "2026-09-15T19:04:10.662Z"
+        }
+      ],
+      "all_ledger_tables_unchanged": true,
+      "program_authority_configuration_unchanged": true,
+      "source_rows": {
+        "events": 8,
+        "results": 96
+      },
+      "source_unchanged": true,
+      "new_counting_questions": 2,
+      "recheck_repeated_questions": 0,
+      "provider_oracle_files": [
+        "counting-wording-control-business-reviewed-oracle.json",
+        "counting-wording-control-rechecked-oracle.json",
+        "counting-wording-control-rechecked-project-difference.json"
+      ],
+      "cli_exits": [
+        0,
+        0
+      ]
+    },
+    {
+      "case": "A",
+      "run": "recovery-tournament-assisted",
+      "status": "PASS",
+      "scope": "known installed review-only path; no deployment/execution qualification",
+      "route": "ordinary Resume -> valid review-only plan",
+      "legacy_choice": "This saved request was review-only; original request retained in completed review history; no separate real business edit identified or cancelled",
+      "actual_calls": 2,
+      "restart_calls": 0,
+      "calls": [
+        {
+          "index": 1,
+          "started_at": "2026-09-15T19:07:19.223Z",
+          "completed_at": "2026-09-15T19:07:22.231Z",
+          "model": "gpt-5.6-terra",
+          "reasoning": {
+            "effort": "low"
+          },
+          "max_output_tokens": 4000,
+          "store": false,
+          "tools": [
+            {
+              "name": "runner__plan_boundary_job",
+              "argument_sha256": "438ba2ba96b5649df146e7ec35c8f5d6b2f664fe2bc5d617c2b0919b90be1103",
+              "operation": "review_rules",
+              "status": "planned",
+              "read_mode": "reuse",
+              "action_mode": "reuse",
+              "passages": 0
+            }
+          ],
+          "usage": {
+            "input_tokens": 6126,
+            "input_tokens_details": {
+              "cache_write_tokens": 5994,
+              "cached_tokens": 0
+            },
+            "output_tokens": 93,
+            "output_tokens_details": {
+              "reasoning_tokens": 11
+            },
+            "total_tokens": 6219
+          },
+          "correction": [],
+          "input": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/runs/recovery-tournament-assisted/meter/input-0001.json",
+          "input_sha256": "37b1cb81f5ccf72a89daa8d51a11dbb320fb185b32eb002e39100ff4adc57b90",
+          "output": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/runs/recovery-tournament-assisted/meter/output-0001.txt",
+          "output_sha256": "fb6158aeb3ce8b6fa6026f78ee58f59a70052c87bfbeb9be2a6ddf41b4fb2c9b"
+        },
+        {
+          "index": 2,
+          "started_at": "2026-09-15T19:08:10.543Z",
+          "completed_at": "2026-09-15T19:08:40.311Z",
+          "model": "gpt-5.6-terra",
+          "reasoning": {
+            "effort": "low"
+          },
+          "max_output_tokens": 12000,
+          "store": false,
+          "tools": [
+            {
+              "name": "runner__review_policy_coverage",
+              "argument_sha256": "2a1f927f1499f38c7ff534a61ed3ec2dd0c850e3be3d249e6ded74fc6ace39ec",
+              "operation": null,
+              "status": null,
+              "read_mode": null,
+              "action_mode": null,
+              "passages": 16
+            }
+          ],
+          "usage": {
+            "input_tokens": 29074,
+            "input_tokens_details": {
+              "cache_write_tokens": 19659,
+              "cached_tokens": 9282
+            },
+            "output_tokens": 2668,
+            "output_tokens_details": {
+              "reasoning_tokens": 487
+            },
+            "total_tokens": 31742
+          },
+          "correction": [],
+          "input": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/runs/recovery-tournament-assisted/meter/input-0002.json",
+          "input_sha256": "eb01399722cffabecfc63557437bd1f7d2300ccb0338fa7b1f6dd24010ba9600",
+          "output": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/runs/recovery-tournament-assisted/meter/output-0002.txt",
+          "output_sha256": "57e8d666f0217c7a3b1aa80bc3a48e60b55d40f36a2a9193580e00f9f8a5a83e"
+        }
+      ],
+      "review_and_recheck": [
+        {
+          "request": {
+            "operation": "review_rules",
+            "request": "Recheck the current saved rules against the attached policy and existing decisions without changing the rules or authority.",
+            "source_session": "a6d8098e-7f74-4c80-bcc2-728ba936ef7a",
+            "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+            "read_digest": "sha256:6c6196b167fe621caf480cd2b2a4449ef083315cebaf044cc5bcb1660985efd3",
+            "action_name": "reviewed_staging_rules",
+            "action_digest": "sha256:3431e33b5c7ef594c67b545c33ae8285cbd919ff01c91bf35f5d72581ad2ea3e",
+            "supersedes_pending_job_revision": "Recheck the current saved rules against the attached policy and existing decisions without changing the rules or authority."
+          },
+          "report_digest": "sha256:1cb03b1620cee8638f7ae37e80e1b93702ef4e05ed86c9720e7107dd605e0ef2",
+          "context_digest": "sha256:2418dd27adcd5f1374a2f90fa60ea3d26cdc8163afbe10bb36dd86b44a83e83a",
+          "activity": "provider",
+          "completed_at": "2026-09-15T19:08:41.042Z"
+        },
+        {
+          "request": {
+            "operation": "review_rules",
+            "request": "Review attached rules and unresolved decisions",
+            "source_session": "a6d8098e-7f74-4c80-bcc2-728ba936ef7a",
+            "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+            "read_digest": "sha256:6c6196b167fe621caf480cd2b2a4449ef083315cebaf044cc5bcb1660985efd3",
+            "action_name": "reviewed_staging_rules",
+            "action_digest": "sha256:3431e33b5c7ef594c67b545c33ae8285cbd919ff01c91bf35f5d72581ad2ea3e"
+          },
+          "report_digest": "sha256:1cb03b1620cee8638f7ae37e80e1b93702ef4e05ed86c9720e7107dd605e0ef2",
+          "context_digest": "sha256:2418dd27adcd5f1374a2f90fa60ea3d26cdc8163afbe10bb36dd86b44a83e83a",
+          "activity": "validated_reuse",
+          "completed_at": "2026-09-15T19:10:12.603Z"
+        }
+      ],
+      "source": {
+        "digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+        "version": 1
+      },
+      "pending_business_items": [],
+      "pending_coverage": [
+        {
+          "topic": "Authenticated referee identity",
+          "paths": [
+            "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+          ],
+          "disposition": "needs_decision",
+          "responsibility": "deployment",
+          "host_assessment": null
+        },
+        {
+          "topic": "Referee result selection",
+          "paths": [
+            "/runner_evidence/runtime_contract/application_obligations/customer_selection"
+          ],
+          "disposition": "needs_decision",
+          "responsibility": "application",
+          "host_assessment": null
+        },
+        {
+          "topic": "Receipt and execution setup",
+          "paths": [
+            "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+          ],
+          "disposition": "needs_decision",
+          "responsibility": "deployment",
+          "host_assessment": null
+        },
+        {
+          "topic": "Independent changed-row verification",
+          "paths": [
+            "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+          ],
+          "disposition": "needs_decision",
+          "responsibility": "application",
+          "host_assessment": {
+            "origin": "HOST-RESOLVED",
+            "family": "independent_source_readback",
+            "path": "/runner_evidence/runtime_contract/application_obligations/independent_source_readback",
+            "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+            "requirement": "independent_source_readback",
+            "phase": "after_execution",
+            "state": "pending",
+            "verified": false,
+            "dependencies_digest": "sha256:954740fdc118d2992905a649de24f49a1e3c62b6b34fc4b7e0c6f21db0d5242c"
+          }
+        }
+      ],
+      "counter_maintenance_evidence": {
+        "status": "owner_confirmed_operating_prerequisite",
+        "resource": "tournament_ops.results",
+        "field": "version",
+        "maintenance": "all_writers_increment",
+        "proof_digest": "sha256:a64444d8c11ed349977baf58b0b194936114c3898e802aeeac70e802a9803bdc",
+        "read_boundary_digest": "sha256:6c6196b167fe621caf480cd2b2a4449ef083315cebaf044cc5bcb1660985efd3",
+        "generation_lock_fingerprint": "sha256:5964cd3f96dd729db2c2615f5f49f4d146b906fd3928abb619a9c98b426addc6",
+        "role_posture_fingerprint": "sha256:f342a8f34ae5650224a607789616aaa1e12a35b9f5e056aee1bd2a6dc2e464d2",
+        "external_writers_verified": false,
+        "production_integration_verified": false
+      },
+      "counting_decisions": [],
+      "all_ledger_tables_unchanged": true,
+      "program_authority_configuration_unchanged": true,
+      "source_rows": {
+        "events": 8,
+        "results": 96
+      },
+      "source_unchanged": true,
+      "new_counting_questions": 0,
+      "recheck_repeated_questions": 0,
+      "provider_oracle_files": [
+        "recovery-tournament-assisted-business-reviewed-oracle.json",
+        "recovery-tournament-assisted-rechecked-oracle.json",
+        "recovery-tournament-assisted-rechecked-project-difference.json"
+      ],
+      "cli_exits": [
+        0,
+        0
+      ]
+    }
+  ]
+}

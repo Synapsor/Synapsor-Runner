@@ -1,6 +1,6 @@
-# Shared obligation readiness — verification in progress
+# Shared obligation readiness — primary completion and frozen handoff
 
-This checkpoint is not a final primary-journey pass. Product/tests: 58c3f7bf5a9997fd966a224694171ba92596b09d, following initial implementation 2a6d0694db72b8462f2247daf7cebe35df6d9ce6 and baseline delivery 666fc5a2262145f9b54860c8c6670580d73acfef. Stable source gates are complete: full suite exit 0 (6,467 passed, 464 skipped; 312 files passed, 21 skipped), types exit 0, all ten offline checks exit 0. Final-source PostgreSQL-enabled selections passed: domain/freshness 5, recovery 4, receipt persistence 2; these counts include the explicitly labeled SQLite controls where present. The final artifact and primary installed journeys are pending. Exact commands/exits and every earlier attempt are in `verification-summary.json`; complete logs are indexed by `gate-log-index.json`.
+Primary B and the short A regression completed BUSINESS review, saved, restarted and explicitly rechecked on one unchanged new installation. The independent Grok B/A lane remains pending. Product/tests: 58c3f7bf5a9997fd966a224694171ba92596b09d, following initial implementation 2a6d0694db72b8462f2247daf7cebe35df6d9ce6 and baseline delivery 666fc5a2262145f9b54860c8c6670580d73acfef. Stable source gates are complete: full suite exit 0 (6,467 passed, 464 skipped; 312 files passed, 21 skipped), types exit 0, all ten offline checks exit 0. Final-source PostgreSQL-enabled selections passed: domain/freshness 5, recovery 4, receipt persistence 2; these counts include the explicitly labeled SQLite controls where present. The final artifact and completed primary journeys are recorded below. Exact commands/exits and every earlier attempt are in `verification-summary.json`; complete logs are indexed by `gate-log-index.json`.
 
 ## Cause and correction
 
@@ -30,3 +30,37 @@ Owner maintenance remains an attestation, with assurance about all external writ
 The later independent Grok A success is recorded in `/home/sandesh-tiwari/Desktop/Synapsor Tutorials/xmodel-secondary-20260915/CROSS-VENDOR-RESULT.md`, final section, on unchanged prior artifact 072ab87a11ecde0ec1e0a0928bfc6ba036fede08b6e75cfc073b1de263c631ef. It postdates the prior implementer zero-live-call report, which is preserved. It does not qualify Grok B or this changed artifact. Claude owns final independent Grok B and a small A regression on the new frozen candidate.
 
 Original Stage B was attempted and remains NOT PASSED. The next unseen attempt remains NOT STARTED. Historical Stage A acceptance is artifact-specific. Software unlinked-slot subjects, signed headless counters and TRUSTED_BINDING_MISSING remain separate tracked work, with no new conclusion about their impact.
+
+## Final candidate and scorecard
+
+Full installed tree: `8c75b859c4220585ccb07fb28723c3c27fed9881417740f61310938481658362` (7,569 file/directory/symlink entries). Product/tests `58c3f7bf5a9997fd966a224694171ba92596b09d`; frozen source/evidence checkpoint `d631810d647b870eb0885910b8282e36dde78d9b`. Runner 1.8.0 with local Spec 1.11.0. Full manifest SHA256 `837db28e55f976e247086d74e81617da9e0daf15d722e58d85472536ff181555`; package-lock SHA256 `6aa57a67bec368531a7f1e1cf169765d027c49ad64cd1a9921eee7b5c52599f1`. `final-artifact.json` records the source/archive/tarball/Node identities and exact paths. This is a new complete installation, never patched during public confirmation.
+
+| Named check | Result |
+| --- | --- |
+| Exact replies and strict phase/negative controls | PASS |
+| Stable whole suite | PASS, exit 0; 6,467 passed / 464 skipped |
+| Types and ten offline gates | PASS, every exit 0 |
+| Explicit real PostgreSQL CONTROL gates | PASS; 5 domain/freshness, 4 recovery, 2 receipt persistence selections, including separately named SQLite controls |
+| Primary B, direct Review | PASS; two coverage calls, including one bounded correction |
+| B exit/restart/explicit recheck | PASS; current validated reuse, zero new calls |
+| Primary A, ordinary Resume | PASS; one valid review-only plan and one coverage call; zero new counting questions |
+| A exit/restart/explicit recheck | PASS; current validated reuse, zero new calls |
+| Independent Grok B and small A on this candidate | PENDING EXTERNALLY — Claude owns this lane |
+
+B used the untouched complete v2 attachment and made its two genuine counting choices with separate confirmations. Its first reply cited an operator message with no exact support for the counter. The existing bounded correction reported `COUNTING_SUPPORT_MISMATCH`, directed a structural support correction and required no new policy answer. The corrected reply completed review. Both actual responses and request envelopes are retained; none was manually replaced. B preserves three pending coverage items: execution setup, independent source readback, and the host-isolated receipt/setup component. The latter records `runner_ledger`, `after_authority_review`, `pending`, `verified:false`; the readback component records `after_execution`, `pending`, `verified:false`. Their source/configuration/dependency bindings are in `primary-result.json` and the raw oracle.
+
+A's actual valid plan was `operation=review_rules`, `read_mode=reuse`, `action_mode=reuse`, with no edit payload. These neutral modes are permitted by the existing closed review branch; no normalization or fallback was needed. A retains four pending items: authenticated identity, client result selection, execution/receipt setup, and independent readback. The shared source-counter evidence in both journeys remains `owner_confirmed_operating_prerequisite`, `all_writers_increment`, with `external_writers_verified:false` and `production_integration_verified:false`, proof digest `sha256:a64444d8c11ed349977baf58b0b194936114c3898e802aeeac70e802a9803bdc`. No new maintenance attestation or independent writer assurance was produced.
+
+For both exact stored no-change requests the operator selected “This saved request was review-only.” The request is retained in completed review history; there is no pending business-edit item. This is not proof of retiring an actually separate unfinished edit: that control remains deterministic coverage, and the earlier Grok A retained-work choice belongs to its old artifact. BUSINESS completion leaves deployment/client/observation duties pending; no source write, activation, worker, receipt provisioning or new execution happened here.
+
+Both runs preserve every SQLite table's row hashes relative to their respective starts, including approvals, queues and receipts. The programs, authority and execution configuration are unchanged. Source readback independently matches all 8 events and 96 results in each restored checkpoint. Only review bookkeeping changed, plus A's new planning diagnostic. Prior conversations and all source snapshots remain. Each recheck retained its review/context digest and pending evidence; the public output and completed review record explicitly state `validated_reuse`. This is current validation, not a newly executed provider call.
+
+One summary-helper attempt mistakenly required action_mode=none and exited 1. Inspection of the unchanged closed schema established that reuse is also valid for existing authority. The helper now checks the actual permitted no-edit branch. The original measurement failure is preserved in `primary-summary-measurement-correction.json`; no product, response or trial changed.
+
+Final primary usage: 4/25 actual authoring calls; 0 of the six reserved recheck calls needed. Separate development usage remains 3/4, including its failed transport. Primary adapter/model: openai/gpt-5.6-terra; exact reasoning/output budgets and usage tokens are in `primary-result.json`. Default timeout 120 seconds and provider bounds remain unchanged. No rescue sentence, owner restatement, provider switch or new model was used. The 260-minute task allocation and 55-minute primary window were not reset; actual elapsed timestamps are recorded. Dollar spend is unknown because no billing meter was available; no credits were purchased. Call counts and review times are not a general usability/speed claim.
+
+## Preservation and stopping point
+
+Original captures, all three source checkpoints, 207-entry untouched reviewer starts and the prior 7,569-entry installation verify unchanged. The new installation verifies unchanged after both public journeys. All five owned containers are stopped with dumps/logs saved first; no originals were touched and no fixture/container was removed. `owned-resource-final.json`, `owned-cleanup.json`, `development-terra-owned-cleanup.json` and `test-postgres-cleanup.json` record exact resources and exits. Complete reproducible primary and reviewer evidence is indexed by `REVIEWER-HANDOFF.md` and the sealed reviewer-evidence manifest.
+
+The named primary checks are complete. STOP for Claude's independent Grok B and short A review on this artifact. If those pass, the next decision is the separately authorized new two-layout Stage B attempt under the existing audit. No unseen cases were selected or run here.

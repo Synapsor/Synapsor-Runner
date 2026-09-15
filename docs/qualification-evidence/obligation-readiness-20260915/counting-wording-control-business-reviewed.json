@@ -1,0 +1,75 @@
+{
+  "at": "2026-09-15T19:05:43.932Z",
+  "runId": "counting-wording-control",
+  "label": "business-reviewed",
+  "classification": "KNOWN-CASE checkpoint recovery",
+  "artifact_tree": "8c75b859c4220585ccb07fb28723c3c27fed9881417740f61310938481658362",
+  "prior_calls": "historical counters retained in previous run; this is a separately bounded task",
+  "new_authoring_calls": 2,
+  "complete_response_captures": 2,
+  "response_capture_files": 2,
+  "cli_exits": [
+    0
+  ],
+  "preflight_exits": [
+    0
+  ],
+  "resume_stage": "authority_review",
+  "exact_original_answer_paths": [
+    ".reconciled_action_revisions[0].pending.operator_statements[3]"
+  ],
+  "stores": {
+    ".synapsor/local.db": {
+      "proposal_store_schema": 1,
+      "proposals": 6,
+      "proposal_events": 40,
+      "approvals": 4,
+      "writeback_receipts": 2,
+      "evidence_bundles": 11,
+      "evidence_items": 6,
+      "observed_subject_references": 120,
+      "query_audit": 12,
+      "explore_privacy_releases": 0,
+      "explore_budget_reservations": 5,
+      "writeback_jobs": 2,
+      "idempotency_receipts": 2,
+      "writeback_intents": 2,
+      "replay_records": 0,
+      "shadow_human_actions": 0,
+      "shadow_studies": 0,
+      "shadow_study_cases": 0,
+      "shadow_outcomes": 0,
+      "runner_state": 9,
+      "cloud_outbox": 0,
+      "cloud_governance_events": 0,
+      "policy_recommendations": 0,
+      "attention_events": 29,
+      "attention_items": 2,
+      "notification_deliveries": 0,
+      "worker_queue": 4,
+      "control_policy_identity": 1,
+      "control_policy_deployments": 1,
+      "control_policy_revisions": 31,
+      "control_policy_active": 7,
+      "control_policy_drafts": 2,
+      "control_policy_events": 42,
+      "control_policy_reviews": 0,
+      "control_policy_budget_accounts": 0,
+      "control_policy_budget_requests": 0,
+      "control_policy_budget_entries": 0,
+      "control_policy_budget_receipts": 0,
+      "control_policy_effect_admissions": 0,
+      "control_policy_effect_receipts": 0,
+      "control_policy_runtime_proofs": 0
+    }
+  },
+  "source_counts": {
+    "events": 8,
+    "results": 96
+  },
+  "source_unchanged_relative_to_matching_task_baseline": true,
+  "source_matches_selected_independent_oracle": true,
+  "source_oracle": "matching restored checkpoint source-readback, not the original seed facts",
+  "project_copy_sha256": "3703179b22ca74b375f333c8ba837fbe0e196eb29a9cb846a5dd76c3c323fced",
+  "checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/runs/counting-wording-control/checkpoints/business-reviewed"
+}

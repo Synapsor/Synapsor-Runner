@@ -1,0 +1,38 @@
+{
+  "at": "2026-09-15T19:17:48.161418+00:00",
+  "containers": [
+    {
+      "name": "synapsor-obligation-readiness-recovery-tournament-assisted-03d059f1",
+      "id": "438a82dba8b5",
+      "state": "exited",
+      "status": "Exited (0) 3 minutes ago"
+    },
+    {
+      "name": "synapsor-obligation-readiness-counting-wording-control-ee97df1b",
+      "id": "d69965eb4ae4",
+      "state": "exited",
+      "status": "Exited (0) 3 minutes ago"
+    },
+    {
+      "name": "synapsor-obligation-readiness-counting-wording-control-680e6028",
+      "id": "74fade8369d2",
+      "state": "exited",
+      "status": "Exited (0) 57 minutes ago"
+    },
+    {
+      "name": "synapsor-obligation-readiness-tests-33347ee0",
+      "id": "72106b8f684c",
+      "state": "exited",
+      "status": "Exited (0) 3 minutes ago"
+    },
+    {
+      "name": "synapsor-obligation-readiness-receipt-replay-14908bf6",
+      "id": "1079dca67880",
+      "state": "exited",
+      "status": "Exited (0) 3 minutes ago"
+    }
+  ],
+  "public_locks_absent": true,
+  "resources_removed": false,
+  "other_resources_touched": false
+}

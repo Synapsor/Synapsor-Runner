@@ -1,12 +1,12 @@
 {
-  "at": "2026-09-15T19:00:56.140675+00:00",
-  "phase": "all stable gates passed; freeze next",
+  "at": "2026-09-15T19:14:11.536451+00:00",
+  "phase": "primary B and A completed; final evidence/cleanup/delivery",
   "product_modified": true,
   "original_B_captures": "initial structural refusal retained; correction positive now passes",
   "development": "3 calls; 2 selected-mode claims overblocked initially then repaired/captured regressions pass; third failed TLS before response; lane stopped",
-  "primary_final": "NOT STARTED",
+  "primary_final": "PASS: B 2 coverage calls; A valid planning+coverage 2 calls; both restart/recheck validated_reuse zero calls",
   "postgres": "final-source domain 5 pass, recovery 4 pass, receipt persistence 2 pass; all exit 0; real PostgreSQL control separately enabled",
-  "next": "Commit source/evidence checkpoint; create new complete immutable install; prepare B and A whole copies; B first",
+  "next": "Save owned state, verify originals/new artifact unchanged, finish immutable handoff, commit and push private backup; STOP for Claude independent review",
   "product_revision": "58c3f7bf5a9997fd966a224694171ba92596b09d",
   "stable_full": {
     "completed_attempt": "stable-full02",
@@ -18,5 +18,7 @@
     "source_unchanged": true,
     "earlier_attempt": "stable-full interrupted deliberately, child -15"
   },
-  "offline": "all ten passed on unchanged product; attempts 1/2 dependency failures retained"
+  "offline": "all ten passed on unchanged product; attempts 1/2 dependency failures retained",
+  "artifact_tree": "8c75b859c4220585ccb07fb28723c3c27fed9881417740f61310938481658362",
+  "frozen_source": "d631810d647b870eb0885910b8282e36dde78d9b"
 }
