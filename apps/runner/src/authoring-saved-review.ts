@@ -1,3 +1,6 @@
+import { authoringReceiptConfiguration } from "./authoring-receipt-configuration.js";
+import { deferredReviewObligation } from "./authoring-obligation-review.js";
+import { boundaryAuthoringVersionReviews } from "./boundary-authoring-resume.js";
 import { actionRuleModelDraftFromAuthority } from "./action-rule-draft.js";
 import { countingConfigurationDigest, countingSourceRequirements } from "./authoring-counting-requirements.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -59,6 +62,22 @@ export async function savedAuthoringPolicyReview(input: {
         domains.every(domain => canonicalJsonDigest(domain) === canonicalJsonDigest(current)))) {
         return pending("The saved counting comparison needs revalidation against current authority and retained history. Its former domain condition is not current review evidence.");
       }
+    }
+    const obligations = session.coverage.passages.filter(p => p.obligation_assessment);
+    if (obligations.some(p => !deferredReviewObligation(p) || p.obligation_assessment!.source_digest !== source.digest)) {
+      return pending("The saved obligation phase evidence needs current validation.");
+    }
+    const receipts = obligations.filter(p => p.obligation_assessment!.family === "receipt_setup");
+    if (receipts.length) {
+      const current = await authoringReceiptConfiguration(input.projectRoot, matchingAuthority?.authority.rules.map(r => r.rule.source) ?? []);
+      if (current.status === "unavailable" || receipts.some(p => p.obligation_assessment!.configuration_digest !== current.digest)) {
+        return pending("Receipt configuration changed or is unavailable. Recheck its setup obligation; no receipt or execution was verified.");
+      }
+    }
+    const ownerReviews = boundaryAuthoringVersionReviews(saved);
+    if (obligations.some(p => p.obligation_assessment!.family === "source_counter_maintenance"
+      && !ownerReviews.some(r => r.proof_digest === p.source_counter_resolution?.proof_digest))) {
+      return pending("The source-owner counter commitment changed. Recheck its current obligation; external writers remain unverified.");
     }
     const review = policyReviewReadiness(source, session.coverage, session);
     if (saved.pending_policy_review || saved.pending_job_revision || saved.pending_read_revision || saved.pending_action_revision

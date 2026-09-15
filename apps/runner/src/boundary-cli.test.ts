@@ -16331,10 +16331,11 @@ function stripAnsi(value: string): string {
 }
 
 describe("saved review operation dispatch and persistence", () => {
-  it.each(["menu", "no-change", "typed-review", "redundant-source", "unknown", "declined", "choice-save-race", "source-race", "resume-race", "unrelated-edit", "provider-refusal", "semantic-question", "genuine-noop", "maintenance", "maintenance-missing", "maintenance-source-race", "model-review", "model-resume", "model-review-edit", "model-cancel", "model-declined", "fallback-review", "fallback-edit", "fallback-pause", "captured-contract"])("reviews without entering editors: %s", async mode => {
+  it.each(["menu", "no-change", "typed-review", "redundant-source", "unknown", "declined", "choice-save-race", "source-race", "resume-race", "unrelated-edit", "provider-refusal", "semantic-question", "genuine-noop", "maintenance", "maintenance-missing", "maintenance-source-race", "model-review", "model-resume", "model-review-edit", "model-cancel", "model-declined", "fallback-review", "fallback-edit", "fallback-pause", "captured-contract", "receipt", "receipt-source-race"])("reviews without entering editors: %s", async mode => {
+    const receipt = mode.startsWith("receipt");
     const maintenance = mode.startsWith("maintenance"), changingModel = mode.startsWith("model-");
     const solCapture = mode === "captured-contract" ? JSON.parse(await fs.readFile(new URL("./fixtures/review-operation-sol-capture.json", import.meta.url), "utf8")) : undefined;
-    const fixture = await staleSemanticRevalidationFixture({ outcomes: [solCapture?.arguments.action_outcome ?? "maintenance.complete_visit"], atomicUpdates: maintenance });
+    const fixture = await staleSemanticRevalidationFixture({ outcomes: [solCapture?.arguments.action_outcome ?? "maintenance.complete_visit"], atomicUpdates: maintenance, ...(receipt ? { writeback: "supervised" as const } : {}) });
     const { root, inspection } = fixture;
     let sourceReadSpy: { mockRestore(): void } | undefined;
     try {
@@ -16364,6 +16365,7 @@ describe("saved review operation dispatch and persistence", () => {
       }
       const source = newPolicySourceSession();
       source.snapshots = [policyTextSnapshot(Buffer.from(counting ? "The approved work uses the shared allowance described by its owner."
+        : receipt ? "Keep the saved human-reviewed visit follow-up. Request a stored Runner-ledger receipt."
         : maintenance ? "Keep the saved atomic visit job. The source owner must maintain the conflict counter on every updated row."
         : "Keep the saved human-reviewed visit follow-up and its existing eligibility."), "current-rules.txt")];
       source.active = 1;
@@ -16424,7 +16426,7 @@ describe("saved review operation dispatch and persistence", () => {
             expect(options.map(o=>o.value)).toEqual(["review", "edit", "details", "back"]);
             return mode === "fallback-review" ? "review" : mode === "fallback-edit" ? "edit" : "back";
           }
-          if (title === "START BOUNDARY DRAFTING") return restarted || ["menu", "unknown", "declined", "choice-save-race", "source-race", "resume-race", "unrelated-edit", "provider-refusal"].includes(mode) ? "review_rules" : "resume";
+          if (title === "START BOUNDARY DRAFTING") return restarted || ["menu", "unknown", "declined", "choice-save-race", "source-race", "resume-race", "unrelated-edit", "provider-refusal", "receipt", "receipt-source-race"].includes(mode) ? "review_rules" : "resume";
           if (title === "CHOOSE THE SAVED JOB OPERATION") return ["semantic-question", "genuine-noop"].includes(mode) ? "continue" : "review";
           if (title === "REVIEW OR UNFINISHED EDIT?") return ["unrelated-edit", "model-review-edit"].includes(mode) ? "keep" : "review";
           if (title === "REVIEW COUNTED AUTOMATIC APPROVALS") { choices++; return "boundary"; }
@@ -16450,7 +16452,7 @@ describe("saved review operation dispatch and persistence", () => {
             current.operator_messages = [...(current.operator_messages ?? []), competingNote];
             await savePolicySources(root, current, { expectedDigest });
           }
-          if (mode === "source-race" || mode === "maintenance-source-race") {
+          if (mode === "source-race" || mode === "maintenance-source-race" || mode === "receipt-source-race") {
             const competing = await loadPolicySources(root, source.id); competing.operator_messages = ["Retain this newer decision."]; await savePolicySources(root, competing);
           }
           if (mode === "resume-race") {
@@ -16458,6 +16460,12 @@ describe("saved review operation dispatch and persistence", () => {
             await writeBoundaryAuthoringResumeState(root, buildBoundaryAuthoringResumeState({ binding, stage: current.value.stage,
               jobIntent: current.value.job_intent, provider: "openai", model: "gpt-test", policySourceSession: source.id,
               pendingJobRevision: "A genuine competing edit.", action: current.value.action, previous: current.value }), { expectedRevisionDigest: current.value.revision_digest });
+          }
+          if (receipt) {
+            const prefix = "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup";
+            const business = { start: 1, end: 1, disposition: "implemented", responsibility: "runner", interpretation: "The saved human-reviewed visit behavior is unchanged.", draft_paths: ["/actions/0"] };
+            const duty = { start: 1, end: 1, disposition: "needs_decision", responsibility: "deployment", issue_kind: "missing_configuration", interpretation: "Receipt setup remains pending; no receipt was produced.", draft_paths: ["/runner_evidence/runtime_contract/receipts"], ...(providerCalls === 1 ? { deployment_prerequisite: "runner_execution_setup" } : {}) };
+            return { status: 200, body: { output: [{ type: "function_call", call_id: "coverage", name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: [business, duty] }) }] } };
           }
           if (maintenance) {
             const prefix = "/runner_evidence/actions/maintenance.complete_visit/effect";
@@ -16526,7 +16534,7 @@ describe("saved review operation dispatch and persistence", () => {
         expect(resume.pending_job_revision).toBe(mode === "genuine-noop" ? "Change the maximum to four." : exact);
         expect(providerCalls).toBe(0); expect(plannerCalls).toBe(1); return;
       }
-      if (["declined", "choice-save-race", "source-race", "resume-race", "provider-refusal", "maintenance-missing", "maintenance-source-race"].includes(mode)) {
+      if (["declined", "choice-save-race", "source-race", "resume-race", "provider-refusal", "maintenance-missing", "maintenance-source-race", "receipt-source-race"].includes(mode)) {
         expect(resume.pending_policy_review?.operation).toBe("review_rules"); expect(resume.completed_policy_reviews).toBeUndefined();
         if (mode === "declined") { expect(stored.counting_decisions).toBeUndefined(); expect(providerCalls).toBe(0); }
         if (mode === "choice-save-race") {
@@ -16534,7 +16542,7 @@ describe("saved review operation dispatch and persistence", () => {
           expect(stored.operator_messages).toEqual([competingNote]); expect(stored.coverage).toBeUndefined();
           expect(notices.flat().join("\n")).toContain("POLICY_SOURCE_CHANGED");
         }
-        if (mode === "source-race" || mode === "maintenance-source-race") expect(stored.operator_messages).toEqual(["Retain this newer decision."]);
+        if (mode === "source-race" || mode === "maintenance-source-race" || mode === "receipt-source-race") expect(stored.operator_messages).toEqual(["Retain this newer decision."]);
         if (mode === "resume-race") expect(resume.pending_job_revision).toBe("A genuine competing edit.");
         if (mode === "maintenance-missing") {
           expect(providerCalls).toBe(2); expect(notices.flat().join("\n")).toContain("SOURCE_COUNTER_ATTESTATION_REQUIRED");
@@ -16545,6 +16553,11 @@ describe("saved review operation dispatch and persistence", () => {
         expect(resume.pending_job_revision).toBe(["unrelated-edit", "model-review-edit"].includes(mode) ? "Change the maximum to four." : undefined);
         expect(stored.coverage?.passages[0]?.disposition).toBe("implemented");
         if (counting) { expect(choices).toBe(2); expect(confirmations).toBe(2); expect(stored.counting_decisions).toHaveLength(2); }
+        if (receipt) {
+          expect(providerCalls).toBe(2);
+          expect(stored.coverage!.passages.find(p => p.obligation_assessment?.family === "receipt_setup")?.disposition).toBe("needs_decision");
+          expect(notices.flat().join("\n")).toContain("Receipt/execution setup pending");
+        }
         if (maintenance) {
           expect(providerCalls).toBe(2);
           expect(stored.coverage!.passages.filter(p => p.source_counter_resolution)).toHaveLength(2);

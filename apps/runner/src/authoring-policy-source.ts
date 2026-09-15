@@ -1,3 +1,5 @@
+import type { ReviewObligationAssessment } from "./authoring-obligation-review.js";
+import { deferredReviewObligation } from "./authoring-obligation-review.js";
 import fs from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";
@@ -54,7 +56,9 @@ export type ReadInterpretationRecord = {
   authority_changed: false; record_digest: string;
 };
 
-export type PolicyPassage = { start: number; end: number;
+export type PolicyPassage = {
+  /** Host-only phase assessment; submitted annotation remains on this passage. */
+  obligation_assessment?: ReviewObligationAssessment; start: number; end: number;
   disposition: "implemented" | "needs_decision" | "conflict" | "unsupported" | "background" | "overridden";
   interpretation: string; draft_paths: string[]; operator_override?: string;
   /** Exact supporting operator statement; not independently proven and not a policy override. */
@@ -367,6 +371,7 @@ function validStoredCoverage(report: PolicyCoverage, sources: PolicyTextSnapshot
           && check.path.length <= 500 && [check.current_capability, check.required_capability].every((value) => value === null || typeof value === "string" && value.length <= 256)))
       && (passage.application_obligations === undefined || validApplicationObligations(passage.application_obligations))
       && (passage.deployment_prerequisite === undefined || isDeferredPolicyDeployment(passage))
+      && (passage.obligation_assessment === undefined || Boolean(deferredReviewObligation(passage)) && passage.obligation_assessment.source_digest === source.digest)
       && (passage.source_counter_obligation === undefined || Boolean(passage.source_counter_obligation
         && typeof passage.source_counter_obligation.path === "string" && passage.source_counter_obligation.path.length <= 500
         && ["owner_maintenance", "independent_assurance"].includes(passage.source_counter_obligation.requirement)))

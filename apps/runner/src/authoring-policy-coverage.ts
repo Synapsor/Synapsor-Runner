@@ -1,3 +1,4 @@
+import { assessReviewObligation, deferredReviewObligation, receiptSelectionComponent } from "./authoring-obligation-review.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { associateCountingRequirements, countingSourceRequirements, configuredCountingLimits } from "./authoring-counting-requirements.js";
 import { associateCountingComponents, resolveCountingComparison } from "./authoring-counting-review.js";
@@ -7,7 +8,7 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { AskError, askToolSurfaceDigest, resolveAskProviderConfiguration, runAskProviderTurn, type AskToolDefinition, type AskToolGateway } from "./model-ask.js";
 import type { ModelAuthoringNarrationSession } from "./model-authoring-narration.js";
 import { modelAuthoringHistory } from "./model-authoring-conversation.js";
-import { activePolicySource, isDeferredPolicyDeployment, isDeferredSourceReadback, policyTextLines, validApplicationObligations, type PolicyTextSnapshot, type PolicyCoverage, type PolicyPassage } from "./authoring-policy-source.js";
+import { activePolicySource, isDeferredPolicyDeployment, isDeferredSourceReadback, isDeferredSourceCounterMaintenance, policyTextLines, validApplicationObligations, type PolicyTextSnapshot, type PolicyCoverage, type PolicyPassage } from "./authoring-policy-source.js";
 export type { PolicyCoverage, PolicyPassage } from "./authoring-policy-source.js";
 import type { ReviewSection } from "./read-boundary-review-types.js";
 import { redactCliErrorMessage } from "./cli-logging.js";
@@ -283,6 +284,7 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
     delete entry.counting_components;
     delete entry.counting_requirement_bindings;
     delete entry.source_counter_resolution;
+    delete entry.obligation_assessment;
     if (stored.counting_resolution && stored.counting_resolution.source_digest !== source.digest) {
       throw new Error("Counting comparison source changed; review the current requirement before reusing this interpretation.");
     }
@@ -488,7 +490,12 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
         throw new Error("Counter disposition must match the actual versus required filter. A matching selector is not a rule defect; differing selectors cannot be called implemented without established current-domain equivalence.");
       }
     }
-    passages.push({ start: entry.start, end: entry.end, disposition: resolution ? "implemented" : entry.disposition,
+    const assessed = { ...normalized, ...(counterMaintenance ? { source_counter_resolution: counterMaintenance } : {}) };
+    const obligationAssessment = assessReviewObligation(assessed, source, draft);
+    if (stored.obligation_assessment && canonicalJsonDigest(stored.obligation_assessment) !== canonicalJsonDigest(obligationAssessment ?? null)) {
+      throw new Error("OBLIGATION_EVIDENCE_STALE: The saved obligation no longer matches its source requirement and current phase evidence. Recheck its exact requirement; no setup or observation was completed.");
+    }
+    passages.push({ ...(obligationAssessment ? { obligation_assessment: obligationAssessment } : {}), start: entry.start, end: entry.end, disposition: resolution ? "implemented" : entry.disposition,
       interpretation: resolution ? "The retained capability choice conditionally implements this source counting requirement. See the host comparison and its exact domain/revalidation condition; the original review claim remains recorded." : entry.interpretation,
       ...(resolution ? { counting_resolution: resolution } : {}),
       ...(components.length ? { counting_components: components } : {}),
@@ -580,6 +587,14 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
   if (passages.length > 120) throw new Error("Coverage including retained counting comparisons exceeds 120 passages; group the remaining clauses without dropping requirements.");
   const missing = lines.flatMap((line, index) => line.trim() && !covered.has(index + 1) ? [index + 1] : []);
   if (missing.length) throw new Error(`Unaccounted source lines: ${missing.join(", ")}. Include restrictions and unsupported clauses, not only implemented clauses.`);
+  // Configuration evidence proves only the selected mode. Preserve its submitted
+  // passage and an isolated, still-pending duty rather than calling a receipt done.
+  for (const passage of [...passages]) {
+    const component = receiptSelectionComponent(passage, source, draft);
+    if (!component || passages.some(p => p.obligation_assessment?.family === "receipt_setup")) continue;
+    const assessment = assessReviewObligation(component, source, draft);
+    passages.push({ ...component, ...(assessment ? { obligation_assessment: assessment } : {}) });
+  }
   const inventory = configuredCountingLimits(draft);
   return { source_digest: source.digest, draft_digest: canonicalJsonDigest(draft), passages,
     counting_inventory: { version: 1, digest: canonicalJsonDigest(inventory.map(({ path, digest }) => ({ path, digest }))), paths: inventory.map(i => i.path) } };
@@ -639,6 +654,21 @@ export async function reviewPolicyCoverage(input: {
         const serialized = JSON.stringify(args);
         lastSubmission = serialized.length <= 160_000 ? serialized : undefined;
         report = parsePolicyCoverage(args, input.source, input.draft, operatorMessages);
+        if (input.previousReport?.source_digest === input.source.digest) {
+          // A new response cannot complete a previously pending duty by omission.
+          // Reparse retained components against current evidence before saving.
+          const prior = input.previousReport.passages.filter(p => deferredReviewObligation(p) || isDeferredSourceReadback(p) || isDeferredSourceCounterMaintenance(p))
+            .filter(p => !report!.passages.some(next => {
+              const family = p.obligation_assessment?.family ?? (isDeferredSourceReadback(p) ? "independent_source_readback" : "source_counter_maintenance");
+              const path = p.obligation_assessment?.path ?? p.source_counter_obligation?.path ?? p.draft_paths[0];
+              return next.obligation_assessment?.family === family && next.obligation_assessment.path === path;
+            }));
+          const validatedPrior = prior.length ? parsePolicyCoverage({ passages: [...report.passages, ...prior] }, input.source, input.draft, operatorMessages).passages.slice(report.passages.length) : [];
+          const retained = validatedPrior.filter(p => deferredReviewObligation(p)
+            && !report!.passages.some(next => next.obligation_assessment?.family === p.obligation_assessment!.family
+              && next.obligation_assessment.path === p.obligation_assessment!.path));
+          if (retained.length) report = parsePolicyCoverage({ passages: [...report.passages, ...retained] }, input.source, input.draft, operatorMessages);
+        }
         return { ok: true, value: { recorded: true, semantic_completeness_proven: false, authority_granted: false } };
       } catch (error) {
         report = undefined; issue = error instanceof Error ? error.message : "Invalid coverage.";
@@ -761,7 +791,7 @@ function passageStatus(passage: PolicyPassage): string {
   if (passage.disposition === "implemented") return "Prepared";
   if (passage.disposition === "background") return "Context";
   if (passage.disposition === "overridden") return "Your clarification";
-  if (isDeferredSourceReadback(passage)) return "After-execution verification pending";
+  if (deferredReviewObligation(passage)?.family === "independent_source_readback") return "After-execution verification pending";
   if (passage.application_obligations?.length) return "Client integration needed";
   if (passage.disposition === "unsupported") return "Not supported";
   if (passage.disposition === "conflict") return "Needs correction";
@@ -774,8 +804,8 @@ function passageStatus(passage: PolicyPassage): string {
 export function policyCoverageSummary(source: PolicyTextSnapshot, report?: PolicyCoverage): string[] {
   if (!report) return [`Attached rules: ${source.name} v${source.version}; coverage still needs checking. Choose Review attached rules; activation is blocked until review completes.`];
   const open = unresolvedPolicyPassages(report);
-  const unresolved = open.filter((passage) => !isDeferredPolicyDeployment(passage));
-  const deferred = open.filter(isDeferredPolicyDeployment);
+  const unresolved = open.filter((passage) => !isDeferredPolicyDeployment(passage) && !deferredReviewObligation(passage));
+  const deferred = open.filter(p => isDeferredPolicyDeployment(p) || deferredReviewObligation(p));
   const topics = [...new Set(unresolved.map((passage) => passageTopic(source, passage)))];
   return [
     `Attached rules: ${source.name} v${source.version}; ${open.length} open check(s) across ${new Set(open.map((passage) => passageTopic(source, passage))).size} business topic(s).`,

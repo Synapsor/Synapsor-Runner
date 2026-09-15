@@ -3136,6 +3136,41 @@ for (const backend of ["sqlite", "postgres"] as const) {
       });
     });
 
+    it("saves and reloads receipt readiness under the existing review lock without changing operator authority", async () => {
+      await useRepository(async ({ binding, projectRoot, config: storageConfig }) => {
+        const { authoringReceiptConfiguration } = await import("./authoring-receipt-configuration.js");
+        const { policyCoverageDraft } = await import("./authoring-policy-evidence.js");
+        const { parsePolicyCoverage } = await import("./authoring-policy-coverage.js");
+        const { policyReviewReadiness } = await import("./authoring-review-readiness.js");
+        const { newPolicySourceSession, policyTextSnapshot, savePolicySources, loadPolicySources, bindPolicyCoverage } = await import("./authoring-policy-source.js");
+        const f = fixture(), draft = actionFixture(f);
+        await writeActionRuleAuthorityDraft(projectRoot, draft);
+        const config = executionConfig(); delete config.supervised_worker; delete config.action_rules;
+        config.storage = storageConfig.storage ?? { sqlite_path: "./control.db" };
+        await fs.writeFile(path.join(projectRoot, "synapsor.runner.json"), JSON.stringify(config));
+        // Existing owned fixture setup, not part of a public authoring trial.
+        await activateSemanticActionRuntime({ projectRoot, draft, actor: "operator" });
+        const before = await binding.repository.scopeSnapshot({ deployment_id: binding.deployment_id, scope: { level: "operator" }, kinds: ["read", "action", "execution"] });
+        const source = policyTextSnapshot(Buffer.from("Request a stored Runner-ledger receipt."), "receipt-requirement.txt");
+        const session = newPolicySourceSession(); session.snapshots = [source]; session.active = 1;
+        await withProjectAuthorityMutation(projectRoot, async permit => {
+          const configuration = await authoringReceiptConfiguration(projectRoot, ["local_postgres"]);
+          expect(configuration.status).toBe("current");
+          const evidence = policyCoverageDraft({ read: f.candidate, actions: [], authority: draft, decisions: [], receiptConfiguration: configuration });
+          const report = parsePolicyCoverage({ passages: [{ start: 1, end: 1, disposition: "needs_decision", responsibility: "deployment", issue_kind: "missing_configuration",
+            interpretation: "The required receipt mode still needs its separate execution setup.", draft_paths: ["/runner_evidence/runtime_contract/receipts"] }] }, source, evidence, []);
+          expect(policyReviewReadiness(source, report).ready).toBe(true);
+          bindPolicyCoverage(session, report, draft.digest);
+          await savePolicySources(projectRoot, session, { expectedDigest: null, permit });
+          const restored = await loadPolicySources(projectRoot, session.id);
+          expect(restored.coverage).toEqual(report);
+          expect(parsePolicyCoverage({ passages: restored.coverage!.passages }, source, evidence, [])).toEqual(report);
+          await expect(savePolicySources(projectRoot, session, { expectedDigest: canonicalJsonDigest("stale caller"), permit })).rejects.toThrow("POLICY_SOURCE_CHANGED");
+        });
+        expect(await binding.repository.scopeSnapshot({ deployment_id: binding.deployment_id, scope: { level: "operator" }, kinds: ["read", "action", "execution"] })).toEqual(before);
+      });
+    });
+
     it.each(["disabled", "revoked", "revoked_execution", "revoked_unconfirmed"])("keeps Action recovery review available with unavailable Read authority: %s", async (mode) => {
       await useRepository(async ({ binding, projectRoot, config: storageConfig }) => {
         const draft = actionFixture(fixture());

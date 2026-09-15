@@ -94,6 +94,7 @@ export function policyCoverageDraft(input: {
   /** Sanitized current operator policy readback; no credentials, identities or source rows. */
   countingDomain?: CountingOutcomeDomain;
   operatorClarifications?: Array<{ question: string; answer: string }>;
+  receiptConfiguration?: Awaited<ReturnType<typeof import("./authoring-receipt-configuration.js").authoringReceiptConfiguration>>;
   executionReview?: { action_digest: string; enabled_outcomes: string[]; policy_digest: string };
 }) {
   const policySource = activePolicySource(input.policySources);
@@ -429,6 +430,7 @@ export function policyCoverageDraft(input: {
             worker_running_verified: false, receipt_mode_verified: false, independent_source_readback_verified: false,
             meaning: "These outcomes have an enabled operator execution policy bound to this exact Action revision. This existing record is not a fresh writer/grant check, worker liveness check, receipt mode verification, completed execution or independent observation. Preserve its history without repeating a business Action repair. Inspect remaining setup separately." }
           : null,
+        receipt_configuration: input.receiptConfiguration ?? null,
         receipts: "Runner supports distinct receipt authorities. runner_ledger records processing and execution receipts in the control ledger, separately from source effects; it is not a source-atomic receipt. For supported direct SQL effects, source_db records the applied receipt in the same source transaction as the guarded effects. It requires separately reviewed receipt objects and writer grants through writeback setup (precreated or reviewed auto-migration), then execution verification and a worker. Receipt mode and readiness are not established by this disabled draft. A source-atomic requirement cannot be satisfied by a control-ledger receipt or by adding a model-authored audit INSERT. Independent source readback is a separate verification step, not an automatic client behavior guarantee. request_change distinguishes queued/human_review/not_enabled/completed; completed requires applied state. Pending/failed is not completed.",
         client_responsibilities: "The application authenticates the person, supplies trusted session identity, captures their selection and uses returned execution status/receipts for messages. A scoped subject reference authorizes one reviewed row; it does not prove the human clicked a UI. When an effective date is in the future, recording the change is not proof its benefits are already in force. Boundary rules cannot prove arbitrary client UI wording.",
         application_obligations: {

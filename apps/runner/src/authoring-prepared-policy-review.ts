@@ -1,3 +1,4 @@
+import { authoringReceiptConfiguration } from "./authoring-receipt-configuration.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";
 import { withCountingOutcomeDomain, type CountingOutcomeDomain } from "./authoring-counting-domain.js";
@@ -103,6 +104,11 @@ export async function ensurePreparedPolicyCoverage(input: {
   // Provider calls occur above, outside this coordinated section.
   await coordinated(async permit => {
     await assertCurrent(permit);
+    const capturedConfiguration = draftRecord.runner_evidence.runtime_contract.receipt_configuration;
+    if (capturedConfiguration && canonicalJsonDigest(capturedConfiguration) !== canonicalJsonDigest(await authoringReceiptConfiguration(
+      input.projectRoot, input.authority?.authority.rules.map(r => r.rule.source) ?? []))) {
+      throw new Error("OBLIGATION_CONFIGURATION_CHANGED: Receipt configuration changed during review. Reopen current Review; no stale result was saved.");
+    }
     if (canonicalJsonDigest(staged) !== canonicalJsonDigest(sources)) {
       await savePolicySources(input.projectRoot, staged, { expectedDigest: expectedSource, permit });
     }

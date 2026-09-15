@@ -1,3 +1,4 @@
+import { deferredReviewObligation } from "./authoring-obligation-review.js";
 import { isDeferredPolicyDeployment, isDeferredSourceReadback, isDeferredSourceCounterMaintenance, type PolicyCoverage, type PolicyTextSnapshot, type PolicyPassage, type PolicySourceSession } from "./authoring-policy-source.js";
 import { needsDeploymentCoverageClassification, unresolvedPolicyPassages } from "./authoring-policy-coverage.js";
 import { readBoundaryRevisionCatalog, type ReadBoundaryFieldExposureChange } from "./read-boundary-revision-model.js";
@@ -10,7 +11,8 @@ export type AuthoringReadinessItem = {
 };
 
 export function applicationObligationAssigned(report: PolicyCoverage, passage: PolicyPassage, session?: PolicySourceSession): boolean {
-  return passage.responsibility === "application" && !passage.field_checks?.length && Boolean(passage.application_obligations?.length
+  return passage.responsibility === "application" && !passage.field_checks?.length
+    && !passage.application_obligations?.includes("independent_source_readback") && Boolean(passage.application_obligations?.length
     && session?.application_assignments?.some((entry) => entry.source_digest === report.source_digest && entry.draft_digest === report.draft_digest
       && entry.start === passage.start && entry.end === passage.end && entry.verified === false && entry.owner === "client_application"
       && entry.obligations.length === passage.application_obligations!.length
@@ -23,7 +25,8 @@ export function policyReadinessItems(report?: PolicyCoverage, session?: PolicySo
   const grouped = new Map<string, AuthoringReadinessItem>();
   for (const passage of unresolvedPolicyPassages(report)) {
     const needsClassification = needsDeploymentCoverageClassification(passage);
-    const deferred = isDeferredPolicyDeployment(passage) || isDeferredSourceReadback(passage) || isDeferredSourceCounterMaintenance(passage);
+    const obligation = deferredReviewObligation(passage);
+    const deferred = isDeferredPolicyDeployment(passage) || Boolean(obligation);
     const kind = needsClassification ? "mechanical_correction"
       : passage.application_obligations?.length || deferred ? "deployment_prerequisite"
       : passage.issue_kind === "schema_meaning" || passage.issue_kind === "business_choice" ? "business_decision"
@@ -32,11 +35,13 @@ export function policyReadinessItems(report?: PolicyCoverage, session?: PolicySo
       : passage.responsibility === "deployment" ? "deployment_prerequisite" : "business_decision";
     const title = passage.topic ?? `Rule at lines ${passage.start}-${passage.end}`;
     const key = `${kind}:${passage.deployment_prerequisite ?? (isDeferredSourceReadback(passage) ? "independent_source_readback" : "")}:${title}`;
-    const nextStep = isDeferredSourceCounterMaintenance(passage)
+    const nextStep = obligation?.family === "receipt_setup"
+      ? `Receipt/execution setup pending: after authority review, use execution setup to review ${obligation.requirement} receipt mode and the dedicated writer, then separate execution permission and worker startup. Selection, provisioning, an actual receipt and independent source readback are not verified by this business review.`
+      : obligation?.family === "source_counter_maintenance"
       ? "The exact source-owner maintenance operating contract is current. The owner must keep every writer within that contract; independent external-writer and production assurance remain unverified. BUSINESS review does not enable execution or verify those writers. Revalidate the existing counter review if source, metadata, role, target or owner decision changes."
       : needsClassification
       ? "Recheck this deployment classification against exact Runner setup evidence. Do not revise business rules or require a client connection before authority review."
-      : isDeferredSourceReadback(passage)
+      : obligation?.family === "independent_source_readback"
         ? "After each applicable execution, independently observe the source and compare it with the exact intended change. This readback remains unverified; a receipt alone is not that observation. No Action-code repair is required for this external step."
       : deferred && passage.deployment_prerequisite === "runner_client_connection"
         ? "After authority review, choose a supported Runner client in client setup and review installation and the connection check. Configuration has not been checked and connection remains unverified; identity, application behavior and execution need separate checks."
@@ -80,6 +85,8 @@ export function policyReviewReadiness(source: PolicyTextSnapshot, report?: Polic
       ? ["Independent source readback remains unverified for each applicable execution. Perform and retain that separate observation after the change; a receipt or completed business review does not prove it."] : []),
     ...(assigned.some(item => item.passages.some(isDeferredSourceCounterMaintenance))
       ? ["Source-counter maintenance relies on the exact current source-owner operating contract. Independent external-writer and production assurance remain unverified; the owner must keep all writers within that contract. This review grants no execution permission."] : []),
+    ...(assigned.some(item => item.passages.some(p => deferredReviewObligation(p)?.family === "receipt_setup"))
+      ? ["Receipt/execution setup pending: review the required mode through execution setup. No receipt, provisioning or independent observation is established by BUSINESS review."] : []),
     ...(assigned.some((item) => item.passages.some((passage) => passage.deployment_prerequisite === "runner_execution_setup"))
       ? ["Execution setup pending: dedicated writer review, separate execution permission and worker startup. Continue to these checks after authority review; automatic completion is not yet enabled."] : []),
   ] };

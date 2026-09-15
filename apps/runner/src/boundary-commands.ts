@@ -1,3 +1,4 @@
+import { authoringReceiptConfiguration } from "./authoring-receipt-configuration.js";
 import type { PolicySourceSession } from "./authoring-policy-source.js";
 import { ensurePreparedPolicyCoverage, type PreparedPolicyReviewState } from "./authoring-prepared-policy-review.js";
 import { reviewUnestablishedCounting } from "./authoring-counting-decision-review.js";
@@ -8378,10 +8379,11 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   let policyAttemptKey: string | undefined;
   let policyReport: { key: string; report: PolicyCoverage } | undefined;
   let policyFailure: string | undefined;
+  let receiptConfigurationEvidence: Parameters<typeof policyCoverageDraft>[0]["receiptConfiguration"];
   let executionReviewEvidence: Parameters<typeof policyCoverageDraft>[0]["executionReview"];
   let countingDomain: CountingOutcomeDomain | undefined;
   const currentPolicyCoverageDraft = () => policyCoverageDraft({ read: context.candidate, decisions: context.bundle.decisions,
-    reviewedVersionFields, policySources: authoringConversation?.policySources, executionReview: executionReviewEvidence, countingDomain,
+    reviewedVersionFields, policySources: authoringConversation?.policySources, executionReview: executionReviewEvidence, receiptConfiguration: receiptConfigurationEvidence, countingDomain,
     operatorClarifications: authoringConversation?.turns.filter(turn => turn.kind === "clarification"
       && authoringConversation?.policySources?.operator_messages?.includes(turn.answer)).map(turn => ({ question: turn.question, answer: turn.answer })) ?? [],
     ...(modelAssistSession ? { authoringSession: { provider: modelAssistSession.provider, model: modelAssistSession.model } } : {}),
@@ -8474,6 +8476,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       }
       return undefined;
     }
+    receiptConfigurationEvidence = await authoringReceiptConfiguration(input.projectRoot, semanticActionAuthorityDraft?.authority.rules.map(r => r.rule.source) ?? [], process.env);
     executionReviewEvidence = undefined;
     if (semanticActionAuthorityDraft) {
       try {
@@ -10524,6 +10527,7 @@ export async function reviewSavedBoundaryPolicy(input: {
       try { domain = await withCountingOutcomeDomain(input.projectRoot, authority, async current => current); }
       catch { /* Unavailable history never supplies an empty-domain proof. */ }
     }
+    const receiptConfiguration = await authoringReceiptConfiguration(input.projectRoot, authority?.authority.rules.map(r => r.rule.source) ?? [], process.env);
     let executionReview: Parameters<typeof policyCoverageDraft>[0]["executionReview"];
     if (authority) {
       try {
@@ -10536,7 +10540,7 @@ export async function reviewSavedBoundaryPolicy(input: {
     }
     const currentDraft = () => policyCoverageDraft({ read: context.candidate, decisions: context.bundle.decisions,
       actions: [], authority, source: { inspection, generationLock: context.lock }, reviewedVersionFields: boundaryAuthoringVersionReviews(resume),
-      policySources: input.sources, countingDomain: domain, executionReview,
+      policySources: input.sources, countingDomain: domain, executionReview, receiptConfiguration,
       authoringSession: { provider: input.modelSession.provider, model: input.modelSession.model },
       operatorClarifications: resume.conversation.filter(turn => turn.kind === "clarification"
         && input.sources.operator_messages?.includes(turn.answer)).map(turn => ({ question: turn.question, answer: turn.answer })) });
