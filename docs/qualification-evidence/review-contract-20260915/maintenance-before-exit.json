@@ -1,0 +1,22 @@
+{
+  "name": "maintenance-before",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "tsx",
+    "docs/qualification-evidence/review-contract-20260915/replay-maintenance-before.mts"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T03:47:05.761419+00:00",
+  "source_head": "9966b592e64e2a37d34f3c350e425ed796a6da72",
+  "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/test-environments/maintenance-before",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/review-contract-20260915/maintenance-before",
+  "source_manifest_sha256": "737d6f7e09d877525f2e3297bfd11b74948ea5b5fd6e0f7253b89ea63ab258b4",
+  "pid": 3456113,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T03:47:08.586560+00:00"
+}

@@ -1,0 +1,3 @@
+(node:3500010) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+{"business_ready":true,"actual_provider_calls":0,"classification":"DETERMINISTIC captured first reply plus labelled derived structural correction; NOT public/model completion"}

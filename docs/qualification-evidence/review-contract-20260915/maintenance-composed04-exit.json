@@ -1,0 +1,30 @@
+{
+  "name": "maintenance-composed04",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/counter-maintenance-review.test.ts",
+    "apps/runner/src/boundary-cli.test.ts",
+    "--testNamePattern",
+    "source counter responsibility|reviews without entering editors",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=30000",
+    "--hookTimeout=120000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T04:08:49.223685+00:00",
+  "source_head": "9966b592e64e2a37d34f3c350e425ed796a6da72",
+  "source_diff_sha256": "7cbba94877906b729af24a6adcdd3decb1ce8c24b4d1f8a9a5df24f2414d5963",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/test-environments/maintenance-composed04",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/review-contract-20260915/maintenance-composed04",
+  "source_manifest_sha256": "e83206bf9f93523beffa5ce9653d71737b236a4e1dd22ff2a999591097605573",
+  "pid": 3492849,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T04:08:58.189070+00:00"
+}

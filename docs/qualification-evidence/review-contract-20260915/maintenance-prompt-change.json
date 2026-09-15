@@ -1,0 +1,41 @@
+{
+  "basis": [
+    "maintenance-before-result.json",
+    "maintenance-wire-before.json"
+  ],
+  "before": {
+    "classification_guidance": null,
+    "typed_source_counter_obligation": null,
+    "exact_maintenance_pointer_in_enum": false
+  },
+  "after": {
+    "classification_guidance": "Classify the source requirement, not the presence of false external-verification flags. Separate maintained-counter responsibility from effect, privacy and other claims. A narrow needs_decision/deployment/missing_configuration passage uses source_counter_obligation={path:<exact effect or companion source_counter_maintenance entry>,requirement:owner_maintenance|independent_assurance}, with draft_paths containing only that path. owner_maintenance means the source accepts the currently attested all-writers maintenance operating contract; independent_assurance means the source actually requires a further independent guarantee. The former can permit BUSINESS review only with current exact host confirmation, while external assurance remains unverified. The latter remains blocked. Never infer confirmation from a column, compiled increment, policy text or model assertion. Keep every effect/version-update/condition/privacy claim in its own checked passage. Do not change rules or ask the owner to repeat a current confirmation merely to classify this report.",
+    "typed_source_counter_obligation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "requirement"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "maxLength": 500,
+          "description": "Exact effect or atomic companion source_counter_maintenance entry; never the context overview."
+        },
+        "requirement": {
+          "type": "string",
+          "enum": [
+            "owner_maintenance",
+            "independent_assurance"
+          ],
+          "description": "What the source requires: the source-owner maintenance operating contract, or an additional independent guarantee. Unverified flags alone do not introduce a policy requirement."
+        }
+      },
+      "description": "Classify the source requirement, not the presence of false external-verification flags. Separate maintained-counter responsibility from effect, privacy and other claims. A narrow needs_decision/deployment/missing_configuration passage uses source_counter_obligation={path:<exact effect or companion source_counter_maintenance entry>,requirement:owner_maintenance|independent_assurance}, with draft_paths containing only that path. owner_maintenance means the source accepts the currently attested all-writers maintenance operating contract; independent_assurance means the source actually requires a further independent guarantee. The former can permit BUSINESS review only with current exact host confirmation, while external assurance remains unverified. The latter remains blocked. Never infer confirmation from a column, compiled increment, policy text or model assertion. Keep every effect/version-update/condition/privacy claim in its own checked passage. Do not change rules or ask the owner to repeat a current confirmation merely to classify this report."
+    },
+    "exact_maintenance_pointer_in_enum": true
+  },
+  "other_prompt_text": "unchanged; exact historical input retained, new deterministic transport envelopes private",
+  "fixture_specific_product_prompt_terms_added": false
+}

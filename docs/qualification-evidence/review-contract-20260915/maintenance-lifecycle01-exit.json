@@ -1,0 +1,29 @@
+{
+  "name": "maintenance-lifecycle01",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/boundary-cli.test.ts",
+    "--testNamePattern",
+    "reviews without entering editors: maintenance",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=30000",
+    "--hookTimeout=120000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T03:59:48.050595+00:00",
+  "source_head": "9966b592e64e2a37d34f3c350e425ed796a6da72",
+  "source_diff_sha256": "4a2899a9ca3acdad1191ff9eeedb99bbcbdf784ad03bc7142d516368828ec999",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/test-environments/maintenance-lifecycle01",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/review-contract-20260915/maintenance-lifecycle01",
+  "source_manifest_sha256": "1e2677693cfd5712c75ed6e15d1b8ba04ba2d391f22837d677a65aed07bd5832",
+  "pid": 3477593,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-15T03:59:56.722981+00:00"
+}

@@ -1,0 +1,58 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:3467919) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3467925) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/counter-maintenance-evidence.test.ts (46 tests) 298ms
+ ✓ apps/runner/src/authoring-policy-coverage.test.ts (80 tests | 1 skipped) 107ms
+(node:3468204) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/counter-maintenance-review.test.ts (17 tests | 1 failed) 76ms
+   ✓ source counter responsibility uses exact owner evidence > asks for the precise component correction on the unchanged captured mixed reply 7ms
+   ✓ source counter responsibility uses exact owner evidence > separates the current operating contract from unverified external assurance and revalidates on reuse 11ms
+   ✓ source counter responsibility uses exact owner evidence > keeps an explicit independent-assurance requirement blocked despite current owner attestation 3ms
+   ✓ source counter responsibility uses exact owner evidence > cannot discharge mixed effect claims 2ms
+   ✓ source counter responsibility uses exact owner evidence > cannot discharge mixed privacy claims 2ms
+   ✓ source counter responsibility uses exact owner evidence > cannot discharge mixed counting claims 1ms
+   ✓ source counter responsibility uses exact owner evidence > cannot discharge mixed application claims 1ms
+   ✓ source counter responsibility uses exact owner evidence > cannot discharge mixed evidence claims 1ms
+   ✓ source counter responsibility uses exact owner evidence > cannot discharge mixed overview claims 1ms
+   ✓ source counter responsibility uses exact owner evidence > cannot discharge mixed implemented claims 1ms
+   ✓ source counter responsibility uses exact owner evidence > does not accept missing current owner evidence 1ms
+   ✓ source counter responsibility uses exact owner evidence > does not accept declined current owner evidence 1ms
+   ✓ source counter responsibility uses exact owner evidence > does not accept stale current owner evidence 1ms
+   ✓ source counter responsibility uses exact owner evidence > does not accept incomplete current owner evidence 1ms
+   ✓ source counter responsibility uses exact owner evidence > does not accept false_assurance current owner evidence 1ms
+   ✓ source counter responsibility uses exact owner evidence > retains an independently incorrect effect and refuses changed proof/source on reuse 8ms
+   × source counter responsibility uses exact owner evidence > runs the captured reply, one real structural correction, persistence/restart and unchanged recheck 31ms
+     → expected false to be true // Object.is equality
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/counter-maintenance-review.test.ts > source counter responsibility uses exact owner evidence > runs the captured reply, one real structural correction, persistence/restart and unchanged recheck
+AssertionError: expected false to be true // Object.is equality
+
+- Expected
++ Received
+
+- true
++ false
+
+ ❯ apps/runner/src/counter-maintenance-review.test.ts:105:81
+    103|       const rechecked = parse({ passages: restored.coverage!.passages …
+    104|       expect(rechecked).toEqual(report);
+    105|       expect(policyReviewReadiness(captured.source, rechecked, restore…
+       |                                                                                 ^
+    106|       expect(requests).toHaveLength(2); // Local revalidation is not a…
+    107|     } finally { await fs.rm(root, { recursive: true, force: true }); }
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 2 passed (3)
+      Tests  1 failed | 141 passed | 1 skipped (143)
+   Start at  20:54:12
+   Duration  6.03s (transform 3.54s, setup 0ms, collect 8.31s, tests 482ms, environment 0ms, prepare 130ms)
+

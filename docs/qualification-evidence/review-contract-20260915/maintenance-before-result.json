@@ -1,0 +1,31 @@
+{
+  "classification": "Exact captured response through parser, coverage binding and readiness; read-only saved inputs, no provider call or store open",
+  "ready": false,
+  "blocking": [
+    {
+      "kind": "deployment_prerequisite",
+      "title": "Conflict-counter maintenance",
+      "nextStep": "Verify that every production writer maintains the reviewed version counter before relying on this control.",
+      "passages": [
+        {
+          "start": 5,
+          "end": 5,
+          "disposition": "needs_decision",
+          "interpretation": "The maintained conflict counter is compiled as a private version increment, and the source owner has confirmed the operating prerequisite that all writers increment it; however, external-writer and production-integration verification remain false.",
+          "draft_paths": [
+            "/runner_evidence/actions/league.result_ratification/effect",
+            "/runner_evidence/runtime_contract/source_counter_maintenance"
+          ],
+          "topic": "Conflict-counter maintenance",
+          "responsibility": "deployment",
+          "issue_kind": "missing_configuration",
+          "next_step": "Verify that every production writer maintains the reviewed version counter before relying on this control."
+        }
+      ],
+      "blocksReview": true
+    }
+  ],
+  "input_unchanged": true,
+  "completion_permitted": false,
+  "actual_provider_calls": 0
+}

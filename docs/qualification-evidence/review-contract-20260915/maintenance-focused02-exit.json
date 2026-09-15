@@ -1,0 +1,29 @@
+{
+  "name": "maintenance-focused02",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/counter-maintenance-review.test.ts",
+    "apps/runner/src/counter-maintenance-evidence.test.ts",
+    "apps/runner/src/authoring-policy-coverage.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=30000",
+    "--hookTimeout=120000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T03:56:30.570657+00:00",
+  "source_head": "9966b592e64e2a37d34f3c350e425ed796a6da72",
+  "source_diff_sha256": "3dfc724135a11d4117753fd2a1e08961eb1eefce2360dbe87af0f23a88c8efcb",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/test-environments/maintenance-focused02",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/review-contract-20260915/maintenance-focused02",
+  "source_manifest_sha256": "00362cbc000d9830b774125006fbd75d9b13d2e8c8fe5eeb2bfaf68278df1acc",
+  "pid": 3471885,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T03:56:38.315480+00:00"
+}

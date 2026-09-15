@@ -1,0 +1,38 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:3483417) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3483423) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/counter-maintenance-evidence.test.ts (46 tests) 322ms
+(node:3483624) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-policy-coverage.test.ts (80 tests | 55 skipped) 55ms
+READ REVIEW COMPLETE - NOT ACTIVE
+Read Boundary: reviewed_staging
+Next: continue this same job into Action Boundary decisions.
+EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF
+Source database changed: no
+Access editor closed. Reviewed authority is unchanged.
+Access editor closed. Reviewed authority is unchanged.
+READ REVIEW COMPLETE - NOT ACTIVE
+Read Boundary: reviewed_staging
+Next: continue this same job into Action Boundary decisions.
+EXPLORE OFF | PROPOSE OFF | APPROVE OFF | APPLY OFF
+Source database changed: no
+Access editor closed. Reviewed authority is unchanged.
+ ✓ apps/runner/src/boundary-cli.test.ts (296 tests | 275 skipped) 4715ms
+   ✓ boundary operator-plane CLI > persists host counter reviews through an unchanged atomic Action and public policy resume (confirmed_noop)  505ms
+   ✓ boundary operator-plane CLI > persists host counter reviews through an unchanged atomic Action and public policy resume (cancelled_checkpoint)  411ms
+   ✓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_counter_clarified)  821ms
+   ✓ boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_counter_clarified_failure)  698ms
+(node:3483865) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/counter-maintenance-review.test.ts (17 tests) 71ms
+
+ Test Files  4 passed (4)
+      Tests  109 passed | 330 skipped (439)
+   Start at  21:03:02
+   Duration  12.00s (transform 4.71s, setup 0ms, collect 11.94s, tests 5.16s, environment 1ms, prepare 169ms)
+

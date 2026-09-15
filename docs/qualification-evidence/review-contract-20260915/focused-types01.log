@@ -1,0 +1,6 @@
+
+> synapsor-runner-monorepo@1.8.0 typecheck /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+> tsc -b --pretty false
+
+apps/runner/src/counter-maintenance-review.test.ts(31,23): error TS2345: Argument of type 'unknown' is not assignable to parameter of type 'Record<string, unknown>'.
+ ELIFECYCLE  Command failed with exit code 1.

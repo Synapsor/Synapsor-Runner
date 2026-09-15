@@ -1,0 +1,35 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:3504096) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3504102) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-counting-freshness.test.ts (2 tests | 1 skipped) 4508ms
+   ✓ saved counting review depends on the actual current store > sqlite: a competing automatic outcome invalidates status, reuse and pre-save validation  4506ms
+ ✓ apps/runner/src/authoring-counting-domain.test.ts (3 tests | 1 skipped) 4621ms
+   ✓ authoring counting domain uses the selected existing store > sqlite: inspects retained history, rejects relocation and releases locks on failure  4616ms
+(node:3504444) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:3504475) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-counting-positive.test.ts (23 tests) 144ms
+(node:3504516) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-policy-source.test.ts (32 tests) 183ms
+(node:3504558) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-mixed-counting.test.ts (26 tests) 145ms
+(node:3504618) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/action-subject-compatibility.test.ts (10 tests) 81ms
+ ✓ apps/runner/src/authoring-policy-coverage.test.ts (80 tests | 1 skipped) 122ms
+(node:3504668) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/authoring-review-readiness.test.ts (8 tests) 34ms
+
+ Test Files  8 passed (8)
+      Tests  181 passed | 3 skipped (184)
+   Start at  21:14:45
+   Duration  12.99s (transform 3.31s, setup 0ms, collect 13.00s, tests 9.84s, environment 1ms, prepare 381ms)
+

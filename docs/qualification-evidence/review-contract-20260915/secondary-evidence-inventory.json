@@ -1,0 +1,33 @@
+{
+  "at": "2026-09-15T04:15:33.489186+00:00",
+  "records": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/xmodel-secondary-20260915/A/source-after.sql",
+      "sha256": "2fb7a377091e45df3cb6a478feeccbb181f7cf01e2e5733e1670f9ff8ebe4afa",
+      "bytes": 29628
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/xmodel-secondary-20260915/A/terminal.log",
+      "sha256": "27610dea95bda4e76cf514c69b7b5a3840b55534c3a32ef00891094530b7b88c",
+      "bytes": 55721
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/xmodel-secondary-20260915/B/source-after.sql",
+      "sha256": "6d5a6e9db1f0a56c35e12a1696630f9cbb753dc3e622b49b5ca9586b030e7126",
+      "bytes": 29628
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/xmodel-secondary-20260915/B/terminal.log",
+      "sha256": "02b82980c6b9cb01f04a27dd78e14663a8d9ed376fcf38ab4a0afb9a3edbe520",
+      "bytes": 66855
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/xmodel-secondary-20260915/REVIEW.md",
+      "sha256": "aae4683cce792b2c586e62e7b68b1095276819dc3346dc569ba520a8a147b397",
+      "bytes": 9200
+    }
+  ],
+  "raw_request_response_pairs_found": 0,
+  "observed_only": "Review, terminal navigation/diagnostics and source dumps",
+  "further_filename_content_search": "No input-*.json or *request*.json with model gpt-5.6-sol in existing r13 evidence or the related reviewer xmodel scratchpad; no credentials printed."
+}

@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-15T03:44:29.747827+00:00",
+  "entries": 283535,
+  "prior_external_delta": {
+    "changed": [],
+    "added": [
+      "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/claude-student-registration/.synapsor",
+      "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/claude-student-registration/.synapsor/local.db",
+      "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/claude-student-registration/.synapsor/runtime-admission.sqlite"
+    ]
+  },
+  "protection": "unchanged original modes; enforced read-only root/original bind mounts for all writable test and public launches"
+}

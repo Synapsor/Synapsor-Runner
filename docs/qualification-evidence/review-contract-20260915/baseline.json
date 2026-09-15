@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-15T03:43:36.380134+00:00",
+  "head": "9966b592e64e2a37d34f3c350e425ed796a6da72",
+  "clean_before_evidence_creation": true,
+  "ancestors_verified": [
+    "cc149a5fb2edac8545963350f8081423d77a3668",
+    "01b6c62af836ec580c86730632274a28faa2d9c8"
+  ],
+  "reports_read": [
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/review-routing-20260915/FINAL-REPORT.md",
+    "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/review-routing-20260915/remaining-counter-maintenance-review.md",
+    "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/xmodel-secondary-20260915/REVIEW.md"
+  ],
+  "original_primary_B": "PASSED on original 9faa artifact; preserved, not transferred"
+}

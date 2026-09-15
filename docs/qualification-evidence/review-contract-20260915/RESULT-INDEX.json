@@ -1,0 +1,200 @@
+{
+  "at": "2026-09-15T04:17:26.576632+00:00",
+  "product_tests": "a49d6127d512524294c1dbe47048e9344332e366",
+  "runs": [
+    {
+      "run": "focused-types01",
+      "exit_code": 1,
+      "source_unchanged": true,
+      "command": [
+        "corepack",
+        "pnpm",
+        "typecheck"
+      ],
+      "result": "docs/qualification-evidence/review-contract-20260915/focused-types01-exit.json"
+    },
+    {
+      "run": "focused-types02",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "command": [
+        "corepack",
+        "pnpm",
+        "typecheck"
+      ],
+      "result": "docs/qualification-evidence/review-contract-20260915/focused-types02-exit.json"
+    },
+    {
+      "run": "maintenance-after",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "tsx",
+        "docs/qualification-evidence/review-contract-20260915/replay-maintenance-after.mts"
+      ],
+      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-after-exit.json"
+    },
+    {
+      "run": "maintenance-before",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "tsx",
+        "docs/qualification-evidence/review-contract-20260915/replay-maintenance-before.mts"
+      ],
+      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-before-exit.json"
+    },
+    {
+      "run": "maintenance-composed03",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/counter-maintenance-review.test.ts",
+        "apps/runner/src/counter-maintenance-evidence.test.ts",
+        "apps/runner/src/authoring-policy-coverage.test.ts",
+        "apps/runner/src/boundary-cli.test.ts",
+        "--testNamePattern",
+        "source counter responsibility|counter|reviews without entering editors",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=30000",
+        "--hookTimeout=120000"
+      ],
+      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-composed03-exit.json"
+    },
+    {
+      "run": "maintenance-composed04",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/counter-maintenance-review.test.ts",
+        "apps/runner/src/boundary-cli.test.ts",
+        "--testNamePattern",
+        "source counter responsibility|reviews without entering editors",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=30000",
+        "--hookTimeout=120000"
+      ],
+      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-composed04-exit.json"
+    },
+    {
+      "run": "maintenance-focused01",
+      "exit_code": 1,
+      "source_unchanged": true,
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/counter-maintenance-review.test.ts",
+        "apps/runner/src/counter-maintenance-evidence.test.ts",
+        "apps/runner/src/authoring-policy-coverage.test.ts",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=30000",
+        "--hookTimeout=120000"
+      ],
+      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-focused01-exit.json"
+    },
+    {
+      "run": "maintenance-focused02",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/counter-maintenance-review.test.ts",
+        "apps/runner/src/counter-maintenance-evidence.test.ts",
+        "apps/runner/src/authoring-policy-coverage.test.ts",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=30000",
+        "--hookTimeout=120000"
+      ],
+      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-focused02-exit.json"
+    },
+    {
+      "run": "maintenance-lifecycle01",
+      "exit_code": 1,
+      "source_unchanged": true,
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/boundary-cli.test.ts",
+        "--testNamePattern",
+        "reviews without entering editors: maintenance",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=30000",
+        "--hookTimeout=120000"
+      ],
+      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-lifecycle01-exit.json"
+    },
+    {
+      "run": "maintenance-normal-regressions",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/authoring-policy-coverage.test.ts",
+        "apps/runner/src/authoring-policy-source.test.ts",
+        "apps/runner/src/authoring-review-readiness.test.ts",
+        "apps/runner/src/authoring-counting-positive.test.ts",
+        "apps/runner/src/authoring-mixed-counting.test.ts",
+        "apps/runner/src/authoring-counting-freshness.test.ts",
+        "apps/runner/src/authoring-counting-domain.test.ts",
+        "apps/runner/src/action-subject-compatibility.test.ts",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=30000",
+        "--hookTimeout=120000"
+      ],
+      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-normal-regressions-exit.json"
+    },
+    {
+      "run": "maintenance-types03",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "command": [
+        "corepack",
+        "pnpm",
+        "typecheck"
+      ],
+      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-types03-exit.json"
+    }
+  ],
+  "full_suite_launches": 0,
+  "provider_calls": {
+    "development": 0,
+    "final": 0
+  },
+  "new_installed_candidate": null
+}

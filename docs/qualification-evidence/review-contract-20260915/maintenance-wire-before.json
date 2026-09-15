@@ -1,0 +1,391 @@
+{
+  "input": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/runs/recovery-tournament-assisted/meter/input-0002.json",
+  "sha256": "1367de8de7126f3f3462fbe1af7486cb8004df1a1f23bfc79c295609f5eecfa9",
+  "actual_tool": "runner__review_policy_coverage",
+  "exact_attestation_pointer_advertised": false,
+  "effect_parent_advertised": true,
+  "context_overview_advertised": true,
+  "new_classification_property_present": false,
+  "full_wire_schema": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "passages"
+    ],
+    "properties": {
+      "passages": {
+        "type": "array",
+        "maxItems": 120,
+        "items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "start",
+            "end",
+            "disposition",
+            "interpretation",
+            "draft_paths"
+          ],
+          "properties": {
+            "start": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "end": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "disposition": {
+              "type": "string",
+              "enum": [
+                "implemented",
+                "needs_decision",
+                "conflict",
+                "unsupported",
+                "background",
+                "overridden"
+              ]
+            },
+            "interpretation": {
+              "type": "string",
+              "maxLength": 800
+            },
+            "draft_paths": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "enum": [
+                  "/actions",
+                  "/actions/0",
+                  "/actions/0/approval",
+                  "/actions/0/derive",
+                  "/actions/0/discovery",
+                  "/actions/0/effect",
+                  "/actions/0/name",
+                  "/actions/0/outcome",
+                  "/actions/0/require",
+                  "/actions/0/review",
+                  "/actions/0/schema_version",
+                  "/actions/0/ttl_seconds",
+                  "/actions/0/verification",
+                  "/read",
+                  "/runner_evidence",
+                  "/runner_evidence/action_subject_compatibility",
+                  "/runner_evidence/actions",
+                  "/runner_evidence/actions/league.result_ratification",
+                  "/runner_evidence/actions/league.result_ratification/automatic_limits",
+                  "/runner_evidence/actions/league.result_ratification/effect",
+                  "/runner_evidence/actions/league.result_ratification/execution",
+                  "/runner_evidence/actions/league.result_ratification/outcome",
+                  "/runner_evidence/actions/league.result_ratification/scoped_bindings",
+                  "/runner_evidence/actions/league.result_ratification/scoped_bindings/event",
+                  "/runner_evidence/actions/league.result_ratification/scoped_bindings/event/fields",
+                  "/runner_evidence/actions/league.result_ratification/scoped_bindings/event/fields/event_id",
+                  "/runner_evidence/actions/league.result_ratification/scoped_bindings/event/fields/operating_state",
+                  "/runner_evidence/actions/league.result_ratification/scoped_bindings/event/fields/principal_id",
+                  "/runner_evidence/actions/league.result_ratification/scoped_bindings/event/fields/tenant_id",
+                  "/runner_evidence/actions/league.result_ratification/scoped_bindings/event/fields/version",
+                  "/runner_evidence/actions/league.result_ratification/scoped_bindings/result",
+                  "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields",
+                  "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/event_id",
+                  "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/integrity_hold",
+                  "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/loser_game_wins",
+                  "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/principal_id",
+                  "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/result_id",
+                  "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/result_ref",
+                  "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/result_state",
+                  "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/stage",
+                  "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/tenant_id",
+                  "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/version",
+                  "/runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/winner_game_wins",
+                  "/runner_evidence/counting_decisions",
+                  "/runner_evidence/counting_interpretations",
+                  "/runner_evidence/privacy_review",
+                  "/runner_evidence/read_access",
+                  "/runner_evidence/read_access/tournament_ops.events",
+                  "/runner_evidence/read_access/tournament_ops.events/fields",
+                  "/runner_evidence/read_access/tournament_ops.events/fields/event_id",
+                  "/runner_evidence/read_access/tournament_ops.events/fields/event_name",
+                  "/runner_evidence/read_access/tournament_ops.events/fields/operating_state",
+                  "/runner_evidence/read_access/tournament_ops.events/fields/principal_id",
+                  "/runner_evidence/read_access/tournament_ops.events/fields/tenant_id",
+                  "/runner_evidence/read_access/tournament_ops.events/fields/version",
+                  "/runner_evidence/read_access/tournament_ops.results",
+                  "/runner_evidence/read_access/tournament_ops.results/fields",
+                  "/runner_evidence/read_access/tournament_ops.results/fields/event_id",
+                  "/runner_evidence/read_access/tournament_ops.results/fields/integrity_hold",
+                  "/runner_evidence/read_access/tournament_ops.results/fields/loser_game_wins",
+                  "/runner_evidence/read_access/tournament_ops.results/fields/principal_id",
+                  "/runner_evidence/read_access/tournament_ops.results/fields/referee_private_note",
+                  "/runner_evidence/read_access/tournament_ops.results/fields/result_id",
+                  "/runner_evidence/read_access/tournament_ops.results/fields/result_ref",
+                  "/runner_evidence/read_access/tournament_ops.results/fields/result_state",
+                  "/runner_evidence/read_access/tournament_ops.results/fields/stage",
+                  "/runner_evidence/read_access/tournament_ops.results/fields/tenant_id",
+                  "/runner_evidence/read_access/tournament_ops.results/fields/version",
+                  "/runner_evidence/read_access/tournament_ops.results/fields/winner_game_wins",
+                  "/runner_evidence/read_access/tournament_ops.results/fields/withdrawal_reason",
+                  "/runner_evidence/read_review",
+                  "/runner_evidence/runtime_contract",
+                  "/runner_evidence/runtime_contract/agent_interface",
+                  "/runner_evidence/runtime_contract/application_obligations",
+                  "/runner_evidence/runtime_contract/application_obligations/customer_selection",
+                  "/runner_evidence/runtime_contract/application_obligations/independent_source_readback",
+                  "/runner_evidence/runtime_contract/application_obligations/status_presentation",
+                  "/runner_evidence/runtime_contract/approval",
+                  "/runner_evidence/runtime_contract/approval_counter_selection",
+                  "/runner_evidence/runtime_contract/authoring_lifecycle",
+                  "/runner_evidence/runtime_contract/authoring_provider",
+                  "/runner_evidence/runtime_contract/client_responsibilities",
+                  "/runner_evidence/runtime_contract/conflict_protection",
+                  "/runner_evidence/runtime_contract/deployment_prerequisites",
+                  "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity",
+                  "/runner_evidence/runtime_contract/deployment_prerequisites/runner_client_connection",
+                  "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup",
+                  "/runner_evidence/runtime_contract/deployment_profile",
+                  "/runner_evidence/runtime_contract/onboarding_reader",
+                  "/runner_evidence/runtime_contract/read_eligibility",
+                  "/runner_evidence/runtime_contract/receipts",
+                  "/runner_evidence/runtime_contract/request_identity",
+                  "/runner_evidence/runtime_contract/saved_execution_review",
+                  "/runner_evidence/runtime_contract/source_counter_maintenance",
+                  "/runner_evidence/runtime_contract/trusted_time",
+                  "/runner_evidence/runtime_contract/version_advancement",
+                  "/runner_evidence/source_constraints",
+                  "/runner_evidence/source_constraints/generation_lock_fingerprint",
+                  "/runner_evidence/source_constraints/resources",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/check_constraints",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/check_constraints/events_operating_state_check",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/check_constraints/events_operating_state_check/definition",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/check_constraints/events_operating_state_check/enforced",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/check_constraints/events_version_check",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/check_constraints/events_version_check/definition",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/check_constraints/events_version_check/enforced",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/columns",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/columns/event_id",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/columns/event_id/nullable",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/columns/event_name",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/columns/event_name/nullable",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/columns/operating_state",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/columns/operating_state/nullable",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/columns/principal_id",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/columns/principal_id/nullable",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/columns/tenant_id",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/columns/tenant_id/nullable",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/columns/version",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/columns/version/nullable",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/primary_key",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/primary_key/all_columns_non_null",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/primary_key/column_count",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/primary_key/columns",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/primary_key/non_null_columns",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/primary_key/unconditional",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/resource",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/unique_constraints",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/unique_constraints/events_event_id_tenant_id_principal_id_key",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/unique_constraints/events_event_id_tenant_id_principal_id_key/all_columns_non_null",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/unique_constraints/events_event_id_tenant_id_principal_id_key/column_count",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/unique_constraints/events_event_id_tenant_id_principal_id_key/columns",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/unique_constraints/events_event_id_tenant_id_principal_id_key/columns/0",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/unique_constraints/events_event_id_tenant_id_principal_id_key/columns/1",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/unique_constraints/events_event_id_tenant_id_principal_id_key/columns/2",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/unique_constraints/events_event_id_tenant_id_principal_id_key/non_null_columns",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.events/unique_constraints/events_event_id_tenant_id_principal_id_key/unconditional",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/check_constraints",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/check_constraints/results_result_state_check",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/check_constraints/results_result_state_check/definition",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/check_constraints/results_result_state_check/enforced",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/check_constraints/results_stage_check",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/check_constraints/results_stage_check/definition",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/check_constraints/results_stage_check/enforced",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/check_constraints/results_version_check",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/check_constraints/results_version_check/definition",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/check_constraints/results_version_check/enforced",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/event_id",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/event_id/nullable",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/integrity_hold",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/integrity_hold/nullable",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/loser_game_wins",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/loser_game_wins/nullable",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/principal_id",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/principal_id/nullable",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/referee_private_note",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/referee_private_note/nullable",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/result_id",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/result_id/nullable",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/result_ref",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/result_ref/nullable",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/result_state",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/result_state/nullable",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/stage",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/stage/nullable",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/tenant_id",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/tenant_id/nullable",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/version",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/version/nullable",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/winner_game_wins",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/winner_game_wins/nullable",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/withdrawal_reason",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/columns/withdrawal_reason/nullable",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/primary_key",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/primary_key/all_columns_non_null",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/primary_key/column_count",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/primary_key/columns",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/primary_key/non_null_columns",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/primary_key/unconditional",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/resource",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/unique_constraints",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/unique_constraints/results_result_ref_key",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/unique_constraints/results_result_ref_key/all_columns_non_null",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/unique_constraints/results_result_ref_key/column_count",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/unique_constraints/results_result_ref_key/columns",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/unique_constraints/results_result_ref_key/columns/0",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/unique_constraints/results_result_ref_key/non_null_columns",
+                  "/runner_evidence/source_constraints/resources/tournament_ops.results/unique_constraints/results_result_ref_key/unconditional",
+                  "/runner_evidence/source_constraints/schema_fingerprint"
+                ]
+              }
+            },
+            "operator_override": {
+              "type": "string"
+            },
+            "operator_message_id": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 11,
+              "description": "Exact indexed operator evidence. For disposition=overridden Runner saves its original text as the override. A reference on another disposition is saved as its exact supporting clarification only: it does not waive any requirement or replace validation. Prefer this ID without a redundant operator_override quote. A pause or deferred action is not an override."
+            },
+            "topic": {
+              "type": "string",
+              "maxLength": 90,
+              "description": "Short business requirement, e.g. Three automatic approvals per customer account. Not technical reasoning or a JSON pointer."
+            },
+            "responsibility": {
+              "type": "string",
+              "enum": [
+                "operator",
+                "runner",
+                "deployment",
+                "application"
+              ]
+            },
+            "issue_kind": {
+              "type": "string",
+              "enum": [
+                "business_choice",
+                "schema_meaning",
+                "missing_configuration",
+                "unsupported_requirement",
+                "contradiction",
+                "coverage_link"
+              ]
+            },
+            "next_step": {
+              "type": "string",
+              "maxLength": 400,
+              "description": "Concrete next step; ask the operator only for genuine business meaning. Pending execution is a deployment review, not a new rule."
+            },
+            "counter_requirements": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 16,
+              "description": "counter_requirements compares only which existing outcomes count, using exact history_selector/capability evidence. Requires responsibility=runner and disposition=implemented or conflict. Omit the property entirely when no capability-filter comparison is needed, never null or []. A threshold-only operator override belongs in a separate overridden passage linked to the limit and an actual indexed operator message or verbatim quote, without counter_requirements. Keep any unchanged selector comparison in a separate implemented Runner passage; overlapping source lines are allowed. Compare maximum separately and retain every unchanged scope, window, filter and limit. A genuine selector mismatch remains conflict, not overridden or implemented. Do not invent an override or remove a requirement to repair this report. A null capability means all outcomes, not a null counter_requirements array. Limit IDs are diagnostic, not filters. Conflict permits a separately validated disabled Action repair, never activation.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "path",
+                  "current_capability",
+                  "required_capability"
+                ],
+                "properties": {
+                  "path": {
+                    "type": "string",
+                    "enum": [
+                      "/runner_evidence/actions/league.result_ratification/automatic_limits/0/history_selector/capability",
+                      "/runner_evidence/actions/league.result_ratification/automatic_limits/1/history_selector/capability"
+                    ]
+                  },
+                  "current_capability": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "required_capability": {
+                    "type": [
+                      "string",
+                      "null"
+                    ]
+                  },
+                  "operator_message_id": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 11,
+                    "description": "Optional exact support for this counter comparison, distinct from the paragraph citation. An explicit wrong reference is refused. When omitted, Runner may bind one uniquely established scoped interpretation; it cannot invent a decision."
+                  }
+                }
+              }
+            },
+            "deployment_prerequisite": {
+              "type": "string",
+              "enum": [
+                "authenticated_identity",
+                "runner_client_connection",
+                "runner_execution_setup"
+              ],
+              "description": "Later unverified setup: authenticated_identity connects a session to already configured customer scope; runner_client_connection is supported client installation; runner_execution_setup is dedicated writer review, separate execution consent and worker setup for already compiled direct SQL effects. responsibility=deployment, issue_kind=missing_configuration, disposition=needs_decision. Link only exact deployment_prerequisites/<name> evidence. Never defer missing effects, business behavior, authorization, privacy or approval conditions."
+            },
+            "application_obligations": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 2,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "enum": [
+                  "customer_selection",
+                  "status_presentation",
+                  "independent_source_readback"
+                ]
+              },
+              "description": "Optional: omit entirely for non-client clauses, never null or []. Customer selection, truthful receipt/status presentation, or a separate independent_source_readback after-execution observation that remains unverified. Requires responsibility=application and disposition=needs_decision or unsupported, even after assignment; never implemented. Link every selected exact /runner_evidence/runtime_contract/application_obligations/<name> path. No field_checks here: split privacy, eligibility, authentication and other controls into separate passages, which may share the same source lines."
+            },
+            "field_checks": {
+              "type": "array",
+              "maxItems": 160,
+              "description": "For privacy requirements list exact fields expected private or business-visible. Runner checks every matching Read and Action use for actual values AND analysis permissions. Private verification-only fields use exact Action scoped_bindings evidence, not nonexistent Read paths; model_visible=false alone is not proof of privacy elsewhere.",
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "resource",
+                  "field",
+                  "expectation"
+                ],
+                "properties": {
+                  "resource": {
+                    "type": "string"
+                  },
+                  "field": {
+                    "type": "string"
+                  },
+                  "expectation": {
+                    "type": "string",
+                    "enum": [
+                      "private",
+                      "business_visible"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

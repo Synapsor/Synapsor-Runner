@@ -1,0 +1,175 @@
+{
+  "at": "2026-09-15T04:12:38.406Z",
+  "classification": "DETERMINISTIC captured first reply plus labelled derived structural correction; NOT public/model completion",
+  "original_refusal": "SOURCE_COUNTER_CLASSIFICATION_REQUIRED: Source lines 5-5. Classify the source requirement, not the presence of false external-verification flags. Separate maintained-counter responsibility from effect, privacy and other claims. A narrow needs_decision/deployment/missing_configuration passage uses source_counter_obligation={path:<exact effect or companion source_counter_maintenance entry>,requirement:owner_maintenance|independent_assurance}, with draft_paths containing only that path. owner_maintenance means the source accepts the currently attested all-writers maintenance operating contract; independent_assurance means the source actually requires a further independent guarantee. The former can permit BUSINESS review only with current exact host confirmation, while external assurance remains unverified. The latter remains blocked. Never infer confirmation from a column, compiled increment, policy text or model assertion. Keep every effect/version-update/condition/privacy claim in its own checked passage. Do not change rules or ask the owner to repeat a current confirmation merely to classify this report.",
+  "original_capture_sha256": "4d7a388b6e8f55fc87441e7dc1c60dbc2ab1862bc9f6bb65b2e033bc21888343",
+  "actual_provider_calls": 0,
+  "mocked_transport_requests": 2,
+  "coverage_saved_reloaded_revalidated": true,
+  "business_ready": true,
+  "components": [
+    {
+      "start": 5,
+      "end": 5,
+      "disposition": "needs_decision",
+      "interpretation": "The source-owner maintenance obligation is current; independent external assurance is unverified.",
+      "draft_paths": [
+        "/runner_evidence/actions/league.result_ratification/effect/source_counter_maintenance"
+      ],
+      "topic": "Conflict-counter maintenance",
+      "responsibility": "deployment",
+      "issue_kind": "missing_configuration",
+      "next_step": "Verify that every production writer maintains the reviewed version counter before relying on this control.",
+      "source_counter_obligation": {
+        "path": "/runner_evidence/actions/league.result_ratification/effect/source_counter_maintenance",
+        "requirement": "owner_maintenance"
+      },
+      "source_counter_resolution": {
+        "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+        "path": "/runner_evidence/actions/league.result_ratification/effect/source_counter_maintenance",
+        "dependencies_digest": "sha256:8deb25f718e6a031be6955d9ba5d01245a93d6ac8efab24823edc32cec2d9d8f",
+        "proof_digest": "sha256:a64444d8c11ed349977baf58b0b194936114c3898e802aeeac70e802a9803bdc",
+        "external_assurance": "unverified"
+      }
+    }
+  ],
+  "pending_responsibilities": [
+    {
+      "kind": "deployment_prerequisite",
+      "title": "Authenticated referee identity",
+      "nextStep": "After review, choose a client and configure runtime identity. Use a fixed test identity only for local testing; production identity must come from an authenticated application session. Runtime access remains unavailable without it.",
+      "passages": [
+        {
+          "start": 3,
+          "end": 3,
+          "disposition": "needs_decision",
+          "interpretation": "The record-scope rules are reviewed, but connecting an authenticated application session to the trusted tenant and principal bindings is not verified. This is later deployment wiring, not a missing scope rule.",
+          "draft_paths": [
+            "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+          ],
+          "topic": "Authenticated referee identity",
+          "responsibility": "deployment",
+          "issue_kind": "missing_configuration",
+          "next_step": "After authority review, configure and verify authenticated-session identity for the reviewed tenant and principal bindings.",
+          "deployment_prerequisite": "authenticated_identity"
+        }
+      ],
+      "blocksReview": false
+    },
+    {
+      "kind": "deployment_prerequisite",
+      "title": "Referee result selection",
+      "nextStep": "Assign the client responsibility for capturing the referee's intended result selection.",
+      "passages": [
+        {
+          "start": 3,
+          "end": 3,
+          "disposition": "needs_decision",
+          "interpretation": "Runner verifies a submitted scoped result reference, but the client must still capture the referee's intended result selection.",
+          "draft_paths": [
+            "/runner_evidence/runtime_contract/application_obligations/customer_selection"
+          ],
+          "topic": "Referee result selection",
+          "responsibility": "application",
+          "issue_kind": "missing_configuration",
+          "next_step": "Assign the client responsibility for capturing the referee's intended result selection.",
+          "application_obligations": [
+            "customer_selection"
+          ]
+        }
+      ],
+      "blocksReview": false
+    },
+    {
+      "kind": "deployment_prerequisite",
+      "title": "Conflict-counter maintenance",
+      "nextStep": "The exact source-owner maintenance operating contract is current. The owner must keep every writer within that contract; independent external-writer and production assurance remain unverified. BUSINESS review does not enable execution or verify those writers. Revalidate the existing counter review if source, metadata, role, target or owner decision changes.",
+      "passages": [
+        {
+          "start": 5,
+          "end": 5,
+          "disposition": "needs_decision",
+          "interpretation": "The source-owner maintenance obligation is current; independent external assurance is unverified.",
+          "draft_paths": [
+            "/runner_evidence/actions/league.result_ratification/effect/source_counter_maintenance"
+          ],
+          "topic": "Conflict-counter maintenance",
+          "responsibility": "deployment",
+          "issue_kind": "missing_configuration",
+          "next_step": "Verify that every production writer maintains the reviewed version counter before relying on this control.",
+          "source_counter_obligation": {
+            "path": "/runner_evidence/actions/league.result_ratification/effect/source_counter_maintenance",
+            "requirement": "owner_maintenance"
+          },
+          "source_counter_resolution": {
+            "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+            "path": "/runner_evidence/actions/league.result_ratification/effect/source_counter_maintenance",
+            "dependencies_digest": "sha256:8deb25f718e6a031be6955d9ba5d01245a93d6ac8efab24823edc32cec2d9d8f",
+            "proof_digest": "sha256:a64444d8c11ed349977baf58b0b194936114c3898e802aeeac70e802a9803bdc",
+            "external_assurance": "unverified"
+          }
+        }
+      ],
+      "blocksReview": false
+    },
+    {
+      "kind": "deployment_prerequisite",
+      "title": "Runner-ledger receipt and execution setup",
+      "nextStep": "After authority review, prepare or verify the dedicated writer, review execution permission, then configure and start the worker. Keep reader credentials separate. Setup and execution remain unverified; no request is completed without a successful receipt.",
+      "passages": [
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "needs_decision",
+          "interpretation": "A stored Runner-ledger receipt is required, but receipt mode, dedicated writer and grants, execution consent, and worker startup are not checked or verified for the current ratification action.",
+          "draft_paths": [
+            "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+          ],
+          "topic": "Runner-ledger receipt and execution setup",
+          "responsibility": "deployment",
+          "issue_kind": "missing_configuration",
+          "next_step": "After authority review, configure the writer, Runner-ledger receipt mode, execution consent, and worker for ratification.",
+          "deployment_prerequisite": "runner_execution_setup"
+        }
+      ],
+      "blocksReview": false
+    },
+    {
+      "kind": "deployment_prerequisite",
+      "title": "Independent changed-row verification",
+      "nextStep": "After each applicable execution, independently observe the source and compare it with the exact intended change. This readback remains unverified; a receipt alone is not that observation. No Action-code repair is required for this external step.",
+      "passages": [
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "needs_decision",
+          "interpretation": "Independently verifying the changed source row is an external after-execution observation and remains unverified; a Runner receipt does not establish it.",
+          "draft_paths": [
+            "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+          ],
+          "topic": "Independent changed-row verification",
+          "responsibility": "application",
+          "issue_kind": "missing_configuration",
+          "next_step": "Assign who will independently observe each changed source row after execution.",
+          "application_obligations": [
+            "independent_source_readback"
+          ]
+        }
+      ],
+      "blocksReview": false
+    }
+  ],
+  "summary": [
+    "Attached rules: rules.txt v1; interpretation checked for this revision.",
+    "Client integration still unverified: signed-in customer identity, customer selection. Check these during client setup before customer use.",
+    "Independent source readback remains unverified for each applicable execution. Perform and retain that separate observation after the change; a receipt or completed business review does not prove it.",
+    "Source-counter maintenance relies on the exact current source-owner operating contract. Independent external-writer and production assurance remain unverified; the owner must keep all writers within that contract. This review grants no execution permission.",
+    "Execution setup pending: dedicated writer review, separate execution permission and worker startup. Continue to these checks after authority review; automatic completion is not yet enabled."
+  ],
+  "original_unchanged": true,
+  "source_effects": false,
+  "authority_mutations": false,
+  "independent_external_assurance": "unverified",
+  "derived_payload_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/deterministic/maintenance-after/derived-structural-correction.json",
+  "envelopes": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/deterministic/maintenance-after/transport-envelopes.json"
+}
