@@ -1,0 +1,35 @@
+{
+  "at": "2026-09-15T16:40:34.090736+00:00",
+  "exit_code": 1,
+  "classification": "inspection harness error after all three public help commands completed with asserted exit0",
+  "failure": "Expected var NAME = value; actual esbuild output declares names together, then assigns NAME = value inside init_model_ask.",
+  "public_help_checks": [
+    {
+      "args": [
+        "start",
+        "--help"
+      ],
+      "exit_code": 0,
+      "evidence": "asserted by synchronous harness before advancing to inspection"
+    },
+    {
+      "args": [
+        "onboard",
+        "db",
+        "--help"
+      ],
+      "exit_code": 0,
+      "evidence": "asserted by synchronous harness before advancing to inspection"
+    },
+    {
+      "args": [
+        "try",
+        "ask",
+        "--help"
+      ],
+      "exit_code": 0,
+      "evidence": "asserted by synchronous harness before advancing to inspection"
+    }
+  ],
+  "artifact_modified": false
+}

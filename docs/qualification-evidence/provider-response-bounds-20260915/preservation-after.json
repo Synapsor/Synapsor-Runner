@@ -1,0 +1,37 @@
+{
+  "at": "2026-09-15T16:39:37.322719+00:00",
+  "artifacts": [
+    {
+      "verified_at": "2026-09-15T16:39:36.268Z",
+      "installed_tree_sha256": "5c5c5eeb0d8a42305d857d5bcc0841c12861dd9bf26798679b2107e2e5a28d35",
+      "entries": 7569
+    },
+    {
+      "verified_at": "2026-09-15T16:39:37.290Z",
+      "installed_tree_sha256": "072ab87a11ecde0ec1e0a0928bfc6ba036fede08b6e75cfc073b1de263c631ef",
+      "entries": 7569
+    }
+  ],
+  "external_originals": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/xmodel-secondary-20260915/CROSS-VENDOR-RESULT.md",
+      "sha256": "18b395510fc883238e17538756fa9f01f3fda750a464b652cf3d3ce88ca93233",
+      "bytes": 7989,
+      "unchanged": true
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/xmodel-secondary-20260915/crossvendor/G2-grok-fixedbuild-terminal.log",
+      "sha256": "4b6cd33c9395ec3423577ad97bd30e7e5f97f6304f333c1a75b51c77c5bf7e54",
+      "bytes": 564277,
+      "unchanged": true
+    }
+  ],
+  "product_source_unchanged_since_tested_commit": true,
+  "old_evidence_modified": false,
+  "note": "Only current task evidence changed in git; older installation and external G2 report/terminal content verified unchanged. Installed checks ran under read-only mounts.",
+  "final_candidate_verification": {
+    "verified_at": "2026-09-15T16:43:44.612Z",
+    "installed_tree_sha256": "072ab87a11ecde0ec1e0a0928bfc6ba036fede08b6e75cfc073b1de263c631ef",
+    "entries": 7569
+  }
+}

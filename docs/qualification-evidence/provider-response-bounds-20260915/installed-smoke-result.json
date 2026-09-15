@@ -1,0 +1,49 @@
+{
+  "completed_at": "2026-09-15T16:40:34.717815+00:00",
+  "artifact_tree_sha256": "072ab87a11ecde0ec1e0a0928bfc6ba036fede08b6e75cfc073b1de263c631ef",
+  "result": "PASS",
+  "scope": "actual installed help commands and installed byte/constant inspection; transport behavior is source regression evidence, no live cross-vendor journey",
+  "provider_calls": 0,
+  "database_opened": false,
+  "checks": [
+    {
+      "args": [
+        "start",
+        "--help"
+      ],
+      "exit_code": 0,
+      "evidence": "asserted by synchronous harness before advancing to inspection"
+    },
+    {
+      "args": [
+        "onboard",
+        "db",
+        "--help"
+      ],
+      "exit_code": 0,
+      "evidence": "asserted by synchronous harness before advancing to inspection"
+    },
+    {
+      "args": [
+        "try",
+        "ask",
+        "--help"
+      ],
+      "exit_code": 0,
+      "evidence": "asserted by synchronous harness before advancing to inspection"
+    }
+  ],
+  "inspection_exit_code": 0,
+  "prior_harness_exit_code": 1,
+  "installed_constants": {
+    "MAX_PROVIDER_CONTINUATION_BYTES": 524288,
+    "MAX_TOOL_ARGUMENT_BYTES": 131072,
+    "MAX_PROVIDER_REQUEST_BYTES": 1048576,
+    "MAX_PROVIDER_RESPONSE_BYTES": 1048576,
+    "MAX_TOOL_CALLS_PER_RESPONSE": 4,
+    "MAX_TOOL_CALLS_PER_TURN": 8,
+    "MAX_TOOL_ITERATIONS": 6,
+    "MAX_AUTHORING_TOOL_ITERATIONS": 12,
+    "MAX_AUTHORING_TOOL_CALLS_PER_TURN": 24
+  }
+}

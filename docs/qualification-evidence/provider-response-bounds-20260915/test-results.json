@@ -100,6 +100,7 @@
   "retained_failed_attempts": [
     "before-bounds exit1 (5 expected before-repair failures)",
     "focused-bounds exit1 (two incorrect test error-code expectations)",
-    "offline package launch exit1 before any check (helper path precedence)"
+    "offline package launch exit1 before any check (helper path precedence)",
+    "installed-smoke exit1 after three asserted exit0 help commands (initializer-layout assumption); corrected inspection exit0, artifact unchanged"
   ]
 }

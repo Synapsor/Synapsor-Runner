@@ -1,6 +1,6 @@
 # Provider response bounds — verifier handoff
 
-Status: preparing the new candidate; full-suite result and final identity will be filled only after completion. Product/tests: fbbb52b; baseline 1ae76e5.
+Status: READY for independent rerun. Product/tests `fbbb52b823314973e8097d07da4f05ddd936cbec`; baseline 1ae76e5. Frozen source `29000841a0a27c50ef436ccf1de76fd98ecf4772`. Full installed tree `072ab87a11ecde0ec1e0a0928bfc6ba036fede08b6e75cfc073b1de263c631ef` (7569 entries). Full suite 6440 passed / 463 skipped, exit 0; types and ten offline checks exit 0.
 
 ## Reproduce the bounded controls
 
@@ -18,7 +18,7 @@ The primary regression is synthetic real local HTTP/SSE followed by real request
 Use the final frozen `installed/node_modules/@synapsor/runner/dist/cli.js` on a new whole-project copy of the reviewer's established clean starting checkpoint, with its matching source state and effective-store preflight. Do not run the historical failure copy or patch this installation. Existing consent, configured provider/key handling and reviewed local fixtures remain required. The launcher command is:
 
 ```bash
-node /ABSOLUTE/FINAL/installed/node_modules/@synapsor/runner/dist/cli.js start --project-root /ABSOLUTE/NEW/OWNED/JOB --cli --timeout 300
+node "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/provider-response-bounds-1ae76e5-20260915/frozen/installed/node_modules/@synapsor/runner/dist/cli.js" start --project-root /ABSOLUTE/NEW/OWNED/JOB --cli --timeout 300
 ```
 
 Keep predeclared OpenRouter x-ai/grok-4.6 and the existing request/navigation route. No new memory-size setting is needed or provided. Preserve every response/failure and authority/source differences. A full model-assisted review remains the independent lane: this task performs zero paid provider calls and does not assert cross-vendor completion from local transport tests.
@@ -37,3 +37,11 @@ The reviewer already established that the previous timeout candidate completes n
 - `external-evidence-baseline.json`, `prior-artifact-verification-before.json`, `preservation-after.json`: preservation. The independent G2 report was legitimately appended before this task; the new baseline does not rewrite an older manifest.
 
 No prompt, business authority, selector, counter, receipt, worker or adapter integration change. Historical Stage A remains artifact-specific and original Stage B remains NOT PASSED. The separate receipt-review and TRUSTED_BINDING_MISSING findings are unchanged.
+
+Verify the sealed installation without changing it:
+
+```bash
+node "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/provider-response-bounds-1ae76e5-20260915/frozen/freeze-repair.mjs" --verify
+```
+
+`installed-smoke-attempt1-result.json` preserves the initial inspector failure after the three successful help commands. The corrected inspector reads the actual esbuild assignment form; it does not rerun those commands or patch the artifact. See FINAL-REPORT.md and installed-candidate.json for the complete manifest, archive, lock and package hashes.

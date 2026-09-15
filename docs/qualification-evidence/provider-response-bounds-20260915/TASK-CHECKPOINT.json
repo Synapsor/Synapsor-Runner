@@ -1,6 +1,6 @@
 {
-  "at": "2026-09-15T16:37:36.012964+00:00",
-  "status": "ALL LOCAL GATES PASSED; READY TO FREEZE",
+  "at": "2026-09-15T16:43:44.627631+00:00",
+  "status": "LOCAL REPAIR AND VERIFICATION COMPLETE; STOP FOR INDEPENDENT RERUN",
   "product_commit": "fbbb52b823314973e8097d07da4f05ddd936cbec",
   "before": {
     "exit": 1,
@@ -27,5 +27,9 @@
     "exit_code": 0,
     "source_unchanged": true
   },
-  "offline_checks_passed": 10
+  "offline_checks_passed": 10,
+  "installed_tree_sha256": "072ab87a11ecde0ec1e0a0928bfc6ba036fede08b6e75cfc073b1de263c631ef",
+  "installed_smoke": "PASS after retained inspection-harness correction",
+  "delivery": "Final private backup commit/remote match recorded in owned-root delivery.json",
+  "active_task_processes": 0
 }
