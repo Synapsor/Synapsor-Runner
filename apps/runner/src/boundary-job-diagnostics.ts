@@ -3,13 +3,14 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { AskError, type AskProviderDependencies } from "./model-ask.js";
 import { redactCliErrorMessage } from "./cli-logging.js";
+import { PLANNING_FIELDS, planningFieldShape } from "./boundary-job-operation-contract.js";
 
 export type PlanningAttemptDiagnostic = {
   attempt: number; phase: "initial" | "correction";
   category: "accepted" | "contract_validation" | "tool_selection" | "response_parse" | "incomplete_response" | "provider_request";
   code: string; message: string;
   response?: { http_status: number; status: string; stop_reason: string; incomplete_reason: string;
-    tool_calls: number; expected_tool_calls: number; argument_bytes: number; field_names: string[] };
+    tool_calls: number; expected_tool_calls: number; argument_bytes: number; field_names: string[]; field_shapes?: string[] };
 };
 export type BoundaryJobPlanningDiagnostic = {
   version: 1; expected_tool: "runner.plan_boundary_job"; context_digest: string; source_digest?: string;
@@ -24,7 +25,7 @@ export class BoundaryJobPlanningError extends Error {
   }
 }
 
-const fields = new Set(["status", "read_mode", "read_intent", "action_mode", "action_intent", "action_intents", "action_outcome", "action_strategy", "summary", "question"]);
+const fields = new Set<string>(PLANNING_FIELDS);
 const object = (value: unknown): Record<string, unknown> => value && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : {};
 const known = (value: unknown, options: string[]) => typeof value === "string" && options.includes(value) ? value : "unavailable_or_other";
 
@@ -40,19 +41,23 @@ export function planningResponseDiagnostic(response: Awaited<ReturnType<NonNulla
     ...(Array.isArray(chat.tool_calls) ? chat.tool_calls.map((entry) => object(object(entry).function)) : []),
   ];
   const keys = new Set<string>();
+  const shapes = new Set<string>();
   let argumentBytes = 0;
   for (const call of calls.slice(0, 16)) {
     const args = call.arguments ?? call.input;
     argumentBytes += Buffer.byteLength(typeof args === "string" ? args : JSON.stringify(args ?? null));
     let parsed = args;
     if (typeof args === "string") { try { parsed = JSON.parse(args); } catch { parsed = undefined; } }
-    for (const key of Object.keys(object(parsed))) keys.add(fields.has(key) ? key : "<unexpected-key>");
+    for (const [key, value] of Object.entries(object(parsed))) {
+      keys.add(fields.has(key) ? key : "<unexpected-key>");
+      shapes.add(planningFieldShape(key, value));
+    }
   }
   return { http_status: response.status, status: known(body.status, ["completed", "incomplete", "failed", "cancelled"]),
     stop_reason: known(body.stop_reason ?? choice.finish_reason, ["tool_use", "end_turn", "max_tokens", "length", "stop", "tool_calls", "refusal", "content_filter"]),
     incomplete_reason: known(object(body.incomplete_details).reason, ["max_output_tokens", "content_filter"]),
     tool_calls: calls.length, expected_tool_calls: calls.filter((call) => call.name === "runner__plan_boundary_job").length,
-    argument_bytes: argumentBytes, field_names: [...keys].sort() };
+    argument_bytes: argumentBytes, field_names: [...keys].sort(), field_shapes: [...shapes].sort().slice(0, 24) };
 }
 
 export function planningErrorDiagnostic(error: unknown): Pick<PlanningAttemptDiagnostic, "category" | "code" | "message"> {
@@ -71,7 +76,8 @@ export function planningDiagnosticLines(diagnostic: BoundaryJobPlanningDiagnosti
     ...diagnostic.attempts.flatMap((attempt) => [
       `${attempt.phase}: ${attempt.code} (${attempt.category}). ${attempt.message}`,
       ...(attempt.response ? [`Response: HTTP ${attempt.response.http_status}; ${attempt.response.status}; stop ${attempt.response.stop_reason}; incomplete ${attempt.response.incomplete_reason}.`,
-        `Tool calls: ${attempt.response.tool_calls}; expected: ${attempt.response.expected_tool_calls}; argument bytes: ${attempt.response.argument_bytes}; fields: ${attempt.response.field_names.join(", ") || "none"}.`] : []),
+        `Tool calls: ${attempt.response.tool_calls}; expected: ${attempt.response.expected_tool_calls}; argument bytes: ${attempt.response.argument_bytes}; received fields: ${attempt.response.field_names.join(", ") || "none"}.`,
+        ...(attempt.response.field_shapes ? [`Received shape (not a list of errors): ${attempt.response.field_shapes.join("; ")}.`] : [])] : []),
     ]), "The same approved context is retained for correction. No raw response or credential values are recorded."];
 }
 

@@ -1,4 +1,5 @@
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { assertReviewOperationShape, planningFieldShape, REVIEW_OPERATION_GUIDANCE, REVIEW_PLAN_FIELDS } from "./boundary-job-operation-contract.js";
 import { BoundaryJobPlanningError, planningErrorDiagnostic, planningResponseDiagnostic,
   type BoundaryJobPlanningDiagnostic, type PlanningAttemptDiagnostic } from "./boundary-job-diagnostics.js";
 import { activePolicySource } from "./authoring-policy-source.js";
@@ -207,7 +208,8 @@ export async function planModelBoundaryJob(input: {
       ? [`Available reviewed resource IDs: ${JSON.stringify(availableResourceIds)}`]
       : []),
     `Call ${PLAN_BOUNDARY_JOB_TOOL} exactly once.`,
-    "For an explicit review/recheck of saved rules without requested changes, set operation=review_rules, use reuse/none for both modes and omit edit intents. Review validates the selected current attachment and candidate; it does not draft, activate, or finish an edit. A request combining review and changes needs one clarification of the intended operation. A current attached source is already supplied by the host; do not ask to upload it again. Ask a specific semantic question if its content is ambiguous.",
+    REVIEW_OPERATION_GUIDANCE,
+    "Review validates the selected current attachment and candidate; it does not draft, activate, or finish an edit. A current attached source is already supplied by the host; do not ask to upload it again. Ask a specific semantic question if its content is ambiguous.",
     "Use read_mode=resume when the current exact disabled Read mapping already covers the requested reads and resumable_draft_count is positive. Resume preserves that draft and continues its pending review; it does not grant authority.",
     "Use read_mode=reuse when the requested reads should stay exactly as reviewed and exact_reusable_revision_count is positive.",
     "Use read_mode=revise when revision_eligible is true (or fully_reviewed for older state) and the operator wants to change existing field visibility, operations, labels, reviewed relationships, privacy or limits. This edits the exact saved candidate, including an incomplete disabled review; it does not remap resources or assert readiness. Keep existing Actions with action_mode=reuse when their business rules should not change; Runner revalidates their Read dependencies. Resource additions or a different workload require create. Do not suggest revise when the tool schema excludes it.",
@@ -364,13 +366,25 @@ function jobPlanToolDefinition(state: BoundaryJobCurrentState): AskToolDefinitio
     description: "Classify current Boundary work or ask one clarification. This grants no authority and changes no source data.",
     input_schema: {
       oneOf: [
+        {
+          type: "object", additionalProperties: false,
+          required: REVIEW_PLAN_FIELDS.filter(field => field !== "intended_client"),
+          properties: {
+            status: { type: "string", enum: ["planned"] },
+            operation: { type: "string", enum: ["review_rules"] },
+            read_mode: { type: "string", enum: ["none", ...(state.read.exact_reusable_revision_count > 0 ? ["reuse"] : [])] },
+            action_mode: { type: "string", enum: ["none", ...(state.actions.length ? ["reuse"] : [])] },
+            summary: { type: "string", minLength: 1, maxLength: 700 },
+            intended_client: { type: "string", enum: authoringClientChoices.map(entry => entry.value) },
+          },
+          description: REVIEW_OPERATION_GUIDANCE,
+        },
         ...readModes.map((readMode) => ({
           type: "object",
           additionalProperties: false,
           required: ["status", "read_mode", "action_mode", "summary", ...(["create", "revise"].includes(readMode) ? ["read_intent"] : [])],
           properties: {
             status: { type: "string", enum: ["planned"] },
-            operation: { type: "string", enum: ["review_rules"], description: "Optional review-only operation, valid only with reuse/none modes and no edit intents." },
             intended_client: { type: "string", enum: authoringClientChoices.map((entry) => entry.value),
               description: "Optional existing operator choice for client setup; omit when not chosen or ambiguous. Does not install, connect or grant authority." },
             read_mode: { type: "string", enum: [readMode] },
@@ -453,7 +467,9 @@ function parseJobPlan(
 ): BoundaryJobPlanCore {
   const keys = value.status === "clarification" ? ["status", "question"]
     : ["status", "operation", "read_mode", "read_intent", "action_mode", "action_intent", "action_intents", "action_outcome", "action_strategy", "summary", "intended_client"];
-  if (Object.keys(value).some((key) => !keys.includes(key))) throw new Error("Planning arguments contain an unexpected property. Return only the fields in the selected tool contract, not schema keywords.");
+  const extraKeys = Object.keys(value).filter(key => !keys.includes(key));
+  if (extraKeys.length) throw new Error(`Planning arguments contain an unexpected property: ${extraKeys.slice(0, 8).map(key => planningFieldShape(key, value[key])).join("; ")}. Return only the fields in the selected tool contract, not schema keywords.`);
+  assertReviewOperationShape(value);
   if (value.intended_client !== undefined && !isAuthoringClientPlan(value.intended_client)) {
     throw new Error("intended_client must be a supported client choice or omitted. Custom client configuration remains a later review.");
   }
@@ -641,12 +657,6 @@ function parseJobPlan(
     if (!semanticOutcomes.includes(actionOutcome)) {
       throw new Error(`action_outcome must name one existing semantic outcome: ${semanticOutcomes.join(", ")}.`);
     }
-  }
-  if (value.operation !== undefined && (value.operation !== "review_rules"
-    || !["none", "reuse"].includes(readMode) || !["none", "reuse"].includes(actionMode)
-    || value.read_intent !== undefined || value.action_intent !== undefined || value.action_intents !== undefined
-    || value.action_outcome !== undefined || value.action_strategy !== undefined)) {
-    throw new Error("Review-only routing cannot contain a business edit. Clarify Review versus Edit; do not drop the requested change.");
   }
   return {
     state: "planned",

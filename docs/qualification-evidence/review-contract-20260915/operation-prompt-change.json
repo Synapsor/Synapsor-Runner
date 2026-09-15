@@ -1,0 +1,459 @@
+{
+  "basis": "sol-baseline-result.json and exact new input/output0003; operation-before-result.json real-parser replay",
+  "before": "For an explicit review/recheck of saved rules without requested changes, set operation=review_rules, use reuse/none for both modes and omit edit intents. Review validates the selected current attachment and candidate; it does not draft, activate, or finish an edit. A request combining review and changes needs one clarification of the intended operation. A current attached source is already supplied by the host; do not ask to upload it again. Ask a specific semantic question if its content is ambiguous.",
+  "after": [
+    "For review/recheck without requested changes, use the separate review_rules branch: status=planned, operation=review_rules, read_mode=reuse or none, action_mode=reuse or none, summary; optionally retain an explicitly selected intended_client. Omit read_intent, action_intent, action_intents, action_outcome and action_strategy entirely, including null or empty placeholders. The existing candidate is selected by the host; action_outcome is not a review target selector. Edit branches have no operation field. A request combining review and changes needs the clarification branch {status:clarification,question}; preserve the whole request and do not discard its change to obtain a review plan.",
+    "Review validates the selected current attachment and candidate; it does not draft, activate, or finish an edit. A current attached source is already supplied by the host; do not ask to upload it again. Ask a specific semantic question if its content is ambiguous."
+  ],
+  "wire_before": {
+    "oneOf": [
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "read_mode",
+          "action_mode",
+          "summary",
+          "read_intent"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "planned"
+            ]
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "review_rules"
+            ],
+            "description": "Optional review-only operation, valid only with reuse/none modes and no edit intents."
+          },
+          "intended_client": {
+            "type": "string",
+            "enum": [
+              "claude-code",
+              "vscode",
+              "cursor",
+              "later"
+            ],
+            "description": "Optional existing operator choice for client setup; omit when not chosen or ambiguous. Does not install, connect or grant authority."
+          },
+          "read_mode": {
+            "type": "string",
+            "enum": [
+              "create"
+            ]
+          },
+          "read_intent": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500,
+            "description": "A representative read question of at most 500 characters. Preserve the full original request and policy outside this routing summary."
+          },
+          "action_mode": {
+            "type": "string",
+            "enum": [
+              "create",
+              "reuse",
+              "revise",
+              "none"
+            ]
+          },
+          "action_intent": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Concise Action-only routing intent. Runner validates the exact Action separately."
+          },
+          "action_intents": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            "description": "Independent business outcomes for a multi-action create job; each keeps its own requested rules."
+          },
+          "action_outcome": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Exact existing semantic outcome selected from Current reviewed state for reuse or revision."
+          },
+          "action_strategy": {
+            "type": "string",
+            "enum": [
+              "discretionary",
+              "rule_derived"
+            ],
+            "description": "rule_derived is the fixed-tool engine including bounded business inputs; discretionary is legacy revision compatibility only."
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 700
+          }
+        }
+      },
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "read_mode",
+          "action_mode",
+          "summary"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "planned"
+            ]
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "review_rules"
+            ],
+            "description": "Optional review-only operation, valid only with reuse/none modes and no edit intents."
+          },
+          "intended_client": {
+            "type": "string",
+            "enum": [
+              "claude-code",
+              "vscode",
+              "cursor",
+              "later"
+            ],
+            "description": "Optional existing operator choice for client setup; omit when not chosen or ambiguous. Does not install, connect or grant authority."
+          },
+          "read_mode": {
+            "type": "string",
+            "enum": [
+              "reuse"
+            ]
+          },
+          "read_intent": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "read_mode=reuse needs no read_intent. Any redundant instruction remains bounded to 2000 characters."
+          },
+          "action_mode": {
+            "type": "string",
+            "enum": [
+              "create",
+              "reuse",
+              "revise",
+              "none"
+            ]
+          },
+          "action_intent": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Concise Action-only routing intent. Runner validates the exact Action separately."
+          },
+          "action_intents": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            "description": "Independent business outcomes for a multi-action create job; each keeps its own requested rules."
+          },
+          "action_outcome": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Exact existing semantic outcome selected from Current reviewed state for reuse or revision."
+          },
+          "action_strategy": {
+            "type": "string",
+            "enum": [
+              "discretionary",
+              "rule_derived"
+            ],
+            "description": "rule_derived is the fixed-tool engine including bounded business inputs; discretionary is legacy revision compatibility only."
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 700
+          }
+        }
+      },
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "read_mode",
+          "action_mode",
+          "summary",
+          "read_intent"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "planned"
+            ]
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "review_rules"
+            ],
+            "description": "Optional review-only operation, valid only with reuse/none modes and no edit intents."
+          },
+          "intended_client": {
+            "type": "string",
+            "enum": [
+              "claude-code",
+              "vscode",
+              "cursor",
+              "later"
+            ],
+            "description": "Optional existing operator choice for client setup; omit when not chosen or ambiguous. Does not install, connect or grant authority."
+          },
+          "read_mode": {
+            "type": "string",
+            "enum": [
+              "revise"
+            ]
+          },
+          "read_intent": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "An access-edit instruction of at most 2000 characters, applied to the existing exact revision without remapping."
+          },
+          "action_mode": {
+            "type": "string",
+            "enum": [
+              "create",
+              "reuse",
+              "revise",
+              "none"
+            ]
+          },
+          "action_intent": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Concise Action-only routing intent. Runner validates the exact Action separately."
+          },
+          "action_intents": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            "description": "Independent business outcomes for a multi-action create job; each keeps its own requested rules."
+          },
+          "action_outcome": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Exact existing semantic outcome selected from Current reviewed state for reuse or revision."
+          },
+          "action_strategy": {
+            "type": "string",
+            "enum": [
+              "discretionary",
+              "rule_derived"
+            ],
+            "description": "rule_derived is the fixed-tool engine including bounded business inputs; discretionary is legacy revision compatibility only."
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 700
+          }
+        }
+      },
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "read_mode",
+          "action_mode",
+          "summary"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "planned"
+            ]
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "review_rules"
+            ],
+            "description": "Optional review-only operation, valid only with reuse/none modes and no edit intents."
+          },
+          "intended_client": {
+            "type": "string",
+            "enum": [
+              "claude-code",
+              "vscode",
+              "cursor",
+              "later"
+            ],
+            "description": "Optional existing operator choice for client setup; omit when not chosen or ambiguous. Does not install, connect or grant authority."
+          },
+          "read_mode": {
+            "type": "string",
+            "enum": [
+              "none"
+            ]
+          },
+          "read_intent": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "read_mode=none needs no read_intent. Any redundant instruction remains bounded to 2000 characters."
+          },
+          "action_mode": {
+            "type": "string",
+            "enum": [
+              "create",
+              "reuse",
+              "revise",
+              "none"
+            ]
+          },
+          "action_intent": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000,
+            "description": "Concise Action-only routing intent. Runner validates the exact Action separately."
+          },
+          "action_intents": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 2000
+            },
+            "description": "Independent business outcomes for a multi-action create job; each keeps its own requested rules."
+          },
+          "action_outcome": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Exact existing semantic outcome selected from Current reviewed state for reuse or revision."
+          },
+          "action_strategy": {
+            "type": "string",
+            "enum": [
+              "discretionary",
+              "rule_derived"
+            ],
+            "description": "rule_derived is the fixed-tool engine including bounded business inputs; discretionary is legacy revision compatibility only."
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 700
+          }
+        }
+      },
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "read_mode",
+          "action_mode",
+          "action_outcome",
+          "summary"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "planned"
+            ]
+          },
+          "intended_client": {
+            "type": "string",
+            "enum": [
+              "claude-code",
+              "vscode",
+              "cursor",
+              "later"
+            ]
+          },
+          "read_mode": {
+            "type": "string",
+            "enum": [
+              "none",
+              "reuse"
+            ]
+          },
+          "action_mode": {
+            "type": "string",
+            "enum": [
+              "remove"
+            ]
+          },
+          "action_outcome": {
+            "type": "string",
+            "enum": [
+              "league.result_ratification"
+            ],
+            "description": "Exact existing semantic outcome to remove from a disabled replacement. Retained outcomes remain unchanged; activation is separate."
+          },
+          "summary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 700
+          }
+        }
+      },
+      {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "status",
+          "question"
+        ],
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "clarification"
+            ]
+          },
+          "question": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          }
+        }
+      }
+    ]
+  },
+  "wire_after_contract": "One closed review branch requires operation and exposes only status,operation,read_mode,action_mode,summary,optional intended_client. Generic edit branches no longer expose operation. Actual transport assertions in boundary-job-operation-contract.test.ts.",
+  "normalization": "None. Original extra-outcome response remains refused with precise disallowed field/type.",
+  "case_specific_product_prompt_text_added": false
+}

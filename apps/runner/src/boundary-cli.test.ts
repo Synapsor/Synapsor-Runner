@@ -10,7 +10,7 @@ import * as readPrerequisiteSources from "./read-prerequisite-source-review.js";
 import * as readPrerequisiteConsent from "./read-prerequisite-consent.js";
 import { buildReadPrerequisiteModelCatalog } from "./read-prerequisite-model.js";
 import { listSupportedReadCurrentStatePrerequisiteCandidates } from "./read-prerequisite.js";
-import type { planModelBoundaryJob } from "./boundary-job-model.js";
+import { planModelBoundaryJob } from "./boundary-job-model.js";
 import { actionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 import { loadPolicySources, activePolicySource, newPolicySourceSession, policyTextSnapshot, savePolicySources, authoringDestination } from "./authoring-policy-source.js";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
@@ -16311,9 +16311,10 @@ function stripAnsi(value: string): string {
 }
 
 describe("saved review operation dispatch and persistence", () => {
-  it.each(["menu", "no-change", "typed-review", "redundant-source", "unknown", "declined", "choice-save-race", "source-race", "resume-race", "unrelated-edit", "provider-refusal", "semantic-question", "genuine-noop", "maintenance", "maintenance-missing", "maintenance-source-race"])("reviews without entering editors: %s", async mode => {
-    const maintenance = mode.startsWith("maintenance");
-    const fixture = await staleSemanticRevalidationFixture({ outcomes: ["maintenance.complete_visit"], atomicUpdates: maintenance });
+  it.each(["menu", "no-change", "typed-review", "redundant-source", "unknown", "declined", "choice-save-race", "source-race", "resume-race", "unrelated-edit", "provider-refusal", "semantic-question", "genuine-noop", "maintenance", "maintenance-missing", "maintenance-source-race", "model-review", "model-resume", "model-review-edit", "model-cancel", "model-declined", "fallback-review", "fallback-edit", "fallback-pause", "captured-contract"])("reviews without entering editors: %s", async mode => {
+    const maintenance = mode.startsWith("maintenance"), changingModel = mode.startsWith("model-");
+    const solCapture = mode === "captured-contract" ? JSON.parse(await fs.readFile(new URL("./fixtures/review-operation-sol-capture.json", import.meta.url), "utf8")) : undefined;
+    const fixture = await staleSemanticRevalidationFixture({ outcomes: [solCapture?.arguments.action_outcome ?? "maintenance.complete_visit"], atomicUpdates: maintenance });
     const { root, inspection } = fixture;
     let sourceReadSpy: { mockRestore(): void } | undefined;
     try {
@@ -16364,7 +16365,7 @@ describe("saved review operation dispatch and persistence", () => {
       const exact = "Recheck the current saved rules against the attached policy and existing decisions without changing the rules or authority.";
       let resume = buildBoundaryAuthoringResumeState({ binding, stage: "planning", jobIntent: "Maintain the reviewed visit job.", provider: "openai", model: "gpt-test",
         policySourceSession: source.id, action: { intent: "Keep the visit job.", outcome: "maintenance.complete_visit", strategy: "rule_derived" },
-        pendingJobRevision: ["unrelated-edit", "genuine-noop"].includes(mode) ? "Change the maximum to four." : exact,
+        pendingJobRevision: ["unrelated-edit", "genuine-noop", "model-review-edit", "fallback-edit"].includes(mode) ? "Change the maximum to four." : exact,
         ...(maintenance ? { reviewedVersionFields: mode === "maintenance-missing" ? counterReviews.slice(0, 1) : counterReviews } : {}) });
       await writeBoundaryAuthoringResumeState(root, resume, { expectedRevisionDigest: null });
       const authorityBefore = canonicalJsonDigest(authority), readBefore = canonicalJsonDigest(context.candidate);
@@ -16390,25 +16391,36 @@ describe("saved review operation dispatch and persistence", () => {
         });
       }
       let restarted = false;
+      const sourceInitial = JSON.stringify(source), resumeInitial = JSON.stringify(resume);
       const session: BoundaryReviewInteractiveSession = { ...fixture.session,
         rememberDetails: (_title, lines) => { notices.push(lines); },
-        chooseOption: async title => {
+        chooseOption: async (title, options) => {
           menus.push(title);
+          if (title === "START BOUNDARY DRAFTING" && changingModel && !restarted) return "choose_model";
+          if (title === "MODEL FOR BOUNDARY DRAFTING") return options.some(o => o.value === "gpt-selected-review") ? "gpt-selected-review" : "change_model";
+          if (title === "CONTINUE SAVED JOB WITH SELECTED MODEL") return mode === "model-cancel" ? "back" : mode === "model-resume" ? "resume" : "review_rules";
+          if (title === "SEND ATTACHED RULES") return mode === "model-declined" ? "cancel" : "send";
+          if (title === "BOUNDARY JOB PLANNING DID NOT COMPLETE" && mode.startsWith("fallback-")) {
+            expect(options.map(o=>o.value)).toEqual(["review", "edit", "details", "back"]);
+            return mode === "fallback-review" ? "review" : mode === "fallback-edit" ? "edit" : "back";
+          }
           if (title === "START BOUNDARY DRAFTING") return restarted || ["menu", "unknown", "declined", "choice-save-race", "source-race", "resume-race", "unrelated-edit", "provider-refusal"].includes(mode) ? "review_rules" : "resume";
           if (title === "CHOOSE THE SAVED JOB OPERATION") return ["semantic-question", "genuine-noop"].includes(mode) ? "continue" : "review";
-          if (title === "REVIEW OR UNFINISHED EDIT?") return mode === "unrelated-edit" ? "keep" : "review";
+          if (title === "REVIEW OR UNFINISHED EDIT?") return ["unrelated-edit", "model-review-edit"].includes(mode) ? "keep" : "review";
           if (title === "REVIEW COUNTED AUTOMATIC APPROVALS") { choices++; return "boundary"; }
           throw new Error(`Unexpected review-only menu: ${title}`);
         },
-        confirm: async title => { if (title.startsWith("Record this counting")) { confirmations++; return mode !== "declined"; } throw new Error(`Unexpected consent: ${title}`); },
+        confirm: async title => { if (changingModel && title.includes("reviewed structural context")) return true; if (title.startsWith("Record this counting")) { confirmations++; return mode !== "declined"; } throw new Error(`Unexpected consent: ${title}`); },
         promptText: async prompt => { if (mode === "semantic-question") { expect(prompt).toBe("Which visits require an additional reviewer?"); return undefined; } throw new Error(`Review must not ask to rewrite/reupload: ${prompt}`); },
         chooseResource: async () => undefined,
       };
       const noEdit = vi.fn(async () => { throw new Error("Review-only operation entered an editor"); });
       const run = () => boundaryReviewCommandInternal(["--project-root", root, "--access", "--job-first"], async () => inspection, session, undefined, {
         exitAfterAgentJob: true, actionProjectInspector: async () => inspection,
-        modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "captured-only", dependencies: { requestJson: async () => {
+        modelDiscovery: { discoverHostedModels: async () => ["gpt-selected-review"] },
+        modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "captured-only", dependencies: { requestJson: async request => {
           providerCalls++;
+          if (changingModel) expect(request.body.model).toBe("gpt-selected-review");
           // After removal of the unsafe acknowledgement read, preserve the same
           // competing save at the next outside-lock provider boundary.
           if (mode === "choice-save-race" && !choiceSaveInterleaved) {
@@ -16448,6 +16460,17 @@ describe("saved review operation dispatch and persistence", () => {
         } } },
         modelBoundaryJobPlanner: async args => {
           plannerCalls++;
+          if (changingModel) expect(args.session.model).toBe("gpt-selected-review");
+          if (solCapture) {
+            let attempts = 0;
+            const result = await planModelBoundaryJob({ ...args, session: { ...args.session, dependencies: { requestJson: async () => {
+              attempts++;
+              return { status: 200, body: attempts === 1 ? solCapture.response : { output: [{ type: "function_call", call_id: "derived-correction", name: "runner__plan_boundary_job",
+                arguments: JSON.stringify({status: "planned", operation: "review_rules", read_mode: "reuse", action_mode: "reuse", summary: "Review the existing saved candidate."}) }] } };
+            } } } });
+            expect(attempts).toBe(2); expect(result.correction_used).toBe(true); return result;
+          }
+          if (mode.startsWith("fallback-")) throw new Error("PLANNING_CONTRACT_INVALID: controlled failed contract; no permission inferred.");
           if (mode === "semantic-question") return { state: "clarification", question: "Which visits require an additional reviewer?", correction_used: false, authority_granted: false, source_database_changed: false };
           if (mode === "genuine-noop") return { state: "planned", read_mode: "reuse", action_mode: "reuse", summary: "No change prepared.", correction_used: false, authority_granted: false, source_database_changed: false };
           const captures = JSON.parse(await fs.readFile(new URL("./fixtures/review-routing-captures.json", import.meta.url), "utf8"));
@@ -16471,6 +16494,13 @@ describe("saved review operation dispatch and persistence", () => {
       expect(canonicalJsonDigest(await readActionRuleAuthorityDraft(root, authority.authority.name))).toBe(authorityBefore);
       expect(canonicalJsonDigest((await loadBoundaryReviewContext(root)).candidate)).toBe(readBefore);
       expect(noEdit).not.toHaveBeenCalled();
+      if (["model-cancel", "model-declined", "fallback-edit", "fallback-pause"].includes(mode)) {
+        expect(resume.completed_policy_reviews).toBeUndefined(); expect(resume.pending_policy_review).toBeUndefined();
+        expect(resume.pending_job_revision).toBe(mode === "fallback-edit" ? "Change the maximum to four." : exact);
+        expect(providerCalls).toBe(0); expect(plannerCalls).toBe(mode.startsWith("fallback-") ? 1 : 0);
+        if (mode === "model-cancel") { expect(JSON.stringify(stored)).toBe(sourceInitial); expect(JSON.stringify(resume)).toBe(resumeInitial); }
+        return;
+      }
       if (["semantic-question", "genuine-noop"].includes(mode)) {
         expect(resume.pending_policy_review).toBeUndefined(); expect(resume.completed_policy_reviews).toBeUndefined();
         expect(resume.pending_job_revision).toBe(mode === "genuine-noop" ? "Change the maximum to four." : exact);
@@ -16492,7 +16522,7 @@ describe("saved review operation dispatch and persistence", () => {
         }
       } else {
         expect(resume.pending_policy_review).toBeUndefined(); expect(resume.completed_policy_reviews).toHaveLength(1);
-        expect(resume.pending_job_revision).toBe(mode === "unrelated-edit" ? "Change the maximum to four." : undefined);
+        expect(resume.pending_job_revision).toBe(["unrelated-edit", "model-review-edit"].includes(mode) ? "Change the maximum to four." : undefined);
         expect(stored.coverage?.passages[0]?.disposition).toBe("implemented");
         if (counting) { expect(choices).toBe(2); expect(confirmations).toBe(2); expect(stored.counting_decisions).toHaveLength(2); }
         if (maintenance) {
@@ -16500,6 +16530,7 @@ describe("saved review operation dispatch and persistence", () => {
           expect(stored.coverage!.passages.filter(p => p.source_counter_resolution)).toHaveLength(2);
           expect(notices.flat().join("\n")).toContain("Independent external-writer and production assurance remain unverified");
         }
+        if (changingModel) { expect(resume.model.name).toBe("gpt-selected-review"); expect(stored.approvals.some(a=>a.destination === authoringDestination({provider: "openai", model: "gpt-selected-review"}))).toBe(true); }
         const calls = providerCalls; restarted = true;
         expect(await run()).toBe(0);
         const after = await readBoundaryAuthoringResumeState(root, binding); if (after.status !== "ready") throw new Error("restart missing");
@@ -16507,7 +16538,7 @@ describe("saved review operation dispatch and persistence", () => {
         expect(after.value.completed_policy_reviews?.[1]?.activity).toBe("validated_reuse");
         expect(providerCalls).toBe(calls); expect(choices).toBe(counting ? 2 : 0);
       }
-      expect(plannerCalls).toBe(["no-change", "typed-review", "redundant-source", "maintenance", "maintenance-missing", "maintenance-source-race"].includes(mode) ? 1 : 0);
+      expect(plannerCalls).toBe(["no-change", "typed-review", "redundant-source", "maintenance", "maintenance-missing", "maintenance-source-race", "model-resume", "fallback-review", "captured-contract"].includes(mode) ? 1 : 0);
     } finally { sourceReadSpy?.mockRestore(); await fixture.dispose(); }
   });
 });

@@ -1168,7 +1168,7 @@ describe("typed review-only job routing", () => {
           arguments: JSON.stringify({ status: "planned", operation: "review_rules", read_mode: "reuse", action_mode: "none", summary: "Review the current candidate without edits." }) }] } };
       } } } });
     expect(result).toMatchObject({ state: "planned", operation: "review_rules", read_mode: "reuse", action_mode: "none", authority_granted: false });
-    expect(requests).toHaveLength(1); expect(requests[0]).toContain(jobIntent); expect(requests[0]).toContain("combining review and changes needs one clarification");
+    expect(requests).toHaveLength(1); expect(requests[0]).toContain(jobIntent); expect(requests[0]).toContain("combining review and changes needs the clarification branch");
   });
   it.each([{ read_intent: "Change the grouping limit to three." }, { action_intent: "Change the approval maximum." },
     { action_intents: ["Add another action."] }, { operation: "publish" }, { read_mode: "revise", read_intent: "Change access." }])("refuses a review label that hides an edit: %j", async extra => {

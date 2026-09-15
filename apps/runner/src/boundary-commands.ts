@@ -3586,7 +3586,8 @@ async function promptBoundaryJobPlanningFallback(input: {
   allowAdditionalAttempt: boolean;
   failure?: unknown;
   unresolvedQuestion?: string;
-}): Promise<"runner" | "retry" | "change_model" | "back"> {
+  savedReviewRequest?: string;
+}): Promise<"runner" | "retry" | "change_model" | "review" | "edit" | "back"> {
   const title = "BOUNDARY JOB PLANNING DID NOT COMPLETE";
   const reason = input.unresolvedQuestion
     ? "The model still needs a business clarification before it can separate Read and Action work."
@@ -3603,7 +3604,13 @@ async function promptBoundaryJobPlanningFallback(input: {
     while (true) {
       const selected = await input.session.chooseOption(
         title,
-        [
+        input.savedReviewRequest ? [
+          { value: "review", label: "This request is review-only; check current attached rules",
+            detail: "Explicit operator fallback after refused planning, not a successful language plan. No edit or counting answer is inferred." },
+          { value: "edit", label: "Keep this request as an unfinished edit", detail: "Retain the complete requested change for continuation; no draft is changed." },
+          { value: "details", label: "View the local planning failure" },
+          { value: "back", label: "Pause this job", detail: "Keep the whole request and every existing Boundary unchanged." },
+        ] : [
           {
             value: "runner",
             label: "Prepare a deterministic starting draft",
@@ -3634,17 +3641,20 @@ async function promptBoundaryJobPlanningFallback(input: {
             detail: "Keep every existing Read and Action Boundary exactly as it was.",
           },
         ],
-        { initialValue: input.allowAdditionalAttempt ? "retry" : "back", context },
+        { initialValue: input.savedReviewRequest ? "back" : input.allowAdditionalAttempt ? "retry" : "back",
+          context: [...context, ...(input.savedReviewRequest ? [`Saved request: ${input.savedReviewRequest}`] : [])] },
       );
       if (selected === "details") {
         input.session.present?.(title, context, "warning");
         continue;
       }
       return selected === "runner" || selected === "retry" || selected === "change_model"
+        || input.savedReviewRequest && (selected === "review" || selected === "edit")
         ? selected
         : "back";
     }
   }
+  if (input.savedReviewRequest) return "back";
   const accepted = await input.session.confirm(
     "Prepare a deterministic starting draft and recheck the full attached policy?",
     { defaultValue: false, context: [title, ...context] },
@@ -4646,6 +4656,22 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         footer: "Use the table list now. W reopens model-guided setup.",
       });
     }
+    // Choosing transport must not reset the saved operation or its pending
+    // work. Select the exact model first, then preserve/confirm the operation.
+    let explicitlyChosenModel: ActionModelSuggestionSession | undefined;
+    if (selected === "choose_model") {
+      explicitlyChosenModel = await promptBoundaryMappingModel(input.session, currentModel, input.modelDiscovery);
+      if (!explicitlyChosenModel) return boundaryAssistResult(boundaryAssistBackNotice());
+      selected = availableResume ? await input.session.chooseOption("CONTINUE SAVED JOB WITH SELECTED MODEL", [
+        { value: "review_rules", label: "Review attached rules and unresolved decisions", detail: "Use the same source and candidate; no operation planner or business edit." },
+        { value: "resume", label: "Resume the interrupted job", detail: "Preserve its exact request, pending work and reviewed decisions with the selected model." },
+        { value: "model", label: "Draft a new change to the saved job", detail: "Ask what should change; preserve existing authority until separate review." },
+        { value: "back", label: "Pause without changing the saved job" },
+      ], { initialValue: "resume", context: [`Selected model: ${boundaryModelLabel(explicitlyChosenModel)}`,
+        "Model selection grants no authority or source permission. Required metadata/source transfer consent follows.",
+        ...(availableResume.pending_job_revision ? [`Pending request: ${availableResume.pending_job_revision}`] : [])] }) : "model";
+      if (selected !== "review_rules" && selected !== "resume" && selected !== "model") return boundaryAssistResult(boundaryAssistBackNotice());
+    }
     selectedPolicyReview ||= selected === "review_rules" || selected === "resume" && Boolean(availableResume?.pending_policy_review);
     resumeSelected = selected === "resume" || selected === "review_rules";
     editingSavedJob = Boolean(availableResume
@@ -4683,12 +4709,12 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     }
     mode = selected === "choose_model" || resumeSelected ? "model" : selected as MappingMode;
     if (mode === "model") {
-      routeSelectedModel = (resumeSelected || input.initialSavedReadRevision) && availableResume
+      routeSelectedModel = explicitlyChosenModel ?? ((resumeSelected || input.initialSavedReadRevision) && availableResume
         ? boundaryAuthoringResumeModelSession(availableResume, currentModel, input.modelDiscovery?.env ?? process.env)
           ?? await promptBoundaryMappingModel(input.session, currentModel, input.modelDiscovery)
         : selected === "choose_model" || !currentModel
           ? await promptBoundaryMappingModel(input.session, currentModel, input.modelDiscovery)
-          : { ...currentModel };
+          : { ...currentModel });
       if (!routeSelectedModel) return boundaryAssistResult(boundaryAssistBackNotice());
       selectedResumeModel = routeSelectedModel;
       input.authoringChat.setModel(boundaryModelLabel(routeSelectedModel));
@@ -5346,7 +5372,10 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         allowAdditionalAttempt: !additionalAttemptUsed,
         ...(planningFailure ? { failure: planningFailure } : {}),
         ...(jobPlan?.state === "clarification" ? { unresolvedQuestion: jobPlan.question } : {}),
+        ...(activeResume && activePolicySource(authoringConversation?.policySources) ? { savedReviewRequest: jobIntent!.trim() } : {}),
       });
+      if (recovery === "review") return runSavedPolicyReview(jobIntent!.trim(), jobIntent!.trim());
+      if (recovery === "edit") return boundaryAssistResult(boundaryAssistBackNotice("The complete request remains an unfinished edit. No review or draft change completed."));
       if (recovery === "back") {
         return boundaryAssistResult(boundaryAssistBackNotice(
           "Boundary planning paused before any disabled draft changed. The rejected model response was discarded.",
