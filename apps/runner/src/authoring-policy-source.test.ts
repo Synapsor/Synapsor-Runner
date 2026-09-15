@@ -482,3 +482,29 @@ describe("complete operator-selected policy text", () => {
     expect(requestJson).toHaveBeenCalledTimes(2);
   });
 });
+
+describe("current attachment review operation", () => {
+  it.each(["already-attached", "replacement", "declined"])("hands the exact consented source to Review (%s)", async mode => {
+    const root = await directory(), conversation = createModelAuthoringConversation(); conversation.policySources = approved("The prior rules.");
+    const original = structuredClone(conversation.policySources);
+    await savePolicySources(root, conversation.policySources);
+    await fs.writeFile(path.join(root, "replacement.txt"), "The complete replacement rules.");
+    const reads = mode === "already-attached" ? ["/rules"] : ["/attach replacement.txt"];
+    const choices = mode === "already-attached" ? ["review"] : mode === "declined" ? ["cancel"] : ["send", "review"];
+    const chat = createBoundaryAuthoringChat({ color: false, io: { read: async () => reads.shift(), readConversation: async () => reads.shift(),
+      write: () => undefined, choose: async () => choices.shift(), columns: () => 80, isTerminal: () => false, onInterrupt: () => () => undefined, close() {} } });
+    const review = vi.fn(async () => {
+      const stored = await loadPolicySources(root, conversation.policySources!.id), current = activePolicySource(stored)!;
+      expect(current.text).toBe(mode === "replacement" ? "The complete replacement rules." : "The prior rules.");
+      expect(stored.approvals.some(a => a.digest === current.digest && a.destination === authoringDestination(destination))).toBe(true);
+      expect(stored.snapshots[0]).toEqual(original.snapshots[0]);
+    });
+    installPolicySourceCommands({ root, chat, conversation, destination: () => destination, onChange: async () => undefined,
+      hasDraft: () => true, reviewCurrent: review });
+    expect(await chat.readOperator!()).toBeUndefined();
+    expect(review).toHaveBeenCalledTimes(mode === "declined" ? 0 : 1);
+    expect(conversation.policySources.operator_messages).toBeUndefined(); // No fabricated answer or replayed source definition.
+    if (mode === "declined") expect(await loadPolicySources(root, original.id)).toEqual(original);
+    chat.close();
+  });
+});

@@ -1600,3 +1600,15 @@ async function mixedStateProject(): Promise<string> {
   }));
   return root;
 }
+
+
+it("hands the visible saved-rule review to the direct coverage operation without installing or drafting", async () => {
+  const review = vi.fn(async () => 0), ask = vi.fn(), install = vi.fn(), worker = vi.fn();
+  expect(await runPostActivationAskHandoff({ projectRoot: "/tmp/review-route-fixture", selection: { route: "review-rules" } }, {
+    env: {}, runBoundaryReview: review, runAsk: ask, runMcpInstall: install, runWorker: worker,
+    readActionDrafts: async () => [], readReadiness: async () => ({ read: "active", legacy_actions: "inactive", worker: "not_checked", semantic_actions: "inactive", semantic_outcomes: [] }),
+    stdout: { write: () => true }, stderr: { write: () => true },
+  })).toBe(0);
+  expect(review).toHaveBeenCalledExactlyOnceWith(["--project-root", "/tmp/review-route-fixture", "--access", "--job-first", "--review-rules"]);
+  expect(ask).not.toHaveBeenCalled(); expect(install).not.toHaveBeenCalled(); expect(worker).not.toHaveBeenCalled();
+});

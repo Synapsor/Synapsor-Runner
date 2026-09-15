@@ -1156,3 +1156,47 @@ describe("model Boundary job planning", () => {
     expect(requestJson).not.toHaveBeenCalled();
   });
 });
+
+describe("typed review-only job routing", () => {
+  it.each(["Recheck the current saved rules against the attached policy and existing decisions without changing the rules or authority.",
+    "Check this saved job against my attached rules; keep its settings.", "Review whether the current policy is implemented. Do not draft changes."])("retains a review-only operation for %s", async jobIntent => {
+    const requests: string[] = [];
+    const result = await planModelBoundaryJob({ jobIntent, currentState: reusableState, egressAcknowledged: true,
+      session: { provider: "openai", model: "fixture", apiKey: "captured-only", dependencies: { requestJson: async request => {
+        requests.push(JSON.stringify(request.body));
+        return { status: 200, body: { output: [{ type: "function_call", call_id: "review", name: "runner__plan_boundary_job",
+          arguments: JSON.stringify({ status: "planned", operation: "review_rules", read_mode: "reuse", action_mode: "none", summary: "Review the current candidate without edits." }) }] } };
+      } } } });
+    expect(result).toMatchObject({ state: "planned", operation: "review_rules", read_mode: "reuse", action_mode: "none", authority_granted: false });
+    expect(requests).toHaveLength(1); expect(requests[0]).toContain(jobIntent); expect(requests[0]).toContain("combining review and changes needs one clarification");
+  });
+  it.each([{ read_intent: "Change the grouping limit to three." }, { action_intent: "Change the approval maximum." },
+    { action_intents: ["Add another action."] }, { operation: "publish" }, { read_mode: "revise", read_intent: "Change access." }])("refuses a review label that hides an edit: %j", async extra => {
+    const result = planModelBoundaryJob({ jobIntent: "Review and then change the maximum.", currentState: reusableState, egressAcknowledged: true,
+      session: { provider: "openai", model: "fixture", apiKey: "captured-only", dependencies: { requestJson: async () => ({ status: 200, body: { output: [{
+        type: "function_call", call_id: "mixed", name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", operation: "review_rules",
+          read_mode: "reuse", action_mode: "none", summary: "Review and edit.", ...extra }) }] } }) } } });
+    await expect(result).rejects.toThrow();
+  });
+});
+
+
+it("replays both complete captured planning requests and unchanged submitted tool replies", async () => {
+  const fs = await import("node:fs/promises");
+  const { createModelAuthoringConversation } = await import("./model-authoring-conversation.js");
+  const captures = JSON.parse(await fs.readFile(new URL("./fixtures/review-routing-captures.json", import.meta.url), "utf8"));
+  for (const capture of captures) {
+    const conversation = createModelAuthoringConversation(); conversation.policySources = capture.source_session;
+    const sent: string[] = [];
+    const result = await planModelBoundaryJob({ jobIntent: capture.operator_job, currentState: capture.current_state,
+      availableResourceIds: capture.current_state.read.resource_ids, egressAcknowledged: true,
+      session: { provider: "openai", model: "gpt-5.6-terra", apiKey: "captured-only", conversation, dependencies: { requestJson: async request => {
+        sent.push(JSON.stringify(request.body)); return { status: 200, body: capture.response };
+      } } } });
+    expect(sent).toHaveLength(1);
+    expect(sent[0]).toContain(capture.source_session.snapshots.find((s: { version: number }) => s.version === capture.source_session.active).digest);
+    expect(result.state).toBe(capture.case === "counting-wording-control" ? "clarification" : "planned");
+    if (result.state === "clarification") expect(result.question).toBe(JSON.parse(capture.response.output[0].arguments).question);
+    else expect(result.operation).toBeUndefined(); // Historical no-change plan is not retroactively rewritten as a review verdict.
+  }
+});
