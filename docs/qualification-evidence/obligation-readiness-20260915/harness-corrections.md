@@ -1,0 +1,3 @@
+The first new receipt lifecycle fixture accidentally retained staleSemanticRevalidationFixture default writeback=proposal_only. Its supported=false setup correctly blocked BUSINESS. The failing lifecycle01 log is preserved. The receipt positive now explicitly uses the existing supervised fixture option; no product assertion or behavior was relaxed.
+
+combined01 exposed a test reconstruction error: it copied the old v1 application assignment but only the active v2 source snapshot. Reload correctly dropped the unrelated assignment, so the new CAS test compared a normalized object with different disk contents. The fixture now retains both exact original snapshots, matching the real stopped session. Captured replies are unchanged; CAS expectations are retained.

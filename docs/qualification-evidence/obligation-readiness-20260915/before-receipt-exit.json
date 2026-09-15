@@ -1,0 +1,27 @@
+{
+  "name": "before-receipt",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/obligation-readiness.test.ts",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T17:57:42.442739+00:00",
+  "source_head": "666fc5a2262145f9b54860c8c6670580d73acfef",
+  "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/test-environments/before-receipt",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/obligation-readiness-20260915/before-receipt",
+  "source_manifest_sha256": "4596a103fa147adb90b8c85f834eedb5f4d35d681e7f130995c7e0ee543f71ef",
+  "pid": 678119,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-15T17:57:45.927469+00:00"
+}

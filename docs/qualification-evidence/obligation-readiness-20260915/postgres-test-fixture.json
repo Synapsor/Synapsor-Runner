@@ -1,0 +1,12 @@
+{
+  "name": "synapsor-obligation-readiness-tests-33347ee0",
+  "id": "72106b8f684c9d154525e96125eafa283a446ce94dfa3cb3bf576b6bb0636060",
+  "label": "obligation-readiness-20260915",
+  "image": "sha256:1edc8e87e53194e0cc8006c4e9df9b626c6c72cb43ad3385f0f34af7922065b1",
+  "network": "none",
+  "database": "policy_reconciliation_tests",
+  "socket": "/tmp/synapsor-obligation-readiness-pg-ITrJck/socket",
+  "private_configuration": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/private/live-postgres.json",
+  "ready_at": "2026-09-15T18:09:54.619Z",
+  "credentials": "only scoped SYNAPSOR_TEST_POSTGRES_URL, no provider environment"
+}

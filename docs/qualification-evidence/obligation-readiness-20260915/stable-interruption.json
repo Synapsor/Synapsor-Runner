@@ -1,0 +1,7 @@
+{
+  "at": "2026-09-15T18:25:45.460230+00:00",
+  "pid": 728868,
+  "reason": "offline trusted-core check found source import cycle; terminate only owned still-running suite before correction",
+  "signal": "SIGTERM",
+  "source_edited_while_running": false
+}

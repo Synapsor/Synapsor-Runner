@@ -1,0 +1,294 @@
+{
+  "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests",
+  "records": [
+    {
+      "name": "acyclic-focused-source-after.json",
+      "sha256": "ef4922b19a1396fa5fd808fa46971311a3b85b941a9bed05c3595e7a455768e2",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/acyclic-focused-source-after.json"
+    },
+    {
+      "name": "acyclic-focused-source.json",
+      "sha256": "ef4922b19a1396fa5fd808fa46971311a3b85b941a9bed05c3595e7a455768e2",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/acyclic-focused-source.json"
+    },
+    {
+      "name": "after-receipt-source-after.json",
+      "sha256": "e778380b8a926bb3630538d8cbd8a1a08177ff52f8558c91c87e5357b8d273fa",
+      "bytes": 115747,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/after-receipt-source-after.json"
+    },
+    {
+      "name": "after-receipt-source.json",
+      "sha256": "e778380b8a926bb3630538d8cbd8a1a08177ff52f8558c91c87e5357b8d273fa",
+      "bytes": 115747,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/after-receipt-source.json"
+    },
+    {
+      "name": "before-receipt-source-after.json",
+      "sha256": "4596a103fa147adb90b8c85f834eedb5f4d35d681e7f130995c7e0ee543f71ef",
+      "bytes": 115627,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/before-receipt-source-after.json"
+    },
+    {
+      "name": "before-receipt-source.json",
+      "sha256": "4596a103fa147adb90b8c85f834eedb5f4d35d681e7f130995c7e0ee543f71ef",
+      "bytes": 115627,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/before-receipt-source.json"
+    },
+    {
+      "name": "before-shape-source-after.json",
+      "sha256": "4596a103fa147adb90b8c85f834eedb5f4d35d681e7f130995c7e0ee543f71ef",
+      "bytes": 115627,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/before-shape-source-after.json"
+    },
+    {
+      "name": "before-shape-source.json",
+      "sha256": "4596a103fa147adb90b8c85f834eedb5f4d35d681e7f130995c7e0ee543f71ef",
+      "bytes": 115627,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/before-shape-source.json"
+    },
+    {
+      "name": "combined-final-source-after.json",
+      "sha256": "9e1ca0f98770c3ee1fae71d624ccfaabf7dc3a5f2a1be67b8b8c9eda79324933",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/combined-final-source-after.json"
+    },
+    {
+      "name": "combined-final-source.json",
+      "sha256": "9e1ca0f98770c3ee1fae71d624ccfaabf7dc3a5f2a1be67b8b8c9eda79324933",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/combined-final-source.json"
+    },
+    {
+      "name": "combined01-source-after.json",
+      "sha256": "f0fba09a463c1369e6169455edd6472d4c3c330338eb4f7e82b70b2ac9d86bef",
+      "bytes": 115871,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/combined01-source-after.json"
+    },
+    {
+      "name": "combined01-source.json",
+      "sha256": "f0fba09a463c1369e6169455edd6472d4c3c330338eb4f7e82b70b2ac9d86bef",
+      "bytes": 115871,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/combined01-source.json"
+    },
+    {
+      "name": "configured-receipt01-source-after.json",
+      "sha256": "ae6060e0330d8e02b376067ccc984b5072394abfe05285b9ae930f9abfa75b14",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/configured-receipt01-source-after.json"
+    },
+    {
+      "name": "configured-receipt01-source.json",
+      "sha256": "ae6060e0330d8e02b376067ccc984b5072394abfe05285b9ae930f9abfa75b14",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/configured-receipt01-source.json"
+    },
+    {
+      "name": "final-focused-source-after.json",
+      "sha256": "76a974b3f5176fa59bb1f23ea76d1eb78688126c7c3c41f4e623cfd13c382d00",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/final-focused-source-after.json"
+    },
+    {
+      "name": "final-focused-source.json",
+      "sha256": "76a974b3f5176fa59bb1f23ea76d1eb78688126c7c3c41f4e623cfd13c382d00",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/final-focused-source.json"
+    },
+    {
+      "name": "foundation-focused-source-after.json",
+      "sha256": "4f598fdcf9661271a0f91ecd2bba3fa585c01cb2e89256bf18fab3621c1089ba",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/foundation-focused-source-after.json"
+    },
+    {
+      "name": "foundation-focused-source.json",
+      "sha256": "4f598fdcf9661271a0f91ecd2bba3fa585c01cb2e89256bf18fab3621c1089ba",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/foundation-focused-source.json"
+    },
+    {
+      "name": "lifecycle01-source-after.json",
+      "sha256": "d13f33b2f7761df0dfec7e809780b22de0011cc6eb1c50bacd3f8d6d97d39415",
+      "bytes": 115871,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/lifecycle01-source-after.json"
+    },
+    {
+      "name": "lifecycle01-source.json",
+      "sha256": "d13f33b2f7761df0dfec7e809780b22de0011cc6eb1c50bacd3f8d6d97d39415",
+      "bytes": 115871,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/lifecycle01-source.json"
+    },
+    {
+      "name": "lifecycle02-source-after.json",
+      "sha256": "ecdc76e4c5089d92998e92a531fd92c8c3abd5abfb22416fd8e8f6b9b543c1e2",
+      "bytes": 115871,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/lifecycle02-source-after.json"
+    },
+    {
+      "name": "lifecycle02-source.json",
+      "sha256": "ecdc76e4c5089d92998e92a531fd92c8c3abd5abfb22416fd8e8f6b9b543c1e2",
+      "bytes": 115871,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/lifecycle02-source.json"
+    },
+    {
+      "name": "obligation-controls01-source-after.json",
+      "sha256": "72a795b98dcc5861ec100f0bc57f30310a23ef07677119214b287b8b36fd4653",
+      "bytes": 115871,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/obligation-controls01-source-after.json"
+    },
+    {
+      "name": "obligation-controls01-source.json",
+      "sha256": "72a795b98dcc5861ec100f0bc57f30310a23ef07677119214b287b8b36fd4653",
+      "bytes": 115871,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/obligation-controls01-source.json"
+    },
+    {
+      "name": "postgres-domain-final-source-after.json",
+      "sha256": "125bab97035671777f62367d5d5c7d81f2713e8bcc71bbc0303288a933111815",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/postgres-domain-final-source-after.json"
+    },
+    {
+      "name": "postgres-domain-final-source.json",
+      "sha256": "125bab97035671777f62367d5d5c7d81f2713e8bcc71bbc0303288a933111815",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/postgres-domain-final-source.json"
+    },
+    {
+      "name": "postgres-domain-source-after.json",
+      "sha256": "1356ff0746bd600f06c5e003c38e7d50e5497412201dfc28f66bfd2f6ec623e0",
+      "bytes": 115871,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/postgres-domain-source-after.json"
+    },
+    {
+      "name": "postgres-domain-source.json",
+      "sha256": "1356ff0746bd600f06c5e003c38e7d50e5497412201dfc28f66bfd2f6ec623e0",
+      "bytes": 115871,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/postgres-domain-source.json"
+    },
+    {
+      "name": "postgres-obligation-final-source-after.json",
+      "sha256": "125bab97035671777f62367d5d5c7d81f2713e8bcc71bbc0303288a933111815",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/postgres-obligation-final-source-after.json"
+    },
+    {
+      "name": "postgres-obligation-final-source.json",
+      "sha256": "125bab97035671777f62367d5d5c7d81f2713e8bcc71bbc0303288a933111815",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/postgres-obligation-final-source.json"
+    },
+    {
+      "name": "postgres-obligation-source-after.json",
+      "sha256": "9e1ca0f98770c3ee1fae71d624ccfaabf7dc3a5f2a1be67b8b8c9eda79324933",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/postgres-obligation-source-after.json"
+    },
+    {
+      "name": "postgres-obligation-source.json",
+      "sha256": "9e1ca0f98770c3ee1fae71d624ccfaabf7dc3a5f2a1be67b8b8c9eda79324933",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/postgres-obligation-source.json"
+    },
+    {
+      "name": "postgres-review-recovery-final-source-after.json",
+      "sha256": "125bab97035671777f62367d5d5c7d81f2713e8bcc71bbc0303288a933111815",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/postgres-review-recovery-final-source-after.json"
+    },
+    {
+      "name": "postgres-review-recovery-final-source.json",
+      "sha256": "125bab97035671777f62367d5d5c7d81f2713e8bcc71bbc0303288a933111815",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/postgres-review-recovery-final-source.json"
+    },
+    {
+      "name": "postgres-review-recovery-source-after.json",
+      "sha256": "1356ff0746bd600f06c5e003c38e7d50e5497412201dfc28f66bfd2f6ec623e0",
+      "bytes": 115871,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/postgres-review-recovery-source-after.json"
+    },
+    {
+      "name": "postgres-review-recovery-source.json",
+      "sha256": "1356ff0746bd600f06c5e003c38e7d50e5497412201dfc28f66bfd2f6ec623e0",
+      "bytes": 115871,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/postgres-review-recovery-source.json"
+    },
+    {
+      "name": "receipt-controls02-source-after.json",
+      "sha256": "1356ff0746bd600f06c5e003c38e7d50e5497412201dfc28f66bfd2f6ec623e0",
+      "bytes": 115871,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/receipt-controls02-source-after.json"
+    },
+    {
+      "name": "receipt-controls02-source.json",
+      "sha256": "1356ff0746bd600f06c5e003c38e7d50e5497412201dfc28f66bfd2f6ec623e0",
+      "bytes": 115871,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/receipt-controls02-source.json"
+    },
+    {
+      "name": "stable-full-source-after.json",
+      "sha256": "76a974b3f5176fa59bb1f23ea76d1eb78688126c7c3c41f4e623cfd13c382d00",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/stable-full-source-after.json"
+    },
+    {
+      "name": "stable-full-source.json",
+      "sha256": "76a974b3f5176fa59bb1f23ea76d1eb78688126c7c3c41f4e623cfd13c382d00",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/stable-full-source.json"
+    },
+    {
+      "name": "stable-full02-source-after.json",
+      "sha256": "125bab97035671777f62367d5d5c7d81f2713e8bcc71bbc0303288a933111815",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/stable-full02-source-after.json"
+    },
+    {
+      "name": "stable-full02-source.json",
+      "sha256": "125bab97035671777f62367d5d5c7d81f2713e8bcc71bbc0303288a933111815",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/stable-full02-source.json"
+    },
+    {
+      "name": "stable-types-source-after.json",
+      "sha256": "125bab97035671777f62367d5d5c7d81f2713e8bcc71bbc0303288a933111815",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/stable-types-source-after.json"
+    },
+    {
+      "name": "stable-types-source.json",
+      "sha256": "125bab97035671777f62367d5d5c7d81f2713e8bcc71bbc0303288a933111815",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/stable-types-source.json"
+    },
+    {
+      "name": "types-final-source-after.json",
+      "sha256": "76a974b3f5176fa59bb1f23ea76d1eb78688126c7c3c41f4e623cfd13c382d00",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/types-final-source-after.json"
+    },
+    {
+      "name": "types-final-source.json",
+      "sha256": "76a974b3f5176fa59bb1f23ea76d1eb78688126c7c3c41f4e623cfd13c382d00",
+      "bytes": 116009,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/types-final-source.json"
+    },
+    {
+      "name": "types01-source-after.json",
+      "sha256": "40a4fcdca27bf349ceed687ed5d1b3b52d7b9c4106f82031333aa786e21ac8e6",
+      "bytes": 115871,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/types01-source-after.json"
+    },
+    {
+      "name": "types01-source.json",
+      "sha256": "40a4fcdca27bf349ceed687ed5d1b3b52d7b9c4106f82031333aa786e21ac8e6",
+      "bytes": 115871,
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/verification-source-manifests/types01-source.json"
+    }
+  ],
+  "note": "Complete original per-attempt source inventories are preserved read-only here and locally beside the exit records. Git carries their hashes and exact source commits rather than many repeated 988-file inventories."
+}

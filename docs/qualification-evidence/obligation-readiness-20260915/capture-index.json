@@ -1,0 +1,9 @@
+{
+  "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/development/terra/runs/counting-wording-control",
+  "capture_sha256": {
+    "input-0001.json": "a80b290fd359ce2f3b81491865a590ffc9ff9d565380ca8bc275ba48f26bb4e4",
+    "input-0002.json": "c27911e5b5f2385a3ca4c486f98ab3bb95f5668aeb2cdde5bd2e364a42d94ed1",
+    "output-0001.txt": "6438ba35c009af3dc7ef7fc1b929919be896b7953de2f77a8aa0ffc0b6852d6e",
+    "output-0002.txt": "da8359858253075b64d33c0d18b2fa6d26f7581ad9ee6d6faf1e34a043b4dbda"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "at": "2026-09-15T18:20:03.222745+00:00",
+  "calls": 3,
+  "ceiling": 4,
+  "completed_responses": 2,
+  "first_attempt": "two legitimate selected-mode claims overblocked by initial observation guard; captured unchanged and now passing composed regressions",
+  "second_attempt": "one transport error ERR_SSL_SSL/TLS_ALERT_BAD_RECORD_MAC; no completed response",
+  "remaining_calls_unused": 1,
+  "public_development_completion": false,
+  "final_lane_not_started": true
+}

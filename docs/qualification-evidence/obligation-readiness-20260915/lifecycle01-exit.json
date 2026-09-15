@@ -1,0 +1,29 @@
+{
+  "name": "lifecycle01",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/boundary-cli.test.ts",
+    "--testNamePattern",
+    "reviews without entering editors: (receipt|maintenance|menu|source-race|resume-race|unrelated-edit)",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=30000",
+    "--hookTimeout=120000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T18:07:00.017550+00:00",
+  "source_head": "666fc5a2262145f9b54860c8c6670580d73acfef",
+  "source_diff_sha256": "610d48976295e6afd370d6d739809f80a6f47f41b86e99ae477dffe9ba55094f",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/test-environments/lifecycle01",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/obligation-readiness-20260915/lifecycle01",
+  "source_manifest_sha256": "d13f33b2f7761df0dfec7e809780b22de0011cc6eb1c50bacd3f8d6d97d39415",
+  "pid": 694677,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-15T18:07:09.383422+00:00"
+}

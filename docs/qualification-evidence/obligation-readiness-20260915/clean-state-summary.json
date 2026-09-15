@@ -1,0 +1,135 @@
+{
+  "at": "2026-09-15T18:42:09.457287+00:00",
+  "cases": [
+    {
+      "case": "recovery-tournament-assisted",
+      "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+      "model": {
+        "provider": "openai",
+        "name": "gpt-5.6-terra",
+        "structural_metadata_egress_acknowledged": true
+      },
+      "pending": {
+        "pending_job_revision": "Recheck the current saved rules against the attached policy and existing decisions without changing the rules or authority."
+      },
+      "completed_reviews": [],
+      "nonimplemented": [
+        {
+          "start": 3,
+          "end": 3,
+          "disposition": "needs_decision",
+          "draft_paths": [
+            "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+          ],
+          "topic": "Authenticated referee identity",
+          "responsibility": "deployment",
+          "issue_kind": "missing_configuration"
+        },
+        {
+          "start": 3,
+          "end": 3,
+          "disposition": "needs_decision",
+          "draft_paths": [
+            "/runner_evidence/runtime_contract/application_obligations/customer_selection"
+          ],
+          "topic": "Referee result selection",
+          "responsibility": "application",
+          "issue_kind": "missing_configuration",
+          "application_obligations": [
+            "customer_selection"
+          ]
+        },
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "needs_decision",
+          "draft_paths": [
+            "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+          ],
+          "topic": "Runner-ledger receipt and execution setup",
+          "responsibility": "deployment",
+          "issue_kind": "missing_configuration"
+        },
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "needs_decision",
+          "draft_paths": [
+            "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+          ],
+          "topic": "Independent changed-row verification",
+          "responsibility": "application",
+          "issue_kind": "missing_configuration",
+          "application_obligations": [
+            "independent_source_readback"
+          ]
+        }
+      ]
+    },
+    {
+      "case": "counting-wording-control",
+      "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+      "model": {
+        "provider": "openai",
+        "name": "gpt-5.6-terra",
+        "structural_metadata_egress_acknowledged": true
+      },
+      "pending": {
+        "pending_job_revision": "Use the updated attached-rules context for this same draft. Operator instruction: Use the attached replacement text for this same saved job and review whether the current rules satisfy it. Preserve the existing business behavior and authority."
+      },
+      "completed_reviews": [],
+      "nonimplemented": [
+        {
+          "start": 3,
+          "end": 3,
+          "disposition": "needs_decision",
+          "draft_paths": [
+            "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+          ],
+          "topic": "Authenticated referee identity",
+          "responsibility": "deployment",
+          "issue_kind": "missing_configuration"
+        },
+        {
+          "start": 3,
+          "end": 3,
+          "disposition": "needs_decision",
+          "draft_paths": [
+            "/runner_evidence/runtime_contract/application_obligations/customer_selection"
+          ],
+          "topic": "Referee result selection",
+          "responsibility": "application",
+          "issue_kind": "missing_configuration",
+          "application_obligations": [
+            "customer_selection"
+          ]
+        },
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "needs_decision",
+          "draft_paths": [
+            "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+          ],
+          "topic": "Execution and Runner-ledger receipt setup",
+          "responsibility": "deployment",
+          "issue_kind": "missing_configuration"
+        },
+        {
+          "start": 7,
+          "end": 7,
+          "disposition": "needs_decision",
+          "draft_paths": [
+            "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+          ],
+          "topic": "Independent changed-row verification",
+          "responsibility": "application",
+          "issue_kind": "missing_configuration",
+          "application_obligations": [
+            "independent_source_readback"
+          ]
+        }
+      ]
+    }
+  ]
+}

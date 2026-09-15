@@ -1,0 +1,22 @@
+{
+  "at": "2026-09-15T19:00:56.140675+00:00",
+  "phase": "all stable gates passed; freeze next",
+  "product_modified": true,
+  "original_B_captures": "initial structural refusal retained; correction positive now passes",
+  "development": "3 calls; 2 selected-mode claims overblocked initially then repaired/captured regressions pass; third failed TLS before response; lane stopped",
+  "primary_final": "NOT STARTED",
+  "postgres": "final-source domain 5 pass, recovery 4 pass, receipt persistence 2 pass; all exit 0; real PostgreSQL control separately enabled",
+  "next": "Commit source/evidence checkpoint; create new complete immutable install; prepare B and A whole copies; B first",
+  "product_revision": "58c3f7bf5a9997fd966a224694171ba92596b09d",
+  "stable_full": {
+    "completed_attempt": "stable-full02",
+    "exit_code": 0,
+    "tests_passed": 6467,
+    "tests_skipped": 464,
+    "files_passed": 312,
+    "files_skipped": 21,
+    "source_unchanged": true,
+    "earlier_attempt": "stable-full interrupted deliberately, child -15"
+  },
+  "offline": "all ten passed on unchanged product; attempts 1/2 dependency failures retained"
+}

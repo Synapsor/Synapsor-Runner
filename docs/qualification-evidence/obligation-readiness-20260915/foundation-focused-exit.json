@@ -1,0 +1,29 @@
+{
+  "name": "foundation-focused",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/obligation-readiness.test.ts",
+    "apps/runner/src/counter-maintenance-review.test.ts",
+    "apps/runner/src/authoring-policy-source.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T18:27:17.068576+00:00",
+  "source_head": "2a6d0694db72b8462f2247daf7cebe35df6d9ce6",
+  "source_diff_sha256": "c6c1298b97c1706addf1683b7eb535623e1e6cf63c317b30b65014ca5785ab4e",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/test-environments/foundation-focused",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/obligation-readiness-20260915/foundation-focused",
+  "source_manifest_sha256": "4f598fdcf9661271a0f91ecd2bba3fa585c01cb2e89256bf18fab3621c1089ba",
+  "pid": 734962,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T18:27:23.684290+00:00"
+}

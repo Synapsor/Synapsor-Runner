@@ -1,0 +1,35 @@
+{
+  "at": "2026-09-15T18:38:31.403246+00:00",
+  "product": "58c3f7bf5a9997fd966a224694171ba92596b09d",
+  "changed_paths": [
+    "apps/runner/src/authoring-obligation-review.ts",
+    "apps/runner/src/authoring-policy-coverage.ts",
+    "apps/runner/src/authoring-policy-evidence.ts",
+    "apps/runner/src/authoring-policy-source.ts",
+    "apps/runner/src/authoring-prepared-policy-review.ts",
+    "apps/runner/src/authoring-receipt-configuration.ts",
+    "apps/runner/src/authoring-review-readiness.ts",
+    "apps/runner/src/authoring-saved-review.ts",
+    "apps/runner/src/boundary-cli.test.ts",
+    "apps/runner/src/boundary-commands.ts",
+    "apps/runner/src/control-policy-authority-codec.test.ts",
+    "apps/runner/src/obligation-readiness.test.ts",
+    "apps/runner/src/test-fixtures/primary-receipt-review.json",
+    "apps/runner/src/test-fixtures/receipt-selection-development.json",
+    "docs/qualification-evidence/obligation-readiness-20260915/IMPLEMENTATION-NOTE.md"
+  ],
+  "preserved_transport": [
+    {
+      "path": "apps/runner/src/model-ask.ts",
+      "sha256": "1b328a0b510f773dc681d33f1c5ea95dee8b1bf0165b7bfbc9e66ba7d67d1b6d",
+      "identical_to_product_fbbb52b": true
+    },
+    {
+      "path": "apps/runner/src/authoring-request-timeout.ts",
+      "sha256": "0087ee1a9aac17fd4e399d3e1e83f1a4bbbd48097b11e7ac681501981ce40fd7",
+      "identical_to_product_fbbb52b": true
+    }
+  ],
+  "prompt_changes": false,
+  "runtime_engine_changes": false
+}

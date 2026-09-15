@@ -1,0 +1,7 @@
+{
+  "commit": "58c3f7bf5a9997fd966a224694171ba92596b09d",
+  "test_revision": "58c3f7bf5a9997fd966a224694171ba92596b09d",
+  "initial_repair_commit": "2a6d0694db72b8462f2247daf7cebe35df6d9ce6",
+  "at": "2026-09-15T18:28:58.578599+00:00",
+  "provider_settings": "openai/gpt-5.6-terra low; timeout 120 default; output 12000; unchanged adapter and product prompts"
+}

@@ -1,0 +1,29 @@
+{
+  "name": "acyclic-focused",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/obligation-readiness.test.ts",
+    "apps/runner/src/counter-maintenance-review.test.ts",
+    "apps/runner/src/authoring-policy-source.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T18:26:09.048597+00:00",
+  "source_head": "2a6d0694db72b8462f2247daf7cebe35df6d9ce6",
+  "source_diff_sha256": "93fd503331d6593f071e24e8794fc6210dc9d10950df535afa89ef8405533148",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/test-environments/acyclic-focused",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/obligation-readiness-20260915/acyclic-focused",
+  "source_manifest_sha256": "ef4922b19a1396fa5fd808fa46971311a3b85b941a9bed05c3595e7a455768e2",
+  "pid": 732491,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T18:26:15.228967+00:00"
+}

@@ -1,0 +1,29 @@
+{
+  "name": "postgres-obligation-final",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/control-policy-authority-codec.test.ts",
+    "--testNamePattern",
+    "saves and reloads receipt readiness under the existing review lock",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=30000",
+    "--hookTimeout=120000"
+  ],
+  "owned_postgres_database_url_enabled": true,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T18:55:30.459303+00:00",
+  "source_head": "58c3f7bf5a9997fd966a224694171ba92596b09d",
+  "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/test-environments/postgres-obligation-final",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/obligation-readiness-20260915/postgres-obligation-final",
+  "source_manifest_sha256": "125bab97035671777f62367d5d5c7d81f2713e8bcc71bbc0303288a933111815",
+  "pid": 794035,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T18:55:42.616413+00:00"
+}

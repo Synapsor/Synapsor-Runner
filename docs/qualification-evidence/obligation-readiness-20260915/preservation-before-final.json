@@ -1,0 +1,80 @@
+{
+  "at": "2026-09-15T18:37:53.156045+00:00",
+  "label": "before-final",
+  "checks": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/development/terra/runs/counting-wording-control/meter/input-0001.json",
+      "sha256": "a80b290fd359ce2f3b81491865a590ffc9ff9d565380ca8bc275ba48f26bb4e4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/development/terra/runs/counting-wording-control/meter/input-0002.json",
+      "sha256": "c27911e5b5f2385a3ca4c486f98ab3bb95f5668aeb2cdde5bd2e364a42d94ed1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/development/terra/runs/counting-wording-control/meter/output-0001.txt",
+      "sha256": "6438ba35c009af3dc7ef7fc1b929919be896b7953de2f77a8aa0ffc0b6852d6e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/development/terra/runs/counting-wording-control/meter/output-0002.txt",
+      "sha256": "da8359858253075b64d33c0d18b2fa6d26f7581ad9ee6d6faf1e34a043b4dbda"
+    },
+    {
+      "case": "recovery-tournament-assisted",
+      "checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/runs/recovery-tournament-assisted/checkpoints/recheck-requested",
+      "project_files": 61,
+      "verified": true
+    },
+    {
+      "case": "counting-wording-control",
+      "checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914/runs/counting-wording-control/checkpoints/wording-stopped",
+      "project_files": 60,
+      "verified": true
+    },
+    {
+      "case": "receipt-replay",
+      "checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/development/terra/runs/counting-wording-control/checkpoints/receipt-blocked",
+      "project_files": 60,
+      "verified": true
+    }
+  ],
+  "clean_starts": {
+    "entries": 207,
+    "manifest_sha256": "a37fe3bdd53313a598889837b867a480750e2488ae258f758295dd8f94de0e9d",
+    "unchanged": true
+  },
+  "prior_installed": {
+    "verified_at": "2026-09-15T18:37:54.129Z",
+    "installed_tree_sha256": "072ab87a11ecde0ec1e0a0928bfc6ba036fede08b6e75cfc073b1de263c631ef",
+    "entries": 7569
+  },
+  "external_files": [
+    {
+      "path": "/home/sandesh-tiwari/.codex/attachments/db0f9b7b-701a-4935-8fe6-e3f5806a34da/pasted-text.txt",
+      "sha256": "1da60fed96f5f1ec71805d3e348a82cb55534dd16bf122b5540655e7482ee583",
+      "current_sha256": "1da60fed96f5f1ec71805d3e348a82cb55534dd16bf122b5540655e7482ee583",
+      "unchanged": true,
+      "handling": "Independent authored report changes must be recorded separately, never overwrite its earlier manifest."
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/obligation-review-20260915/NEGATIVE-CONSTRAINTS.md",
+      "sha256": "c04ca91fa908c98a385d78b52493dbb6f0a9ba20f2bd1ff84b1a01a54c610733",
+      "current_sha256": "c04ca91fa908c98a385d78b52493dbb6f0a9ba20f2bd1ff84b1a01a54c610733",
+      "unchanged": true,
+      "handling": "Independent authored report changes must be recorded separately, never overwrite its earlier manifest."
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/obligation-review-20260915/deferral-shape.mts",
+      "sha256": "f48cadc4fc6e86dd49129ff83dc320624875981dd4511ebf75d39487b4b39f68",
+      "current_sha256": "f48cadc4fc6e86dd49129ff83dc320624875981dd4511ebf75d39487b4b39f68",
+      "unchanged": true,
+      "handling": "Independent authored report changes must be recorded separately, never overwrite its earlier manifest."
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/xmodel-secondary-20260915/CROSS-VENDOR-RESULT.md",
+      "sha256": "c899a11a2e1141eb2849eb84024609047c69ea19842d455f016d9f4ba0f4cf6d",
+      "current_sha256": "c899a11a2e1141eb2849eb84024609047c69ea19842d455f016d9f4ba0f4cf6d",
+      "unchanged": true,
+      "handling": "Independent authored report changes must be recorded separately, never overwrite its earlier manifest."
+    }
+  ]
+}

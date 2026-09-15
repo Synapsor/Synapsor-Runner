@@ -1,0 +1,25 @@
+{
+  "at": "2026-09-15T18:20:03.193649+00:00",
+  "records": [
+    {
+      "run": "counting-wording-control",
+      "container": "synapsor-obligation-readiness-counting-wording-control-680e6028",
+      "container_id": "74fade8369d23eee5f723c86c447067e527769bcd75b34efbaecd5c1d2b61055",
+      "label": "obligation-readiness-20260915",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "6a413cf9295442df4399599e590c9d74d47612ade2c4da216b57c9d2d8fd6289",
+        "postgres.log": "825768ae65c4efe0925430e3f55afa5d9222281040ac9a7aadf45c19bd497d53",
+        "source.dump": "8c617bb065bfc1cec46538041cc9747578e8b4163b4e5b1540d957cef15a4fa2"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/development/terra/closure/counting-wording-control",
+      "removed": false
+    }
+  ],
+  "counts_note": "Actual public CLI and provider invocations retained in each public-invocations.jsonl and meter/events.jsonl. Worker outcomes are recorded separately; this cleanup makes no execution-success claim.",
+  "original_containers_touched": false,
+  "fixture_directories_removed": false
+}

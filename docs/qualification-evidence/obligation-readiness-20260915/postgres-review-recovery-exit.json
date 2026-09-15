@@ -1,0 +1,29 @@
+{
+  "name": "postgres-review-recovery",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/control-policy-authority-codec.test.ts",
+    "--testNamePattern",
+    "postgres validated operator policy transactions.*keeps Action recovery review available with unavailable Read authority:",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=30000",
+    "--hookTimeout=120000"
+  ],
+  "owned_postgres_database_url_enabled": true,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T18:13:52.112709+00:00",
+  "source_head": "666fc5a2262145f9b54860c8c6670580d73acfef",
+  "source_diff_sha256": "f50b780c26e5b6f7dd41a0b7206720df3db5725283e448a165b3b7c41feace17",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/test-environments/postgres-review-recovery",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/obligation-readiness-20260915/postgres-review-recovery",
+  "source_manifest_sha256": "1356ff0746bd600f06c5e003c38e7d50e5497412201dfc28f66bfd2f6ec623e0",
+  "pid": 708647,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T18:14:01.777790+00:00"
+}
