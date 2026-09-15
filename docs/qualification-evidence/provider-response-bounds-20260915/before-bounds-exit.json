@@ -1,0 +1,25 @@
+{
+  "name": "before-bounds",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/provider-response-bounds.test.ts",
+    "--maxWorkers=1",
+    "--testTimeout=10000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T16:00:19.819225+00:00",
+  "source_head": "1ae76e5a6865ec4e9c54358451594dcfad69def9",
+  "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/provider-response-bounds-1ae76e5-20260915/test-environments/before-bounds",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/provider-response-bounds-20260915/before-bounds",
+  "source_manifest_sha256": "60b4e3152963005558ac0c4a5cec6ef25dbb981ba19be413ac9bc3f843bcd31f",
+  "pid": 465828,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-15T16:00:25.077287+00:00"
+}

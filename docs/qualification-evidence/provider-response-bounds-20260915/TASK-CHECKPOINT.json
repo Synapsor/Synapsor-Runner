@@ -1,0 +1,31 @@
+{
+  "at": "2026-09-15T16:37:36.012964+00:00",
+  "status": "ALL LOCAL GATES PASSED; READY TO FREEZE",
+  "product_commit": "fbbb52b823314973e8097d07da4f05ddd936cbec",
+  "before": {
+    "exit": 1,
+    "tests_failed": 5,
+    "why": [
+      "Stream continuation refused at old 64 KiB",
+      "Nonstream continuation refused at old 64 KiB",
+      "Chat tool arguments refused at old 32K character limit",
+      "Responses tool arguments refused at old 32K character limit",
+      "Anthropic object arguments over new bound accepted before repair"
+    ]
+  },
+  "focused_final": {
+    "exit": 0,
+    "passed": 225
+  },
+  "types_exit": 0,
+  "provider_calls": 0,
+  "full_suite": {
+    "passed": 6440,
+    "skipped": 463,
+    "passed_files": 311,
+    "skipped_files": 21,
+    "exit_code": 0,
+    "source_unchanged": true
+  },
+  "offline_checks_passed": 10
+}

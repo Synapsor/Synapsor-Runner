@@ -1,0 +1,20 @@
+{
+  "name": "types",
+  "args": [
+    "corepack",
+    "pnpm",
+    "typecheck"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T16:04:42.793822+00:00",
+  "source_head": "1ae76e5a6865ec4e9c54358451594dcfad69def9",
+  "source_diff_sha256": "bb3c123a5dc3e771f751e6f930e53abb04632a81d094e445304b31e187c40b27",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/provider-response-bounds-1ae76e5-20260915/test-environments/types",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/provider-response-bounds-20260915/types",
+  "source_manifest_sha256": "24f21a129601497729d5f0df151face5fd3f554768dbf95636a561f073da4192",
+  "pid": 474415,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T16:04:47.681237+00:00"
+}

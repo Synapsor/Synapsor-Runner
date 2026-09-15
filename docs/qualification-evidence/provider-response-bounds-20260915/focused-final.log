@@ -1,0 +1,19 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:473039) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:473045) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/provider-response-bounds.test.ts (17 tests) 275ms
+ ✓ apps/runner/src/model-ask.test.ts (192 tests) 1524ms
+   ✓ Workbench BYOM Ask > enforces a wall-clock timeout and refuses an oversized response without exposing provider contents  1009ms
+(node:473237) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/openrouter.test.ts (16 tests) 75ms
+
+ Test Files  3 passed (3)
+      Tests  225 passed (225)
+   Start at  09:04:03
+   Duration  8.91s (transform 4.47s, setup 0ms, collect 8.67s, tests 1.87s, environment 0ms, prepare 139ms)
+

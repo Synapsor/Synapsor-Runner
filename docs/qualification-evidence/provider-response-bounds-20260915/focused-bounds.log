@@ -1,0 +1,56 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:471556) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/openrouter.test.ts (16 tests) 92ms
+(node:471863) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ❯ apps/runner/src/provider-response-bounds.test.ts (17 tests | 2 failed) 230ms
+   ✓ bounded provider response assembly > replays a 512 KiB private continuation through the real request transport (stream=true) 43ms
+   ✓ bounded provider response assembly > replays a 512 KiB private continuation through the real request transport (stream=false) 17ms
+   ✓ bounded provider response assembly > accepts exact 128 KiB tool arguments and rejects excess before execution (openrouter) 4ms
+   ✓ bounded provider response assembly > accepts exact 128 KiB tool arguments and rejects excess before execution (openai) 4ms
+   ✓ bounded provider response assembly > accepts exact 128 KiB tool arguments and rejects excess before execution (anthropic) 8ms
+   × stream and replay boundary controls > enforces UTF-8 argument bytes while assembling openai_chat, retaining incomplete refusal 32ms
+     → expected 'ASK_PROVIDER_RESPONSE_INVALID' to be 'ASK_PROVIDER_STREAM_INCOMPLETE' // Object.is equality
+   × stream and replay boundary controls > enforces UTF-8 argument bytes while assembling anthropic, retaining incomplete refusal 27ms
+     → expected 'ASK_PROVIDER_RESPONSE_INVALID' to be 'ASK_PROVIDER_STREAM_INCOMPLETE' // Object.is equality
+   ✓ stream and replay boundary controls > counts the retained continuation array independently of chunking (split=false) 23ms
+   ✓ stream and replay boundary controls > counts the retained continuation array independently of chunking (split=true) 23ms
+   ✓ stream and replay boundary controls > refuses oversized or malformed continuation before tools (stream=true) 10ms
+   ✓ stream and replay boundary controls > refuses oversized or malformed continuation before tools (stream=false) 9ms
+   ✓ stream and replay boundary controls > re-encodes the full accepted arguments in OpenAI Responses history 3ms
+   ✓ stream and replay boundary controls > refuses an over-budget cumulative follow-up without discarding continuation 19ms
+   ✓ completed tool budgets > retains per-response and exact structured initial-call limits (openrouter) 1ms
+   ✓ completed tool budgets > retains per-response and exact structured initial-call limits (anthropic) 1ms
+   ✓ completed tool budgets > retains turn and round-trip limits, including the final answer-only request (openrouter) 2ms
+   ✓ completed tool budgets > retains turn and round-trip limits, including the final answer-only request (anthropic) 1ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  apps/runner/src/provider-response-bounds.test.ts > stream and replay boundary controls > enforces UTF-8 argument bytes while assembling openai_chat, retaining incomplete refusal
+ FAIL  apps/runner/src/provider-response-bounds.test.ts > stream and replay boundary controls > enforces UTF-8 argument bytes while assembling anthropic, retaining incomplete refusal
+AssertionError: expected 'ASK_PROVIDER_RESPONSE_INVALID' to be 'ASK_PROVIDER_STREAM_INCOMPLETE' // Object.is equality
+
+Expected: "ASK_PROVIDER_STREAM_INCOMPLETE"
+Received: "ASK_PROVIDER_RESPONSE_INVALID"
+
+ ❯ apps/runner/src/provider-response-bounds.test.ts:112:79
+    110|         const run = turn(request => secureAskJsonRequest({ ...request,…
+    111|           { provider: format === "anthropic" ? "anthropic" : "openrout…
+    112|         expect(await run.promise.then(() => "accepted", error => error…
+       |                                                                               ^
+    113|         expect(run.callTool).toHaveBeenCalledTimes(code === "accepted"…
+    114|       }, (_body, response) => wireArguments(response, format, args, co…
+ ❯ serverRun apps/runner/src/provider-response-bounds.test.ts:25:9
+ ❯ apps/runner/src/provider-response-bounds.test.ts:109:7
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+
+ Test Files  1 failed | 1 passed (2)
+      Tests  2 failed | 31 passed (33)
+   Start at  09:03:20
+   Duration  7.69s (transform 4.34s, setup 0ms, collect 6.95s, tests 322ms, environment 0ms, prepare 100ms)
+

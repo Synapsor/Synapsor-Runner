@@ -1,0 +1,26 @@
+{
+  "name": "focused-bounds",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/provider-response-bounds.test.ts",
+    "apps/runner/src/openrouter.test.ts",
+    "--maxWorkers=1",
+    "--testTimeout=10000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T16:03:19.336764+00:00",
+  "source_head": "1ae76e5a6865ec4e9c54358451594dcfad69def9",
+  "source_diff_sha256": "e9ff399a491aaab0372ea2669bf10c832fa6793c34ed5d2246c27f94a2d3349d",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/provider-response-bounds-1ae76e5-20260915/test-environments/focused-bounds",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/provider-response-bounds-20260915/focused-bounds",
+  "source_manifest_sha256": "0f17478bbce6b8ce0e78376d9c2e8b8acf0ebf087f4b73c17875344d85461c28",
+  "pid": 471488,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-15T16:03:28.040489+00:00"
+}

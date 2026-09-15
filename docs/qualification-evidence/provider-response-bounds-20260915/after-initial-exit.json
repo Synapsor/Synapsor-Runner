@@ -1,0 +1,25 @@
+{
+  "name": "after-initial",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/provider-response-bounds.test.ts",
+    "--maxWorkers=1",
+    "--testTimeout=10000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T16:01:31.828640+00:00",
+  "source_head": "1ae76e5a6865ec4e9c54358451594dcfad69def9",
+  "source_diff_sha256": "e9ff399a491aaab0372ea2669bf10c832fa6793c34ed5d2246c27f94a2d3349d",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/provider-response-bounds-1ae76e5-20260915/test-environments/after-initial",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/provider-response-bounds-20260915/after-initial",
+  "source_manifest_sha256": "ea6bce4f0e7615f4e7483137ff6a10f766345cc561927d4678366bba3f5d597f",
+  "pid": 468219,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T16:01:34.729715+00:00"
+}

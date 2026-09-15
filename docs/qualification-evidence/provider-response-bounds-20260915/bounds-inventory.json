@@ -1,0 +1,178 @@
+{
+  "source_sha256": "1b328a0b510f773dc681d33f1c5ea95dee8b1bf0165b7bfbc9e66ba7d67d1b6d",
+  "old_inline_literals_remaining": false,
+  "bounds": {
+    "MAX_PROVIDER_CONTINUATION_BYTES": [
+      {
+        "line": 34,
+        "text": "const MAX_PROVIDER_CONTINUATION_BYTES = 512 * 1024;"
+      },
+      {
+        "line": 6774,
+        "text": "if (bytes > MAX_PROVIDER_CONTINUATION_BYTES) {"
+      },
+      {
+        "line": 6775,
+        "text": "throw new AskError(\"ASK_PROVIDER_RESPONSE_INVALID\", `The provider's private tool-continuation data exceeded the ${MAX_PROVIDER_CONTINUATION_BYTES}-byte limit. No incomplete tool call was accepted.`, 502);"
+      }
+    ],
+    "MAX_TOOL_ARGUMENT_BYTES": [
+      {
+        "line": 35,
+        "text": "const MAX_TOOL_ARGUMENT_BYTES = 128 * 1024;"
+      },
+      {
+        "line": 4646,
+        "text": "if (typeof serialized !== \"string\" || Buffer.byteLength(serialized) > MAX_TOOL_ARGUMENT_BYTES) {"
+      },
+      {
+        "line": 6768,
+        "text": "if (Buffer.byteLength(serialized) > MAX_TOOL_ARGUMENT_BYTES) {"
+      },
+      {
+        "line": 6769,
+        "text": "throw new AskError(\"ASK_TOOL_ARGUMENTS_INVALID\", `Tool arguments exceeded the ${MAX_TOOL_ARGUMENT_BYTES}-byte limit. No oversized tool call was accepted.`, 422);"
+      }
+    ],
+    "MAX_PROVIDER_REQUEST_BYTES": [
+      {
+        "line": 29,
+        "text": "const MAX_PROVIDER_REQUEST_BYTES = 1_048_576;"
+      },
+      {
+        "line": 715,
+        "text": "if (Buffer.byteLength(serialized) > MAX_PROVIDER_REQUEST_BYTES) {"
+      }
+    ],
+    "MAX_PROVIDER_RESPONSE_BYTES": [
+      {
+        "line": 25,
+        "text": "const MAX_PROVIDER_RESPONSE_BYTES = 1_048_576;"
+      },
+      {
+        "line": 28,
+        "text": "const MAX_PROVIDER_STREAM_BYTES = 8 * MAX_PROVIDER_RESPONSE_BYTES;"
+      },
+      {
+        "line": 775,
+        "text": "if (Number.isFinite(declaredLength) && declaredLength > (eventStream ? MAX_PROVIDER_STREAM_BYTES : MAX_PROVIDER_RESPONSE_BYTES)) {"
+      },
+      {
+        "line": 822,
+        "text": "if (total > MAX_PROVIDER_RESPONSE_BYTES) {"
+      },
+      {
+        "line": 869,
+        "text": "if (Buffer.byteLength(pending) > MAX_PROVIDER_RESPONSE_BYTES) {"
+      },
+      {
+        "line": 876,
+        "text": "if (Buffer.byteLength(JSON.stringify(result)) > MAX_PROVIDER_RESPONSE_BYTES) {"
+      },
+      {
+        "line": 883,
+        "text": "if (Buffer.byteLength(block) > MAX_PROVIDER_RESPONSE_BYTES) {"
+      },
+      {
+        "line": 6844,
+        "text": "if (!responseBody || responseBody.length > MAX_PROVIDER_RESPONSE_BYTES) return undefined;"
+      }
+    ],
+    "MAX_PROVIDER_STREAM_BYTES": [
+      {
+        "line": 28,
+        "text": "const MAX_PROVIDER_STREAM_BYTES = 8 * MAX_PROVIDER_RESPONSE_BYTES;"
+      },
+      {
+        "line": 775,
+        "text": "if (Number.isFinite(declaredLength) && declaredLength > (eventStream ? MAX_PROVIDER_STREAM_BYTES : MAX_PROVIDER_RESPONSE_BYTES)) {"
+      },
+      {
+        "line": 857,
+        "text": "if (total > MAX_PROVIDER_STREAM_BYTES) {"
+      }
+    ],
+    "MAX_TOOL_CALLS_PER_RESPONSE": [
+      {
+        "line": 39,
+        "text": "const MAX_TOOL_CALLS_PER_RESPONSE = 4;"
+      },
+      {
+        "line": 1523,
+        "text": "if (toolCalls.length > MAX_TOOL_CALLS_PER_RESPONSE || traces.length + toolCalls.length > (input.conversationalAuthoring ? MAX_AUTHORING_TOOL_CALLS_PER_TURN : MAX_TOOL_CALLS_PER_TURN)) {"
+      },
+      {
+        "line": 2313,
+        "text": "if (calls.length > MAX_TOOL_CALLS_PER_RESPONSE || traces.length + calls.length > (input.conversationalAuthoring ? MAX_AUTHORING_TOOL_CALLS_PER_TURN : MAX_TOOL_CALLS_PER_TURN)) {"
+      }
+    ],
+    "MAX_TOOL_CALLS_PER_TURN": [
+      {
+        "line": 40,
+        "text": "const MAX_TOOL_CALLS_PER_TURN = 8;"
+      },
+      {
+        "line": 1435,
+        "text": "if (traces.length >= MAX_TOOL_CALLS_PER_TURN) {"
+      },
+      {
+        "line": 1523,
+        "text": "if (toolCalls.length > MAX_TOOL_CALLS_PER_RESPONSE || traces.length + toolCalls.length > (input.conversationalAuthoring ? MAX_AUTHORING_TOOL_CALLS_PER_TURN : MAX_TOOL_CALLS_PER_TURN)) {"
+      },
+      {
+        "line": 1547,
+        "text": "&& traces.length + toolCalls.length < MAX_TOOL_CALLS_PER_TURN) {"
+      },
+      {
+        "line": 1744,
+        "text": "if (!exploreProviderName || traces.length >= MAX_TOOL_CALLS_PER_TURN) {"
+      },
+      {
+        "line": 2313,
+        "text": "if (calls.length > MAX_TOOL_CALLS_PER_RESPONSE || traces.length + calls.length > (input.conversationalAuthoring ? MAX_AUTHORING_TOOL_CALLS_PER_TURN : MAX_TOOL_CALLS_PER_TURN)) {"
+      }
+    ],
+    "MAX_TOOL_ITERATIONS": [
+      {
+        "line": 41,
+        "text": "const MAX_TOOL_ITERATIONS = 6;"
+      },
+      {
+        "line": 1185,
+        "text": "for (let iteration = 0; iteration < (input.conversationalAuthoring ? MAX_AUTHORING_TOOL_ITERATIONS : MAX_TOOL_ITERATIONS); iteration += 1) {"
+      },
+      {
+        "line": 2155,
+        "text": "for (let iteration = 0; iteration < (input.conversationalAuthoring ? MAX_AUTHORING_TOOL_ITERATIONS : MAX_TOOL_ITERATIONS); iteration += 1) {"
+      }
+    ],
+    "MAX_AUTHORING_TOOL_ITERATIONS": [
+      {
+        "line": 42,
+        "text": "const MAX_AUTHORING_TOOL_ITERATIONS = 12;"
+      },
+      {
+        "line": 1185,
+        "text": "for (let iteration = 0; iteration < (input.conversationalAuthoring ? MAX_AUTHORING_TOOL_ITERATIONS : MAX_TOOL_ITERATIONS); iteration += 1) {"
+      },
+      {
+        "line": 2155,
+        "text": "for (let iteration = 0; iteration < (input.conversationalAuthoring ? MAX_AUTHORING_TOOL_ITERATIONS : MAX_TOOL_ITERATIONS); iteration += 1) {"
+      }
+    ],
+    "MAX_AUTHORING_TOOL_CALLS_PER_TURN": [
+      {
+        "line": 43,
+        "text": "const MAX_AUTHORING_TOOL_CALLS_PER_TURN = 24;"
+      },
+      {
+        "line": 1523,
+        "text": "if (toolCalls.length > MAX_TOOL_CALLS_PER_RESPONSE || traces.length + toolCalls.length > (input.conversationalAuthoring ? MAX_AUTHORING_TOOL_CALLS_PER_TURN : MAX_TOOL_CALLS_PER_TURN)) {"
+      },
+      {
+        "line": 2313,
+        "text": "if (calls.length > MAX_TOOL_CALLS_PER_RESPONSE || traces.length + calls.length > (input.conversationalAuthoring ? MAX_AUTHORING_TOOL_CALLS_PER_TURN : MAX_TOOL_CALLS_PER_TURN)) {"
+      }
+    ]
+  }
+}

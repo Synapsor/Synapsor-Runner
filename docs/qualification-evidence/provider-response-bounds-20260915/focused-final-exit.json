@@ -1,0 +1,29 @@
+{
+  "name": "focused-final",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/provider-response-bounds.test.ts",
+    "apps/runner/src/openrouter.test.ts",
+    "apps/runner/src/model-ask.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T16:04:02.837413+00:00",
+  "source_head": "1ae76e5a6865ec4e9c54358451594dcfad69def9",
+  "source_diff_sha256": "bb3c123a5dc3e771f751e6f930e53abb04632a81d094e445304b31e187c40b27",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/provider-response-bounds-1ae76e5-20260915/test-environments/focused-final",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/provider-response-bounds-20260915/focused-final",
+  "source_manifest_sha256": "24f21a129601497729d5f0df151face5fd3f554768dbf95636a561f073da4192",
+  "pid": 472956,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T16:04:12.587480+00:00"
+}

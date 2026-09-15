@@ -1,0 +1,105 @@
+{
+  "product_test_commit": "fbbb52b823314973e8097d07da4f05ddd936cbec",
+  "focused": {
+    "passed": 225,
+    "exit_code": 0
+  },
+  "full_suite": {
+    "passed": 6440,
+    "skipped": 463,
+    "passed_files": 311,
+    "skipped_files": 21,
+    "exit_code": 0,
+    "source_unchanged": true
+  },
+  "types_exit": 0,
+  "offline_checks": [
+    {
+      "name": "trusted-core",
+      "exit_code": 0,
+      "args": [
+        "node",
+        "scripts/check-trusted-core-dependencies.mjs"
+      ]
+    },
+    {
+      "name": "licenses",
+      "exit_code": 0,
+      "args": [
+        "node",
+        "scripts/check-license-content.mjs"
+      ]
+    },
+    {
+      "name": "human-commands",
+      "exit_code": 0,
+      "args": [
+        "node",
+        "scripts/verify-human-command-surface.mjs"
+      ]
+    },
+    {
+      "name": "dsl-sources",
+      "exit_code": 0,
+      "args": [
+        "bash",
+        "scripts/verify-dsl-source-paths.sh"
+      ]
+    },
+    {
+      "name": "cursor-plugin",
+      "exit_code": 0,
+      "args": [
+        "node",
+        "scripts/verify-cursor-plugin.mjs"
+      ]
+    },
+    {
+      "name": "mcp-client-configs",
+      "exit_code": 0,
+      "args": [
+        "node",
+        "scripts/verify-mcp-client-configs.mjs"
+      ]
+    },
+    {
+      "name": "local-package",
+      "exit_code": 0,
+      "args": [
+        "bash",
+        "scripts/verify-local-runner.sh"
+      ]
+    },
+    {
+      "name": "bundle-freshness",
+      "exit_code": 0,
+      "args": [
+        "node",
+        "scripts/verify-local-runner-bundle-freshness.mjs"
+      ]
+    },
+    {
+      "name": "public-commands",
+      "exit_code": 0,
+      "args": [
+        "bash",
+        "scripts/verify-public-commands.sh"
+      ]
+    },
+    {
+      "name": "packed-offline",
+      "exit_code": 0,
+      "args": [
+        "bash",
+        "scripts/verify-packed-runner.sh"
+      ]
+    }
+  ],
+  "live_provider_calls": 0,
+  "live_database_campaign": "NOT RUN; transport-only repair, no backend changes",
+  "retained_failed_attempts": [
+    "before-bounds exit1 (5 expected before-repair failures)",
+    "focused-bounds exit1 (two incorrect test error-code expectations)",
+    "offline package launch exit1 before any check (helper path precedence)"
+  ]
+}

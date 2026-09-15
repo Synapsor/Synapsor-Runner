@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-15T16:33:22.705933+00:00",
+  "command": [
+    "python3",
+    "docs/qualification-evidence/provider-response-bounds-20260915/run-offline-checks.py",
+    "package"
+  ],
+  "exit_code": 1,
+  "failure": "TypeError: unsupported operand type(s) for +: PosixPath and str at prior=json.loads((e/'offline-package-plan-'+attempt+'.json').read_text())",
+  "classification": "copied harness phase-resume path precedence error before any package command launched",
+  "correction": "parenthesize filename concatenation before Path join; prior six source gate results unchanged"
+}

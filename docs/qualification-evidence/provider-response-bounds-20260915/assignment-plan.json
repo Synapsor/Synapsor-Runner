@@ -1,0 +1,20 @@
+{
+  "started_at": "2026-09-15T15:58:54.902077+00:00",
+  "baseline": "1ae76e5a6865ec4e9c54358451594dcfad69def9",
+  "owned_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/provider-response-bounds-1ae76e5-20260915",
+  "budgets_minutes": {
+    "implementation": 40,
+    "verification_packaging": 40,
+    "delivery": 20
+  },
+  "provider_call_budget": 0,
+  "scope": "Bound provider continuation and tool arguments coherently; retain privacy/incomplete checks and fixed tool budgets. New immutable installation for independent cross-vendor rerun. No accounting, policy, database, worker or provider campaign.",
+  "budget_reallocation": {
+    "at": "2026-09-15T16:11:06.703260+00:00",
+    "reason": "Implementation and focused/type checks finished in under seven minutes; the last stable full suite took 39m25s. Reserve adequate full-suite completion plus offline packaging without restarting it.",
+    "implementation_minutes": 20,
+    "verification_packaging_minutes": 60,
+    "delivery_minutes": 20,
+    "total_minutes_unchanged": 100
+  }
+}

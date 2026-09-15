@@ -1,0 +1,3 @@
+The first expanded focused run had 31 passes / 2 failures: the new incomplete-stream assertions expected ASK_PROVIDER_STREAM_INCOMPLETE, a code this path does not use. Existing assembler finish() correctly refuses both unfinished chat and Anthropic streams as ASK_PROVIDER_RESPONSE_INVALID. Changed only the expected code; preserved the raw log, test snapshot and exit 1. Neither partial tool executed. No product change for these failures.
+
+The separate package-phase launcher initially exited 1 before invoking any check: copied helper used `(e / filename_prefix + attempt + suffix)` rather than joining the complete filename. Corrected path parentheses; preserved the script and failure JSON. This did not rerun the six completed source checks or modify product source.
