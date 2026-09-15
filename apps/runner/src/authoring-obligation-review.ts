@@ -1,16 +1,7 @@
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { isDeferredSourceCounterMaintenance, isDeferredSourceReadback, type PolicyPassage, type PolicyTextSnapshot } from "./authoring-policy-source.js";
+import { isDeferredSourceCounterMaintenance, isDeferredSourceReadback, receiptSetupComponentOnly as receiptOnly, type ReviewObligationAssessment, type PolicyPassage, type PolicyTextSnapshot } from "./authoring-policy-source.js";
+export { deferredReviewObligation } from "./authoring-policy-source.js";
 
-export type ReviewObligationAssessment = {
-  origin: "HOST-RESOLVED";
-  family: "receipt_setup" | "source_counter_maintenance" | "independent_source_readback";
-  path: string; source_digest: string; dependencies_digest: string;
-  requirement: string;
-  phase: "after_authority_review" | "ongoing_source_operation" | "after_execution";
-  state: "pending" | "owner_attested_external_assurance_unverified";
-  configuration_digest?: string | null;
-  verified: false;
-};
 export const RECEIPT_PATH = "/runner_evidence/runtime_contract/receipts";
 const SETUP_PATH = "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup";
 const READBACK_PATH = "/runner_evidence/runtime_contract/application_obligations/independent_source_readback";
@@ -18,14 +9,6 @@ const CONFIGURATION_PATH = "/runner_evidence/runtime_contract/receipt_configurat
 function at(draft: unknown, pointer: string): any {
   return pointer.slice(1).split("/").reduce<any>((value, key) => value?.[key.replace(/~1/gu, "/").replace(/~0/gu, "~")], draft);
 }
-function receiptOnly(p: PolicyPassage) {
-  return p.disposition === "needs_decision" && p.responsibility === "deployment" && p.issue_kind === "missing_configuration"
-    && p.draft_paths.length === 1 && p.draft_paths[0] === RECEIPT_PATH
-    && !p.field_checks?.length && !p.counter_requirements?.length && !p.evidence_checks?.length
-    && !p.application_obligations?.length && !p.deployment_prerequisite && !p.source_counter_obligation
-    && !p.operator_override && !p.counting_components?.length && !p.counting_resolution;
-}
-
 /** Only an explicit receipt-mode requirement can supply this narrow binding.
  * Missing/ambiguous prose never means the default mode or an absent duty.
  * This does not interpret arbitrary delivery, atomicity or durability claims. */
@@ -100,18 +83,4 @@ export function assessReviewObligation(p: PolicyPassage, source: PolicyTextSnaps
   } else return undefined;
   return { ...(family === "receipt_setup" ? { configuration_digest: at(draft, "/runner_evidence/runtime_contract/receipt_configuration")?.digest ?? null } : {}), origin: "HOST-RESOLVED", family, path: pointer, source_digest: source.digest, requirement, phase, state, verified: false,
     dependencies_digest: canonicalJsonDigest({ source: source.digest, range: [p.start, p.end], family, requirement, pointer, evidence }) };
-}
-
-/** Total confinement is checked again at consumption, including host binding. */
-export function deferredReviewObligation(p: PolicyPassage): ReviewObligationAssessment | undefined {
-  const a = p.obligation_assessment;
-  if (!a || a.origin !== "HOST-RESOLVED" || a.verified !== false || !/^sha256:[a-f0-9]{64}$/u.test(a.dependencies_digest)
-    || !/^sha256:[a-f0-9]{64}$/u.test(a.source_digest)) return undefined;
-  if (a.family === "receipt_setup" && a.path === RECEIPT_PATH && a.phase === "after_authority_review" && a.state === "pending"
-    && ["runner_ledger", "source_db"].includes(a.requirement) && receiptOnly(p)) return a;
-  if (a.family === "source_counter_maintenance" && a.path === p.source_counter_obligation?.path && a.phase === "ongoing_source_operation"
-    && a.requirement === "owner_maintenance" && a.state === "owner_attested_external_assurance_unverified" && isDeferredSourceCounterMaintenance(p)) return a;
-  if (a.family === "independent_source_readback" && a.path === READBACK_PATH && a.phase === "after_execution" && a.state === "pending"
-    && a.requirement === "independent_source_readback" && isDeferredSourceReadback(p)) return a;
-  return undefined;
 }

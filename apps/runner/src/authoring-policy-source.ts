@@ -1,5 +1,3 @@
-import type { ReviewObligationAssessment } from "./authoring-obligation-review.js";
-import { deferredReviewObligation } from "./authoring-obligation-review.js";
 import fs from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";
@@ -122,6 +120,41 @@ export function isDeferredSourceCounterMaintenance(passage: PolicyPassage): bool
     && !passage.counter_requirements?.length && !passage.application_obligations?.length
     && !passage.deployment_prerequisite && !passage.evidence_checks?.length;
 }
+
+export type ReviewObligationAssessment = {
+  origin: "HOST-RESOLVED";
+  family: "receipt_setup" | "source_counter_maintenance" | "independent_source_readback";
+  path: string; source_digest: string; dependencies_digest: string;
+  requirement: string;
+  phase: "after_authority_review" | "ongoing_source_operation" | "after_execution";
+  state: "pending" | "owner_attested_external_assurance_unverified";
+  configuration_digest?: string | null;
+  verified: false;
+};
+const RECEIPT_PATH = "/runner_evidence/runtime_contract/receipts";
+const READBACK_PATH = "/runner_evidence/runtime_contract/application_obligations/independent_source_readback";
+export function receiptSetupComponentOnly(p: PolicyPassage) {
+  return p.disposition === "needs_decision" && p.responsibility === "deployment" && p.issue_kind === "missing_configuration"
+    && p.draft_paths.length === 1 && p.draft_paths[0] === RECEIPT_PATH
+    && !p.field_checks?.length && !p.counter_requirements?.length && !p.evidence_checks?.length
+    && !p.application_obligations?.length && !p.deployment_prerequisite && !p.source_counter_obligation
+    && !p.operator_override && !p.counting_components?.length && !p.counting_resolution;
+}
+
+/** Total confinement is checked again at consumption, including host binding. */
+export function deferredReviewObligation(p: PolicyPassage): ReviewObligationAssessment | undefined {
+  const a = p.obligation_assessment;
+  if (!a || a.origin !== "HOST-RESOLVED" || a.verified !== false || !/^sha256:[a-f0-9]{64}$/u.test(a.dependencies_digest)
+    || !/^sha256:[a-f0-9]{64}$/u.test(a.source_digest)) return undefined;
+  if (a.family === "receipt_setup" && a.path === RECEIPT_PATH && a.phase === "after_authority_review" && a.state === "pending"
+    && ["runner_ledger", "source_db"].includes(a.requirement) && receiptSetupComponentOnly(p)) return a;
+  if (a.family === "source_counter_maintenance" && a.path === p.source_counter_obligation?.path && a.phase === "ongoing_source_operation"
+    && a.requirement === "owner_maintenance" && a.state === "owner_attested_external_assurance_unverified" && isDeferredSourceCounterMaintenance(p)) return a;
+  if (a.family === "independent_source_readback" && a.path === READBACK_PATH && a.phase === "after_execution" && a.state === "pending"
+    && a.requirement === "independent_source_readback" && isDeferredSourceReadback(p)) return a;
+  return undefined;
+}
+
 
 export const POLICY_TEXT_MAX_BYTES = 32_768;
 export const POLICY_TEXT_MAX_LINES = 600;
