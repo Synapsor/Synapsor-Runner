@@ -1,0 +1,29 @@
+{
+  "name": "guided-status-corrected",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/guided-start.test.ts",
+    "--testNamePattern",
+    "public status preserves the saved policy blocker",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T21:45:05.495816+00:00",
+  "source_head": "68775b51b18292e8b461116cec6c33b278ef41cb",
+  "source_diff_sha256": "85ca6624bdd1f8cfd23aa2215d818e6a13e63d51271f0723d01114fa615ff215",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/test-environments/guided-status-corrected",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/client-duty-review-20260915/guided-status-corrected",
+  "source_manifest_sha256": "01cf6876abb0001bef5722fa112ddc47a9dafe652207e74bca0fc1024e60383b",
+  "pid": 1098770,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T21:45:25.383682+00:00"
+}

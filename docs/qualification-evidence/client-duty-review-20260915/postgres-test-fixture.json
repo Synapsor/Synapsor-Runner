@@ -1,0 +1,12 @@
+{
+  "name": "synapsor-obligation-readiness-tests-7d44d66a",
+  "id": "f6e7668ab06b0dc925fa8204f32ecd492d9332ef31d0a7dcaf6126ff3bb61cb1",
+  "label": "client-duty-review-20260915",
+  "image": "sha256:1edc8e87e53194e0cc8006c4e9df9b626c6c72cb43ad3385f0f34af7922065b1",
+  "network": "none",
+  "database": "policy_reconciliation_tests",
+  "socket": "/tmp/synapsor-obligation-readiness-pg-vXfg4V/socket",
+  "private_configuration": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/private/live-postgres.json",
+  "ready_at": "2026-09-15T21:08:30.623Z",
+  "credentials": "only scoped SYNAPSOR_TEST_POSTGRES_URL, no provider environment"
+}

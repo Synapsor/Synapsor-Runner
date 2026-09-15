@@ -1,0 +1,28 @@
+{
+  "name": "focused04",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-client-duties.test.ts",
+    "apps/runner/src/authoring-policy-coverage.test.ts",
+    "apps/runner/src/authoring-review-readiness.test.ts",
+    "packages/action-rules/src/action-rules.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T21:05:31.071862+00:00",
+  "source_head": "f60dfa1214e99aa912fad3d2306da95a1151f5ae",
+  "source_diff_sha256": "400646e2e36230992e331021995ba48be1e54e22ac8d00dac1d06ebe0d7ee7b3",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/test-environments/focused04",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/client-duty-review-20260915/focused04",
+  "source_manifest_sha256": "a8f274eb1785adb18d4a5b66240edebb9be0ae8414236fb755240e5929c207e2",
+  "pid": 1018818,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-15T21:05:39.257660+00:00"
+}

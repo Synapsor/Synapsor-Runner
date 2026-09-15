@@ -1,0 +1,27 @@
+{
+  "name": "cli-history04",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/boundary-cli.test.ts",
+    "-t",
+    "policy_target_reconcile_client",
+    "--maxWorkers=1",
+    "--minWorkers=1"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T21:25:19.758531+00:00",
+  "source_head": "f60dfa1214e99aa912fad3d2306da95a1151f5ae",
+  "source_diff_sha256": "3e203ffeb1bf6e1f573b19a47bde090fd210abe2b466e82c75354a5be42eb558",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/test-environments/cli-history04",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/client-duty-review-20260915/cli-history04",
+  "source_manifest_sha256": "a0071b83735e3f7aa5d468aca6052fdd2a15f62e9b548256df92003133fffca9",
+  "pid": 1059007,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T21:25:29.945105+00:00"
+}

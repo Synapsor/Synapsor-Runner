@@ -1,0 +1,6 @@
+{
+  "at": "2026-09-15T21:44:45.228763+00:00",
+  "pid": 1068053,
+  "reason": "Exact guided-start status fixture failure reproduced separately, exit1; no current Read-only client-contract basis. Stop known-failing suite before fixture correction; not a completed suite; original 65-minute allocation unchanged.",
+  "reproduction": "guided-status-failure-exit.json"
+}

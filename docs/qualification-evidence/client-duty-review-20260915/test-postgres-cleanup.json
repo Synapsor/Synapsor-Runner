@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-15T22:12:31.958478+00:00",
+  "container": "synapsor-obligation-readiness-tests-7d44d66a",
+  "id": "f6e7668ab06b0dc925fa8204f32ecd492d9332ef31d0a7dcaf6126ff3bb61cb1",
+  "saved_before_stop": {
+    "container-before.json": "f37179ef1cb15bca02bb0bd002b32c326ce4e0c6c219ac785ab5ff9011cb45cd",
+    "postgres.log": "8ca01556b222b6154daaa3de7e0b0ed3e12a6dc9fb472418d5d739a19c34b6ec",
+    "source.dump": "5bbc3e5fc0e74dfdbcee0252398423858c88d6391672ba3f52c43acbe7f834b0"
+  },
+  "directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/closure/test-postgres",
+  "exit_code": 0,
+  "running_after": false,
+  "removed": false
+}

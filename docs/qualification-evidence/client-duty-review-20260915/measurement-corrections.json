@@ -1,0 +1,52 @@
+{
+  "baseline": {
+    "terra_ready": true,
+    "grok_ready": false,
+    "current_v2_assignments_both": 0,
+    "grok_verdict": "public ownership step not executed; not a provider/runtime failure"
+  },
+  "fixture_corrections": [
+    {
+      "attempt": "focused01",
+      "issue": "unknown-contract hash initially included undefined; corrected host unknown representation to null",
+      "classification": "Initial implementation failure, not a fixture error: canonical hashing must represent an unknown contract without undefined."
+    },
+    {
+      "attempt": "focused01",
+      "issue": "composed saved-review test had no matching receipt configuration; provided its authentic captured host configuration in the isolated mocked source prerequisite"
+    },
+    {
+      "attempt": "focused04",
+      "issue": "tiny evaluator test used camelCase compiler parameters instead of existing verification_boundary/effect_envelope; test corrected"
+    },
+    {
+      "attempt": "focused05",
+      "issue": "evaluator returns match/no_match, not true/false strings; test oracle corrected without engine change"
+    },
+    {
+      "attempt": "compatibility02",
+      "issue": "test ownership step added await to synchronous test callback; marked callback async"
+    }
+  ],
+  "prior_positive_tests": "Exact phase/counting assertions retained; current intrinsic ownership is explicitly accepted by synthetic operator control before claiming BUSINESS readiness. Incomplete metadata-only tests no longer imply a complete current job contract.",
+  "stable_attempts": [
+    {
+      "attempt": "stable-full",
+      "classification": "Interrupted after trusted-core architectural cycle failure; product foundation refactor; not a completed suite",
+      "child_exit": -15,
+      "source_unchanged": true
+    },
+    {
+      "attempt": "stable-full02",
+      "classification": "Observed guided-start fixture assertion; isolated unchanged reproduction exit1. Fixture lacked current Read-only basis. Interrupted before test-only correction; not a completed suite",
+      "child_exit": -15,
+      "source_unchanged": true
+    },
+    {
+      "attempt": "guided-status-corrected",
+      "classification": "Current Read-only inventory added, original business-blocker assertions retained, missing historical inventory explicitly refused",
+      "exit_code": 0
+    }
+  ],
+  "combined01": "Pre-stable combined attempt changed while focused implementation continued; exit1, not stable evidence. Later targeted passes are separate and never aggregated into a full pass."
+}

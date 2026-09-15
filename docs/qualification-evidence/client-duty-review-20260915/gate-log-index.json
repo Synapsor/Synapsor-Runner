@@ -1,0 +1,513 @@
+{
+  "at": "2026-09-15T22:17:19.411576+00:00",
+  "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs",
+  "manifest_sha256": "50c8f1741a786df5ab795aad7013c2678661bf35275890ba6a7f1b7a5e913369",
+  "records": [
+    {
+      "name": "bundle-freshness-attempt3.log",
+      "bytes": 182,
+      "sha256": "4534215e15034b5b5391ab51d71121ebc119c68a2226f6194462a8558e9489b7",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/bundle-freshness-attempt3.log"
+    },
+    {
+      "name": "cli-history04.log",
+      "bytes": 1062,
+      "sha256": "1beedc8f29f73e2791299260050f11036880fce213c72e3d1109ba5aa9d5d270",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/cli-history04.log"
+    },
+    {
+      "name": "cli-lifecycle02.log",
+      "bytes": 92057,
+      "sha256": "011b2b8f362a7001e2e4f5a0e242eb95c4fc0be25e14495c39ab628cd86afb24",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/cli-lifecycle02.log"
+    },
+    {
+      "name": "cli-lifecycle03.log",
+      "bytes": 61635,
+      "sha256": "e8c6c19b5448851aaf7894b9742feff7647081535b28b5ed6ae7b51ece69442a",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/cli-lifecycle03.log"
+    },
+    {
+      "name": "cli-review02.log",
+      "bytes": 724,
+      "sha256": "2a5eb88cc8b6b5ba25480f343772c681c3554402e1c3ffbb484d0765585e649b",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/cli-review02.log"
+    },
+    {
+      "name": "combined01.log",
+      "bytes": 412618,
+      "sha256": "35fbd28e140af198142e095c9d02e9c0d070412e1ca88f6baaa6c3856f8254d1",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/combined01.log"
+    },
+    {
+      "name": "compatibility01.log",
+      "bytes": 19191,
+      "sha256": "61b8b6ffa15e1cde9a330ce17bd1cd88acff0b4823cc08d86271551999f0059b",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/compatibility01.log"
+    },
+    {
+      "name": "compatibility02.log",
+      "bytes": 2982,
+      "sha256": "153f98840e695b663509e76c903db5125e134d6ea48bbf920b61dcd104ad8364",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/compatibility02.log"
+    },
+    {
+      "name": "compatibility03.log",
+      "bytes": 977,
+      "sha256": "29e918aacbaadcc8326bbcc133f0d1774a6d7c4db9af4ed012cae758df708eef",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/compatibility03.log"
+    },
+    {
+      "name": "cursor-plugin-attempt2.log",
+      "bytes": 391,
+      "sha256": "cc12e22d29ebd660345c60ee249826505ffccb62bb45e1b39590202b7ee7135f",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/cursor-plugin-attempt2.log"
+    },
+    {
+      "name": "cursor-plugin-attempt3.log",
+      "bytes": 391,
+      "sha256": "cc12e22d29ebd660345c60ee249826505ffccb62bb45e1b39590202b7ee7135f",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/cursor-plugin-attempt3.log"
+    },
+    {
+      "name": "dsl-sources-attempt2.log",
+      "bytes": 89,
+      "sha256": "3bd663b10b211bb9dbfa01117dd164a3a851d9936e4be1568a6bd5f9ccf7d50a",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/dsl-sources-attempt2.log"
+    },
+    {
+      "name": "dsl-sources-attempt3.log",
+      "bytes": 89,
+      "sha256": "3bd663b10b211bb9dbfa01117dd164a3a851d9936e4be1568a6bd5f9ccf7d50a",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/dsl-sources-attempt3.log"
+    },
+    {
+      "name": "final-types.log",
+      "bytes": 118,
+      "sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/final-types.log"
+    },
+    {
+      "name": "focused01.log",
+      "bytes": 4562,
+      "sha256": "f1cbeaae9288ac04fb5ff71c4dea38929e654f40cda297c7ed2c1172a7bc4810",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/focused01.log"
+    },
+    {
+      "name": "focused02.log",
+      "bytes": 39184,
+      "sha256": "329e6e6b152a3473f9e89da298d029701c3ff970304a74bb1645a8fe74f25f77",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/focused02.log"
+    },
+    {
+      "name": "focused03.log",
+      "bytes": 20019,
+      "sha256": "eda4e42b23d599ea95c7acc6acc144fe636f71cfc9e8fcdf7285c129b8b5ae8c",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/focused03.log"
+    },
+    {
+      "name": "focused04.log",
+      "bytes": 10122,
+      "sha256": "97492fc40a75e194e2383c9a8f11ef806bc905601b51ede408ae16474a91a7ca",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/focused04.log"
+    },
+    {
+      "name": "focused05.log",
+      "bytes": 9683,
+      "sha256": "450de677bbf7c02dc47162be5adafcb79e8f5187bbd0800be70555fe82df5a12",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/focused05.log"
+    },
+    {
+      "name": "focused06.log",
+      "bytes": 560,
+      "sha256": "65533fb031f8cad3ae770d333c57306ad1ecfbee96859adb0af25ce00095a693",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/focused06.log"
+    },
+    {
+      "name": "foundation-focus.log",
+      "bytes": 1212,
+      "sha256": "62488e72e2b8df896822eb91283ccbbcda4a157206fe2682ed2858106a724854",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/foundation-focus.log"
+    },
+    {
+      "name": "guided-status-corrected.log",
+      "bytes": 650,
+      "sha256": "5fbd989a620b9e333d7a809dc938a89ab2eaab8f10cdf65213d45d0b3b565b68",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/guided-status-corrected.log"
+    },
+    {
+      "name": "guided-status-failure.log",
+      "bytes": 6718,
+      "sha256": "fe445752f0956c66f21bd4825b359b1d6b0ddb4a82ffea845c27638d4efbff00",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/guided-status-failure.log"
+    },
+    {
+      "name": "human-commands-attempt2.log",
+      "bytes": 43,
+      "sha256": "4ca02cff1d23604455f2707b16fc58bea2d0beb7f6adff085887cbdae1379222",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/human-commands-attempt2.log"
+    },
+    {
+      "name": "human-commands-attempt3.log",
+      "bytes": 43,
+      "sha256": "4ca02cff1d23604455f2707b16fc58bea2d0beb7f6adff085887cbdae1379222",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/human-commands-attempt3.log"
+    },
+    {
+      "name": "licenses-attempt2.log",
+      "bytes": 30,
+      "sha256": "81c81f063c5391a1e9f237b114a7ba197da9b6cece450fa3fd851f6fcac80bac",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/licenses-attempt2.log"
+    },
+    {
+      "name": "licenses-attempt3.log",
+      "bytes": 30,
+      "sha256": "81c81f063c5391a1e9f237b114a7ba197da9b6cece450fa3fd851f6fcac80bac",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/licenses-attempt3.log"
+    },
+    {
+      "name": "local-package-attempt3.log",
+      "bytes": 293,
+      "sha256": "3482d699a71057daa00ca2992fa3eb9c0ed7d9d4acfb384f70ac803a820285a3",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/local-package-attempt3.log"
+    },
+    {
+      "name": "mcp-client-configs-attempt2.log",
+      "bytes": 1601,
+      "sha256": "c71bcda8c34e92ed9307cb8f2be2b1fd2acb53e90067467be899275d784d10e9",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/mcp-client-configs-attempt2.log"
+    },
+    {
+      "name": "mcp-client-configs-attempt3.log",
+      "bytes": 1601,
+      "sha256": "c71bcda8c34e92ed9307cb8f2be2b1fd2acb53e90067467be899275d784d10e9",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/mcp-client-configs-attempt3.log"
+    },
+    {
+      "name": "packed-offline-attempt3.log",
+      "bytes": 2194,
+      "sha256": "248597074e5556097e799d4dfa65cfc1923e677d57936a081be84cdc043b98a1",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/packed-offline-attempt3.log"
+    },
+    {
+      "name": "postgres-assignment-final.log",
+      "bytes": 1462,
+      "sha256": "3c7d9d0b1c2ecd542c7517206aadade6f10e95a1e9ae212cf5ae15cfb290047f",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/postgres-assignment-final.log"
+    },
+    {
+      "name": "postgres-assignment.log",
+      "bytes": 1462,
+      "sha256": "42377e3c21c1fc06901b3db9f7497c00356b5e18cd6c32e435160964a1c7aa29",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/postgres-assignment.log"
+    },
+    {
+      "name": "postgres-domain-final.log",
+      "bytes": 1386,
+      "sha256": "20b29ab5f426c039269a0b1b8d6aebd6a9858c66f06e1cbf6db4d2e1780ff1d5",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/postgres-domain-final.log"
+    },
+    {
+      "name": "postgres-domain.log",
+      "bytes": 1387,
+      "sha256": "6c20f555b22fe6bcdcca09dcd39149174ee544160f3c7f7ca8c728f2234c4e45",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/postgres-domain.log"
+    },
+    {
+      "name": "public-commands-attempt3.log",
+      "bytes": 803,
+      "sha256": "2121e7f079daf2f2826853340dcdbf7349aeb7e7ed01ffc464e8202cec41e559",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/public-commands-attempt3.log"
+    },
+    {
+      "name": "source-final-focus.log",
+      "bytes": 3643,
+      "sha256": "8cbddea17a6e7cffa467f8d490979b4297f93836fcf25d4e589f0efdf775247b",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/source-final-focus.log"
+    },
+    {
+      "name": "stable-full.log",
+      "bytes": 14690,
+      "sha256": "97746c958092b26fa3ab2618ccb41ab603a6f24e9901d91608686a80244d61fc",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/stable-full.log"
+    },
+    {
+      "name": "stable-full02.log",
+      "bytes": 107928,
+      "sha256": "80a6232d90f2e6b7d540d80858952c7cb3a4883999a31f1645e4eefb505fe7ae",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/stable-full02.log"
+    },
+    {
+      "name": "stable-full03.log",
+      "bytes": 498916,
+      "sha256": "5ef1161faa2ed9ac3a2ebc1dcc9989a49abd565761f168ecc430617c1ea86913",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/stable-full03.log"
+    },
+    {
+      "name": "stable-types.log",
+      "bytes": 118,
+      "sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/stable-types.log"
+    },
+    {
+      "name": "stable-types03.log",
+      "bytes": 118,
+      "sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/stable-types03.log"
+    },
+    {
+      "name": "trusted-core-attempt1.log",
+      "bytes": 202,
+      "sha256": "7fc4a9914272b12b9be44453efdff45f7177c12cca418e4e82121628e583835b",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/trusted-core-attempt1.log"
+    },
+    {
+      "name": "trusted-core-attempt2.log",
+      "bytes": 73,
+      "sha256": "1d83b41d42b818ce2f15c233d47cacd450c9e8f9b952aefc5933389ac44a74f7",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/trusted-core-attempt2.log"
+    },
+    {
+      "name": "trusted-core-attempt3.log",
+      "bytes": 73,
+      "sha256": "1d83b41d42b818ce2f15c233d47cacd450c9e8f9b952aefc5933389ac44a74f7",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/trusted-core-attempt3.log"
+    },
+    {
+      "name": "trusted-core-repair.log",
+      "bytes": 73,
+      "sha256": "1d83b41d42b818ce2f15c233d47cacd450c9e8f9b952aefc5933389ac44a74f7",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/trusted-core-repair.log"
+    },
+    {
+      "name": "types-focused.log",
+      "bytes": 118,
+      "sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/types-focused.log"
+    },
+    {
+      "name": "client-duty-cli-history04-driver.log",
+      "bytes": 969,
+      "sha256": "9791db906e333558f3abe38fe4c3f61c66c877956628b9f4f1ab57bb45f0eaf0",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-cli-history04-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-cli-lifecycle02-driver.log",
+      "bytes": 1059,
+      "sha256": "609b62020ecca501624a3c6fbffc1fc070cbed222d8cfe71532fd531ffe9a5e6",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-cli-lifecycle02-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-cli-lifecycle03-driver.log",
+      "bytes": 1060,
+      "sha256": "bf8a757a2bec1b71be46c4d32d8ad65c90ec338a9de6fc4ef1fb0aaf4610efe7",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-cli-lifecycle03-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-cli-review02-driver.log",
+      "bytes": 1014,
+      "sha256": "9ab4e273045fe8f05e0c973814cdda55bbcfd37abe728129c511d2d603035f64",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-cli-review02-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-combined01-driver.log",
+      "bytes": 1612,
+      "sha256": "6b47e11b170fb29b9bcfe0df512eb63c3dac2a9c5120834b15ec090428e727dd",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-combined01-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-compatibility01-driver.log",
+      "bytes": 1221,
+      "sha256": "acadf8b6852aea1e9b9bca38d1a9e2e3a3e2c59f415c67d7a08377f216635ce4",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-compatibility01-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-compatibility02-driver.log",
+      "bytes": 1166,
+      "sha256": "0851943712f47cf879d0a2856d5f2329b70783139172ae5c5bc056abeec12f6a",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-compatibility02-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-compatibility03-driver.log",
+      "bytes": 1055,
+      "sha256": "dfd6d26c117c835dceef0163e2e57b2cc111e391009599c0c872fa091c29aeb8",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-compatibility03-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-final-types-driver.log",
+      "bytes": 835,
+      "sha256": "1a4e24da14ca77e569a23092c86dcab66b1ebac1515c7225be8d0459e3bcfe5a",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-final-types-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-finish-stable-driver.log",
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-finish-stable-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-finish-stable03-driver.log",
+      "bytes": 3380,
+      "sha256": "d90a25a9d0d1aa0b28da93a60f04af3d008411cf0b19fc654a64e915506bbe7b",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-finish-stable03-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-focused01-driver.log",
+      "bytes": 928,
+      "sha256": "b97f8cd1773218c7fd0d7d7e1e11cae1e4ef286a7a42d4debcfb6738e09002ef",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-focused01-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-focused02-driver.log",
+      "bytes": 1244,
+      "sha256": "c73d5f8e26844d0207a05b4d652fcfdfcd3c0eabdc9031507b93f3c5bedcfda0",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-focused02-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-focused03-driver.log",
+      "bytes": 1244,
+      "sha256": "fd77f1a647f9b9665afaea457007e714ee81c323893378bd4cbf74403f63734f",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-focused03-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-focused04-driver.log",
+      "bytes": 1085,
+      "sha256": "701170410e54495dfbdc632fb161f126f5bf394155974cdc28c2f27d673d0f8d",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-focused04-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-focused05-driver.log",
+      "bytes": 927,
+      "sha256": "c0ab511ce7a536331f88b0cb50051012240e7a03bdc31705a3691b0900fb6827",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-focused05-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-focused06-driver.log",
+      "bytes": 978,
+      "sha256": "991c990f2832b7da074bb5506ac35ae654ce921f4da166832f0aee7abb9cbb86",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-focused06-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-foundation-focus-driver.log",
+      "bytes": 1102,
+      "sha256": "b4db7c5d2baaac5c6d60a50b99bd376a7827dcefb1d1875f0a14b86f1e779d57",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-foundation-focus-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-guided-status-corrected-driver.log",
+      "bytes": 1078,
+      "sha256": "139d3ba80ecb5887a7afa90584d236dc8f1a18542f4ff1e091d1b13841e9e5e7",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-guided-status-corrected-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-guided-status-failure-driver.log",
+      "bytes": 1072,
+      "sha256": "21ace15a0515b2cf69da72db288a10f4da765338dc99dfe29a70a2e21ebd9951",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-guided-status-failure-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-offline-source-driver.log",
+      "bytes": 271,
+      "sha256": "20fa843ed7e44690b839890d8c7a0fcf0f40dd053ce899b8195fc69fd896291f",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-offline-source-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-offline-source03-driver.log",
+      "bytes": 1591,
+      "sha256": "7d878a7b900a3918c0cf05b8e0394b3d41ce741991e7473bcc5edaf743d0c7af",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-offline-source03-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-offline-source2-driver.log",
+      "bytes": 1591,
+      "sha256": "e77c7e094e2dc43605c37162627be444f1f8f0591d7a519c1f538d817ff01bbe",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-offline-source2-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-postgres-assignment-driver.log",
+      "bytes": 1223,
+      "sha256": "0fff55dd23a1c002484ed5f0457d77c08e8153641101d80085817d78cd5f9623",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-postgres-assignment-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-postgres-domain-driver.log",
+      "bytes": 1049,
+      "sha256": "44e759d53aa8ad8c4f182df1fce500a4f0a208c662bac3a3692c9caed1491233",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-postgres-domain-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-source-final-focus-driver.log",
+      "bytes": 1647,
+      "sha256": "d15fda8e68c51822e3a4e256834c44a83f3587f2b71f9b8f4b5400689ad35b91",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-source-final-focus-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-stable-full-driver.log",
+      "bytes": 931,
+      "sha256": "850b2876c26c9c90af106cdabf98821c5ac5d5c0c8e9bfa61327638ccbe7ab96",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-stable-full-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-stable-full02-driver.log",
+      "bytes": 937,
+      "sha256": "31ebf47d7c1667d6cf6f7c02213a87153f0107c3dd18d0f19d79d1112c2b4acd",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-stable-full02-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-stable-full03-driver.log",
+      "bytes": 935,
+      "sha256": "9033d94d4ebabf973bfdb253aa1aa726b3c00d8132c676a4fd7495c5974ee60e",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-stable-full03-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-stable-types-driver.log",
+      "bytes": 838,
+      "sha256": "c8a4c2b0a8a54e229dd9e1d915af03ef073a635678dcbd40b4d27ff96aa0bf02",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-stable-types-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-stable-types03-driver.log",
+      "bytes": 844,
+      "sha256": "e8aa92361ca36e83c696115c2280dbb610c877b5b2fa35178b7935b953e3b1f6",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-stable-types03-driver.log",
+      "kind": "task wrapper output"
+    },
+    {
+      "name": "client-duty-types-focused-driver.log",
+      "bytes": 841,
+      "sha256": "cff937684ad0230b47f3c484801862425aee9dcb2feda18ef6b19837c1db5884",
+      "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/verification-logs/client-duty-types-focused-driver.log",
+      "kind": "task wrapper output"
+    }
+  ]
+}

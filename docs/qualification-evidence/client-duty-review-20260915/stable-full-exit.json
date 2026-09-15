@@ -1,0 +1,26 @@
+{
+  "name": "stable-full",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "--maxWorkers=4",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T21:26:13.555970+00:00",
+  "source_head": "03f26a059ed6bb40acac9fc10468a0ddf005e90a",
+  "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/test-environments/stable-full",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/client-duty-review-20260915/stable-full",
+  "source_manifest_sha256": "a0071b83735e3f7aa5d468aca6052fdd2a15f62e9b548256df92003133fffca9",
+  "pid": 1061072,
+  "source_unchanged": true,
+  "exit_code": -15,
+  "completed_at": "2026-09-15T21:28:13.588127+00:00"
+}

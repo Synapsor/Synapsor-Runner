@@ -1,0 +1,25 @@
+{
+  "name": "focused05",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "packages/action-rules/src/action-rules.test.ts",
+    "--maxWorkers=1",
+    "--minWorkers=1"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T21:06:43.382335+00:00",
+  "source_head": "f60dfa1214e99aa912fad3d2306da95a1151f5ae",
+  "source_diff_sha256": "8767e355acd9274f4099936e08c95d50b37b6a15daba240a05abf33c4d5ad429",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/test-environments/focused05",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/client-duty-review-20260915/focused05",
+  "source_manifest_sha256": "a29beb0c3d32b5f5e9d58093a25ed299ef97bcae4e4abc7c455b09821d45f1ba",
+  "pid": 1021216,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-15T21:06:45.348622+00:00"
+}

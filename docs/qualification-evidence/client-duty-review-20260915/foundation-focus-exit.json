@@ -1,0 +1,28 @@
+{
+  "name": "foundation-focus",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-client-duties.test.ts",
+    "apps/runner/src/authoring-policy-source.test.ts",
+    "apps/runner/src/authoring-client-readiness.test.ts",
+    "apps/runner/src/obligation-readiness.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T21:28:34.935743+00:00",
+  "source_head": "03f26a059ed6bb40acac9fc10468a0ddf005e90a",
+  "source_diff_sha256": "125a221a197ce225d08d7ed4b530a5864a06e9af390283332a3c7aa983ab361c",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/test-environments/foundation-focus",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/client-duty-review-20260915/foundation-focus",
+  "source_manifest_sha256": "d48f6440d9065f17294c3d7b5ceb3d4dfbda1ffcba6bccf8cf0446601d043433",
+  "pid": 1066253,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T21:28:42.856955+00:00"
+}

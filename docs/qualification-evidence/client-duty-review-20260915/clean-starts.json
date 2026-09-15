@@ -1,0 +1,49 @@
+{
+  "at": "2026-09-15T21:27:34.562404+00:00",
+  "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/clean-starts",
+  "manifest_sha256": "a37fe3bdd53313a598889837b867a480750e2488ae258f758295dd8f94de0e9d",
+  "entries": 207,
+  "cases": [
+    {
+      "run": "recovery-tournament-assisted",
+      "source_checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/clean-starts/recovery-tournament-assisted",
+      "copy": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/clean-starts/recovery-tournament-assisted",
+      "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+      "source_version": 1,
+      "coverage_source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+      "counting_decisions_for_current_source": 0,
+      "pending_job_revision": "Recheck the current saved rules against the attached policy and existing decisions without changing the rules or authority.",
+      "source_counts": {
+        "events": 8,
+        "results": 96
+      },
+      "project_manifest_sha256": "ae0aea9c32ab06e91df853dad340b3a82fc3f0b8525a22d64a6ebcef36fd9b94",
+      "source_dump_sha256": "26cf73567fa5225acc8af6455602aac6c46fc1752bd0ec3077956713df3849d4",
+      "source_readback_sha256": "4c28dccd5d440f1798ace4882a0441cdbce3bc9613d42e02037c82168405e44e",
+      "provider_calls": 0,
+      "application_opened": false,
+      "primary_trial_decisions_copied": false
+    },
+    {
+      "run": "counting-wording-control",
+      "source_checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/clean-starts/counting-wording-control",
+      "copy": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/clean-starts/counting-wording-control",
+      "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+      "source_version": 2,
+      "coverage_source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+      "counting_decisions_for_current_source": 0,
+      "pending_job_revision": "Use the updated attached-rules context for this same draft. Operator instruction: Use the attached replacement text for this same saved job and review whether the current rules satisfy it. Preserve the existing business behavior and authority.",
+      "source_counts": {
+        "events": 8,
+        "results": 96
+      },
+      "project_manifest_sha256": "79beb1e13718966c9036a9a8564e0174f77d1632e1ddff348769dc616e8dde0f",
+      "source_dump_sha256": "ce23bf60661173a6776cf507c2d149840b98ceea781f148ced6990638e9b66e6",
+      "source_readback_sha256": "4c28dccd5d440f1798ace4882a0441cdbce3bc9613d42e02037c82168405e44e",
+      "provider_calls": 0,
+      "application_opened": false,
+      "primary_trial_decisions_copied": false
+    }
+  ],
+  "purpose": "Independent secondary starting states; restore new owned whole copies and matching dumps, never run these in place."
+}

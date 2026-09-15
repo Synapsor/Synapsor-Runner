@@ -1,0 +1,29 @@
+{
+  "name": "cli-lifecycle03",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/boundary-cli.test.ts",
+    "-t",
+    "compiles a rule-derived job|keeps one saved job|cited missing Action",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T21:23:42.803925+00:00",
+  "source_head": "f60dfa1214e99aa912fad3d2306da95a1151f5ae",
+  "source_diff_sha256": "ffec6037413c682e8ca9d8782a2fbd50d31c859722c6320feec44edfabe59338",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/test-environments/cli-lifecycle03",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/client-duty-review-20260915/cli-lifecycle03",
+  "source_manifest_sha256": "636ac686c2d155dfd732fe959440511dedc187c8e7f7aba13380326e3ed9a484",
+  "pid": 1055494,
+  "source_unchanged": false,
+  "exit_code": 1,
+  "completed_at": "2026-09-15T21:24:52.354089+00:00"
+}

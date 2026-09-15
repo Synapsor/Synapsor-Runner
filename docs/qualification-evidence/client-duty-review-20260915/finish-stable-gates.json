@@ -1,0 +1,8 @@
+{
+  "started_at": "2026-09-15T21:33:02.076516+00:00",
+  "verification_deadline": "2026-09-15T22:31:13.555970+00:00",
+  "waiting_for_existing": "stable-full02",
+  "steps": [],
+  "full_suite_exit": -15,
+  "stopped": "Stable suite failed/interrupted or source changed; inspect exact saved result"
+}

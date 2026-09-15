@@ -1,0 +1,8 @@
+{
+  "commit": "68775b51b18292e8b461116cec6c33b278ef41cb",
+  "test_revision": "3e7fde650def99b7f2a4745c499bb147fdf45bb6",
+  "at": "2026-09-15T21:29:23.827618+00:00",
+  "provider_settings": "openai/gpt-5.6-terra low; timeout120 default; coverage12000 output; unchanged provider prompt instructions, added typed client contract evidence",
+  "initial_repair_commit": "03f26a059ed6bb40acac9fc10468a0ddf005e90a",
+  "test_only_followup_at": "2026-09-15T21:46:06.461541+00:00"
+}

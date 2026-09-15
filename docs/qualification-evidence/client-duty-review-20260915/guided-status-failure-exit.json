@@ -1,0 +1,29 @@
+{
+  "name": "guided-status-failure",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/guided-start.test.ts",
+    "--testNamePattern",
+    "public status preserves the saved policy blocker",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T21:43:56.778855+00:00",
+  "source_head": "68775b51b18292e8b461116cec6c33b278ef41cb",
+  "source_diff_sha256": "5f04875eb28a1eb8ffc4287844fadaf2411e8e1ed5256b961acd1974b9339209",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/test-environments/guided-status-failure",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/client-duty-review-20260915/guided-status-failure",
+  "source_manifest_sha256": "d48f6440d9065f17294c3d7b5ceb3d4dfbda1ffcba6bccf8cf0446601d043433",
+  "pid": 1095999,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-15T21:44:20.218975+00:00"
+}

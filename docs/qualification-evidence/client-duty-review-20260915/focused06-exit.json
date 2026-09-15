@@ -1,0 +1,26 @@
+{
+  "name": "focused06",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-client-duties.test.ts",
+    "packages/action-rules/src/action-rules.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T21:13:19.560919+00:00",
+  "source_head": "f60dfa1214e99aa912fad3d2306da95a1151f5ae",
+  "source_diff_sha256": "2159c271ae187007c4ef4512b763a4a573a18842ca535b351f96aefb0b697b8f",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/test-environments/focused06",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/client-duty-review-20260915/focused06",
+  "source_manifest_sha256": "c1ddd12fe23408466a54c4439aaf45790e3893aaab586c88aff70e557f1c5384",
+  "pid": 1034983,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T21:13:26.198171+00:00"
+}

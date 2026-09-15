@@ -1,0 +1,29 @@
+{
+  "name": "compatibility02",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-mixed-counting.test.ts",
+    "apps/runner/src/authoring-counting-contract.test.ts",
+    "apps/runner/src/counter-maintenance-review.test.ts",
+    "apps/runner/src/read-boundary-review-view.test.ts",
+    "apps/runner/src/authoring-review-continuation.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T21:12:15.712144+00:00",
+  "source_head": "f60dfa1214e99aa912fad3d2306da95a1151f5ae",
+  "source_diff_sha256": "3eeef9b814074fb157e66d33a1d65c46a66f61e399f156f5f501ce7407bfd2cd",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/test-environments/compatibility02",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/client-duty-review-20260915/compatibility02",
+  "source_manifest_sha256": "262ea9d33577f9c38b880515ef98607536c238a3724ab824fed9c66f3591d234",
+  "pid": 1032837,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-15T21:12:32.226256+00:00"
+}

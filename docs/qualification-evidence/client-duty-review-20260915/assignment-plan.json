@@ -1,0 +1,49 @@
+{
+  "started_at": "2026-09-15T20:53:38.173607+00:00",
+  "baseline": "f60dfa1214e99aa912fad3d2306da95a1151f5ae",
+  "owned_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915",
+  "frozen_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/frozen",
+  "original_cases_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases",
+  "case_sources": {
+    "recovery-tournament-assisted": {
+      "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914",
+      "run": "recovery-tournament-assisted",
+      "checkpoint": "recheck-requested",
+      "case": "tournament-ratification",
+      "checkpoint_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/clean-starts/recovery-tournament-assisted"
+    },
+    "counting-wording-control": {
+      "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914",
+      "run": "counting-wording-control",
+      "checkpoint": "wording-stopped",
+      "case": "tournament-ratification",
+      "checkpoint_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/clean-starts/counting-wording-control"
+    }
+  },
+  "primary": {
+    "adapter": "openai",
+    "model": "gpt-5.6-terra",
+    "reasoning_effort": "low",
+    "store": false,
+    "endpoint": "https://api.openai.com/v1",
+    "basis": "actual previous captured transport and saved authoring context; reverify final settings"
+  },
+  "budgets_minutes": {
+    "implementation": 90,
+    "fixture_recovery": 30,
+    "stable_verification_freeze": 65,
+    "primary_final": 45,
+    "delivery": 20
+  },
+  "provider_calls": {
+    "development_max": 4,
+    "primary_final_max": 25,
+    "primary_restart_reserved": 6
+  },
+  "provider_spend_ceiling_usd": 15,
+  "scope": "Two intrinsic client duties; explicit unverified ownership; review-only B then small A. No runtime or receipt engine changes.",
+  "status": "STABLE_GATES_PASSED_FREEZE_NEXT",
+  "evidence_root": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/client-duty-review-20260915",
+  "next_step": "Collect final PostgreSQL/offline package exits, archive evidence, commit checkpoint, freeze one installation, direct-Review B/A",
+  "trial_harness_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/trial-harness"
+}

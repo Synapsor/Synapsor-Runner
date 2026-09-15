@@ -1,0 +1,394 @@
+[
+  {
+    "name": "terra",
+    "source": {
+      "version": 2,
+      "name": "wording-control-rules.txt",
+      "text": "# League result ratification\n\nHelp a league referee ratify completed best-of-three match results. A referee may see and act only on results assigned to that referee within that league. The referee can read result reference, event name, stage, recorded wins/losses and result state, including a related event's operating state. Do not expose database identities, conflict counters, integrity_hold or referee_private_note as public data. Never reveal, filter, sort, group or aggregate by the private fields; the host may use the hold privately to verify a request.\n\nRatification is valid only while the related event is open, the result is finished, the winner has exactly two game wins, the loser has zero or one game wins, and there is no integrity hold. Do not correct scores or move a result to another person, event or league. An invalid result is refused, not routed into approval as if valid. A successful ratification changes only result state to ratified, plus the maintained conflict counter.\n\nValid qualifying-stage results may be approved automatically, but no more than two ratifications may be auto-approved per league per day and no more than six overall, using the inclusive rolling 24-hour window. Qualifying results beyond either cap go to human review. Every valid championship-stage result requires the league supervisor's human review. Counts are shared across that league's referees; creating a local client does not create more allowance. Explicit supervised execution follows approval. Request a stored Runner-ledger receipt and independently verify the changed source row. No match server or external system is contacted.\n\nPublic reads must retain these restrictions as jobs are edited. Ratification never grants a referee permission to change the recorded winner or score.\n",
+      "bytes": 1797,
+      "lines": 10,
+      "digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa"
+    },
+    "assignments": [
+      {
+        "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+        "draft_digest": "sha256:6a49093a3cb1a0329c870dde41a319ad823b50743cb3df71bfbcc0c29363e008",
+        "start": 3,
+        "end": 3,
+        "obligations": [
+          "customer_selection"
+        ],
+        "assigned_at": "2026-09-14T19:28:29.446Z",
+        "owner": "client_application",
+        "verified": false
+      }
+    ],
+    "readiness": {
+      "ready": true,
+      "privacy": false,
+      "items": [
+        {
+          "kind": "deployment_prerequisite",
+          "title": "Execution deployment setup",
+          "nextStep": "After authority review, prepare or verify the dedicated writer, review execution permission, then configure and start the worker. Keep reader credentials separate. Setup and execution remain unverified; no request is completed without a successful receipt.",
+          "passages": [
+            {
+              "start": 7,
+              "end": 7,
+              "disposition": "needs_decision",
+              "interpretation": "A dedicated writer, execution enablement for this exact revision, receipt review, and worker startup remain unverified deployment prerequisites for supervised completion.",
+              "draft_paths": [
+                "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+              ],
+              "topic": "Execution deployment setup",
+              "responsibility": "deployment",
+              "issue_kind": "missing_configuration",
+              "next_step": "After authority review, configure and verify the dedicated writer, execution enablement, receipt setup, and worker.",
+              "deployment_prerequisite": "runner_execution_setup"
+            }
+          ],
+          "blocksReview": false
+        },
+        {
+          "kind": "deployment_prerequisite",
+          "title": "Independent source verification",
+          "nextStep": "After each applicable execution, independently observe the source and compare it with the exact intended change. This readback remains unverified; a receipt alone is not that observation. No Action-code repair is required for this external step.",
+          "passages": [
+            {
+              "obligation_assessment": {
+                "origin": "HOST-RESOLVED",
+                "family": "independent_source_readback",
+                "path": "/runner_evidence/runtime_contract/application_obligations/independent_source_readback",
+                "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+                "requirement": "independent_source_readback",
+                "phase": "after_execution",
+                "state": "pending",
+                "verified": false,
+                "dependencies_digest": "sha256:3b50fea76a7508eefe7b4e7f163d7d7da3cc07b76bc868f2b17c0591dbe06637"
+              },
+              "start": 7,
+              "end": 7,
+              "disposition": "needs_decision",
+              "interpretation": "Independent verification of the changed source row is an external after-execution observation and is not verified by the current receipt or draft.",
+              "draft_paths": [
+                "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+              ],
+              "topic": "Independent source verification",
+              "responsibility": "application",
+              "issue_kind": "missing_configuration",
+              "next_step": "Who will independently check the changed source row after each completed ratification?",
+              "application_obligations": [
+                "independent_source_readback"
+              ]
+            }
+          ],
+          "blocksReview": false
+        },
+        {
+          "kind": "deployment_prerequisite",
+          "title": "Receipt/execution setup",
+          "nextStep": "Receipt/execution setup pending: after authority review, use execution setup to review runner_ledger receipt mode and the dedicated writer, then separate execution permission and worker startup. Selection, provisioning, an actual receipt and independent source readback are not verified by this business review.",
+          "passages": [
+            {
+              "start": 7,
+              "end": 7,
+              "disposition": "needs_decision",
+              "responsibility": "deployment",
+              "issue_kind": "missing_configuration",
+              "topic": "Receipt/execution setup",
+              "draft_paths": [
+                "/runner_evidence/runtime_contract/receipts"
+              ],
+              "interpretation": "HOST-RESOLVED pending component: the configured receipt mode matches the explicit source requirement. Writer/provisioning verification, execution authorization and receipt production remain separate and unverified. The submitted configuration claim is retained separately.",
+              "next_step": "Continue through execution setup after authority review; an actual receipt and independent source readback still require their applicable later evidence.",
+              "obligation_assessment": {
+                "configuration_digest": "sha256:4271bc259e1604d29231176a50fa2ecd959e3b172255b56254ab00c8697ac1a6",
+                "origin": "HOST-RESOLVED",
+                "family": "receipt_setup",
+                "path": "/runner_evidence/runtime_contract/receipts",
+                "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+                "requirement": "runner_ledger",
+                "phase": "after_authority_review",
+                "state": "pending",
+                "verified": false,
+                "dependencies_digest": "sha256:9cd773c8fb81f87730b1beaa40bfae317e17e89da852ddb73c887b7524487b1d"
+              }
+            }
+          ],
+          "blocksReview": false
+        }
+      ],
+      "summary": [
+        "Attached rules: wording-control-rules.txt v2; interpretation checked for this revision.",
+        "Independent source readback remains unverified for each applicable execution. Perform and retain that separate observation after the change; a receipt or completed business review does not prove it.",
+        "Receipt/execution setup pending: review the required mode through execution setup. No receipt, provisioning or independent observation is established by BUSINESS review.",
+        "Execution setup pending: dedicated writer review, separate execution permission and worker startup. Continue to these checks after authority review; automatic completion is not yet enabled."
+      ]
+    }
+  },
+  {
+    "name": "grok",
+    "source": {
+      "version": 2,
+      "name": "wording-control-rules.txt",
+      "text": "# League result ratification\n\nHelp a league referee ratify completed best-of-three match results. A referee may see and act only on results assigned to that referee within that league. The referee can read result reference, event name, stage, recorded wins/losses and result state, including a related event's operating state. Do not expose database identities, conflict counters, integrity_hold or referee_private_note as public data. Never reveal, filter, sort, group or aggregate by the private fields; the host may use the hold privately to verify a request.\n\nRatification is valid only while the related event is open, the result is finished, the winner has exactly two game wins, the loser has zero or one game wins, and there is no integrity hold. Do not correct scores or move a result to another person, event or league. An invalid result is refused, not routed into approval as if valid. A successful ratification changes only result state to ratified, plus the maintained conflict counter.\n\nValid qualifying-stage results may be approved automatically, but no more than two ratifications may be auto-approved per league per day and no more than six overall, using the inclusive rolling 24-hour window. Qualifying results beyond either cap go to human review. Every valid championship-stage result requires the league supervisor's human review. Counts are shared across that league's referees; creating a local client does not create more allowance. Explicit supervised execution follows approval. Request a stored Runner-ledger receipt and independently verify the changed source row. No match server or external system is contacted.\n\nPublic reads must retain these restrictions as jobs are edited. Ratification never grants a referee permission to change the recorded winner or score.\n",
+      "bytes": 1797,
+      "lines": 10,
+      "digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa"
+    },
+    "assignments": [
+      {
+        "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+        "draft_digest": "sha256:6a49093a3cb1a0329c870dde41a319ad823b50743cb3df71bfbcc0c29363e008",
+        "start": 3,
+        "end": 3,
+        "obligations": [
+          "customer_selection"
+        ],
+        "assigned_at": "2026-09-14T19:28:29.446Z",
+        "owner": "client_application",
+        "verified": false
+      }
+    ],
+    "readiness": {
+      "ready": false,
+      "privacy": false,
+      "items": [
+        {
+          "kind": "deployment_prerequisite",
+          "title": "Authenticated session wiring",
+          "nextStep": "After review, choose a client and configure runtime identity. Use a fixed test identity only for local testing; production identity must come from an authenticated application session. Runtime access remains unavailable without it.",
+          "passages": [
+            {
+              "start": 3,
+              "end": 3,
+              "disposition": "needs_decision",
+              "interpretation": "Connecting an authenticated application session to the already reviewed league and referee bindings remains unverified. Record-scope RLS is already configured; this later wiring does not reopen which customers may access which rows.",
+              "draft_paths": [
+                "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+              ],
+              "topic": "Authenticated session wiring",
+              "responsibility": "deployment",
+              "issue_kind": "missing_configuration",
+              "next_step": "After authority review, connect runtime identity to the reviewed tenant and principal bindings without collecting those values during authoring.",
+              "deployment_prerequisite": "authenticated_identity"
+            }
+          ],
+          "blocksReview": false
+        },
+        {
+          "kind": "deployment_prerequisite",
+          "title": "Referee selects the result",
+          "nextStep": "Assign the client to capture the referee's selected match result before submit, without moving eligibility or privacy into the client.",
+          "passages": [
+            {
+              "start": 3,
+              "end": 3,
+              "disposition": "needs_decision",
+              "interpretation": "The client must capture the referee's chosen assigned result and submit that reviewed subject reference. Runner independently verifies scope and eligibility and cannot prove the human selected the row.",
+              "draft_paths": [
+                "/runner_evidence/runtime_contract/application_obligations/customer_selection"
+              ],
+              "topic": "Referee selects the result",
+              "responsibility": "application",
+              "issue_kind": "missing_configuration",
+              "next_step": "Assign the client to capture the referee's selected match result before submit, without moving eligibility or privacy into the client.",
+              "application_obligations": [
+                "customer_selection"
+              ]
+            }
+          ],
+          "blocksReview": true
+        },
+        {
+          "kind": "deployment_prerequisite",
+          "title": "Maintained conflict counter",
+          "nextStep": "The exact source-owner maintenance operating contract is current. The owner must keep every writer within that contract; independent external-writer and production assurance remain unverified. BUSINESS review does not enable execution or verify those writers. Revalidate the existing counter review if source, metadata, role, target or owner decision changes.",
+          "passages": [
+            {
+              "obligation_assessment": {
+                "origin": "HOST-RESOLVED",
+                "family": "source_counter_maintenance",
+                "path": "/runner_evidence/actions/league.result_ratification/effect/source_counter_maintenance",
+                "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+                "requirement": "owner_maintenance",
+                "phase": "ongoing_source_operation",
+                "state": "owner_attested_external_assurance_unverified",
+                "verified": false,
+                "dependencies_digest": "sha256:8d9d13c014692178d0bfb1d4bd76b64f16540df6f0018ed587bec22c92bbe39d"
+              },
+              "start": 5,
+              "end": 5,
+              "disposition": "needs_decision",
+              "interpretation": "The source requires the conflict counter to be maintained on updates. The host currently attests an all-writers increment operating contract for tournament_ops.results.version. External-writer and production-integration flags remain unverified and do not add an independent-assurance rule.",
+              "draft_paths": [
+                "/runner_evidence/actions/league.result_ratification/effect/source_counter_maintenance"
+              ],
+              "topic": "Maintained conflict counter",
+              "responsibility": "deployment",
+              "issue_kind": "missing_configuration",
+              "next_step": "Keep the attested all-writers version-increment contract for business review; do not ask the owner to restate it or treat unverified external writers as a new rule.",
+              "source_counter_obligation": {
+                "path": "/runner_evidence/actions/league.result_ratification/effect/source_counter_maintenance",
+                "requirement": "owner_maintenance"
+              },
+              "source_counter_resolution": {
+                "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+                "path": "/runner_evidence/actions/league.result_ratification/effect/source_counter_maintenance",
+                "dependencies_digest": "sha256:c62e330e2a5e4d333a0a1bdcdc7207e73730692e8012a8541be0f30f73da3daf",
+                "proof_digest": "sha256:a64444d8c11ed349977baf58b0b194936114c3898e802aeeac70e802a9803bdc",
+                "external_assurance": "unverified"
+              }
+            }
+          ],
+          "blocksReview": false
+        },
+        {
+          "kind": "deployment_prerequisite",
+          "title": "Independent source-row verification",
+          "nextStep": "After each applicable execution, independently observe the source and compare it with the exact intended change. This readback remains unverified; a receipt alone is not that observation. No Action-code repair is required for this external step.",
+          "passages": [
+            {
+              "obligation_assessment": {
+                "origin": "HOST-RESOLVED",
+                "family": "independent_source_readback",
+                "path": "/runner_evidence/runtime_contract/application_obligations/independent_source_readback",
+                "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+                "requirement": "independent_source_readback",
+                "phase": "after_execution",
+                "state": "pending",
+                "verified": false,
+                "dependencies_digest": "sha256:3b50fea76a7508eefe7b4e7f163d7d7da3cc07b76bc868f2b17c0591dbe06637"
+              },
+              "start": 7,
+              "end": 7,
+              "disposition": "needs_decision",
+              "interpretation": "After execution, an independent observation must verify the changed source row. A receipt, selected receipt mode, setup plan, or past test does not establish that observation. It is not an Action expression and remains unverified for each execution.",
+              "draft_paths": [
+                "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+              ],
+              "topic": "Independent source-row verification",
+              "responsibility": "application",
+              "issue_kind": "missing_configuration",
+              "next_step": "After a completed ratification, independently observe the source row and compare it with the intended ratified state.",
+              "application_obligations": [
+                "independent_source_readback"
+              ]
+            }
+          ],
+          "blocksReview": false
+        },
+        {
+          "kind": "deployment_prerequisite",
+          "title": "Supported local client connection",
+          "nextStep": "After authority review, choose a supported Runner client in client setup and review installation and the connection check. Configuration has not been checked and connection remains unverified; identity, application behavior and execution need separate checks.",
+          "passages": [
+            {
+              "start": 7,
+              "end": 7,
+              "disposition": "needs_decision",
+              "interpretation": "Connecting a supported Runner-managed local stdio client remains a later handoff. Creating a local client does not expand automatic ratification allowance. Configuration and connection are unchecked and grant no authority.",
+              "draft_paths": [
+                "/runner_evidence/runtime_contract/deployment_prerequisites/runner_client_connection"
+              ],
+              "topic": "Supported local client connection",
+              "responsibility": "deployment",
+              "issue_kind": "missing_configuration",
+              "next_step": "After authority review, install and connect a supported local client without treating that handshake as business implementation.",
+              "deployment_prerequisite": "runner_client_connection"
+            }
+          ],
+          "blocksReview": false
+        },
+        {
+          "kind": "deployment_prerequisite",
+          "title": "Writer, execution consent, and worker",
+          "nextStep": "After authority review, prepare or verify the dedicated writer, review execution permission, then configure and start the worker. Keep reader credentials separate. Setup and execution remain unverified; no request is completed without a successful receipt.",
+          "passages": [
+            {
+              "start": 7,
+              "end": 7,
+              "disposition": "needs_decision",
+              "interpretation": "Dedicated writer review, keeping the inspected reader separate, execution permission, receipt-mode checks, and worker startup remain outstanding for the already compiled direct_sql ratification effect. Supported setup exists; it is not running and does not waive remaining business rules.",
+              "draft_paths": [
+                "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+              ],
+              "topic": "Writer, execution consent, and worker",
+              "responsibility": "deployment",
+              "issue_kind": "missing_configuration",
+              "next_step": "After authority review, complete dedicated writer, execution-enable, and worker setup for this compiled effect without returning to business authoring.",
+              "deployment_prerequisite": "runner_execution_setup"
+            }
+          ],
+          "blocksReview": false
+        },
+        {
+          "kind": "deployment_prerequisite",
+          "title": "Truthful ratification status",
+          "nextStep": "Assign the client to present queued, human-review, failed, and completed statuses truthfully, without moving database controls to the client.",
+          "passages": [
+            {
+              "start": 7,
+              "end": 7,
+              "disposition": "needs_decision",
+              "interpretation": "The client must present returned ratification statuses and Runner-ledger receipts accurately. Approval, a queued request, or a failed execution is not completion.",
+              "draft_paths": [
+                "/runner_evidence/runtime_contract/application_obligations/status_presentation"
+              ],
+              "topic": "Truthful ratification status",
+              "responsibility": "application",
+              "issue_kind": "missing_configuration",
+              "next_step": "Assign the client to present queued, human-review, failed, and completed statuses truthfully, without moving database controls to the client.",
+              "application_obligations": [
+                "status_presentation"
+              ]
+            }
+          ],
+          "blocksReview": true
+        },
+        {
+          "kind": "deployment_prerequisite",
+          "title": "Receipt/execution setup",
+          "nextStep": "Receipt/execution setup pending: after authority review, use execution setup to review runner_ledger receipt mode and the dedicated writer, then separate execution permission and worker startup. Selection, provisioning, an actual receipt and independent source readback are not verified by this business review.",
+          "passages": [
+            {
+              "start": 7,
+              "end": 7,
+              "disposition": "needs_decision",
+              "responsibility": "deployment",
+              "issue_kind": "missing_configuration",
+              "topic": "Receipt/execution setup",
+              "draft_paths": [
+                "/runner_evidence/runtime_contract/receipts"
+              ],
+              "interpretation": "HOST-RESOLVED pending component: the configured receipt mode matches the explicit source requirement. Writer/provisioning verification, execution authorization and receipt production remain separate and unverified. The submitted configuration claim is retained separately.",
+              "next_step": "Continue through execution setup after authority review; an actual receipt and independent source readback still require their applicable later evidence.",
+              "obligation_assessment": {
+                "configuration_digest": "sha256:4271bc259e1604d29231176a50fa2ecd959e3b172255b56254ab00c8697ac1a6",
+                "origin": "HOST-RESOLVED",
+                "family": "receipt_setup",
+                "path": "/runner_evidence/runtime_contract/receipts",
+                "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+                "requirement": "runner_ledger",
+                "phase": "after_authority_review",
+                "state": "pending",
+                "verified": false,
+                "dependencies_digest": "sha256:9cd773c8fb81f87730b1beaa40bfae317e17e89da852ddb73c887b7524487b1d"
+              }
+            }
+          ],
+          "blocksReview": false
+        }
+      ],
+      "summary": [
+        "Before activation: Referee selects the result; Truthful ratification status. These are required decisions, not optional recommendations.",
+        "Continue with the model to resolve them in this saved draft. Activation is unavailable until the checks pass.",
+        "Client integration still unverified: signed-in customer identity, Runner client connection. Check these during client setup before customer use.",
+        "Independent source readback remains unverified for each applicable execution. Perform and retain that separate observation after the change; a receipt or completed business review does not prove it.",
+        "Source-counter maintenance relies on the exact current source-owner operating contract. Independent external-writer and production assurance remain unverified; the owner must keep all writers within that contract. This review grants no execution permission.",
+        "Receipt/execution setup pending: review the required mode through execution setup. No receipt, provisioning or independent observation is established by BUSINESS review.",
+        "Execution setup pending: dedicated writer review, separate execution permission and worker startup. Continue to these checks after authority review; automatic completion is not yet enabled."
+      ]
+    }
+  }
+]
