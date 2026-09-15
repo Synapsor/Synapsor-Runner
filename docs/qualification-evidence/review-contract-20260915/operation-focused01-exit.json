@@ -1,0 +1,28 @@
+{
+  "name": "operation-focused01",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/boundary-job-operation-contract.test.ts",
+    "apps/runner/src/boundary-job-model.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=30000",
+    "--hookTimeout=120000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T06:17:32.927895+00:00",
+  "source_head": "e74883eb9926da5aee8231175a2e921175c4012b",
+  "source_diff_sha256": "a3e8f861a13720d928c1564c97c1293e2c603692255ff041f6a8827b20ce8426",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/test-environments/operation-focused01",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/review-contract-20260915/operation-focused01",
+  "source_manifest_sha256": "ffb1fb5fa8dc587425dc2cd3ba797a58b5b59dab0d647289a73460034ea0e33b",
+  "pid": 3699913,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-15T06:17:38.434766+00:00"
+}

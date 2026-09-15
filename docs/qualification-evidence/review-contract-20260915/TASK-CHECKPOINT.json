@@ -1,18 +1,27 @@
 {
-  "at": "2026-09-15T04:17:26.576632+00:00",
-  "status": "PAUSED_FOR_REQUIRED_SECONDARY_RAW_CAPTURES; MAINTENANCE_COMMITTED_DETERMINISTIC_ONLY",
-  "next": "Locate/copy/hash the four exact secondary planning replies and original initial/correction envelopes, then replay before implementing operation/schema/chooser changes. Do not substitute the deterministic maintenance correction for a provider observation.",
-  "owned_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915",
-  "provider_calls": 0,
-  "full_suite_launches": 0,
-  "focused_result": "maintenance-composed04:33 pass/281 name-filtered; maintenance-normal-regressions:181 pass/3 opt-in skips (two PostgreSQL, one live authoring model); both exit0. maintenance-types03 exit0.",
-  "preservation": "283535 original entries unchanged; accepted old package7569 entries unchanged",
-  "clean_starts": "207 immutable entries,104 rows each; no current primary decisions, no application open",
-  "product_tests": "a49d6127d512524294c1dbe47048e9344332e366",
-  "new_candidate": null,
-  "budget_elapsed_wall_minutes": 33.84,
-  "development_wall_deadline": "2026-09-15T06:43:36.380134+00:00",
-  "budget_reset": false,
-  "owned_resources": "No task-labelled database/container or public client was created. Focused test subprocesses exited; retained task-owned logs/state.",
-  "issue": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/review-contract-20260915/MISSING-SECONDARY-CAPTURES.md"
+  "at": "2026-09-15T07:26:15.542237+00:00",
+  "status": "ALL_STABLE_GATES_PASSED_FREEZE_NEXT",
+  "product_tests": "65395f6e87e26e25c8d1543ce7a6e2c373a1c997",
+  "maintenance": "a49d612",
+  "development_calls": 10,
+  "development_limit": 12,
+  "final_calls": 0,
+  "full_suite_launches": 1,
+  "source_changes_closed": true,
+  "new_issue": "remaining-receipt-review.md; primary devB blocked, no further sample/repair",
+  "next": "Commit current evidence checkpoint, freeze complete candidate, prepare primary A and run Resume then restart explicit Review. No final B retry.",
+  "originals": "283535 entries unchanged; one external predeclaration added under reviewer directory during task, recorded separately",
+  "owned_resources": "Five development and one PG gate containers all saved/stopped. Offline packaging runs; no public client or worker.",
+  "budget_deadlines": {
+    "development": "2026-09-15T08:29:45.157678+00:00",
+    "stable": "2026-09-15T08:41:26.089057+00:00"
+  },
+  "suite_pid": 3744837,
+  "suite_started_at": "2026-09-15T06:41:26.184503+00:00",
+  "source": "65395f6 committed product/tests; subsequent changes are evidence/harness only",
+  "suite_result": "6407passed/463skipped,309passed/21skippedfiles,exit0,sourceunchanged",
+  "offline_checks": {
+    "completed": 10,
+    "all_exit_zero": true
+  }
 }

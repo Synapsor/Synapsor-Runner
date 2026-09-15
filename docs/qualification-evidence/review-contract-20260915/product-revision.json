@@ -1,0 +1,7 @@
+{
+  "commit": "65395f6e87e26e25c8d1543ce7a6e2c373a1c997",
+  "test_revision": "65395f6e87e26e25c8d1543ce7a6e2c373a1c997",
+  "maintenance_product_tests": "a49d6127d512524294c1dbe47048e9344332e366",
+  "baseline": "9966b592e64e2a37d34f3c350e425ed796a6da72",
+  "source_prompt_schema": "current committed files; actual captures recorded separately"
+}

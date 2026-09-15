@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-15T07:22:32.169928+00:00",
+  "container": "synapsor-review-contract-tests-cef5b6d6",
+  "id": "271606b3c4ea54e27883c1331e85505c584354d6c79538243bf117a75f120db2",
+  "saved_before_stop": {
+    "container-before.json": "968c91ac7d9cfe1cedb9fcaecf4f69e479f5528f69fbd000e4ab47f47ac3cb61",
+    "postgres.log": "1f2b6c6d2d6dcd61bb057a82cd0e48b9c571e8ca7f267b4f23c73ca00f4b2b8c",
+    "source.dump": "f58b467a372fc1e3dfeef1a389436fac9a1aaed275be54264df873bde35b344b"
+  },
+  "directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/closure/test-postgres",
+  "exit_code": 0,
+  "running_after": false,
+  "removed": false
+}

@@ -1,0 +1,28 @@
+{
+  "name": "postgres-domain",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-counting-domain.test.ts",
+    "apps/runner/src/authoring-counting-freshness.test.ts",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=30000",
+    "--hookTimeout=120000"
+  ],
+  "owned_postgres_database_url_enabled": true,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T07:20:53.963897+00:00",
+  "source_head": "65395f6e87e26e25c8d1543ce7a6e2c373a1c997",
+  "source_diff_sha256": "c69c619ceb0babc79f44bb912266c714034f8e4257bdf8debbf8e7a876051206",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/test-environments/postgres-domain",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/review-contract-20260915/postgres-domain",
+  "source_manifest_sha256": "7d01c681716dc34f66c9d8e4ddf009262aa0b17975bc0865e3001d13f0f023f0",
+  "pid": 3819787,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T07:21:06.267052+00:00"
+}

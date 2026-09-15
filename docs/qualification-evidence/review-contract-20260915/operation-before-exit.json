@@ -1,0 +1,22 @@
+{
+  "name": "operation-before",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "tsx",
+    "docs/qualification-evidence/review-contract-20260915/replay-operation-before.mts"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T06:13:56.813788+00:00",
+  "source_head": "e74883eb9926da5aee8231175a2e921175c4012b",
+  "source_diff_sha256": "4e41b697da9566c110e164021be0d56817c527ad9ae55a0b12f082c134147146",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/test-environments/operation-before",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/review-contract-20260915/operation-before",
+  "source_manifest_sha256": "4dd157ddb6eb72e472544573ab17029d00c5e1a93b036088747ebc3ecc541fae",
+  "pid": 3692306,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T06:13:58.829514+00:00"
+}

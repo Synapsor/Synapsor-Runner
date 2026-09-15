@@ -8,7 +8,10 @@ run, label = sys.argv[1:3]
 assert run in plan['case_sources'] and label.replace('-', '').isalnum()
 development = '--development' in sys.argv
 R = Path(plan['owned_root'])
-if development: R /= 'development'
+lane = next((a.split('=',1)[1] for a in sys.argv if a.startswith('--development-lane=')), None)
+if development:
+    assert lane in ['terra','sol','sol-repaired','terra-repaired']
+    R = R / 'development' / lane
 R = R / 'runs' / run
 P = R / 'project'
 selected = plan['case_sources'][run]
@@ -47,7 +50,7 @@ result = {'at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'run':
           'completed_policy_reviews': resume.get('completed_policy_reviews', []),
           'pending': [k for k, v in resume.items() if k.startswith('pending_') and v is not None],
           'note': 'SQLite byte differences do not establish durable state changes. Pair with review-oracle table hashes and independent source readback.'}
-out = E / (run + '-' + label + '-project-difference.json')
+out = E / (run + '-' + (lane+'-' if development else '') + label + '-project-difference.json')
 with out.open('x') as f: json.dump(result, f, indent=2); f.write('\n')
 print(json.dumps({'run': run, 'changed_files': len(changes), 'unexpected': len(rejected), 'source_snapshots_unchanged': source_snapshots_unchanged, 'missing_original_conversation': len(missing_history)}))
 assert not rejected and source_snapshots_unchanged and not missing_history

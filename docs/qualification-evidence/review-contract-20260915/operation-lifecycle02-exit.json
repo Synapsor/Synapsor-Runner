@@ -1,0 +1,31 @@
+{
+  "name": "operation-lifecycle02",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/boundary-job-operation-contract.test.ts",
+    "apps/runner/src/boundary-job-model.test.ts",
+    "apps/runner/src/boundary-cli.test.ts",
+    "--testNamePattern",
+    "review operation|typed review-only|reviews without entering editors|replays both complete captured",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=30000",
+    "--hookTimeout=120000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T06:22:28.785832+00:00",
+  "source_head": "e74883eb9926da5aee8231175a2e921175c4012b",
+  "source_diff_sha256": "5d92b308f88a0343d9754b8dd32956e6106bfe75dfaf1d8a48fe37a5c31239a5",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/test-environments/operation-lifecycle02",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/review-contract-20260915/operation-lifecycle02",
+  "source_manifest_sha256": "7d01c681716dc34f66c9d8e4ddf009262aa0b17975bc0865e3001d13f0f023f0",
+  "pid": 3708608,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T06:22:50.918686+00:00"
+}

@@ -11,8 +11,12 @@ os.umask(0o077)
 E = Path(__file__).resolve().parent
 O = Path(json.loads((E / 'assignment-plan.json').read_text())['owned_root'])
 development = '--development' in sys.argv
-selected = next((a for a in sys.argv[1:] if a != '--development'), None)
-if development: O = O / 'development'
+lane = next((a.split('=',1)[1] for a in sys.argv if a.startswith('--development-lane=')), None)
+if lane: assert lane in ['terra','sol','terra-repaired','sol-repaired']
+selected = next((a for a in sys.argv[1:] if a != '--development' and not a.startswith('--development-lane=')), None)
+if development:
+    assert lane
+    O = O / 'development' / lane
 assert not (O / 'one-public-run.lock').exists()
 closure = O / 'closure'
 closure.mkdir(exist_ok=True)
@@ -28,7 +32,7 @@ for R in sorted((O / 'runs').iterdir()):
     name = connection['container']
     info = json.loads(subprocess.check_output(['docker', 'inspect', name]))[0]
     assert info['Id'] == connection['container_id']
-    assert info['Config']['Labels']['synapsor.qualification'] == connection['label'] == 'review-routing-20260915'
+    assert info['Config']['Labels']['synapsor.qualification'] == connection['label'] == 'review-contract-20260915'
     assert info['HostConfig']['NetworkMode'] == 'none'
     assert info['State']['Running']
     invocations = [json.loads(s) for s in ((R / 'public-invocations.jsonl').read_text() if (R / 'public-invocations.jsonl').exists() else '').splitlines()]
@@ -55,6 +59,6 @@ for R in sorted((O / 'runs').iterdir()):
 result = {'at': datetime.datetime.now(datetime.timezone.utc).isoformat(), 'records': records,
           'counts_note': 'Actual public CLI and provider invocations retained in each public-invocations.jsonl and meter/events.jsonl. Worker outcomes are recorded separately; this cleanup makes no execution-success claim.',
           'original_containers_touched': False, 'fixture_directories_removed': False}
-(E / ('development-owned-cleanup.json' if development else 'owned-cleanup-'+selected+'.json' if selected else 'owned-cleanup.json')).write_text(json.dumps(result, indent=2) + '\n')
+(E / (('development-'+lane+'-owned-cleanup.json') if development else 'owned-cleanup-'+selected+'.json' if selected else 'owned-cleanup.json')).write_text(json.dumps(result, indent=2) + '\n')
 (closure / 'owned-cleanup.json').write_text(json.dumps(result, indent=2) + '\n')
 print(json.dumps({'stopped': len(records), 'all_exits': [r['stop_exit'] for r in records], 'saved': str(closure)}))

@@ -1,0 +1,46 @@
+{
+  "at": "2026-09-15T06:13:56.614852+00:00",
+  "classification": "New development sol A first planner response; initial schema/parser refusal. Correction was blocked by harness stage ceiling; no second provider response exists.",
+  "raw_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/development/sol/runs/recovery-tournament-assisted/meter",
+  "request_sha256": "b469908ed8f8fb2955a3ef7a42a30184a80c2c4613790a241f31e460971c62a5",
+  "response_sha256": "da37507f667c56d860f544b841f8a681a174b7d6c5736f2cc236c4a011b7e065",
+  "argument_bytes": 556,
+  "actual_fields": {
+    "status": "str",
+    "operation": "str",
+    "read_mode": "str",
+    "action_mode": "str",
+    "action_outcome": "str",
+    "summary": "str"
+  },
+  "operation": "review_rules",
+  "read_mode": "reuse",
+  "action_mode": "reuse",
+  "action_outcome": "canonical existing outcome, string; not a null placeholder",
+  "masked_key": "operation (legal schema property omitted by diagnostic allowlist)",
+  "provider": "gpt-5.6-sol",
+  "settings": {
+    "store": false,
+    "reasoning": {
+      "effort": "low"
+    },
+    "tool_choice": {
+      "type": "function",
+      "name": "runner__plan_boundary_job"
+    },
+    "parallel_tool_calls": false,
+    "max_output_tokens": 4000,
+    "stream": true
+  },
+  "actual_authoring_calls": 2,
+  "authoring_call_kinds": [
+    "opening chat",
+    "planner"
+  ],
+  "catalog_requests": 2,
+  "correction": "harness-refused before transport; not another product failure",
+  "new_business_records": false,
+  "source_rows_unchanged": true,
+  "snapshot": "recovery-tournament-assisted-sol-baseline-stopped.json",
+  "snapshot_count_correction": "snapshot reports3 transport_attempts including first catalogue; actual authoring2. Original snapshot preserved."
+}

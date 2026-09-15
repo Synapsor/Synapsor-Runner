@@ -1,0 +1,9 @@
+{
+  "at": "2026-09-15T06:07:47.687064+00:00",
+  "original_invocation": "baseline-terminal.log",
+  "observation": "The normal product chooser made GET /v1/models before any authoring. Original meter counted it as transport attempt1; no planner request happened. CLI cancelled at the model list.",
+  "correction": "Owned copy of meter records catalog requests/responses separately; leaves original files/index1 intact. All actual authoring calls/corrections retain shared12 ceiling. Numeric capture ceiling accounts for previously reserved indices; does not reset history.",
+  "actual_authoring_calls": 0,
+  "catalog_requests": 1,
+  "product_change": false
+}

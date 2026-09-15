@@ -2,7 +2,7 @@ from pathlib import Path
 import os,subprocess,json
 os.umask(0o077)
 repo=Path(__file__).resolve().parents[3];e=Path(__file__).resolve().parent
-owned=Path("/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915")
+owned=Path("/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915")
 frozen=owned/'frozen';frozen.mkdir(exist_ok=True)
 (frozen/'freeze-repair.mjs').write_bytes((e/'freeze-repair.mjs').read_bytes())
 (frozen/'product-revision.json').write_bytes((e/'product-revision.json').read_bytes())

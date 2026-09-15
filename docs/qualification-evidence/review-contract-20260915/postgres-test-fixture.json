@@ -1,0 +1,12 @@
+{
+  "name": "synapsor-review-contract-tests-cef5b6d6",
+  "id": "271606b3c4ea54e27883c1331e85505c584354d6c79538243bf117a75f120db2",
+  "label": "review-contract-20260915",
+  "image": "sha256:1edc8e87e53194e0cc8006c4e9df9b626c6c72cb43ad3385f0f34af7922065b1",
+  "network": "none",
+  "database": "policy_reconciliation_tests",
+  "socket": "/tmp/synapsor-review-contract-pg-BDHZrC/socket",
+  "private_configuration": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/private/live-postgres.json",
+  "ready_at": "2026-09-15T06:35:06.201Z",
+  "credentials": "only scoped SYNAPSOR_TEST_POSTGRES_URL, no provider environment"
+}

@@ -1,0 +1,42 @@
+{
+  "at": "2026-09-15T06:46:04.887727+00:00",
+  "packages_and_scripts_unchanged": true,
+  "records": [
+    {
+      "path": "packages/proposal-store/src/sqlite-proposal-methods.ts",
+      "git_blob": "eefbf7500bfb50eeb2b22a9160f29e26b1ac4890",
+      "sha256": "a06b7600b2888d20438223c777f1cd364b94b5973d741bd4c29939e75d6b305d",
+      "unchanged_since_baseline": true
+    },
+    {
+      "path": "apps/runner/src/authoring-counting-review.ts",
+      "git_blob": "e6a7b0734cbbcc0dce6e2bdb33a5a89cbab8ff59",
+      "sha256": "986a55f1646e8d1f870cc313bfe8c57369a64e36b87e7704f90644d6127462a7",
+      "unchanged_since_baseline": true
+    },
+    {
+      "path": "apps/runner/src/authoring-counting-domain.ts",
+      "git_blob": "e9141999de305e9e857a89a4f33d666ee80e8e13",
+      "sha256": "b695a9ce3a2240efeaa2ae867409f7172c717dcdb515401517a38881c84e6a9d",
+      "unchanged_since_baseline": true
+    },
+    {
+      "path": "apps/runner/src/action-policy-scope.ts",
+      "git_blob": "e09dd6106f6874ffcbc495c97c7735a8ef515473",
+      "sha256": "fc9ce83986c2c283ab6ccabf5ef7e8c3919bdd95f53eee2815b4cfa9f527b33e",
+      "unchanged_since_baseline": true
+    },
+    {
+      "path": "apps/runner/src/local-test-runtime-identity.ts",
+      "git_blob": "acdb529df5d3980f771961a3b907752ed7bb8ec6",
+      "sha256": "35197c269ed260bf28e5a521923305bee3f06499e8b66d4874cd3efefd50c708",
+      "unchanged_since_baseline": true
+    },
+    {
+      "path": "apps/runner/src/scoped-explore.ts",
+      "git_blob": "b23f0a2b2265a0bedb3d98870fe776eee7d26705",
+      "sha256": "57b27345428d59ed6d2978bcf73adb7a684a6179cb7a35f544b68ee2b897c10d",
+      "unchanged_since_baseline": true
+    }
+  ]
+}

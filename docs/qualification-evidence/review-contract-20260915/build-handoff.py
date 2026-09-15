@@ -22,10 +22,10 @@ for R in sorted((O/'runs').iterdir()):
   elif p.is_file():shutil.copy2(p,target/name)
 shutil.copytree(O/'closure',D/'closure')
 shutil.copytree(O/'clean-starts',D/'clean-starts')
-shutil.copytree(O/'race-reproductions',D/'race-reproductions')
+if (O/'race-reproductions').exists():shutil.copytree(O/'race-reproductions',D/'race-reproductions')
 shutil.copytree(O/'development',D/'development')
 (D/'original-captures').mkdir()
-shutil.copy2(O/'private/exact-routing-captures.json', D/'original-captures/exact-routing-captures.json')
+for source in (O/'private').glob('*capture*.json'):shutil.copy2(source,D/'original-captures'/source.name)
 if (O/'fixture-failures').exists():shutil.copytree(O/'fixture-failures',D/'fixture-failures')
 for name in ['final-budget.json','preservation-start.json']:
  if (O/name).exists():shutil.copy2(O/name,D/name)
@@ -33,7 +33,7 @@ for name in ['final-budget.json','preservation-start.json']:
 
 Delivery commit {commit}. Start with evidence/FINAL-REPORT.md, evidence/REVIEWER-HANDOFF.md and evidence/SCORECARD.json. This is implementer-owned evidence pending independent review. Preserved failures are not replaced by later passes. The candidate archive has its complete file/mode/symlink manifest; repository-delivery.tar contains the committed source/tests/reports. Public captures, owned project checkpoints and matching source dumps are included separately.
 
-Do not run saved projects in place. Restore whole new owned directories and matching dumps through the recorded logical-path isolation and effective-store preflight. Private synthetic identities and source rows are evidence for the local reviewer only, not material to commit or send to an authoring provider. Provider credentials are not included. clean-starts contains the untouched A/B project and matching source snapshots from before the primary trial. Development evidence is separately labelled and must not be used as B starting decisions. Claude owns the already-predeclared secondary model run; we did not execute it. No worker or activation belongs to this review-only task. Historical Stage A is artifact-specific; original Stage B remains NOT PASSED.
+Do not run saved projects in place. Restore whole new owned directories and matching dumps through the recorded logical-path isolation and effective-store preflight. Private synthetic identities and source rows are evidence for the local reviewer only, not material to commit or send to an authoring provider. Provider credentials are not included. clean-starts contains the untouched A/B project and matching source snapshots from before the primary trial. Development evidence is separately labelled and must not be used as B starting decisions. Claude owns the already-predeclared secondary model run; we did not execute that independent lane; our bounded development smoke is separately labelled. No worker or activation belongs to this review-only task. Historical Stage A is artifact-specific; original Stage B remains NOT PASSED.
 ''')
 records=[]
 for p in sorted(D.rglob('*')):

@@ -1,0 +1,94 @@
+{
+  "at": "2026-09-15T06:58:08.666707+00:00",
+  "stopped": 5,
+  "removed": 0,
+  "all_saved_before_stop": true,
+  "records": [
+    {
+      "run": "recovery-tournament-assisted",
+      "container": "synapsor-review-contract-recovery-tournament-assisted-b4e53817",
+      "container_id": "c87e47acb4f38411c47e1a0b412793ed9bc7de6cd2bf0b5d8dc1296706ba3e9d",
+      "label": "review-contract-20260915",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "7664e47ff008f34b89eb8c5461be045666f3d57d4d974f300caa5e04029c0be5",
+        "postgres.log": "5b45d9e912cd3eb4c825b28503e258319ce9d346f9e0d07d384bdfecd76a9c21",
+        "source.dump": "f81e120ff8024e27a6f210f7a32e16e96d232af49a7409ca88d68f68bd2b8840"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/development/sol/closure/recovery-tournament-assisted",
+      "removed": false
+    },
+    {
+      "run": "counting-wording-control",
+      "container": "synapsor-review-contract-counting-wording-control-458b6516",
+      "container_id": "cd6d369c84ee7da683c4b9d2e3b8ce79140234fdaaa9420a5f600fef23f2cdd3",
+      "label": "review-contract-20260915",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "059d04dd9894983e1e097b910f873a737dea798a0991fb70e796bed346841669",
+        "postgres.log": "9bbaf1919192446682a3396c3a2ec02215ba31dc53227967453687e6a36b602c",
+        "source.dump": "f81e120ff8024e27a6f210f7a32e16e96d232af49a7409ca88d68f68bd2b8840"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/development/terra/closure/counting-wording-control",
+      "removed": false
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "container": "synapsor-review-contract-recovery-tournament-assisted-c7715d81",
+      "container_id": "4a4f7f6cc98364a277dd08f632e678b9eac6a5844d6ba4ecffbf816ef6c3fff2",
+      "label": "review-contract-20260915",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "3cd469500490f67af5eb75bad7e1ae4ecd0ac94ece5c83511251f19860325e4c",
+        "postgres.log": "c238fbb630b667ec21203a9df605a30da4b559f1e87657f5629f31bf3572acee",
+        "source.dump": "37f9b971a10787346e20a1bc1efc52d93e7c9941decaf23c4c25a4d656c52f92"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/development/terra/closure/recovery-tournament-assisted",
+      "removed": false
+    },
+    {
+      "run": "counting-wording-control",
+      "container": "synapsor-review-contract-counting-wording-control-6dafb24d",
+      "container_id": "6c189642c6cfdf4f271ddce313a545d60efa2e785630fb4b3afe37c3210f0298",
+      "label": "review-contract-20260915",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "4528e225b4e59e6d812f85edd366ca0861b6bdaa9476a90d9fcf24159266688b",
+        "postgres.log": "21441014f15c1bcf8005f9f69721642b535e715af1729286cb9016b0bedd3895",
+        "source.dump": "11042258c95ab9c82596ff6f329ee9b52c3615ce8667a4250f9aac38d71b3d74"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/development/sol-repaired/closure/counting-wording-control",
+      "removed": false
+    },
+    {
+      "run": "recovery-tournament-assisted",
+      "container": "synapsor-review-contract-recovery-tournament-assisted-6ebcd372",
+      "container_id": "a8ab2fabdd07a29695b28bb3fdf054ddfd903a8a7ca37706c4e9ec078b5de56d",
+      "label": "review-contract-20260915",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "1086fb8ecae4c3f7392303c0f2e0573e3177f1b9fed3e9b52c06644af5549b4e",
+        "postgres.log": "1cc2e41170690dd5bbf745c1f55686b894df28283df070d69a76f7ecac8a7040",
+        "source.dump": "4d951b4ad19528eb8b8237296642f9390caf6fabb69e454b031ab654aead4530"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/development/sol-repaired/closure/recovery-tournament-assisted",
+      "removed": false
+    }
+  ],
+  "gate_container": "still running; owned explicitPG tests have not started; not eligible for cleanup yet"
+}

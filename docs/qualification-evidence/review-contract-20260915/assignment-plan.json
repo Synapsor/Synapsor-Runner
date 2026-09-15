@@ -35,8 +35,8 @@
   "frozen_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/frozen",
   "previous_artifact_tree": "9faa87dd7e9f22a8ed8e2e8fe41317b6ea47d131465ec1bccac6017b98230de8",
   "scope": "Planning operation/schema agreement, model-choice routing, exact maintained source-counter responsibility only; no counting/runtime changes",
-  "status": "PAUSED_FOR_REQUIRED_SECONDARY_RAW_CAPTURES; MAINTENANCE_COMMITTED_DETERMINISTIC_ONLY",
-  "next_step": "Locate/copy/hash the four exact secondary planning replies and original initial/correction envelopes, then replay before implementing operation/schema/chooser changes. Do not substitute the deterministic maintenance correction for a provider observation.",
+  "status": "STABLE_GATES_PASSED_FREEZE_NEXT",
+  "next_step": "Finish remaining predeclared sol B development capture without expanding receipt repair; stable full suite/types/10offline/PG; freeze and final primary A/restart. Final primary B remains blocked by preserved new receipt issue, not sampled again.",
   "budgets": {
     "development_minutes": 180,
     "fixture_minutes": 40,
@@ -51,7 +51,18 @@
     "final_confirmation_minutes": 75,
     "closure_minutes": 25
   },
-  "budget_amendments": [],
+  "budget_amendments": [
+    {
+      "at": "2026-09-15T06:05:21.931685+00:00",
+      "basis": "User clarified historical raw envelopes never existed and authorized recording new bounded development captures; resume remaining active development allocation, do not reset used time/calls/tests.",
+      "paused_from": "2026-09-15T04:19:13.154141+00:00",
+      "paused_until": "2026-09-15T06:05:21.931685+00:00",
+      "previous_wall_deadline": "2026-09-15T06:43:36.380134+00:00",
+      "resumed_development_deadline": "2026-09-15T08:29:45.157678+00:00",
+      "development_provider_ceiling_unchanged": 12,
+      "development_calls_already_used": 0
+    }
+  ],
   "development_models": [
     "openai/gpt-5.6-terra",
     "openai/gpt-5.6-sol"
@@ -74,8 +85,32 @@
   "independent_report": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/xmodel-secondary-20260915/REVIEW.md",
   "route_correction": "A matched planning route. Secondary B used chooser/attachment/free-form planner; it is not an explicit-Review comparison.",
   "provider_calls_used": {
-    "development": 0,
+    "development": 10,
     "final": 0
   },
-  "product_tests": "a49d6127d512524294c1dbe47048e9344332e366"
+  "product_tests": "a49d6127d512524294c1dbe47048e9344332e366",
+  "development_deadline": "2026-09-15T08:29:45.157678+00:00",
+  "development_capture_allocation": {
+    "total": 12,
+    "initial_sol_A_ceiling": 2,
+    "baseline_B": "Do not repeat identical failure solely for volume; add only if A does not establish exact schema/parser shape. Historical four responses do not exist.",
+    "remaining": "shared at most10 for both fixed models and explicit Review/ordinary recheck paths; stop substantive failure; no reset"
+  },
+  "development_stage_call_ceiling": 12,
+  "development_stage": "post-repair-matched-Resume-A-and-explicit-Review-B",
+  "development_continuations": [
+    "sol-repaired/A chooser then Resume exact unchanged recheck",
+    "terra/A chooser then Resume exact unchanged recheck",
+    "terra/B chooser then explicit Review current attachment",
+    "sol-repaired/B explicit Review only if within shared12"
+  ],
+  "development_outcomes": {
+    "sol_A": "BUSINESS complete,2calls",
+    "terra_A": "BUSINESS complete,2calls",
+    "terra_B": "new receipt classification block after2calls; stopped, no repair",
+    "sol_B": "BUSINESS complete after1precise counting-support correction,2calls; separate development evidence"
+  },
+  "stable_verification_started_at": "2026-09-15T06:41:26.089057+00:00",
+  "stable_verification_deadline": "2026-09-15T08:41:26.089057+00:00",
+  "product_commit": "65395f6e87e26e25c8d1543ce7a6e2c373a1c997"
 }

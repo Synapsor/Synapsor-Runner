@@ -1,0 +1,64 @@
+{
+  "classification": "Deterministic real adapter/parser replay of the exact newly captured first response. The same first response is replayed for the bounded correction; it is NOT a captured second response.",
+  "actual_provider_calls": 0,
+  "mock_transport_calls": 2,
+  "diagnostic": {
+    "version": 1,
+    "expected_tool": "runner.plan_boundary_job",
+    "context_digest": "sha256:239072c10652c7707a0f28fae1e1c2267b7f43e64b0c867382b7aab79d25e83e",
+    "attempts": [
+      {
+        "attempt": 1,
+        "phase": "initial",
+        "category": "contract_validation",
+        "code": "PLANNING_CONTRACT_INVALID",
+        "message": "Review-only routing cannot contain a business edit. Clarify Review versus Edit; do not drop the requested change.",
+        "response": {
+          "http_status": 200,
+          "status": "completed",
+          "stop_reason": "unavailable_or_other",
+          "incomplete_reason": "unavailable_or_other",
+          "tool_calls": 1,
+          "expected_tool_calls": 1,
+          "argument_bytes": 556,
+          "field_names": [
+            "<unexpected-key>",
+            "action_mode",
+            "action_outcome",
+            "read_mode",
+            "status",
+            "summary"
+          ]
+        }
+      },
+      {
+        "attempt": 2,
+        "phase": "correction",
+        "category": "contract_validation",
+        "code": "PLANNING_CONTRACT_INVALID",
+        "message": "Review-only routing cannot contain a business edit. Clarify Review versus Edit; do not drop the requested change.",
+        "response": {
+          "http_status": 200,
+          "status": "completed",
+          "stop_reason": "unavailable_or_other",
+          "incomplete_reason": "unavailable_or_other",
+          "tool_calls": 1,
+          "expected_tool_calls": 1,
+          "argument_bytes": 556,
+          "field_names": [
+            "<unexpected-key>",
+            "action_mode",
+            "action_outcome",
+            "read_mode",
+            "status",
+            "summary"
+          ]
+        }
+      }
+    ],
+    "model_requests": 2,
+    "duration_ms": 7,
+    "authority_changed": false,
+    "source_database_changed": false
+  }
+}

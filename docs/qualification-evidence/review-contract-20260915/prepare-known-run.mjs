@@ -5,7 +5,7 @@ import {fileURLToPath} from 'node:url';import {createHash,randomUUID} from 'node
 import {createRequire} from 'node:module';import {execFileSync,spawnSync} from 'node:child_process';import assert from 'node:assert/strict';import {setTimeout as delay} from 'node:timers/promises';
 process.umask(0o077);
 const E=path.dirname(fileURLToPath(import.meta.url)),plan=JSON.parse(await fs.readFile(path.join(E,'assignment-plan.json'))),lane=process.argv.find(a=>a.startsWith('--development-lane='))?.split('=')[1],O=process.argv.includes('--development')?path.join(plan.owned_root,'development',lane??''):plan.owned_root;
-assert(!process.argv.includes('--development') || ['terra','sol'].includes(lane),'Declare the development evidence lane; model choice stays in the public UI');
+assert(!process.argv.includes('--development') || /^(terra|sol)(-repaired)?$/.test(lane??''),'Declare the development evidence lane; model choice stays in the public UI');
 const runId=process.argv[2],selected=plan.case_sources[runId];assert(selected);
 const caseId=selected.case,checkpoint=selected.checkpoint,original=path.join(plan.original_cases_root,caseId),owned=path.join(O,'runs',runId),previousRun=path.join(selected.root,'runs',selected.run);
 const checkpointRoot=selected.checkpoint_root??path.join(previousRun,'checkpoints',checkpoint);

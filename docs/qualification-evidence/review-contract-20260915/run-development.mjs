@@ -5,7 +5,7 @@ import {parseEnv} from 'node:util';import {spawn,spawnSync,execFileSync} from 'n
 import {qualificationSandboxArguments,qualificationEnvironment} from '../../../scripts/qualification-sandbox.mjs';
 
 process.umask(0o077);
-const E=path.dirname(fileURLToPath(import.meta.url)),plan=JSON.parse(await fs.readFile(path.join(E,'assignment-plan.json'))),lane=process.argv[2],O=path.join(plan.owned_root,'development',lane);assert(['terra','sol'].includes(lane));
+const E=path.dirname(fileURLToPath(import.meta.url)),plan=JSON.parse(await fs.readFile(path.join(E,'assignment-plan.json'))),lane=process.argv[2],O=path.join(plan.owned_root,'development',lane);assert(/^(terra|sol)(-repaired)?$/.test(lane??''));
 const [runId,...args]=process.argv.slice(3);assert(/^(counting-wording-control|recovery-tournament-(original|assisted)|recovery-software|edit-tournament|fresh-(tournament|software))$/.test(runId));
 assert(process.stdin.isTTY&&process.stdout.isTTY);assert(!args.some(a=>/postgres(?:ql)?:\/\/|sk-|--api-key/.test(a)));
 const owned=path.join(O,'runs',runId),statePath=path.join(owned,'run-state.json'),state=JSON.parse(await fs.readFile(statePath));
@@ -21,7 +21,7 @@ const log=x=>fs.appendFile(path.join(owned,'public-invocations.jsonl'),JSON.stri
 try {
  const meter=path.join(owned,'meter'),meterPath=path.join(meter,'plan.json');
  const secrets=parseEnv(await fs.readFile('/home/sandesh-tiwari/Desktop/Customer Service With Synapsor Runner/.env','utf8'));assert(secrets.OPENAI_API_KEY);
- const env=qualificationEnvironment({...connection.env,OPENAI_API_KEY:secrets.OPENAI_API_KEY,NO_COLOR:'1',QUALIFICATION_MOUNT_PLAN:path.join(owned,'mount-plan.json'),QUALIFICATION_PROVIDER_METER:meter,NODE_OPTIONS:`--import=${pathToFileURL(path.join(H,'provider-meter.mjs')).href}`});
+ const env=qualificationEnvironment({...connection.env,OPENAI_API_KEY:secrets.OPENAI_API_KEY,NO_COLOR:'1',QUALIFICATION_MOUNT_PLAN:path.join(owned,'mount-plan.json'),QUALIFICATION_PROVIDER_METER:meter,NODE_OPTIONS:`--import=${pathToFileURL(path.join(E,'provider-meter.mjs')).href}`});
  const mounts=state.checkpoint?[{logical:state.logicalCase,physical:owned}]:[];
  const sandbox=await qualificationSandboxArguments({ownedRoot:owned,mounts,cwd:state.logicalProject,home:path.join(owned,'home')});
  sandbox.splice(sandbox.length-1,0,'--ro-bind',connection.socket,connection.logicalSocket,'--bind',path.join(owned,'var-tmp'),'/var/tmp','--setenv','NO_COLOR','1');
@@ -31,11 +31,13 @@ try {
  const pre=spawnSync('bwrap',[...sandbox,process.execPath,path.join(H,'storage-preflight.mjs'),...args],{env:preEnv,encoding:'utf8'});
  await log({event:'preflight',args,code:pre.status,stdout:pre.stdout,stderr:pre.stderr});assert.equal(pre.status,0,'Effective-store preflight refused before writable application open');
  let used=0;
- for(const modelLane of ['terra','sol']) for(const id of Object.keys(plan.case_sources)) used+=(await fs.readFile(path.join(plan.owned_root,'development',modelLane,'runs',id,'meter/events.jsonl'),'utf8').catch(()=>'')).split('\n').filter(Boolean).map(JSON.parse).filter(x=>x.type==='transport_attempt').length;
- assert(used<plan.budgets.development_provider_calls,'Development provider ceiling exhausted; no reset');
- const own=(await fs.readFile(path.join(meter,'events.jsonl'),'utf8').catch(()=>'')).split('\n').filter(Boolean).map(JSON.parse).filter(x=>x.type==='transport_attempt').length;
- const meterPlan={started_at:plan.started_at,deadline:new Date(Date.parse(plan.started_at)+plan.budgets.development_minutes*60000).toISOString(),
- maximum_attempts:own+plan.budgets.development_provider_calls-used,maximum_case_attempts:plan.budgets.development_provider_calls,hosts:['api.openai.com'],capture_sanitized_inputs:true,private_values_file:path.join(owned,'private/forbidden-provider-values.json')};
+ for(const modelLane of (await fs.readdir(path.join(plan.owned_root,'development'))).filter(name=>/^(terra|sol)(-repaired)?$/.test(name))) for(const id of Object.keys(plan.case_sources)) used+=(await fs.readFile(path.join(plan.owned_root,'development',modelLane,'runs',id,'meter/events.jsonl'),'utf8').catch(()=>'')).split('\n').filter(Boolean).map(JSON.parse).filter(x=>x.type==='transport_attempt'&&x.pathname!=='/v1/models').length;
+ const stageCeiling=Math.min(plan.budgets.development_provider_calls,plan.development_stage_call_ceiling??plan.budgets.development_provider_calls);
+ assert(used<stageCeiling,'Development provider ceiling exhausted; no reset');
+ const own=(await fs.readFile(path.join(meter,'events.jsonl'),'utf8').catch(()=>'')).split('\n').filter(Boolean).map(JSON.parse).filter(x=>x.type==='transport_attempt'&&x.pathname!=='/v1/models').length;
+ const reservedSequence=Math.max(0,...(await fs.readdir(meter)).flatMap(name=>/^attempt-\d+\.json$/.test(name)?[Number(name.slice(8,-5))]:[]));
+ const meterPlan={started_at:plan.started_at,deadline:plan.development_deadline??new Date(Date.parse(plan.started_at)+plan.budgets.development_minutes*60000).toISOString(),
+ maximum_attempts:reservedSequence+stageCeiling-used,maximum_case_attempts:plan.budgets.development_provider_calls,hosts:['api.openai.com'],capture_sanitized_inputs:true,private_values_file:path.join(owned,'private/forbidden-provider-values.json')};
  await fs.writeFile(meterPath,JSON.stringify(meterPlan,null,2)+'\n');
  const invocationDeadline=new Date(Math.min(Date.parse(meterPlan.deadline),Date.now()+600000)).toISOString();
  await log({event:'start',authoring:true,args,lane,model_selection:'ordinary public chooser; directory lane does not select transport',development_source:sourceIdentity,phase:state.phase,deadline:meterPlan.deadline,invocation_deadline:invocationDeadline,maximum_provider_attempts:meterPlan.maximum_attempts,environment_names:Object.keys(env).sort()});

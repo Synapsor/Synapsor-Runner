@@ -1,7 +1,41 @@
 {
-  "at": "2026-09-15T04:17:26.576632+00:00",
-  "product_tests": "a49d6127d512524294c1dbe47048e9344332e366",
+  "at": "2026-09-15T07:23:35.451743+00:00",
+  "product_tests": {
+    "commit": "65395f6e87e26e25c8d1543ce7a6e2c373a1c997",
+    "test_revision": "65395f6e87e26e25c8d1543ce7a6e2c373a1c997",
+    "maintenance_product_tests": "a49d6127d512524294c1dbe47048e9344332e366",
+    "baseline": "9966b592e64e2a37d34f3c350e425ed796a6da72",
+    "source_prompt_schema": "current committed files; actual captures recorded separately"
+  },
   "runs": [
+    {
+      "run": "combined-final",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/boundary-cli.test.ts",
+        "apps/runner/src/boundary-job-model.test.ts",
+        "apps/runner/src/boundary-job-operation-contract.test.ts",
+        "apps/runner/src/authoring-counter-maintenance-review.test.ts",
+        "apps/runner/src/authoring-policy-coverage.test.ts",
+        "apps/runner/src/authoring-counting-positive.test.ts",
+        "apps/runner/src/authoring-mixed-counting.test.ts",
+        "apps/runner/src/authoring-counting-freshness.test.ts",
+        "apps/runner/src/authoring-counting-domain.test.ts",
+        "apps/runner/src/authoring-review-readiness.test.ts",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=30000",
+        "--hookTimeout=120000"
+      ],
+      "result": "docs/qualification-evidence/review-contract-20260915/combined-final-exit.json",
+      "log": "docs/qualification-evidence/review-contract-20260915/combined-final.log"
+    },
     {
       "run": "focused-types01",
       "exit_code": 1,
@@ -11,7 +45,8 @@
         "pnpm",
         "typecheck"
       ],
-      "result": "docs/qualification-evidence/review-contract-20260915/focused-types01-exit.json"
+      "result": "docs/qualification-evidence/review-contract-20260915/focused-types01-exit.json",
+      "log": "docs/qualification-evidence/review-contract-20260915/focused-types01.log"
     },
     {
       "run": "focused-types02",
@@ -22,7 +57,8 @@
         "pnpm",
         "typecheck"
       ],
-      "result": "docs/qualification-evidence/review-contract-20260915/focused-types02-exit.json"
+      "result": "docs/qualification-evidence/review-contract-20260915/focused-types02-exit.json",
+      "log": "docs/qualification-evidence/review-contract-20260915/focused-types02.log"
     },
     {
       "run": "maintenance-after",
@@ -35,7 +71,8 @@
         "tsx",
         "docs/qualification-evidence/review-contract-20260915/replay-maintenance-after.mts"
       ],
-      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-after-exit.json"
+      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-after-exit.json",
+      "log": "docs/qualification-evidence/review-contract-20260915/maintenance-after.log"
     },
     {
       "run": "maintenance-before",
@@ -48,7 +85,8 @@
         "tsx",
         "docs/qualification-evidence/review-contract-20260915/replay-maintenance-before.mts"
       ],
-      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-before-exit.json"
+      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-before-exit.json",
+      "log": "docs/qualification-evidence/review-contract-20260915/maintenance-before.log"
     },
     {
       "run": "maintenance-composed03",
@@ -71,7 +109,8 @@
         "--testTimeout=30000",
         "--hookTimeout=120000"
       ],
-      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-composed03-exit.json"
+      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-composed03-exit.json",
+      "log": "docs/qualification-evidence/review-contract-20260915/maintenance-composed03.log"
     },
     {
       "run": "maintenance-composed04",
@@ -92,7 +131,8 @@
         "--testTimeout=30000",
         "--hookTimeout=120000"
       ],
-      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-composed04-exit.json"
+      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-composed04-exit.json",
+      "log": "docs/qualification-evidence/review-contract-20260915/maintenance-composed04.log"
     },
     {
       "run": "maintenance-focused01",
@@ -112,7 +152,8 @@
         "--testTimeout=30000",
         "--hookTimeout=120000"
       ],
-      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-focused01-exit.json"
+      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-focused01-exit.json",
+      "log": "docs/qualification-evidence/review-contract-20260915/maintenance-focused01.log"
     },
     {
       "run": "maintenance-focused02",
@@ -132,7 +173,8 @@
         "--testTimeout=30000",
         "--hookTimeout=120000"
       ],
-      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-focused02-exit.json"
+      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-focused02-exit.json",
+      "log": "docs/qualification-evidence/review-contract-20260915/maintenance-focused02.log"
     },
     {
       "run": "maintenance-lifecycle01",
@@ -152,7 +194,8 @@
         "--testTimeout=30000",
         "--hookTimeout=120000"
       ],
-      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-lifecycle01-exit.json"
+      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-lifecycle01-exit.json",
+      "log": "docs/qualification-evidence/review-contract-20260915/maintenance-lifecycle01.log"
     },
     {
       "run": "maintenance-normal-regressions",
@@ -177,7 +220,8 @@
         "--testTimeout=30000",
         "--hookTimeout=120000"
       ],
-      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-normal-regressions-exit.json"
+      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-normal-regressions-exit.json",
+      "log": "docs/qualification-evidence/review-contract-20260915/maintenance-normal-regressions.log"
     },
     {
       "run": "maintenance-types03",
@@ -188,13 +232,187 @@
         "pnpm",
         "typecheck"
       ],
-      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-types03-exit.json"
+      "result": "docs/qualification-evidence/review-contract-20260915/maintenance-types03-exit.json",
+      "log": "docs/qualification-evidence/review-contract-20260915/maintenance-types03.log"
+    },
+    {
+      "run": "operation-before",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "tsx",
+        "docs/qualification-evidence/review-contract-20260915/replay-operation-before.mts"
+      ],
+      "result": "docs/qualification-evidence/review-contract-20260915/operation-before-exit.json",
+      "log": "docs/qualification-evidence/review-contract-20260915/operation-before.log"
+    },
+    {
+      "run": "operation-focused01",
+      "exit_code": 1,
+      "source_unchanged": true,
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/boundary-job-operation-contract.test.ts",
+        "apps/runner/src/boundary-job-model.test.ts",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=30000",
+        "--hookTimeout=120000"
+      ],
+      "result": "docs/qualification-evidence/review-contract-20260915/operation-focused01-exit.json",
+      "log": "docs/qualification-evidence/review-contract-20260915/operation-focused01.log"
+    },
+    {
+      "run": "operation-lifecycle01",
+      "exit_code": 1,
+      "source_unchanged": true,
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/boundary-job-operation-contract.test.ts",
+        "apps/runner/src/boundary-job-model.test.ts",
+        "apps/runner/src/boundary-cli.test.ts",
+        "--testNamePattern",
+        "review operation|typed review-only|reviews without entering editors|replays both complete captured",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=30000",
+        "--hookTimeout=120000"
+      ],
+      "result": "docs/qualification-evidence/review-contract-20260915/operation-lifecycle01-exit.json",
+      "log": "docs/qualification-evidence/review-contract-20260915/operation-lifecycle01.log"
+    },
+    {
+      "run": "operation-lifecycle02",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/boundary-job-operation-contract.test.ts",
+        "apps/runner/src/boundary-job-model.test.ts",
+        "apps/runner/src/boundary-cli.test.ts",
+        "--testNamePattern",
+        "review operation|typed review-only|reviews without entering editors|replays both complete captured",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=30000",
+        "--hookTimeout=120000"
+      ],
+      "result": "docs/qualification-evidence/review-contract-20260915/operation-lifecycle02-exit.json",
+      "log": "docs/qualification-evidence/review-contract-20260915/operation-lifecycle02.log"
+    },
+    {
+      "run": "operation-types01",
+      "exit_code": 1,
+      "source_unchanged": true,
+      "command": [
+        "corepack",
+        "pnpm",
+        "typecheck"
+      ],
+      "result": "docs/qualification-evidence/review-contract-20260915/operation-types01-exit.json",
+      "log": "docs/qualification-evidence/review-contract-20260915/operation-types01.log"
+    },
+    {
+      "run": "operation-types02",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "command": [
+        "corepack",
+        "pnpm",
+        "typecheck"
+      ],
+      "result": "docs/qualification-evidence/review-contract-20260915/operation-types02-exit.json",
+      "log": "docs/qualification-evidence/review-contract-20260915/operation-types02.log"
+    },
+    {
+      "run": "postgres-domain",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/authoring-counting-domain.test.ts",
+        "apps/runner/src/authoring-counting-freshness.test.ts",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=30000",
+        "--hookTimeout=120000"
+      ],
+      "result": "docs/qualification-evidence/review-contract-20260915/postgres-domain-exit.json",
+      "log": "docs/qualification-evidence/review-contract-20260915/postgres-domain.log"
+    },
+    {
+      "run": "postgres-review-recovery",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/control-policy-authority-codec.test.ts",
+        "--testNamePattern",
+        "postgres validated operator policy transactions.*keeps Action recovery review available with unavailable Read authority:",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=30000",
+        "--hookTimeout=120000"
+      ],
+      "result": "docs/qualification-evidence/review-contract-20260915/postgres-review-recovery-exit.json",
+      "log": "docs/qualification-evidence/review-contract-20260915/postgres-review-recovery.log"
+    },
+    {
+      "run": "stable-full",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=30000",
+        "--hookTimeout=120000"
+      ],
+      "result": "docs/qualification-evidence/review-contract-20260915/stable-full-exit.json",
+      "log": "docs/qualification-evidence/review-contract-20260915/stable-full.log"
+    },
+    {
+      "run": "stable-types",
+      "exit_code": 0,
+      "source_unchanged": true,
+      "command": [
+        "corepack",
+        "pnpm",
+        "typecheck"
+      ],
+      "result": "docs/qualification-evidence/review-contract-20260915/stable-types-exit.json",
+      "log": "docs/qualification-evidence/review-contract-20260915/stable-types.log"
     }
   ],
-  "full_suite_launches": 0,
-  "provider_calls": {
-    "development": 0,
-    "final": 0
-  },
-  "new_installed_candidate": null
+  "offline": "offline-package-plan-attempt1.json",
+  "captures": "development-results.json",
+  "new_blocker": "remaining-receipt-review.json",
+  "historical_missing_envelopes": "MISSING-SECONDARY-CAPTURES.md (resolved by user clarification; new captures separately labelled)"
 }

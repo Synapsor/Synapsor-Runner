@@ -1,0 +1,36 @@
+{
+  "at": "2026-09-15T06:42:32.725797+00:00",
+  "run": "counting-wording-control",
+  "label": "receipt-blocked",
+  "classification": "development",
+  "changes": [
+    {
+      "path": ".synapsor/boundary-authoring/policy-sources/a6d8098e-7f74-4c80-bcc2-728ba936ef7a.json",
+      "before_sha256": "b590d0b748e1e754115945c148e43c87e48e6a1c06f7b602fd8c1fcda6629e0f",
+      "after_sha256": "e9a0af45652bee9aec574e05221cc0d1cc3403d70fc2ac1440942b5965d9ef74",
+      "classification": "review bookkeeping"
+    },
+    {
+      "path": ".synapsor/boundary-authoring/resume.json",
+      "before_sha256": "21d20990d24dd9e7b52d9d58278f9238f720345dc52cbd7b788f5714e9ec6323",
+      "after_sha256": "b1062a1c3c8199b45ead05693e39e21ae3a2397c0418d0f162d6752239603040",
+      "classification": "review bookkeeping"
+    },
+    {
+      "path": ".synapsor/local.db",
+      "before_sha256": "1b55dab6a5f287e73b6d69207c744e9936624705f098042b068de08c6cec6d8c",
+      "after_sha256": "ce2d288328ca50357629237132bda750ae3bd7eb772242916bec04d8b7990181",
+      "classification": "SQLite physical bytes; see independent table oracle"
+    }
+  ],
+  "unexplained_file_changes": [],
+  "source_snapshots_unchanged": true,
+  "original_conversation_entries_missing": 0,
+  "active_authority_and_business_configuration_files_unchanged": true,
+  "completed_policy_reviews": [],
+  "pending": [
+    "pending_job_revision",
+    "pending_policy_review"
+  ],
+  "note": "SQLite byte differences do not establish durable state changes. Pair with review-oracle table hashes and independent source readback."
+}

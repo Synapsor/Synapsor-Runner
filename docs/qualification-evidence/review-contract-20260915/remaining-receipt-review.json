@@ -1,0 +1,49 @@
+{
+  "at": "2026-09-15T06:37:43.291073+00:00",
+  "classification": "NEW DOWNSTREAM BUSINESS-REVIEW BLOCKER; separate decision, no product repair",
+  "source_identity": {
+    "digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+    "version": 2
+  },
+  "candidate": "sha256:97ef5fd14f6d4b61c986de923d8e999761d43d80272782c8b03e61eb7ec25b60",
+  "new_calls": 2,
+  "first_refusal": "Correct this structural coverage problem: Source lines 7-7: runner_execution_setup draft_paths must contain only \"/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup\" (and optional children of that exact evidence). Remove unrelated links [\"/runner_evidence/runtime_contract/receipts\"] from this deployment passage. Put already-enforced Read scope in a separate implemented passage and privacy/eligibility decisions in their own passages. Return the complete corrected coverage; do not change the draft or request identity values.",
+  "retained_passage": [
+    {
+      "start": 7,
+      "end": 7,
+      "disposition": "needs_decision",
+      "interpretation": "The source requires a stored Runner-ledger receipt. Runner supports that receipt authority, but the saved execution configuration does not verify its selected receipt mode for this action.",
+      "draft_paths": [
+        "/runner_evidence/runtime_contract/receipts"
+      ],
+      "topic": "Runner-ledger receipt",
+      "responsibility": "deployment",
+      "issue_kind": "missing_configuration",
+      "next_step": "During execution setup, select and verify the Runner-ledger receipt mode for ratification."
+    }
+  ],
+  "actual_result": "BUSINESS pending; current-source counting choices retained; pending_job_revision and pending_policy_review retained",
+  "expected_user_journey": "Complete BUSINESS review with separate truthful execution/receipt setup duties remaining pending",
+  "source_and_ledger_unchanged": true,
+  "run": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/development/terra/runs/counting-wording-control",
+  "snapshots": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/development/terra/runs/counting-wording-control/checkpoints/receipt-blocked",
+  "captures": [
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/development/terra/runs/counting-wording-control/meter/input-0001.json",
+      "sha256": "a80b290fd359ce2f3b81491865a590ffc9ff9d565380ca8bc275ba48f26bb4e4"
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/development/terra/runs/counting-wording-control/meter/input-0002.json",
+      "sha256": "c27911e5b5f2385a3ca4c486f98ab3bb95f5668aeb2cdde5bd2e364a42d94ed1"
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/development/terra/runs/counting-wording-control/meter/output-0001.txt",
+      "sha256": "6438ba35c009af3dc7ef7fc1b929919be896b7953de2f77a8aa0ffc0b6852d6e"
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/development/terra/runs/counting-wording-control/meter/output-0002.txt",
+      "sha256": "da8359858253075b64d33c0d18b2fa6d26f7581ad9ee6d6faf1e34a043b4dbda"
+    }
+  ]
+}

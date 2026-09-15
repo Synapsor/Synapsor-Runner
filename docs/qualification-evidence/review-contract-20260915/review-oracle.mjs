@@ -2,7 +2,8 @@
 import fs from 'node:fs';import path from 'node:path';import assert from 'node:assert/strict';import {createHash} from 'node:crypto';import {DatabaseSync} from 'node:sqlite';
 const E=path.dirname(new URL(import.meta.url).pathname),plan=JSON.parse(fs.readFileSync(path.join(E,'assignment-plan.json'),'utf8'));
 const [runId,label]=process.argv.slice(2);assert(plan.case_sources[runId]&&/^[a-z0-9-]+$/.test(label));
-const R=path.join(plan.owned_root,...(process.argv.includes('--development')?['development']:[]),'runs',runId),P=path.join(R,'project'),old=plan.case_sources[runId],baseline=path.join(old.root,'runs',old.run,'checkpoints',old.checkpoint,'project');
+const lane=process.argv.find(a=>a.startsWith('--development-lane='))?.split('=')[1];assert(!process.argv.includes('--development')||/^(terra|sol)(-repaired)?$/.test(lane??''));
+const R=path.join(plan.owned_root,...(process.argv.includes('--development')?['development',lane]:[]),'runs',runId),P=path.join(R,'project'),old=plan.case_sources[runId],baseline=path.join(old.root,'runs',old.run,'checkpoints',old.checkpoint,'project');
 const sha=s=>createHash('sha256').update(s).digest('hex');
 function files(dir){return fs.readdirSync(dir).flatMap(n=>{const f=path.join(dir,n),s=fs.lstatSync(f);assert(!s.isSymbolicLink());return s.isDirectory()?files(f):[f];});}
 const ledgers=[];
@@ -23,7 +24,8 @@ const result={at:new Date().toISOString(),artifact_tree:plan.artifact_tree,runId
  coverage_source_digest:report?.source_digest,coverage_draft_digest:report?.draft_digest,counting_inventory:report?.counting_inventory,
  counting_decisions:session.counting_decisions??[],counting_passages:report?.passages.filter(p=>p.counting_requirement_bindings?.length||p.counter_requirements?.length),
  nonimplemented_passages:report?.passages.filter(p=>!['implemented','background','overridden'].includes(p.disposition)),application_assignments:session.application_assignments??[],
- resume_stage:resume.stage,pending:Object.keys(resume).filter(k=>k.startsWith('pending_')&&resume[k]!=null),ledgers,actual_authoring_calls:events.filter(e=>e.type==='transport_attempt').length,
+ maintenance_passages:report?.passages.filter(p=>p.source_counter_obligation||JSON.stringify(p).includes('source_counter_maintenance')),completed_reviews:resume.completed_policy_reviews,resume_model:resume.model,
+ resume_stage:resume.stage,pending:Object.keys(resume).filter(k=>k.startsWith('pending_')&&resume[k]!=null),ledgers,actual_authoring_calls:events.filter(e=>e.type==='transport_attempt'&&e.pathname!=='/v1/models').length,
  public_effects_or_workers_run:false,readiness:'Inspect public review result together with these persisted records; this oracle grants no application attestation.'};
-fs.writeFileSync(path.join(E,runId+'-'+label+'-oracle.json'),JSON.stringify(result,null,2)+'\n',{flag:'wx'});
+fs.writeFileSync(path.join(E,runId+'-'+(lane?lane+'-':'')+label+'-oracle.json'),JSON.stringify(result,null,2)+'\n',{flag:'wx'});
 console.log(JSON.stringify({runId,label,actual_authoring_calls:result.actual_authoring_calls,pending:result.pending,ledger_changes:ledgers.flatMap(l=>l.tables.filter(t=>!t.unchanged).map(t=>({store:l.path,...t}))),inventory:result.counting_inventory}));

@@ -20,7 +20,7 @@ const log=x=>fs.appendFile(path.join(owned,'public-invocations.jsonl'),JSON.stri
 try {
  const meter=path.join(owned,'meter'),meterPath=path.join(meter,'plan.json');
  const secrets=parseEnv(await fs.readFile('/home/sandesh-tiwari/Desktop/Customer Service With Synapsor Runner/.env','utf8'));assert(secrets.OPENAI_API_KEY);
- const env=qualificationEnvironment({...connection.env,OPENAI_API_KEY:secrets.OPENAI_API_KEY,NO_COLOR:'1',QUALIFICATION_MOUNT_PLAN:path.join(owned,'mount-plan.json'),QUALIFICATION_PROVIDER_METER:meter,NODE_OPTIONS:`--import=${pathToFileURL(path.join(H,'provider-meter.mjs')).href}`});
+ const env=qualificationEnvironment({...connection.env,OPENAI_API_KEY:secrets.OPENAI_API_KEY,NO_COLOR:'1',QUALIFICATION_MOUNT_PLAN:path.join(owned,'mount-plan.json'),QUALIFICATION_PROVIDER_METER:meter,NODE_OPTIONS:`--import=${pathToFileURL(path.join(E,'provider-meter.mjs')).href}`});
  const mounts=state.checkpoint?[{logical:state.logicalCase,physical:owned}]:[];
  const sandbox=await qualificationSandboxArguments({ownedRoot:owned,mounts,cwd:state.logicalProject,home:path.join(owned,'home')});
  sandbox.splice(sandbox.length-1,0,'--ro-bind',connection.socket,connection.logicalSocket,'--bind',path.join(owned,'var-tmp'),'/var/tmp','--setenv','NO_COLOR','1');

@@ -1,0 +1,70 @@
+{
+  "at": "2026-09-15T06:49:29.993237+00:00",
+  "artifact": null,
+  "product_tests": "65395f6e87e26e25c8d1543ce7a6e2c373a1c997",
+  "overall": "INCOMPLETE: primary B receipt-review blocker; independent acceptance pending",
+  "rows": [
+    {
+      "check": "operation exact capture + closed schema/parser + saved routing",
+      "status": "PASSED",
+      "evidence": "operation-before-result.json, operation-lifecycle02-exit.json, combined-final-exit.json"
+    },
+    {
+      "check": "narrow counter maintenance responsibility and negative controls",
+      "status": "PASSED",
+      "evidence": "maintenance-before-result.json, maintenance-after-result.json, maintenance-composed04-exit.json"
+    },
+    {
+      "check": "both-model development A ordinary recheck",
+      "status": "PASSED",
+      "evidence": "development-results.json",
+      "qualification": "development only; not final or independent"
+    },
+    {
+      "check": "primary development B explicit Review",
+      "status": "BLOCKED",
+      "evidence": "remaining-receipt-review.json"
+    },
+    {
+      "check": "secondary development B explicit Review",
+      "status": "PASSED",
+      "evidence": "development-results.json",
+      "qualification": "after one structural correction; does not cancel primary failure"
+    },
+    {
+      "check": "one stable full suite",
+      "status": "PASSED",
+      "result": "6407passed/463skipped,exit0,sourceunchanged",
+      "evidence": "stable-full-exit.json"
+    },
+    {
+      "check": "types,10offline,realPG review/domain",
+      "status": "PASSED",
+      "result": "types0;10offline0;livePG domain/freshness5pass and recovery4pass/416filtered",
+      "evidence": "stable-types-exit.json,postgres-domain-exit.json,postgres-review-recovery-exit.json,offline-package-plan-attempt1.json"
+    },
+    {
+      "check": "final installed primary A + restart",
+      "status": "NOT RUN YET"
+    },
+    {
+      "check": "final installed primary B + restart",
+      "status": "BLOCKED / NOT RUN",
+      "reason": "Preserved new receipt review blocker; no repeated sampling of unchanged code"
+    },
+    {
+      "check": "independent final sol A/B",
+      "status": "NOT RUN HERE",
+      "owner": "Claude"
+    }
+  ],
+  "stage_a": "historical and artifact-specific",
+  "original_stage_b": "NOT PASSED",
+  "provider_budget": {
+    "development_actual": 10,
+    "development_ceiling": 12,
+    "final_actual": 0,
+    "final_ceiling": 25,
+    "reserved_restart_recheck": 6
+  }
+}

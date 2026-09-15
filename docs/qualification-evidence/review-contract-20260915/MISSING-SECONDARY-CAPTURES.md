@@ -11,3 +11,7 @@ The terminal text names action_outcome and an unexpected-key marker. It does not
 Independent route correction retained: A used planning on both models; primary B used explicit Review with no planner, whereas secondary B used model choice/attachment/free-form planning. Secondary explicit-Review success is NOT ESTABLISHED.
 
 No operation-schema, planner, diagnostic or chooser product changes have been made in this checkpoint. The independent maintenance classification branch has deterministic integration evidence, separately labelled. Both-model development smoke, stable suite, PostgreSQL gate, offline packaging, new installation and final public A/B remain pending. No replacement model, rescue sentence or new trial has been substituted for this required replay.
+
+## Resolved by author clarification
+
+The reviewer confirms that no historical raw envelopes were recorded; only terminal logs survive. The user authorizes new bounded development captures under the unchanged12-call total. No more capture-location search or waiting. New results are labelled development reproductions and never relabelled as the four historical responses.

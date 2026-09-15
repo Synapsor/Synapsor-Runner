@@ -1,0 +1,20 @@
+{
+  "name": "operation-types01",
+  "args": [
+    "corepack",
+    "pnpm",
+    "typecheck"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T06:20:50.582360+00:00",
+  "source_head": "e74883eb9926da5aee8231175a2e921175c4012b",
+  "source_diff_sha256": "3d84477616e79544783e3d85de20d7636c174b2db58072070aa5d053ea28aa25",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/test-environments/operation-types01",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/review-contract-20260915/operation-types01",
+  "source_manifest_sha256": "0ac29ac843c2d75c6f90303d9b1148f2a3dd2d805472474be8d1d061323c7f64",
+  "pid": 3705676,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-15T06:21:07.695975+00:00"
+}
