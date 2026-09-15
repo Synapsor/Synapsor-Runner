@@ -1,19 +1,8 @@
+export { validClientDutyInventory, type ClientDuty, type ClientDutyInventory } from "./authoring-policy-source.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import type { PolicyCoverage, PolicyPassage, PolicySourceSession } from "./authoring-policy-source.js";
+import { validClientDutyInventory, type ClientDuty, type ClientDutyInventory, type PolicyCoverage, type PolicyPassage, type PolicySourceSession } from "./authoring-policy-source.js";
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 
-export type ClientDuty = "customer_selection" | "status_presentation";
-export type ClientDutyInventory = {
-  version: 1; origin: "PRODUCT-CLIENT-CONTRACT"; contract_digest: string;
-  mode: "interactive_subject_action" | "read_only" | "unresolved";
-  client: string; duties: ClientDuty[];
-};
-export function validClientDutyInventory(value: ClientDutyInventory): boolean {
-  return Boolean(value && value.version === 1 && value.origin === "PRODUCT-CLIENT-CONTRACT"
-    && /^sha256:[a-f0-9]{64}$/u.test(value.contract_digest) && typeof value.client === "string" && value.client.length <= 100
-    && ["interactive_subject_action", "read_only", "unresolved"].includes(value.mode)
-    && JSON.stringify(value.duties) === JSON.stringify(value.mode === "interactive_subject_action" ? ["customer_selection", "status_presentation"] : []));
-}
 const record = (v: unknown): Record<string, any> | undefined => v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, any> : undefined;
 
 /** Host-prepared Action inputs, never the provider's coverage passages or prose.
