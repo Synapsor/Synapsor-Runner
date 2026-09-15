@@ -1,4 +1,5 @@
 import { planModelBoundaryJob } from "./boundary-job-model.js";
+import { clientDutyInventory } from "./authoring-client-duties.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -47,7 +48,8 @@ describe("guided start surfaces", () => {
       const source = policyTextSnapshot(Buffer.from("Use database-origin UTC for release eligibility."), "rules.txt");
       sources.snapshots = [source]; sources.active = 1;
       sources.coverage_authority_digest = canonicalJsonDigest({ read: context.bundle.candidate_digest, action: null });
-      sources.coverage = { source_digest: source.digest, draft_digest: canonicalJsonDigest({ test: "saved interpretation" }), passages: [{
+      sources.coverage = { source_digest: source.digest, draft_digest: canonicalJsonDigest({ test: "saved interpretation" }),
+        client_duties: clientDutyInventory({ actions: [] }), passages: [{
         start: 1, end: 1, disposition: "conflict", responsibility: "runner", issue_kind: "unsupported_requirement",
         topic: "Database-origin UTC", interpretation: "Runner evaluation time does not establish database-server time.",
         draft_paths: [], next_step: "Keep the original requirement and saved draft pending support.",
@@ -71,11 +73,12 @@ describe("guided start surfaces", () => {
       await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
       expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(context.bundle.candidate_digest);
       const originalSources = structuredClone(sources);
-      for (const variant of ["provider_unavailable", "changed_read", "changed_source", "pending_edit", "unfinished_action", "checked"]) {
+      for (const variant of ["provider_unavailable", "historical_client_basis", "changed_read", "changed_source", "pending_edit", "unfinished_action", "checked"]) {
         const changed = structuredClone(originalSources);
         if (variant !== "provider_unavailable") changed.coverage!.passages = [{ start: 1, end: 1, disposition: "implemented",
           interpretation: "Test-only saved successful interpretation.", draft_paths: [] }];
         else delete changed.coverage;
+        if (variant === "historical_client_basis") delete changed.coverage!.client_duties;
         if (variant === "changed_read") changed.coverage_authority_digest = canonicalJsonDigest({ different: true });
         if (variant === "changed_source") { changed.snapshots.push(policyTextSnapshot(Buffer.from("A new restriction."), "rules.txt", 2)); changed.active = 2; }
         await savePolicySources(root, changed);
@@ -88,6 +91,7 @@ describe("guided start surfaces", () => {
         await boundaryCommand(["status", "--project-root", root, "--json"]);
         const current = JSON.parse(output.mock.calls.map(([chunk]) => String(chunk)).join(""));
         expect(current.policy_review.ready, variant).toBe(variant === "checked");
+        if (variant === "historical_client_basis") expect(current.policy_review.summary.join(" ")).toContain("current contract and ownership review");
         expect(current.activation, variant).toBe("disabled_unreviewed");
         expect(current.next_action, variant).not.toMatch(/^Activate/);
         if (variant === "checked") expect(current.next_action).toContain("exact saved review");
