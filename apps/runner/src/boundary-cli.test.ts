@@ -16311,8 +16311,9 @@ function stripAnsi(value: string): string {
 }
 
 describe("saved review operation dispatch and persistence", () => {
-  it.each(["menu", "no-change", "typed-review", "redundant-source", "unknown", "declined", "choice-save-race", "source-race", "resume-race", "unrelated-edit", "provider-refusal", "semantic-question", "genuine-noop"])("reviews without entering editors: %s", async mode => {
-    const fixture = await staleSemanticRevalidationFixture({ outcomes: ["maintenance.complete_visit"] });
+  it.each(["menu", "no-change", "typed-review", "redundant-source", "unknown", "declined", "choice-save-race", "source-race", "resume-race", "unrelated-edit", "provider-refusal", "semantic-question", "genuine-noop", "maintenance", "maintenance-missing", "maintenance-source-race"])("reviews without entering editors: %s", async mode => {
+    const maintenance = mode.startsWith("maintenance");
+    const fixture = await staleSemanticRevalidationFixture({ outcomes: ["maintenance.complete_visit"], atomicUpdates: maintenance });
     const { root, inspection } = fixture;
     let sourceReadSpy: { mockRestore(): void } | undefined;
     try {
@@ -16342,14 +16343,29 @@ describe("saved review operation dispatch and persistence", () => {
       }
       const source = newPolicySourceSession();
       source.snapshots = [policyTextSnapshot(Buffer.from(counting ? "The approved work uses the shared allowance described by its owner."
+        : maintenance ? "Keep the saved atomic visit job. The source owner must maintain the conflict counter on every updated row."
         : "Keep the saved human-reviewed visit follow-up and its existing eligibility."), "current-rules.txt")];
       source.active = 1;
       source.approvals = [{ digest: source.snapshots[0]!.digest, destination: authoringDestination({ provider: "openai", model: "gpt-test" }) }];
       await savePolicySources(root, source);
+      const counterReviews = [];
+      if (maintenance) {
+        for (const resource of ["public.service_visits", "public.maintenance_requests"]) {
+          const reviewed = await reviewActionVersionField({ context: { readBoundary: context.candidate,
+            readBoundaryDigest: context.bundle.candidate_digest,
+            builtCatalog: buildActionRuleAuthoringCatalog({ boundary: context.candidate, inspection, retainedCatalog: authority.authority.catalog }) },
+            resource, field: "c09", inspection, generationLock: context.lock,
+            session: { ...fixture.session, chooseOption: async title => {
+              expect(title).toBe("REVIEW CHANGED-RECORD PROTECTION"); return "confirm";
+            } }, assertCurrent: async () => { expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(context.bundle.candidate_digest); } });
+          expect(reviewed).toBeDefined(); counterReviews.push(reviewed!.review);
+        }
+      }
       const exact = "Recheck the current saved rules against the attached policy and existing decisions without changing the rules or authority.";
       let resume = buildBoundaryAuthoringResumeState({ binding, stage: "planning", jobIntent: "Maintain the reviewed visit job.", provider: "openai", model: "gpt-test",
         policySourceSession: source.id, action: { intent: "Keep the visit job.", outcome: "maintenance.complete_visit", strategy: "rule_derived" },
-        pendingJobRevision: ["unrelated-edit", "genuine-noop"].includes(mode) ? "Change the maximum to four." : exact });
+        pendingJobRevision: ["unrelated-edit", "genuine-noop"].includes(mode) ? "Change the maximum to four." : exact,
+        ...(maintenance ? { reviewedVersionFields: mode === "maintenance-missing" ? counterReviews.slice(0, 1) : counterReviews } : {}) });
       await writeBoundaryAuthoringResumeState(root, resume, { expectedRevisionDigest: null });
       const authorityBefore = canonicalJsonDigest(authority), readBefore = canonicalJsonDigest(context.candidate);
       const menus: string[] = [], notices: string[][] = []; let choices = 0, confirmations = 0, providerCalls = 0, plannerCalls = 0;
@@ -16402,7 +16418,7 @@ describe("saved review operation dispatch and persistence", () => {
             current.operator_messages = [...(current.operator_messages ?? []), competingNote];
             await savePolicySources(root, current, { expectedDigest });
           }
-          if (mode === "source-race") {
+          if (mode === "source-race" || mode === "maintenance-source-race") {
             const competing = await loadPolicySources(root, source.id); competing.operator_messages = ["Retain this newer decision."]; await savePolicySources(root, competing);
           }
           if (mode === "resume-race") {
@@ -16410,6 +16426,20 @@ describe("saved review operation dispatch and persistence", () => {
             await writeBoundaryAuthoringResumeState(root, buildBoundaryAuthoringResumeState({ binding, stage: current.value.stage,
               jobIntent: current.value.job_intent, provider: "openai", model: "gpt-test", policySourceSession: source.id,
               pendingJobRevision: "A genuine competing edit.", action: current.value.action, previous: current.value }), { expectedRevisionDigest: current.value.revision_digest });
+          }
+          if (maintenance) {
+            const prefix = "/runner_evidence/actions/maintenance.complete_visit/effect";
+            const business = { start: 1, end: 1, disposition: "implemented", responsibility: "runner",
+              interpretation: "The compiled atomic visit job and guarded updates remain unchanged.", draft_paths: ["/actions/0"] };
+            const passages = providerCalls === 1 ? [business, { start: 1, end: 1, disposition: "needs_decision", responsibility: "deployment",
+              issue_kind: "missing_configuration", interpretation: "The owner contract is reviewed but external writers are not independently verified.",
+              draft_paths: [prefix, "/runner_evidence/runtime_contract/source_counter_maintenance"] }]
+              : [business, ...[`${prefix}/source_counter_maintenance`, `${prefix}/atomic_updates/0/source_counter_maintenance`].map(path => ({
+                start: 1, end: 1, disposition: "needs_decision", responsibility: "deployment", issue_kind: "missing_configuration",
+                interpretation: "The owner maintains this counter; independent external assurance is unverified.", draft_paths: [path],
+                source_counter_obligation: { path, requirement: "owner_maintenance" },
+              }))];
+            return { status: 200, body: { output: [{ type: "function_call", call_id: "coverage", name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages }) }] } };
           }
           return { status: 200, body: { output: [{ type: "function_call", call_id: "coverage", name: "runner__review_policy_coverage",
             arguments: JSON.stringify({ passages: [{ start: 1, end: 1, disposition: mode === "provider-refusal" ? "needs_decision" : "implemented",
@@ -16446,7 +16476,7 @@ describe("saved review operation dispatch and persistence", () => {
         expect(resume.pending_job_revision).toBe(mode === "genuine-noop" ? "Change the maximum to four." : exact);
         expect(providerCalls).toBe(0); expect(plannerCalls).toBe(1); return;
       }
-      if (["declined", "choice-save-race", "source-race", "resume-race", "provider-refusal"].includes(mode)) {
+      if (["declined", "choice-save-race", "source-race", "resume-race", "provider-refusal", "maintenance-missing", "maintenance-source-race"].includes(mode)) {
         expect(resume.pending_policy_review?.operation).toBe("review_rules"); expect(resume.completed_policy_reviews).toBeUndefined();
         if (mode === "declined") { expect(stored.counting_decisions).toBeUndefined(); expect(providerCalls).toBe(0); }
         if (mode === "choice-save-race") {
@@ -16454,13 +16484,22 @@ describe("saved review operation dispatch and persistence", () => {
           expect(stored.operator_messages).toEqual([competingNote]); expect(stored.coverage).toBeUndefined();
           expect(notices.flat().join("\n")).toContain("POLICY_SOURCE_CHANGED");
         }
-        if (mode === "source-race") expect(stored.operator_messages).toEqual(["Retain this newer decision."]);
+        if (mode === "source-race" || mode === "maintenance-source-race") expect(stored.operator_messages).toEqual(["Retain this newer decision."]);
         if (mode === "resume-race") expect(resume.pending_job_revision).toBe("A genuine competing edit.");
+        if (mode === "maintenance-missing") {
+          expect(providerCalls).toBe(2); expect(notices.flat().join("\n")).toContain("SOURCE_COUNTER_ATTESTATION_REQUIRED");
+          expect(stored.coverage).toBeUndefined();
+        }
       } else {
         expect(resume.pending_policy_review).toBeUndefined(); expect(resume.completed_policy_reviews).toHaveLength(1);
         expect(resume.pending_job_revision).toBe(mode === "unrelated-edit" ? "Change the maximum to four." : undefined);
         expect(stored.coverage?.passages[0]?.disposition).toBe("implemented");
         if (counting) { expect(choices).toBe(2); expect(confirmations).toBe(2); expect(stored.counting_decisions).toHaveLength(2); }
+        if (maintenance) {
+          expect(providerCalls).toBe(2);
+          expect(stored.coverage!.passages.filter(p => p.source_counter_resolution)).toHaveLength(2);
+          expect(notices.flat().join("\n")).toContain("Independent external-writer and production assurance remain unverified");
+        }
         const calls = providerCalls; restarted = true;
         expect(await run()).toBe(0);
         const after = await readBoundaryAuthoringResumeState(root, binding); if (after.status !== "ready") throw new Error("restart missing");
@@ -16468,7 +16507,7 @@ describe("saved review operation dispatch and persistence", () => {
         expect(after.value.completed_policy_reviews?.[1]?.activity).toBe("validated_reuse");
         expect(providerCalls).toBe(calls); expect(choices).toBe(counting ? 2 : 0);
       }
-      expect(plannerCalls).toBe(["no-change", "typed-review", "redundant-source"].includes(mode) ? 1 : 0);
+      expect(plannerCalls).toBe(["no-change", "typed-review", "redundant-source", "maintenance", "maintenance-missing", "maintenance-source-race"].includes(mode) ? 1 : 0);
     } finally { sourceReadSpy?.mockRestore(); await fixture.dispose(); }
   });
 });

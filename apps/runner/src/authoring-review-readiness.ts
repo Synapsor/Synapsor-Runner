@@ -1,4 +1,4 @@
-import { isDeferredPolicyDeployment, isDeferredSourceReadback, type PolicyCoverage, type PolicyTextSnapshot, type PolicyPassage, type PolicySourceSession } from "./authoring-policy-source.js";
+import { isDeferredPolicyDeployment, isDeferredSourceReadback, isDeferredSourceCounterMaintenance, type PolicyCoverage, type PolicyTextSnapshot, type PolicyPassage, type PolicySourceSession } from "./authoring-policy-source.js";
 import { needsDeploymentCoverageClassification, unresolvedPolicyPassages } from "./authoring-policy-coverage.js";
 import { readBoundaryRevisionCatalog, type ReadBoundaryFieldExposureChange } from "./read-boundary-revision-model.js";
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
@@ -23,7 +23,7 @@ export function policyReadinessItems(report?: PolicyCoverage, session?: PolicySo
   const grouped = new Map<string, AuthoringReadinessItem>();
   for (const passage of unresolvedPolicyPassages(report)) {
     const needsClassification = needsDeploymentCoverageClassification(passage);
-    const deferred = isDeferredPolicyDeployment(passage) || isDeferredSourceReadback(passage);
+    const deferred = isDeferredPolicyDeployment(passage) || isDeferredSourceReadback(passage) || isDeferredSourceCounterMaintenance(passage);
     const kind = needsClassification ? "mechanical_correction"
       : passage.application_obligations?.length || deferred ? "deployment_prerequisite"
       : passage.issue_kind === "schema_meaning" || passage.issue_kind === "business_choice" ? "business_decision"
@@ -32,7 +32,9 @@ export function policyReadinessItems(report?: PolicyCoverage, session?: PolicySo
       : passage.responsibility === "deployment" ? "deployment_prerequisite" : "business_decision";
     const title = passage.topic ?? `Rule at lines ${passage.start}-${passage.end}`;
     const key = `${kind}:${passage.deployment_prerequisite ?? (isDeferredSourceReadback(passage) ? "independent_source_readback" : "")}:${title}`;
-    const nextStep = needsClassification
+    const nextStep = isDeferredSourceCounterMaintenance(passage)
+      ? "The exact source-owner maintenance operating contract is current. The owner must keep every writer within that contract; independent external-writer and production assurance remain unverified. BUSINESS review does not enable execution or verify those writers. Revalidate the existing counter review if source, metadata, role, target or owner decision changes."
+      : needsClassification
       ? "Recheck this deployment classification against exact Runner setup evidence. Do not revise business rules or require a client connection before authority review."
       : isDeferredSourceReadback(passage)
         ? "After each applicable execution, independently observe the source and compare it with the exact intended change. This readback remains unverified; a receipt alone is not that observation. No Action-code repair is required for this external step."
@@ -76,6 +78,8 @@ export function policyReviewReadiness(source: PolicyTextSnapshot, report?: Polic
     ...(clientChecks.length ? [`Client integration still unverified: ${clientChecks.join(", ")}. Check these during client setup before customer use.`] : []),
     ...(assigned.some(item => item.passages.some(isDeferredSourceReadback))
       ? ["Independent source readback remains unverified for each applicable execution. Perform and retain that separate observation after the change; a receipt or completed business review does not prove it."] : []),
+    ...(assigned.some(item => item.passages.some(isDeferredSourceCounterMaintenance))
+      ? ["Source-counter maintenance relies on the exact current source-owner operating contract. Independent external-writer and production assurance remain unverified; the owner must keep all writers within that contract. This review grants no execution permission."] : []),
     ...(assigned.some((item) => item.passages.some((passage) => passage.deployment_prerequisite === "runner_execution_setup"))
       ? ["Execution setup pending: dedicated writer review, separate execution permission and worker startup. Continue to these checks after authority review; automatic completion is not yet enabled."] : []),
   ] };

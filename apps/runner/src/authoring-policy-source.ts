@@ -77,6 +77,11 @@ export type PolicyPassage = { start: number; end: number;
   application_obligations?: Array<"customer_selection" | "status_presentation" | "independent_source_readback">;
   /** Later setup, not verification or an assignment of business controls to the client. */
   deployment_prerequisite?: "authenticated_identity" | "runner_client_connection" | "runner_execution_setup";
+  /** Source requirement for this exact maintained version counter, not an allowance. */
+  source_counter_obligation?: { path: string; requirement: "owner_maintenance" | "independent_assurance" };
+  /** Recomputed from current host evidence; never an external-writer attestation. */
+  source_counter_resolution?: { source_digest: string; path: string; dependencies_digest: string;
+    proof_digest: string; external_assurance: "unverified" };
 };
 export type PolicyCoverage = { counting_inventory?: { version: 1; digest: string; paths: string[] }; source_digest: string; draft_digest: string; passages: PolicyPassage[] };
 
@@ -101,6 +106,17 @@ export function isDeferredSourceReadback(passage: PolicyPassage): boolean {
     && !passage.field_checks?.length && !passage.counter_requirements?.length && !passage.deployment_prerequisite
     && passage.draft_paths.includes(pointer)
     && passage.draft_paths.every(path => path === pointer || path.startsWith(`${pointer}/`));
+}
+
+export function isDeferredSourceCounterMaintenance(passage: PolicyPassage): boolean {
+  const obligation = passage.source_counter_obligation, resolution = passage.source_counter_resolution;
+  return obligation?.requirement === "owner_maintenance" && Boolean(resolution)
+    && resolution!.path === obligation.path && resolution!.external_assurance === "unverified"
+    && passage.disposition === "needs_decision" && passage.responsibility === "deployment"
+    && passage.issue_kind === "missing_configuration" && passage.draft_paths.length === 1
+    && passage.draft_paths[0] === obligation.path && !passage.field_checks?.length
+    && !passage.counter_requirements?.length && !passage.application_obligations?.length
+    && !passage.deployment_prerequisite && !passage.evidence_checks?.length;
 }
 
 export const POLICY_TEXT_MAX_BYTES = 32_768;
@@ -351,6 +367,14 @@ function validStoredCoverage(report: PolicyCoverage, sources: PolicyTextSnapshot
           && check.path.length <= 500 && [check.current_capability, check.required_capability].every((value) => value === null || typeof value === "string" && value.length <= 256)))
       && (passage.application_obligations === undefined || validApplicationObligations(passage.application_obligations))
       && (passage.deployment_prerequisite === undefined || isDeferredPolicyDeployment(passage))
+      && (passage.source_counter_obligation === undefined || Boolean(passage.source_counter_obligation
+        && typeof passage.source_counter_obligation.path === "string" && passage.source_counter_obligation.path.length <= 500
+        && ["owner_maintenance", "independent_assurance"].includes(passage.source_counter_obligation.requirement)))
+      && (passage.source_counter_resolution === undefined || Boolean(passage.source_counter_obligation
+        && passage.source_counter_resolution.external_assurance === "unverified"
+        && passage.source_counter_resolution.path === passage.source_counter_obligation.path
+        && [passage.source_counter_resolution.source_digest, passage.source_counter_resolution.dependencies_digest,
+          passage.source_counter_resolution.proof_digest].every(digest => /^sha256:[a-f0-9]{64}$/u.test(digest))))
       && (passage.supporting_dependencies_digest === undefined || typeof passage.supporting_dependencies_digest === "string" && /^sha256:[a-f0-9]{64}$/u.test(passage.supporting_dependencies_digest))
       && (passage.operator_clarification === undefined || typeof passage.operator_clarification === "string" && passage.operator_clarification.length <= 4_000)
       && (passage.operator_override === undefined || typeof passage.operator_override === "string" && passage.operator_override.length <= 4_000)));
