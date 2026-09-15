@@ -1,0 +1,45 @@
+{
+  "started_at": "2026-09-15T03:43:36.380134+00:00",
+  "budget_amendments": [
+    {
+      "at": "2026-09-15T06:05:21.931685+00:00",
+      "basis": "User clarified historical raw envelopes never existed and authorized recording new bounded development captures; resume remaining active development allocation, do not reset used time/calls/tests.",
+      "paused_from": "2026-09-15T04:19:13.154141+00:00",
+      "paused_until": "2026-09-15T06:05:21.931685+00:00",
+      "previous_wall_deadline": "2026-09-15T06:43:36.380134+00:00",
+      "resumed_development_deadline": "2026-09-15T08:29:45.157678+00:00",
+      "development_provider_ceiling_unchanged": 12,
+      "development_calls_already_used": 0
+    }
+  ],
+  "development_closed_at": "2026-09-15T06:41:26.089057+00:00",
+  "stable_started_at": "2026-09-15T06:41:26.089057+00:00",
+  "stable_completed_at": "2026-09-15T07:25:05.235504+00:00",
+  "final_budget": {
+    "started_at": "2026-09-15T07:28:14.069Z",
+    "deadline": "2026-09-15T08:43:14.069Z",
+    "maximum_calls": 25,
+    "reserved_recheck_calls": 6
+  },
+  "final_last_exit": {
+    "at": "2026-09-15T07:31:12.453Z",
+    "event": "exit",
+    "code": 0,
+    "signal": null
+  },
+  "actual_authoring_calls": {
+    "development": 10,
+    "final": 2
+  },
+  "ceilings": {
+    "development": 12,
+    "final": 25,
+    "restart_reserved": 6
+  },
+  "full_suite_launches": 1,
+  "unused_restart_calls": 6,
+  "fixture_timing": "Existing per-fixture creation/readiness timestamps retained; no separate aggregate usability claim",
+  "closure_started_at": "2026-09-15T07:31:43.146Z",
+  "closure_budget_minutes": 25,
+  "no_budget_reset": true
+}

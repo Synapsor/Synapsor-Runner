@@ -1,8 +1,8 @@
 {
-  "at": "2026-09-15T06:49:29.993237+00:00",
-  "artifact": null,
+  "at": "2026-09-15T07:34:18.483452+00:00",
+  "artifact": "45ce2a9d66e48e978b8cc9f61f5074603a473be86051fb27cd75dbe99cbb5224",
   "product_tests": "65395f6e87e26e25c8d1543ce7a6e2c373a1c997",
-  "overall": "INCOMPLETE: primary B receipt-review blocker; independent acceptance pending",
+  "overall": "PARTIAL: final A/restart passed; final B blocked/unrun; independent acceptance pending",
   "rows": [
     {
       "check": "operation exact capture + closed schema/parser + saved routing",
@@ -45,7 +45,9 @@
     },
     {
       "check": "final installed primary A + restart",
-      "status": "NOT RUN YET"
+      "status": "PASSED",
+      "result": "2calls,zero new counting questions; restarted explicit Review validated_reuse with0additional calls, same report/context",
+      "evidence": "installed-primary-results.json"
     },
     {
       "check": "final installed primary B + restart",
@@ -63,8 +65,9 @@
   "provider_budget": {
     "development_actual": 10,
     "development_ceiling": 12,
-    "final_actual": 0,
+    "final_actual": 2,
     "final_ceiling": 25,
     "reserved_restart_recheck": 6
-  }
+  },
+  "source_checkpoint": "690abe1111a4cdb45e631d6b11c15e068b53cfc3"
 }

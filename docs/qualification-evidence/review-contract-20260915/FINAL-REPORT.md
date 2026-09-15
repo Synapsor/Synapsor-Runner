@@ -1,6 +1,6 @@
 # Review-operation contract and maintained-counter responsibility
 
-Implementation is committed; all stable and offline gates passed; final installed confirmation is next. The two named changes are delivered, but a complete primary A/B journey is not established: primary development B exposed a separate receipt-review classification blocker. Its exact result is preserved in `remaining-receipt-review.md` and is not repaired or repeatedly sampled here. All stable results below come from completed exit records; the final installed result is still pending. Historical Stage A remains artifact-specific; original Stage B remains NOT PASSED.
+The operation/maintenance repair, stable gates and final installed A review/restart are complete. The two named changes are delivered, but a complete primary A/B journey is not established: primary development B exposed a separate receipt-review classification blocker. Its exact result is preserved in `remaining-receipt-review.md` and is not repaired or repeatedly sampled here. All stable and installed results below come from completed exit records and durable state. Historical Stage A remains artifact-specific; original Stage B remains NOT PASSED.
 
 ## Source and traced operation cause
 
@@ -49,10 +49,29 @@ The single full suite passed 6,407 tests with 463 opt-in skips across 309 passed
 
 The combined current-source run passed 519 tests with three opt-in skips across nine matched files. One misspelled maintenance filename did not match and is not counted. The actual maintenance file was already tested and remains in normal full discovery. Earlier focused fixture expectation/type errors and the old prompt assertion failure are retained; none was changed to skipped or expected failure. Passing targeted runs are not a replacement for the stable suite.
 
-PENDING final candidate and primary A/restart. No candidate identity is inferred from version1.8.0 or a prior package. The final installation must include local Spec, dependencies, lockfile, all five entrypoints and prompts, with full file/mode/symlink hashes before and after public use. Final primary B is BLOCKED/NOT RUN because of the preserved new issue. The untouched 207-entry independent clean-start manifest remains `a37fe3bdd53313a598889837b867a480750e2488ae258f758295dd8f94de0e9d`; development decisions never enter it.
+Final candidate: `45ce2a9d66e48e978b8cc9f61f5074603a473be86051fb27cd75dbe99cbb5224` (7,569 entries), frozen source `690abe1111a4cdb45e631d6b11c15e068b53cfc3`, product/tests `65395f6e87e26e25c8d1543ce7a6e2c373a1c997`. `installed-candidate.json` records full manifest, archive, tarball, Node and lockfile identities. It contains local Spec1.11.0, dependencies, lockfile, all five entrypoints and prompts. Primary A completed BUSINESS review in two calls (planner then reviewer). The restarted explicit Review completed with validated reuse, zero additional calls and zero repeated counting questions. Both CLI exits were 0. The complete manifest was checked before each public run and again after the final run; it is unchanged. Final primary B is BLOCKED/NOT RUN because of the preserved new issue. The untouched 207-entry independent clean-start manifest remains `a37fe3bdd53313a598889837b867a480750e2488ae258f758295dd8f94de0e9d`; development decisions never enter it.
+
+
+| Final artifact row | Result | Calls |
+| --- | --- | --- |
+| A ordinary saved recheck through installed Resume | PASSED: valid first plan, persisted completed BUSINESS review, no new counting question | 2 |
+| A exit/restart, explicit unchanged Review | PASSED: validated reuse, same report/context/decisions, no repeated answer | 0 additional |
+| B review/restart on final artifact | BLOCKED / NOT RUN: primary development receipt-review issue preserved; no repeated sample | 0 |
+| Independent sol final A/B | NOT RUN HERE; reserved for Claude | 0 |
+
+A retained Read/Action/source identities exactly. Its review report is `sha256:f1d9a2d307c7b205a575c9e52d3f3f9a2c7c4256b4e56d12567c6898cc1570ed`, with context `sha256:78b3a767a83c8ecba17d1d201dc815ce143622f456cc897b0e4a5abb83b55ff0`. The initial completed record at `2026-09-15T07:30:06.519Z` retains the exact formerly pending request; the restarted record at `2026-09-15T07:31:12.423Z` records validated reuse. Both pending review/edit fields are absent after legitimate BUSINESS completion. Coverage and existing decisions were unchanged across restart. The public maintenance passage recognizes the exact source-owner operating contract and expressly withholds independent external/production assurance; it does not use the new typed deferral branch. Identity/customer selection, execution/receipt setup and independent source readback duties remain pending. `installed-primary-results.json`, both checkpoints/oracles and project differences corroborate every result. No developer-authored policy prose, payload substitution or source/authority change was used.
+
+Total final authoring usage is 2 of 25; all six reserved restart calls were unused. Development 10 of 12 remains separate, including the baseline failure. The final invocation timestamps include operator navigation; they are not general onboarding/usability measurements. No fresh onboarding or cross-provider comparison occurred.
 
 ## Limits and next review
 
 These are implementer-owned known-case results, not independent acceptance, a new Stage B attempt, a model ranking or general natural-language reliability. Claude owns final secondary sol trials after the immutable handoff; only bounded development sol calls were run here. Source-owner attestation does not prove universal external-writer compliance. BUSINESS review does not prove deployment, identity integration, receipt execution or independent readback. Existing clock, same-version process coordination and runtime durability limits are unchanged.
 
 The only new repair decision is `remaining-receipt-review.md`. The frozen operation/maintenance change also awaits the already-planned independent review. Software slot references, signed headless counter review, TRUSTED_BINDING_MISSING and unseen domains remain outside scope. No follow-on campaign starts automatically.
+
+
+## Closure
+
+All seven task-owned PostgreSQL containers (five development, one explicit test gate, one final A source) were dumped/logged then stopped; none was removed. Test/public processes completed, and preserved queues were never executed. The unchanged clean-start manifest was verified again after primary completion. The original 283,535 manifest entries remain unchanged; strict preservation checks return 1 solely for the separately recorded external CROSS-VENDOR-PREDECLARATION.md addition, whose hash/mode also remain unchanged since first observed. Baselines and failed strict results are preserved. Candidate45ce2a9d… passed complete post-run verification; the full hash above is authoritative. Source/product and tests are unchanged since stable verification.
+
+The immutable reviewer-handoff directory and its separate manifest/delivery record are created after the final report commit. Push is restricted to the reverified private backup destination. The final branch/commit and clean-tree result are recorded in the task-owned delivery.json and tracker. STOP for independent review; no new campaign or model retry is scheduled.

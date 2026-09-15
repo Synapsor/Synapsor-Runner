@@ -1,0 +1,25 @@
+{
+  "at": "2026-09-15T07:31:55.519562+00:00",
+  "records": [
+    {
+      "run": "recovery-tournament-assisted",
+      "container": "synapsor-review-contract-recovery-tournament-assisted-6fd3b3a6",
+      "container_id": "a59f6f7518ee13bda019f41e810c2deed2e49699feb93611b1e9ba57f2b466ce",
+      "label": "review-contract-20260915",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "77036aeca82d2a7dbc0f87f2bf661857596a20e90d7b42eac6b796f4671b468b",
+        "postgres.log": "061b2f2f94aca0f1f500bf8778ff5c2dfe10797d3c74221ef112874e2a0bf838",
+        "source.dump": "78c6ce2df4fc5a7e3b1b7a45484a1575a3448805b5d55f1520516b4bbdf2fc11"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/closure/recovery-tournament-assisted",
+      "removed": false
+    }
+  ],
+  "counts_note": "Actual public CLI and provider invocations retained in each public-invocations.jsonl and meter/events.jsonl. Worker outcomes are recorded separately; this cleanup makes no execution-success claim.",
+  "original_containers_touched": false,
+  "fixture_directories_removed": false
+}

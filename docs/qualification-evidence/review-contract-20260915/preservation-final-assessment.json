@@ -1,0 +1,16 @@
+{
+  "at": "2026-09-15T07:31:06.033092+00:00",
+  "original_entries": 283535,
+  "original_entries_changed": 0,
+  "strict_checker_exit": 1,
+  "reason": "One separately recorded external reviewer-directory addition; old manifest unchanged",
+  "same_external_addition_unchanged_since_pre_stable": true,
+  "external_addition": {
+    "at": "2026-09-15T06:41:26.089057+00:00",
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/xmodel-secondary-20260915/CROSS-VENDOR-PREDECLARATION.md",
+    "sha256": "3690bddd982ae125a62d92d53113b9c7f02b3ab827a1d30a2905e30169760c22",
+    "mode": 436,
+    "classification": "New external reviewer-directory file; not changed by this task; old manifest preserved. No original entry changed. Strict preservation-pre-stable exit1 retained; no cross-provider lane authorized or started here."
+  },
+  "candidate_verification": "separate full installed manifest before/after public calls"
+}

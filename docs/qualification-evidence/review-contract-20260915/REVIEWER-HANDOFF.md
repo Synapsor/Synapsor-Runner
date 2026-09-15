@@ -1,6 +1,6 @@
 # Independent verifier handoff
 
-Status: preparation in progress; final installation and delivery manifest are recorded at closure. This document is not an acceptance verdict. Read FINAL-REPORT.md, SCORECARD.json, IMPLEMENTATION-NOTE.md, development-results.json and remaining-receipt-review.md first. Claude owns final sol trials and independent controls, not another concurrent full suite.
+Status: closed for independent review. Final candidate `45ce2a9d66e48e978b8cc9f61f5074603a473be86051fb27cd75dbe99cbb5224`; source checkpoint `690abe1111a4cdb45e631d6b11c15e068b53cfc3`. Primary final A/restart passed in2calls; B remains blocked/unrun final. The full stable suite/types/10offline/explicitPG gates passed; see completed records. This document is not an acceptance verdict. Read FINAL-REPORT.md, SCORECARD.json, IMPLEMENTATION-NOTE.md, development-results.json and remaining-receipt-review.md first. Claude owns final sol trials and independent controls, not another concurrent full suite.
 
 ## Identities and starting state
 

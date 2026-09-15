@@ -1,0 +1,64 @@
+{
+  "at": "2026-09-15T07:35:35.801800+00:00",
+  "owned_containers": [
+    {
+      "id": "a59f6f7518ee13bda019f41e810c2deed2e49699feb93611b1e9ba57f2b466ce",
+      "name": "synapsor-review-contract-recovery-tournament-assisted-6fd3b3a6",
+      "running": false,
+      "removed": false
+    },
+    {
+      "id": "271606b3c4ea54e27883c1331e85505c584354d6c79538243bf117a75f120db2",
+      "name": "synapsor-review-contract-tests-cef5b6d6",
+      "running": false,
+      "removed": false
+    },
+    {
+      "id": "6c189642c6cfdf4f271ddce313a545d60efa2e785630fb4b3afe37c3210f0298",
+      "name": "synapsor-review-contract-counting-wording-control-6dafb24d",
+      "running": false,
+      "removed": false
+    },
+    {
+      "id": "cd6d369c84ee7da683c4b9d2e3b8ce79140234fdaaa9420a5f600fef23f2cdd3",
+      "name": "synapsor-review-contract-counting-wording-control-458b6516",
+      "running": false,
+      "removed": false
+    },
+    {
+      "id": "4a4f7f6cc98364a277dd08f632e678b9eac6a5844d6ba4ecffbf816ef6c3fff2",
+      "name": "synapsor-review-contract-recovery-tournament-assisted-c7715d81",
+      "running": false,
+      "removed": false
+    },
+    {
+      "id": "a8ab2fabdd07a29695b28bb3fdf054ddfd903a8a7ca37706c4e9ec078b5de56d",
+      "name": "synapsor-review-contract-recovery-tournament-assisted-6ebcd372",
+      "running": false,
+      "removed": false
+    },
+    {
+      "id": "c87e47acb4f38411c47e1a0b412793ed9bc7de6cd2bf0b5d8dc1296706ba3e9d",
+      "name": "synapsor-review-contract-recovery-tournament-assisted-b4e53817",
+      "running": false,
+      "removed": false
+    }
+  ],
+  "original_entries_unchanged": 283535,
+  "strict_preservation_exit": 1,
+  "strict_exit_reason": "same separately recorded external reviewer addition; no original changed",
+  "external_addition_unchanged": true,
+  "product_source_unchanged_since_stable": true,
+  "candidate": {
+    "verified_at": "2026-09-15T07:31:44.855Z",
+    "installed_tree_sha256": "45ce2a9d66e48e978b8cc9f61f5074603a473be86051fb27cd75dbe99cbb5224",
+    "entries": 7569
+  },
+  "clean_starts": {
+    "at": "2026-09-15T07:33:11.263185+00:00",
+    "entries": 207,
+    "manifest_sha256": "a37fe3bdd53313a598889837b867a480750e2488ae258f758295dd8f94de0e9d",
+    "unchanged_both_directions": true,
+    "application_opened": false
+  }
+}

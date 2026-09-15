@@ -35,8 +35,8 @@
   "frozen_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-contract-9966b59-20260915/frozen",
   "previous_artifact_tree": "9faa87dd7e9f22a8ed8e2e8fe41317b6ea47d131465ec1bccac6017b98230de8",
   "scope": "Planning operation/schema agreement, model-choice routing, exact maintained source-counter responsibility only; no counting/runtime changes",
-  "status": "STABLE_GATES_PASSED_FREEZE_NEXT",
-  "next_step": "Finish remaining predeclared sol B development capture without expanding receipt repair; stable full suite/types/10offline/PG; freeze and final primary A/restart. Final primary B remains blocked by preserved new receipt issue, not sampled again.",
+  "status": "STOP_FOR_INDEPENDENT_REVIEW",
+  "next_step": "Independent review of frozen operation/maintenance repair; separate receipt-review classification decision for blocked primary B. No further work is scheduled.",
   "budgets": {
     "development_minutes": 180,
     "fixture_minutes": 40,
@@ -86,7 +86,7 @@
   "route_correction": "A matched planning route. Secondary B used chooser/attachment/free-form planner; it is not an explicit-Review comparison.",
   "provider_calls_used": {
     "development": 10,
-    "final": 0
+    "final": 2
   },
   "product_tests": "a49d6127d512524294c1dbe47048e9344332e366",
   "development_deadline": "2026-09-15T08:29:45.157678+00:00",
@@ -112,5 +112,7 @@
   },
   "stable_verification_started_at": "2026-09-15T06:41:26.089057+00:00",
   "stable_verification_deadline": "2026-09-15T08:41:26.089057+00:00",
-  "product_commit": "65395f6e87e26e25c8d1543ce7a6e2c373a1c997"
+  "product_commit": "65395f6e87e26e25c8d1543ce7a6e2c373a1c997",
+  "artifact_tree": "45ce2a9d66e48e978b8cc9f61f5074603a473be86051fb27cd75dbe99cbb5224",
+  "source_checkpoint": "690abe1111a4cdb45e631d6b11c15e068b53cfc3"
 }
