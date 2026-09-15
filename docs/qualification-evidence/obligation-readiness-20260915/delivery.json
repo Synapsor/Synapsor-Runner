@@ -1,0 +1,50 @@
+{
+  "prepared_at": "2026-09-15T19:20:08.975159+00:00",
+  "branch": "codex/tui-safe-action-control-plane",
+  "baseline": "666fc5a2262145f9b54860c8c6670580d73acfef",
+  "retained_product_ancestor": "fbbb52b823314973e8097d07da4f05ddd936cbec",
+  "retained_frozen_ancestor": "29000841a0a27c50ef436ccf1de76fd98ecf4772",
+  "product_commit": "58c3f7bf5a9997fd966a224694171ba92596b09d",
+  "test_commit": "58c3f7bf5a9997fd966a224694171ba92596b09d",
+  "frozen_source_commit": "d631810d647b870eb0885910b8282e36dde78d9b",
+  "report_commit": "cbf78347b03cdad8550154eda8aa53fb46ec0ece",
+  "installed_tree_sha256": "8c75b859c4220585ccb07fb28723c3c27fed9881417740f61310938481658362",
+  "installed_manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/frozen/installed-artifact-manifest.json",
+  "installed_manifest_sha256": "837db28e55f976e247086d74e81617da9e0daf15d722e58d85472536ff181555",
+  "installed_archive": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/frozen/installed-artifact.tar.gz",
+  "installed_archive_sha256": "7792531bb99efc6edbaede3d8039a55ea5c6680dcaf9319cadeb62fd6de1161b",
+  "source_archive": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/frozen/source-checkpoint.tar.gz",
+  "source_archive_sha256": "c21405b3354048907326c71f7b3c6ab91c040f54147489f1318ca04e507a080d",
+  "reviewer_evidence": {
+    "at": "2026-09-15T19:18:34.945792+00:00",
+    "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/reviewer-evidence",
+    "manifest_sha256": "605516b49da84e5215bde73f92c5f6bb1d6e34a133857453652488624e5314ac",
+    "entries": 923,
+    "archive": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/obligation-readiness-666fc5a-20260915/reviewer-evidence.tar.gz",
+    "archive_sha256": "6bda657a9fd2f56fe1f11b825e3658acb16076b61fb4d630a609d2b10f8d121d",
+    "artifact_tree": "8c75b859c4220585ccb07fb28723c3c27fed9881417740f61310938481658362",
+    "scope": "Immutable local evidence, including private synthetic project checkpoints. Do not execute saved queues. Separate final installation and source archive identities are in final-artifact.json. Delivery-only metadata added later is outside this manifest."
+  },
+  "scorecard": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/obligation-readiness-20260915/SCORECARD.json",
+  "report": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/obligation-readiness-20260915/FINAL-REPORT.md",
+  "reviewer_handoff": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/obligation-readiness-20260915/REVIEWER-HANDOFF.md",
+  "full_suite": {
+    "exit": 0,
+    "passed": 6467,
+    "skipped": 464
+  },
+  "primary_B": "PASS review/save/restart/validated recheck; 2 authoring calls",
+  "primary_A": "PASS ordinary review-only plan/review/save/restart/validated recheck; 2 authoring calls; no new counting questions",
+  "independent_current_candidate": "PENDING: Claude Grok B and small A",
+  "historical_stage_a": "artifact-specific acceptance retained",
+  "original_stage_b": "ATTEMPTED_NOT_PASSED",
+  "next_unseen_stage_b": "NOT_STARTED",
+  "owned_resources": "state/logs saved; all five task containers stopped; no originals touched",
+  "push_destination": {
+    "remote": "backup",
+    "url": "https://github.com/Synapsor/Synapsor-Runner-Backup.git",
+    "verified_private": true,
+    "evidence": "backup-verification.json"
+  },
+  "status": "STOP for independent review; final delivery commit/push exit recorded in external tracker to avoid self-referential commit hashes"
+}
