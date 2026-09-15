@@ -1,0 +1,31 @@
+{
+  "name": "focused-timeout",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-request-timeout.test.ts",
+    "apps/runner/src/openrouter.test.ts",
+    "apps/runner/src/model-ask.test.ts",
+    "-t",
+    "operator authoring timeout|first-class OpenRouter|wall-clock timeout|endpoint-aware request timeout|configured timeout",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=30000",
+    "--hookTimeout=120000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T15:09:51.212231+00:00",
+  "source_head": "6a9ed0b8306adf4ad01549c72718b8b1a9a4d631",
+  "source_diff_sha256": "dd532cd28018999f5dc3bcbe017d706237467215e624c44c5ed68fbe8338f803",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-timeout-6a9ed0b-20260915/test-environments/focused-timeout",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-timeout-20260915/focused-timeout",
+  "source_manifest_sha256": "3e9ab4714d02d6fdfd8ffd10b6d7a687041b94f84c915ac4698ffc78a1d46cf9",
+  "pid": 372630,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T15:10:07.198816+00:00"
+}

@@ -1,0 +1,7 @@
+{
+  "bundle": "apps/runner/dist/runner.mjs",
+  "sha256": "7049b83801770d1b2a64f7c40da78f5fb59f9eca7bca15b40777c67282b56960",
+  "timeout_scope_definitions": 1,
+  "authoring_configuration_reads": 12,
+  "label": "compiled bundle inspection, not a provider execution"
+}

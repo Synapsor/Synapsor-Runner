@@ -1,0 +1,46 @@
+[
+  {
+    "file": "read-boundary-revision-model.ts",
+    "calls": 1
+  },
+  {
+    "file": "read-workload-model.ts",
+    "calls": 1
+  },
+  {
+    "file": "action-rule-model.ts",
+    "calls": 1
+  },
+  {
+    "file": "owner-policy-parent-model.ts",
+    "calls": 1
+  },
+  {
+    "file": "model-principal-scope-review.ts",
+    "calls": 1
+  },
+  {
+    "file": "authoring-policy-coverage.ts",
+    "calls": 1
+  },
+  {
+    "file": "action-boundary-interview.ts",
+    "calls": 1
+  },
+  {
+    "file": "model-authoring-narration.ts",
+    "calls": 1
+  },
+  {
+    "file": "boundary-job-model.ts",
+    "calls": 1
+  },
+  {
+    "file": "read-prerequisite-model.ts",
+    "calls": 1
+  },
+  {
+    "file": "action-suggestion-model.ts",
+    "calls": 2
+  }
+]

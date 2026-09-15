@@ -1,0 +1,29 @@
+{
+  "completed_at": "2026-09-15T15:16:37.857530+00:00",
+  "before": {
+    "exit_code": 1,
+    "failed": 5,
+    "note": "2 actual-handoff timeout failures,3 selection guidance failures"
+  },
+  "after_handoff": {
+    "exit_code": 0,
+    "passed": 5,
+    "filtered": 349
+  },
+  "focused_transport": {
+    "exit_code": 0,
+    "passed": 30,
+    "filtered": 189
+  },
+  "combined": {
+    "exit_code": 0,
+    "passed": 1326,
+    "skipped": 2,
+    "files": 21,
+    "source_unchanged": true
+  },
+  "provider_calls": 0,
+  "full_suite": "NOT RUN for this narrow repair;6407/463 result remains prior-artifact only",
+  "live_postgres": "NOT RUN; no storage/receipt/authority change",
+  "stage_b": "historically NOT PASSED"
+}

@@ -1,0 +1,31 @@
+{
+  "updated_at": "2026-09-15T15:24:41.980078+00:00",
+  "phase": "all-local-gates-passed; freeze next",
+  "product_tests": "69d1f3f22a76b28779d3f96ef1428ae970c0eabb",
+  "combined": {
+    "passed": 1326,
+    "skipped": 2,
+    "files": 21,
+    "exit_code": 0
+  },
+  "types_exit": 0,
+  "provider_calls": 0,
+  "next": "Finish packed gate, commit evidence checkpoint, freeze new complete installation, run installed CLI smoke, preserve checks and private delivery.",
+  "pending_external": "Claude owns cross-vendor rerun; no contract-level claim added.",
+  "unrelated_blocker": "../review-contract-20260915/remaining-receipt-review.md",
+  "offline_checks": {
+    "passed": 10,
+    "exit_codes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ]
+  }
+}

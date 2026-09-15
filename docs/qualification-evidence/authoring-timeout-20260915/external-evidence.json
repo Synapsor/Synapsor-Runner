@@ -1,0 +1,26 @@
+[
+  {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/xmodel-secondary-20260915/CROSS-VENDOR-RESULT.md",
+    "sha256": "c2524eaeaa7062874534a5ba574a09bc34f5787814ab1ae3406f0395449e3ca7",
+    "bytes": 4924,
+    "mode": "0o664"
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/xmodel-secondary-20260915/crossvendor/GA-terminal.log",
+    "sha256": "56ac46104d7902cdd3420be5864a4ab7b86e5ad31f0d2c364a0ef71de006ebed",
+    "bytes": 443920,
+    "mode": "0o664"
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/xmodel-secondary-20260915/crossvendor/QA-terminal.log",
+    "sha256": "dc1edcf9f715903377702c958583f638f42dfa553135be37f01d54fe09a3341e",
+    "bytes": 91798,
+    "mode": "0o664"
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/xmodel-secondary-20260915/crossvendor/CA-terminal.log",
+    "sha256": "6530c1444058b31a542186b2ce8dc694dcf2b159b8427f309230d652bd083556",
+    "bytes": 50586,
+    "mode": "0o664"
+  }
+]

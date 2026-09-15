@@ -1,0 +1,30 @@
+{
+  "name": "after-handoff",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/guided-start.test.ts",
+    "apps/runner/src/boundary-cli.test.ts",
+    "-t",
+    "threads the selected timeout|explains OpenRouter serving eligibility",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=30000",
+    "--hookTimeout=120000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T15:07:57.362602+00:00",
+  "source_head": "6a9ed0b8306adf4ad01549c72718b8b1a9a4d631",
+  "source_diff_sha256": "7fcca03e8145b9e38f61dd98d88c31e8382887df8ac86df471906da75e4a42af",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-timeout-6a9ed0b-20260915/test-environments/after-handoff",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-timeout-20260915/after-handoff",
+  "source_manifest_sha256": "0ab7f3939ce777400665a921ae66807befbc8e347a594ea18928444b34708a7d",
+  "pid": 369324,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T15:08:19.656766+00:00"
+}

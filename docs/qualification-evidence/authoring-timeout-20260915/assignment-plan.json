@@ -1,0 +1,14 @@
+{
+  "started_at": "2026-09-15T15:05:05.414137+00:00",
+  "baseline": "6a9ed0b8306adf4ad01549c72718b8b1a9a4d631",
+  "branch": "codex/tui-safe-action-control-plane",
+  "owned_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-timeout-6a9ed0b-20260915",
+  "budgets": {
+    "development_minutes": 90,
+    "verification_minutes": 80,
+    "closure_minutes": 25,
+    "provider_calls": 0,
+    "full_suite_runs": 0
+  },
+  "scope": "Authoring timeout propagation and selection-time OpenRouter eligibility guidance; retain default120, bounds1..600, privacy/no fallback and incomplete response refusal. Local focused/types/offline gates and new complete installed artifact; Claude owns provider rerun."
+}

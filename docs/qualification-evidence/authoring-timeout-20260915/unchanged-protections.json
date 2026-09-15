@@ -1,0 +1,16 @@
+{
+  "baseline": "6a9ed0b8306adf4ad01549c72718b8b1a9a4d631",
+  "tracked_files_compared": 312,
+  "paths": [
+    "packages",
+    "apps/runner/src/authoring-counting-review.ts",
+    "apps/runner/src/authoring-counting-requirements.ts",
+    "apps/runner/src/authoring-counting-domain.ts",
+    "apps/runner/src/boundary-job-operation-contract.ts",
+    "apps/runner/src/authoring-counter-maintenance-review.ts",
+    "apps/runner/src/local-test-runtime-identity.ts",
+    "apps/runner/src/semantic-admission-publication.qualification.ts"
+  ],
+  "changed": [],
+  "method": "exact tracked bytes compared to baseline commit; no runtime/accounting/publication/identity change intended"
+}
