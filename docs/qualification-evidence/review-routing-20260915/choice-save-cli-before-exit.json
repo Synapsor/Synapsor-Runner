@@ -1,0 +1,29 @@
+{
+  "name": "choice-save-cli-before",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/boundary-cli.test.ts",
+    "--testNamePattern",
+    "reviews without entering editors: choice-save-race",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=30000",
+    "--hookTimeout=120000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T01:37:54.384596+00:00",
+  "source_head": "11ba4805251f39be9df3aeea62d81433ed340071",
+  "source_diff_sha256": "53da0cd659e0d814bc274eccfae00fea77651fc4f06a5945cf3478074eab72b2",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/test-environments/choice-save-cli-before",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/review-routing-20260915/choice-save-cli-before",
+  "source_manifest_sha256": "46d7f260af0f46d6d9c9cf89010e4ebdcfde00e2ef86f0edf8f03b6b36a8b785",
+  "pid": 3215950,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-15T01:38:01.675718+00:00"
+}

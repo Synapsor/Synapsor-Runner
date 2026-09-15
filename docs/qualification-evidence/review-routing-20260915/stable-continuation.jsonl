@@ -1,0 +1,2 @@
+{"at": "2026-09-15T01:30:21.200016+00:00", "event": "waiting_for_existing_suite", "suite_exit_record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/review-routing-20260915/stable-full-exit.json"}
+{"at": "2026-09-15T01:33:32.099958+00:00", "event": "paused_before_any_followup_gate", "owned_waiter_pid": 3201794, "reason": "Reproduce possible counting-choice acknowledgement race after existing suite; no product edits"}

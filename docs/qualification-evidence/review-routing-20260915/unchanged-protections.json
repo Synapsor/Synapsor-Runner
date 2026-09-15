@@ -1,0 +1,64 @@
+{
+  "at": "2026-09-15T01:51:14.045788+00:00",
+  "baseline": "475c5c5ec7d5b5572b066665ddad3ff818117567",
+  "head": "cc149a5fb2edac8545963350f8081423d77a3668",
+  "exact_unchanged_files": [
+    {
+      "path": "apps/runner/src/authoring-counting-requirements.ts",
+      "git_blob": "c516ca3c4890fa9501fe585e6a954f09bde1bbcc",
+      "unchanged": true
+    },
+    {
+      "path": "apps/runner/src/authoring-counting-review.ts",
+      "git_blob": "e6a7b0734cbbcc0dce6e2bdb33a5a89cbab8ff59",
+      "unchanged": true
+    },
+    {
+      "path": "apps/runner/src/authoring-policy-coverage.ts",
+      "git_blob": "0188266323a31c78bcbe24cc60e8e9da3a42ddb6",
+      "unchanged": true
+    },
+    {
+      "path": "apps/runner/src/authoring-counting-domain.ts",
+      "git_blob": "e9141999de305e9e857a89a4f33d666ee80e8e13",
+      "unchanged": true
+    },
+    {
+      "path": "apps/runner/src/authoring-counting-decision-review.ts",
+      "git_blob": "6987d7ea72cb9f9347f39e18cdd9180f8732b38c",
+      "unchanged": true
+    },
+    {
+      "path": "apps/runner/src/semantic-action-runtime.ts",
+      "git_blob": "f86cf451cc30063314afc22d6ba7dd589d8e47c1",
+      "unchanged": true
+    },
+    {
+      "path": "apps/runner/src/scoped-explore.ts",
+      "git_blob": "b23f0a2b2265a0bedb3d98870fe776eee7d26705",
+      "unchanged": true
+    },
+    {
+      "path": "apps/runner/src/project-authority-mutation.ts",
+      "git_blob": "a92f0e59125412944b64622e580da8c90c0689c5",
+      "unchanged": true
+    },
+    {
+      "path": "apps/runner/src/project-runtime-admission.ts",
+      "git_blob": "69efc9c4950f14c5fd5c01a60f9e516140f67f78",
+      "unchanged": true
+    },
+    {
+      "path": "apps/runner/src/action-rule-authority.ts",
+      "git_blob": "f254b8896ec2a2f0b1d6480cec0df4f69e8adc04",
+      "unchanged": true
+    },
+    {
+      "path": "apps/runner/src/local-test-runtime-identity.ts",
+      "git_blob": "acdb529df5d3980f771961a3b907752ed7bb8ec6",
+      "unchanged": true
+    }
+  ],
+  "changed_package_files": [],
+  "scope": "Source identity evidence; not a substitute for final tests or an extension of historical qualification"
+}

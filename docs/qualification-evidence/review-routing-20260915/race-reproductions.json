@@ -1,0 +1,35 @@
+{
+  "at": "2026-09-15T01:40:20.548608+00:00",
+  "cases": [
+    {
+      "label": "counting-save-race-before",
+      "original_owned_store": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/test-environments/counting-save-race-before/tmp/review-choice-save-race-7xnnJ6",
+      "saved_store": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/race-reproductions/counting-save-race-before",
+      "files": [
+        {
+          "path": ".synapsor/authority-write-lock.sqlite",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".synapsor/boundary-authoring/policy-sources/da1be180-e4b3-47c4-9dff-88248c57c93f.json",
+          "sha256": "c06f7e7dde9e2b3efa165d2eb8f6d8e69fbc66d52d799cd56632e06268a3dea0"
+        }
+      ]
+    },
+    {
+      "label": "counting-save-race-after",
+      "original_owned_store": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/test-environments/counting-save-race-after/tmp/review-choice-save-race-3yBRDx",
+      "saved_store": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/race-reproductions/counting-save-race-after",
+      "files": [
+        {
+          "path": ".synapsor/authority-write-lock.sqlite",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": ".synapsor/boundary-authoring/policy-sources/570e3edf-4039-46ee-a704-6a508625b97e.json",
+          "sha256": "f18fc52c39f1e6dcf7969c0b3d497de5d0e3d5bcf7445fa8ae73f2ffaa74f876"
+        }
+      ]
+    }
+  ]
+}

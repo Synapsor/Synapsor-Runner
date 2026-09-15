@@ -1,0 +1,18 @@
+{
+  "full_captures": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/private/exact-routing-captures.json",
+  "sha256": "7f33f35b7dcb0ce4a83d4c3c159ad6136d633c02c30d49574d8db96ed038199a",
+  "cases": [
+    {
+      "case": "recovery-tournament-assisted",
+      "original_input_sha256": "b063ebad9f187d5ead3370073e6f610aac10417260d7b65da717aae7c19c7f7a",
+      "original_response_sha256": "8a83a45c70611a762dd0093d3bee246db9a58b3d3503e8e9b3aa6b04c272f523"
+    },
+    {
+      "case": "counting-wording-control",
+      "original_input_sha256": "5c05e6c2671943a109efe46f1b6bdf5f9d2388551992af37352a8e6f208f02dc",
+      "original_response_sha256": "3d8192be52da0bd0eb10f10b45e5abc1fd02a1b2a82daa0351595713e3be6289"
+    }
+  ],
+  "normal_regression_fixture": "apps/runner/src/fixtures/review-routing-captures.json",
+  "basis": "Full requests and unchanged tool call blocks; full envelopes preserved separately"
+}

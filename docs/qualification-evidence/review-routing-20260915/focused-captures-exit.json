@@ -1,0 +1,30 @@
+{
+  "name": "focused-captures",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/boundary-cli.test.ts",
+    "apps/runner/src/boundary-job-model.test.ts",
+    "-t",
+    "saved review operation dispatch|replays both complete|typed review-only",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=30000",
+    "--hookTimeout=120000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T01:09:40.352833+00:00",
+  "source_head": "475c5c5ec7d5b5572b066665ddad3ff818117567",
+  "source_diff_sha256": "632c8fd101e6b7b3909a5409d2303abf7bf67d71847bb5b8086610ff78c80b96",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/test-environments/focused-captures",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/review-routing-20260915/focused-captures",
+  "source_manifest_sha256": "866d643b23e7f0f57fbd6a39375f824f4168d9eb3c77f6deaf9cd007a2eb6565",
+  "pid": 3162811,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T01:09:48.304012+00:00"
+}

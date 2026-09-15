@@ -1,0 +1,20 @@
+{
+  "name": "focused-persistence-types-complete",
+  "args": [
+    "corepack",
+    "pnpm",
+    "typecheck"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T01:41:54.740805+00:00",
+  "source_head": "11ba4805251f39be9df3aeea62d81433ed340071",
+  "source_diff_sha256": "9a3344c357d6bf089d36f61e453f271316a760592f97adb2b84b2c2f60eae4d2",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/test-environments/focused-persistence-types-complete",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/review-routing-20260915/focused-persistence-types-complete",
+  "source_manifest_sha256": "737d6f7e09d877525f2e3297bfd11b74948ea5b5fd6e0f7253b89ea63ab258b4",
+  "pid": 3224700,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T01:42:01.527252+00:00"
+}

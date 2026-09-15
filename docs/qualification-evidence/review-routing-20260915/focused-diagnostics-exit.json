@@ -1,0 +1,29 @@
+{
+  "name": "focused-diagnostics",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/boundary-cli.test.ts",
+    "-t",
+    "coverage_failure|active_rules_recovery|saved review operation dispatch",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=30000",
+    "--hookTimeout=120000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T01:06:09.933130+00:00",
+  "source_head": "475c5c5ec7d5b5572b066665ddad3ff818117567",
+  "source_diff_sha256": "c23c8e463bb18d248dd94b451ab5d274f9dc94f7c2b6008105c8e8264fb154cf",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/test-environments/focused-diagnostics",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/review-routing-20260915/focused-diagnostics",
+  "source_manifest_sha256": "d07060aa6231e3e856d64a3f1b659e1b88deabbe0fa0f918b1ec57d53fb72074",
+  "pid": 3156441,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T01:06:20.048074+00:00"
+}

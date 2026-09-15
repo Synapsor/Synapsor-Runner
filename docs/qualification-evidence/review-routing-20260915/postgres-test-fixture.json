@@ -1,0 +1,12 @@
+{
+  "name": "synapsor-positive-review-tests-18f42ada",
+  "id": "cebf2a0703d47e8472f585901f3d2c3ce61954adbb97c708e0010487d05dc2c4",
+  "label": "review-routing-20260915",
+  "image": "sha256:1edc8e87e53194e0cc8006c4e9df9b626c6c72cb43ad3385f0f34af7922065b1",
+  "network": "none",
+  "database": "policy_reconciliation_tests",
+  "socket": "/tmp/synapsor-positive-review-pg-wpV9jm/socket",
+  "private_configuration": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/private/live-postgres.json",
+  "ready_at": "2026-09-15T01:16:51.249Z",
+  "credentials": "only scoped SYNAPSOR_TEST_POSTGRES_URL, no provider environment"
+}

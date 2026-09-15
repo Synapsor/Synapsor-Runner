@@ -1,0 +1,17 @@
+{
+  "label": "counting-save-race-before",
+  "interleaved": true,
+  "timeline": [
+    "own choices committed and source read reached after lock release",
+    "independent source update committed",
+    "coverage producer uses original in-memory source",
+    "coverage and completion saved"
+  ],
+  "producerCalls": 1,
+  "completed": true,
+  "failure": null,
+  "concurrent_note_preserved": false,
+  "coverage_saved": true,
+  "root": "/tmp/review-choice-save-race-7xnnJ6",
+  "expectation": "The independent saved source update must survive and the stale review must not complete."
+}

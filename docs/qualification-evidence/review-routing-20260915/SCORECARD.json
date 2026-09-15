@@ -1,0 +1,146 @@
+{
+  "updated_at": "2026-09-15T02:29:29.270520+00:00",
+  "artifact_tree": null,
+  "product_revision": "cc149a5fb2edac8545963350f8081423d77a3668",
+  "test_revision": "cc149a5fb2edac8545963350f8081423d77a3668",
+  "original_stage_b": "NOT PASSED",
+  "historical_stage_a": "artifact-specific; not requalified here",
+  "independent_acceptance": "PENDING CLAUDE REVIEW",
+  "rows": [
+    {
+      "name": "exact original routing failures replayed",
+      "status": "PASSED",
+      "evidence": [
+        "before-routing.log",
+        "exact-routing-captures-index.json"
+      ]
+    },
+    {
+      "name": "normal composed routing/positive review regressions",
+      "status": "PASSED",
+      "evidence": [
+        "focused-final-exit.json",
+        "focused-persistence-final-exit.json",
+        "focused-persistence-controls-exit.json"
+      ],
+      "note": "Separate runs; not aggregated into a full-suite claim"
+    },
+    {
+      "name": "source acknowledgement lost update",
+      "status": "REPAIRED; before fail / after pass",
+      "evidence": [
+        "counting-save-race-before-result.json",
+        "choice-save-cli-before-exit.json",
+        "counting-save-race-after-result.json"
+      ]
+    },
+    {
+      "name": "first stable suite",
+      "status": "INTERRUPTED",
+      "child_exit": -15,
+      "wrapper_exit": 241,
+      "evidence": [
+        "stable-full-stop.json",
+        "stable-full-exit.json"
+      ]
+    },
+    {
+      "name": "final stable suite",
+      "status": "PASSED",
+      "evidence": [
+        "stable-full02-exit.json"
+      ],
+      "passed": 6367,
+      "skipped": 463,
+      "files_passed": 307,
+      "files_skipped": 21,
+      "exit_code": 0,
+      "source_unchanged": true
+    },
+    {
+      "name": "stable types",
+      "status": "PASSED",
+      "exit_code": 0,
+      "evidence": [
+        "stable-types-exit.json"
+      ]
+    },
+    {
+      "name": "ten offline gates on final source",
+      "status": "PASSED",
+      "note": "Six earlier-source read-only passes retained separately",
+      "evidence": [
+        "offline-package-plan-attempt2.json"
+      ],
+      "checks": 10,
+      "exits": [
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0,
+        0
+      ]
+    },
+    {
+      "name": "real PostgreSQL control-store review/domain gate",
+      "status": "PASSED",
+      "evidence": [
+        "postgres-domain-exit.json",
+        "postgres-review-recovery-exit.json"
+      ],
+      "domain_gate": {
+        "passed": 5,
+        "real_postgres": 2,
+        "sqlite": 3,
+        "skipped": 0,
+        "exit_code": 0
+      },
+      "recovery_gate": {
+        "real_postgres_passed": 4,
+        "filtered_out": 416,
+        "exit_code": 0
+      }
+    },
+    {
+      "name": "new immutable installed artifact",
+      "status": "NOT CREATED"
+    },
+    {
+      "name": "development B real-provider review/restart",
+      "status": "PASSED, DEVELOPMENT ONLY",
+      "calls": 2,
+      "evidence": [
+        "development-result.json"
+      ]
+    },
+    {
+      "name": "installed A ordinary recheck/save/restart/visible recheck",
+      "status": "NOT RUN"
+    },
+    {
+      "name": "installed B attached-v2 choice/review/save/restart/recheck",
+      "status": "NOT RUN"
+    },
+    {
+      "name": "clean independent A/B starts",
+      "status": "PREPARED AND VERIFIED",
+      "evidence": [
+        "clean-starts.json"
+      ]
+    },
+    {
+      "name": "independent secondary openai/gpt-5.6-sol",
+      "status": "PENDING CLAUDE LANE; NOT RUN HERE"
+    },
+    {
+      "name": "cross-provider comparison",
+      "status": "BLOCKED",
+      "note": "Predeclared missing credential; no new credential discovery"
+    }
+  ]
+}

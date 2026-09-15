@@ -1,0 +1,8 @@
+{
+  "commit": "cc149a5fb2edac8545963350f8081423d77a3668",
+  "test_revision": "cc149a5fb2edac8545963350f8081423d77a3668",
+  "evidence_revision": "recorded at closure",
+  "baseline": "475c5c5ec7d5b5572b066665ddad3ff818117567",
+  "initial_product_revision": "557277d11bba380159febc1dcb88b83b20775a8a",
+  "initial_test_revision": "11ba4805251f39be9df3aeea62d81433ed340071"
+}

@@ -1,0 +1,29 @@
+{
+  "name": "focused-dispatch04",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/boundary-cli.test.ts",
+    "-t",
+    "saved review operation dispatch",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=30000",
+    "--hookTimeout=120000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T00:58:25.305552+00:00",
+  "source_head": "475c5c5ec7d5b5572b066665ddad3ff818117567",
+  "source_diff_sha256": "f9b9bf24c4dbd14e2d8f00102215f8169621f7b390c80cb8f5e386a374af8422",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/test-environments/focused-dispatch04",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/review-routing-20260915/focused-dispatch04",
+  "source_manifest_sha256": "ff8ca72c014545dcc8edffe4606228fd48fe3efa84244fa9e638c8a67ede488f",
+  "pid": 3142150,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T00:58:33.574503+00:00"
+}

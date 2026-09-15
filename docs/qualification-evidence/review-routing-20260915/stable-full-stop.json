@@ -1,0 +1,8 @@
+{
+  "at": "2026-09-15T01:37:07.200231+00:00",
+  "owned_suite_pid": 3180758,
+  "signal": "SIGTERM",
+  "reason": "Confirmed in-scope source acknowledgement lost-update at counting-save-race-before-result.json; preserve pre-fix verification as interrupted, never a pass",
+  "source_changed_before_stop": false,
+  "second_suite_authorized_by_declared_condition": true
+}

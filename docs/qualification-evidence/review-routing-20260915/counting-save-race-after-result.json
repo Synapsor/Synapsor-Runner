@@ -1,0 +1,17 @@
+{
+  "label": "counting-save-race-after",
+  "interleaved": true,
+  "timeline": [
+    "own choices committed; independent update enters before provider work",
+    "independent source update committed",
+    "coverage producer uses original in-memory source",
+    "refused: Error: POLICY_SOURCE_CHANGED: The selected source or its decisions changed during review. Reopen the current saved review; no stale result was saved."
+  ],
+  "producerCalls": 1,
+  "completed": false,
+  "failure": "Error: POLICY_SOURCE_CHANGED: The selected source or its decisions changed during review. Reopen the current saved review; no stale result was saved.",
+  "concurrent_note_preserved": true,
+  "coverage_saved": false,
+  "root": "/tmp/review-choice-save-race-3yBRDx",
+  "expectation": "The independent saved source update must survive and the stale review must not complete."
+}

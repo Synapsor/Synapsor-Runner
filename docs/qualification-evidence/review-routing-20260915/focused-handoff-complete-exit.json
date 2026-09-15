@@ -1,0 +1,29 @@
+{
+  "name": "focused-handoff-complete",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/post-activation-ask.test.ts",
+    "-t",
+    "visible saved-rule review",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=30000",
+    "--hookTimeout=120000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T01:16:47.070131+00:00",
+  "source_head": "475c5c5ec7d5b5572b066665ddad3ff818117567",
+  "source_diff_sha256": "8ba71d5ea35bf130bdc5a8b1505336020c2532ad1f50b9241cfb6bb59ac6717a",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/test-environments/focused-handoff-complete",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/review-routing-20260915/focused-handoff-complete",
+  "source_manifest_sha256": "0c1a578351d69ac80ccc99014184b5b3d89998c2c8e42a1d54d564aeb2b5a201",
+  "pid": 3176375,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T01:16:54.148313+00:00"
+}

@@ -1,0 +1,23 @@
+{
+  "name": "counting-save-race-before",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "tsx",
+    "docs/qualification-evidence/review-routing-20260915/replay-counting-save-race.mts",
+    "counting-save-race-before"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T01:36:41.554659+00:00",
+  "source_head": "11ba4805251f39be9df3aeea62d81433ed340071",
+  "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/test-environments/counting-save-race-before",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/review-routing-20260915/counting-save-race-before",
+  "source_manifest_sha256": "0c1a578351d69ac80ccc99014184b5b3d89998c2c8e42a1d54d564aeb2b5a201",
+  "pid": 3213351,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-15T01:36:43.217893+00:00"
+}

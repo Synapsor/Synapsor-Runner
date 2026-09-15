@@ -1,0 +1,20 @@
+{
+  "name": "focused-final-types",
+  "args": [
+    "corepack",
+    "pnpm",
+    "typecheck"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T01:12:00.334515+00:00",
+  "source_head": "475c5c5ec7d5b5572b066665ddad3ff818117567",
+  "source_diff_sha256": "a1daf1ca3b7efb64219a82ddae5f09fb27908a29f406df58953455f201e92785",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/test-environments/focused-final-types",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/review-routing-20260915/focused-final-types",
+  "source_manifest_sha256": "066ae73ee562808b4701335989d4027d55e40fa22ed957ca6ef1b6239d18443a",
+  "pid": 3166883,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-15T01:12:10.446045+00:00"
+}

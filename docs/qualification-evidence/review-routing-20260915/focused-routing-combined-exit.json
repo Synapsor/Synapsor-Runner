@@ -1,0 +1,33 @@
+{
+  "name": "focused-routing-combined",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/boundary-cli.test.ts",
+    "apps/runner/src/boundary-job-model.test.ts",
+    "apps/runner/src/authoring-policy-source.test.ts",
+    "apps/runner/src/post-activation-ask.test.ts",
+    "apps/runner/src/authoring-counting-positive.test.ts",
+    "apps/runner/src/authoring-counting-addition.test.ts",
+    "apps/runner/src/authoring-mixed-counting.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=30000",
+    "--hookTimeout=120000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T01:00:33.758199+00:00",
+  "source_head": "475c5c5ec7d5b5572b066665ddad3ff818117567",
+  "source_diff_sha256": "1035a8bbb938186207d136e1db02be2f1c18873f19bb284a88dc299cbc9d7b8a",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/test-environments/focused-routing-combined",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/review-routing-20260915/focused-routing-combined",
+  "source_manifest_sha256": "b427ae03224a6b123ddf9f930fa76316fedeb7b9fa01376ecd57ce6f2a0f36c9",
+  "pid": 3146245,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-15T01:03:18.772494+00:00"
+}

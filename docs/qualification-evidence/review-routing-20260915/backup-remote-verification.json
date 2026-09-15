@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-15T02:19:17.545854+00:00",
+  "remote": "backup",
+  "fetch_url": "https://github.com/Synapsor/Synapsor-Runner-Backup.git",
+  "push_url": "https://github.com/Synapsor/Synapsor-Runner-Backup.git",
+  "github": {
+    "isPrivate": true,
+    "nameWithOwner": "Synapsor/Synapsor-Runner-Backup",
+    "url": "https://github.com/Synapsor/Synapsor-Runner-Backup",
+    "viewerPermission": "ADMIN"
+  },
+  "scope": "Destination verification only; no push, release or deployment performed"
+}

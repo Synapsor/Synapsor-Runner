@@ -1,0 +1,94 @@
+{
+  "assignment": "Review-only routing and already-attached policy completion",
+  "started_at": "2026-09-15T00:35:49.849395+00:00",
+  "baseline": "475c5c5ec7d5b5572b066665ddad3ff818117567",
+  "branch": "codex/tui-safe-action-control-plane",
+  "owned_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915",
+  "evidence_root": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/review-routing-20260915",
+  "previous_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914",
+  "previous_evidence": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/positive-counting-evidence-20260914",
+  "frozen_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/review-routing-475c5c5-20260915/frozen",
+  "artifact_tree": null,
+  "trial_harness_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/trial-harness",
+  "original_cases_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases",
+  "acceptance": "Historical narrow independent acceptance only; not transferred to current candidate",
+  "budgets": {
+    "development_minutes": 180,
+    "fixture_minutes": 40,
+    "stable_verification_minutes": 140,
+    "full_suite_launches": 2,
+    "full_suite_second_launch_condition": "Only after a demonstrated in-scope failure and preserved first result; no blind retry",
+    "test_file_workers": 2,
+    "outer_test_timeout_ms": 30000,
+    "outer_hook_timeout_ms": 120000,
+    "development_provider_calls": 3,
+    "final_authoring_calls": 25,
+    "restart_recheck_reserved_calls": 6,
+    "final_confirmation_minutes": 75,
+    "closure_minutes": 25
+  },
+  "scope": "Explicit review routing, attachment handoff, persistence/continuation only; accepted counting invariant unchanged",
+  "known_open_worker": "TRUSTED_BINDING_MISSING worker-retry classification; record if reached, no repair/requeue/refund",
+  "stage_b": "original NOT PASSED",
+  "status": "READY_TO_FREEZE",
+  "next_step": "Freeze one complete installed artifact after evidence checkpoint; final A/B calls not started.",
+  "case_sources": {
+    "recovery-tournament-assisted": {
+      "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914",
+      "run": "recovery-tournament-assisted",
+      "checkpoint": "recheck-requested",
+      "case": "tournament-ratification"
+    },
+    "counting-wording-control": {
+      "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914",
+      "run": "counting-wording-control",
+      "checkpoint": "wording-stopped",
+      "case": "tournament-ratification"
+    }
+  },
+  "budget_amendments": [],
+  "secondary": {
+    "owner": "Claude independent",
+    "predeclared_adapter": "openai",
+    "model": "gpt-5.6-sol",
+    "fallback_order": [
+      "gpt-5.6-luna",
+      "gpt-5.5",
+      "gpt-5.4"
+    ],
+    "cross_provider": "BLOCKED missing configured credential per independent predeclaration; not rediscovered",
+    "predeclaration": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/positive-counting-review-20260914/SECONDARY-MODEL-PREDECLARATION.md",
+    "run_after_frozen_handoff": true
+  },
+  "heavy_window": "User reserved for this assignment; independent secondary lane follows frozen handoff",
+  "primary": {
+    "adapter": "openai",
+    "model": "gpt-5.6-terra",
+    "reasoning_effort": "low",
+    "store": false,
+    "endpoint": "https://api.openai.com/v1",
+    "basis": "actual previous captured transport and saved authoring context; reverify final settings"
+  },
+  "environment_corrections": [
+    {
+      "at": "2026-09-15T00:57:00.167024+00:00",
+      "correction": "Removed inherited prior-assignment stable timestamps from copied harness plan before any current stable launch. Current stable budget has not started; declared budgets unchanged."
+    }
+  ],
+  "stable_verification_started_at": "2026-09-15T01:18:51.990570+00:00",
+  "stable_verification_deadline": "2026-09-15T03:38:51.990570+00:00",
+  "historical_acceptance_report": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/mixed-counting-acceptance-20260914/ACCEPTANCE.md",
+  "current_independent_review": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/positive-counting-review-20260914/REVIEW.md",
+  "verification_events": [
+    {
+      "at": "2026-09-15T01:37:07.200231+00:00",
+      "event": "first stable suite intentionally interrupted",
+      "actual_child_exit": -15,
+      "wrapper_exit": 241,
+      "source_unchanged": true,
+      "basis": "counting-save-race-before and choice-save-cli-before demonstrate in-scope lost update; use remaining declared second slot",
+      "deadline_unchanged": "2026-09-15T03:38:51.990570+00:00"
+    }
+  ],
+  "stable_verification_completed_at": "2026-09-15T02:27:49.034016+00:00"
+}

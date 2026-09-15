@@ -1,0 +1,19 @@
+{
+  "at": "2026-09-15T01:15:23.850643+00:00",
+  "classification": "DEVELOPMENT real-provider smoke, not frozen installed qualification",
+  "run": "counting-wording-control",
+  "calls": 2,
+  "initial_failure": "COUNTING_SUPPORT_MISMATCH at submitted counter citation; one existing structural correction",
+  "business_review": "completed",
+  "restart_recheck": "validated_reuse, zero new calls",
+  "counting_choices": 2,
+  "separate_confirmations": 2,
+  "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+  "pending_after": [],
+  "independent_source_rows": 104,
+  "ledger_table_changes": [],
+  "source_manifest_initial": "focused-routing-combined-source.json",
+  "source_identity_limit": "development launcher records tracked diff; the focused source manifest separately includes the new untracked prepared handler",
+  "initial_return": "Access editor menu; exited q with no edit. Subsequent routing correction returns directly after Review.",
+  "snapshot_attempt1": "MODULE_NOT_FOUND pg from not-yet-frozen path; empty checkpoint retained. Corrected to installed repo dependency only for explicit development mode; development-reviewed-complete is actual saved snapshot."
+}
