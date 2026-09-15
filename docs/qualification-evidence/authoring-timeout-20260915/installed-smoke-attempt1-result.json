@@ -1,0 +1,11 @@
+{
+  "recorded_at": "2026-09-15T15:26:31.084650+00:00",
+  "artifact_tree": "5c5c5eeb0d8a42305d857d5bcc0841c12861dd9bf26798679b2107e2e5a28d35",
+  "harness_exit_code": 1,
+  "expected_child_exit": 2,
+  "actual_child_exit": 1,
+  "actual_diagnostic": "Model request timeout must be a whole number from 1 through 600 seconds.",
+  "classification": "harness measurement error: incorrectly assumed CLI exit status; range validation correctly refused before source inspection/save",
+  "project_unchanged": true,
+  "correction": "assert established CLI exit1; fresh owned directory; no product/package change"
+}

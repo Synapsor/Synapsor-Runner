@@ -1,0 +1,38 @@
+{
+  "frozen_at": "2026-09-15T15:25:05.215Z",
+  "purpose": "operator authoring timeout and OpenRouter selection guidance",
+  "cases": [
+    "local timeout propagation and bounded transport regressions; no provider trial"
+  ],
+  "product_commit": "69d1f3f22a76b28779d3f96ef1428ae970c0eabb",
+  "test_commit": "69d1f3f22a76b28779d3f96ef1428ae970c0eabb",
+  "report_commit": "recorded separately after verification",
+  "source_commit": "6f8b0f3a31b1eaece01df00b6e058a25e7ccc848",
+  "source_status": "?? .claude/",
+  "unpackaged_unrelated_directory": ".claude/ (preserved, no contents read)",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-timeout-6a9ed0b-20260915/frozen/installed",
+  "installed_tree_sha256": "5c5c5eeb0d8a42305d857d5bcc0841c12861dd9bf26798679b2107e2e5a28d35",
+  "node": {
+    "version": "v22.22.2",
+    "executable": "/usr/bin/node",
+    "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+  },
+  "runner_version": "1.8.0",
+  "spec_version": "1.11.0",
+  "package_lock_sha256": "20a4cce6f39d209d78cb69e5c5a7271934a77787ff812dc19ab05d953b44ba90",
+  "tarballs": [
+    {
+      "name": "synapsor-runner-1.8.0.tgz",
+      "sha256": "76ed316451e5de75893822100a8c09b3e92870ca3becaa2de89e6fe34c539ee2"
+    },
+    {
+      "name": "synapsor-spec-1.11.0.tgz",
+      "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+    }
+  ],
+  "manifest_sha256": "0a286a04cce016d9752faea2a865e59641a63dc62c712ab26ef8b03f2ff01ba5",
+  "archive_sha256": "6b50e4210940934e15d5c7d372421fdd7c79a6752c807daf6d18fdb21609dbbe",
+  "entries": 7569,
+  "freeze_exit_code": 0,
+  "write_protection": "all installation files/directories have write bits removed; command smoke additionally uses a read-only bind"
+}

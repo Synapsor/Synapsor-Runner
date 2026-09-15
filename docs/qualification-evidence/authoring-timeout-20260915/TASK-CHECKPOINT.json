@@ -1,6 +1,6 @@
 {
-  "updated_at": "2026-09-15T15:24:41.980078+00:00",
-  "phase": "all-local-gates-passed; freeze next",
+  "updated_at": "2026-09-15T15:30:19.925113+00:00",
+  "phase": "verification complete; prepare private delivery",
   "product_tests": "69d1f3f22a76b28779d3f96ef1428ae970c0eabb",
   "combined": {
     "passed": 1326,
@@ -10,7 +10,7 @@
   },
   "types_exit": 0,
   "provider_calls": 0,
-  "next": "Finish packed gate, commit evidence checkpoint, freeze new complete installation, run installed CLI smoke, preserve checks and private delivery.",
+  "next": "Save immutable handoff, commit final reports/raw logs, private backup push, verify clean state and STOP.",
   "pending_external": "Claude owns cross-vendor rerun; no contract-level claim added.",
   "unrelated_blocker": "../review-contract-20260915/remaining-receipt-review.md",
   "offline_checks": {
@@ -27,5 +27,7 @@
       0,
       0
     ]
-  }
+  },
+  "artifact_tree": "5c5c5eeb0d8a42305d857d5bcc0841c12861dd9bf26798679b2107e2e5a28d35",
+  "installed_smoke": "PASS; two preserved harness assumption corrections;10completed checks"
 }

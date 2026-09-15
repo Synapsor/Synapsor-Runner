@@ -1,0 +1,67 @@
+[
+  {
+    "args": [
+      "start",
+      "--help"
+    ],
+    "exit_code": 0,
+    "verified": "packaged Start help describes real control/default/restart",
+    "evidence_attempt": 2
+  },
+  {
+    "args": [
+      "start",
+      "--project-root",
+      "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-timeout-6a9ed0b-20260915/installed-smoke-attempt2/start-0",
+      "--cli",
+      "--timeout",
+      "0"
+    ],
+    "exit_code": 1,
+    "verified": "invalid authoring timeout refused before inspection/save",
+    "project_unchanged": true,
+    "evidence_attempt": 2
+  },
+  {
+    "args": [
+      "start",
+      "--project-root",
+      "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-timeout-6a9ed0b-20260915/installed-smoke-attempt2/start-601",
+      "--cli",
+      "--timeout",
+      "601"
+    ],
+    "exit_code": 1,
+    "verified": "invalid authoring timeout refused before inspection/save",
+    "project_unchanged": true,
+    "evidence_attempt": 2
+  },
+  {
+    "args": [
+      "start",
+      "--project-root",
+      "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-timeout-6a9ed0b-20260915/installed-smoke-attempt2/start-1.5",
+      "--cli",
+      "--timeout",
+      "1.5"
+    ],
+    "exit_code": 1,
+    "verified": "invalid authoring timeout refused before inspection/save",
+    "project_unchanged": true,
+    "evidence_attempt": 2
+  },
+  {
+    "args": [
+      "start",
+      "--project-root",
+      "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-timeout-6a9ed0b-20260915/installed-smoke-attempt2/start-not-a-number",
+      "--cli",
+      "--timeout",
+      "not-a-number"
+    ],
+    "exit_code": 1,
+    "verified": "invalid authoring timeout refused before inspection/save",
+    "project_unchanged": true,
+    "evidence_attempt": 2
+  }
+]

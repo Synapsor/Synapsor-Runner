@@ -1,0 +1,17 @@
+
+ RUN  v3.2.6 /home/sandesh-tiwari/Desktop/C++/synapsor-runner
+
+(node:369459) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:369452) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+ ✓ apps/runner/src/boundary-cli.test.ts (309 tests | 306 skipped) 9ms
+ ✓ apps/runner/src/guided-start.test.ts (45 tests | 43 skipped) 7362ms
+   ✓ guided start surfaces > start threads the selected timeout into actual authoring transport and its correction  3123ms
+   ✓ guided start surfaces > onboard threads the selected timeout into actual authoring transport and its correction  4235ms
+
+ Test Files  2 passed (2)
+      Tests  5 passed | 349 skipped (354)
+   Start at  08:07:58
+   Duration  20.44s (transform 11.65s, setup 0ms, collect 25.75s, tests 7.37s, environment 1ms, prepare 266ms)
+

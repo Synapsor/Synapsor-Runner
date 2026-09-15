@@ -1,0 +1,33 @@
+{
+  "verified_at": "2026-09-15T15:31:19.134140+00:00",
+  "installations": [
+    {
+      "verified_at": "2026-09-15T15:27:18.630Z",
+      "installed_tree_sha256": "5c5c5eeb0d8a42305d857d5bcc0841c12861dd9bf26798679b2107e2e5a28d35",
+      "entries": 7569,
+      "kind": "new",
+      "exit_code": 0
+    },
+    {
+      "verified_at": "2026-09-15T15:27:23.060Z",
+      "installed_tree_sha256": "45ce2a9d66e48e978b8cc9f61f5074603a473be86051fb27cd75dbe99cbb5224",
+      "entries": 7569,
+      "kind": "previous",
+      "exit_code": 0
+    }
+  ],
+  "provided_external_files_unchanged": [
+    "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/xmodel-secondary-20260915/CROSS-VENDOR-RESULT.md",
+    "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/xmodel-secondary-20260915/crossvendor/GA-terminal.log",
+    "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/xmodel-secondary-20260915/crossvendor/QA-terminal.log",
+    "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/xmodel-secondary-20260915/crossvendor/CA-terminal.log"
+  ],
+  "original_stores_opened_or_modified": false,
+  "owned_databases_or_workers_started": false,
+  "cleanup": "No owned database/worker to stop. Test and packaging processes completed; reviewer processes untouched.",
+  "new_installation_after_final_smoke": {
+    "verified_at": "2026-09-15T15:31:19.113Z",
+    "installed_tree_sha256": "5c5c5eeb0d8a42305d857d5bcc0841c12861dd9bf26798679b2107e2e5a28d35",
+    "entries": 7569
+  }
+}
