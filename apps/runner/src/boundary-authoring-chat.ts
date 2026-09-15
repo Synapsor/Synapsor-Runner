@@ -44,7 +44,7 @@ export type BoundaryAuthoringChat = {
   actionPrompter: ActionControlPrompter;
   setModel(label: string): void;
   setPermissionGuide?(guide: BoundaryAuthoringPermissionGuide | undefined): void;
-  setSourceCommandHandler?(handler: (command: string, argument: string) => Promise<boolean>, hasDraft?: () => boolean): void;
+  setSourceCommandHandler?(handler: (command: string, argument: string) => Promise<boolean | "reviewed">, hasDraft?: () => boolean): void;
   setSourceAnswerRecorder?(recorder: (answer: string) => Promise<void>): void;
   readLiteral?(prompt: string): Promise<string | undefined>;
   runner(title: string, lines?: string[], tone?: BoundaryAuthoringTone): void;
@@ -875,7 +875,7 @@ export function createBoundaryAuthoringChat(input: {
     pendingConversationQuestion = { speaker, lines: [prompt] };
     return readAnswer();
   };
-  let sourceCommandHandler: ((command: string, argument: string) => Promise<boolean>) | undefined;
+  let sourceCommandHandler: ((command: string, argument: string) => Promise<boolean | "reviewed">) | undefined;
   let sourceHasDraft: (() => boolean) | undefined;
   let sourceAnswerRecorder: ((answer: string) => Promise<void>) | undefined;
   const readAnswer = async (defaultValue?: string, recordPolicyAnswer = true) => {
@@ -917,6 +917,7 @@ export function createBoundaryAuthoringChat(input: {
         else {
           try {
             const changed = await sourceCommandHandler(command, trimmed!.slice(trimmed!.split(/\s+/u)[0]!.length).trim());
+            if (changed === "reviewed") return undefined;
             sourceChanged ||= changed;
             if (changed) checkpoint("Rules context changed", [sourceHasDraft?.() || defaultValue
               ? "Describe how to use these rules for this same draft. Enter alone will not accept the old decision."

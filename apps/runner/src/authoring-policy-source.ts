@@ -165,7 +165,7 @@ export function confirmedReadFieldMeanings(session: PolicySourceSession | undefi
  * same reviewed authority and source passage. Never carry activation consent. */
 export function bindPolicyCoverage(session: PolicySourceSession, report: PolicyCoverage, authorityDigest: string): void {
   const before = session.coverage;
-  if (session.coverage_authority_digest === authorityDigest && before?.source_digest === report.source_digest) {
+  if (session.application_assignments && session.coverage_authority_digest === authorityDigest && before?.source_digest === report.source_digest) {
     session.application_assignments = session.application_assignments?.map((entry) => {
       const passage = report.passages.find((item) => item.start === entry.start && item.end === entry.end
         && item.responsibility === "application" && !item.field_checks?.length

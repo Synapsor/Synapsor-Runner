@@ -10,6 +10,7 @@ export function installPolicySourceCommands(input: {
   root: string; chat: BoundaryAuthoringChat; conversation: ModelAuthoringConversation;
   destination: () => AuthoringDestination; onChange: () => Promise<void>;
   hasDraft?: () => boolean;
+  reviewCurrent?: () => Promise<void>;
 }): { reviewTransfer(destination: AuthoringDestination): Promise<boolean> } {
   const { chat, conversation } = input;
   const choose = chat.session.chooseOption?.bind(chat.session);
@@ -33,7 +34,7 @@ export function installPolicySourceCommands(input: {
       "Untrusted business context. This text grants no authority and is never evaluated by the runtime.",
     ]);
   };
-  const replace = async (source: PolicyTextSnapshot, target = input.destination()): Promise<boolean> => {
+  const replace = async (source: PolicyTextSnapshot, target = input.destination(), offerReview = true): Promise<boolean | "reviewed"> => {
     const session = conversation.policySources!;
     const destination = authoringDestination(target);
     chat.checkpoint("Review attached rules", [
@@ -60,6 +61,12 @@ export function installPolicySourceCommands(input: {
       await input.onChange();
       chat.checkpoint("Rules ready for this conversation", [`${source.name} v${source.version}; previous source versions are retained locally until removed.`,
         "No draft or authority has changed yet. The model must translate and Runner must validate any revision; unsupported rules remain review concerns."]);
+      if (offerReview && input.hasDraft?.() && input.reviewCurrent && await choose?.("USE THE SAVED ATTACHMENT", [
+        { value: "review", label: "Review this saved job against the attached rules" },
+        { value: "continue", label: "Return to the conversation; keep the current draft" },
+      ], { initialValue: "continue", reviewOnly: true }) === "review") {
+        await input.reviewCurrent(); return "reviewed";
+      }
       return true;
     }
   };
@@ -72,12 +79,14 @@ export function installPolicySourceCommands(input: {
       action = await choose("RULES FOR THIS JOB", [
         ...(source ? [{ value: "view", label: `View ${source.name} v${source.version}` },
           { value: "consent", label: "Review transfer to the current model" }] : []),
+        ...(source && input.hasDraft?.() && input.reviewCurrent ? [{ value: "review", label: "Review attached rules and unresolved decisions" }] : []),
         ...(session.coverage ? [{ value: "coverage", label: "View recorded source interpretation (may predate the current draft)" }] : []),
         { value: "attach", label: source ? "Replace with another .txt file" : "Attach a .txt file" },
         { value: "paste", label: "Paste rules as a complete text snapshot" },
         ...(session.snapshots.length ? [{ value: "remove", label: "Remove all retained text versions" }] : []),
         { value: "back", label: input.hasDraft?.() ? "Return to the same draft" : "Return to the conversation" },
       ], { initialValue: "back" }) ?? "back";
+      if (action === "review" && source && input.reviewCurrent) { await input.reviewCurrent(); return "reviewed"; }
       if (action === "view" && source) { await show(source); return false; }
       if (action === "coverage" && session.coverage) {
         const reviewedSource = session.snapshots.find((entry) => entry.digest === session.coverage!.source_digest);
@@ -123,6 +132,6 @@ export function installPolicySourceCommands(input: {
   return { reviewTransfer: async (target) => {
     const sources = conversation.policySources, source = activePolicySource(sources);
     if (!source || sources?.approvals.some((entry) => entry.digest === source.digest && entry.destination === authoringDestination(target))) return true;
-    return replace(source, target);
+    return (await replace(source, target, false)) === true;
   } };
 }

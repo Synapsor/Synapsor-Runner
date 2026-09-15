@@ -61,7 +61,7 @@ export async function savedAuthoringPolicyReview(input: {
       }
     }
     const review = policyReviewReadiness(source, session.coverage, session);
-    if (saved.pending_job_revision || saved.pending_read_revision || saved.pending_action_revision
+    if (saved.pending_policy_review || saved.pending_job_revision || saved.pending_read_revision || saved.pending_action_revision
       || saved.pending_action_removal || saved.pending_action_addition
       || !["authority_review", "client_setup"].includes(saved.stage)) {
       return { ...review, ready: false, summary: ["A saved edit or unfinished drafting step is still pending.", ...review.summary] };

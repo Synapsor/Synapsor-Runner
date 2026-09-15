@@ -101,6 +101,26 @@ export type BoundaryAuthoringResumeAction = {
   completed_outcomes?: string[];
 };
 
+/** Review operation identity, separate from the job's business edit agenda. */
+export type BoundaryPolicyReviewRequest = {
+  operation: "review_rules";
+  request: string;
+  source_session: string;
+  source_digest: `sha256:${string}`;
+  read_digest: `sha256:${string}`;
+  action_name?: string;
+  action_digest?: `sha256:${string}`;
+  /** Exact legacy request explicitly identified by the operator as review-only. */
+  supersedes_pending_job_revision?: string;
+};
+export type BoundaryPolicyReviewCompletion = {
+  request: BoundaryPolicyReviewRequest;
+  report_digest: `sha256:${string}`;
+  context_digest: `sha256:${string}`;
+  activity: "provider" | "validated_reuse";
+  completed_at: string;
+};
+
 export type BoundaryAuthoringResumeState = {
   schema_version: typeof BOUNDARY_AUTHORING_RESUME_VERSION;
   state: "in_progress";
@@ -118,6 +138,8 @@ export type BoundaryAuthoringResumeState = {
   read_intent?: string;
   /** Unclassified edit of the saved job; never replaces its canonical intent. */
   pending_job_revision?: string;
+  pending_policy_review?: BoundaryPolicyReviewRequest;
+  completed_policy_reviews?: BoundaryPolicyReviewCompletion[];
   /** Requested edit of the exact saved candidate, not a new workload or consent. */
   pending_read_revision?: string;
   /** Exact private Read mapping covered by this saved model's metadata permission. */
@@ -182,6 +204,9 @@ export function buildBoundaryAuthoringResumeState(input: {
   policySourceSession?: string;
   readIntent?: string;
   pendingJobRevision?: string;
+  /** Omission retains a selected operation; null completes it explicitly. */
+  pendingPolicyReview?: BoundaryPolicyReviewRequest | null;
+  completedPolicyReviews?: BoundaryPolicyReviewCompletion[];
   pendingReadRevision?: string;
   privateReadMetadataDigest?: `sha256:${string}`;
   metadataDestinationDigest?: `sha256:${string}`;
@@ -241,6 +266,10 @@ export function buildBoundaryAuthoringResumeState(input: {
     ...(input.read ? { read: normalizeRead(input.read) } : {}),
     ...(input.pendingJobRevision ? { pending_job_revision: reviewedText(input.pendingJobRevision,
       "Job revision request", MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS) } : {}),
+    ...((input.pendingPolicyReview === undefined ? input.previous?.pending_policy_review : input.pendingPolicyReview)
+      ? { pending_policy_review: normalizePolicyReview(input.pendingPolicyReview ?? input.previous!.pending_policy_review!) } : {}),
+    ...((input.completedPolicyReviews ?? input.previous?.completed_policy_reviews)?.length
+      ? { completed_policy_reviews: normalizePolicyReviewCompletions(input.completedPolicyReviews ?? input.previous!.completed_policy_reviews!) } : {}),
     ...(input.pendingReadRevision ? { pending_read_revision: reviewedText(input.pendingReadRevision,
       "Read revision request", MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS) } : {}),
     ...(input.privateReadMetadataDigest ? { private_read_metadata_digest: normalizePrivateReadMetadataDigest(input.privateReadMetadataDigest) } : {}),
@@ -385,7 +414,7 @@ export async function clearBoundaryAuthoringResumeState(projectRootInput: string
     assertBoundaryAuthoringResumeState(state);
     if (boundaryAuthoringActionIsUnfinished(state.action) || state.pending_job_revision || state.pending_read_revision
       || state.pending_action_addition || state.pending_action_revision || state.pending_action_removal
-      || state.reconciled_action_revisions?.length) return false;
+      || state.reconciled_action_revisions?.length || state.pending_policy_review || state.completed_policy_reviews?.length) return false;
     await fs.rm(filePath, { force: true });
     return true;
   });
@@ -477,6 +506,8 @@ export function assertBoundaryAuthoringResumeState(
     if (typeof value.pending_job_revision !== "string") throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Job revision request is invalid.");
     reviewedText(value.pending_job_revision, "Job revision request", MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS);
   }
+  if (value.pending_policy_review !== undefined) normalizePolicyReview(value.pending_policy_review);
+  if (value.completed_policy_reviews !== undefined) normalizePolicyReviewCompletions(value.completed_policy_reviews);
   if (value.pending_read_revision !== undefined) {
     if (typeof value.pending_read_revision !== "string") throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Read revision request is invalid.");
     reviewedText(value.pending_read_revision, "Read revision request", MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS);
@@ -782,4 +813,56 @@ function relativeProjectPath(projectRoot: string, target: string): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function normalizePolicyReview(value: unknown): BoundaryPolicyReviewRequest {
+  if (!isRecord(value) || value.operation !== "review_rules") throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Invalid review operation.");
+  const review: BoundaryPolicyReviewRequest = {
+    operation: "review_rules", request: reviewedText(reviewString(value.request), "Review request", MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS),
+    source_session: normalizeSourceSession(value.source_session),
+    source_digest: normalizePrivateReadMetadataDigest(value.source_digest),
+    read_digest: normalizePrivateReadMetadataDigest(value.read_digest),
+    ...(value.action_name !== undefined ? { action_name: reviewedName(reviewString(value.action_name), "Review Action", 200),
+      action_digest: normalizePrivateReadMetadataDigest(value.action_digest) } : {}),
+    ...(value.supersedes_pending_job_revision !== undefined ? { supersedes_pending_job_revision:
+      reviewedText(reviewString(value.supersedes_pending_job_revision), "Original review request", MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS) } : {}),
+  };
+  if (canonicalJsonDigest(review) !== canonicalJsonDigest(value)) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Unexpected review operation fields.");
+  return review;
+}
+function normalizePolicyReviewCompletions(value: unknown): BoundaryPolicyReviewCompletion[] {
+  if (!Array.isArray(value) || value.length > 32) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Invalid review history.");
+  return value.map(entry => {
+    if (!isRecord(entry) || !["provider", "validated_reuse"].includes(String(entry.activity))) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Invalid review completion.");
+    const completed: BoundaryPolicyReviewCompletion = { request: normalizePolicyReview(entry.request),
+      report_digest: normalizePrivateReadMetadataDigest(entry.report_digest), context_digest: normalizePrivateReadMetadataDigest(entry.context_digest),
+      activity: entry.activity as BoundaryPolicyReviewCompletion["activity"], completed_at: reviewedText(reviewString(entry.completed_at), "Review completion time", 64) };
+    if (!Number.isFinite(Date.parse(completed.completed_at)) || canonicalJsonDigest(completed) !== canonicalJsonDigest(entry)) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Invalid review completion fields.");
+    return completed;
+  });
+}
+
+/** Preserve every independent agenda while changing only this review operation. */
+export function updateBoundaryPolicyReview(state: BoundaryAuthoringResumeState, input: {
+  pending: BoundaryPolicyReviewRequest | null; completion?: BoundaryPolicyReviewCompletion;
+}): BoundaryAuthoringResumeState {
+  const superseded = input.completion?.request.supersedes_pending_job_revision;
+  if (superseded && state.pending_job_revision !== superseded) throw new Error("BOUNDARY_AUTHORING_RESUME_CHANGED: The pending request changed during review.");
+  return buildBoundaryAuthoringResumeState({ binding: state.binding,
+    stage: input.completion && (!state.pending_job_revision || superseded) && state.stage === "planning" ? "authority_review" : state.stage,
+    jobIntent: state.job_intent, provider: state.model.provider, model: state.model.name,
+    conversation: state.conversation, policySourceSession: state.policy_source_session, readIntent: state.read_intent,
+    pendingJobRevision: superseded ? undefined : state.pending_job_revision, pendingReadRevision: state.pending_read_revision,
+    pendingActionRemoval: state.pending_action_removal, pendingActionRevision: state.pending_action_revision,
+    pendingActionAddition: state.pending_action_addition, privateReadMetadataDigest: state.private_read_metadata_digest,
+    metadataDestinationDigest: state.metadata_destination_digest, read: state.read, action: state.action,
+    clientHandoff: state.client_handoff, intendedClient: state.intended_client, previous: state,
+    pendingPolicyReview: input.pending,
+    completedPolicyReviews: input.completion ? [...(state.completed_policy_reviews ?? []), input.completion].slice(-32) : undefined,
+  });
+}
+
+function reviewString(value: unknown): string {
+  if (typeof value !== "string") throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Review text must be a string.");
+  return value;
 }

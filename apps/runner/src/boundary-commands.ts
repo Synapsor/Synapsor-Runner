@@ -1,3 +1,5 @@
+import type { PolicySourceSession } from "./authoring-policy-source.js";
+import { ensurePreparedPolicyCoverage, type PreparedPolicyReviewState } from "./authoring-prepared-policy-review.js";
 import { reviewUnestablishedCounting } from "./authoring-counting-decision-review.js";
 import { reviewHistorySelectorChange } from "./action-history-selector-review.js";
 import { withCountingOutcomeDomain, type CountingOutcomeDomain } from "./authoring-counting-domain.js";
@@ -163,6 +165,8 @@ import {
 } from "./model-authoring-conversation.js";
 import {
   buildBoundaryAuthoringResumeState,
+  updateBoundaryPolicyReview,
+  type BoundaryPolicyReviewRequest,
   assertBoundaryAuthoringResumeCurrent,
   boundaryAuthoringVersionReviews,
   prepareBoundaryActionRevision,
@@ -440,6 +444,7 @@ export type BoundaryReviewCommandOptions = {
   startWithAgentJob?: boolean;
   /** Internal navigation from an existing review; does not start another job. */
   initialSavedReadRevision?: boolean;
+  initialPolicyReview?: boolean;
   /** Returns after that one model-guided job instead of opening the Boundary list. */
   exitAfterAgentJob?: boolean;
 };
@@ -910,7 +915,7 @@ export async function boundaryReviewCommand(
   }
   assertKnownOptions(
     args,
-    new Set(["--project-root", "--output", "--json", "--confirm", "--actor", "--map", "--all", "--details", "--access", "--job-first"]),
+    new Set(["--project-root", "--output", "--json", "--confirm", "--actor", "--map", "--all", "--details", "--access", "--job-first", "--review-rules"]),
     "boundary review",
   );
   if (args.includes("--all") && !args.includes("--map")) {
@@ -996,8 +1001,9 @@ export async function boundaryReviewCommand(
       actionProjectInspector: options.actionProjectInspector,
       runDelegationActionReview: options.runDelegationActionReview,
       boundaryAuthoringChatFactory: options.boundaryAuthoringChatFactory,
-      startWithAgentJob: options.startWithAgentJob ?? args.includes("--job-first"),
+      startWithAgentJob: options.startWithAgentJob ?? (args.includes("--job-first") || args.includes("--review-rules")),
       initialSavedReadRevision: options.initialSavedReadRevision,
+      initialPolicyReview: options.initialPolicyReview ?? args.includes("--review-rules"),
       exitAfterAgentJob: options.exitAfterAgentJob,
     });
   }
@@ -1742,6 +1748,7 @@ async function interactiveBoundaryReviewLoop(input: {
   boundaryAuthoringChatFactory?: BoundaryAuthoringChatFactory;
   startWithAgentJob?: boolean;
   initialSavedReadRevision?: boolean;
+  initialPolicyReview?: boolean;
   exitAfterAgentJob?: boolean;
 }): Promise<number> {
   let startAtBoundaryList = input.startAtBoundaryList;
@@ -1838,6 +1845,7 @@ async function interactiveBoundaryReviewLoop(input: {
           }),
           jobFirst: true,
           initialSavedReadRevision: input.initialSavedReadRevision,
+          initialPolicyReview: input.initialPolicyReview,
           ...(continueSavedJob ? { continueSavedJob: true } : {}),
         });
         if (assist.activation_ready && !assist.notice_presented) {
@@ -4162,6 +4170,7 @@ type InteractiveReadWorkloadAssistInput = {
   /** Internal one-shot continuation after an explicit saved-state transition. */
   continueSavedJob?: boolean;
   initialSavedReadRevision?: boolean;
+  initialPolicyReview?: boolean;
 };
 
 type BoundaryAssistOutcome = {
@@ -4434,6 +4443,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     }
   };
   const conversationalJobChoices = [
+    ...(availableResume && !revalidateSavedJob ? [{ value: "review_rules", label: "Review attached rules and unresolved decisions",
+      detail: "Recheck the exact saved candidate and current attachment; keep business edits separate." }] : []),
     ...(availableResume
       ? [{
           value: "resume",
@@ -4475,6 +4486,20 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       detail: "Import exact plan JSON, question-intent JSON, or a saved analysis.",
     },
   ];
+  let selectedPolicyReview = input.initialPolicyReview === true;
+  let sourceReviewOutcome: BoundaryAssistOutcome | undefined;
+  const runSavedPolicyReview = async (request = "Review attached rules and unresolved decisions", confirmedReviewRequest?: string) => {
+    if (!activeResume || !authoringConversation?.policySources || !selectedResumeModel || revalidateSavedJob) {
+      return boundaryAssistResult({ tone: "warning", title: "Saved review context is unavailable.",
+        lines: ["Restore or revalidate this job's saved source, candidate and model permission before review. No edit was started."] });
+    }
+    const notice = await reviewSavedBoundaryPolicy({ projectRoot: input.projectRoot, session: input.session,
+      resume: activeResume, sources: authoringConversation.policySources,
+      modelSession: boundaryAuthoringModelSession({ ...selectedResumeModel, conversation: authoringConversation }, input.authoringChat),
+      request, confirmedReviewRequest, actionProjectInspector: input.actionProjectInspector, progress: runWithProgress, assertRunning });
+    await input.authoringChat?.streamCheckpoint(notice.title, notice.lines, notice.tone === "warning" ? "warning" : "normal");
+    return { ...boundaryAssistResult(notice, false, false, true), navigation: "pause" as const };
+  };
   let policySourceControls: ReturnType<typeof installPolicySourceCommands> | undefined;
   const confirmModelEgress = async (session: ActionModelSuggestionSession) => {
     const privateCondition = (await loadBoundaryReviewContext(input.projectRoot)).candidate.read_prerequisite;
@@ -4582,7 +4607,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       footer: "Return to the saved review to inspect or restore the conversation." });
   }
   if (input.authoringChat && input.session.chooseOption) {
-    let selected = input.continueSavedJob ? "resume" : input.initialSavedReadRevision ? "model" : await input.session.chooseOption(
+    let selected = input.initialPolicyReview ? "review_rules" : input.continueSavedJob ? "resume" : input.initialSavedReadRevision ? "model" : await input.session.chooseOption(
       "START BOUNDARY DRAFTING",
       conversationalJobChoices,
       {
@@ -4621,7 +4646,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         footer: "Use the table list now. W reopens model-guided setup.",
       });
     }
-    resumeSelected = selected === "resume";
+    selectedPolicyReview ||= selected === "review_rules" || selected === "resume" && Boolean(availableResume?.pending_policy_review);
+    resumeSelected = selected === "resume" || selected === "review_rules";
     editingSavedJob = Boolean(availableResume
       && (selected === "model" || selected === "choose_model"));
     if (resumeSelected && availableResume) {
@@ -4756,6 +4782,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           }
           policySourceControls = installPolicySourceCommands({ root: input.projectRoot, chat: input.authoringChat, conversation: authoringConversation,
             hasDraft: () => Boolean(resumeRead),
+            reviewCurrent: async () => { sourceReviewOutcome = await runSavedPolicyReview(); },
             destination: () => selectedResumeModel ?? preselectedMappingSession!,
             onChange: () => persistAuthoringResume(activeResume?.stage ?? "planning") });
           if (!await policySourceControls.reviewTransfer(preselectedMappingSession)) {
@@ -4765,6 +4792,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             ? "Restored the saved rules snapshot without rereading its original file. /rules views, replaces or removes it."
             : "Describe the job, paste your business rules, or use /attach ./rules.txt. /rules manages the selected text."]);
         }
+        if (selectedPolicyReview) return runSavedPolicyReview(activeResume?.pending_policy_review?.request);
         installPermissionGuide(preselectedMappingSession);
         if (resumeSelected && revalidateSavedJob) {
           rememberModelAuthoringTurn(authoringConversation, "Runner revalidation notice",
@@ -4846,6 +4874,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     jobValidationContext = ["JOB DESCRIPTION TOO LONG", ...validationLines, ""];
     jobIntent = undefined;
   }
+  if (sourceReviewOutcome) return sourceReviewOutcome;
   if (jobIntent === undefined) return boundaryAssistResult(boundaryAssistBackNotice("Delegation setup closed."));
   if (input.jobFirst && /^(?:m|manual)$/i.test(jobIntent.trim())) {
     return boundaryAssistResult({
@@ -5266,6 +5295,21 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
               egressAcknowledged: true,
             }),
           );
+          if (activeResume && activePolicySource(authoringConversation?.policySources)
+            && (jobPlan.state === "clarification" || ["reuse", "none"].includes(jobPlan.read_mode) && ["reuse", "none"].includes(jobPlan.action_mode))) {
+            const reviewOnly = jobPlan.state === "planned" && jobPlan.operation === "review_rules";
+            if (reviewOnly) return runSavedPolicyReview(jobIntent!.trim());
+            const operation = await input.session.chooseOption?.("CHOOSE THE SAVED JOB OPERATION", [
+              { value: "continue", label: jobPlan.state === "clarification" ? "Answer the model's question" : "Keep this request as an unfinished edit" },
+              { value: "review", label: "This request is review-only; check current attached rules", detail: "Finish only this mistaken edit item after a successful review; retain its exact request in review history." },
+              { value: "pause", label: "Pause with this request preserved" },
+            ], { initialValue: "continue", reviewOnly: true, displayContext: true, context: [
+              jobPlan.state === "clarification" ? jobPlan.question : jobPlan.summary,
+              `Saved request: ${jobIntent!.trim()}`,
+              "Planning does not establish coverage. Selecting Review does not answer a business question or change rules."] });
+            if (operation === "review") return runSavedPolicyReview(jobIntent!.trim(), jobIntent!.trim());
+            if (operation === "pause") return boundaryAssistResult(boundaryAssistBackNotice("Request retained for continuation; no review or edit completed."));
+          }
           if (jobPlan.state === "planned") break;
           if (modelTurn >= 2) break;
           clarificationAnswer = await input.session.promptText(jobPlan.question, {
@@ -8404,81 +8448,34 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       try { countingDomain = await withCountingOutcomeDomain(input.projectRoot, semanticActionAuthorityDraft, async domain => domain); }
       catch { /* Missing, busy or mismatched history is not evidence of an empty domain. */ }
     }
-    let draftRecord = currentPolicyCoverageDraft();
-    if (sources) {
-      const expected = await policySourceSavedDigest(input.projectRoot, sources.id);
-      const assertCurrent = async () => {
-        if (await policySourceSavedDigest(input.projectRoot, sources.id) !== expected) throw new Error("POLICY_SOURCE_CHANGED: Counting review changed concurrently; reopen the saved job.");
-        if (activeResume) await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume);
-        await reloadReadReviewForModelRevision(input.projectRoot, context, semanticActionAuthorityDraft);
-      };
-      const decisions = await reviewUnestablishedCounting({ source, draft: draftRecord,
-        messages: sources.operator_messages ?? [], session: input.session, assertCurrent });
-      if (decisions?.length) {
-        const staged = structuredClone(sources);
-        staged.counting_decisions = [...(staged.counting_decisions ?? []).filter(d => !decisions.some(n => n.path === d.path)), ...decisions];
-        await withProjectAuthorityMutation(input.projectRoot, async permit => {
+    const state: PreparedPolicyReviewState = { attemptKey: policyAttemptKey, report: policyReport };
+    try {
+      const result = await ensurePreparedPolicyCoverage({ projectRoot: input.projectRoot, sources: sources!,
+        modelSession: modelAssistSession, operatorSession: input.session, currentDraft: currentPolicyCoverageDraft,
+        authorityDigest: canonicalJsonDigest({ read: explorationBoundaryCandidateDigest(context.candidate),
+          action: semanticActionAuthorityDraft?.digest ?? null }),
+        authority: semanticActionAuthorityDraft, countingDomain,
+        clarifications: authoringConversation?.turns.filter(turn => turn.kind === "clarification") ?? [],
+        assertCurrent: async permit => {
+          assertRunning();
           if (activeResume) await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, undefined, { permit });
           await reloadReadReviewForModelRevision(input.projectRoot, context, semanticActionAuthorityDraft);
-          await savePolicySources(input.projectRoot, staged, { expectedDigest: expected, permit });
-        });
-        Object.assign(sources, staged);
-        draftRecord = currentPolicyCoverageDraft();
-      }
+        }, progress: runWithProgress, state, force });
+      policyAttemptKey = state.attemptKey;
+      policyReport = state.report;
+      if (result.report) policyFailure = undefined;
+      return result;
+    } catch (error) {
+      assertRunning(error);
+      policyAttemptKey = state.attemptKey;
+      policyReport = undefined;
+      policyFailure = redactCliErrorMessage(error instanceof Error ? error.message : String(error));
+      input.authoringChat.rememberDetails("RULES COVERAGE UNAVAILABLE", [policyFailure,
+        "The draft and source snapshot remain saved. No rule was dropped and no authority was activated."]);
+      input.authoringChat.checkpoint("Rules check needs a retry", [policyFailure,
+        "The reviewed draft is saved. Continue with the model retries this check; exact details work without the provider."], "warning");
+      return { source, key: state.attemptKey ?? "", draftRecord: currentPolicyCoverageDraft(), report: undefined };
     }
-    const authorityDigest = canonicalJsonDigest({ read: explorationBoundaryCandidateDigest(context.candidate),
-      action: semanticActionAuthorityDraft?.digest ?? null });
-    const key = canonicalJsonDigest({ source: source.digest, draft: draftRecord, messages: sources?.operator_messages ?? [],
-      clarifications: authoringConversation?.turns.filter(turn => turn.kind === "clarification") ?? [],
-      interpretations: sources?.read_interpretations ?? [] });
-    if (!force && policyAttemptKey === undefined && sources?.coverage_context_digest === key && sources.coverage) {
-      try {
-        const report = parsePolicyCoverage({ passages: sources.coverage.passages }, source, draftRecord, sources.operator_messages ?? []);
-        bindPolicyCoverage(sources, report, authorityDigest);
-        policyReport = { key, report };
-        policyAttemptKey = key;
-      } catch { /* Recheck incompatible evidence, never replay stale readiness. */ }
-    }
-    if (force || policyAttemptKey !== key) {
-      policyAttemptKey = key;
-      try {
-        const expectedSourceDigest = sources ? await policySourceSavedDigest(input.projectRoot, sources.id) : undefined;
-        const report = await runWithProgress("Checking attached rules against this exact draft", () => reviewPolicyCoverage({
-          session: modelAssistSession!, source, draft: draftRecord,
-          ...(sources?.coverage?.source_digest === source.digest ? { previousReport: sources.coverage } : {}),
-        }));
-        policyReport = { key, report };
-        policyFailure = undefined;
-        if (sources) {
-          const staged = structuredClone(sources);
-          bindPolicyCoverage(staged, report, authorityDigest);
-          staged.coverage_context_digest = key;
-          const persist = async (permit: Parameters<Parameters<typeof withProjectAuthorityMutation>[1]>[0]) => {
-            if (activeResume) await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, undefined, { permit });
-            await reloadReadReviewForModelRevision(input.projectRoot, context, semanticActionAuthorityDraft);
-            await savePolicySources(input.projectRoot, staged, { expectedDigest: expectedSourceDigest ?? null, permit });
-          };
-          if (countingDomain && semanticActionAuthorityDraft) {
-            await withCountingOutcomeDomain(input.projectRoot, semanticActionAuthorityDraft, async (current, permit) => {
-              if (canonicalJsonDigest(current) !== canonicalJsonDigest(countingDomain)) {
-                throw new Error("POLICY_COUNTING_DOMAIN_CHANGED: Current authority or retained history changed during review. Recheck the exact saved rules; no policy or selector changed.");
-              }
-              await persist(permit);
-            });
-          } else await withProjectAuthorityMutation(input.projectRoot, persist);
-          Object.assign(sources, staged);
-        }
-      } catch (error) {
-        assertRunning(error);
-        policyFailure = redactCliErrorMessage(error instanceof Error ? error.message : String(error));
-        input.authoringChat.rememberDetails("RULES COVERAGE UNAVAILABLE", [policyFailure,
-          "The draft and source snapshot remain saved. No rule was dropped and no authority was activated."]);
-        input.authoringChat.checkpoint("Rules check needs a retry", [policyFailure,
-          "The reviewed draft is saved. Continue with the model retries this check; exact details work without the provider."], "warning");
-        policyReport = undefined;
-      }
-    }
-    return { source, key, draftRecord, report: policyReport?.report };
   };
   const originalPolicyStatements = () => [...new Set([
     canonicalJobIntent ?? jobIntent,
@@ -10407,6 +10404,135 @@ type ModelReadBoundaryExposureRevisionInput = {
     generationLock: GenerationLock,
   ) => void;
 };
+
+/** Review the exact saved candidate without entering any draft/edit/activation path. */
+export async function reviewSavedBoundaryPolicy(input: {
+  projectRoot: string; session: BoundaryReviewInteractiveSession;
+  modelSession: ActionModelSuggestionSession;
+  resume: BoundaryAuthoringResumeState;
+  sources: PolicySourceSession;
+  request: string;
+  /** Exact request confirmed by the host operation-selection menu, never model output. */
+  confirmedReviewRequest?: string;
+  actionProjectInspector?: typeof inspectActionProject;
+  progress?: <T>(label: string, operation: () => Promise<T>) => Promise<T>;
+  assertRunning?: () => void;
+}): Promise<BoundaryAccessNotice> {
+  let resume = input.resume;
+  const context = await loadBoundaryReviewContext(input.projectRoot);
+  const source = activePolicySource(input.sources);
+  if (!source || resume.policy_source_session !== input.sources.id) throw new Error("POLICY_REVIEW_SOURCE_UNAVAILABLE: Select the saved job's complete attached source before review.");
+  const readDigest = explorationBoundaryCandidateDigest(context.candidate);
+  const drafts = (await listActionRuleAuthorityDrafts(input.projectRoot)).filter(draft => draft.authority.rules.every(rule =>
+    rule.read_boundary_name === context.candidate.pack.name && rule.read_boundary_digest === readDigest));
+  let authority: ActionRuleAuthorityDraftV1 | undefined;
+  if (resume.pending_policy_review?.action_name) {
+    authority = drafts.find(draft => draft.authority.name === resume.pending_policy_review!.action_name);
+    if (!authority || authority.digest !== resume.pending_policy_review.action_digest) throw new Error("POLICY_REVIEW_CANDIDATE_CHANGED: The selected review candidate changed. Select its current revision explicitly; the unfinished review is retained.");
+  } else if (drafts.length === 1) authority = drafts[0];
+  else if (drafts.length > 1) {
+    const chosen = await input.session.chooseOption?.("SELECT SAVED ACTION CANDIDATE TO REVIEW", drafts.map((draft, index) => ({
+      value: String(index), label: draft.authority.name, detail: `Saved candidate ${draft.digest}; active authority is separate.`,
+    })), { reviewOnly: true });
+    if (chosen === undefined || !drafts[Number(chosen)]) return boundaryAssistBackNotice("Review selection cancelled. Saved work is unchanged.");
+    authority = drafts[Number(chosen)];
+  } else if (resume.action) throw new Error("POLICY_REVIEW_CANDIDATE_UNAVAILABLE: This job has no saved Action candidate matching the selected Read revision. Revalidate its existing draft before review; no replacement was inferred.");
+  const prior = resume.pending_policy_review;
+  if (prior && (prior.source_session !== input.sources.id || prior.source_digest !== source.digest || prior.read_digest !== readDigest)) {
+    throw new Error("POLICY_REVIEW_CONTEXT_CHANGED: The selected source or Read candidate changed. The prior review remains pending; explicitly select the new context before continuing.");
+  }
+  const display = [`Saved job: ${resume.job_intent}`, `Read candidate: ${context.candidate.pack.name} · ${readDigest}`,
+    ...(authority ? [`Action candidate: ${authority.authority.name} · ${authority.digest}`] : []),
+    `Attached source: ${source.name} v${source.version} · ${source.digest} · ${source.bytes} bytes / ${source.lines} lines (complete)`,
+    "Operation: review this saved candidate. Rules, active authority, execution and application history stay unchanged."];
+  input.session.rememberDetails?.("REVIEW ATTACHED RULES AND UNRESOLVED DECISIONS", display);
+  if (input.confirmedReviewRequest !== undefined && input.confirmedReviewRequest !== resume.pending_job_revision) {
+    throw new Error("BOUNDARY_AUTHORING_RESUME_CHANGED: The confirmed review request no longer matches the saved item.");
+  }
+  let supersedes = prior?.supersedes_pending_job_revision ?? input.confirmedReviewRequest;
+  if (!prior && resume.pending_job_revision && !supersedes) {
+    const choice = await input.session.chooseOption?.("REVIEW OR UNFINISHED EDIT?", [
+      { value: "keep", label: "Review this candidate; retain the separate unfinished edit" },
+      { value: "review", label: "This saved request was review-only", detail: "After a successful business review, retain this request in review history and finish only its mistaken edit item." },
+      { value: "pause", label: "Pause without changing pending work" },
+    ], { initialValue: "keep", reviewOnly: true, displayContext: true, context: [...display, `Saved request: ${resume.pending_job_revision}`] });
+    if (!choice || choice === "pause") return boundaryAssistBackNotice("Review paused. The unfinished request remains saved.");
+    if (choice === "review") supersedes = resume.pending_job_revision;
+  }
+  const request: BoundaryPolicyReviewRequest = prior ?? { operation: "review_rules", request: input.request,
+    source_session: input.sources.id, source_digest: source.digest as `sha256:${string}`, read_digest: readDigest,
+    ...(authority ? { action_name: authority.authority.name, action_digest: authority.digest } : {}),
+    ...(supersedes ? { supersedes_pending_job_revision: supersedes } : {}) };
+  const assertCurrent = async (permit?: ProjectAuthorityMutationPermit) => {
+    input.assertRunning?.();
+    await assertBoundaryAuthoringResumeCurrent(input.projectRoot, resume, undefined, { permit });
+    await reloadReadReviewForModelRevision(input.projectRoot, context, authority);
+  };
+  if (!prior) {
+    await withProjectAuthorityMutation(input.projectRoot, async permit => {
+      await assertCurrent(permit);
+      const next = updateBoundaryPolicyReview(resume, { pending: request });
+      await writeBoundaryAuthoringResumeState(input.projectRoot, next, { expectedRevisionDigest: resume.revision_digest, permit });
+      resume = next;
+    });
+  }
+  try {
+    const inspection = await (input.actionProjectInspector ?? inspectActionProject)(input.projectRoot, process.env);
+    let domain: CountingOutcomeDomain | undefined;
+    if (authority) {
+      try { domain = await withCountingOutcomeDomain(input.projectRoot, authority, async current => current); }
+      catch { /* Unavailable history never supplies an empty-domain proof. */ }
+    }
+    let executionReview: Parameters<typeof policyCoverageDraft>[0]["executionReview"];
+    if (authority) {
+      try {
+        const execution = await readSemanticSupervisedExecutionState({ projectRoot: input.projectRoot, env: process.env });
+        const matching = execution.policies.filter(policy => policy.action_boundary_digest === authority!.authority.action_boundary.digest);
+        if (matching.length) executionReview = { action_digest: authority.authority.action_boundary.digest,
+          policy_digest: canonicalJsonDigest({ enabled: execution.enabled, policies: matching }),
+          enabled_outcomes: execution.enabled ? matching.map(policy => policy.outcome).sort() : [] };
+      } catch { /* Deployment evidence unavailable, not verified. */ }
+    }
+    const currentDraft = () => policyCoverageDraft({ read: context.candidate, decisions: context.bundle.decisions,
+      actions: [], authority, source: { inspection, generationLock: context.lock }, reviewedVersionFields: boundaryAuthoringVersionReviews(resume),
+      policySources: input.sources, countingDomain: domain, executionReview,
+      authoringSession: { provider: input.modelSession.provider, model: input.modelSession.model },
+      operatorClarifications: resume.conversation.filter(turn => turn.kind === "clarification"
+        && input.sources.operator_messages?.includes(turn.answer)).map(turn => ({ question: turn.question, answer: turn.answer })) });
+    const state: PreparedPolicyReviewState = {};
+    const checked = await ensurePreparedPolicyCoverage({ projectRoot: input.projectRoot, sources: input.sources,
+      modelSession: input.modelSession, operatorSession: input.session, currentDraft, authority,
+      authorityDigest: canonicalJsonDigest({ read: readDigest, action: authority?.digest ?? null }), countingDomain: domain,
+      clarifications: resume.conversation.filter(turn => turn.kind === "clarification"), assertCurrent,
+      progress: input.progress, state, requireCountingChoice: true,
+      onValidated: async (result, permit) => {
+        if (!policyReviewReadiness(source, result.report, result.sources).ready) return;
+        const next = updateBoundaryPolicyReview(resume, { pending: null, completion: { request,
+          report_digest: canonicalJsonDigest(result.report), context_digest: result.key as `sha256:${string}`,
+          activity: result.activity, completed_at: new Date().toISOString() } });
+        await writeBoundaryAuthoringResumeState(input.projectRoot, next, { expectedRevisionDigest: resume.revision_digest, permit });
+        resume = next;
+      },
+    });
+    if (checked.report) {
+      const section = policyCoverageSection(source, checked.report, checked.draftRecord);
+      input.session.rememberDetails?.(section.title, reviewSectionLines(section));
+    }
+    const readiness = policyReviewReadiness(source, checked.report, input.sources);
+    return { tone: readiness.ready ? "success" : "warning", title: readiness.ready ? "Business review completed for this saved candidate." : "Business review remains pending.",
+      lines: [...display, `Review activity: ${checked.activity ?? "not completed"}.`, ...readiness.summary,
+        ...(resume.pending_job_revision || resume.pending_action_revision || resume.pending_read_revision || resume.pending_action_addition || resume.pending_action_removal
+          ? ["Separate unfinished edits remain saved; this review did not implement them."] : []),
+        "Deployment, client identity and independent execution readback retain their separate required reviews."],
+      footer: readiness.ready ? "Review finished. Choose Review attached rules and unresolved decisions to recheck; Edit rules is a separate operation."
+        : "Resume Review attached rules and unresolved decisions. Any necessary rule change is a separate Edit operation; no rule changed here." };
+  } catch (error) {
+    input.assertRunning?.();
+    return { tone: "warning", title: "Saved business review did not complete.",
+      lines: [redactCliErrorMessage(error instanceof Error ? error.message : String(error)), "The unfinished review and any separate edit remain saved. No rule or authority changed."],
+      footer: "Resume Review attached rules and unresolved decisions to continue from current saved evidence." };
+  }
+}
 
 export async function reloadReadReviewForModelRevision(
   projectRoot: string,
@@ -17051,7 +17177,7 @@ async function reviewReadFromSavedActions(input: { projectRoot: string; boundary
       schemaInspector: input.schemaInspector, session: input.session, keepAccessOpen: true,
       reviewOptions: { openModelRevision: async () => {
         await reloadReadReviewForModelRevision(input.projectRoot, context);
-        const result = await boundaryReviewCommand(["--project-root", input.projectRoot, "--access", "--job-first"],
+        const result = await boundaryReviewCommand(["--project-root", input.projectRoot, "--access", "--job-first", "--review-rules"],
           input.schemaInspector, input.session, undefined, { ...input.authoringOptions,
             startWithAgentJob: true, initialSavedReadRevision: true, exitAfterAgentJob: true });
         if (result !== 0) throw new Error("The saved access revision did not finish. Return to this review to inspect the retained draft or retry.");
@@ -17089,7 +17215,7 @@ async function reviewActionsCommand(
     ...(modelSuggestionSession ? { modelSuggestionSession } : {}),
     ...(includeModelGuidedVerifiedActionRevision ? { modelGuidedVerifiedActionRevision: async ({ modelSuggestionSession: currentModel }) => {
       const result = await boundaryReviewCommand(
-        ["--project-root", projectRoot, "--access", "--job-first"],
+        ["--project-root", projectRoot, "--access", "--job-first", "--review-rules"],
         inspectDatabase,
         undefined,
         undefined,

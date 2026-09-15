@@ -1247,3 +1247,12 @@ proposal-only states:
 
 For common blocked states and one-action recovery commands, use
 [Troubleshooting First Run](troubleshooting-first-run.md).
+
+
+### Review a saved job without editing its rules
+
+From `start --project-root . --cli`, resume the saved job and choose **Review attached rules and unresolved decisions**. The same choice is available in **Connect your client**, and `/rules` offers it while a saved draft is open. You can also use `synapsor-runner boundary review --review-rules --project-root .` in the operator terminal.
+
+Review displays the exact saved candidate and selected attachment version, revalidates applicable evidence, and reuses current coverage or invokes the configured authoring model. Replacing an attachment requires its own transfer consent and offers review of that saved version. Neither selection authorizes a rule edit. A language request may be classified by the existing planner; when Review versus Edit is unclear, choose the operation explicitly.
+
+An older request stored as an unfinished edit is retained unless you identify it as review-only. After successful business review, that exact request is retained in review history and its mistaken edit item is finished. Separate edits remain pending. A cancelled or failed review remains an unfinished review. Business review does not establish deployment, authenticated client identity, or independent source readback after execution; those duties remain separate.

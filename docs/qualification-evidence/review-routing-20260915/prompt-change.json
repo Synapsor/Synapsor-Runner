@@ -1,0 +1,13 @@
+{
+  "file": "apps/runner/src/boundary-job-model.ts",
+  "before": "No review-only operation guidance. Existing Read/Action create/revise/reuse planning instructions only.",
+  "after": "\"For an explicit review/recheck of saved rules without requested changes, set operation=review_rules, use reuse/none for both modes and omit edit intents. Review validates the selected current attachment and candidate; it does not draft, activate, or finish an edit. A request combining review and changes needs one clarification of the intended operation. A current attached source is already supplied by the host; do not ask to upload it again. Ask a specific semantic question if its content is ambiguous.\",",
+  "basis": [
+    "Exact no-change recheck was treated as an unfinished job edit.",
+    "Exact current v2 attachment was present in captured input when planning requested it again."
+  ],
+  "fixture_names_added": false,
+  "new_policy_sentences_added": false,
+  "coverage_prompt_changed": false,
+  "scope": "Operation routing guidance only; existing semantic coverage producer and positive-counting guards unchanged."
+}

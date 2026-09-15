@@ -44,6 +44,7 @@ export type PostActivationAskRoute =
   | "openai-compatible"
   | "mcp-client"
   | "mcp-http"
+  | "review-rules"
   | "edit-rules"
   | "create-outcome"
   | "review-outcomes"
@@ -79,6 +80,9 @@ export type PostActivationAskSelection =
     }
   | {
       route: "edit-rules";
+    }
+  | {
+      route: "review-rules";
     }
   | {
       route: "create-outcome";
@@ -205,6 +209,10 @@ const routeOptions: RouteOption[] = [
     id: "later",
     label: "Later",
     detail: "Leave the reviewed boundary active and return to the shell",
+  },
+  {
+    id: "review-rules", label: "Review attached rules and unresolved decisions",
+    detail: "Recheck the saved candidate and attachment without drafting a change",
   },
   {
     id: "edit-rules",
@@ -439,9 +447,9 @@ export async function runPostActivationAskHandoff(
     return runPostActivationAskHandoff({ ...input, selection: undefined, autoStartConfiguredProvider: false }, dependencies);
   }
 
-  if (route === "edit-rules" || route === "create-outcome" || route === "manual-editor") {
+  if (route === "review-rules" || route === "edit-rules" || route === "create-outcome" || route === "manual-editor") {
     const reviewArgs = ["--project-root", input.projectRoot, "--access",
-      ...(route !== "manual-editor" ? ["--job-first"] : [])];
+      ...(route !== "manual-editor" ? ["--job-first"] : []), ...(route === "review-rules" ? ["--review-rules"] : [])];
     if (dependencies.runBoundaryReview) return dependencies.runBoundaryReview(reviewArgs);
     const { boundaryReviewCommand } = await import("./boundary-commands.js");
     return boundaryReviewCommand(reviewArgs, undefined, undefined, ({ projectRoot }) =>
@@ -831,6 +839,7 @@ export function formatPostActivationAskSelection(
 ): string {
   if (selection.route === "mcp-client") return `Local stdio MCP / ${managedMcpClientLabel(selection.client)}`;
   if (selection.route === "mcp-http") return "Production HTTP MCP";
+  if (selection.route === "review-rules") return "Review attached rules and unresolved decisions";
   if (selection.route === "edit-rules") return "Edit rules with model";
   if (selection.route === "create-outcome") return "Create the first verified outcome";
   if (selection.route === "review-outcomes") return "Review saved verified outcomes";
@@ -880,7 +889,7 @@ export async function choosePostActivationAskSelection(
       if (!client) continue;
       return { route, client };
     }
-    if (route === "mcp-http" || route === "later" || route === "edit-rules" || route === "create-outcome" || route === "review-outcomes" || route === "manual-editor" || route === "execution-setup" || route === "owner-rules") return { route };
+    if (route === "review-rules" || route === "mcp-http" || route === "later" || route === "edit-rules" || route === "create-outcome" || route === "review-outcomes" || route === "manual-editor" || route === "execution-setup" || route === "owner-rules") return { route };
     if (route === "openai") {
       const model = await prompt("Terminal Ask model (OpenAI)", DEFAULT_TERMINAL_OPENAI_ASK_MODEL);
       if (model === undefined) continue;
@@ -1179,7 +1188,7 @@ async function chooseRouteInTerminal(
   if (!input.isTTY || !output.isTTY || typeof input.setRawMode !== "function") {
     throw new Error("The post-activation Ask choice requires a real terminal.");
   }
-  const primary = ["mcp-client", "edit-rules", "execution-setup", "later", ...(createFirstOutcome ? ["create-outcome"] : []),
+  const primary = ["mcp-client", "review-rules", "edit-rules", "execution-setup", "later", ...(createFirstOutcome ? ["create-outcome"] : []),
     ...(reviewSavedOutcomes ? ["review-outcomes"] : [])];
   let more = !primary.includes(defaultRoute);
   const options = () => [...routeOptions.filter((option) => (option.id !== "create-outcome" || createFirstOutcome)

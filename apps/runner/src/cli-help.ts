@@ -510,6 +510,7 @@ remain supported; prefer runner start for that explicit worker path.
   ${cmd} boundary assist --list [--project-root .]
   ${cmd} boundary assist --analysis rw_... --actor reviewer@example.com --reason "Compile reviewed workload" --apply --confirm "APPLY WORKLOAD sha256:..."
   ${cmd} boundary review --access [--project-root .]  # focused table/column/path editor
+  ${cmd} boundary review --review-rules [--project-root .]  # saved candidate + attached policy; no edits
   ${cmd} boundary review --map [--project-root .]
   ${cmd} boundary review --map --all [--details] [--project-root .]
   ${cmd} boundary review --confirm [--project-root .] [--actor reviewer@example.com]
