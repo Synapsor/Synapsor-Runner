@@ -26,12 +26,21 @@ const MAX_PROVIDER_RESPONSE_BYTES = 1_048_576;
 // SSE repeats identifiers and framing for every token. Bound wire traffic
 // separately while preserving the same final JSON payload limit.
 const MAX_PROVIDER_STREAM_BYTES = 8 * MAX_PROVIDER_RESPONSE_BYTES;
-const MAX_PROVIDER_REQUEST_BYTES = 262_144;
+const MAX_PROVIDER_REQUEST_BYTES = 1_048_576;
 const MAX_TOOL_RESULT_BYTES = 131_072;
 const MAX_TOOL_SCHEMA_BYTES = 131_072;
+// Opaque continuation has no portable bytes/token ratio. Leave headroom under
+// the 1 MiB completed-response cap and in the bounded follow-up request.
+const MAX_PROVIDER_CONTINUATION_BYTES = 512 * 1024;
+const MAX_TOOL_ARGUMENT_BYTES = 128 * 1024;
+// Completed calls/round trips, not reasoning chunks. Structured authoring also
+// enforces exactly one required initial tool; conversational authoring is bounded
+// separately. Do not increase execution/fanout budgets to accommodate reasoning.
 const MAX_TOOL_CALLS_PER_RESPONSE = 4;
 const MAX_TOOL_CALLS_PER_TURN = 8;
 const MAX_TOOL_ITERATIONS = 6;
+const MAX_AUTHORING_TOOL_ITERATIONS = 12;
+const MAX_AUTHORING_TOOL_CALLS_PER_TURN = 24;
 const MAX_HISTORY_TURNS = 4;
 const MAX_HISTORY_CHARS = 16_384;
 const MAX_HISTORY_TOOL_CONTEXT_CHARS = 12_288;
@@ -963,7 +972,7 @@ function openAiChatStreamAssembler(
   let content = "";
   let usage: Record<string, unknown> | undefined;
   const reasoningDetails: unknown[] = [];
-  let reasoningBytes = 0;
+  let reasoningBytes = 2; // Serialized array brackets; count retained bytes, not SSE framing.
   const tools = new Map<number, { id?: string; name?: string; arguments: string }>();
   const start = () => {
     if (started) return;
@@ -991,13 +1000,16 @@ function openAiChatStreamAssembler(
         }
         if (choice.finish_reason !== undefined && choice.finish_reason !== null) done = true;
         if (!isRecord(choice.delta)) continue;
-        if (Array.isArray(choice.delta.reasoning_details)) {
-          reasoningBytes += Buffer.byteLength(JSON.stringify(choice.delta.reasoning_details));
-          if (reasoningBytes > 65_536) {
-            throw new AskError("ASK_PROVIDER_RESPONSE_INVALID", "The provider's tool-continuation data exceeded the bounded size.", 502);
+        if (choice.delta.reasoning_details !== undefined) {
+          const fragment = choice.delta.reasoning_details;
+          const fragmentBytes = providerContinuationBytes(fragment);
+          if (Array.isArray(fragment) && fragment.length) {
+            reasoningBytes += fragmentBytes - 2 + (reasoningDetails.length ? 1 : 0);
+            assertProviderContinuationSize(reasoningBytes);
+            // Retain private blocks exactly, in order; never emit them to the UI.
+            // Avoid spreading a provider-sized array into function arguments.
+            for (const detail of fragment) reasoningDetails.push(detail);
           }
-          // Retain private continuation blocks in order; never emit them to the UI.
-          reasoningDetails.push(...choice.delta.reasoning_details);
         }
         if (typeof choice.delta.content === "string" && choice.delta.content) {
           content += choice.delta.content;
@@ -1018,9 +1030,7 @@ function openAiChatStreamAssembler(
             }
             if (typeof raw.function.arguments === "string" && raw.function.arguments) {
               current.arguments += raw.function.arguments;
-              if (current.arguments.length > 32_768) {
-                throw new AskError("ASK_TOOL_ARGUMENTS_INVALID", "Streamed tool arguments exceeded the bounded size.", 422);
-              }
+              assertToolArgumentSize(current.arguments);
               emitProviderStream(onEvent, { phase: "tool_delta", characters: raw.function.arguments.length });
             }
           }
@@ -1104,9 +1114,7 @@ function anthropicStreamAssembler(
         emitProviderStream(onEvent, { phase: "text_delta", characters: event.delta.text.length, text: event.delta.text });
       } else if (event.delta.type === "input_json_delta" && typeof event.delta.partial_json === "string") {
         const next = `${partialInputs.get(index) ?? ""}${event.delta.partial_json}`;
-        if (next.length > 32_768) {
-          throw new AskError("ASK_TOOL_ARGUMENTS_INVALID", "Streamed tool arguments exceeded the bounded size.", 422);
-        }
+        assertToolArgumentSize(next);
         partialInputs.set(index, next);
         emitProviderStream(onEvent, { phase: "tool_delta", characters: event.delta.partial_json.length });
       }
@@ -1174,7 +1182,7 @@ async function runOpenAiCompatibleTurn(input: {
   let pendingSyntaxRepair: AskPlanSyntaxRepair | undefined;
   let syntaxRepairAttempted = false;
 
-  for (let iteration = 0; iteration < (input.conversationalAuthoring ? 12 : MAX_TOOL_ITERATIONS); iteration += 1) {
+  for (let iteration = 0; iteration < (input.conversationalAuthoring ? MAX_AUTHORING_TOOL_ITERATIONS : MAX_TOOL_ITERATIONS); iteration += 1) {
     assertAskNotCancelled(input.signal);
     if (input.authorityGuard) {
       await assertAskAuthorityCurrent(input.authorityDigest, input.authorityGuard);
@@ -1512,7 +1520,7 @@ async function runOpenAiCompatibleTurn(input: {
         authorityGuard: input.authorityGuard,
       }), providerHistory);
     }
-    if (toolCalls.length > MAX_TOOL_CALLS_PER_RESPONSE || traces.length + toolCalls.length > (input.conversationalAuthoring ? 24 : MAX_TOOL_CALLS_PER_TURN)) {
+    if (toolCalls.length > MAX_TOOL_CALLS_PER_RESPONSE || traces.length + toolCalls.length > (input.conversationalAuthoring ? MAX_AUTHORING_TOOL_CALLS_PER_TURN : MAX_TOOL_CALLS_PER_TURN)) {
       throw new AskError("ASK_TOOL_BUDGET_EXCEEDED", "The provider requested more tools than the bounded Ask session permits.", 422);
     }
     const compoundQuestions = input.configuration.provider === "openai_compatible"
@@ -2144,7 +2152,7 @@ async function runAnthropicTurn(input: {
   let pendingSyntaxRepair: AskPlanSyntaxRepair | undefined;
   let syntaxRepairAttempted = false;
 
-  for (let iteration = 0; iteration < (input.conversationalAuthoring ? 12 : MAX_TOOL_ITERATIONS); iteration += 1) {
+  for (let iteration = 0; iteration < (input.conversationalAuthoring ? MAX_AUTHORING_TOOL_ITERATIONS : MAX_TOOL_ITERATIONS); iteration += 1) {
     assertAskNotCancelled(input.signal);
     if (input.authorityGuard) {
       await assertAskAuthorityCurrent(input.authorityDigest, input.authorityGuard);
@@ -2302,7 +2310,7 @@ async function runAnthropicTurn(input: {
         authorityGuard: input.authorityGuard,
       }), providerHistory);
     }
-    if (calls.length > MAX_TOOL_CALLS_PER_RESPONSE || traces.length + calls.length > (input.conversationalAuthoring ? 24 : MAX_TOOL_CALLS_PER_TURN)) {
+    if (calls.length > MAX_TOOL_CALLS_PER_RESPONSE || traces.length + calls.length > (input.conversationalAuthoring ? MAX_AUTHORING_TOOL_CALLS_PER_TURN : MAX_TOOL_CALLS_PER_TURN)) {
       throw new AskError("ASK_TOOL_BUDGET_EXCEEDED", "The provider requested more tools than the bounded Ask session permits.", 422);
     }
     const results: Array<Record<string, unknown>> = [];
@@ -4635,7 +4643,7 @@ function openAiResponsesInput(
         throw new AskError("ASK_PROVIDER_REQUEST_INVALID", "Runner could not encode a prior provider tool call safely.", 500);
       }
       const serialized = raw.function.arguments;
-      if (typeof serialized !== "string" || serialized.length > 32_768) {
+      if (typeof serialized !== "string" || Buffer.byteLength(serialized) > MAX_TOOL_ARGUMENT_BYTES) {
         throw new AskError("ASK_PROVIDER_REQUEST_INVALID", "Runner could not encode prior provider tool arguments safely.", 500);
       }
       items.push({
@@ -4807,9 +4815,10 @@ function openAiMessage(body: Record<string, unknown>): Record<string, unknown> {
     if (item.type === "function_call") {
       const id = safeProviderIdentifier(item.call_id, "tool call");
       const name = safeProviderIdentifier(item.name, "tool name");
-      if (typeof item.arguments !== "string" || item.arguments.length > 32_768) {
+      if (typeof item.arguments !== "string") {
         throw new AskError("ASK_TOOL_ARGUMENTS_INVALID", "The provider returned malformed tool arguments.", 422);
       }
+      assertToolArgumentSize(item.arguments);
       toolCalls.push({
         id,
         type: "function",
@@ -4854,9 +4863,10 @@ function openAiToolCalls(message: Record<string, unknown>): Array<{
     const id = safeProviderIdentifier(raw.id, "tool call");
     const name = safeProviderIdentifier(raw.function.name, "tool name");
     const serialized = raw.function.arguments;
-    if (typeof serialized !== "string" || serialized.length > 32_768) {
+    if (typeof serialized !== "string") {
       throw new AskError("ASK_TOOL_ARGUMENTS_INVALID", "The provider returned malformed tool arguments.", 422);
     }
+    assertToolArgumentSize(serialized);
     let parsed: unknown;
     try {
       parsed = JSON.parse(serialized);
@@ -4876,7 +4886,7 @@ function anthropicBlocks(body: Record<string, unknown>): Array<Record<string, un
 
 function safeToolArguments(value: unknown): Record<string, unknown> {
   if (typeof value === "string") {
-    if (value.length > 32_768) throw new AskError("ASK_TOOL_ARGUMENTS_INVALID", "Tool arguments exceeded the bounded size.", 422);
+    assertToolArgumentSize(value);
     try {
       value = JSON.parse(value);
     } catch {
@@ -4885,6 +4895,7 @@ function safeToolArguments(value: unknown): Record<string, unknown> {
   }
   if (!isRecord(value)) throw new AskError("ASK_TOOL_ARGUMENTS_INVALID", "Tool arguments must be a JSON object.", 422);
   assertSafeJsonValue(value, 0);
+  assertToolArgumentSize(JSON.stringify(value));
   return value;
 }
 
@@ -6753,12 +6764,30 @@ function providerLabel(provider: AskProvider): string {
   return provider === "openai" ? "OpenAI" : provider === "anthropic" ? "Anthropic" : provider === "openrouter" ? "OpenRouter" : "The custom provider";
 }
 
+function assertToolArgumentSize(serialized: string): void {
+  if (Buffer.byteLength(serialized) > MAX_TOOL_ARGUMENT_BYTES) {
+    throw new AskError("ASK_TOOL_ARGUMENTS_INVALID", `Tool arguments exceeded the ${MAX_TOOL_ARGUMENT_BYTES}-byte limit. No oversized tool call was accepted.`, 422);
+  }
+}
+
+function assertProviderContinuationSize(bytes: number): void {
+  if (bytes > MAX_PROVIDER_CONTINUATION_BYTES) {
+    throw new AskError("ASK_PROVIDER_RESPONSE_INVALID", `The provider's private tool-continuation data exceeded the ${MAX_PROVIDER_CONTINUATION_BYTES}-byte limit. No incomplete tool call was accepted.`, 502);
+  }
+}
+
+function providerContinuationBytes(value: unknown): number {
+  if (!Array.isArray(value)) {
+    throw new AskError("ASK_PROVIDER_RESPONSE_INVALID", "The provider's private tool-continuation data must be an array.", 502);
+  }
+  const bytes = Buffer.byteLength(JSON.stringify(value));
+  assertProviderContinuationSize(bytes);
+  return bytes;
+}
+
 function openRouterContinuation(message: Record<string, unknown>): Record<string, unknown> {
   if (message.reasoning_details === undefined) return {};
-  if (!Array.isArray(message.reasoning_details)
-    || Buffer.byteLength(JSON.stringify(message.reasoning_details)) > 65_536) {
-    throw new AskError("ASK_PROVIDER_RESPONSE_INVALID", "The provider's tool-continuation data is invalid or exceeds the bounded size.", 502);
-  }
+  providerContinuationBytes(message.reasoning_details);
   return { reasoning_details: message.reasoning_details };
 }
 

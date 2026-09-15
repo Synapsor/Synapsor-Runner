@@ -73,6 +73,25 @@ blocks needed for a tool round trip stay in memory and are not shown as chat,
 stored as operator history, or presented as Runner validation. Required tool
 calls, cancellations and output-size limits use Runner's normal checks.
 
+Response memory remains bounded independently of the request timeout and token
+budget. Private continuation is limited to 512 KiB per completed response (the
+serialized UTF-8 array); tool arguments to 128 KiB per call across streamed and
+nonstreamed responses. The full response and follow-up request each have a 1 MiB
+limit, with a separate 8 MiB streaming wire limit. Opaque continuation does not
+have a portable bytes-per-token ratio, so these are fixed byte limits, not values
+scaled by `max_output_tokens`. They are not operator settings. A model can still
+exceed them and be refused; Runner does not truncate continuation or accept a
+partial call. Accumulated history can exhaust the follow-up request limit after
+earlier tools completed; refusal does not undo those completed operations.
+
+Normal Ask allows at most four calls in one response, eight calls per turn and
+six tool-bearing provider rounds. Conversational authoring retains its separate
+24-call / 12-round ceiling. After the round ceiling, one final answer-only request
+may occur; additional tools from it are refused. Structured authoring requires
+exactly one named initial tool call, and its caller may make a separate bounded
+correction. These limits count completed calls and round trips, not reasoning
+fragments, and do not grant tool or business authority.
+
 Provider documentation: [API overview](https://openrouter.ai/docs/api/reference/overview),
 [routing preferences](https://openrouter.ai/docs/guides/routing/provider-selection),
 [reasoning continuation](https://openrouter.ai/docs/guides/best-practices/reasoning-tokens).
