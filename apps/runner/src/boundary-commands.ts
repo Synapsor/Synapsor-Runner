@@ -1,3 +1,4 @@
+import { readActivationImpact, readActivationImpactLines } from "./read-activation-impact.js";
 import { authoringReceiptConfiguration } from "./authoring-receipt-configuration.js";
 import type { PolicySourceSession } from "./authoring-policy-source.js";
 import { ensurePreparedPolicyCoverage, type PreparedPolicyReviewState } from "./authoring-prepared-policy-review.js";
@@ -1029,6 +1030,8 @@ export async function boundaryReviewCommand(
     reviewActor = reviewed.actor;
   }
 
+  const impactLines = readActivationImpactLines(await readActivationImpact(projectRoot, context.candidate));
+  if (impactLines.length) process.stderr.write(`${impactLines.join("\n")}\n`);
   const output = optionalArg(args, "--output");
   if (output) {
     const outputPath = path.resolve(output);
@@ -13153,6 +13156,8 @@ async function confirmAndActivateFocusedBoundary(input: {
         "Declining keeps the current active revision live and leaves this candidate disabled.",
       ]
     : [];
+  const impactLines = input.prepareDependentActions ? []
+    : readActivationImpactLines(await readActivationImpact(input.projectRoot, context.candidate));
   const activationReview = formatFocusedBoundaryActivationReview(
     context.bundle,
     conversation ? false : process.stdout.isTTY === true && !("NO_COLOR" in process.env),
@@ -13164,6 +13169,7 @@ async function confirmAndActivateFocusedBoundary(input: {
   );
   if (input.session.presentationMode !== "conversation") {
     process.stdout.write(activationReview);
+    if (impactLines.length) process.stdout.write(`${impactLines.join("\n")}\n`);
   }
   const activationReviewNotice = input.activationReviewNotice?.({
     projectRoot: input.projectRoot,
@@ -13179,6 +13185,7 @@ async function confirmAndActivateFocusedBoundary(input: {
   }
   const activationContext = [
     ...activationReview.trimEnd().split("\n"),
+    ...impactLines,
     ...(authorityReplacementContext.length ? ["", ...authorityReplacementContext] : []),
     ...(activationReviewNotice ? activationReviewNotice.trimEnd().split("\n") : []),
   ];
@@ -13199,6 +13206,7 @@ async function confirmAndActivateFocusedBoundary(input: {
   const discoveryLines = readDiscoveryConcernLines(discoveryConcerns);
   activationContext.push(...(discoveryLines.length ? ["", ...discoveryLines] : ["Discovery compatibility: complete resource contracts fit the bounded MCP response."]));
   const conversationReviewContext = formatReadActivationDecisionSummary([
+    ...impactLines,
     ...vocabularyLines,
     ...(deployment?.summary ?? []),
     ...(discoveryConcerns.length ? ["Discovery compatibility: some exact resource contracts exceed the supported size. Revise this saved draft before activation; exact details list the affected resources and sizes."] : []),
@@ -16187,7 +16195,10 @@ export async function boundaryActivateCommand(
     nextAction: `Rerun ${cliCommandName()} boundary activate after updating the credential.`,
     statePreserved: "The reviewed boundary was not activated, existing active boundaries remain unchanged, and the source database was not changed.",
   });
+  const activationImpact = await readActivationImpact(projectRoot, context.candidate);
+  const impactLines = readActivationImpactLines(activationImpact);
   const headless = args.includes("--headless");
+  if (headless && impactLines.length) process.stderr.write(`${impactLines.join("\n")}\n`);
   const expectedConfirmation = `ACTIVATE ${context.bundle.candidate_digest}`;
   let confirmation = optionalArg(args, "--confirm")?.trim();
   let actor = optionalArg(args, "--actor")?.trim();
@@ -16366,6 +16377,7 @@ export async function boundaryActivateCommand(
     }
     const session = interactiveSession ?? createBoundaryReviewInteractiveSession();
     const activationContext = [
+      ...impactLines,
       (await formatBoundaryReviewSummary(context.bundle, projectRoot, { nextAction: false, active: activeBeforeActivation })).trimEnd(),
       `Exact reviewed fingerprint: ${context.bundle.candidate_digest}`,
       context.candidate.deployment_profile === "production"
@@ -16490,6 +16502,7 @@ export async function boundaryActivateCommand(
     const payload = {
       ok: true,
       active,
+      activation_impact: activationImpact,
       operator,
       source_database_changed: false,
       model_facing_activation_tool: false,

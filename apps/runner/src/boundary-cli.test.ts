@@ -1,3 +1,6 @@
+import { startLocalUiServer } from "./local-ui.js";
+import { readActivationImpact, readActivationImpactLines } from "./read-activation-impact.js";
+import { createOptionalActionRuleRuntimeServices } from "./semantic-action-runtime.js";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
@@ -87,7 +90,7 @@ import {
   generateModelActionSuggestionSet,
 } from "./action-suggestion-model.js";
 import { compileActionRuleModelDraft, actionRuleModelDraftFromAuthority, type ActionRuleModelDraftV1 } from "./action-rule-draft.js";
-import { activateActionRuleAuthority, buildActionRuleAuthorityDraft, readActionRuleAuthorityDraft, readActionRuleAuthorityActivation,
+import { loadActiveActionRuleAuthority, activateActionRuleAuthority, buildActionRuleAuthorityDraft, readActionRuleAuthorityDraft, readActionRuleAuthorityActivation,
   writeActionRuleAuthorityDraft } from "./action-rule-authority.js";
 import { buildActionRuleAuthoringCatalog } from "./action-rule-authoring.js";
 import { reviewActionVersionField } from "./action-rule-version-review.js";
@@ -854,6 +857,135 @@ describe("boundary operator-plane CLI", () => {
       "CHOOSE A MODEL FOR BOUNDARY DRAFTING",
       "MODEL FOR BOUNDARY DRAFTING",
     ]);
+  });
+
+  it.each(["activate", "decline", "access-decline", "conversation-decline", "headless", "workbench"] as const)("warns before an unrelated Read edit pauses every verified Action (%s)", async choice => {
+    const fixture = await staleSemanticRevalidationFixture({ writeback: "supervised" });
+    const { root, inspection } = fixture;
+    const accepted = choice === "activate" || choice === "headless" || choice === "workbench";
+    try {
+      const guided = choice === "headless" || choice === "workbench" ? await initializeGuidedProject({ projectRoot: root, build: fixture.build, runnerVersion: "1.8.0" }) : undefined;
+      const initial = await loadBoundaryReviewContext(root);
+      await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({ draft: initial.draft, candidate: initial.candidate,
+        confirmedDecisions: initial.candidate.unresolved_decisions, actor: "test-reviewer", revision: 1 }));
+      await activateExplorationBoundary({ projectRoot: root, candidate: initial.candidate, expectedDigest: initial.bundle.candidate_digest,
+        actor: "test-reviewer", confirmation: `ACTIVATE ${initial.bundle.candidate_digest}`,
+        confirmedDecisions: initial.candidate.unresolved_decisions, currentInspection: inspection });
+      const action = (await readActionRuleAuthorityDraft(root, "reviewed_staging_rules"))!;
+      await activateActionRuleAuthority({ projectRoot: root, name: action.authority.name, expected_digest: action.digest,
+        actor: "test-reviewer", confirmation: `ACTIVATE ${action.digest}` });
+      const before = await loadActiveActionRuleAuthority(root);
+      const readBefore = await loadActivatedExplorationBoundaries(root);
+      expect(readActivationImpactLines(await readActivationImpact(root, initial.candidate))).toEqual([]);
+      const otherBoundary = structuredClone(initial.candidate);
+      otherBoundary.pack.name = "separate_read";
+      expect(readActivationImpactLines(await readActivationImpact(root, otherBoundary))).toEqual([]);
+      expect(action.authority.rules.every(({ rule, verification_boundary, effect_envelope }) =>
+        !JSON.stringify({ rule, verification_boundary, effect_envelope }).includes("scheduled_at"))).toBe(true);
+      const mutation = await prepareBoundaryResourceReviewMutation(root, { resource_id: "public.service_visits",
+        field_metadata: [{ field: "scheduled_at", label: "Visit appointment time" }],
+        actor: "test-reviewer", reason: "Label an unrelated field." }, async () => inspection);
+      await commitBoundaryResourceReviewMutation(root, mutation);
+      const pending = await loadBoundaryReviewContext(root);
+      await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({ draft: pending.draft, candidate: pending.candidate,
+        confirmedDecisions: pending.candidate.unresolved_decisions, actor: "test-reviewer", revision: (pending.progress?.revision ?? 0) + 1 }));
+      expect(pending.bundle.candidate_digest).not.toBe(initial.bundle.candidate_digest);
+      const confirm = vi.fn(async (_prompt, options) => {
+        const text = options.context.join(" ").replace(/\s+/g, " ");
+        expect(text).toContain("maintenance.complete_visit");
+        expect(text).toContain("maintenance.close_visit");
+        expect(text).toMatch(/Action recheck.*writer review/s);
+        // Merely displaying the confirmation must not mutate either authority.
+        expect(await loadActiveActionRuleAuthority(root)).toEqual(before);
+        return accepted;
+      });
+      if (choice === "workbench" && guided) {
+        const server = await startLocalUiServer({ projectRoot: root, boundaryRoot: fixture.written.root,
+          configPath: guided.config_path, storePath: guided.store_path, token: "impact-test", csrfToken: "impact-csrf",
+          schemaInspector: async () => inspection });
+        try {
+          const post = async (route: string, body: unknown) => {
+            const response = await fetch(`http://${server.host}:${server.port}${route}`, { method: "POST",
+              headers: { "content-type": "application/json", "x-synapsor-ui-token": "impact-test", "x-synapsor-csrf": "impact-csrf" },
+              body: JSON.stringify(body) });
+            const payload = await response.json(); expect(response.status, JSON.stringify(payload)).toBe(200); return payload;
+          };
+          const current = await loadBoundaryReviewContext(root);
+          const preview = await post("/api/boundary/preview", { candidate: current.candidate, expected_revision: current.progress!.revision,
+            actor: "test-reviewer", confirmed_decisions: current.candidate.unresolved_decisions,
+            ...(current.bundle.mutation_bindings.authoring ? { authoring_binding: current.bundle.mutation_bindings.authoring } : {}) });
+          expect(preview.activation_impact.newly_unavailable_outcomes).toEqual(["maintenance.close_visit", "maintenance.complete_visit"]);
+          expect(preview.activation_warning_lines.join(" ")).toMatch(/Action recheck.*writer review/);
+          expect(await loadActiveActionRuleAuthority(root)).toEqual(before);
+          await post("/api/boundary/activate", { candidate: current.candidate, expected_digest: preview.digest,
+            actor: "test-reviewer", confirmation: `ACTIVATE ${preview.digest}`, confirmed_decisions: current.candidate.unresolved_decisions,
+            ...(preview.authoring_binding ? { authoring_binding: preview.authoring_binding } : {}) });
+        } finally { await server.close(); }
+      } else if (guided) {
+        const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+        const publicPath = path.join(path.dirname(guided.config_path), "operator.pub.pem");
+        const privatePath = path.join(root, "operator.private.pem");
+        await fs.writeFile(publicPath, publicKey.export({ type: "spki", format: "pem" }).toString(), { mode: 0o600 });
+        await fs.writeFile(privatePath, privateKey.export({ type: "pkcs8", format: "pem" }).toString(), { mode: 0o600 });
+        const config = JSON.parse(await fs.readFile(guided.config_path, "utf8"));
+        config.operator_identity = { provider: "signed_key", operators: { alice: { public_key_path: "./operator.pub.pem", roles: ["boundary_reviewer"] } } };
+        await fs.writeFile(guided.config_path, JSON.stringify(config), { mode: 0o600 });
+        const bundlePath = path.join(root, "review.json");
+        const stderr = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+        const stdout = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+        const reviewed = await loadBoundaryReviewContext(root);
+        await boundaryReviewCommandInternal(["--project-root", root, "--output", bundlePath, "--json"], async () => inspection);
+        expect(JSON.parse(await fs.readFile(bundlePath, "utf8"))).toEqual(reviewed.bundle);
+        expect(stderr.mock.calls.flat().join(" ")).toContain("maintenance.complete_visit");
+        stderr.mockClear(); stdout.mockClear();
+        await expect(boundaryActivateCommandInternal(["--project-root", root, "--headless", "--config", guided.config_path,
+          "--review-bundle", bundlePath, "--confirm", `ACTIVATE ${reviewed.bundle.candidate_digest}`, "--identity", "alice",
+          "--identity-key", privatePath, "--required-role", "boundary_reviewer", "--reason", "Review this exact replacement.",
+          "--environment", reviewed.candidate.deployment_profile, "--nonce", "read-impact-nonce-0001", "--json"], async () => inspection)).resolves.toBe(0);
+        expect(stderr.mock.calls.flat().join(" ")).toMatch(/maintenance.close_visit[\s\S]*maintenance.complete_visit[\s\S]*Action recheck[\s\S]*writer review/);
+        const payload = JSON.parse(stdout.mock.calls.map(call => String(call[0])).join(""));
+        expect(payload.activation_impact.newly_unavailable_outcomes).toHaveLength(2);
+        expect(payload.operator.verified).toBe(true);
+      } else if (choice === "access-decline" || choice === "conversation-decline") {
+        let visits = 0;
+        await expect(boundaryReviewCommandInternal(["--project-root", root, "--access"], async () => inspection,
+          { ...fixture.session, ...(choice === "conversation-decline" ? { presentationMode: "conversation" as const } : {}),
+            chooseResource: async () => visits++ === 0 ? { action: "confirm" as const } : undefined,
+            confirmActivation: confirm,
+            chooseOption: async (title, _choices, options) => {
+              expect(title).toBe("REPLACE ACTIVE READ BOUNDARY");
+              await confirm(title, options);
+              return "back";
+            } })).resolves.toBe(0);
+        expect(confirm).toHaveBeenCalledOnce();
+      } else {
+        await expect(boundaryActivateCommandInternal(["--project-root", root, "--actor", "test-reviewer"], async () => inspection,
+          { ...fixture.session, confirm })).resolves.toBe(0);
+        expect(confirm).toHaveBeenCalledOnce();
+      }
+      const after = await loadActiveActionRuleAuthority(root, { dependency_check: "report" });
+      expect(after.activation).toEqual(before.activation);
+      expect(after.authority).toEqual(before.authority);
+      expect(after.registry).toEqual(before.registry);
+      expect([...(after.unavailable_outcomes ?? [])].sort()).toEqual(accepted ? ["maintenance.close_visit", "maintenance.complete_visit"] : []);
+      if (!accepted) expect(await loadActivatedExplorationBoundaries(root)).toEqual(readBefore);
+      else {
+        await expect(loadActiveActionRuleAuthority(root)).rejects.toMatchObject({ code: "ACTION_RULE_READ_AUTHORITY_STALE" });
+        const impact = await readActivationImpact(root, pending.candidate);
+        expect(impact.newly_unavailable_outcomes).toEqual([]);
+        expect(impact.already_unavailable_outcomes).toHaveLength(2);
+        const store = new ProposalStore(":memory:");
+        const facts = vi.fn(async () => { throw new Error("Unavailable Actions must not read source facts."); });
+        try {
+          const services = await createOptionalActionRuleRuntimeServices({ projectRoot: root, config: { version: 1, mode: "review", sources: {},
+              trusted_context: { provider: "static_dev", values: { tenant_id: "synthetic-tenant", principal: "synthetic-reviewer" } } },
+            store, key: Buffer.alloc(32, 7), factSessionFactory: facts });
+          await expect(services!.semanticActions.callTool("app.request_change", { outcome: "maintenance.complete_visit",
+            subject_refs: { visit: `obj_${"x".repeat(40)}` } })).rejects.toMatchObject({ code: "SEMANTIC_ACTION_UNAVAILABLE" });
+          expect(facts).not.toHaveBeenCalled();
+        } finally { store.close(); }
+      }
+    } finally { await fixture.dispose(); }
   });
 
   it("exports an exact review bundle and requires a replay-safe signed decision for headless activation", async () => {
@@ -15980,7 +16112,7 @@ async function staleSemanticRevalidationFixture(options: { writeback?: "proposal
   const build = buildAutoBoundary({ inspection, project: { root, package_manager: "npm", frameworks: ["node"],
     schema_inputs: [], database_env_names: ["DATABASE_URL"] }, sourceEnv: "DATABASE_URL", inspectedSchema: "public" });
   const planner = vi.fn(async () => { throw new Error("Stale completed Actions must not be replanned."); });
-  await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+  const written = await writeAutoBoundaryArtifacts({ projectRoot: root, build });
   if (options.currentStateRead) for (const table of inspection.tables) {
     const preview = await prepareBoundaryResourceReviewMutation(root, { resource_id: `public.${table.name}`, principal_key: "principal_id",
       withhold_from_model_fields: ["principal_id"], actor: "test-reviewer", reason: "Review the fixture's exact existing organization/person scope." }, async () => inspection);
@@ -16101,7 +16233,7 @@ async function staleSemanticRevalidationFixture(options: { writeback?: "proposal
     await expect(readActionRuleAuthorityActivation(root)).resolves.toBeUndefined();
     await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
   };
-  return { root, inspection, compile, planner, session, chats, writeResume, run, expectRetained,
+  return { root, build, written, inspection, compile, planner, session, chats, writeResume, run, expectRetained,
     dispose: () => fs.rm(root, { recursive: true, force: true }) };
 }
 

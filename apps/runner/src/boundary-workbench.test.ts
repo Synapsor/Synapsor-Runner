@@ -1,5 +1,5 @@
 import vm from "node:vm";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { renderBoundaryWorkbench } from "./boundary-workbench.js";
 
 describe("Auto Boundary Workbench renderer", () => {
@@ -48,6 +48,31 @@ describe("Auto Boundary Workbench renderer", () => {
     await prepare("reviewer");
     expect(sent).toEqual([{ url: "/api/boundary/delegations/catalog",
       body: { expected_plan_digest: "reviewed-catalog", accepted_shared_resources: [], actor: "reviewer" } }]);
+  });
+
+  it.each([false, true])("shows exact Action impact before the Workbench submits Read activation (accept=%s)", async accept => {
+    const script = renderBoundaryWorkbench("csrf").match(/<script>([\s\S]*?)<\/script>/)![1]!;
+    const start = script.indexOf("function confirmReadActivationImpact(");
+    const end = script.indexOf("async function activateBoundary(", start);
+    const warning = ["ACTIVATING THIS READ REVISION WILL PAUSE VERIFIED ACTIONS", "- maintenance.complete_visit",
+      "Each listed outcome needs an Action recheck and then a fresh writer review before supervised execution can resume."];
+    const order: string[] = [];
+    const nodes = { message: { className: "", textContent: "" }, preview: { disabled: false }, actor: { value: "reviewer" } };
+    const confirm = vi.fn((message: string) => { order.push("warning"); expect(message).toContain(warning.join("\n")); return accept; });
+    const context = vm.createContext({ byId: (id: keyof typeof nodes) => nodes[id], window: { confirm },
+      focusedAccessReview: false, reviewProgressHealthy: true, candidate: {}, candidateDigest: undefined,
+      reviewRevision: 2, confirmedDecisions: new Set(), queueReviewProgressSave: async () => undefined,
+      updateActivationState: () => undefined,
+      post: async (url: string) => { expect(url).toBe("/api/boundary/preview"); order.push("preview");
+        return { digest: "exact", activation_warning_lines: warning }; },
+      activateBoundary: async () => { order.push("activate"); } });
+    vm.runInContext(script.slice(start, end), context);
+    await vm.runInContext("previewBoundary()", context);
+    expect(order).toEqual(accept ? ["preview", "warning", "activate"] : ["preview", "warning"]);
+    expect(confirm).toHaveBeenCalledOnce();
+    // The independent relationship shortcut also warns before its activation submission.
+    const relationship = script.slice(script.indexOf("async function activateReviewedRelationship("), script.indexOf("function renderClientConfigs("));
+    expect(relationship.indexOf("confirmReadActivationImpact(preview)")).toBeLessThan(relationship.indexOf('post("/api/boundary/activate"'));
   });
 
   it("ships an executable code-editor playground with parameterized SQL as a primary path", () => {

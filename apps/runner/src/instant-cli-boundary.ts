@@ -1,3 +1,4 @@
+import { readActivationImpact, readActivationImpactLines } from "./read-activation-impact.js";
 import type { InspectEngine, SchemaInspection } from "@synapsor-runner/schema-inspector";
 import process from "node:process";
 import {
@@ -188,6 +189,7 @@ async function activateInstantCliBoundaryAttempt(
   const firstValue = buildInstantFirstValue(candidate);
   const actor = operatorActor(env);
   const digest = explorationBoundaryCandidateDigest(candidate);
+  const impactLines = readActivationImpactLines(await readActivationImpact(input.projectRoot, candidate));
   let askSelection = initialAskSelection;
   const reviewFrame = () => formatInstantCliBoundaryReview({
     candidate,
@@ -197,7 +199,7 @@ async function activateInstantCliBoundaryAttempt(
     askSelection,
     trustedScope,
     color: stdout.isTTY === true && !("NO_COLOR" in env),
-  });
+  }) + (impactLines.length ? `${impactLines.join("\n")}\n` : "");
   // A real TTY opens each text prompt on an alternate screen. Keep the review
   // in that same frame so it remains visible while the operator chooses.
   if (stdout.isTTY !== true) write(reviewFrame());

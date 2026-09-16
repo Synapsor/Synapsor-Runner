@@ -1334,6 +1334,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
       const button=byId("run-instant");
       const status=byId("instant-status");
       const nextSurface="model";
+      if(!confirmReadActivationImpact(instantOnboarding))return;
       button.disabled=true;
       status.className="status-message";
       status.textContent="Rechecking the read-only role, exact schema, and symbolic scope bindings before activating this boundary...";
@@ -4054,6 +4055,11 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	      }
 	    }
 
+    function confirmReadActivationImpact(preview){
+      const lines=preview.activation_warning_lines||[];
+      return !lines.length||window.confirm(lines.join("\\n")+"\\n\\nActivate this exact Read revision?");
+    }
+
     async function previewBoundary(){
       const message=byId("message");
       const button=byId("preview");
@@ -4075,6 +4081,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
 	          confirmed_decisions:[...confirmedDecisions]
 	        });
 	        candidateDigest=payload.digest;
+        if(!confirmReadActivationImpact(payload)){updateActivationState();return}
 	        await activateBoundary();
 	      }catch(error){
 	        updateActivationState();
@@ -6946,6 +6953,7 @@ export function renderBoundaryWorkbench(csrfToken: string): string {
           actor,
           confirmed_decisions:staged.confirmed_decisions
         });
+        if(!confirmReadActivationImpact(preview)){status.textContent="Read activation cancelled; existing authority is unchanged.";return}
         status.textContent="The final review fingerprint is current. Activating only this exact reviewed path...";
         const payload=await post("/api/boundary/activate",{
           candidate:preview.candidate,

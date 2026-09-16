@@ -724,9 +724,15 @@ function staleReadDependency(outcome: string): Error {
     `Action Rule outcome ${outcome} is not bound to its exact active Read Boundary revision.`);
 }
 
-function unavailableReadDependencies(
+// The same exact pins are used by runtime admission and display-only activation previews.
+// A preview needs no fabricated activation actor, time, or verified decision.
+export type ReadDependencyAuthority = Pick<ActivatedExplorationBoundary, "source" | "generation_lock_fingerprint">
+  & { pack: Pick<ActivatedExplorationBoundary["pack"], "name">;
+      activation: Pick<ActivatedExplorationBoundary["activation"], "digest"> };
+
+export function unavailableReadDependencies(
   loaded: LoadedActionRuleAuthorityV1,
-  boundaries: ActivatedExplorationBoundary[],
+  boundaries: readonly ReadDependencyAuthority[],
 ): string[] {
   const activeByName = new Map(boundaries.map((boundary) => [boundary.pack.name, boundary]));
   const unavailable: string[] = [];

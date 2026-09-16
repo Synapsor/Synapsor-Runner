@@ -1,3 +1,4 @@
+import { readActivationImpact, readActivationImpactLines } from "./read-activation-impact.js";
 import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
@@ -963,6 +964,8 @@ async function handleRequest(input: {
             .map((dependency) => dependency.name),
         }
       : null;
+    const activationImpact = await readActivationImpact(projectRoot, candidate);
+    const instantImpact = instantCandidate ? await readActivationImpact(projectRoot, instantCandidate) : undefined;
     const reviewDecisions = boundaryReviewDecisions(candidate);
     const confirmedDecisions = progress?.confirmed_decisions ?? [];
     sendJson(response, 200, {
@@ -978,6 +981,8 @@ async function handleRequest(input: {
       ),
       confirmed_decisions: confirmedDecisions,
       review_decisions: reviewDecisions,
+      activation_impact: activationImpact,
+      activation_warning_lines: readActivationImpactLines(activationImpact),
       review_progress: {
         revision: progress?.revision ?? 0,
         policy_migration: progress?.policy_migration ?? null,
@@ -1001,6 +1006,7 @@ async function handleRequest(input: {
       operator_identity: instantActivationActor(),
       operator_identity_mode: "dev_env",
       instant_onboarding: {
+        activation_warning_lines: instantImpact ? readActivationImpactLines(instantImpact) : [],
         available: instantAvailable,
         eligible: instantAvailable && instantTenantScopeSource !== null,
         runtime_ready: instantAvailable && instantMissingBindings.length === 0,
@@ -2824,6 +2830,7 @@ async function handleRequest(input: {
     });
     const currentReview = await readWorkbenchBoundaryReview(projectRoot, boundaryRoot);
     assertWorkbenchReviewBinding({ authoring_binding: savedReview.authoring }, currentReview.authoring);
+    const activationImpact = await readActivationImpact(projectRoot, reviewed.candidate);
     bootstrapState.boundaryPreview = {
       ...(savedReview.authoring ? { authoring: savedReview.authoring } : {}),
       digest: reviewed.digest,
@@ -2834,6 +2841,8 @@ async function handleRequest(input: {
     sendJson(response, 200, {
       ok: true,
       ...reviewed,
+      activation_impact: activationImpact,
+      activation_warning_lines: readActivationImpactLines(activationImpact),
       review_revision: currentRevision,
       ...(savedReview.authoring ? { authoring_binding: savedReview.authoring } : {}),
       source_database_changed: false,
@@ -8224,7 +8233,7 @@ function renderBoundaryShell(csrfToken: string): string {
     }
     async function loadProtect(){const status=document.getElementById("protect-message");try{const p=await fetch("/api/protect").then(r=>r.json());if(!p.ok)throw new Error(p.error||"Could not load recent queries");protectQueries=p.queries;selectedProtect=protectQueries.length?0:null;renderProtect();status.className="";status.textContent=protectQueries.length?protectQueries.length+" recent query or analysis result(s) ready for review.":p.message||"No recent query is ready yet."}catch(e){protectQueries=[];selectedProtect=null;renderProtect();status.className="error";status.textContent=e.message}}
     async function load(){const p=await fetch("/api/boundary").then(r=>r.json());if(!p.ok)throw new Error(p.error||"Could not load review");original=p.draft;candidate=structuredClone(p.draft);reviewReport=p.review;reviewDecisions=[...p.review.unresolved_decisions];const s=p.review.summary;document.getElementById("summary").innerHTML=[[s.objects,"objects"],[s.draft_reads,"draft reads"],[s.blocked_objects,"blocked"],[s.sensitive_fields_kept_out,"kept-out fields"],[s.rls_policies,"RLS policies"],[s.structured_write_candidates,"disabled actions"]].map(([v,l])=>'<div class="metric"><strong>'+v+'</strong><span>'+l+'</span></div>').join("");document.getElementById("decisions").innerHTML=reviewDecisions.map((item,index)=>'<p><label><input type="checkbox" data-review-decision="'+index+'"> '+esc(reviewDecisionLabel(item))+"</label></p>").join("");document.querySelectorAll("[data-review-decision]").forEach(input=>input.addEventListener("change",updateActivationState));document.getElementById("deployment-profile").addEventListener("change",event=>{candidate.deployment_profile=event.currentTarget.value;changed();renderPosture()});document.getElementById("state").textContent=p.active?"Active reviewed boundary":"Disabled · review required";renderDatabaseCompatibility(p.database_server_compatibility);renderPosture();renderBlocked();renderResources();renderBudgets()}
-    document.getElementById("preview").onclick=async()=>{try{msg.className="";msg.textContent="Validating narrowed boundary…";const p=await post("/api/boundary/preview",{candidate});digest=p.digest;msg.textContent="Exact digest: "+digest;updateActivationState()}catch(e){msg.className="error";msg.textContent=e.message}};
+    document.getElementById("preview").onclick=async()=>{try{msg.className="";msg.textContent="Validating narrowed boundary…";const p=await post("/api/boundary/preview",{candidate});digest=p.digest;msg.textContent="Exact digest: "+digest+"\\n"+(p.activation_warning_lines||[]).join("\\n");updateActivationState()}catch(e){msg.className="error";msg.textContent=e.message}};
     document.getElementById("activate").onclick=async()=>{try{const actor=document.getElementById("actor").value.trim();if(!actor)throw new Error("Enter the local operator identity.");const confirmedDecisions=[...document.querySelectorAll("[data-review-decision]:checked")].map(input=>reviewDecisions[Number(input.dataset.reviewDecision)]);msg.className="";msg.textContent="Rechecking schema lock and database-role posture…";await post("/api/boundary/activate",{candidate,expected_digest:digest,actor,confirmation:"ACTIVATE "+digest,confirmed_decisions:confirmedDecisions});msg.className="success";msg.textContent="Activated. Reconnect the local authoring MCP session to use Scoped Explore.";document.getElementById("state").textContent="Active reviewed boundary";document.getElementById("activate").disabled=true}catch(e){msg.className="error";msg.textContent=e.message}};
     document.getElementById("refresh-protect").onclick=loadProtect;
     load().then(loadProtect).catch(e=>{msg.className="error";msg.textContent=e.message});
