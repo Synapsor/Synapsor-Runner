@@ -1,0 +1,27 @@
+{
+  "name": "combined",
+  "command": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/boundary-cli.test.ts",
+    "apps/runner/src/boundary-cli-picker.test.ts",
+    "apps/runner/src/scoped-explore.test.ts",
+    "apps/runner/src/read-boundary-revision-model.test.ts",
+    "apps/runner/src/composite-read-privacy.test.ts",
+    "apps/runner/src/boundary-workbench.test.ts",
+    "apps/runner/src/protect-query.test.ts",
+    "packages/mcp-server/src/protected-read.test.ts",
+    "packages/mcp-server/src/analytics-catalog.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1"
+  ],
+  "started_at": "2026-09-16T15:37:21.666084+00:00",
+  "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/manual-runner-only-75a65f8-20260916/combined/output.log",
+  "source": "75a65f8123d7be1e4212205179066b6378d2090a",
+  "environment": "network isolated, clear credentials, private HOME/tmp/var-tmp, NO_COLOR, umask0077",
+  "exit_code": 1,
+  "completed_at": "2026-09-16T15:42:55.780776+00:00"
+}

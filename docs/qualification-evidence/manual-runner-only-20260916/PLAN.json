@@ -1,0 +1,13 @@
+{
+  "started_at": "2026-09-16T15:30:54.107972+00:00",
+  "baseline": "75a65f8123d7be1e4212205179066b6378d2090a",
+  "branch": "codex/tui-safe-action-control-plane",
+  "budgets_minutes": {
+    "implementation_focused": 60,
+    "verification": 20,
+    "delivery": 10
+  },
+  "provider_calls": 0,
+  "owned_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/manual-runner-only-75a65f8-20260916",
+  "scope": "Manual RUNNER ONLY stages no model analysis using existing private_model_fields; verify selection tokens and preserve_reviewed/active compatibility. Inspect protected-read tokenFor without silently migrating reviewed authority."
+}

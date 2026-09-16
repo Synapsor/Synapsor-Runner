@@ -1,0 +1,23 @@
+{
+  "name": "corrected-controls",
+  "command": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/boundary-cli.test.ts",
+    "apps/runner/src/boundary-cli-picker.test.ts",
+    "-t",
+    "warns about lost private verification|reports deterministic outcomes when focused access widens|restricts manual analysis|manual RUNNER ONLY",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000"
+  ],
+  "started_at": "2026-09-16T15:44:49.198569+00:00",
+  "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/manual-runner-only-75a65f8-20260916/corrected-controls/output.log",
+  "source": "75a65f8123d7be1e4212205179066b6378d2090a",
+  "environment": "network isolated, clear credentials, private HOME/tmp/var-tmp, NO_COLOR, umask0077",
+  "exit_code": 0,
+  "completed_at": "2026-09-16T15:45:03.885213+00:00"
+}
