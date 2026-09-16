@@ -1,0 +1,86 @@
+{
+  "at": "2026-09-16T03:39:12.708680+00:00",
+  "product_and_tests": "ba1dd7ddfef7a7930026d1360657b7a89465e423",
+  "tested_working_tree_base": "89b66f02dcf7e0b7854dea7a1414d7011277f214",
+  "files": [
+    {
+      "path": "apps/runner/src/boundary-cli-picker.test.ts",
+      "sha256": "7150ab9cef8bfffff6636e10508eeef16e4edc8deb1e3e9dca04ecac162c56fc"
+    },
+    {
+      "path": "apps/runner/src/boundary-cli-picker.ts",
+      "sha256": "c335e072069d2e3871419644454948e66bf1335deb69e905a8380b009e6e746b"
+    },
+    {
+      "path": "apps/runner/src/boundary-cli.test.ts",
+      "sha256": "fcb2dcec879198d48cc454298ef5c9ee771d8b41703c0667a5c4f789cd648cb1"
+    },
+    {
+      "path": "apps/runner/src/boundary-commands.ts",
+      "sha256": "41ed19ff995e90fd51fbfe521a64089098a05718a4a69bb40e6fc90a007bd9f4"
+    },
+    {
+      "path": "apps/runner/src/read-workload-assist.test.ts",
+      "sha256": "b5347d993e7fed96dba9cd7f81a4aea8fdcfe3846559cc06d6288c1fb91b2086"
+    },
+    {
+      "path": "apps/runner/src/read-workload-assist.ts",
+      "sha256": "87cc07c0cb36a1f0b0e609a264f5dd4459864d41eb1544c2f73a1f9736355e32"
+    },
+    {
+      "path": "apps/runner/src/read-workload-selection-guidance.ts",
+      "sha256": "4c5ffdf6ceb6cf40737be885ac94a1bea7be3d55d6250f222f11b66975f53582"
+    },
+    {
+      "path": "docs/guided-onboarding.md",
+      "sha256": "d69b3a85455c5aa6fb5e5af991b275374d73391daa0fc14a4bea63da90d9c4ec"
+    }
+  ],
+  "logs": [
+    {
+      "result": "trusted-core-result.json",
+      "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/model-free-read-selection-89b66f0-20260915/trusted-core/output.log",
+      "sha256": "a2b7372c3e3e7f587433241b1fc9af6374d90c035a863ac4762e35ddd411aa6d",
+      "exit_code": 0
+    },
+    {
+      "result": "combined-result.json",
+      "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/model-free-read-selection-89b66f0-20260915/combined/output.log",
+      "sha256": "0ed162245709bac3430e82753f5413ec94d46ce61a1958e6ab801d13ca72f92d",
+      "exit_code": 0
+    },
+    {
+      "result": "types-result.json",
+      "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/model-free-read-selection-89b66f0-20260915/types/output.log",
+      "sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5",
+      "exit_code": 0
+    },
+    {
+      "result": "frozen-preservation-result.json",
+      "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/model-free-read-selection-89b66f0-20260915/frozen-preservation/output.log",
+      "sha256": "4b91005ef5e9d8fce1013cc70d88fc7cac3e48affea329a83792e3f6c6c7c37f",
+      "exit_code": 0
+    },
+    {
+      "result": "local-package-result.json",
+      "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/model-free-read-selection-89b66f0-20260915/local-package/output.log",
+      "sha256": "40ecedd4d7af042c573ada68e7e697dde04366b9b26eec53382eff8d8a8e362e",
+      "exit_code": 0
+    },
+    {
+      "result": "before-result.json",
+      "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/model-free-read-selection-89b66f0-20260915/before/output.log",
+      "sha256": "7c5b210e8398d56c96c347de7b15d70f8bbe4ae70ba2db149000d3de31c55050",
+      "exit_code": 1
+    },
+    {
+      "result": "after-result.json",
+      "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/model-free-read-selection-89b66f0-20260915/after/output.log",
+      "sha256": "7e6bc1a74a0b1cd71ce463100809c4b2bcce38ebf4e94ec58d3a70215e8d5550",
+      "exit_code": 0
+    }
+  ],
+  "provider_calls": 0,
+  "new_database_containers": 0,
+  "frozen_candidate_replaced": false
+}

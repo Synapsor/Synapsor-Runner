@@ -1,0 +1,27 @@
+{
+  "name": "combined",
+  "command": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/read-workload-assist.test.ts",
+    "apps/runner/src/boundary-cli-picker.test.ts",
+    "apps/runner/src/action-rule-draft.test.ts",
+    "apps/runner/src/action-rule-authoring.test.ts",
+    "apps/runner/src/boundary-cli.test.ts",
+    "--testNamePattern",
+    "Read workload boundary compiler|boundary review terminal picker|model-authored Action Rule draft compilation|Action Rule authoring|no-model|runner-guided|representative question",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "started_at": "2026-09-16T03:35:18.816374+00:00",
+  "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/model-free-read-selection-89b66f0-20260915/combined/output.log",
+  "source": "89b66f02dcf7e0b7854dea7a1414d7011277f214",
+  "environment": "network isolated, clear credentials, private HOME/tmp/var-tmp, NO_COLOR, umask0077",
+  "exit_code": 0,
+  "completed_at": "2026-09-16T03:35:29.312272+00:00"
+}

@@ -1,0 +1,98 @@
+{
+  "at": "2026-09-16T03:31:26.826089+00:00",
+  "source": "89b66f02dcf7e0b7854dea7a1414d7011277f214",
+  "originals_read_only_observation": true,
+  "records": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/software-model-free-20260915/PROGRESS.md",
+      "sha256": "19a449f54cde83524b55b5a9c31fcfbbe1d277e3da15946e8c9c7e527a5cff01"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/software-model-free-20260915/exported-draft.json",
+      "sha256": "94cb8c930d9912b977cf234d522528b30c4a2f475da893eb3a433b807070af11",
+      "resources": [
+        "release_ops.build_candidates",
+        "release_ops.release_slots"
+      ],
+      "relationships": [
+        {
+          "name": "build_candidates_slot_id_tenant_id_principal_id_fkey",
+          "from_resource": "release_ops.build_candidates",
+          "to_resource": "release_ops.release_slots",
+          "field_pairs": [
+            {
+              "local_field": "slot_id",
+              "target_field": "slot_id"
+            },
+            {
+              "local_field": "tenant_id",
+              "target_field": "tenant_id"
+            },
+            {
+              "local_field": "principal_id",
+              "target_field": "principal_id"
+            }
+          ],
+          "cardinality": "many_to_one",
+          "nullable": false,
+          "target_unique": true
+        }
+      ]
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/software-model-free-20260915/exported-draft-checks-included.json",
+      "sha256": "bb12805f977644019d205748a5a18d1fafee792fcca5d493cac63d57724c2cae",
+      "resources": [
+        "release_ops.build_candidates",
+        "release_ops.build_checks",
+        "release_ops.release_slots"
+      ],
+      "relationships": [
+        {
+          "name": "build_candidates_slot_id_tenant_id_principal_id_fkey",
+          "from_resource": "release_ops.build_candidates",
+          "to_resource": "release_ops.release_slots",
+          "field_pairs": [
+            {
+              "local_field": "slot_id",
+              "target_field": "slot_id"
+            },
+            {
+              "local_field": "tenant_id",
+              "target_field": "tenant_id"
+            },
+            {
+              "local_field": "principal_id",
+              "target_field": "principal_id"
+            }
+          ],
+          "cardinality": "many_to_one",
+          "nullable": false,
+          "target_unique": true
+        },
+        {
+          "name": "build_checks_candidate_id_tenant_id_principal_id_fkey",
+          "from_resource": "release_ops.build_checks",
+          "to_resource": "release_ops.build_candidates",
+          "field_pairs": [
+            {
+              "local_field": "candidate_id",
+              "target_field": "candidate_id"
+            },
+            {
+              "local_field": "tenant_id",
+              "target_field": "tenant_id"
+            },
+            {
+              "local_field": "principal_id",
+              "target_field": "principal_id"
+            }
+          ],
+          "cardinality": "many_to_one",
+          "nullable": false,
+          "target_unique": true
+        }
+      ]
+    }
+  ]
+}

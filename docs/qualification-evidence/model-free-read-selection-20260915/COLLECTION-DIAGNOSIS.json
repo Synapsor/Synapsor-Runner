@@ -1,0 +1,133 @@
+{
+  "at": "2026-09-16T03:37:25.267451+00:00",
+  "original_export_hashes_unchanged": true,
+  "reviewer_progress_changed_during_task": true,
+  "preservation_checks": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/software-model-free-20260915/PROGRESS.md",
+      "before": "19a449f54cde83524b55b5a9c31fcfbbe1d277e3da15946e8c9c7e527a5cff01",
+      "now": "56cdeb29eb38f7271b862d5da7dc44d71591b6caf2ef2ce99eff3a936e9cc4c4",
+      "unchanged": false
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/software-model-free-20260915/exported-draft.json",
+      "before": "94cb8c930d9912b977cf234d522528b30c4a2f475da893eb3a433b807070af11",
+      "now": "94cb8c930d9912b977cf234d522528b30c4a2f475da893eb3a433b807070af11",
+      "unchanged": true
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/software-model-free-20260915/exported-draft-checks-included.json",
+      "before": "bb12805f977644019d205748a5a18d1fafee792fcca5d493cac63d57724c2cae",
+      "now": "bb12805f977644019d205748a5a18d1fafee792fcca5d493cac63d57724c2cae",
+      "unchanged": true
+    }
+  ],
+  "owned_readonly_snapshot": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/model-free-read-selection-89b66f0-20260915/reviewer-observation",
+  "observations": [
+    {
+      "export": "exported-draft.json",
+      "actions": 0,
+      "action_skeletons": 0,
+      "typed_collection_property": {
+        "const": "complete_locked",
+        "description": "A reviewed complete relationship collection; Runner also derives this requirement for negative existence. Never substitute a stored eligibility flag for a required absence check."
+      },
+      "complete_collection_catalog": {
+        "strategy": "complete_locked",
+        "shape": "inverse_foreign_key_from_one_scoped_parent",
+        "visibility_and_phantoms_reverified": true
+      },
+      "relationships": [
+        {
+          "name": "build_candidates_slot_id_tenant_id_principal_id_fkey",
+          "from_resource": "release_ops.build_candidates",
+          "to_resource": "release_ops.release_slots",
+          "field_pairs": [
+            {
+              "local_field": "slot_id",
+              "target_field": "slot_id"
+            },
+            {
+              "local_field": "tenant_id",
+              "target_field": "tenant_id"
+            },
+            {
+              "local_field": "principal_id",
+              "target_field": "principal_id"
+            }
+          ],
+          "cardinality": "many_to_one",
+          "nullable": false,
+          "target_unique": true
+        }
+      ]
+    },
+    {
+      "export": "exported-draft-checks-included.json",
+      "actions": 0,
+      "action_skeletons": 0,
+      "typed_collection_property": {
+        "const": "complete_locked",
+        "description": "A reviewed complete relationship collection; Runner also derives this requirement for negative existence. Never substitute a stored eligibility flag for a required absence check."
+      },
+      "complete_collection_catalog": {
+        "strategy": "complete_locked",
+        "shape": "inverse_foreign_key_from_one_scoped_parent",
+        "visibility_and_phantoms_reverified": true
+      },
+      "relationships": [
+        {
+          "name": "build_candidates_slot_id_tenant_id_principal_id_fkey",
+          "from_resource": "release_ops.build_candidates",
+          "to_resource": "release_ops.release_slots",
+          "field_pairs": [
+            {
+              "local_field": "slot_id",
+              "target_field": "slot_id"
+            },
+            {
+              "local_field": "tenant_id",
+              "target_field": "tenant_id"
+            },
+            {
+              "local_field": "principal_id",
+              "target_field": "principal_id"
+            }
+          ],
+          "cardinality": "many_to_one",
+          "nullable": false,
+          "target_unique": true
+        },
+        {
+          "name": "build_checks_candidate_id_tenant_id_principal_id_fkey",
+          "from_resource": "release_ops.build_checks",
+          "to_resource": "release_ops.build_candidates",
+          "field_pairs": [
+            {
+              "local_field": "candidate_id",
+              "target_field": "candidate_id"
+            },
+            {
+              "local_field": "tenant_id",
+              "target_field": "tenant_id"
+            },
+            {
+              "local_field": "principal_id",
+              "target_field": "principal_id"
+            }
+          ],
+          "cardinality": "many_to_one",
+          "nullable": false,
+          "target_unique": true
+        }
+      ]
+    }
+  ],
+  "compiler_control": {
+    "file": "apps/runner/src/action-rule-draft.test.ts",
+    "test": "preserves complete collection ordering and aggregate-only private fields through approval edits",
+    "result": "PASS in combined",
+    "shape": "three-column composite FK from child to scoped parent; inverse binding; aggregate and negative-existence predicates; complete_locked derived then round-tripped through schema and edit"
+  },
+  "conclusion": "No collection-consistency product defect established by original exports: zero Action drafts/skeletons, schema exposes complete_locked. Reviewer-owned progress report was extended during this task to report exact software typed-draft validation with inverse checks, complete_locked and atomic updates. That is separately attributed reviewer evidence, not an execution performed here. Exact software execution, writer RLS, receipt and independent two-row readback remain untested here."
+}
