@@ -320,6 +320,7 @@ import {
   type ReadWorkloadPlanCard,
   type ReadWorkloadSet,
 } from "./read-workload-assist.js";
+import { READ_SELECTION_GUIDANCE } from "./read-workload-selection-guidance.js";
 import {
   commitReadWorkloadCandidate,
   prepareReadWorkloadCandidate,
@@ -10837,6 +10838,7 @@ async function selectRunnerGuidedReadCards(input: {
         context: [
           `Runner matched reviewed metadata across ${recommendation.matched_resource_count} resource${recommendation.matched_resource_count === 1 ? "" : "s"}. No model or source query ran.`,
           ...recommendation.cards.map((card) => `- ${card.title}`),
+          ...READ_SELECTION_GUIDANCE,
           "This is drafting assistance only. Nothing activates until the exact boundary review.",
         ],
       },
@@ -10849,12 +10851,13 @@ async function selectRunnerGuidedReadCards(input: {
       initialSelectedIds: recommendedIds,
       recommendationLabel: recommendedIds.length
         ? `Runner preselected ${recommendedIds.length} explainable match${recommendedIds.length === 1 ? "" : "es"}; review or change them.`
-        : "Runner found no unique reviewed-metadata match. Select exact questions; no model or source query ran.",
+        : "Select exact questions; aggregates need explicit selection. No model or source query ran.",
     });
   }
   const selectedText = await input.session.promptText([
     "CHOOSE REPRESENTATIVE QUESTIONS",
     "Select every question the agent needs. This selects exact plan shapes; it does not activate access.",
+    ...READ_SELECTION_GUIDANCE,
     ...input.cards.map((card, index) =>
       `${index + 1}${recommendedIds.includes(card.id) ? "*" : " "} ${card.title}\n   ${card.detail}`),
     ...(recommendedIds.length

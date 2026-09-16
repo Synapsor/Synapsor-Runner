@@ -300,6 +300,8 @@ export function rankReadWorkloadPlanCardsForJob(
  * Produces a small disabled-draft recommendation from exact cards that already
  * pass the Explore validator and compiler. A positive reviewed-metadata match
  * is required; no match means the operator must choose cards explicitly.
+ * Aggregates always require an explicit choice: matching private verification
+ * terms does not establish permission to expose counts or grouped facts.
  */
 export function recommendReadWorkloadPlanCardsForJob(
   cards: ReadWorkloadPlanCard[],
@@ -334,9 +336,12 @@ export function recommendReadWorkloadPlanCardsForJob(
     selectedIds.add(entry.card.id);
   }
   selected.sort((left, right) => right.score - left.score || left.index - right.index);
+  // Do not refill an excluded aggregate with a different question about the
+  // same private resource. Preserve only the existing row recommendations.
+  const explicitRows = selected.filter(entry => entry.card.plan.kind !== "aggregate");
   return {
-    cards: selected.map((entry) => entry.card),
-    matched_resource_count: new Set(selected.map((entry) => String(entry.card.plan.resource ?? ""))).size,
+    cards: explicitRows.map((entry) => entry.card),
+    matched_resource_count: new Set(explicitRows.map((entry) => String(entry.card.plan.resource ?? ""))).size,
     source: "reviewed_metadata",
   };
 }

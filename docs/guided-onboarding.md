@@ -97,6 +97,15 @@ OpenAI, Anthropic, OpenRouter, or loopback local model after explicit structural
 egress consent. Runner-guided exact plan cards require no model; full manual
 table and field review remains available.
 
+In the model-free question picker, aggregate questions require explicit selection;
+metadata matches do not establish that your policy permits counts or grouped facts.
+Excluding a resource's questions can also remove that resource from the new Action
+catalog used for private verification. If an Action needs it, retain it in the
+disabled draft and review all public operations before activation. `RUNNER ONLY`
+withholds raw values; it does not by itself remove filters, grouping or other
+analytical grants. Review those grants separately rather than treating a selected
+count question as private-only access.
+
 The mapper prepares a broad disabled structural catalog, minimizes it to the
 reviewed job, and presents one exact Read Boundary review. Change-oriented jobs
 also prepare a separate disabled Action Boundary and source-unchanged proposal

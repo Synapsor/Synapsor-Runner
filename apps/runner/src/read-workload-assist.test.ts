@@ -21,6 +21,30 @@ import {
 import { validateExplorePlan } from "./scoped-explore.js";
 
 describe("Read workload boundary compiler", () => {
+  it("requires explicit aggregate selection even when private-policy terms match metadata", () => {
+    const cards: ReadWorkloadPlanCard[] = [
+      { id: "candidates", title: "List build candidates", detail: "Candidate status",
+        plan: { kind: "rows", resource: "release_ops.build_candidates", select: ["status"] } },
+      { id: "checks", title: "Count build checks by related slot ref", detail: "Build checks related slot ref",
+        plan: { kind: "aggregate", resource: "release_ops.build_checks", measures: [{ function: "count" }] } },
+    ];
+    const before = structuredClone(cards);
+    const recommendation = recommendReadWorkloadPlanCardsForJob(cards,
+      "List build candidates. Use build checks privately, never expose check counts or aggregates by slot ref.");
+    expect(recommendation.cards.map(card => card.id)).toEqual(["candidates"]);
+    expect(readWorkloadFromPlanCards({ cards, selectedIds: ["checks"] }).allowed[0]!.plan.kind).toBe("aggregate");
+    expect(cards).toEqual(before);
+  });
+
+  it("does not substitute a different question when dropping an aggregate recommendation", () => {
+    const cards: ReadWorkloadPlanCard[] = [
+      { id: "count", title: "Count checks by slot ref", detail: "Checks slot ref aggregate",
+        plan: { kind: "aggregate", resource: "checks", measures: [{ function: "count" }] } },
+      { id: "rows", title: "List checks", detail: "Check kind", plan: { kind: "rows", resource: "checks", select: ["kind"] } },
+    ];
+    expect(recommendReadWorkloadPlanCardsForJob(cards, "Count checks by slot ref", 1).cards).toEqual([]);
+  });
+
   it("ranks no-model cards from the job without selecting or changing them", () => {
     const cards: ReadWorkloadPlanCard[] = [
       {
@@ -52,7 +76,7 @@ describe("Read workload boundary compiler", () => {
     expect(cards.map((card) => card.id)).toEqual(["sites", "maintenance", "inspections"]);
   });
 
-  it("recommends a small resource-diverse no-model draft only from positive reviewed matches", () => {
+  it("recommends matching rows while leaving aggregate matches for explicit choice", () => {
     const cards: ReadWorkloadPlanCard[] = [
       {
         id: "maintenance_rows",
@@ -88,13 +112,11 @@ describe("Read workload boundary compiler", () => {
 
     expect(recommendation).toMatchObject({
       source: "reviewed_metadata",
-      matched_resource_count: 2,
+      matched_resource_count: 1,
     });
-    expect(recommendation.cards).toHaveLength(3);
-    expect(recommendation.cards.map((card) => card.id)).toEqual(expect.arrayContaining([
-      "maintenance_rows",
-      "inspections",
-    ]));
+    expect(recommendation.cards.map((card) => card.id)).toEqual(["maintenance_rows"]);
+    expect(recommendReadWorkloadPlanCardsForJob(cards.filter(card => card.plan.kind === "aggregate"),
+      "Count maintenance requests and inspections.").cards).toEqual([]);
     expect(recommendation.cards.map((card) => card.id)).not.toContain("sites");
     expect(cards.map((card) => card.id)).toEqual([
       "maintenance_rows",

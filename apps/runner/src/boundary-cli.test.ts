@@ -9953,6 +9953,8 @@ describe("boundary operator-plane CLI", () => {
         }
         if (title === "RUNNER-GUIDED READ DRAFT") {
           recommendationTitles.push(...(options?.context ?? []).filter((line) => line.startsWith("- ")));
+          expect(options?.context?.join(" ")).toContain("private Action verification");
+          expect(options?.context?.join(" ")).toContain("not analytical grants");
           return "use";
         }
         throw new Error(`Unexpected no-model recommendation choice: ${title}`);

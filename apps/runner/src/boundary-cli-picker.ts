@@ -38,6 +38,7 @@ import {
 import { exploreVocabularyCoverage } from "./explore-vocabulary.js";
 import { terminalBrandPalette } from "./terminal-brand-theme.js";
 import type { ReadWorkloadPlanCard } from "./read-workload-assist.js";
+import { READ_SELECTION_GUIDANCE } from "./read-workload-selection-guidance.js";
 
 export type BoundaryFieldTier = ReviewedBoundaryFieldTier;
 export type BoundaryFieldTierEditResult =
@@ -637,7 +638,9 @@ async function selectReadWorkloadCards(
   let notice = "";
   return withRawKeys(input, output, async (nextKey, render) => {
     while (true) {
-      const visibleRows = Math.max(5, (output.rows ?? 24) - 10);
+      const guidance = READ_SELECTION_GUIDANCE.flatMap(line =>
+        wrapStyledTerminalLine(`  ${line}`, terminalContentWidth(output.columns)));
+      const visibleRows = Math.max(1, (output.rows ?? 24) - 10 - guidance.length);
       const start = Math.max(0, Math.min(
         cursor - Math.floor(visibleRows / 2),
         Math.max(0, cards.length - visibleRows),
@@ -648,6 +651,7 @@ async function selectReadWorkloadCards(
         theme.title("  CHOOSE REPRESENTATIVE QUESTIONS"),
         `  ${theme.dim(options.recommendationLabel
           ?? "No model or source query. Job matches appear first; choose exact plan shapes.")}`,
+        ...guidance.map(line => theme.dim(line)),
         `  ${theme.bold(`${selected.size} selected`)}  ${theme.dim(`| question ${cursor + 1} of ${cards.length}`)}`,
         `  ${theme.dim(current.detail)}`,
         ...(notice ? [`  ${theme.warning(notice)}`] : [""]),
@@ -669,7 +673,10 @@ async function selectReadWorkloadCards(
       if (key.name === "up") cursor = (cursor - 1 + cards.length) % cards.length;
       if (key.name === "down") cursor = (cursor + 1) % cards.length;
       if (key.name === "space" || key.sequence === " ") {
-        if (selected.has(current.id)) selected.delete(current.id);
+        if (selected.has(current.id)) {
+          selected.delete(current.id);
+          notice = "Question removed. Check private verification needs before continuing.";
+        }
         else selected.add(current.id);
       }
       if (key.name === "a" || key.sequence?.toLowerCase() === "a") {

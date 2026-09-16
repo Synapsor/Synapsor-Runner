@@ -213,6 +213,24 @@ describe("boundary review terminal picker", () => {
     expect(rendered).not.toContain("Choice [Enter]: [Esc Back]:");
   });
 
+  it("warns about lost private verification when deselecting a question without changing the selection", async () => {
+    const terminal = fakeTerminal(100, 24);
+    const session = createBoundaryReviewInteractiveSession(terminal.input, terminal.output);
+    const cards = [
+      { id: "checks", title: "Count checks", detail: "An aggregate", plan: { kind: "aggregate", resource: "checks" } },
+      { id: "candidates", title: "List candidates", detail: "Rows", plan: { kind: "rows", resource: "candidates" } },
+    ];
+    const selection = session.selectReadWorkloadCards!(cards, { initialSelectedIds: ["checks", "candidates"] });
+    await emitKey(terminal.input, { name: "space", sequence: " " });
+    await emitKey(terminal.input, { name: "return", sequence: "\r" });
+    await expect(selection).resolves.toEqual(["candidates"]);
+    const rendered = stripAnsi(terminal.output.read()?.toString() ?? "");
+    expect(rendered).toContain("private Action verification");
+    expect(rendered).toContain("RUNNER ONLY");
+    expect(rendered).toContain("analytical grants");
+    expect(terminal.input.isRaw).toBe(false);
+  });
+
   it("selects representative read questions in place without dumping the catalog", async () => {
     const terminal = fakeTerminal(84, 16);
     const session = createBoundaryReviewInteractiveSession(terminal.input, terminal.output);
