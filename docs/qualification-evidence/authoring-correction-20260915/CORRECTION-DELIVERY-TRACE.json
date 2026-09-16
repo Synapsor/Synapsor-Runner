@@ -1,0 +1,210 @@
+{
+  "historical_inputs": {
+    "records": [
+      {
+        "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/runs/counting-wording-control/meter/input-0001.json",
+        "sha256": "8cbc79f01fbac4c23a2fe73506da038d246ecf80d6bdb5f4fbe1681a60e30d3f"
+      },
+      {
+        "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/runs/counting-wording-control/meter/output-0001.txt",
+        "sha256": "c2743eb4398e722fa26cad8eac2946fc4b58449fd6537ebd0a4078923d19e2fd"
+      },
+      {
+        "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/runs/counting-wording-control/meter/input-0002.json",
+        "sha256": "c8d6f2b47b25326147d222661305372bd309f444db54cd4472f27a1cbd8d423b"
+      },
+      {
+        "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/runs/counting-wording-control/meter/output-0002.txt",
+        "sha256": "d2ccba521f10a9aa5f56b1742e04287c849c735fc6256d48ef598f234a1e120d"
+      }
+    ],
+    "fixture": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/test-fixtures/coverage-correction-captures.json",
+    "fixture_sha256": "8de746594dca372caeb17d10c3e600ad472d32f4e8875891d9b12b6298bb5d83",
+    "previous_correction": [
+      "Correct this structural coverage problem: Draft pointer(s) not present: /runner_evidence/actions/league.result_ratification/scoped_bindings/result/fields/referee_private_note. Use the supplied exact coverage references; do not invent a missing setting or edit a rule to repair a link. Private verification-only fields are under /runner_evidence/actions/<outcome>/scoped_bindings/<binding>/fields/<field>, not nonexistent read_access resources. Select an existing exact path; no missing Read path is redirected."
+    ]
+  },
+  "historical_first_rejection": "Missing pointer pre-scan; counter support not evaluated then, not filtered or dropped from an already-created finding. Only the pointer message was transmitted.",
+  "historical_replacement": "Pointer, maintenance and deployment grouping corrected; both explicit counter supports still invalid; support mismatch surfaced only after the final response.",
+  "old_two_replies_still_invalid": true,
+  "after": [
+    {
+      "adapter": "openai",
+      "classification": "local HTTP/SSE transport, original initial response followed by separately derived complete correction; not a historical provider completion",
+      "request_file": {
+        "relative_path": "stable-full03/openai-actual-http-wire.json",
+        "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/verification-archive/stable-full03/openai-actual-http-wire.json",
+        "sha256": "675a05474014844ff2cb58611444a8fe15942db00fe88a687999608c156bcfd2",
+        "bytes": 463708,
+        "phase": "stable"
+      },
+      "request_index_zero_based": 1,
+      "decoded_request_sha256": "7526fc19e58ff2688d46ac757cb44260b9317570f74f169d6fda0d5b8d4ef1ab",
+      "feedback": {
+        "context": "sha256:a5db7f13e5a710892b9e39231cd5871fea246e3dd6285e04d5626dd65b5c6375",
+        "findings": [
+          {
+            "code": "COVERAGE_REFERENCE_MISSING",
+            "component": "/passages/3/draft_paths/5",
+            "component_identity": "sha256:915ad1322c985f663b87b4a1347b73c06688f5d17ffd071ab69f3d6438ec1f5b",
+            "identity": "sha256:2cd3b70666051e4e76694c8987870ffbf4408319ac893a471bbe611d0e770b9c",
+            "reason": "The submitted reference is absent from the current prepared review context. Its untrusted value is withheld.",
+            "repair": "Use only an existing exact reference that proves this claim. Read exclusion is not evidence that an Action privately uses a field. Do not invent an Action binding or substitute a nearby pointer. If proof is unavailable, preserve the claim as unresolved, with no invented reference; resubmit the complete review.",
+            "structural": true,
+            "passage_identity": "sha256:fca9eef57f1917011685750c8aede543d6aa405de83f909c24de2c5409c00815"
+          },
+          {
+            "code": "SOURCE_COUNTER_COMPONENT_MIXED",
+            "component": "/passages/6",
+            "component_identity": "sha256:f93594261671273b4c2928727f5e308a718d74395a98b513d5c358cbcaa4275c",
+            "identity": "sha256:8872ae421bd8191863a06872e23d1d19ec4ee00415fd92babb869b28472f39b9",
+            "reason": "A source-counter maintenance component mixes responsibilities or uses an unclassified source requirement.",
+            "repair": "Separate the maintenance duty from effect/version-update, privacy and other claims. Use the exact source_counter_maintenance entry and typed source_counter_obligation requirement. Owner maintenance needs current exact host attestation; independent assurance remains blocked. False verification flags alone are not an additional source requirement. Do not drop any claim or repeat an existing owner confirmation.",
+            "structural": true,
+            "passage_identity": "sha256:77b365ecb7ff3cc01d2fec401cf3df7bf2421f72810bd864864c0482799926ce"
+          },
+          {
+            "code": "COUNTING_SUPPORT_MISMATCH",
+            "component": "/passages/8/counter_requirements/0",
+            "component_identity": "sha256:4cf1636be6655efd6c1c7b0910654eb4a5a1b023ad4b216d876255781d8179eb",
+            "identity": "sha256:ce0a4c94f20d370be10677905717641f6c480f72b6290ed2f9b4d5f63d50db96",
+            "reason": "The counter-specific citation has no applicable exact support association; a paragraph citation is separate.",
+            "repair": "Correct only this counter citation using its current scoped support. Retain the counting comparison, all source requirements and every other claim. Do not change selectors or invent an owner decision. The current host/source association supports this comparison without an OPTIONAL counter-specific citation: omit operator_message_id/operator_clarification on this counter, retain its path and actual/required capability values, and keep the paragraph citation separate. This removes no counting claim or proof obligation.",
+            "structural": true,
+            "passage_identity": "sha256:0fb1c8787b2a71189c54e091ad2e88cfa40be92f2a22d38414b983a126ccc741"
+          },
+          {
+            "code": "COUNTING_SUPPORT_MISMATCH",
+            "component": "/passages/8/counter_requirements/1",
+            "component_identity": "sha256:e20f038ab4920dfe5f16807dd140ef4449bfcb4afe19d23abd0eb1a5e32d4510",
+            "identity": "sha256:5f53210efa04c89ea1d17c881e8fcef0c56e25f6185d4b4fe71683c1054740d4",
+            "reason": "The counter-specific citation has no applicable exact support association; a paragraph citation is separate.",
+            "repair": "Correct only this counter citation using its current scoped support. Retain the counting comparison, all source requirements and every other claim. Do not change selectors or invent an owner decision. The current host/source association supports this comparison without an OPTIONAL counter-specific citation: omit operator_message_id/operator_clarification on this counter, retain its path and actual/required capability values, and keep the paragraph citation separate. This removes no counting claim or proof obligation.",
+            "structural": true,
+            "passage_identity": "sha256:0fb1c8787b2a71189c54e091ad2e88cfa40be92f2a22d38414b983a126ccc741"
+          },
+          {
+            "code": "COVERAGE_DEPLOYMENT_COMPONENT_MIXED",
+            "component": "/passages/11",
+            "component_identity": "sha256:16dc079b19d961e81e5e807223ce11c2d5d2568a37a7de3e763e45b8b4f23724",
+            "identity": "sha256:9c6ee031877198afb56c11546186d368e2a92336b3db465a097c23353b34c20d",
+            "reason": "The deployment component contains references outside its exact prerequisite or has no supported classification.",
+            "repair": "Use only the exact deployment_prerequisites entry for that supported setup duty. Split receipt-mode/setup, Read/privacy and business claims into their own independently checked passages. Selection is not setup, a receipt or independent readback; keep all outstanding duties pending. Do not change the draft.",
+            "structural": true,
+            "passage_identity": "sha256:0fb1c8787b2a71189c54e091ad2e88cfa40be92f2a22d38414b983a126ccc741"
+          }
+        ],
+        "limited": false,
+        "unevaluated": [
+          "/passages/3",
+          "/passages/6",
+          "/passages/8",
+          "/passages/11",
+          "whole-report acceptance, retained obligations and persistence"
+        ],
+        "complete_validation": false
+      },
+      "strict_result": "complete derived replacement accepted; both original complete replies remain invalid",
+      "persistence": "separate same-capture prepared-review test saves only after strict validation and explicit current unverified ownership; restart validates reuse"
+    },
+    {
+      "adapter": "openrouter",
+      "classification": "local HTTP/SSE transport, original initial response followed by separately derived complete correction; not a historical provider completion",
+      "request_file": {
+        "relative_path": "stable-full03/openrouter-actual-http-wire.json",
+        "saved_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/verification-archive/stable-full03/openrouter-actual-http-wire.json",
+        "sha256": "9f24450740f3c4fc2350342d3fb5cb0d0a82930dc6dfc5c0b0da713fd519cd6b",
+        "bytes": 466594,
+        "phase": "stable"
+      },
+      "request_index_zero_based": 1,
+      "decoded_request_sha256": "4356719cfb4eefa831a5f15b2483b145dec7eca6a9defb6de208ec966b06216b",
+      "feedback": {
+        "context": "sha256:a5db7f13e5a710892b9e39231cd5871fea246e3dd6285e04d5626dd65b5c6375",
+        "findings": [
+          {
+            "code": "COVERAGE_REFERENCE_MISSING",
+            "component": "/passages/3/draft_paths/5",
+            "component_identity": "sha256:915ad1322c985f663b87b4a1347b73c06688f5d17ffd071ab69f3d6438ec1f5b",
+            "identity": "sha256:2cd3b70666051e4e76694c8987870ffbf4408319ac893a471bbe611d0e770b9c",
+            "reason": "The submitted reference is absent from the current prepared review context. Its untrusted value is withheld.",
+            "repair": "Use only an existing exact reference that proves this claim. Read exclusion is not evidence that an Action privately uses a field. Do not invent an Action binding or substitute a nearby pointer. If proof is unavailable, preserve the claim as unresolved, with no invented reference; resubmit the complete review.",
+            "structural": true,
+            "passage_identity": "sha256:fca9eef57f1917011685750c8aede543d6aa405de83f909c24de2c5409c00815"
+          },
+          {
+            "code": "SOURCE_COUNTER_COMPONENT_MIXED",
+            "component": "/passages/6",
+            "component_identity": "sha256:f93594261671273b4c2928727f5e308a718d74395a98b513d5c358cbcaa4275c",
+            "identity": "sha256:8872ae421bd8191863a06872e23d1d19ec4ee00415fd92babb869b28472f39b9",
+            "reason": "A source-counter maintenance component mixes responsibilities or uses an unclassified source requirement.",
+            "repair": "Separate the maintenance duty from effect/version-update, privacy and other claims. Use the exact source_counter_maintenance entry and typed source_counter_obligation requirement. Owner maintenance needs current exact host attestation; independent assurance remains blocked. False verification flags alone are not an additional source requirement. Do not drop any claim or repeat an existing owner confirmation.",
+            "structural": true,
+            "passage_identity": "sha256:77b365ecb7ff3cc01d2fec401cf3df7bf2421f72810bd864864c0482799926ce"
+          },
+          {
+            "code": "COUNTING_SUPPORT_MISMATCH",
+            "component": "/passages/8/counter_requirements/0",
+            "component_identity": "sha256:4cf1636be6655efd6c1c7b0910654eb4a5a1b023ad4b216d876255781d8179eb",
+            "identity": "sha256:ce0a4c94f20d370be10677905717641f6c480f72b6290ed2f9b4d5f63d50db96",
+            "reason": "The counter-specific citation has no applicable exact support association; a paragraph citation is separate.",
+            "repair": "Correct only this counter citation using its current scoped support. Retain the counting comparison, all source requirements and every other claim. Do not change selectors or invent an owner decision. The current host/source association supports this comparison without an OPTIONAL counter-specific citation: omit operator_message_id/operator_clarification on this counter, retain its path and actual/required capability values, and keep the paragraph citation separate. This removes no counting claim or proof obligation.",
+            "structural": true,
+            "passage_identity": "sha256:0fb1c8787b2a71189c54e091ad2e88cfa40be92f2a22d38414b983a126ccc741"
+          },
+          {
+            "code": "COUNTING_SUPPORT_MISMATCH",
+            "component": "/passages/8/counter_requirements/1",
+            "component_identity": "sha256:e20f038ab4920dfe5f16807dd140ef4449bfcb4afe19d23abd0eb1a5e32d4510",
+            "identity": "sha256:5f53210efa04c89ea1d17c881e8fcef0c56e25f6185d4b4fe71683c1054740d4",
+            "reason": "The counter-specific citation has no applicable exact support association; a paragraph citation is separate.",
+            "repair": "Correct only this counter citation using its current scoped support. Retain the counting comparison, all source requirements and every other claim. Do not change selectors or invent an owner decision. The current host/source association supports this comparison without an OPTIONAL counter-specific citation: omit operator_message_id/operator_clarification on this counter, retain its path and actual/required capability values, and keep the paragraph citation separate. This removes no counting claim or proof obligation.",
+            "structural": true,
+            "passage_identity": "sha256:0fb1c8787b2a71189c54e091ad2e88cfa40be92f2a22d38414b983a126ccc741"
+          },
+          {
+            "code": "COVERAGE_DEPLOYMENT_COMPONENT_MIXED",
+            "component": "/passages/11",
+            "component_identity": "sha256:16dc079b19d961e81e5e807223ce11c2d5d2568a37a7de3e763e45b8b4f23724",
+            "identity": "sha256:9c6ee031877198afb56c11546186d368e2a92336b3db465a097c23353b34c20d",
+            "reason": "The deployment component contains references outside its exact prerequisite or has no supported classification.",
+            "repair": "Use only the exact deployment_prerequisites entry for that supported setup duty. Split receipt-mode/setup, Read/privacy and business claims into their own independently checked passages. Selection is not setup, a receipt or independent readback; keep all outstanding duties pending. Do not change the draft.",
+            "structural": true,
+            "passage_identity": "sha256:0fb1c8787b2a71189c54e091ad2e88cfa40be92f2a22d38414b983a126ccc741"
+          }
+        ],
+        "limited": false,
+        "unevaluated": [
+          "/passages/3",
+          "/passages/6",
+          "/passages/8",
+          "/passages/11",
+          "whole-report acceptance, retained obligations and persistence"
+        ],
+        "complete_validation": false
+      },
+      "strict_result": "complete derived replacement accepted; both original complete replies remain invalid",
+      "persistence": "separate same-capture prepared-review test saves only after strict validation and explicit current unverified ownership; restart validates reuse"
+    }
+  ],
+  "prompt_change": [
+    {
+      "ref": "3c9dbf1",
+      "template": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/prompt-evidence/before-request-template.txt",
+      "sha256": "6d5e2dc4411cc4f1dd865cbccc59224d26acf60d48239aa1fce52fde8be4cfdd",
+      "static_system_source_sha256": "2e8f5bb7c83c15cd026477bdf688b4559a21d87eb3d479bfb1aa90fb025cd9b6"
+    },
+    {
+      "ref": "77e206a",
+      "template": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/prompt-evidence/after-request-template.txt",
+      "sha256": "4d9f656d3bbac9b9039b58a7026bf1e988146768ed33a6730e851d54037d1e89",
+      "static_system_source_sha256": "2e8f5bb7c83c15cd026477bdf688b4559a21d87eb3d479bfb1aa90fb025cd9b6"
+    }
+  ],
+  "justification": "Exact pointer-first/support-second captured sequence; batch independent same-validator findings and withhold arbitrary rejected text. No fixture-specific product prompt, preferred message ID or rescue sentence.",
+  "comparison_controls": [
+    "authoring-counting-positive.test.ts actual post-removal captures: explicit supported decision still validates; old wrong supports remain invalid",
+    "obligation-readiness.test.ts earlier exact two-response correction still saves/reloads with deployment/readback pending"
+  ],
+  "disclosure": "Coordinates/codes/reasons/repairs are host authored. Candidate context remains the already consented context; no arbitrary rejected private-field name is copied into diagnostic. Opaque stream continuation is not readable UI or correction content."
+}

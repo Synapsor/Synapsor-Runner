@@ -1,0 +1,25 @@
+{
+  "name": "baseline",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-coverage-correction.test.ts",
+    "--maxWorkers=1",
+    "--minWorkers=1"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T23:20:32.078514+00:00",
+  "source_head": "3c9dbf19978d03045706636dae79cc681215c5dd",
+  "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/test-environments/baseline",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-correction-20260915/baseline",
+  "source_manifest_sha256": "ed8b8aaa5f6c9dee30e355dcd9be681edb8a75d64aebf61b9d2e62052b15f7ee",
+  "pid": 1274462,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T23:20:35.342687+00:00"
+}

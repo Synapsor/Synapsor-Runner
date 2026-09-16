@@ -1,0 +1,8 @@
+  it.each(['openai','openrouter'] as const)('%s refuses incomplete output without validating or saving the tool payload',async provider=>{
+    const f=fixture(),t=transport(f,[f.corrected],provider),after=vi.fn();
+    t.session.dependencies.requestJson=vi.fn(async()=>({status:200,body:provider==='openai'
+      ? {status:'incomplete',incomplete_details:{reason:'max_output_tokens'},output:[{type:'function_call',call_id:'partial',name:'runner__review_policy_coverage',arguments:JSON.stringify(f.corrected)}]}
+      : {choices:[{finish_reason:'length',message:{tool_calls:[{id:'partial',type:'function',function:{name:'runner__review_policy_coverage',arguments:JSON.stringify(f.corrected)}}]}}]}})) as any;
+    await expect(reviewPolicyCoverage({source:f.source,draft:f.draft,session:t.session,episode:{beforeSubmission:async()=>{},afterSubmission:after}})).rejects.toMatchObject({code:'ASK_PROVIDER_RESPONSE_INCOMPLETE'});
+    expect(after).not.toHaveBeenCalled();
+  });

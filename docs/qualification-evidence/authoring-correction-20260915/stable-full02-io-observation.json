@@ -1,0 +1,12 @@
+{
+  "at": "2026-09-16T00:27:16.660218+00:00",
+  "pid": 1385165,
+  "suite": "stable-full02",
+  "wchan": "jbd2_log_wait_commit",
+  "memory_and_threads": [
+    "VmRSS:\t  409356 kB",
+    "VmSwap:\t       0 kB",
+    "Threads:\t11"
+  ],
+  "observation_only": "Sampled filesystem journal wait, not a diagnosed application lock leak; no timing/configuration changes."
+}

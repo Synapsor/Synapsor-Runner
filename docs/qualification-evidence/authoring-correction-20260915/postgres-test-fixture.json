@@ -1,0 +1,12 @@
+{
+  "name": "synapsor-authoring-correction-tests-e734c8ce",
+  "id": "994235721a6e68d0b3914052657554275ead2650357d998e3cded7620610310e",
+  "label": "authoring-correction-20260915",
+  "image": "sha256:1edc8e87e53194e0cc8006c4e9df9b626c6c72cb43ad3385f0f34af7922065b1",
+  "network": "none",
+  "database": "policy_reconciliation_tests",
+  "socket": "/tmp/synapsor-authoring-correction-pg-jyCu5f/socket",
+  "private_configuration": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/private/live-postgres.json",
+  "ready_at": "2026-09-15T23:36:48.849Z",
+  "credentials": "only scoped SYNAPSOR_TEST_POSTGRES_URL, no provider environment"
+}

@@ -1,0 +1,25 @@
+{
+  "at": "2026-09-16T00:07:05.562895+00:00",
+  "records": [
+    {
+      "run": "counting-wording-control",
+      "container": "synapsor-authoring-correction-counting-wording-control-2d6aa64f",
+      "container_id": "2589f3c08adc2f7194a3a798d034c3a671667f5f6ecbd4a358d71054bfae2518",
+      "label": "authoring-correction-20260915",
+      "network": "none",
+      "saved_before_stop": {
+        "container-before.json": "75bae34af0c17f13fd84c93117b129fcd7cd404c11dfde59b53920d1913a8dbf",
+        "postgres.log": "ab4b96c3a734096ac60e67a4df73d9ece184215ad29ae029ad6518c979707f38",
+        "source.dump": "dc914d8a0ddb3ff5a16a967c0bb786f1d4fc27444a3d3cf3b26c2de138b7511f"
+      },
+      "stop_exit": 0,
+      "running_after": false,
+      "original_input_hashes_unchanged": true,
+      "saved_directory": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/development/terra/closure/counting-wording-control",
+      "removed": false
+    }
+  ],
+  "counts_note": "Actual public CLI and provider invocations retained in each public-invocations.jsonl and meter/events.jsonl. Worker outcomes are recorded separately; this cleanup makes no execution-success claim.",
+  "original_containers_touched": false,
+  "fixture_directories_removed": false
+}

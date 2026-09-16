@@ -1,0 +1,7 @@
+{
+  "at": "2026-09-16T00:00:20.598375+00:00",
+  "reason": "Read-only progress probe demonstrated that relocated same bad counter support could incorrectly earn the one additional correction. Stop before source change; no full-suite pass.",
+  "pid": 1342919,
+  "signal": "SIGTERM",
+  "budget_reset": false
+}

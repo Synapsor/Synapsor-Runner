@@ -1,0 +1,8 @@
+{
+  "commit": "77e206a52238aaecb5976d1190711734d846cbdd",
+  "test_revision": "68fe72ba1403da2fb53821c02e2e3a3ca42bcafc",
+  "baseline": "3c9dbf19978d03045706636dae79cc681215c5dd",
+  "runtime_and_counting_query_changes": false,
+  "initial_product_commit": "49a36ace1dbb49937c7d36710509c05e8867d9b4",
+  "initial_test_revision": "8382f987f1c34a1db76fe23fcffd2c51c7f9f799"
+}

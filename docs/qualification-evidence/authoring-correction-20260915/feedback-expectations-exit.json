@@ -1,0 +1,29 @@
+{
+  "name": "feedback-expectations",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/action-rule-source-evidence.test.ts",
+    "apps/runner/src/authoring-policy-context.test.ts",
+    "apps/runner/src/authoring-review-readiness.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-16T00:29:33.130181+00:00",
+  "source_head": "77e206a52238aaecb5976d1190711734d846cbdd",
+  "source_diff_sha256": "e3999631a1ec24afcf0992a4e320cdc3f32a1f622163b33dcf5dbf85447f5a40",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/test-environments/feedback-expectations",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-correction-20260915/feedback-expectations",
+  "source_manifest_sha256": "38c41e66ce824b5b3f7aab888156bc4d7b39d8d28f677a23d5584db7840a44f8",
+  "pid": 1413411,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-16T00:29:39.531519+00:00"
+}

@@ -1,0 +1,22 @@
+{
+  "name": "progress-reintroduction",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "tsx",
+    "docs/qualification-evidence/authoring-correction-20260915/progress-reintroduction-probe.mts"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T23:59:56.966122+00:00",
+  "source_head": "8382f987f1c34a1db76fe23fcffd2c51c7f9f799",
+  "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/test-environments/progress-reintroduction",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-correction-20260915/progress-reintroduction",
+  "source_manifest_sha256": "2900c55cc8c7f0fddb1b5f56d12589adf9e62f29ac44ab9a081329b46b20b2fd",
+  "pid": 1351860,
+  "source_unchanged": true,
+  "exit_code": 1,
+  "completed_at": "2026-09-15T23:59:58.729805+00:00"
+}

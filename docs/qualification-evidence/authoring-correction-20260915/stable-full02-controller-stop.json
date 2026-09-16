@@ -1,0 +1,6 @@
+{
+  "exit_code": 1,
+  "reason": "Full suite exit 1; driver assertion prevented PG/package launch.",
+  "full_suite_exit": 1,
+  "source_unchanged": true
+}

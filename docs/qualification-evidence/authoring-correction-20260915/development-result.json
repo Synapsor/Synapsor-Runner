@@ -1,0 +1,60 @@
+{
+  "at": "2026-09-15T23:41:49.873928+00:00",
+  "status": "BUSINESS review completed after explicit current unverified ownership",
+  "calls": 1,
+  "ceiling": 6,
+  "structural_corrections": 0,
+  "provider": "gpt-5.6-terra",
+  "reasoning": {
+    "effort": "low"
+  },
+  "source": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+  "episode": {
+    "id": "a1b20339-2f94-4614-9525-757c969cc3e5",
+    "context": "sha256:94fac37659150331ebcd6f37eed16533b22186bf959a044a9fa4a6125cc5610c",
+    "started_at": "2026-09-15T23:33:45.764Z",
+    "submissions": [
+      {
+        "number": 1,
+        "reserved_at": "2026-09-15T23:33:47.210Z",
+        "completed_at": "2026-09-15T23:34:26.589Z",
+        "validated": true
+      }
+    ]
+  },
+  "application_assignments": [
+    {
+      "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+      "draft_digest": "sha256:6a49093a3cb1a0329c870dde41a319ad823b50743cb3df71bfbcc0c29363e008",
+      "start": 3,
+      "end": 3,
+      "obligations": [
+        "customer_selection"
+      ],
+      "assigned_at": "2026-09-14T19:28:29.446Z",
+      "owner": "client_application",
+      "verified": false
+    },
+    {
+      "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+      "draft_digest": "sha256:d6c17aee99cb62a604caf086fa29cbcefecad000dced87991a62bfbcbfe186d9",
+      "origin": "PRODUCT-CLIENT-CONTRACT",
+      "contract_digest": "sha256:cb86267d06a0abce531eeff8d61d11aab59ea72f1c4247bca2e45d647fe5c941",
+      "obligations": [
+        "customer_selection",
+        "status_presentation"
+      ],
+      "assigned_at": "2026-09-15T23:34:32.227Z",
+      "owner": "client_application",
+      "verified": false
+    }
+  ],
+  "raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/development/terra/runs/counting-wording-control",
+  "qualification": "DEVELOPMENT only; not final immutable candidate; no paid repeat required",
+  "source_rows": 104,
+  "confirmed_against_declared_checkpoint_root": [
+    "counting-wording-control-terra-development-baseline-rechecked-oracle.json",
+    "counting-wording-control-terra-development-baseline-rechecked-project-difference.json"
+  ],
+  "baseline_measurement_note": "Final oracle explicitly prefers declared checkpoint_root; original measurement files remain retained. No application rerun or provider call."
+}

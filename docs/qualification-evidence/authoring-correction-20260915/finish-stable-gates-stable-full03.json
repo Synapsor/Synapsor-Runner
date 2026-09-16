@@ -1,0 +1,64 @@
+{
+  "started_at": "2026-09-16T00:30:26.821799+00:00",
+  "deadline": "2026-09-16T01:00:26.213065+00:00",
+  "full_suite": "stable-full03",
+  "steps": [
+    {
+      "command": [
+        "python3",
+        "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-correction-20260915/run-local.py",
+        "postgres-domain",
+        "--pg",
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/authoring-counting-domain.test.ts",
+        "apps/runner/src/authoring-counting-freshness.test.ts",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "started_at": "2026-09-16T00:51:31.910468+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-16T00:51:46.422895+00:00"
+    },
+    {
+      "command": [
+        "python3",
+        "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-correction-20260915/run-local.py",
+        "postgres-assignment",
+        "--pg",
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/control-policy-authority-codec.test.ts",
+        "--testNamePattern",
+        "saves and reloads receipt readiness under the existing review lock|postgres validated operator policy transactions.*keeps Action recovery review available with unavailable Read authority:",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=30000",
+        "--hookTimeout=120000"
+      ],
+      "started_at": "2026-09-16T00:51:46.423276+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-16T00:52:02.027236+00:00"
+    },
+    {
+      "command": [
+        "python3",
+        "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-correction-20260915/run-offline-checks.py",
+        "package",
+        "attempt3"
+      ],
+      "started_at": "2026-09-16T00:52:02.027725+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-16T00:56:39.067114+00:00"
+    }
+  ],
+  "completed_at": "2026-09-16T00:56:39.067553+00:00"
+}

@@ -1,0 +1,29 @@
+{
+  "name": "progress-fixed",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-coverage-correction.test.ts",
+    "apps/runner/src/authoring-policy-coverage.test.ts",
+    "apps/runner/src/authoring-client-duties.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-16T00:01:12.937448+00:00",
+  "source_head": "8382f987f1c34a1db76fe23fcffd2c51c7f9f799",
+  "source_diff_sha256": "d93aa4ea353027684e413113d6290e1c7a129f03c706cc776ab5ab90e9d42bcf",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/test-environments/progress-fixed",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-correction-20260915/progress-fixed",
+  "source_manifest_sha256": "b7b1698397b768ae99624cdb2ac11a1bac1fad8e33f6b8648c789be548efb773",
+  "pid": 1354290,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-16T00:01:21.862718+00:00"
+}

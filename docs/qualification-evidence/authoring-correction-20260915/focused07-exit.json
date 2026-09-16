@@ -1,0 +1,27 @@
+{
+  "name": "focused07",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-coverage-correction.test.ts",
+    "apps/runner/src/authoring-client-duties.test.ts",
+    "apps/runner/src/authoring-policy-coverage.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1"
+  ],
+  "owned_postgres_database_url_enabled": false,
+  "creation_umask": "0077",
+  "started_at": "2026-09-15T23:31:39.658682+00:00",
+  "source_head": "3c9dbf19978d03045706636dae79cc681215c5dd",
+  "source_diff_sha256": "8fe844175f21239c96e1a05ac4f0f4d085c0b0dcdc5f7e284986e7c0b105a3c9",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/test-environments/focused07",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-correction-20260915/focused07",
+  "source_manifest_sha256": "cb87dc80545361799e7b08a622d0f4015f064ee4549070728d618aa674ca94d3",
+  "pid": 1295585,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-15T23:31:47.320004+00:00"
+}

@@ -1,0 +1,67 @@
+{
+  "started_at": "2026-09-15T23:19:00.724962+00:00",
+  "baseline": "3c9dbf19978d03045706636dae79cc681215c5dd",
+  "owned_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915",
+  "frozen_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/frozen",
+  "original_cases_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/stage-b-acceptance-674ca78-20260913/cases",
+  "case_sources": {
+    "recovery-tournament-assisted": {
+      "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914",
+      "run": "recovery-tournament-assisted",
+      "checkpoint": "recheck-requested",
+      "case": "tournament-ratification",
+      "checkpoint_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/runs/recovery-tournament-assisted/checkpoints/rechecked"
+    },
+    "counting-wording-control": {
+      "root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/positive-counting-evidence-1019a23-20260914",
+      "run": "counting-wording-control",
+      "checkpoint": "wording-stopped",
+      "case": "tournament-ratification",
+      "checkpoint_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/client-duty-review-f60dfa1-20260915/clean-starts/counting-wording-control"
+    }
+  },
+  "primary": {
+    "adapter": "openai",
+    "model": "gpt-5.6-terra",
+    "reasoning_effort": "low",
+    "store": false,
+    "endpoint": "https://api.openai.com/v1",
+    "basis": "actual previous captured transport and saved authoring context; reverify final settings"
+  },
+  "budgets_minutes": {
+    "implementation": 100,
+    "fixture_recovery": 30,
+    "stable_verification_freeze": 85,
+    "primary_final": 45,
+    "delivery": 20
+  },
+  "provider_calls": {
+    "development_max": 6,
+    "primary_final_max": 25,
+    "primary_restart_reserved": 6
+  },
+  "provider_spend_ceiling_usd": 15,
+  "scope": "Bounded structural correction delivery using existing validators; review-only B and current-ownership A",
+  "status": "FREEZING",
+  "evidence_root": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-correction-20260915",
+  "next_step": "Freeze tested source 68fe72b after the evidence checkpoint, bind artifact, then final untouched B and settled A with restart/recheck. Stable full03, types, PostgreSQL and ten offline checks passed.",
+  "trial_harness_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/trial-harness",
+  "original_budgets_minutes": {
+    "implementation": 120,
+    "fixture_recovery": 30,
+    "stable_verification_freeze": 65,
+    "primary_final": 45,
+    "delivery": 20
+  },
+  "budget_adjustments": [
+    {
+      "at": "2026-09-16T00:44:19.930886+00:00",
+      "from": "20 unused implementation minutes",
+      "to": "stable verification/freezing",
+      "reason": "Complete the current full03 and already queued gates after the preserved interrupted and failed full attempts. No additional repair or full-suite cycle authorized by this reallocation.",
+      "total_minutes_before": 280,
+      "total_minutes_after": 280,
+      "authoring_call_and_final_wall_spend_limits_changed": false
+    }
+  ]
+}

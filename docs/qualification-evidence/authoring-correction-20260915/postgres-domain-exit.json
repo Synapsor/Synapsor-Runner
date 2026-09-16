@@ -1,0 +1,28 @@
+{
+  "name": "postgres-domain",
+  "args": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/authoring-counting-domain.test.ts",
+    "apps/runner/src/authoring-counting-freshness.test.ts",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "owned_postgres_database_url_enabled": true,
+  "creation_umask": "0077",
+  "started_at": "2026-09-16T00:51:31.971642+00:00",
+  "source_head": "68fe72ba1403da2fb53821c02e2e3a3ca42bcafc",
+  "source_diff_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+  "environment": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/test-environments/postgres-domain",
+  "observations": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-correction-20260915/postgres-domain",
+  "source_manifest_sha256": "38c41e66ce824b5b3f7aab888156bc4d7b39d8d28f677a23d5584db7840a44f8",
+  "pid": 1460221,
+  "source_unchanged": true,
+  "exit_code": 0,
+  "completed_at": "2026-09-16T00:51:46.414809+00:00"
+}
