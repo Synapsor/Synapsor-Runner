@@ -84,8 +84,9 @@ describe("one authoritative guided review readiness model", () => {
       } } }, env: { OPENAI_API_KEY: "test-provider-key" },
     });
     expect(requests).toHaveLength(2);
-    expect(requests[1]).toContain("Remove unrelated links");
-    expect(requests[1]).toContain("Source lines 1-1");
+    expect(requests[1]).toContain("COVERAGE_DEPLOYMENT_COMPONENT_MIXED");
+    expect(requests[1]).toContain("Use only the exact deployment_prerequisites entry");
+    expect(requests[1]).toContain("/passages/0");
     expect(policyReviewReadiness(identitySource, result).ready).toBe(true);
     expect(result.passages[0]!.disposition).toBe("needs_decision");
     expect(evidence).toEqual(before);

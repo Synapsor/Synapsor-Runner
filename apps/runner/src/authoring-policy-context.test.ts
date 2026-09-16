@@ -199,7 +199,7 @@ describe("current authoring context is separate from runtime deployment", () => 
           name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages }) }] } };
       } },
     } });
-    expect(requests).toHaveLength(2);
+    expect(requests).toHaveLength(1);
     expect(requests[0]).toContain("authoring_provider");
     expect(requests[0]).toContain("not a runtime MCP client");
     expect(requests[0]).toContain("Do not ask to provision the already inspected reader");
@@ -208,7 +208,7 @@ describe("current authoring context is separate from runtime deployment", () => 
     expect(draft).toEqual(before);
   });
 
-  it.each([false, true])("bounds a supplied-provider misclassification without waiving the independent clock requirement (corrected=%s)", async corrected => {
+  it.each([false, true])("keeps the independent clock requirement blocked with either initial provider disposition (derived correction=%s)", async corrected => {
     // The provider interpretation is verbatim from the saved 3478 coverage.
     // This is a focused excerpt replay, not a claim to recreate its missing wire log.
     const source = policyTextSnapshot(Buffer.from("Use Claude Code as the runtime MCP client and Terra for drafting.\nUse the database's current UTC timestamp."), "rules.txt");
@@ -242,7 +242,7 @@ describe("current authoring context is separate from runtime deployment", () => 
     const report = await reviewPolicyCoverage({ source, draft, env: { OPENAI_API_KEY: "test-key" }, session: {
       provider: "openai", model: "gpt-5.6-terra", conversation, dependencies: { requestJson: async request => {
         requests.push(JSON.stringify(request.body));
-        const provider = corrected && requests.length === 2 ? { ...providerPassage, disposition: "implemented",
+        const provider = corrected ? { ...providerPassage, disposition: "implemented",
           interpretation: "The current host selection is the requested drafting model; it does not verify runtime client deployment.",
           next_step: "Retain this selection; review the separate client connection later.",
           evidence_checks: [{ path: `${root}/authoring_provider/model`, equals: "gpt-5.6-terra" }] } : providerPassage;
@@ -250,16 +250,17 @@ describe("current authoring context is separate from runtime deployment", () => 
           name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: [provider, clientPassage, clockPassage] }) }] } };
       } },
     } });
-    expect(requests).toHaveLength(2);
+    expect(requests).toHaveLength(1);
     for (const request of requests) {
       expect(request).toContain(answer);
       expect(request).toContain("gpt-5.6-terra");
       expect(request).toContain("not a runtime MCP client");
       expect(request).toContain("database-origin clock requirement remains unresolved");
     }
-    expect(requests[1]).toContain("Recheck these mechanical coverage gaps");
-    expect(requests[1]).toContain("Previous untrusted coverage submission");
-    expect(requests[1]).toContain(providerPassage.interpretation);
+    // A structurally valid unresolved report is not an invitation for another opinion.
+    // The corrected=true first reply is a derived positive control, not a captured reply.
+    expect(requests[0]).not.toContain("Recheck these mechanical coverage gaps");
+    expect(requests[0]).not.toContain("Previous untrusted coverage submission");
     expect(report.passages[0]!.disposition).toBe(corrected ? "implemented" : "conflict");
     expect(report.passages[1]!.deployment_prerequisite).toBe("runner_client_connection");
     expect(report.passages[2]).toEqual(clockPassage);

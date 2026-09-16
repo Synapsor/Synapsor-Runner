@@ -237,7 +237,8 @@ describe("exact inspected Action source constraints", () => {
     expect(requests[0]).toContain(`/runner_evidence/source_constraints/resources/${resource}/columns/sequence_no/nullable`);
     expect(requests[0]).toContain("does not prove a derived expression or optional relationship result is non-null");
     expect(requests[0]).toContain(ACTION_RULE_SOURCE_CONSTRAINT_GUIDANCE);
-    expect(requests[1]).toContain("Previous untrusted coverage submission");
+    expect(requests[1]).toContain("COVERAGE_REFERENCE_MISSING");
+    expect(requests[1]).not.toContain("Previous untrusted coverage submission");
     expect(report.passages[0]!.disposition).toBe("implemented");
     expect(draft).toEqual(before);
   });
