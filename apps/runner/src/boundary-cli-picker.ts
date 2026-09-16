@@ -2704,7 +2704,7 @@ function tierConsequence(tier: BoundaryFieldTier): string {
     return "Model + Runner: reviewed values appear locally and may be sent to the configured model; re-including a kept-out field restores its current inspected operation suggestions.";
   }
   if (tier === "withheld_from_model") {
-    return "Raw values: Runner only. Raw output stays local or becomes response-only tokens, but reviewed filter/group/sort operations can still reveal equality, frequency, or order. Use Kept out for confidentiality.";
+    return "Raw values: Runner only. Moving a field here removes model analysis grants in the disabled draft; selected cells get unlinkable placeholders. Existing reviewed grants remain until revised and activated. Use Kept out to exclude the field entirely.";
   }
   return "Kept out: the field cannot be selected, filtered, sorted, grouped, joined, or aggregated.";
 }

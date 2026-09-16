@@ -42,6 +42,7 @@ import {
   formatFocusedBoundaryActivationReview,
   formatReadActivationBusinessSummary,
   loadBoundaryReviewContext,
+  prepareModelReadBoundaryExposureRevision,
   promptBoundaryMappingModel,
 } from "./boundary-commands.js";
 import {
@@ -81,6 +82,7 @@ import { generateModelReadWorkload } from "./read-workload-model.js";
 import { ReadWorkloadDraftError } from "./read-workload-diagnostics.js";
 import { generateModelReadBoundaryRevision, readBoundaryRevisionCatalog } from "./read-boundary-revision-model.js";
 import { AskError } from "./model-ask.js";
+import { reviewedModelAnalysisOperations } from "./read-field-privacy.js";
 import {
   generateModelActionSuggestionSet,
 } from "./action-suggestion-model.js";
@@ -123,6 +125,8 @@ import { reviewGuidedScopeAdmission } from "./guided-scope-admission.js";
 import { interpretPrincipalScopeAnswer } from "./model-principal-scope-review.js";
 import {
   compileExplorePlan,
+  projectScopedExploreResultForModel,
+  validateExplorePlan,
   prepareScopedExplore,
   validateExploreRequest,
 } from "./scoped-explore.js";
@@ -9954,7 +9958,7 @@ describe("boundary operator-plane CLI", () => {
         if (title === "RUNNER-GUIDED READ DRAFT") {
           recommendationTitles.push(...(options?.context ?? []).filter((line) => line.startsWith("- ")));
           expect(options?.context?.join(" ")).toContain("private Action verification");
-          expect(options?.context?.join(" ")).toContain("not analytical grants");
+          expect(options?.context?.join(" ")).toContain("removes model analysis grants in the disabled draft");
           return "use";
         }
         throw new Error(`Unexpected no-model recommendation choice: ${title}`);
@@ -10930,6 +10934,101 @@ describe("boundary operator-plane CLI", () => {
     }
   });
 
+  it.each(["columns", "enum"] as const)("manual RUNNER ONLY strips analysis and equality through the %s save path without changing active authority", async (route) => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-manual-private-"));
+    const inspection = boundaryInspection();
+    const table = inspection.tables[0]!;
+    const hold = structuredClone(table.columns.find((field) => field.name === "status")!);
+    hold.name = "security_hold";
+    hold.data_type = "boolean";
+    delete hold.enum_values;
+    table.columns.push(hold);
+    table.suggestions.default_visible_columns.push(hold.name);
+    const build = buildAutoBoundary({ inspection, project: {
+      root, package_manager: "npm", frameworks: ["node"], schema_inputs: [], database_env_names: ["DATABASE_URL"],
+    }, sourceEnv: "DATABASE_URL", inspectedSchema: "public" });
+    // A previously reviewed raw-withheld field is not silently migrated.
+    build.exploration_boundary.pack.resources[0]!.model_withheld_fields = ["status"];
+    const resourceId = "public.service_visits";
+    const rowPlan = { kind: "rows", resource: resourceId, select: ["security_hold"] };
+    const filterPlan = { ...rowPlan, where: [{ field: "security_hold", op: "eq", value: true }] };
+    let resourceVisits = 0, columnVisits = 0;
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => resourceVisits++ === 0 ? { resource_id: resourceId, action: "review" } : undefined,
+      editFieldTiers: async (view) => {
+        const tiers = Object.fromEntries(view.fields.map((field) => [field.name,
+          field.name === "security_hold" ? "withheld_from_model" :
+            view.candidate?.kept_out_fields.includes(field.name) ? "kept_out" :
+              view.candidate?.model_withheld_fields?.includes(field.name) ? "withheld_from_model" : "visible",
+        ])) as Record<string, BoundaryFieldTier>;
+        return route === "enum" && columnVisits++ === 0 ? { action: "enum", field: "status", tiers } : tiers;
+      },
+      editFieldEnumValues: async () => ["completed"],
+      promptText: async () => "Keep hold facts private for host verification.",
+      confirm: async () => { throw new Error("Manual access save must not activate authority."); },
+    };
+    const previousUser = process.env.USER;
+    process.env.USER = "private-reviewer";
+    vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const digest = explorationBoundaryCandidateDigest(build.exploration_boundary);
+      await activateExplorationBoundary({ projectRoot: root, candidate: build.exploration_boundary,
+        expectedDigest: digest, actor: "initial-reviewer", confirmation: `ACTIVATE ${digest}`,
+        confirmedDecisions: build.exploration_boundary.unresolved_decisions, currentInspection: inspection });
+      const previousActive = await loadActivatedExplorationBoundaries(root);
+      const activePath = path.join(root, ".synapsor/exploration-boundary.active.json");
+      const activeBytes = await fs.readFile(activePath);
+      expect(() => validateExplorePlan(filterPlan, previousActive[0]!)).not.toThrow();
+      const priorResource = previousActive[0]!.pack.resources.find((item) => item.id === resourceId)!;
+      expect(reviewedModelAnalysisOperations(priorResource, "security_hold")).toContain("filter:eq");
+      const unchangedStatus = reviewedModelAnalysisOperations(priorResource, "status");
+      const before = await loadBoundaryReviewContext(root);
+      const preserved = await prepareModelReadBoundaryExposureRevision({ projectRoot: root, context: before,
+        schemaInspector: async () => inspection, revision: { changes: [{ resource: resourceId, field: "security_hold",
+          before: "model_and_runner", after: "runner_only", model_operations: "preserve_reviewed" }] } });
+      // Preserve the existing model path's filter/sort/group behavior. Its raw
+      // withholding already omits presence; this task does not alter that mode.
+      expect(reviewedModelAnalysisOperations(preserved.candidate.pack.resources[0]!, "security_hold"))
+        .toEqual(["filter:eq", "filter:neq", "filter:in", "sort", "group"]);
+      expect((await loadBoundaryReviewContext(root)).candidate).toEqual(before.candidate);
+
+      await expect(boundaryReviewCommandInternal(["--project-root", root, "--access"], async () => inspection, session)).resolves.toBe(0);
+      const { candidate } = await loadBoundaryReviewContext(root);
+      const privateResource = candidate.pack.resources.find((item) => item.id === resourceId)!;
+      expect(privateResource.model_withheld_fields).toContain("security_hold");
+      expect(privateResource.selectable_fields).toContain("security_hold");
+      expect(privateResource.tenant_key).toBe(priorResource.tenant_key);
+      expect(privateResource.relationships).toEqual(priorResource.relationships);
+      expect(reviewedModelAnalysisOperations(privateResource, "status")).toEqual(unchangedStatus);
+      expect(await fs.readFile(activePath)).toEqual(activeBytes);
+      expect(await loadActivatedExplorationBoundaries(root)).toEqual(previousActive);
+
+      // Only the normal explicit activation applies the changed candidate to Explore.
+      const revisedDigest = explorationBoundaryCandidateDigest(candidate);
+      await activateExplorationBoundary({ projectRoot: root, candidate, expectedDigest: revisedDigest,
+        actor: "privacy-reviewer", confirmation: `ACTIVATE ${revisedDigest}`,
+        confirmedDecisions: candidate.unresolved_decisions, currentInspection: inspection });
+      const [active] = await loadActivatedExplorationBoundaries(root);
+      expect.soft(() => validateExplorePlan(filterPlan, active!)).toThrow("security_hold is not reviewed for filter operator eq");
+      expect.soft(reviewedModelAnalysisOperations(privateResource, "security_hold")).toEqual([]);
+      expect(() => validateExplorePlan(rowPlan, active!)).not.toThrow();
+      const raw = { ok: true, data: [{ security_hold: true }, { security_hold: true }, { security_hold: false }, { security_hold: null }], source_database_changed: false };
+      const project = () => projectScopedExploreResultForModel({ tool: "app.explore_data", boundary: active!, arguments: { plan: rowPlan }, result: raw });
+      const projected = project();
+      const tokens = (projected.value.data as Array<{ security_hold: string }>).map((row) => row.security_hold);
+      expect.soft(new Set(tokens).size).toBe(4);
+      expect.soft(tokens.every((token) => /^\[withheld:[a-f0-9]{12}:\d+\]$/.test(token))).toBe(true);
+      expect.soft(projected.value.model_egress).toMatchObject({ value_equality_withheld_columns: ["security_hold"] });
+      expect((project().value.data as Array<{ security_hold: string }>).every((row) => !tokens.includes(row.security_hold))).toBe(true);
+      expect(raw.data.map((row) => row.security_hold)).toEqual([true, true, false, null]);
+    } finally {
+      if (previousUser === undefined) delete process.env.USER;
+      else process.env.USER = previousUser;
+      await fs.rm(root, { recursive: true, force: true });
+    }
+  }, 15_000);
+
   it("saves an enum review with pending column edits and returns to the column screen", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-enum-columns-"));
     const inspection = boundaryInspection();
@@ -11111,13 +11210,8 @@ describe("boundary operator-plane CLI", () => {
         "Recorded: public.service_visits.contact_name -> Runner only (withheld from model); " +
         "actor=sensitive-reviewer; reason=\"Support analytics needs local unique counts.\"",
       );
-      expect(output).toContain(
-        "Restored only the operations currently supported by the field's inspected type",
-      );
-      expect(output).toMatch(
-        /public\.service_visits\.contact_name: return, filter\([^)]*\), sort, group, count distinct/,
-      );
-      expect(output).toContain("These grants are staged, not active.");
+      expect(output).toContain("model analysis grants are removed in this disabled revision");
+      expect(output).toContain("Current active authority is unchanged until this revision is separately reviewed and activated.");
 
       const progressPath = path.join(root, ".synapsor/boundary-review-progress.json");
       const applied = JSON.parse(await fs.readFile(progressPath, "utf8")) as {
@@ -11134,11 +11228,10 @@ describe("boundary operator-plane CLI", () => {
       const appliedResource = applied.candidate.pack.resources.find((resource) =>
         resource.id === "public.service_visits")!;
       expect(appliedResource.model_withheld_fields).toContain("contact_name");
-      expect(appliedResource.filterable_fields.contact_name)
-        .toEqual(expect.arrayContaining(["eq", "in"]));
-      expect(appliedResource.sortable_fields).toContain("contact_name");
-      expect(appliedResource.groupable_fields).toContain("contact_name");
-      expect(appliedResource.count_distinct_fields).toContain("contact_name");
+      expect(appliedResource.filterable_fields.contact_name).toBeUndefined();
+      expect(appliedResource.sortable_fields).not.toContain("contact_name");
+      expect(appliedResource.groupable_fields).not.toContain("contact_name");
+      expect(appliedResource.count_distinct_fields).not.toContain("contact_name");
       const appliedRevision = applied.revision;
 
       output = "";
@@ -11447,7 +11540,7 @@ describe("boundary operator-plane CLI", () => {
     }
   });
 
-  it("records the same disabled candidate through the picker and flag paths", async () => {
+  it("restricts manual analysis while keeping the raw-withhold flag path compatible", async () => {
     const flagRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-flag-equivalence-"));
     const pickerRoot = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-picker-equivalence-"));
     const inspection = boundaryInspection();
@@ -11517,8 +11610,18 @@ describe("boundary operator-plane CLI", () => {
         path.join(pickerRoot, ".synapsor/boundary-review-progress.json"),
         "utf8",
       ));
-      expect(pickerProgress.candidate).toEqual(flagProgress.candidate);
-      expect(pickerProgress.candidate_digest).toBe(flagProgress.candidate_digest);
+      const flagResource = flagProgress.candidate.pack.resources[0];
+      expect(flagResource.model_withheld_fields).toContain("status");
+      expect(flagResource.filterable_fields.status).toContain("eq");
+      expect(flagResource.sortable_fields).toContain("status");
+      expect(flagResource.groupable_fields).toContain("status");
+      // All candidate state agrees except the requested model-analysis narrowing.
+      const expectedPrivate = structuredClone(flagProgress.candidate);
+      delete expectedPrivate.pack.resources[0].filterable_fields.status;
+      expectedPrivate.pack.resources[0].sortable_fields = flagResource.sortable_fields.filter((field: string) => field !== "status");
+      expectedPrivate.pack.resources[0].groupable_fields = flagResource.groupable_fields.filter((field: string) => field !== "status");
+      expect(pickerProgress.candidate).toEqual(expectedPrivate);
+      expect(pickerProgress.candidate_digest).not.toBe(flagProgress.candidate_digest);
       await expect(fs.access(path.join(pickerRoot, ".synapsor/exploration-boundary.active.json")))
         .rejects.toMatchObject({ code: "ENOENT" });
     } finally {

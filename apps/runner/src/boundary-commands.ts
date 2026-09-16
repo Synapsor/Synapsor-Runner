@@ -14652,6 +14652,9 @@ async function interactiveBoundaryResourceReview(input: {
     withhold_from_model_fields: changed
       .filter((item) => item.tier === "withheld_from_model")
       .map((item) => item.field),
+    private_model_fields: changed
+      .filter((item) => item.tier === "withheld_from_model")
+      .map((item) => item.field),
     allow_reviewed_fields: changed.filter((item) => item.tier === "visible").map((item) => item.field),
     actor,
     reason,
@@ -14718,8 +14721,8 @@ async function interactiveBoundaryResourceReview(input: {
         ]
         : changed.some(({ tier }) => tier === "withheld_from_model")
         ? [
-          "Access-level note: changing Model + Runner to Runner only preserves existing operation grants and changes only where raw values may appear.",
-          "Review additional or narrower operations separately in Workbench Advanced field operations or with --group-fields, --measure-fields, or --count-distinct-fields.",
+          "Runner only: raw values stay local and model analysis grants are removed in this disabled revision; selected cells receive unlinkable placeholders.",
+          "Current active authority is unchanged until this revision is separately reviewed and activated.",
         ]
         : []),
       "",
@@ -15254,6 +15257,9 @@ async function interactiveBoundaryEnumReview(input: {
         .filter((item) => item.tier === "kept_out")
         .map((item) => item.field),
       withhold_from_model_fields: changedTiers
+        .filter((item) => item.tier === "withheld_from_model")
+        .map((item) => item.field),
+      private_model_fields: changedTiers
         .filter((item) => item.tier === "withheld_from_model")
         .map((item) => item.field),
       allow_reviewed_fields: changedTiers
@@ -16930,7 +16936,7 @@ function formatBoundaryResourceSignoff(
       [20, 56],
     ),
     "",
-    "Runner only controls raw-value egress, not inference: reviewed filter/group/sort operations may still reveal equality, frequency, or order. Use Kept out for confidentiality.",
+    "New manual Runner-only choices remove model analysis grants. Inspect operations on existing or explicitly raw-withheld fields: retained grants may still reveal equality, frequency, or order. Use Kept out to exclude the field entirely.",
     "",
     ...formatTextTable(
       ["SETTING", "REVIEWED VALUE"],

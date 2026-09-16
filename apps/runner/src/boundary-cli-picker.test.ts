@@ -227,7 +227,7 @@ describe("boundary review terminal picker", () => {
     const rendered = stripAnsi(terminal.output.read()?.toString() ?? "");
     expect(rendered).toContain("private Action verification");
     expect(rendered).toContain("RUNNER ONLY");
-    expect(rendered).toContain("analytical grants");
+    expect(rendered).toContain("removes model analysis grants");
     expect(terminal.input.isRaw).toBe(false);
   });
 
@@ -2315,8 +2315,9 @@ describe("boundary review terminal picker", () => {
       expect(rendered).toContain("Back");
       expect(rendered).not.toContain("Backspace Back to tables");
       expect(rendered).toContain("Space cycles: MODEL + RUNNER -> RUNNER ONLY -> KEPT OUT");
-      expect(normalized).toContain("reviewed filter/group/sort operations can still reveal equality, frequency, or order");
-      expect(normalized).toContain("Use Kept out for confidentiality");
+      expect(normalized).toContain("Existing reviewed grants remain until revised and activated");
+      expect(normalized).toContain("removes model analysis grants in the disabled draft");
+      expect(normalized).toContain("Use Kept out to exclude the field entirely");
       expect(rendered).toContain("TABLE ACCESS MAP - public.check_ins");
       expect(rendered).toContain("Preview includes unsaved access choices.");
       expect(rendered).toContain("Reviewed operations");

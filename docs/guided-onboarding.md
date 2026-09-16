@@ -101,10 +101,15 @@ In the model-free question picker, aggregate questions require explicit selectio
 metadata matches do not establish that your policy permits counts or grouped facts.
 Excluding a resource's questions can also remove that resource from the new Action
 catalog used for private verification. If an Action needs it, retain it in the
-disabled draft and review all public operations before activation. `RUNNER ONLY`
-withholds raw values; it does not by itself remove filters, grouping or other
-analytical grants. Review those grants separately rather than treating a selected
-count question as private-only access.
+disabled draft and review all public operations before activation. Moving a field
+to `RUNNER ONLY` in manual access review removes its model filter, sort, grouping
+and other analysis grants from that disabled revision. Selected cells receive
+unlinkable placeholders. Private host verification remains available. Existing
+active boundaries stay unchanged until the revision is separately reviewed and
+activated. Explicit `preserve_reviewed` revisions and the low-level
+`--withhold-from-model` raw-value control retain reviewed analysis grants; these
+are not the manual picker's default. A selected count question is not private-only
+access.
 
 The mapper prepares a broad disabled structural catalog, minimizes it to the
 reviewed job, and presents one exact Read Boundary review. Change-oriented jobs
