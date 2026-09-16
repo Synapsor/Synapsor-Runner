@@ -1,0 +1,50 @@
+{
+  "base": "5a5ec376e1b2eb27807471d4ac7ecaa4193b8caf",
+  "files": [
+    {
+      "path": "apps/runner/src/action-rule-authority.ts",
+      "sha256": "7980518c3b5a44116b4edcd054b53f2c60ce44f68a3870cfba9350ef63a2af98",
+      "mode": "0o664"
+    },
+    {
+      "path": "apps/runner/src/boundary-cli.test.ts",
+      "sha256": "811315fa8e796a9a975d7f304c284aed6b01b5bd8b6b217f77d3606afa206cb9",
+      "mode": "0o664"
+    },
+    {
+      "path": "apps/runner/src/boundary-commands.ts",
+      "sha256": "53c4ed7f2fcf761f7d725cb1aa88d775bd60cabd5d48a372e8ce1e7017cb7871",
+      "mode": "0o664"
+    },
+    {
+      "path": "apps/runner/src/boundary-workbench.test.ts",
+      "sha256": "d54c939cfa860a376880e45f7dfae1483032fa102bfdfc536b17d291f6ef94c1",
+      "mode": "0o664"
+    },
+    {
+      "path": "apps/runner/src/boundary-workbench.ts",
+      "sha256": "4b36f658fd7ded8105a64c9fa625cbefde52e240ef4041971c389043315978ad",
+      "mode": "0o664"
+    },
+    {
+      "path": "apps/runner/src/instant-cli-boundary.ts",
+      "sha256": "7cedc421fe182a6d10d3a1c86601fffde154666edf8b613ac0b1cb1ca3a250b5",
+      "mode": "0o664"
+    },
+    {
+      "path": "apps/runner/src/local-ui.ts",
+      "sha256": "6e46e25e5babfeeb9f86ea35b6171f455ba0858da89483f7c7b1433d85ae9ec6",
+      "mode": "0o664"
+    },
+    {
+      "path": "apps/runner/src/read-activation-impact.test.ts",
+      "sha256": "bc3e17528edfb083f47ad5dace9e0c76c8ba80344be5f4b5727397ad1630bed0",
+      "mode": "0o664"
+    },
+    {
+      "path": "apps/runner/src/read-activation-impact.ts",
+      "sha256": "93eab0181ed559c98b3bdf1e0d3576d83cfaeadf27fdc1972145d5222ad08b06",
+      "mode": "0o664"
+    }
+  ]
+}

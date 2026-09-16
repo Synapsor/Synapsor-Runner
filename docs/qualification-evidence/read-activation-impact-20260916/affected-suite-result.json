@@ -1,0 +1,25 @@
+{
+  "name": "affected-suite",
+  "command": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/boundary-cli.test.ts",
+    "apps/runner/src/boundary-workbench.test.ts",
+    "apps/runner/src/local-ui.test.ts",
+    "apps/runner/src/instant-cli-boundary.test.ts",
+    "apps/runner/src/action-rule-authority.test.ts",
+    "apps/runner/src/read-activation-impact.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=20000"
+  ],
+  "started_at": "2026-09-16T16:42:35.845993+00:00",
+  "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/read-activation-impact-5a5ec37-20260916/affected-suite/output.log",
+  "source": "5a5ec376e1b2eb27807471d4ac7ecaa4193b8caf",
+  "environment": "network isolated, clear credentials, private HOME/tmp/var-tmp, NO_COLOR, umask0077",
+  "exit_code": 0,
+  "completed_at": "2026-09-16T16:46:49.245883+00:00"
+}

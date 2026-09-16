@@ -1,0 +1,13 @@
+{
+  "started_at": "2026-09-16T16:30:28.692632+00:00",
+  "baseline": "5a5ec376e1b2eb27807471d4ac7ecaa4193b8caf",
+  "branch": "codex/tui-safe-action-control-plane",
+  "owned_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/read-activation-impact-5a5ec37-20260916",
+  "budgets_minutes": {
+    "implementation_focused": 55,
+    "verification": 25,
+    "delivery": 10
+  },
+  "provider_calls": 0,
+  "scope": "Display-only pending Read activation impact using the existing unavailableReadDependencies predicate. Warn before interactive/headless activation; cover Workbench and instant routes. No digest, dependency or execution binding changes."
+}

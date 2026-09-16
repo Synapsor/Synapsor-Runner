@@ -1,0 +1,14 @@
+{
+  "name": "types-early",
+  "command": [
+    "corepack",
+    "pnpm",
+    "typecheck"
+  ],
+  "started_at": "2026-09-16T16:39:23.141838+00:00",
+  "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/read-activation-impact-5a5ec37-20260916/types-early/output.log",
+  "source": "5a5ec376e1b2eb27807471d4ac7ecaa4193b8caf",
+  "environment": "network isolated, clear credentials, private HOME/tmp/var-tmp, NO_COLOR, umask0077",
+  "exit_code": 0,
+  "completed_at": "2026-09-16T16:39:39.640925+00:00"
+}

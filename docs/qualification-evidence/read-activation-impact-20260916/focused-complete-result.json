@@ -1,0 +1,24 @@
+{
+  "name": "focused-complete",
+  "command": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/boundary-cli.test.ts",
+    "apps/runner/src/boundary-workbench.test.ts",
+    "apps/runner/src/read-activation-impact.test.ts",
+    "-t",
+    "warns before an unrelated Read edit|shows exact Action impact|ships an executable|Read activation impact display failures",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=20000"
+  ],
+  "started_at": "2026-09-16T16:41:52.862021+00:00",
+  "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/read-activation-impact-5a5ec37-20260916/focused-complete/output.log",
+  "source": "5a5ec376e1b2eb27807471d4ac7ecaa4193b8caf",
+  "environment": "network isolated, clear credentials, private HOME/tmp/var-tmp, NO_COLOR, umask0077",
+  "exit_code": 0,
+  "completed_at": "2026-09-16T16:42:06.648204+00:00"
+}

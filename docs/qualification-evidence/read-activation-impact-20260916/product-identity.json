@@ -1,0 +1,8 @@
+{
+  "commit": "b7e074db5d4d856737329b2dcfa5dbf7e193881b",
+  "branch": "codex/tui-safe-action-control-plane",
+  "base": "5a5ec376e1b2eb27807471d4ac7ecaa4193b8caf",
+  "source_manifest": "source-files.json",
+  "source_manifest_sha256": "9a7cfa0ec4d144fcfb26cfced9118cf6f5ec3741e6251628b7881729d6efe621",
+  "all_files_match_commit": true
+}
