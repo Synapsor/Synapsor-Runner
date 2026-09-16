@@ -1,0 +1,748 @@
+{
+  "at": "2026-09-16T01:04:57.764838+00:00",
+  "artifact_tree": "4cdd9cd65389a57de238c07775ca9bb22d824bccf9cf9dd8a1e1adb9e2b44284",
+  "results": [
+    {
+      "run": "recovery-tournament-assisted",
+      "snapshots": [
+        {
+          "label": "business-reviewed",
+          "business_ready": true,
+          "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+          "coverage_draft_digest": "sha256:ca14cf3864f79098598d9c895ea4e246e23a74a5fec4923b57c3c4e9be514601",
+          "client_duties": [
+            {
+              "duty": "customer_selection",
+              "assigned": true
+            },
+            {
+              "duty": "status_presentation",
+              "assigned": true
+            }
+          ],
+          "new_episodes": [],
+          "application_assignments": [
+            {
+              "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+              "draft_digest": "sha256:75ee86fcf9f5e7eadba61c7c027a0a09f37de305d38b7c5442934df37b5211fa",
+              "start": 3,
+              "end": 3,
+              "obligations": [
+                "customer_selection"
+              ],
+              "assigned_at": "2026-09-14T23:18:46.352Z",
+              "owner": "client_application",
+              "verified": false
+            },
+            {
+              "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+              "draft_digest": "sha256:ca14cf3864f79098598d9c895ea4e246e23a74a5fec4923b57c3c4e9be514601",
+              "start": 3,
+              "end": 3,
+              "obligations": [
+                "customer_selection"
+              ],
+              "assigned_at": "2026-09-14T23:18:46.352Z",
+              "owner": "client_application",
+              "verified": false
+            },
+            {
+              "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+              "draft_digest": "sha256:ca14cf3864f79098598d9c895ea4e246e23a74a5fec4923b57c3c4e9be514601",
+              "origin": "PRODUCT-CLIENT-CONTRACT",
+              "contract_digest": "sha256:cb86267d06a0abce531eeff8d61d11aab59ea72f1c4247bca2e45d647fe5c941",
+              "obligations": [
+                "customer_selection",
+                "status_presentation"
+              ],
+              "assigned_at": "2026-09-15T22:29:35.212Z",
+              "owner": "client_application",
+              "verified": false
+            }
+          ],
+          "ledger_table_changes": [],
+          "review_bookkeeping_files": [
+            ".synapsor/boundary-authoring/resume.json",
+            ".synapsor/local.db"
+          ],
+          "pending": [],
+          "source_rows": 104,
+          "checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/runs/recovery-tournament-assisted/checkpoints/business-reviewed",
+          "project_manifest_sha256": "beec70d1a53c77650d0a402f9055f3c922d4e818d178729c75040579142120dd",
+          "remaining_readiness_items": [
+            {
+              "kind": "deployment_prerequisite",
+              "clientDuty": "customer_selection",
+              "title": "Client target selection",
+              "nextStep": "Use the client integration responsibilities review to accept current ownership. Implementation and per-operation assurance remain unverified.",
+              "passages": [
+                {
+                  "start": 3,
+                  "end": 3,
+                  "disposition": "needs_decision",
+                  "interpretation": "Runner verifies the submitted scoped result reference, but the client must capture the referee's intended result selection.",
+                  "draft_paths": [
+                    "/runner_evidence/runtime_contract/application_obligations/customer_selection"
+                  ],
+                  "topic": "Referee result selection",
+                  "responsibility": "application",
+                  "issue_kind": "missing_configuration",
+                  "next_step": "Assign the client responsibility for capturing the referee's intended result selection.",
+                  "application_obligations": [
+                    "customer_selection"
+                  ]
+                }
+              ],
+              "blocksReview": false
+            },
+            {
+              "kind": "deployment_prerequisite",
+              "clientDuty": "status_presentation",
+              "title": "Client status presentation",
+              "nextStep": "Use the client integration responsibilities review to accept current ownership. Implementation and per-operation assurance remain unverified.",
+              "passages": [],
+              "blocksReview": false
+            },
+            {
+              "kind": "deployment_prerequisite",
+              "title": "Authenticated referee identity",
+              "nextStep": "After review, choose a client and configure runtime identity. Use a fixed test identity only for local testing; production identity must come from an authenticated application session. Runtime access remains unavailable without it.",
+              "passages": [
+                {
+                  "start": 3,
+                  "end": 3,
+                  "disposition": "needs_decision",
+                  "interpretation": "The reviewed scope controls are configured, but connecting an authenticated application session to those tenant and principal bindings is not verified.",
+                  "draft_paths": [
+                    "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+                  ],
+                  "topic": "Authenticated referee identity",
+                  "responsibility": "deployment",
+                  "issue_kind": "missing_configuration",
+                  "next_step": "After authority review, configure and verify authenticated-session identity for the reviewed tenant and principal bindings.",
+                  "deployment_prerequisite": "authenticated_identity"
+                }
+              ],
+              "blocksReview": false
+            },
+            {
+              "kind": "deployment_prerequisite",
+              "title": "Ratification execution setup",
+              "nextStep": "After authority review, prepare or verify the dedicated writer, review execution permission, then configure and start the worker. Keep reader credentials separate. Setup and execution remain unverified; no request is completed without a successful receipt.",
+              "passages": [
+                {
+                  "start": 7,
+                  "end": 7,
+                  "disposition": "needs_decision",
+                  "interpretation": "A Runner-ledger receipt mode is currently configured, but dedicated-writer review, grants, execution enablement, and worker startup for the prepared direct-SQL action are not verified.",
+                  "draft_paths": [
+                    "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+                  ],
+                  "topic": "Ratification execution setup",
+                  "responsibility": "deployment",
+                  "issue_kind": "missing_configuration",
+                  "next_step": "After authority review, complete writer, grant, execution-consent, receipt, and worker setup for ratification.",
+                  "deployment_prerequisite": "runner_execution_setup"
+                }
+              ],
+              "blocksReview": false
+            },
+            {
+              "kind": "deployment_prerequisite",
+              "title": "Independent changed-row verification",
+              "nextStep": "After each applicable execution, independently observe the source and compare it with the exact intended change. This readback remains unverified; a receipt alone is not that observation. No Action-code repair is required for this external step.",
+              "passages": [
+                {
+                  "obligation_assessment": {
+                    "origin": "HOST-RESOLVED",
+                    "family": "independent_source_readback",
+                    "path": "/runner_evidence/runtime_contract/application_obligations/independent_source_readback",
+                    "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+                    "requirement": "independent_source_readback",
+                    "phase": "after_execution",
+                    "state": "pending",
+                    "verified": false,
+                    "dependencies_digest": "sha256:954740fdc118d2992905a649de24f49a1e3c62b6b34fc4b7e0c6f21db0d5242c"
+                  },
+                  "start": 7,
+                  "end": 7,
+                  "disposition": "needs_decision",
+                  "interpretation": "Independently verifying the changed source row is a separate after-execution observation. It remains unverified; a Runner-ledger receipt is not that observation.",
+                  "draft_paths": [
+                    "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+                  ],
+                  "topic": "Independent changed-row verification",
+                  "responsibility": "application",
+                  "issue_kind": "missing_configuration",
+                  "next_step": "Assign who will independently observe each changed source row after execution.",
+                  "application_obligations": [
+                    "independent_source_readback"
+                  ]
+                }
+              ],
+              "blocksReview": false
+            }
+          ]
+        },
+        {
+          "label": "rechecked",
+          "business_ready": true,
+          "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+          "coverage_draft_digest": "sha256:ca14cf3864f79098598d9c895ea4e246e23a74a5fec4923b57c3c4e9be514601",
+          "client_duties": [
+            {
+              "duty": "customer_selection",
+              "assigned": true
+            },
+            {
+              "duty": "status_presentation",
+              "assigned": true
+            }
+          ],
+          "new_episodes": [],
+          "application_assignments": [
+            {
+              "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+              "draft_digest": "sha256:75ee86fcf9f5e7eadba61c7c027a0a09f37de305d38b7c5442934df37b5211fa",
+              "start": 3,
+              "end": 3,
+              "obligations": [
+                "customer_selection"
+              ],
+              "assigned_at": "2026-09-14T23:18:46.352Z",
+              "owner": "client_application",
+              "verified": false
+            },
+            {
+              "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+              "draft_digest": "sha256:ca14cf3864f79098598d9c895ea4e246e23a74a5fec4923b57c3c4e9be514601",
+              "start": 3,
+              "end": 3,
+              "obligations": [
+                "customer_selection"
+              ],
+              "assigned_at": "2026-09-14T23:18:46.352Z",
+              "owner": "client_application",
+              "verified": false
+            },
+            {
+              "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+              "draft_digest": "sha256:ca14cf3864f79098598d9c895ea4e246e23a74a5fec4923b57c3c4e9be514601",
+              "origin": "PRODUCT-CLIENT-CONTRACT",
+              "contract_digest": "sha256:cb86267d06a0abce531eeff8d61d11aab59ea72f1c4247bca2e45d647fe5c941",
+              "obligations": [
+                "customer_selection",
+                "status_presentation"
+              ],
+              "assigned_at": "2026-09-15T22:29:35.212Z",
+              "owner": "client_application",
+              "verified": false
+            }
+          ],
+          "ledger_table_changes": [],
+          "review_bookkeeping_files": [
+            ".synapsor/boundary-authoring/resume.json",
+            ".synapsor/local.db"
+          ],
+          "pending": [],
+          "source_rows": 104,
+          "checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/runs/recovery-tournament-assisted/checkpoints/rechecked",
+          "project_manifest_sha256": "ea00c96d46742bc7dbeaf0cf19a6f6a401b3948bc6bb9694fd910fef4dc8ff52",
+          "remaining_readiness_items": [
+            {
+              "kind": "deployment_prerequisite",
+              "clientDuty": "customer_selection",
+              "title": "Client target selection",
+              "nextStep": "Use the client integration responsibilities review to accept current ownership. Implementation and per-operation assurance remain unverified.",
+              "passages": [
+                {
+                  "start": 3,
+                  "end": 3,
+                  "disposition": "needs_decision",
+                  "interpretation": "Runner verifies the submitted scoped result reference, but the client must capture the referee's intended result selection.",
+                  "draft_paths": [
+                    "/runner_evidence/runtime_contract/application_obligations/customer_selection"
+                  ],
+                  "topic": "Referee result selection",
+                  "responsibility": "application",
+                  "issue_kind": "missing_configuration",
+                  "next_step": "Assign the client responsibility for capturing the referee's intended result selection.",
+                  "application_obligations": [
+                    "customer_selection"
+                  ]
+                }
+              ],
+              "blocksReview": false
+            },
+            {
+              "kind": "deployment_prerequisite",
+              "clientDuty": "status_presentation",
+              "title": "Client status presentation",
+              "nextStep": "Use the client integration responsibilities review to accept current ownership. Implementation and per-operation assurance remain unverified.",
+              "passages": [],
+              "blocksReview": false
+            },
+            {
+              "kind": "deployment_prerequisite",
+              "title": "Authenticated referee identity",
+              "nextStep": "After review, choose a client and configure runtime identity. Use a fixed test identity only for local testing; production identity must come from an authenticated application session. Runtime access remains unavailable without it.",
+              "passages": [
+                {
+                  "start": 3,
+                  "end": 3,
+                  "disposition": "needs_decision",
+                  "interpretation": "The reviewed scope controls are configured, but connecting an authenticated application session to those tenant and principal bindings is not verified.",
+                  "draft_paths": [
+                    "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+                  ],
+                  "topic": "Authenticated referee identity",
+                  "responsibility": "deployment",
+                  "issue_kind": "missing_configuration",
+                  "next_step": "After authority review, configure and verify authenticated-session identity for the reviewed tenant and principal bindings.",
+                  "deployment_prerequisite": "authenticated_identity"
+                }
+              ],
+              "blocksReview": false
+            },
+            {
+              "kind": "deployment_prerequisite",
+              "title": "Ratification execution setup",
+              "nextStep": "After authority review, prepare or verify the dedicated writer, review execution permission, then configure and start the worker. Keep reader credentials separate. Setup and execution remain unverified; no request is completed without a successful receipt.",
+              "passages": [
+                {
+                  "start": 7,
+                  "end": 7,
+                  "disposition": "needs_decision",
+                  "interpretation": "A Runner-ledger receipt mode is currently configured, but dedicated-writer review, grants, execution enablement, and worker startup for the prepared direct-SQL action are not verified.",
+                  "draft_paths": [
+                    "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+                  ],
+                  "topic": "Ratification execution setup",
+                  "responsibility": "deployment",
+                  "issue_kind": "missing_configuration",
+                  "next_step": "After authority review, complete writer, grant, execution-consent, receipt, and worker setup for ratification.",
+                  "deployment_prerequisite": "runner_execution_setup"
+                }
+              ],
+              "blocksReview": false
+            },
+            {
+              "kind": "deployment_prerequisite",
+              "title": "Independent changed-row verification",
+              "nextStep": "After each applicable execution, independently observe the source and compare it with the exact intended change. This readback remains unverified; a receipt alone is not that observation. No Action-code repair is required for this external step.",
+              "passages": [
+                {
+                  "obligation_assessment": {
+                    "origin": "HOST-RESOLVED",
+                    "family": "independent_source_readback",
+                    "path": "/runner_evidence/runtime_contract/application_obligations/independent_source_readback",
+                    "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+                    "requirement": "independent_source_readback",
+                    "phase": "after_execution",
+                    "state": "pending",
+                    "verified": false,
+                    "dependencies_digest": "sha256:954740fdc118d2992905a649de24f49a1e3c62b6b34fc4b7e0c6f21db0d5242c"
+                  },
+                  "start": 7,
+                  "end": 7,
+                  "disposition": "needs_decision",
+                  "interpretation": "Independently verifying the changed source row is a separate after-execution observation. It remains unverified; a Runner-ledger receipt is not that observation.",
+                  "draft_paths": [
+                    "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+                  ],
+                  "topic": "Independent changed-row verification",
+                  "responsibility": "application",
+                  "issue_kind": "missing_configuration",
+                  "next_step": "Assign who will independently observe each changed source row after execution.",
+                  "application_obligations": [
+                    "independent_source_readback"
+                  ]
+                }
+              ],
+              "blocksReview": false
+            }
+          ]
+        }
+      ],
+      "actual_authoring_calls": 0,
+      "structural_correction_requests": 0,
+      "captures": [],
+      "preflight_exits": [
+        0,
+        0
+      ],
+      "cli_exits": [
+        0,
+        0
+      ],
+      "public_invocations": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/runs/recovery-tournament-assisted/public-invocations.jsonl",
+      "terminal_logs": [
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/runs/recovery-tournament-assisted/logs/final-recheck-terminal.log",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/runs/recovery-tournament-assisted/logs/final-review-terminal.log"
+      ]
+    },
+    {
+      "run": "counting-wording-control",
+      "snapshots": [
+        {
+          "label": "business-reviewed",
+          "business_ready": true,
+          "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+          "coverage_draft_digest": "sha256:52f865b8ab51aaa52f40ec9aaa7cea5931cfdd5e3502b11218f208f6d56436f8",
+          "client_duties": [
+            {
+              "duty": "customer_selection",
+              "assigned": true
+            },
+            {
+              "duty": "status_presentation",
+              "assigned": true
+            }
+          ],
+          "new_episodes": [
+            {
+              "id": "1182d554-8149-4df5-b9f4-e01c4693ae67",
+              "context": "sha256:6c8b6f81721f7dfcc8729214547f6e6f338a084d8854a1a92572c1a4917ee8d8",
+              "started_at": "2026-09-16T01:01:37.673Z",
+              "submissions": [
+                {
+                  "number": 1,
+                  "reserved_at": "2026-09-16T01:01:39.160Z",
+                  "completed_at": "2026-09-16T01:02:11.341Z",
+                  "validated": true
+                }
+              ]
+            }
+          ],
+          "application_assignments": [
+            {
+              "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+              "draft_digest": "sha256:6a49093a3cb1a0329c870dde41a319ad823b50743cb3df71bfbcc0c29363e008",
+              "start": 3,
+              "end": 3,
+              "obligations": [
+                "customer_selection"
+              ],
+              "assigned_at": "2026-09-14T19:28:29.446Z",
+              "owner": "client_application",
+              "verified": false
+            },
+            {
+              "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+              "draft_digest": "sha256:52f865b8ab51aaa52f40ec9aaa7cea5931cfdd5e3502b11218f208f6d56436f8",
+              "origin": "PRODUCT-CLIENT-CONTRACT",
+              "contract_digest": "sha256:cb86267d06a0abce531eeff8d61d11aab59ea72f1c4247bca2e45d647fe5c941",
+              "obligations": [
+                "customer_selection",
+                "status_presentation"
+              ],
+              "assigned_at": "2026-09-16T01:02:19.329Z",
+              "owner": "client_application",
+              "verified": false
+            }
+          ],
+          "ledger_table_changes": [],
+          "review_bookkeeping_files": [
+            ".synapsor/boundary-authoring/policy-sources/a6d8098e-7f74-4c80-bcc2-728ba936ef7a.json",
+            ".synapsor/boundary-authoring/resume.json",
+            ".synapsor/local.db"
+          ],
+          "pending": [],
+          "source_rows": 104,
+          "checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/runs/counting-wording-control/checkpoints/business-reviewed",
+          "project_manifest_sha256": "d49d90dd56d50a80b637d31221fd18c93b2010f7b4e91bd91e3192f3a8c3b4ab",
+          "remaining_readiness_items": [
+            {
+              "kind": "deployment_prerequisite",
+              "clientDuty": "customer_selection",
+              "title": "Client target selection",
+              "nextStep": "Use the client integration responsibilities review to accept current ownership. Implementation and per-operation assurance remain unverified.",
+              "passages": [],
+              "blocksReview": false
+            },
+            {
+              "kind": "deployment_prerequisite",
+              "clientDuty": "status_presentation",
+              "title": "Client status presentation",
+              "nextStep": "Use the client integration responsibilities review to accept current ownership. Implementation and per-operation assurance remain unverified.",
+              "passages": [],
+              "blocksReview": false
+            },
+            {
+              "kind": "deployment_prerequisite",
+              "title": "Independent source verification",
+              "nextStep": "After each applicable execution, independently observe the source and compare it with the exact intended change. This readback remains unverified; a receipt alone is not that observation. No Action-code repair is required for this external step.",
+              "passages": [
+                {
+                  "obligation_assessment": {
+                    "origin": "HOST-RESOLVED",
+                    "family": "independent_source_readback",
+                    "path": "/runner_evidence/runtime_contract/application_obligations/independent_source_readback",
+                    "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+                    "requirement": "independent_source_readback",
+                    "phase": "after_execution",
+                    "state": "pending",
+                    "verified": false,
+                    "dependencies_digest": "sha256:3b50fea76a7508eefe7b4e7f163d7d7da3cc07b76bc868f2b17c0591dbe06637"
+                  },
+                  "start": 7,
+                  "end": 7,
+                  "disposition": "needs_decision",
+                  "interpretation": "Independently verifying the changed source row is an external after-execution observation. It is not yet verified and cannot be performed before a change exists.",
+                  "draft_paths": [
+                    "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+                  ],
+                  "topic": "Independent source verification",
+                  "responsibility": "application",
+                  "issue_kind": "missing_configuration",
+                  "next_step": "Who will independently check the changed source row after each completed ratification?",
+                  "application_obligations": [
+                    "independent_source_readback"
+                  ]
+                }
+              ],
+              "blocksReview": false
+            },
+            {
+              "kind": "deployment_prerequisite",
+              "title": "Receipt/execution setup",
+              "nextStep": "Receipt/execution setup pending: after authority review, use execution setup to review runner_ledger receipt mode and the dedicated writer, then separate execution permission and worker startup. Selection, provisioning, an actual receipt and independent source readback are not verified by this business review.",
+              "passages": [
+                {
+                  "start": 7,
+                  "end": 7,
+                  "disposition": "needs_decision",
+                  "responsibility": "deployment",
+                  "issue_kind": "missing_configuration",
+                  "topic": "Receipt/execution setup",
+                  "draft_paths": [
+                    "/runner_evidence/runtime_contract/receipts"
+                  ],
+                  "interpretation": "HOST-RESOLVED pending component: the configured receipt mode matches the explicit source requirement. Writer/provisioning verification, execution authorization and receipt production remain separate and unverified. The submitted configuration claim is retained separately.",
+                  "next_step": "Continue through execution setup after authority review; an actual receipt and independent source readback still require their applicable later evidence.",
+                  "obligation_assessment": {
+                    "configuration_digest": "sha256:4271bc259e1604d29231176a50fa2ecd959e3b172255b56254ab00c8697ac1a6",
+                    "origin": "HOST-RESOLVED",
+                    "family": "receipt_setup",
+                    "path": "/runner_evidence/runtime_contract/receipts",
+                    "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+                    "requirement": "runner_ledger",
+                    "phase": "after_authority_review",
+                    "state": "pending",
+                    "verified": false,
+                    "dependencies_digest": "sha256:9cd773c8fb81f87730b1beaa40bfae317e17e89da852ddb73c887b7524487b1d"
+                  }
+                }
+              ],
+              "blocksReview": false
+            }
+          ]
+        },
+        {
+          "label": "rechecked",
+          "business_ready": true,
+          "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+          "coverage_draft_digest": "sha256:52f865b8ab51aaa52f40ec9aaa7cea5931cfdd5e3502b11218f208f6d56436f8",
+          "client_duties": [
+            {
+              "duty": "customer_selection",
+              "assigned": true
+            },
+            {
+              "duty": "status_presentation",
+              "assigned": true
+            }
+          ],
+          "new_episodes": [
+            {
+              "id": "1182d554-8149-4df5-b9f4-e01c4693ae67",
+              "context": "sha256:6c8b6f81721f7dfcc8729214547f6e6f338a084d8854a1a92572c1a4917ee8d8",
+              "started_at": "2026-09-16T01:01:37.673Z",
+              "submissions": [
+                {
+                  "number": 1,
+                  "reserved_at": "2026-09-16T01:01:39.160Z",
+                  "completed_at": "2026-09-16T01:02:11.341Z",
+                  "validated": true
+                }
+              ]
+            }
+          ],
+          "application_assignments": [
+            {
+              "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+              "draft_digest": "sha256:6a49093a3cb1a0329c870dde41a319ad823b50743cb3df71bfbcc0c29363e008",
+              "start": 3,
+              "end": 3,
+              "obligations": [
+                "customer_selection"
+              ],
+              "assigned_at": "2026-09-14T19:28:29.446Z",
+              "owner": "client_application",
+              "verified": false
+            },
+            {
+              "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+              "draft_digest": "sha256:52f865b8ab51aaa52f40ec9aaa7cea5931cfdd5e3502b11218f208f6d56436f8",
+              "origin": "PRODUCT-CLIENT-CONTRACT",
+              "contract_digest": "sha256:cb86267d06a0abce531eeff8d61d11aab59ea72f1c4247bca2e45d647fe5c941",
+              "obligations": [
+                "customer_selection",
+                "status_presentation"
+              ],
+              "assigned_at": "2026-09-16T01:02:19.329Z",
+              "owner": "client_application",
+              "verified": false
+            }
+          ],
+          "ledger_table_changes": [],
+          "review_bookkeeping_files": [
+            ".synapsor/boundary-authoring/policy-sources/a6d8098e-7f74-4c80-bcc2-728ba936ef7a.json",
+            ".synapsor/boundary-authoring/resume.json",
+            ".synapsor/local.db"
+          ],
+          "pending": [],
+          "source_rows": 104,
+          "checkpoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/runs/counting-wording-control/checkpoints/rechecked",
+          "project_manifest_sha256": "9fbd1e4e0e324f385bcc70b6c808f00a65b0c8b797c90edfe0a8d02d0c964fa8",
+          "remaining_readiness_items": [
+            {
+              "kind": "deployment_prerequisite",
+              "clientDuty": "customer_selection",
+              "title": "Client target selection",
+              "nextStep": "Use the client integration responsibilities review to accept current ownership. Implementation and per-operation assurance remain unverified.",
+              "passages": [],
+              "blocksReview": false
+            },
+            {
+              "kind": "deployment_prerequisite",
+              "clientDuty": "status_presentation",
+              "title": "Client status presentation",
+              "nextStep": "Use the client integration responsibilities review to accept current ownership. Implementation and per-operation assurance remain unverified.",
+              "passages": [],
+              "blocksReview": false
+            },
+            {
+              "kind": "deployment_prerequisite",
+              "title": "Independent source verification",
+              "nextStep": "After each applicable execution, independently observe the source and compare it with the exact intended change. This readback remains unverified; a receipt alone is not that observation. No Action-code repair is required for this external step.",
+              "passages": [
+                {
+                  "obligation_assessment": {
+                    "origin": "HOST-RESOLVED",
+                    "family": "independent_source_readback",
+                    "path": "/runner_evidence/runtime_contract/application_obligations/independent_source_readback",
+                    "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+                    "requirement": "independent_source_readback",
+                    "phase": "after_execution",
+                    "state": "pending",
+                    "verified": false,
+                    "dependencies_digest": "sha256:3b50fea76a7508eefe7b4e7f163d7d7da3cc07b76bc868f2b17c0591dbe06637"
+                  },
+                  "start": 7,
+                  "end": 7,
+                  "disposition": "needs_decision",
+                  "interpretation": "Independently verifying the changed source row is an external after-execution observation. It is not yet verified and cannot be performed before a change exists.",
+                  "draft_paths": [
+                    "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+                  ],
+                  "topic": "Independent source verification",
+                  "responsibility": "application",
+                  "issue_kind": "missing_configuration",
+                  "next_step": "Who will independently check the changed source row after each completed ratification?",
+                  "application_obligations": [
+                    "independent_source_readback"
+                  ]
+                }
+              ],
+              "blocksReview": false
+            },
+            {
+              "kind": "deployment_prerequisite",
+              "title": "Receipt/execution setup",
+              "nextStep": "Receipt/execution setup pending: after authority review, use execution setup to review runner_ledger receipt mode and the dedicated writer, then separate execution permission and worker startup. Selection, provisioning, an actual receipt and independent source readback are not verified by this business review.",
+              "passages": [
+                {
+                  "start": 7,
+                  "end": 7,
+                  "disposition": "needs_decision",
+                  "responsibility": "deployment",
+                  "issue_kind": "missing_configuration",
+                  "topic": "Receipt/execution setup",
+                  "draft_paths": [
+                    "/runner_evidence/runtime_contract/receipts"
+                  ],
+                  "interpretation": "HOST-RESOLVED pending component: the configured receipt mode matches the explicit source requirement. Writer/provisioning verification, execution authorization and receipt production remain separate and unverified. The submitted configuration claim is retained separately.",
+                  "next_step": "Continue through execution setup after authority review; an actual receipt and independent source readback still require their applicable later evidence.",
+                  "obligation_assessment": {
+                    "configuration_digest": "sha256:4271bc259e1604d29231176a50fa2ecd959e3b172255b56254ab00c8697ac1a6",
+                    "origin": "HOST-RESOLVED",
+                    "family": "receipt_setup",
+                    "path": "/runner_evidence/runtime_contract/receipts",
+                    "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+                    "requirement": "runner_ledger",
+                    "phase": "after_authority_review",
+                    "state": "pending",
+                    "verified": false,
+                    "dependencies_digest": "sha256:9cd773c8fb81f87730b1beaa40bfae317e17e89da852ddb73c887b7524487b1d"
+                  }
+                }
+              ],
+              "blocksReview": false
+            }
+          ]
+        }
+      ],
+      "actual_authoring_calls": 1,
+      "structural_correction_requests": 0,
+      "captures": [
+        {
+          "input": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/runs/counting-wording-control/meter/input-0001.json",
+          "input_sha256": "17b8fd20b4e52c8f2267b04c914d72eb7cd0c0ca4736d0522fd75746e56165d3",
+          "output": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/runs/counting-wording-control/meter/output-0001.txt",
+          "output_sha256": "5c6cc72a8457c487a4d842bf264b4ba4a6e67e381ae6f13d56d93a664fd412cf",
+          "model": "gpt-5.6-terra",
+          "reasoning": {
+            "effort": "low"
+          },
+          "store": false,
+          "usage": {
+            "input_tokens": 29704,
+            "input_tokens_details": {
+              "cache_write_tokens": 29571,
+              "cached_tokens": 0
+            },
+            "output_tokens": 3012,
+            "output_tokens_details": {
+              "reasoning_tokens": 516
+            },
+            "total_tokens": 32716
+          },
+          "structural_correction": false,
+          "feedback": []
+        }
+      ],
+      "preflight_exits": [
+        0,
+        0
+      ],
+      "cli_exits": [
+        0,
+        0
+      ],
+      "public_invocations": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/runs/counting-wording-control/public-invocations.jsonl",
+      "terminal_logs": [
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/runs/counting-wording-control/logs/final-recheck-terminal.log",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/runs/counting-wording-control/logs/final-review-terminal.log"
+      ]
+    }
+  ],
+  "actual_final_calls": 1,
+  "final_ceiling": 25,
+  "reserved_restart_calls": 6,
+  "development_calls": 1,
+  "actual_cost_usd": null,
+  "cost_note": "No billed monetary amount in captured provider response; token usage retained. No monetary total invented.",
+  "independent_grok_B": "PENDING EXTERNAL REVIEW",
+  "original_stage_b": "ATTEMPTED NOT PASSED"
+}

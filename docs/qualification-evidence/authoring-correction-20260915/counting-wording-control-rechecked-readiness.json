@@ -1,0 +1,140 @@
+{
+  "at": "2026-09-16T01:03:23.724Z",
+  "run": "counting-wording-control",
+  "label": "rechecked",
+  "artifact_tree": "4cdd9cd65389a57de238c07775ca9bb22d824bccf9cf9dd8a1e1adb9e2b44284",
+  "kind": "Read-only pure implementation oracle over the installed-run snapshot; not a separate public operation",
+  "modules": [
+    {
+      "name": "authoring-review-readiness.ts",
+      "sha256": "66803f23846f157d40d4acbe9ea631c0a2e761d75ffa04062413f0c15d54c34f"
+    },
+    {
+      "name": "authoring-client-duties.ts",
+      "sha256": "21a9c333f5270d3b88b1cde0c475a49debefa97d143bb43358259dd15970eb13"
+    },
+    {
+      "name": "authoring-policy-source.ts",
+      "sha256": "be6e04ceba459a1d84a4e67c5b792bdb21f6d1a7fac7ef8d60f17aada51357c6"
+    }
+  ],
+  "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+  "coverage_draft_digest": "sha256:52f865b8ab51aaa52f40ec9aaa7cea5931cfdd5e3502b11218f208f6d56436f8",
+  "client_duties": {
+    "version": 1,
+    "origin": "PRODUCT-CLIENT-CONTRACT",
+    "mode": "interactive_subject_action",
+    "client": "claude-code",
+    "duties": [
+      "customer_selection",
+      "status_presentation"
+    ],
+    "contract_digest": "sha256:cb86267d06a0abce531eeff8d61d11aab59ea72f1c4247bca2e45d647fe5c941"
+  },
+  "ownership": [
+    {
+      "duty": "customer_selection",
+      "assigned": true
+    },
+    {
+      "duty": "status_presentation",
+      "assigned": true
+    }
+  ],
+  "readiness": {
+    "ready": true,
+    "privacy": false,
+    "items": [
+      {
+        "kind": "deployment_prerequisite",
+        "clientDuty": "customer_selection",
+        "title": "Client target selection",
+        "nextStep": "Use the client integration responsibilities review to accept current ownership. Implementation and per-operation assurance remain unverified.",
+        "passages": [],
+        "blocksReview": false
+      },
+      {
+        "kind": "deployment_prerequisite",
+        "clientDuty": "status_presentation",
+        "title": "Client status presentation",
+        "nextStep": "Use the client integration responsibilities review to accept current ownership. Implementation and per-operation assurance remain unverified.",
+        "passages": [],
+        "blocksReview": false
+      },
+      {
+        "kind": "deployment_prerequisite",
+        "title": "Independent source verification",
+        "nextStep": "After each applicable execution, independently observe the source and compare it with the exact intended change. This readback remains unverified; a receipt alone is not that observation. No Action-code repair is required for this external step.",
+        "passages": [
+          {
+            "obligation_assessment": {
+              "origin": "HOST-RESOLVED",
+              "family": "independent_source_readback",
+              "path": "/runner_evidence/runtime_contract/application_obligations/independent_source_readback",
+              "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+              "requirement": "independent_source_readback",
+              "phase": "after_execution",
+              "state": "pending",
+              "verified": false,
+              "dependencies_digest": "sha256:3b50fea76a7508eefe7b4e7f163d7d7da3cc07b76bc868f2b17c0591dbe06637"
+            },
+            "start": 7,
+            "end": 7,
+            "disposition": "needs_decision",
+            "interpretation": "Independently verifying the changed source row is an external after-execution observation. It is not yet verified and cannot be performed before a change exists.",
+            "draft_paths": [
+              "/runner_evidence/runtime_contract/application_obligations/independent_source_readback"
+            ],
+            "topic": "Independent source verification",
+            "responsibility": "application",
+            "issue_kind": "missing_configuration",
+            "next_step": "Who will independently check the changed source row after each completed ratification?",
+            "application_obligations": [
+              "independent_source_readback"
+            ]
+          }
+        ],
+        "blocksReview": false
+      },
+      {
+        "kind": "deployment_prerequisite",
+        "title": "Receipt/execution setup",
+        "nextStep": "Receipt/execution setup pending: after authority review, use execution setup to review runner_ledger receipt mode and the dedicated writer, then separate execution permission and worker startup. Selection, provisioning, an actual receipt and independent source readback are not verified by this business review.",
+        "passages": [
+          {
+            "start": 7,
+            "end": 7,
+            "disposition": "needs_decision",
+            "responsibility": "deployment",
+            "issue_kind": "missing_configuration",
+            "topic": "Receipt/execution setup",
+            "draft_paths": [
+              "/runner_evidence/runtime_contract/receipts"
+            ],
+            "interpretation": "HOST-RESOLVED pending component: the configured receipt mode matches the explicit source requirement. Writer/provisioning verification, execution authorization and receipt production remain separate and unverified. The submitted configuration claim is retained separately.",
+            "next_step": "Continue through execution setup after authority review; an actual receipt and independent source readback still require their applicable later evidence.",
+            "obligation_assessment": {
+              "configuration_digest": "sha256:4271bc259e1604d29231176a50fa2ecd959e3b172255b56254ab00c8697ac1a6",
+              "origin": "HOST-RESOLVED",
+              "family": "receipt_setup",
+              "path": "/runner_evidence/runtime_contract/receipts",
+              "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+              "requirement": "runner_ledger",
+              "phase": "after_authority_review",
+              "state": "pending",
+              "verified": false,
+              "dependencies_digest": "sha256:9cd773c8fb81f87730b1beaa40bfae317e17e89da852ddb73c887b7524487b1d"
+            }
+          }
+        ],
+        "blocksReview": false
+      }
+    ],
+    "summary": [
+      "Attached rules: wording-control-rules.txt v2; interpretation checked for this revision.",
+      "Client integration still unverified: Client target selection, Client status presentation. Check these during client setup before customer use.",
+      "Independent source readback remains unverified for each applicable execution. Perform and retain that separate observation after the change; a receipt or completed business review does not prove it.",
+      "Receipt/execution setup pending: review the required mode through execution setup. No receipt, provisioning or independent observation is established by BUSINESS review."
+    ]
+  }
+}

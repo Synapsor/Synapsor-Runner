@@ -42,9 +42,9 @@
   },
   "provider_spend_ceiling_usd": 15,
   "scope": "Bounded structural correction delivery using existing validators; review-only B and current-ownership A",
-  "status": "FREEZING",
+  "status": "PRIMARY_COMPLETE_AWAITING_INDEPENDENT_REVIEW",
   "evidence_root": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/authoring-correction-20260915",
-  "next_step": "Freeze tested source 68fe72b after the evidence checkpoint, bind artifact, then final untouched B and settled A with restart/recheck. Stable full03, types, PostgreSQL and ten offline checks passed.",
+  "next_step": "Claude independent Grok B on frozen 4cdd9cd6 and matched sealed B. No further primary/model/runtime work; separate direct-JSON decoder decision retained.",
   "trial_harness_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-review-repair-9c7219d-20260913/trial-harness",
   "original_budgets_minutes": {
     "implementation": 120,
@@ -63,5 +63,9 @@
       "total_minutes_after": 280,
       "authoring_call_and_final_wall_spend_limits_changed": false
     }
-  ]
+  ],
+  "artifact_tree": "4cdd9cd65389a57de238c07775ca9bb22d824bccf9cf9dd8a1e1adb9e2b44284",
+  "primary_final_calls": 1,
+  "development_calls": 1,
+  "completed_primary_at": "2026-09-16T01:04:56.013Z"
 }

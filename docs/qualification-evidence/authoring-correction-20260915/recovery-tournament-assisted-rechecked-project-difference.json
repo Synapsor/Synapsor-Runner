@@ -1,0 +1,89 @@
+{
+  "at": "2026-09-16T01:04:56.163618+00:00",
+  "run": "recovery-tournament-assisted",
+  "label": "rechecked",
+  "classification": "final installed",
+  "changes": [
+    {
+      "path": ".synapsor/boundary-authoring/resume.json",
+      "before_sha256": "bb60e3c5ef31eb9a086ec7f6c160a0b80688e8a45ba618c842741e3180cbfbee",
+      "after_sha256": "2d72fac518b94dbb4eaebcaaf727b97360dca697ae4bf3ff3feb3637eb9f6c06",
+      "classification": "review bookkeeping"
+    },
+    {
+      "path": ".synapsor/local.db",
+      "before_sha256": "6183938650093c13c06c45005a157cbe07bb1175d1a388e32a6a7d825513f702",
+      "after_sha256": "7a8a23cf9d2108b4b4062b2f35449c9d0595045186f7a409d49922e6177e3688",
+      "classification": "SQLite physical bytes; see independent table oracle"
+    }
+  ],
+  "unexplained_file_changes": [],
+  "source_snapshots_unchanged": true,
+  "original_conversation_entries_missing": 0,
+  "active_authority_and_business_configuration_files_unchanged": true,
+  "completed_policy_reviews": [
+    {
+      "request": {
+        "operation": "review_rules",
+        "request": "Review attached rules and unresolved decisions",
+        "source_session": "a6d8098e-7f74-4c80-bcc2-728ba936ef7a",
+        "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+        "read_digest": "sha256:6c6196b167fe621caf480cd2b2a4449ef083315cebaf044cc5bcb1660985efd3",
+        "action_name": "reviewed_staging_rules",
+        "action_digest": "sha256:3431e33b5c7ef594c67b545c33ae8285cbd919ff01c91bf35f5d72581ad2ea3e",
+        "supersedes_pending_job_revision": "Recheck the current saved rules against the attached policy and existing decisions without changing the rules or authority."
+      },
+      "report_digest": "sha256:1699a845ac8b9a4ae0f2f477d01e5a9aca48e0378779ec73ee49560fe612e019",
+      "context_digest": "sha256:a011a6cbb06ecc13052c1a884f6340bc86965032505aed1bc7003b828d4f915b",
+      "activity": "validated_reuse",
+      "completed_at": "2026-09-15T22:29:35.902Z"
+    },
+    {
+      "request": {
+        "operation": "review_rules",
+        "request": "Review attached rules and unresolved decisions",
+        "source_session": "a6d8098e-7f74-4c80-bcc2-728ba936ef7a",
+        "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+        "read_digest": "sha256:6c6196b167fe621caf480cd2b2a4449ef083315cebaf044cc5bcb1660985efd3",
+        "action_name": "reviewed_staging_rules",
+        "action_digest": "sha256:3431e33b5c7ef594c67b545c33ae8285cbd919ff01c91bf35f5d72581ad2ea3e"
+      },
+      "report_digest": "sha256:1699a845ac8b9a4ae0f2f477d01e5a9aca48e0378779ec73ee49560fe612e019",
+      "context_digest": "sha256:a011a6cbb06ecc13052c1a884f6340bc86965032505aed1bc7003b828d4f915b",
+      "activity": "validated_reuse",
+      "completed_at": "2026-09-15T22:30:18.624Z"
+    },
+    {
+      "request": {
+        "operation": "review_rules",
+        "request": "Review attached rules and unresolved decisions",
+        "source_session": "a6d8098e-7f74-4c80-bcc2-728ba936ef7a",
+        "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+        "read_digest": "sha256:6c6196b167fe621caf480cd2b2a4449ef083315cebaf044cc5bcb1660985efd3",
+        "action_name": "reviewed_staging_rules",
+        "action_digest": "sha256:3431e33b5c7ef594c67b545c33ae8285cbd919ff01c91bf35f5d72581ad2ea3e"
+      },
+      "report_digest": "sha256:1699a845ac8b9a4ae0f2f477d01e5a9aca48e0378779ec73ee49560fe612e019",
+      "context_digest": "sha256:a011a6cbb06ecc13052c1a884f6340bc86965032505aed1bc7003b828d4f915b",
+      "activity": "validated_reuse",
+      "completed_at": "2026-09-16T01:03:46.626Z"
+    },
+    {
+      "request": {
+        "operation": "review_rules",
+        "request": "Review attached rules and unresolved decisions",
+        "source_session": "a6d8098e-7f74-4c80-bcc2-728ba936ef7a",
+        "source_digest": "sha256:2491df8d3397e186e260447ee6487ac008a5134c86f22d256aebc67b6452c5f7",
+        "read_digest": "sha256:6c6196b167fe621caf480cd2b2a4449ef083315cebaf044cc5bcb1660985efd3",
+        "action_name": "reviewed_staging_rules",
+        "action_digest": "sha256:3431e33b5c7ef594c67b545c33ae8285cbd919ff01c91bf35f5d72581ad2ea3e"
+      },
+      "report_digest": "sha256:1699a845ac8b9a4ae0f2f477d01e5a9aca48e0378779ec73ee49560fe612e019",
+      "context_digest": "sha256:a011a6cbb06ecc13052c1a884f6340bc86965032505aed1bc7003b828d4f915b",
+      "activity": "validated_reuse",
+      "completed_at": "2026-09-16T01:04:39.300Z"
+    }
+  ],
+  "pending": [],
+  "note": "SQLite byte differences do not establish durable state changes. Pair with review-oracle table hashes and independent source readback."
+}

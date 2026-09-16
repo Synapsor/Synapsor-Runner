@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-16T01:09:30.407494+00:00",
+  "indexes_verified": {
+    "verification-evidence-index.json": 206,
+    "public-evidence-index.json": 279,
+    "reviewer-starts.json": 127
+  },
+  "archive_identities_verified": true,
+  "tested_product_test_source_unchanged": true,
+  "installed_tree": "4cdd9cd65389a57de238c07775ca9bb22d824bccf9cf9dd8a1e1adb9e2b44284",
+  "backup_destination": "https://github.com/Synapsor/Synapsor-Runner-Backup.git",
+  "backup_verified_private": true,
+  "measurement_note": "First closure-index convenience check stopped at KeyError manifest: reviewer-starts records root plus MANIFEST.json instead. Correct path used here; no application or provider rerun."
+}

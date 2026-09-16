@@ -1,0 +1,17 @@
+{
+  "at": "2026-09-16T00:59:57.447615+00:00",
+  "old_captures_verified": 4,
+  "old_public_evidence_files_verified": 409,
+  "old_sealed_starts_unchanged": true,
+  "new_sealed_starts_unchanged": true,
+  "old_installation": {
+    "verified_at": "2026-09-16T00:59:56.140Z",
+    "installed_tree_sha256": "ff9a030cdb353ec56b9f4f048d40df60e3bb49f77d224eac675ba2b4c1a29568",
+    "entries": 7569
+  },
+  "current_installation": {
+    "verified_at": "2026-09-16T00:59:57.427Z",
+    "installed_tree_sha256": "4cdd9cd65389a57de238c07775ca9bb22d824bccf9cf9dd8a1e1adb9e2b44284",
+    "entries": 7569
+  }
+}

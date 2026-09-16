@@ -1,0 +1,50 @@
+{
+  "at": "2026-09-16T01:02:28.013406+00:00",
+  "run": "counting-wording-control",
+  "label": "business-reviewed",
+  "classification": "final installed",
+  "changes": [
+    {
+      "path": ".synapsor/boundary-authoring/policy-sources/a6d8098e-7f74-4c80-bcc2-728ba936ef7a.json",
+      "before_sha256": "b590d0b748e1e754115945c148e43c87e48e6a1c06f7b602fd8c1fcda6629e0f",
+      "after_sha256": "2f36ec4a640d209065e4eb02e485ae32264736245166d3555b7ac97d4e5e1048",
+      "classification": "review bookkeeping"
+    },
+    {
+      "path": ".synapsor/boundary-authoring/resume.json",
+      "before_sha256": "21d20990d24dd9e7b52d9d58278f9238f720345dc52cbd7b788f5714e9ec6323",
+      "after_sha256": "30566f996f8885ca0d59f3305bac0c2e7332f802cde603289eea373e18f68c7f",
+      "classification": "review bookkeeping"
+    },
+    {
+      "path": ".synapsor/local.db",
+      "before_sha256": "1b55dab6a5f287e73b6d69207c744e9936624705f098042b068de08c6cec6d8c",
+      "after_sha256": "d0988d4ed07b6f98b661a373010dd65ab436e960a3695b07cab3ee91518c6de1",
+      "classification": "SQLite physical bytes; see independent table oracle"
+    }
+  ],
+  "unexplained_file_changes": [],
+  "source_snapshots_unchanged": true,
+  "original_conversation_entries_missing": 0,
+  "active_authority_and_business_configuration_files_unchanged": true,
+  "completed_policy_reviews": [
+    {
+      "request": {
+        "operation": "review_rules",
+        "request": "Review attached rules and unresolved decisions",
+        "source_session": "a6d8098e-7f74-4c80-bcc2-728ba936ef7a",
+        "source_digest": "sha256:43b32189678511fe66cfa821c92c029270c134152cc2f4d34dc5efbf2aeb69aa",
+        "read_digest": "sha256:6c6196b167fe621caf480cd2b2a4449ef083315cebaf044cc5bcb1660985efd3",
+        "action_name": "reviewed_staging_rules",
+        "action_digest": "sha256:3431e33b5c7ef594c67b545c33ae8285cbd919ff01c91bf35f5d72581ad2ea3e",
+        "supersedes_pending_job_revision": "Use the updated attached-rules context for this same draft. Operator instruction: Use the attached replacement text for this same saved job and review whether the current rules satisfy it. Preserve the existing business behavior and authority."
+      },
+      "report_digest": "sha256:c757042b2f91f49cb3db68791e79dc88f7ef2b58b908977e369b9123d743bdc5",
+      "context_digest": "sha256:6c8b6f81721f7dfcc8729214547f6e6f338a084d8854a1a92572c1a4917ee8d8",
+      "activity": "provider",
+      "completed_at": "2026-09-16T01:02:20.046Z"
+    }
+  ],
+  "pending": [],
+  "note": "SQLite byte differences do not establish durable state changes. Pair with review-oracle table hashes and independent source readback."
+}

@@ -1,0 +1,38 @@
+{
+  "at": "2026-09-16T00:59:54.654845+00:00",
+  "product_commit": "77e206a52238aaecb5976d1190711734d846cbdd",
+  "test_commit": "68fe72ba1403da2fb53821c02e2e3a3ca42bcafc",
+  "source_commit": "06ee93c674111b06cbc7b85833852bb890d26b96",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/frozen/installed",
+  "installed_tree_sha256": "4cdd9cd65389a57de238c07775ca9bb22d824bccf9cf9dd8a1e1adb9e2b44284",
+  "runner_version": "1.8.0",
+  "spec_version": "1.11.0",
+  "package_lock_sha256": "ae30c224faa25b281d5e9b1699846456647dfd06ed74a81ad7962fae1ec86001",
+  "node": {
+    "version": "v22.22.2",
+    "executable": "/usr/bin/node",
+    "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+  },
+  "tarballs": [
+    {
+      "name": "synapsor-runner-1.8.0.tgz",
+      "sha256": "7274ebfd279cb93aab6cfcd4831974a8f868e5dc983c455eea186225a6c818ee"
+    },
+    {
+      "name": "synapsor-spec-1.11.0.tgz",
+      "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+    }
+  ],
+  "entries": 7569,
+  "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/frozen/installed-artifact-manifest.json",
+  "manifest_sha256": "86a5c41ae663e562e05185e839b89727d6a943d884b60f115d254b28abfcc0ed",
+  "installed_archive": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/frozen/installed-artifact.tar.gz",
+  "archive_sha256": "52f891716fb37728098273ef4d31ca692eb0df248867a3a05ddc9b109d2c737c",
+  "source_archive": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-correction-3c9dbf1-20260915/frozen/source-checkpoint.tar.gz",
+  "source_archive_sha256": "18a1979780bfdb9a36a1b2efc1f12572b9a91fbb7949051ffe339da763541067",
+  "before_public_verify": {
+    "verified_at": "2026-09-16T00:59:45.949Z",
+    "installed_tree_sha256": "4cdd9cd65389a57de238c07775ca9bb22d824bccf9cf9dd8a1e1adb9e2b44284",
+    "entries": 7569
+  }
+}
