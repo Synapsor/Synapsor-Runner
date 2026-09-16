@@ -18,6 +18,12 @@ export type CoverageFeedback = {
 };
 // Host-only evidence of completed checks in this traversal, never provider input
 // or a durable success flag. Restart requires a separately authorized episode.
+// Opaque local identity of the referenced component, including rejected paths.
+// Never serialize a hash/value of undisclosed submitted data into feedback.
+const findingSubjects = new WeakMap<CoverageFinding, string>();
+export function recordCoverageFindingSubject(finding: CoverageFinding, subject: unknown): void {
+  findingSubjects.set(finding, canonicalJsonDigest(subject));
+}
 const checkedPassages = new WeakMap<CoverageFeedback, Map<string,string>>();
 export function recordCheckedCoveragePassage(feedback: CoverageFeedback, component: string, identity: string): void {
   const checked=checkedPassages.get(feedback)??new Map<string,string>(); checked.set(component,identity); checkedPassages.set(feedback,checked);
@@ -106,7 +112,7 @@ export function permitsSecondCoverageCorrection(prior: CoverageFeedback[], next:
   const checked = checkedPassages.get(next);
   if (!checked || old.some(f => !f.passage_identity || checked.get(f.component.match(/^\/passages\/\d+/u)?.[0] ?? "/") !== f.passage_identity)) return false;
   return prior.every(r => r.context === next.context && !r.limited && r.findings.every(f => f.structural))
-    && next.findings.every(f => !old.some(p => p.identity === f.identity || p.component_identity === f.component_identity || p.component === f.component
+    && next.findings.every(f => !old.some(p => (findingSubjects.has(f) && findingSubjects.get(p) === findingSubjects.get(f)) || p.identity === f.identity || p.component_identity === f.component_identity || p.component === f.component
       || p.component.split('/counter_requirements/')[0] === f.component.split('/counter_requirements/')[0]))
     && old.every(p => !next.unevaluated.some(c => p.component.startsWith(c) || c.startsWith(p.component)));
 }

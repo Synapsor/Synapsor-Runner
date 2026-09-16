@@ -150,6 +150,14 @@ describe('captured coverage correction round trip',()=>{
     const t=transport(f,[f.replies[0],replacement,f.corrected]);
     await expect(t.run()).rejects.toThrow('COVERAGE_REFERENCE_MISSING');expect(t.requests).toHaveLength(2);
   });
+  it.each(['counter','pointer'])('relocating the same invalid %s is not a newly exposed issue',async kind=>{
+    const f=fixture(),second=structuredClone(f.corrected);
+    const repeated=structuredClone(f.replies[0].passages[kind==='counter'?8:3]);
+    repeated.start=repeated.end=1;second.passages.push(repeated);
+    const t=transport(f,[f.replies[0],second,f.corrected]);
+    await expect(t.run()).rejects.toThrow(kind==='counter'?'COUNTING_SUPPORT_MISMATCH':'COVERAGE_REFERENCE_MISSING');
+    expect(t.requests).toHaveLength(2);
+  });
   it('rejects stale context, reintroduced identities and code-only changes as progress',()=>{
     const f=fixture(),first=collectCoverageFeedback(f.replies[0],f.source,f.draft,f.sources.operator_messages);
     expect(permitsSecondCoverageCorrection([first],first)).toBe(false);

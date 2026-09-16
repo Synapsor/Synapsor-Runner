@@ -1,4 +1,4 @@
-import { CoverageComponentError, CoverageComponentsError, recordCheckedCoveragePassage, coverageFinding, MAX_COVERAGE_FINDINGS, MAX_COVERAGE_FEEDBACK_BYTES, MAX_COVERAGE_SUBMISSIONS, permitsSecondCoverageCorrection, type CoverageFeedback } from "./authoring-coverage-feedback.js";
+import { CoverageComponentError, CoverageComponentsError, recordCoverageFindingSubject, recordCheckedCoveragePassage, coverageFinding, MAX_COVERAGE_FINDINGS, MAX_COVERAGE_FEEDBACK_BYTES, MAX_COVERAGE_SUBMISSIONS, permitsSecondCoverageCorrection, type CoverageFeedback } from "./authoring-coverage-feedback.js";
 import { clientDutyInventory } from "./authoring-client-duties.js";
 import { assessReviewObligation, deferredReviewObligation, receiptSelectionComponent } from "./authoring-obligation-review.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
@@ -517,6 +517,13 @@ export function collectCoverageFeedback(args: Record<string, unknown>, source: P
     findings: [], limited: false, unevaluated: [], complete_validation: false };
   const add = (error: unknown, component: string, raw: unknown) => {
     const f = coverageFinding(error, component, raw);
+    const location = /^\/passages\/(\d+)\/(counter_requirements|draft_paths)\/(\d+)$/u.exec(f.component);
+    if (location && Array.isArray(args.passages)) {
+      const passage = args.passages[Number(location[1])];
+      const reference = location[2] === "counter_requirements" ? passage?.counter_requirements?.[Number(location[3])]?.path
+        : passage?.draft_paths?.[Number(location[3])];
+      if (typeof reference === "string") recordCoverageFindingSubject(f, { kind: location[2], reference });
+    }
     const basis = raw as {start?:number|null;end?:number|null};
     if(typeof raw === "object" && raw !== null) f.passage_identity=canonicalJsonDigest({start:basis.start??null,end:basis.end??null});
     else if(raw === "envelope") f.passage_identity=canonicalJsonDigest("envelope");
