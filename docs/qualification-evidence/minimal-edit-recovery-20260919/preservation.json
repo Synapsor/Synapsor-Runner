@@ -1,0 +1,68 @@
+{
+  "at": "2026-09-19T22:07:18.083947+00:00",
+  "originals_unchanged": {
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/public-operation-3eb09c4-20260919/final-results.json": {
+      "sha256": "1b224be74c667a1b935a0623a2d82b7ebbe89c3b3c667975512865e801b90da1",
+      "mode": 384,
+      "bytes": 22317
+    },
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/public-operation-3eb09c4-20260919/frozen/installed-artifact-manifest.json": {
+      "sha256": "8f0d7aa4e2f52df7bf2c951bbc68307e68e0ae7e0d1ca76df01caa36bb1d68aa",
+      "mode": 384,
+      "bytes": 1622711
+    },
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/public-operation-3eb09c4-20260919/saved-state/software-reviewer.tgz": {
+      "sha256": "c28b26e82dd3dd79aeed9fabad3d385cb4b7c3f495e6fbd4070e6c48d38454dc",
+      "mode": 256,
+      "bytes": 598321
+    },
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/public-operation-3eb09c4-20260919/saved-state/releaselab.dump": {
+      "sha256": "d601f239d2b5e34b0309877be73d740bbefd41500e8778bade9abef4d9397d6c",
+      "mode": 384,
+      "bytes": 40690
+    },
+    "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/independent-verification-20260919/EDIT-METADATA-PREWORK.md": {
+      "sha256": "a0db137f3c7778538d973bf3c5210474458d0e00243158e6b05a3399bd04fb4e",
+      "mode": 436,
+      "bytes": 7134
+    },
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/public-operation-3eb09c4-20260919/public/m4-final-action/terminal-1.log": {
+      "sha256": "02f8e6c2bd843793b5cb804457ccbf522d65fd061ac758b6528520c4237cb028",
+      "mode": 384,
+      "bytes": 42510
+    },
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/public-operation-3eb09c4-20260919/public/m4-final-action/terminal-2.log": {
+      "sha256": "b9e162ee2ddef149a99fbb12d07f59a603a59766b635923c31c030117d87dcbd",
+      "mode": 384,
+      "bytes": 11564
+    },
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/public-operation-3eb09c4-20260919/public/m4-final-w/terminal-1.log": {
+      "sha256": "1ead5083c5eb3544a5dc2a1c70d92955cf8dbf2c07efcac521bafe3a0fe9acfd",
+      "mode": 384,
+      "bytes": 28586
+    },
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/public-operation-3eb09c4-20260919/public/m4-final-w/terminal-2.log": {
+      "sha256": "248815a4fe47e68b1b023dfea3b8d32b71f8d1b5a791b0894328260e761f945e",
+      "mode": 384,
+      "bytes": 12915
+    }
+  },
+  "old_installation": {
+    "verified_at": "2026-09-19T22:07:17.000Z",
+    "installed_tree_sha256": "23c6ea7b3f128da6d0022efdb2b1ba70650794f1ec42b71086729282dde26fd7",
+    "entries": 7569
+  },
+  "new_installation": {
+    "verified_at": "2026-09-19T22:07:18.069Z",
+    "installed_tree_sha256": "24f0ed0780e2956911bbf0c78c7684adf519909ba31cb96ddf86f36ab07abe1b",
+    "entries": 7569
+  },
+  "cleanup": {
+    "at": "2026-09-19T22:04:00.742918+00:00",
+    "container": "3e9374d10b57291172c69d87e4a4d314392bb5f45ed8e0c59855a2f872c7ff1a",
+    "label": "minimal-edit-bfc2f19-20260919",
+    "status": "exited",
+    "saved_manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/minimal-edit-bfc2f19-20260919/saved-state/manifest.json",
+    "removal": "Stopped only owned container; preserved filesystem and originals."
+  }
+}

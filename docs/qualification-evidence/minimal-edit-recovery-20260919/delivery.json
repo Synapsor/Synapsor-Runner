@@ -1,0 +1,24 @@
+{
+  "branch": "codex/tui-safe-action-control-plane",
+  "product_commit": "feb705536859eafd90ee29bb6ac55efd941774da",
+  "test_commit": "feb705536859eafd90ee29bb6ac55efd941774da",
+  "frozen_source_commit": "c046bcbebc2412ac146099e66da97e99d1dc44f7",
+  "installed_tree_sha256": "24f0ed0780e2956911bbf0c78c7684adf519909ba31cb96ddf86f36ab07abe1b",
+  "manifest_sha256": "9a8de7009a05d8eba186dca184825b4ebdf7d273c564cd36143d0d730a381825",
+  "entries": 7569,
+  "raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/minimal-edit-bfc2f19-20260919",
+  "report": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/minimal-edit-recovery-20260919/FINAL-REPORT.md",
+  "handoff": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/minimal-edit-recovery-20260919/REVIEWER-HANDOFF.md",
+  "source_archive": {
+    "commit": "c046bcbebc2412ac146099e66da97e99d1dc44f7",
+    "archive": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/minimal-edit-bfc2f19-20260919/frozen/source-c046bcb.tar.gz",
+    "sha256": "5247f6eebfc192ac07fefdf89997cc03b9789f5ad02f04ae6d6fa7ccd2ebadd5"
+  },
+  "status": "Implementer PASS E1/E2/E3; awaiting independent review",
+  "original_stage_b": "ATTEMPTED / NOT PASSED",
+  "backup": {
+    "isPrivate": true,
+    "nameWithOwner": "Synapsor/Synapsor-Runner-Backup",
+    "url": "https://github.com/Synapsor/Synapsor-Runner-Backup"
+  }
+}

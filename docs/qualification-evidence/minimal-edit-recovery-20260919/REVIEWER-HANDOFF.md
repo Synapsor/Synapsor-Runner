@@ -1,6 +1,6 @@
-# M4 independent handoff — preparation
+# M4 independent handoff — ready
 
-This is an implementer-owned known-case repair. The previous independent paired edit assessment was an inspection, not an independently repeated model run. Final trial results and immutable identity will be appended after the stable gates and frozen public trials. Original Stage B remains ATTEMPTED / NOT PASSED.
+This is an implementer-owned known-case repair. The previous independent paired edit assessment was an inspection, not an independently repeated model run. All named gates and E1/E2/E3 completed; exact scorecard and preservation limits are in FINAL-REPORT.md. Original Stage B remains ATTEMPTED / NOT PASSED.
 
 Raw root: `/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/minimal-edit-bfc2f19-20260919`.
 
@@ -35,3 +35,9 @@ E1 uses action review and the recommended edit. E2 uses start / More options / M
 Owner-only oracles: `snapshot-owned.py` records every ledger table, configuration file and source row. `owned.py ... verify-edit.mts` compares the complete compiled authority (including digests), exact active baseline, writer/receipt configuration, application history, pending edit and retained reconciliation evidence. This is independent owner inspection, not a model tool or a product save path. Read the terminal and model replies alongside the canonical comparisons, including review prose changes.
 
 Verify `frozen/freeze-repair.mjs --verify` before and after any run. Never patch the frozen installation. Each verifier must use its own copies and meter; delivered successful projects are evidence, not clean starts.
+
+Final installation tree: `24f0ed0780e2956911bbf0c78c7684adf519909ba31cb96ddf86f36ab07abe1b`; source checkpoint `c046bcbebc2412ac146099e66da97e99d1dc44f7`, product/tests `feb705536859eafd90ee29bb6ac55efd941774da`. Verify with `node "<raw-root>/frozen/freeze-repair.mjs" --verify`. `saved-starts/{E1,E2,E3}.tgz` are untouched matched baselines; `E3-interrupted.tgz` is the actual declared cut with matching source unchanged. Do not use final saved-state projects as clean starts. The owned container is stopped after dumps; restore into your own resources and retain exact logical-path mounts.
+
+Raw index: `final-results.json`, `frozen/installed-artifact-manifest.json`, `saved-starts/manifest.json`, `saved-state/manifest.json`, `final-meter/plan.json`, input/output/attempt files, `public/E*/terminal-*.log`, state-before/after/reopened, verified-* and complete-saved-diff.json. E3 additionally has interrupted-resume.json, interrupted-verification.json, declared-interruption.json and reopen-management-diff.json. All full-suite/type/PG logs and actual exits are raw root; offline logs are `offline-gates/`. Concise Git evidence has the final scorecard and exact commands; raw originals/captures remain private.
+
+Final provider attempts: E1 1–6; E2 7–12; E3 opening/planning 13–14, unsent cut 15, resumed work 16–19. No calls during any final reopen. Provider work is implementation evidence, not independent verification. The E3 repeat authority review saves the identical revision once (epoch 15 → 16); do not demand a false whole-ledger byte-identity claim. No application state or source changes. Independent final live trials belong to Claude's separate declared lane; no need to repeat the heavy suite concurrently.

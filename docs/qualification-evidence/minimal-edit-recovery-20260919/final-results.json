@@ -1,0 +1,744 @@
+{
+  "cases": {
+    "E1": {
+      "verdict": "PASS",
+      "installed_tree": "24f0ed0780e2956911bbf0c78c7684adf519909ba31cb96ddf86f36ab07abe1b",
+      "disabled_policy": "policy:3dd3517dff24322517d70873baa70491e7a79efdbc9581df5d229a9f9a5e98be",
+      "disabled_authority": "sha256:f307eeeff16794a7298a1f01738d646059b29bca31aa07bced6f9be842aac029",
+      "original_request": "Change one rule only: sealing a build candidate must now require at least three passed checks instead of two. Leave every other condition, the slot consumption, the approval policy and the time limits exactly as they are.",
+      "episodes": [
+        {
+          "command": [
+            "action",
+            "review",
+            "--project-root",
+            "."
+          ],
+          "exit": 0,
+          "start": "2026-09-19T21:50:04.306786+00:00",
+          "end": "2026-09-19T21:52:21.488128+00:00",
+          "seconds_including_operator_navigation": 137.181342,
+          "attempts": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6
+          ],
+          "provider_reported_cost_usd": 0.0629683
+        },
+        {
+          "command": [
+            "action",
+            "review",
+            "--project-root",
+            "."
+          ],
+          "exit": 0,
+          "start": "2026-09-19T21:52:28.940463+00:00",
+          "end": "2026-09-19T21:53:16.752319+00:00",
+          "seconds_including_operator_navigation": 47.811856,
+          "attempts": [],
+          "provider_reported_cost_usd": 0
+        }
+      ],
+      "structural_diff": [
+        {
+          "path": "/authority/activated_at",
+          "before_present": true,
+          "after_present": false,
+          "before": "2026-09-16T03:46:08.090Z"
+        },
+        {
+          "path": "/authority/actor",
+          "before_present": true,
+          "after_present": false,
+          "before": "sandesh-tiwari"
+        },
+        {
+          "path": "/authority/authority/action_boundary/digest",
+          "before": "sha256:37d57ce2b3531d1a2651f4af022913f8db19b1b000236ca1e765d7fbb2ab7101",
+          "after": "sha256:92ee7d3c1c570fe4db81981d11438ff818448e04e59d775999b3cbf0950a8849"
+        },
+        {
+          "path": "/authority/authority/action_boundary/rules/0/action_rule_digest",
+          "before": "sha256:62fe7aaf3a575421f128b46edcd76c1664a8765caccfa2beafda45a6bf699114",
+          "after": "sha256:629102a696e48fbd14ec04e86dc106297b749e923c00db760de911fa149b81cd"
+        },
+        {
+          "path": "/authority/authority/action_boundary/rules/0/approval_policy_digest",
+          "before": "sha256:7742be978003ae53f416cf2d61655c0dc2b2a29c8cc321d1273d7d112e4d95cb",
+          "after": "sha256:0f834509fe6ca7da511bdbe61e7c376c94834ef1f6b5158812e0a2e570d6f3cf"
+        },
+        {
+          "path": "/authority/authority/action_boundary/rules/0/compiled_plan_digest",
+          "before": "sha256:1b33446de97a0d7e785ff33b5e3574879aa927ae67f375e4257d353c9c0e92a2",
+          "after": "sha256:bb3753fb75acbc2c3b29a24587830241180851ec61b860b9f888d60de35bb3e3"
+        },
+        {
+          "path": "/authority/authority/digest",
+          "before": "sha256:d34194efbc719291dd71cf3107e357d92800c9d1f27eb8ea1b43189eef4fb1fa",
+          "after": "sha256:f307eeeff16794a7298a1f01738d646059b29bca31aa07bced6f9be842aac029"
+        },
+        {
+          "path": "/authority/authority/rules/0/activated_at",
+          "before": "2026-09-16T03:45:15.744Z",
+          "after": "2026-09-19T21:51:21.746Z"
+        },
+        {
+          "path": "/authority/authority/rules/0/rule/require/expressions/4/right/value",
+          "before": 2,
+          "after": 3
+        },
+        {
+          "path": "/authority/authority/rules/0/verification_boundary/resources/0/fields/1/model_visible",
+          "before": false,
+          "after": true
+        },
+        {
+          "path": "/authority/authority/rules/0/verification_boundary/resources/0/fields/4/model_visible",
+          "before": true,
+          "after": false
+        },
+        {
+          "path": "/authority/created_at",
+          "before_present": false,
+          "after_present": true,
+          "after": "2026-09-19T21:51:21.746Z"
+        },
+        {
+          "path": "/authority/digest",
+          "before": "sha256:d34194efbc719291dd71cf3107e357d92800c9d1f27eb8ea1b43189eef4fb1fa",
+          "after": "sha256:f307eeeff16794a7298a1f01738d646059b29bca31aa07bced6f9be842aac029"
+        },
+        {
+          "path": "/authority/reviews/0/examples/0/scenario",
+          "before": "Staged candidate, ready slot, two passed checks totalling 40 seconds",
+          "after": "Staged candidate, ready slot, three passed checks totalling 40 seconds"
+        },
+        {
+          "path": "/authority/reviews/0/examples/1/scenario",
+          "before": "Staged candidate with passing checks totalling 400 seconds",
+          "after": "Staged candidate with three passing checks totalling 400 seconds"
+        },
+        {
+          "path": "/authority/reviews/0/examples/2/scenario",
+          "before": "One check still pending",
+          "after": "Only two passed checks"
+        },
+        {
+          "path": "/authority/reviews/0/refused/1",
+          "before": "Fewer than two checks",
+          "after": "Fewer than three checks"
+        },
+        {
+          "path": "/authority/reviews/0/when",
+          "before": "Candidate staged, slot ready, no security hold, complete passing checks within the time budget.",
+          "after": "Candidate staged, slot ready, no security hold, at least three complete passing checks within the time budget."
+        },
+        {
+          "path": "/authority/schema_version",
+          "before": "synapsor.action-rule-authority-activation.v1",
+          "after": "synapsor.action-rule-authority-draft.v1"
+        },
+        {
+          "path": "/authority/state",
+          "before": "active",
+          "after": "disabled"
+        }
+      ],
+      "derived_evidence_diff": [
+        {
+          "path": "/actions/0/require/expressions/4/right/value",
+          "before": 2,
+          "after": 3
+        },
+        {
+          "path": "/actions/0/review/when",
+          "before": "Candidate staged, slot ready, no security hold, complete passing checks within the time budget.",
+          "after": "Candidate staged, slot ready, no security hold, at least three complete passing checks within the time budget."
+        },
+        {
+          "path": "/actions/0/review/refused/1",
+          "before": "Fewer than two checks",
+          "after": "Fewer than three checks"
+        },
+        {
+          "path": "/actions/0/review/examples/0/scenario",
+          "before": "Staged candidate, ready slot, two passed checks totalling 40 seconds",
+          "after": "Staged candidate, ready slot, three passed checks totalling 40 seconds"
+        },
+        {
+          "path": "/actions/0/review/examples/1/scenario",
+          "before": "Staged candidate with passing checks totalling 400 seconds",
+          "after": "Staged candidate with three passing checks totalling 400 seconds"
+        },
+        {
+          "path": "/actions/0/review/examples/2/scenario",
+          "before": "One check still pending",
+          "after": "Only two passed checks"
+        },
+        {
+          "path": "/runner_evidence/actions/release.seal_candidate/scoped_bindings/candidate/fields/candidate_state/model_visible",
+          "before": false,
+          "after": true
+        },
+        {
+          "path": "/runner_evidence/actions/release.seal_candidate/scoped_bindings/candidate/fields/candidate_state/private_action_verification",
+          "before": true,
+          "after": false
+        },
+        {
+          "path": "/runner_evidence/actions/release.seal_candidate/scoped_bindings/candidate/fields/slot_id/model_visible",
+          "before": true,
+          "after": false
+        },
+        {
+          "path": "/runner_evidence/actions/release.seal_candidate/scoped_bindings/candidate/fields/slot_id/actual_values_returned",
+          "before": true,
+          "after": false
+        },
+        {
+          "path": "/runner_evidence/actions/release.seal_candidate/scoped_bindings/candidate/fields/slot_id/private_action_verification",
+          "before": false,
+          "after": true
+        },
+        {
+          "path": "/runner_evidence/action_subject_compatibility/action_digest",
+          "before": "sha256:d34194efbc719291dd71cf3107e357d92800c9d1f27eb8ea1b43189eef4fb1fa",
+          "after": "sha256:f307eeeff16794a7298a1f01738d646059b29bca31aa07bced6f9be842aac029"
+        }
+      ],
+      "same_original_request_after_resume": true,
+      "source_rows": 504,
+      "all_application_tables_unchanged": true,
+      "all_prior_authority_history_retained_byte_for_byte": true,
+      "read_active_action_execution_and_writer_receipts_unchanged": true,
+      "disclosure_reviews": [
+        {
+          "outcome": "release.seal_candidate",
+          "read_digest": "sha256:bc2df7660d0238ab7b678d35a5061a34bf3fbcf1ec834774781978305e13bf12",
+          "authority_digest": "sha256:d34194efbc719291dd71cf3107e357d92800c9d1f27eb8ea1b43189eef4fb1fa",
+          "review_digest": "sha256:64786723ee6bffeab6a6aad90f368a747cccb47596a0cc8e34c8dba29ddf0374"
+        }
+      ],
+      "reopen_changed_tables": [],
+      "receipt": {
+        "source": "local_postgres",
+        "authority": "source_db",
+        "provisioning": "precreated",
+        "schema": "release_ops",
+        "table": "synapsor_writeback_receipts",
+        "writer_ref": "SYNAPSOR_WRITE_RELEASE_SEAL_CANDIDATE_77988288"
+      }
+    },
+    "E2": {
+      "verdict": "PASS",
+      "installed_tree": "24f0ed0780e2956911bbf0c78c7684adf519909ba31cb96ddf86f36ab07abe1b",
+      "disabled_policy": "policy:84373fe58c369beee068846f291f376e839ef52223fbbbc37852d2c19a415f20",
+      "disabled_authority": "sha256:34e6113feadd4a0387f7a8a13c224b7875e0efaf7f2013025917be8147e3aec7",
+      "original_request": "Change one rule only: sealing a build candidate must now require at least three passed checks instead of two. Leave every other condition, the slot consumption, the approval policy and the time limits exactly as they are.",
+      "episodes": [
+        {
+          "command": [
+            "start",
+            "--project-root",
+            ".",
+            "--cli"
+          ],
+          "exit": 0,
+          "start": "2026-09-19T21:53:32.053979+00:00",
+          "end": "2026-09-19T21:55:31.738168+00:00",
+          "seconds_including_operator_navigation": 119.684189,
+          "attempts": [
+            7,
+            8,
+            9,
+            10,
+            11,
+            12
+          ],
+          "provider_reported_cost_usd": 0.0393425
+        },
+        {
+          "command": [
+            "action",
+            "review",
+            "--project-root",
+            "."
+          ],
+          "exit": 0,
+          "start": "2026-09-19T21:55:43.741861+00:00",
+          "end": "2026-09-19T21:56:21.687071+00:00",
+          "seconds_including_operator_navigation": 37.94521,
+          "attempts": [],
+          "provider_reported_cost_usd": 0
+        }
+      ],
+      "structural_diff": [
+        {
+          "path": "/authority/activated_at",
+          "before_present": true,
+          "after_present": false,
+          "before": "2026-09-16T03:46:08.090Z"
+        },
+        {
+          "path": "/authority/actor",
+          "before_present": true,
+          "after_present": false,
+          "before": "sandesh-tiwari"
+        },
+        {
+          "path": "/authority/authority/action_boundary/digest",
+          "before": "sha256:37d57ce2b3531d1a2651f4af022913f8db19b1b000236ca1e765d7fbb2ab7101",
+          "after": "sha256:92ee7d3c1c570fe4db81981d11438ff818448e04e59d775999b3cbf0950a8849"
+        },
+        {
+          "path": "/authority/authority/action_boundary/rules/0/action_rule_digest",
+          "before": "sha256:62fe7aaf3a575421f128b46edcd76c1664a8765caccfa2beafda45a6bf699114",
+          "after": "sha256:629102a696e48fbd14ec04e86dc106297b749e923c00db760de911fa149b81cd"
+        },
+        {
+          "path": "/authority/authority/action_boundary/rules/0/approval_policy_digest",
+          "before": "sha256:7742be978003ae53f416cf2d61655c0dc2b2a29c8cc321d1273d7d112e4d95cb",
+          "after": "sha256:0f834509fe6ca7da511bdbe61e7c376c94834ef1f6b5158812e0a2e570d6f3cf"
+        },
+        {
+          "path": "/authority/authority/action_boundary/rules/0/compiled_plan_digest",
+          "before": "sha256:1b33446de97a0d7e785ff33b5e3574879aa927ae67f375e4257d353c9c0e92a2",
+          "after": "sha256:bb3753fb75acbc2c3b29a24587830241180851ec61b860b9f888d60de35bb3e3"
+        },
+        {
+          "path": "/authority/authority/digest",
+          "before": "sha256:d34194efbc719291dd71cf3107e357d92800c9d1f27eb8ea1b43189eef4fb1fa",
+          "after": "sha256:34e6113feadd4a0387f7a8a13c224b7875e0efaf7f2013025917be8147e3aec7"
+        },
+        {
+          "path": "/authority/authority/rules/0/activated_at",
+          "before": "2026-09-16T03:45:15.744Z",
+          "after": "2026-09-19T21:54:45.919Z"
+        },
+        {
+          "path": "/authority/authority/rules/0/rule/require/expressions/4/right/value",
+          "before": 2,
+          "after": 3
+        },
+        {
+          "path": "/authority/authority/rules/0/verification_boundary/resources/0/fields/1/model_visible",
+          "before": false,
+          "after": true
+        },
+        {
+          "path": "/authority/authority/rules/0/verification_boundary/resources/0/fields/4/model_visible",
+          "before": true,
+          "after": false
+        },
+        {
+          "path": "/authority/created_at",
+          "before_present": false,
+          "after_present": true,
+          "after": "2026-09-19T21:54:45.919Z"
+        },
+        {
+          "path": "/authority/digest",
+          "before": "sha256:d34194efbc719291dd71cf3107e357d92800c9d1f27eb8ea1b43189eef4fb1fa",
+          "after": "sha256:34e6113feadd4a0387f7a8a13c224b7875e0efaf7f2013025917be8147e3aec7"
+        },
+        {
+          "path": "/authority/reviews/0/examples/0/scenario",
+          "before": "Staged candidate, ready slot, two passed checks totalling 40 seconds",
+          "after": "Staged candidate, ready slot, three passed checks totalling 40 seconds"
+        },
+        {
+          "path": "/authority/reviews/0/examples/1/scenario",
+          "before": "Staged candidate with passing checks totalling 400 seconds",
+          "after": "Staged candidate with three passing checks totalling 400 seconds"
+        },
+        {
+          "path": "/authority/reviews/0/refused/1",
+          "before": "Fewer than two checks",
+          "after": "Fewer than three checks"
+        },
+        {
+          "path": "/authority/reviews/0/when",
+          "before": "Candidate staged, slot ready, no security hold, complete passing checks within the time budget.",
+          "after": "Candidate staged, slot ready, no security hold, at least three complete passing checks within the time budget."
+        },
+        {
+          "path": "/authority/schema_version",
+          "before": "synapsor.action-rule-authority-activation.v1",
+          "after": "synapsor.action-rule-authority-draft.v1"
+        },
+        {
+          "path": "/authority/state",
+          "before": "active",
+          "after": "disabled"
+        }
+      ],
+      "derived_evidence_diff": [
+        {
+          "path": "/actions/0/require/expressions/4/right/value",
+          "before": 2,
+          "after": 3
+        },
+        {
+          "path": "/actions/0/review/when",
+          "before": "Candidate staged, slot ready, no security hold, complete passing checks within the time budget.",
+          "after": "Candidate staged, slot ready, no security hold, at least three complete passing checks within the time budget."
+        },
+        {
+          "path": "/actions/0/review/refused/1",
+          "before": "Fewer than two checks",
+          "after": "Fewer than three checks"
+        },
+        {
+          "path": "/actions/0/review/examples/0/scenario",
+          "before": "Staged candidate, ready slot, two passed checks totalling 40 seconds",
+          "after": "Staged candidate, ready slot, three passed checks totalling 40 seconds"
+        },
+        {
+          "path": "/actions/0/review/examples/1/scenario",
+          "before": "Staged candidate with passing checks totalling 400 seconds",
+          "after": "Staged candidate with three passing checks totalling 400 seconds"
+        },
+        {
+          "path": "/runner_evidence/actions/release.seal_candidate/scoped_bindings/candidate/fields/candidate_state/model_visible",
+          "before": false,
+          "after": true
+        },
+        {
+          "path": "/runner_evidence/actions/release.seal_candidate/scoped_bindings/candidate/fields/candidate_state/private_action_verification",
+          "before": true,
+          "after": false
+        },
+        {
+          "path": "/runner_evidence/actions/release.seal_candidate/scoped_bindings/candidate/fields/slot_id/model_visible",
+          "before": true,
+          "after": false
+        },
+        {
+          "path": "/runner_evidence/actions/release.seal_candidate/scoped_bindings/candidate/fields/slot_id/actual_values_returned",
+          "before": true,
+          "after": false
+        },
+        {
+          "path": "/runner_evidence/actions/release.seal_candidate/scoped_bindings/candidate/fields/slot_id/private_action_verification",
+          "before": false,
+          "after": true
+        },
+        {
+          "path": "/runner_evidence/action_subject_compatibility/action_digest",
+          "before": "sha256:d34194efbc719291dd71cf3107e357d92800c9d1f27eb8ea1b43189eef4fb1fa",
+          "after": "sha256:34e6113feadd4a0387f7a8a13c224b7875e0efaf7f2013025917be8147e3aec7"
+        }
+      ],
+      "same_original_request_after_resume": true,
+      "source_rows": 504,
+      "all_application_tables_unchanged": true,
+      "all_prior_authority_history_retained_byte_for_byte": true,
+      "read_active_action_execution_and_writer_receipts_unchanged": true,
+      "disclosure_reviews": [
+        {
+          "outcome": "release.seal_candidate",
+          "read_digest": "sha256:bc2df7660d0238ab7b678d35a5061a34bf3fbcf1ec834774781978305e13bf12",
+          "authority_digest": "sha256:d34194efbc719291dd71cf3107e357d92800c9d1f27eb8ea1b43189eef4fb1fa",
+          "review_digest": "sha256:64786723ee6bffeab6a6aad90f368a747cccb47596a0cc8e34c8dba29ddf0374"
+        }
+      ],
+      "reopen_changed_tables": [],
+      "receipt": {
+        "source": "local_postgres",
+        "authority": "source_db",
+        "provisioning": "precreated",
+        "schema": "release_ops",
+        "table": "synapsor_writeback_receipts",
+        "writer_ref": "SYNAPSOR_WRITE_RELEASE_SEAL_CANDIDATE_77988288"
+      }
+    },
+    "E3": {
+      "verdict": "PASS",
+      "installed_tree": "24f0ed0780e2956911bbf0c78c7684adf519909ba31cb96ddf86f36ab07abe1b",
+      "disabled_policy": "policy:8a8bfe0a404838ad83e7cf30966a1627e18bab2ecfa71de61408c44db374d781",
+      "disabled_authority": "sha256:a6adf4c3d6d0b9f906d1784b0da2a041da2221e424ae3429d34946bdcf144d29",
+      "original_request": "Change one rule only: sealing a build candidate must now require at least three passed checks instead of two. Leave every other condition, the slot consumption, the approval policy and the time limits exactly as they are.",
+      "episodes": [
+        {
+          "command": [
+            "action",
+            "review",
+            "--project-root",
+            "."
+          ],
+          "exit": 143,
+          "start": "2026-09-19T21:56:24.450425+00:00",
+          "end": "2026-09-19T21:57:17.880241+00:00",
+          "seconds_including_operator_navigation": 53.429816,
+          "attempts": [
+            13,
+            14,
+            15
+          ],
+          "provider_reported_cost_usd": 0.008070299999999999
+        },
+        {
+          "command": [
+            "start",
+            "--project-root",
+            ".",
+            "--cli"
+          ],
+          "exit": 0,
+          "start": "2026-09-19T21:57:41.417598+00:00",
+          "end": "2026-09-19T21:58:48.999205+00:00",
+          "seconds_including_operator_navigation": 67.581607,
+          "attempts": [
+            16,
+            17,
+            18,
+            19
+          ],
+          "provider_reported_cost_usd": 0.034506
+        },
+        {
+          "command": [
+            "start",
+            "--project-root",
+            ".",
+            "--cli"
+          ],
+          "exit": 0,
+          "start": "2026-09-19T21:58:51.784434+00:00",
+          "end": "2026-09-19T21:59:33.190864+00:00",
+          "seconds_including_operator_navigation": 41.40643,
+          "attempts": [],
+          "provider_reported_cost_usd": 0
+        }
+      ],
+      "structural_diff": [
+        {
+          "path": "/authority/activated_at",
+          "before_present": true,
+          "after_present": false,
+          "before": "2026-09-16T03:46:08.090Z"
+        },
+        {
+          "path": "/authority/actor",
+          "before_present": true,
+          "after_present": false,
+          "before": "sandesh-tiwari"
+        },
+        {
+          "path": "/authority/authority/action_boundary/digest",
+          "before": "sha256:37d57ce2b3531d1a2651f4af022913f8db19b1b000236ca1e765d7fbb2ab7101",
+          "after": "sha256:92ee7d3c1c570fe4db81981d11438ff818448e04e59d775999b3cbf0950a8849"
+        },
+        {
+          "path": "/authority/authority/action_boundary/rules/0/action_rule_digest",
+          "before": "sha256:62fe7aaf3a575421f128b46edcd76c1664a8765caccfa2beafda45a6bf699114",
+          "after": "sha256:629102a696e48fbd14ec04e86dc106297b749e923c00db760de911fa149b81cd"
+        },
+        {
+          "path": "/authority/authority/action_boundary/rules/0/approval_policy_digest",
+          "before": "sha256:7742be978003ae53f416cf2d61655c0dc2b2a29c8cc321d1273d7d112e4d95cb",
+          "after": "sha256:0f834509fe6ca7da511bdbe61e7c376c94834ef1f6b5158812e0a2e570d6f3cf"
+        },
+        {
+          "path": "/authority/authority/action_boundary/rules/0/compiled_plan_digest",
+          "before": "sha256:1b33446de97a0d7e785ff33b5e3574879aa927ae67f375e4257d353c9c0e92a2",
+          "after": "sha256:bb3753fb75acbc2c3b29a24587830241180851ec61b860b9f888d60de35bb3e3"
+        },
+        {
+          "path": "/authority/authority/digest",
+          "before": "sha256:d34194efbc719291dd71cf3107e357d92800c9d1f27eb8ea1b43189eef4fb1fa",
+          "after": "sha256:a6adf4c3d6d0b9f906d1784b0da2a041da2221e424ae3429d34946bdcf144d29"
+        },
+        {
+          "path": "/authority/authority/rules/0/activated_at",
+          "before": "2026-09-16T03:45:15.744Z",
+          "after": "2026-09-19T21:58:01.859Z"
+        },
+        {
+          "path": "/authority/authority/rules/0/rule/require/expressions/4/right/value",
+          "before": 2,
+          "after": 3
+        },
+        {
+          "path": "/authority/authority/rules/0/verification_boundary/resources/0/fields/1/model_visible",
+          "before": false,
+          "after": true
+        },
+        {
+          "path": "/authority/authority/rules/0/verification_boundary/resources/0/fields/4/model_visible",
+          "before": true,
+          "after": false
+        },
+        {
+          "path": "/authority/created_at",
+          "before_present": false,
+          "after_present": true,
+          "after": "2026-09-19T21:58:01.859Z"
+        },
+        {
+          "path": "/authority/digest",
+          "before": "sha256:d34194efbc719291dd71cf3107e357d92800c9d1f27eb8ea1b43189eef4fb1fa",
+          "after": "sha256:a6adf4c3d6d0b9f906d1784b0da2a041da2221e424ae3429d34946bdcf144d29"
+        },
+        {
+          "path": "/authority/reviews/0/examples/0/scenario",
+          "before": "Staged candidate, ready slot, two passed checks totalling 40 seconds",
+          "after": "Staged candidate, ready slot, three passed checks totalling 40 seconds"
+        },
+        {
+          "path": "/authority/reviews/0/examples/1/scenario",
+          "before": "Staged candidate with passing checks totalling 400 seconds",
+          "after": "Staged candidate with three passing checks totalling 400 seconds"
+        },
+        {
+          "path": "/authority/reviews/0/examples/2/scenario",
+          "before": "One check still pending",
+          "after": "Two passed checks"
+        },
+        {
+          "path": "/authority/reviews/0/refused/1",
+          "before": "Fewer than two checks",
+          "after": "Fewer than three checks"
+        },
+        {
+          "path": "/authority/schema_version",
+          "before": "synapsor.action-rule-authority-activation.v1",
+          "after": "synapsor.action-rule-authority-draft.v1"
+        },
+        {
+          "path": "/authority/state",
+          "before": "active",
+          "after": "disabled"
+        }
+      ],
+      "derived_evidence_diff": [
+        {
+          "path": "/actions/0/require/expressions/4/right/value",
+          "before": 2,
+          "after": 3
+        },
+        {
+          "path": "/actions/0/review/refused/1",
+          "before": "Fewer than two checks",
+          "after": "Fewer than three checks"
+        },
+        {
+          "path": "/actions/0/review/examples/0/scenario",
+          "before": "Staged candidate, ready slot, two passed checks totalling 40 seconds",
+          "after": "Staged candidate, ready slot, three passed checks totalling 40 seconds"
+        },
+        {
+          "path": "/actions/0/review/examples/1/scenario",
+          "before": "Staged candidate with passing checks totalling 400 seconds",
+          "after": "Staged candidate with three passing checks totalling 400 seconds"
+        },
+        {
+          "path": "/actions/0/review/examples/2/scenario",
+          "before": "One check still pending",
+          "after": "Two passed checks"
+        },
+        {
+          "path": "/runner_evidence/actions/release.seal_candidate/scoped_bindings/candidate/fields/candidate_state/model_visible",
+          "before": false,
+          "after": true
+        },
+        {
+          "path": "/runner_evidence/actions/release.seal_candidate/scoped_bindings/candidate/fields/candidate_state/private_action_verification",
+          "before": true,
+          "after": false
+        },
+        {
+          "path": "/runner_evidence/actions/release.seal_candidate/scoped_bindings/candidate/fields/slot_id/model_visible",
+          "before": true,
+          "after": false
+        },
+        {
+          "path": "/runner_evidence/actions/release.seal_candidate/scoped_bindings/candidate/fields/slot_id/actual_values_returned",
+          "before": true,
+          "after": false
+        },
+        {
+          "path": "/runner_evidence/actions/release.seal_candidate/scoped_bindings/candidate/fields/slot_id/private_action_verification",
+          "before": false,
+          "after": true
+        },
+        {
+          "path": "/runner_evidence/action_subject_compatibility/action_digest",
+          "before": "sha256:d34194efbc719291dd71cf3107e357d92800c9d1f27eb8ea1b43189eef4fb1fa",
+          "after": "sha256:a6adf4c3d6d0b9f906d1784b0da2a041da2221e424ae3429d34946bdcf144d29"
+        }
+      ],
+      "same_original_request_after_resume": true,
+      "source_rows": 504,
+      "all_application_tables_unchanged": true,
+      "all_prior_authority_history_retained_byte_for_byte": true,
+      "read_active_action_execution_and_writer_receipts_unchanged": true,
+      "disclosure_reviews": [
+        {
+          "outcome": "release.seal_candidate",
+          "read_digest": "sha256:bc2df7660d0238ab7b678d35a5061a34bf3fbcf1ec834774781978305e13bf12",
+          "authority_digest": "sha256:d34194efbc719291dd71cf3107e357d92800c9d1f27eb8ea1b43189eef4fb1fa",
+          "review_digest": "sha256:64786723ee6bffeab6a6aad90f368a747cccb47596a0cc8e34c8dba29ddf0374"
+        }
+      ],
+      "reopen_changed_tables": [
+        "control_policy_deployments",
+        "control_policy_events"
+      ],
+      "receipt": {
+        "source": "local_postgres",
+        "authority": "source_db",
+        "provisioning": "precreated",
+        "schema": "release_ops",
+        "table": "synapsor_writeback_receipts",
+        "writer_ref": "SYNAPSOR_WRITE_RELEASE_SEAL_CANDIDATE_77988288"
+      }
+    }
+  },
+  "total_attempts": 19,
+  "sent": 18,
+  "pre_send_interruption": 15,
+  "ceiling": 24,
+  "reserved_allowance_used": 1,
+  "reported_cost_usd": 0.1448871,
+  "provider": "openrouter",
+  "model": "openai/gpt-5.6-terra",
+  "cross_case_full_authority_diffs": {
+    "E2": [
+      {
+        "path": "/digest",
+        "before": "sha256:f307eeeff16794a7298a1f01738d646059b29bca31aa07bced6f9be842aac029",
+        "after": "sha256:34e6113feadd4a0387f7a8a13c224b7875e0efaf7f2013025917be8147e3aec7"
+      },
+      {
+        "path": "/rules/0/activated_at",
+        "before": "2026-09-19T21:51:21.746Z",
+        "after": "2026-09-19T21:54:45.919Z"
+      }
+    ],
+    "E3": [
+      {
+        "path": "/digest",
+        "before": "sha256:f307eeeff16794a7298a1f01738d646059b29bca31aa07bced6f9be842aac029",
+        "after": "sha256:a6adf4c3d6d0b9f906d1784b0da2a041da2221e424ae3429d34946bdcf144d29"
+      },
+      {
+        "path": "/rules/0/activated_at",
+        "before": "2026-09-19T21:51:21.746Z",
+        "after": "2026-09-19T21:58:01.859Z"
+      }
+    ]
+  },
+  "limitations": [
+    "Known-case disabled edit repair, not new unseen qualification.",
+    "E3 controlled interruption, not uninterrupted completion.",
+    "E3 later Resume adds same-revision save_disabled_action event and epoch15->16; no new draft revision or provider call.",
+    "E3 opening text was discarded as unsupported; the standard job input remained available.",
+    "Navigation/inspection time included in episode durations; no claim of intrinsic human usability time.",
+    "No activation, runtime effect or worker execution."
+  ]
+}

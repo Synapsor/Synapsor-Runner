@@ -35,5 +35,8 @@
     "Read analysis permissions are distinct from raw model visibility; existing reviewed analysis grants unchanged.",
     "Disabled activated_at is a canonical compiler/draft timestamp, not a publication event.",
     "Policy revision and contained authority digest are different identities; preserved early fixture assertion mistake distinguished."
-  ]
+  ],
+  "source": {
+    "kind": "subject_ref"
+  }
 }
