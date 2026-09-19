@@ -68,7 +68,8 @@ it.each(['refunds','returns_ops'])('retains the private fraud fact and distingui
     const before=structuredClone(full);
     await expect(prepareReadWorkloadRelationship({projectRoot:'/synthetic/read-dependency',boundary:full,generatedBoundary:full,
       fromResource:source.id,toResource:customer.id,modelLabel:'unused',assertCurrent:async()=>{},
-      session:{chooseResource:async()=>undefined,editFieldTiers:async()=>undefined}})).rejects.toMatchObject({
+      session:{chooseResource:async()=>undefined,editFieldTiers:async()=>undefined,
+        promptText:async()=>undefined,confirm:async()=>false}})).rejects.toMatchObject({
         code:'READ_RELATIONSHIP_RESTORE_UNAVAILABLE',message:expect.stringContaining('no generated outgoing path')});
     expect(full).toEqual(before);
   }
