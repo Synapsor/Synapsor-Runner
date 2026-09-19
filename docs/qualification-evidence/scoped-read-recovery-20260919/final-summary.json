@@ -1,0 +1,91 @@
+{
+  "installed_tree_sha256": "e60532d31bf71b801112155cbd44d7385577e44d29e4088aeb58cfefbd4b611f",
+  "product_commit": "7754b79a3cf41c35b964e9905c221d2bca76fdf5",
+  "test_commit": "353165bc8865ae1ccf0aee844a5b70a5916471f6",
+  "source_commit": "53e91046ac4015060acaa6ef3aedb00a64afd050",
+  "node": {
+    "version": "v22.22.2",
+    "executable": "/usr/bin/node",
+    "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+  },
+  "runner_version": "1.8.0",
+  "spec_version": "1.11.0",
+  "package_lock_sha256": "24733b46da2fb8ca1e86daa3fe4b66d5cde58aadb0050481966465c92126ea92",
+  "tarballs": [
+    {
+      "name": "synapsor-runner-1.8.0.tgz",
+      "sha256": "32036fa4d0f60dbea7498dfbb53bf4ce9d8fae94daff9e33cf1e51e44edbbc3b"
+    },
+    {
+      "name": "synapsor-spec-1.11.0.tgz",
+      "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+    }
+  ],
+  "calls": 7,
+  "reported_cost_usd": 0.1031629,
+  "source_before_after_equal": true,
+  "source_hash": "0726e36b9f82c326f459d55b69e387e46541a92c2913ba23166e27378ad6dda6",
+  "original_job": "BLOCKED",
+  "stage_b": "ATTEMPTED / NOT PASSED",
+  "public": {
+    "final-fresh": {
+      "calls": [
+        [
+          1,
+          2,
+          3
+        ],
+        []
+      ],
+      "exits": [
+        0,
+        0
+      ],
+      "pending": {
+        "resource": "refunds.refund_requests"
+      },
+      "result": "BLOCKED: original required dependency unavailable; negative recovery only",
+      "no_business_authority": true
+    },
+    "final-reopen": {
+      "calls": [
+        [],
+        [
+          4,
+          5
+        ],
+        []
+      ],
+      "exits": [
+        0,
+        0,
+        0
+      ],
+      "pending": {
+        "resource": "refunds.refund_requests"
+      },
+      "result": "BLOCKED: original required dependency unavailable; negative recovery only",
+      "no_business_authority": true
+    },
+    "final-resume": {
+      "calls": [
+        [],
+        [
+          6,
+          7
+        ],
+        []
+      ],
+      "exits": [
+        0,
+        0,
+        0
+      ],
+      "pending": {
+        "resource": "refunds.refund_requests"
+      },
+      "result": "BLOCKED: original required dependency unavailable; negative recovery only",
+      "no_business_authority": true
+    }
+  }
+}

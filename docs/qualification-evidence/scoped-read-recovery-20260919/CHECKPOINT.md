@@ -33,3 +33,10 @@ stable-full03 exit0:316files passed/21skipped;6554tests passed/464skipped;1435.7
 
 ### Candidate freeze checkpoint — 2026-09-19 16:31 UTC
 All ten applicable offline gates exit0 on final source. Full suite6554pass/464skip exit0, types0, explicit PostgreSQL8pass/414filter exit0. Product7754b79/tests353165b; no source changes after final stable run. Freezing a new complete installation next; no final installed public run has occurred yet.
+
+
+### Final installed closure — 2026-09-19 16:52 UTC
+
+Final product7754b79/tests353165b/source53e9104; installed tree e60532d31bf71b801112155cbd44d7385577e44d29e4088aeb58cfefbd4b611f (7,569 entries). Full03 exit0:6,554pass/464skip; types0; ten offline gates0; PostgreSQL-control8pass/414filtered0. Prior full02 failure and interruption retained. Installed matrix26exit0 (20canonical Reads/6metadata-only scaffolds); corresponding renamed semantics pass. Final public7calls/$0.1031629, all3restarts0calls. Fresh blocks on inverse item path; stopped copies request required fraud/collection paths. Reopen opens local editor; Resume consumes saved local pending step. Original job remains BLOCKED, not positive completion. Source schema/rows unchanged;28application tables unchanged in restored copies. Candidate kept-out field sets reorder only during public rescan. All originals and old/new installations verify unchanged; state/logs saved before stopping2ownedcontainers. See FINAL-REPORT.md and REVIEWER-HANDOFF.md. Stage B ATTEMPTED / NOT PASSED. No additional provider run or roadmap work planned.
+
+Final harness-only corrections: fresh mount ordering fixed before application/provider startup; first failed preflight retained. Read-only summary first assumed wall-window attribution and byte-equal candidate ordering; corrected measurement to observed process IDs and explicitly recorded kept-out set ordering. No product/test/installed bytes changed during final public runs.

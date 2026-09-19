@@ -24,7 +24,7 @@ for line in pathlib.Path('/home/sandesh-tiwari/Desktop/Customer Service With Syn
 assert secrets.get('OPENROUTER_API_KEY'), 'Same configured provider credential required'
 for d in ['home','tmp','var-tmp']:(owned/d).mkdir(exist_ok=True)
 env={'PATH':os.environ['PATH'],'HOME':str(owned/'home'),'NO_COLOR':'1','TERM':'xterm-256color','LANG':'C.UTF-8','COLUMNS':'100','LINES':'30','TMPDIR':'/var/tmp','NODE_NO_WARNINGS':'1','DATABASE_URL':db['reader_url']}
-args=['bwrap','--die-with-parent','--ro-bind','/','/','--bind',str(owned),str(owned),'--bind',str(owned/'project'),logical,'--bind',str(meter),str(meter),'--bind',str(owned/'tmp'),'/tmp','--bind',str(owned/'var-tmp'),'/var/tmp','--proc','/proc','--dev','/dev','--chdir',logical]
+args=['bwrap','--die-with-parent','--ro-bind','/','/','--bind',str(owned),str(owned),'--bind',str(owned/'tmp'),'/tmp','--bind',str(owned/'var-tmp'),'/var/tmp','--bind',str(owned/'project'),logical,'--bind',str(meter),str(meter),'--proc','/proc','--dev','/dev','--chdir',logical]
 pre=subprocess.run(args+[str(REPO/'node_modules/.bin/tsx'),str(E/'public-preflight.mts'),logical,str(owned/'project')],env=env,capture_output=True,text=True)
 (owned/'preflight.json').write_text(json.dumps({'exit':pre.returncode,'stdout':pre.stdout,'stderr':pre.stderr},indent=2));assert pre.returncode==0,'Effective-store preflight failed'
 env.update(OPENROUTER_API_KEY=secrets['OPENROUTER_API_KEY'],QUALIFICATION_PROVIDER_METER=str(meter),NODE_OPTIONS='--import='+str(E/'provider-meter.mjs'))
