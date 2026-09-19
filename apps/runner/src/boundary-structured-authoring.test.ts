@@ -50,7 +50,10 @@ vi.mock("./boundary-review-domain.js", () => ({
 vi.mock("./control-policy-read-authoring-project.js", () => ({
   readProjectReadAuthoring: vi.fn(async () => ({ bindings: bindings(), selected: { progress: { boundary_id: "bnd_12345678901234567890123456789012" }, catalog: {} }, authoring: { type: "read_authoring", selected_boundary_id: "bnd_12345678901234567890123456789012", entries: [{ progress: { boundary_id: "bnd_12345678901234567890123456789012" } }] } })),
 }));
-vi.mock("./control-policy-read-authoring.js", () => ({ readAuthoringCatalog: () => ({}) }));
+vi.mock("./control-policy-read-authoring.js", async (importOriginal) => ({
+  ...await importOriginal<typeof import("./control-policy-read-authoring.js")>(),
+  readAuthoringCatalog: () => ({}),
+}));
 vi.mock("./control-policy-store.js", () => ({ openBoundProjectControlPolicies: vi.fn(async () => ({
   repository_id: "00000000-0000-4000-8000-000000000001", deployment_id: "00000000-0000-4000-8000-000000000002",
   project_id: "00000000-0000-4000-8000-000000000003", close: vi.fn(),
