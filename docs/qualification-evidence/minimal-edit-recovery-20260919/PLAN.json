@@ -1,0 +1,25 @@
+{
+  "started_at": "2026-09-19T20:41:56.602379+00:00",
+  "implementation_minutes": 180,
+  "implementation_deadline": "2026-09-19T23:41:56.602379+00:00",
+  "fixture_minutes": 45,
+  "stable_minutes": 90,
+  "public_minutes": 90,
+  "delivery_minutes": 30,
+  "development_calls": 6,
+  "development_spend_usd": 3,
+  "final_calls": 24,
+  "final_initial_calls": 18,
+  "final_reserved_recovery_recheck": 6,
+  "final_spend_usd": 12,
+  "provider": "openrouter",
+  "model": "openai/gpt-5.6-terra",
+  "provider_switches": 0,
+  "public_cases": [
+    "E1 recommended uninterrupted",
+    "E2 W uninterrupted",
+    "E3 controlled post-plan interruption/resume"
+  ],
+  "heavy_window": "Reserved for this assignment by owner; Claude pre-work read-only, final independent calls after frozen handoff",
+  "scope": "M4 disclosure reconciliation and pending edit resume only; no live runtime/activation/source mutation"
+}

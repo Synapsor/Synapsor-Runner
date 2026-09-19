@@ -1,0 +1,119 @@
+{
+  "full_suite": {
+    "passed": 6587,
+    "skipped": 464,
+    "files_passed": 318,
+    "files_skipped": 21
+  },
+  "records": {
+    "full-stable": {
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "--maxWorkers=4",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "start": 1789852713.531842,
+      "source_before": "a4f9422a2b1ad06900b7eb0932c6d8d0822f68771c75089a32259d37a726a91f",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 597109,
+      "exit": 0,
+      "seconds": 1521.7695534229279,
+      "source_after": "a4f9422a2b1ad06900b7eb0932c6d8d0822f68771c75089a32259d37a726a91f"
+    },
+    "stable-types": {
+      "command": [
+        "corepack",
+        "pnpm",
+        "typecheck"
+      ],
+      "start": 1789852577.9431088,
+      "source_before": "a4f9422a2b1ad06900b7eb0932c6d8d0822f68771c75089a32259d37a726a91f",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 594855,
+      "exit": 0,
+      "seconds": 6.527477502822876,
+      "source_after": "a4f9422a2b1ad06900b7eb0932c6d8d0822f68771c75089a32259d37a726a91f"
+    },
+    "postgres-stable-review": {
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/control-policy-authority-codec.test.ts",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000",
+        "-t",
+        "postgres validated operator policy transactions.*(keeps the original Read|atomically saves only a validated disabled Action companion|retains partial coded|rescans and renames|persists exact disabled|commits complete Read|reopens, edits and switches|rescans stored reviews|refuses stale review and admits)"
+      ],
+      "start": 1789852602.8155358,
+      "source_before": "a4f9422a2b1ad06900b7eb0932c6d8d0822f68771c75089a32259d37a726a91f",
+      "credentials": "only owned SYNAPSOR_TEST_POSTGRES_URL",
+      "umask": "0077",
+      "pid": 595264,
+      "exit": 0,
+      "seconds": 13.348324298858643,
+      "source_after": "a4f9422a2b1ad06900b7eb0932c6d8d0822f68771c75089a32259d37a726a91f"
+    },
+    "postgres-stable-freshness": {
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/authoring-counting-domain.test.ts",
+        "apps/runner/src/authoring-counting-freshness.test.ts",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "start": 1789852667.9853082,
+      "source_before": "a4f9422a2b1ad06900b7eb0932c6d8d0822f68771c75089a32259d37a726a91f",
+      "credentials": "only owned SYNAPSOR_TEST_POSTGRES_URL",
+      "umask": "0077",
+      "pid": 596398,
+      "exit": 0,
+      "seconds": 11.013325452804565,
+      "source_after": "a4f9422a2b1ad06900b7eb0932c6d8d0822f68771c75089a32259d37a726a91f"
+    },
+    "ready-focused": {
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/boundary-cli.test.ts",
+        "apps/runner/src/action-rule-disclosure-review.test.ts",
+        "apps/runner/src/boundary-authoring-resume.test.ts",
+        "-t",
+        "retains the exact 30-to-10 policy edit|keeps one saved job through interruption|disclosure reconciliation|Boundary authoring resume|boundary authoring resume",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=40000",
+        "--hookTimeout=30000"
+      ],
+      "start": 1789852528.8336952,
+      "source_before": "a4f9422a2b1ad06900b7eb0932c6d8d0822f68771c75089a32259d37a726a91f",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 594024,
+      "exit": 0,
+      "seconds": 13.791741847991943,
+      "source_after": "a4f9422a2b1ad06900b7eb0932c6d8d0822f68771c75089a32259d37a726a91f"
+    }
+  }
+}

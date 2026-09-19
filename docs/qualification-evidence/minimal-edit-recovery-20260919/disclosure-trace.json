@@ -1,0 +1,39 @@
+{
+  "outcome": "release.seal_candidate",
+  "binding": "candidate",
+  "resource": "release_ops.build_candidates",
+  "baseline_policy": "policy:f2df8db27f1d0b98288459d837470a648c0cf9595e6adcf53085a9793fe03849",
+  "baseline_authority": "sha256:d34194efbc719291dd71cf3107e357d92800c9d1f27eb8ea1b43189eef4fb1fa",
+  "read_digest": "sha256:bc2df7660d0238ab7b678d35a5061a34bf3fbcf1ec834774781978305e13bf12",
+  "fields": [
+    {
+      "field": "candidate_state",
+      "old": false,
+      "derived": true
+    },
+    {
+      "field": "slot_id",
+      "old": true,
+      "derived": false
+    }
+  ],
+  "first_observed": "no-op compilation, before any provider call",
+  "producer": [
+    "buildActionRuleAuthoringCatalog",
+    "verificationField"
+  ],
+  "owner": "derived catalog fact based on the exact pinned reviewed Read contract; stored baseline annotations were inconsistent",
+  "consumers": [
+    "authoring-policy-evidence actual_values_returned/private_action_verification",
+    "authoring-policy-coverage privacy evidence",
+    "verified-action-review and boundary-commands descriptions"
+  ],
+  "impact": "Inaccurate evidence/description corrected after explicit reconciliation. No runtime permission use or runtime disclosure demonstrated.",
+  "preservation": "Same source/resource/binding/scope/collection/locks/types and Read revision required; otherwise dependency review refusal.",
+  "notes": [
+    "False is explicit; missing is unknown. No blanket clamp/copy or activation.",
+    "Read analysis permissions are distinct from raw model visibility; existing reviewed analysis grants unchanged.",
+    "Disabled activated_at is a canonical compiler/draft timestamp, not a publication event.",
+    "Policy revision and contained authority digest are different identities; preserved early fixture assertion mistake distinguished."
+  ]
+}

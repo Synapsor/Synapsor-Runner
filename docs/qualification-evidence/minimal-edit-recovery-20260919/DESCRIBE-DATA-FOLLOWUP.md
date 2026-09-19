@@ -1,0 +1,3 @@
+# Separate bounded follow-up: describe_data operation schema
+
+Not authorized for implementation in this M4 assignment. Independent pre-work and preserved runtime-primary captures demonstrate detail+limit is schema-valid in app.describe_data but runtime-refused; null limit succeeds. The repaired app.describe_actions is a different tool and worked. Terra used one of three responses correcting this and did not reach rows; no universal client failure is established. Reuse existing operation schema/validator in a separately authorized ticket. Evidence: ../public-operation-20260919/FINAL-REPORT.md and raw public/runtime-primary/protocol.jsonl.

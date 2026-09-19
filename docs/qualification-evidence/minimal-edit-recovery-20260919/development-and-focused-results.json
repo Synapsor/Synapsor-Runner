@@ -1,0 +1,326 @@
+{
+  "updated_at": "2026-09-19T21:24:12.989855+00:00",
+  "records": [
+    {
+      "name": "development-types02",
+      "command": [
+        "corepack",
+        "pnpm",
+        "typecheck"
+      ],
+      "exit": 1,
+      "seconds": 10.661666631698608,
+      "source_before": "c8c67a6c357375803dddeb44782ac0d02131913d01e5de3c3acf84b14eca5181",
+      "source_after": "c8c67a6c357375803dddeb44782ac0d02131913d01e5de3c3acf84b14eca5181"
+    },
+    {
+      "name": "disclosure-tests01",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/action-rule-disclosure-review.test.ts",
+        "--maxWorkers=1",
+        "--minWorkers=1"
+      ],
+      "exit": 1,
+      "seconds": 3.2900569438934326,
+      "source_before": "494870426497c62c9efaa7702660a17539e7eac8f6cb5b70be2c15d564520eee",
+      "source_after": "494870426497c62c9efaa7702660a17539e7eac8f6cb5b70be2c15d564520eee"
+    },
+    {
+      "name": "disclosure-tests02",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/action-rule-disclosure-review.test.ts",
+        "--maxWorkers=1",
+        "--minWorkers=1"
+      ],
+      "exit": 0,
+      "seconds": 3.1663870811462402,
+      "source_before": "8cd22b78269013990ca99cb11367e90ce34ab479f608935da9174b9111885725",
+      "source_after": "8cd22b78269013990ca99cb11367e90ce34ab479f608935da9174b9111885725"
+    },
+    {
+      "name": "drift-controls02",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/boundary-cli.test.ts",
+        "-t",
+        "retains the exact 30-to-10 policy edit.*(read_drift|competing_edit)",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=40000",
+        "--hookTimeout=30000"
+      ],
+      "exit": 0,
+      "seconds": 8.432901620864868,
+      "source_before": "c8c67a6c357375803dddeb44782ac0d02131913d01e5de3c3acf84b14eca5181",
+      "source_after": "c8c67a6c357375803dddeb44782ac0d02131913d01e5de3c3acf84b14eca5181"
+    },
+    {
+      "name": "final-development-types",
+      "command": [
+        "corepack",
+        "pnpm",
+        "typecheck"
+      ],
+      "exit": 0,
+      "seconds": 14.414733171463013,
+      "source_before": "e882a3497c499329e7c887e21358b7b5ced5b7613601d9aaf027bcee645c1af1",
+      "source_after": "e882a3497c499329e7c887e21358b7b5ced5b7613601d9aaf027bcee645c1af1"
+    },
+    {
+      "name": "final-focused-edit",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/boundary-cli.test.ts",
+        "-t",
+        "retains the exact 30-to-10 policy edit",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=40000",
+        "--hookTimeout=30000"
+      ],
+      "exit": 0,
+      "seconds": 11.435679197311401,
+      "source_before": "e882a3497c499329e7c887e21358b7b5ced5b7613601d9aaf027bcee645c1af1",
+      "source_after": "e882a3497c499329e7c887e21358b7b5ced5b7613601d9aaf027bcee645c1af1"
+    },
+    {
+      "name": "focused03",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/boundary-cli.test.ts",
+        "apps/runner/src/action-rule-disclosure-review.test.ts",
+        "apps/runner/src/boundary-authoring-resume.test.ts",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=40000",
+        "--hookTimeout=30000"
+      ],
+      "exit": 1,
+      "seconds": 180.40999555587769,
+      "source_before": "f9f52a54d1f4063035bd8b0161779a0cd8b331bdd01dd520fab7c4903ba2e8f2",
+      "source_after": "f9f52a54d1f4063035bd8b0161779a0cd8b331bdd01dd520fab7c4903ba2e8f2"
+    },
+    {
+      "name": "focused04",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/boundary-cli.test.ts",
+        "apps/runner/src/action-rule-disclosure-review.test.ts",
+        "apps/runner/src/boundary-authoring-resume.test.ts",
+        "apps/runner/src/action-rule-model.test.ts",
+        "apps/runner/src/action-rule-draft.test.ts",
+        "apps/runner/src/model-assisted-boundary-authoring.test.ts",
+        "apps/runner/src/structured-boundary-draft.test.ts",
+        "apps/runner/src/boundary-authoring-chat.test.ts",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=40000",
+        "--hookTimeout=30000"
+      ],
+      "exit": 0,
+      "seconds": 180.00236558914185,
+      "source_before": "4d9214cfe6b16473ca686a6a7e050d0296584fafb55da2dd354ed581db651560",
+      "source_after": "1f7c7f5863799e4912fcb8f42e9ba9311be53fd697d32bd822497e338fb30f83"
+    },
+    {
+      "name": "postgres-stable-freshness",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/authoring-counting-domain.test.ts",
+        "apps/runner/src/authoring-counting-freshness.test.ts",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "exit": 0,
+      "seconds": 11.013325452804565,
+      "source_before": "a4f9422a2b1ad06900b7eb0932c6d8d0822f68771c75089a32259d37a726a91f",
+      "source_after": "a4f9422a2b1ad06900b7eb0932c6d8d0822f68771c75089a32259d37a726a91f"
+    },
+    {
+      "name": "postgres-stable-review",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/control-policy-authority-codec.test.ts",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000",
+        "-t",
+        "postgres validated operator policy transactions.*(keeps the original Read|atomically saves only a validated disabled Action companion|retains partial coded|rescans and renames|persists exact disabled|commits complete Read|reopens, edits and switches|rescans stored reviews|refuses stale review and admits)"
+      ],
+      "exit": 0,
+      "seconds": 13.348324298858643,
+      "source_before": "a4f9422a2b1ad06900b7eb0932c6d8d0822f68771c75089a32259d37a726a91f",
+      "source_after": "a4f9422a2b1ad06900b7eb0932c6d8d0822f68771c75089a32259d37a726a91f"
+    },
+    {
+      "name": "ready-focused",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/boundary-cli.test.ts",
+        "apps/runner/src/action-rule-disclosure-review.test.ts",
+        "apps/runner/src/boundary-authoring-resume.test.ts",
+        "-t",
+        "retains the exact 30-to-10 policy edit|keeps one saved job through interruption|disclosure reconciliation|Boundary authoring resume|boundary authoring resume",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=40000",
+        "--hookTimeout=30000"
+      ],
+      "exit": 0,
+      "seconds": 13.791741847991943,
+      "source_before": "a4f9422a2b1ad06900b7eb0932c6d8d0822f68771c75089a32259d37a726a91f",
+      "source_after": "a4f9422a2b1ad06900b7eb0932c6d8d0822f68771c75089a32259d37a726a91f"
+    },
+    {
+      "name": "resume-baseline",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/boundary-cli.test.ts",
+        "-t",
+        "retains the exact 30-to-10 policy edit.*draft_interrupted",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=40000",
+        "--hookTimeout=30000"
+      ],
+      "exit": 1,
+      "seconds": 8.5907883644104,
+      "source_before": "574132b42c181b88489929518ef85f4a79de0546ba618947f04f566700c23b31",
+      "source_after": "574132b42c181b88489929518ef85f4a79de0546ba618947f04f566700c23b31"
+    },
+    {
+      "name": "resume-baseline02",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/boundary-cli.test.ts",
+        "-t",
+        "retains the exact 30-to-10 policy edit.*draft_interrupted",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=40000",
+        "--hookTimeout=30000"
+      ],
+      "exit": 1,
+      "seconds": 8.02855920791626,
+      "source_before": "f72c6c935219663b014fef62b3be50220363ced8832ab88ee1db031fb75e5de5",
+      "source_after": "f72c6c935219663b014fef62b3be50220363ced8832ab88ee1db031fb75e5de5"
+    },
+    {
+      "name": "resume-cuts01",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/boundary-cli.test.ts",
+        "-t",
+        "retains the exact 30-to-10 policy edit",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=40000",
+        "--hookTimeout=30000"
+      ],
+      "exit": 0,
+      "seconds": 10.48733401298523,
+      "source_before": "e55a55559e19ffa435a469c2cb4e322273147be5a27a1809d13b25121cc924cb",
+      "source_after": "e55a55559e19ffa435a469c2cb4e322273147be5a27a1809d13b25121cc924cb"
+    },
+    {
+      "name": "resume-repair01",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/boundary-cli.test.ts",
+        "-t",
+        "retains the exact 30-to-10 policy edit",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=40000",
+        "--hookTimeout=30000"
+      ],
+      "exit": 0,
+      "seconds": 11.039193630218506,
+      "source_before": "0bb9bd71e74a8eaada0058f6889688944e518c91b5536858127dbb1b52074bca",
+      "source_after": "0bb9bd71e74a8eaada0058f6889688944e518c91b5536858127dbb1b52074bca"
+    },
+    {
+      "name": "stable-types",
+      "command": [
+        "corepack",
+        "pnpm",
+        "typecheck"
+      ],
+      "exit": 0,
+      "seconds": 6.527477502822876,
+      "source_before": "a4f9422a2b1ad06900b7eb0932c6d8d0822f68771c75089a32259d37a726a91f",
+      "source_after": "a4f9422a2b1ad06900b7eb0932c6d8d0822f68771c75089a32259d37a726a91f"
+    },
+    {
+      "name": "types03",
+      "command": [
+        "corepack",
+        "pnpm",
+        "typecheck"
+      ],
+      "exit": 1,
+      "seconds": 15.201092720031738,
+      "source_before": "8ef83cb6cde197e03ba6b6df83a2c8d4993b7fac236fbcfabeab378b2bbe99f9",
+      "source_after": "8ef83cb6cde197e03ba6b6df83a2c8d4993b7fac236fbcfabeab378b2bbe99f9"
+    }
+  ],
+  "raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/minimal-edit-bfc2f19-20260919",
+  "classification": "Failed attempts retained; focused04 changed-source pass is exploratory; stable gates explicitly named."
+}

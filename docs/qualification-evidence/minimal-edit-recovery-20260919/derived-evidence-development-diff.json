@@ -1,0 +1,56 @@
+{
+  "evidence": "owner inspection of actual policyCoverageDraft before/after development saved edit; no new provider call",
+  "read_digest": "sha256:bc2df7660d0238ab7b678d35a5061a34bf3fbcf1ec834774781978305e13bf12",
+  "changes": [
+    {
+      "path": "/actions/0/require/expressions/4/right/value",
+      "before": 2,
+      "after": 3
+    },
+    {
+      "path": "/actions/0/review/refused/1",
+      "before": "Fewer than two checks",
+      "after": "Fewer than three checks"
+    },
+    {
+      "path": "/actions/0/review/examples/0/scenario",
+      "before": "Staged candidate, ready slot, two passed checks totalling 40 seconds",
+      "after": "Staged candidate, ready slot, three passed checks totalling 40 seconds"
+    },
+    {
+      "path": "/actions/0/review/examples/1/scenario",
+      "before": "Staged candidate with passing checks totalling 400 seconds",
+      "after": "Staged candidate with three passing checks totalling 400 seconds"
+    },
+    {
+      "path": "/runner_evidence/actions/release.seal_candidate/scoped_bindings/candidate/fields/candidate_state/model_visible",
+      "before": false,
+      "after": true
+    },
+    {
+      "path": "/runner_evidence/actions/release.seal_candidate/scoped_bindings/candidate/fields/candidate_state/private_action_verification",
+      "before": true,
+      "after": false
+    },
+    {
+      "path": "/runner_evidence/actions/release.seal_candidate/scoped_bindings/candidate/fields/slot_id/model_visible",
+      "before": true,
+      "after": false
+    },
+    {
+      "path": "/runner_evidence/actions/release.seal_candidate/scoped_bindings/candidate/fields/slot_id/actual_values_returned",
+      "before": true,
+      "after": false
+    },
+    {
+      "path": "/runner_evidence/actions/release.seal_candidate/scoped_bindings/candidate/fields/slot_id/private_action_verification",
+      "before": false,
+      "after": true
+    },
+    {
+      "path": "/runner_evidence/action_subject_compatibility/action_digest",
+      "before": "sha256:d34194efbc719291dd71cf3107e357d92800c9d1f27eb8ea1b43189eef4fb1fa",
+      "after": "sha256:50ef3c807a81366c3e90fe1724aa727a9118ec471da41525193066448340d85d"
+    }
+  ]
+}
