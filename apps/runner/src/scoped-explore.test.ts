@@ -549,6 +549,22 @@ describe("Scoped Explore", () => {
         { outcome: null, query: "some", limit: 2, cursor: null }]) expect(actions(args)).toBe(true);
       expect(actions({ cursor: "" })).toBe(false);
       expect((await client.callTool({ name: "app.describe_actions", arguments: { outcome: null, query: "some", limit: 2, cursor: null } })).isError).not.toBe(true);
+      const data = ajv.compile(tools.find(t => t.name === "app.describe_data")!.inputSchema);
+      for (const args of [{ resource: "public.subscriptions", limit: 20 },
+        { resource: "public.subscriptions", query: "subscriptions" },
+        { resource: "public.subscriptions", cursor: `cur_${"a".repeat(43)}` }]) {
+        // Both declarations and the actual handler must refuse meaningful mixtures.
+        expect((await client.callTool({ name: "app.describe_data", arguments: args })).isError).toBe(true);
+        expect(data(args), JSON.stringify(args)).toBe(false);
+      }
+      for (const args of [{}, { resource: "public.subscriptions" },
+        { boundary: null, resource: "public.subscriptions", query: null, cursor: null, limit: null },
+        { boundary: null, resource: null, query: "subscriptions", cursor: null, limit: 20 },
+        { resource: "public.subscriptions", cursor: 0, limit: 0 }]) {
+        expect(data(args), JSON.stringify(args)).toBe(true);
+        expect((await client.callTool({ name: "app.describe_data", arguments: args })).isError).not.toBe(true);
+      }
+      for (const args of [{ cursor: "" }, { limit: 21 }, { resource: 5 }, { sql: "select" }]) expect(data(args)).toBe(false);
       const explore = ajv.compile(tools.find(t => t.name === "app.explore_data")!.inputSchema);
       const rows = { plan: { kind: "rows", resource: "public.subscriptions", select: ["region"] } };
       const aggregate = { plan: { kind: "aggregate", resource: "public.subscriptions", measures: [{ function: "count" }] } };

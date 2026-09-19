@@ -73,6 +73,18 @@ const optionalBoundarySelector = optionalModelArgument(z.string()
   .describe("Exact active boundary name; empty means omitted."));
 const optionalResourceSelector = optionalModelArgument(z.string().max(256)
   .describe("Exact resource id; empty means omitted."));
+// Detail/listing are existing operations, not arbitrary combinations of optional
+// fields. Keep the dispatch envelope for its safe diagnostics; publish both exact
+// branches using the same schema conversion as the Action catalog.
+const readCatalogInput = z.union([
+  z.object({ boundary: optionalBoundarySelector, resource: z.string().min(1).max(256),
+    query: z.null().optional(), cursor: z.union([z.literal(0), z.null()]).optional(),
+    limit: z.union([z.literal(0), z.null()]).optional() }).strict(),
+  z.object({ boundary: optionalBoundarySelector, resource: z.union([z.literal(""), z.null()]).optional(),
+    query: optionalModelArgument(z.string().max(256)),
+    cursor: optionalModelArgument(z.union([z.string().regex(/^cur_[A-Za-z0-9_-]{43}$/u), z.literal(0)])),
+    limit: optionalModelArgument(z.number().int().min(0).max(20)) }).strict(),
+]).describe("Exact detail: resource with optional boundary; query absent/null, cursor and limit absent/null/0. Listing: optional boundary, query, limit and returned cursor; resource absent/null/empty. Never mix meaningful detail and listing arguments.");
 const relationshipId = z.string().min(1).max(256).describe("Exact relationship id.");
 const numericBandId = z.string().min(1).max(64).describe(
   "Exact reviewed numeric-band name; never send edges.",
@@ -240,6 +252,8 @@ export function createScopedExploreMcpServer(
   const policyManagement = options.policyManagement;
   publishToolInputContracts(server, name => name === "app.describe_actions"
     ? semanticActionCatalogJsonSchema(policyManagement ? policyManagementToolInputSchema(name) : undefined)
+    : name === SCOPED_EXPLORE_DESCRIBE_TOOL
+      ? mcpToolInputJsonSchema(policyManagement ? z.union([readCatalogInput, policyManagementToolInputSchema(name)]) : readCatalogInput)
     : name === SCOPED_EXPLORE_QUERY_TOOL
       ? mcpToolInputJsonSchema(policyManagement ? z.union([exploreInput, policyManagementToolInputSchema(name)]) : exploreInput)
       : undefined);

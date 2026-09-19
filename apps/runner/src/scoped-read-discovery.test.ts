@@ -93,6 +93,32 @@ describe("scoped Read discovery", () => {
     expect(f.describeResource).toHaveBeenCalledExactlyOnceWith({ boundary: "public", resource: "public.resource_1", include_time_coverage: false });
   });
 
+  it("keeps real Read pagination and context-bound cursors through tools/list and dispatch", async () => {
+    const f = fixture(6);
+    const server = createScopedExploreMcpServer(f.runtime, { semanticActions: createInactiveSemanticActionRuntime() });
+    const client = new Client({ name: "read-operation-pagination", version: "1" });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    try {
+      await server.connect(b); await client.connect(a);
+      expect((await client.listTools()).tools).toHaveLength(4);
+      const call = (args: Record<string, unknown>) => client.callTool({ name: "app.describe_data", arguments: args });
+      const first = await call({ boundary: "public", limit: 2 });
+      expect(first.isError).not.toBe(true);
+      const page = first.structuredContent as Record<string, any>;
+      expect(page.next_cursor).toMatch(/^cur_[A-Za-z0-9_-]{43}$/);
+      const second = await call({ boundary: "public", limit: 2, cursor: page.next_cursor });
+      expect(second.isError).not.toBe(true);
+      expect(new Set([...page.resources, ...(second.structuredContent as any).resources].map(r => r.id)).size).toBe(4);
+      for (const args of [{ boundary: "public", cursor: `cur_${"x".repeat(43)}` },
+        { boundary: "public", query: "other", cursor: page.next_cursor },
+        { boundary: "secret", cursor: page.next_cursor }]) expect((await call(args)).isError).toBe(true);
+      f.changeRevision();
+      expect((await call({ boundary: "public", cursor: page.next_cursor })).isError).toBe(true);
+      expect((await call({ resource: "public.resource_0", boundary: "public", limit: null })).isError).not.toBe(true);
+      expect((await call({ resource: "secret.resource_0" })).isError).toBe(true);
+    } finally { await client.close(); await server.close(); }
+  });
+
   it("bounds the complete public MCP summary response to 16 KiB with maximum-length metadata", async () => {
     // Isolates serialization with mocked authorization/metadata. The active-file
     // composition at 1000 + 1000 resources is covered in the boundary-set suite.
