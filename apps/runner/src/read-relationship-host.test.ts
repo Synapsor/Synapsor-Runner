@@ -181,6 +181,39 @@ async function resumeState(f: Fixture) {
 }
 
 describe("public host Read relationship preparation", () => {
+  it("retains an unavailable structural request and checks it locally on restart without another model call", async () => {
+    const f = await fixture();
+    f.from = "editorial.final_reviews"; // Included, but has no outgoing FK; never invent an inverse.
+    const first = await runHost(f);
+    await expect(first.operation).resolves.toBe(0);
+    expect(first.requestJson).toHaveBeenCalledOnce();
+    expect(first.failures.join("\n")).toContain("Read root: editorial.final_reviews");
+    expect(first.failures.join("\n")).toContain("no generated outgoing path");
+    expect(first.failures.join("\n")).toContain("private verification facts");
+    expect(await resumeState(f)).toMatchObject({status:"ready",value:{pending_read_relationship:{resource:f.from},job_intent:job,stage:"read_mapping"}});
+    const restarted = await runHost(f);
+    await expect(restarted.operation).resolves.toBe(0);
+    expect(restarted.requestJson).not.toHaveBeenCalled();
+    expect(restarted.mapper).not.toHaveBeenCalled();
+    expect(restarted.failures).toEqual(first.failures);
+    expect((await loadBoundaryReviewContext(f.root)).candidate).toEqual(f.before.candidate);
+    await expect(loadActivatedExplorationBoundaries(f.root)).rejects.toMatchObject({code:"ENOENT"});
+  }, 30_000);
+
+  it("resumes a declined supported path through exact review before returning to the model", async () => {
+    const f = await fixture();
+    const first = await runHost(f,{choose:async()=>"pending"});
+    await expect(first.operation).resolves.toBe(0);
+    expect(await resumeState(f)).toMatchObject({status:"ready",value:{pending_read_relationship:{resource:f.from}}});
+    const resumed=await runHost(f);
+    await expect(resumed.operation).resolves.toBe(0);
+    expect(resumed.failures).toEqual([]);
+    expect(resumed.snapshots.map(s=>s.candidate.pack.resources.find(r=>r.id===f.from)!.relationships.length)).toEqual([1,2]);
+    const state=await resumeState(f);
+    expect(state.status).toBe("ready");
+    if(state.status==='ready') expect(state.value.pending_read_relationship).toBeUndefined();
+  },30_000);
+
   it.each([false, true])("persists each accepted exact link before rebuilding the model catalog (renamed=%s)", async renamed => {
     const f = await fixture(renamed);
     const run = await runHost(f);

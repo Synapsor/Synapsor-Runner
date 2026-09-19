@@ -23,6 +23,21 @@ const binding: BoundaryAuthoringResumeBinding = {
 };
 
 describe("Boundary authoring resume state", () => {
+  it("persists one unfinished Read relationship across recheck and clears it only explicitly or for another job", async () => {
+    const root=await fs.mkdtemp(path.join(os.tmpdir(),'read-relationship-resume-'));
+    const input={binding,stage:'read_mapping' as const,jobIntent:'Read the related reference.',provider:'openai' as const,model:'test'};
+    try {
+      const first=buildBoundaryAuthoringResumeState({...input,pendingReadRelationship:{resource:'work.items'}});
+      await writeBoundaryAuthoringResumeState(root,first);
+      expect(await readBoundaryAuthoringResumeState(root,binding)).toEqual({status:'ready',value:first});
+      const rechecked=buildBoundaryAuthoringResumeState({...input,previous:first});
+      expect(rechecked.pending_read_relationship).toEqual(first.pending_read_relationship);
+      expect(revalidateBoundaryAuthoringResume(first,{...binding,schema_fingerprint:canonicalJsonDigest('new inspected metadata')}).pending_read_relationship).toEqual(first.pending_read_relationship);
+      expect(buildBoundaryAuthoringResumeState({...input,previous:first,pendingReadRelationship:null}).pending_read_relationship).toBeUndefined();
+      expect(buildBoundaryAuthoringResumeState({...input,previous:first,jobIntent:'A distinct job.'}).pending_read_relationship).toBeUndefined();
+      for(const resource of ['', 'x'.repeat(257), 'a\nb']) expect(()=>buildBoundaryAuthoringResumeState({...input,pendingReadRelationship:{resource}})).toThrow('BOUNDARY_AUTHORING_RESUME_INVALID');
+    } finally {await fs.rm(root,{recursive:true,force:true});}
+  });
   it("does not transfer generated-repair provenance into a genuine owner edit with the same words", () => {
     const request = { outcome: "work.finish", instruction: "Review the existing effect.", baseline_digest: canonicalJsonDigest("exact draft") };
     const generated = { ...request, coverage_repair: { source_digest: canonicalJsonDigest("source"),

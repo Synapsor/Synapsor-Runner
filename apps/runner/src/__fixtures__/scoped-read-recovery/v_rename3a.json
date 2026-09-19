@@ -1,0 +1,1061 @@
+{
+ "engine": "postgres",
+ "server_version": "PostgreSQL 17.10 (Debian 17.10-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+ "current_user": "refunds_trial_reader",
+ "role_posture": {
+  "verified": true,
+  "superuser": false,
+  "bypass_rls": false,
+  "read_only": true,
+  "writable_relations": [],
+  "owned_relations": [],
+  "reasons": []
+ },
+ "inspected_at": "2026-09-19T15:09:59.548Z",
+ "schemas": [
+  "public",
+  "refunds",
+  "returns_ops",
+  "v_comp3_norls",
+  "v_comp3_rls",
+  "v_full",
+  "v_itemuniq",
+  "v_itemuniq2",
+  "v_mixed3_p",
+  "v_mixed3_t",
+  "v_nocust",
+  "v_noinspect",
+  "v_noitems",
+  "v_nonull",
+  "v_noquantity",
+  "v_plain2",
+  "v_plain3",
+  "v_plain4",
+  "v_rename3",
+  "v_rename3a",
+  "v_rename3b",
+  "v_scope2_norls",
+  "v_scope2_rls",
+  "v_scope3_norls",
+  "v_scope4_norls",
+  "v_simple3_rls",
+  "v_star"
+ ],
+ "tables": [
+  {
+   "schema": "v_rename3a",
+   "name": "depot",
+   "type": "table",
+   "writable": true,
+   "columns": [
+    {
+     "name": "depot_state",
+     "data_type": "text",
+     "enum_values": [
+      "open",
+      "done"
+     ],
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 1,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "revision_no",
+     "data_type": "integer",
+     "nullable": false,
+     "default": "1",
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 2,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "tenant_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 3,
+     "suggestions": {
+      "tenant": true,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": true,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "principal_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 4,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "depot_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 5,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": true,
+      "large_or_binary": false
+     }
+    }
+   ],
+   "primary_key": [
+    "depot_id"
+   ],
+   "unique_constraints": [
+    {
+     "name": "depot_depot_id_tenant_id_principal_id_key",
+     "columns": [
+      "depot_id",
+      "tenant_id",
+      "principal_id"
+     ]
+    }
+   ],
+   "check_constraints": [
+    {
+     "name": "depot_depot_state_check",
+     "definition": "CHECK (depot_state = ANY (ARRAY['open'::text, 'done'::text]))"
+    },
+    {
+     "name": "depot_revision_no_check",
+     "definition": "CHECK (revision_no > 0)"
+    }
+   ],
+   "foreign_keys": [],
+   "referenced_by": [
+    {
+     "name": "route_depot_id_fkey",
+     "schema": "v_rename3a",
+     "table": "route",
+     "columns": [
+      "depot_id"
+     ],
+     "referenced_columns": [
+      "depot_id"
+     ],
+     "delete_rule": "NO ACTION"
+    }
+   ],
+   "write_triggers": [],
+   "row_level_security": false,
+   "row_level_security_policies": [],
+   "role_posture": {
+    "owner": "postgres",
+    "current_role_is_owner": false,
+    "current_role_can_assume_owner": false,
+    "privileges": {
+     "select": true,
+     "insert": false,
+     "update": false,
+     "delete": false,
+     "truncate": false,
+     "references": false,
+     "trigger": false
+    },
+    "row_security_forced": false,
+    "row_security_effective_for_current_role": false
+   },
+   "indexes": [
+    {
+     "name": "depot_depot_id_tenant_id_principal_id_key",
+     "definition": "CREATE UNIQUE INDEX depot_depot_id_tenant_id_principal_id_key ON v_rename3a.depot USING btree (depot_id, tenant_id, principal_id)",
+     "catalog_key_columns": "{depot_id,tenant_id,principal_id}",
+     "catalog_leading_column": "depot_id",
+     "catalog_usable": true,
+     "catalog_partial": false
+    },
+    {
+     "name": "depot_pkey",
+     "definition": "CREATE UNIQUE INDEX depot_pkey ON v_rename3a.depot USING btree (depot_id)",
+     "catalog_key_columns": "{depot_id}",
+     "catalog_leading_column": "depot_id",
+     "catalog_usable": true,
+     "catalog_partial": false
+    }
+   ],
+   "suggestions": {
+    "tenant_columns": [
+     "tenant_id"
+    ],
+    "conflict_columns": [],
+    "sensitive_columns": [],
+    "default_visible_columns": [
+     "depot_state",
+     "revision_no",
+     "tenant_id",
+     "principal_id",
+     "depot_id"
+    ]
+   }
+  },
+  {
+   "schema": "v_rename3a",
+   "name": "route",
+   "type": "table",
+   "writable": true,
+   "columns": [
+    {
+     "name": "depot_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 1,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "principal_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 2,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "route_state",
+     "data_type": "text",
+     "enum_values": [
+      "open",
+      "done"
+     ],
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 3,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "route_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 4,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": true,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "tenant_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 5,
+     "suggestions": {
+      "tenant": true,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": true,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "revision_no",
+     "data_type": "integer",
+     "nullable": false,
+     "default": "1",
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 6,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    }
+   ],
+   "primary_key": [
+    "route_id"
+   ],
+   "unique_constraints": [
+    {
+     "name": "route_route_id_tenant_id_principal_id_key",
+     "columns": [
+      "route_id",
+      "tenant_id",
+      "principal_id"
+     ]
+    }
+   ],
+   "check_constraints": [
+    {
+     "name": "route_revision_no_check",
+     "definition": "CHECK (revision_no > 0)"
+    },
+    {
+     "name": "route_route_state_check",
+     "definition": "CHECK (route_state = ANY (ARRAY['open'::text, 'done'::text]))"
+    }
+   ],
+   "foreign_keys": [
+    {
+     "name": "route_depot_id_fkey",
+     "columns": [
+      "depot_id"
+     ],
+     "referenced_schema": "v_rename3a",
+     "referenced_table": "depot",
+     "referenced_columns": [
+      "depot_id"
+     ],
+     "delete_rule": "NO ACTION"
+    }
+   ],
+   "referenced_by": [
+    {
+     "name": "stop_route_id_fkey",
+     "schema": "v_rename3a",
+     "table": "stop",
+     "columns": [
+      "route_id"
+     ],
+     "referenced_columns": [
+      "route_id"
+     ],
+     "delete_rule": "NO ACTION"
+    }
+   ],
+   "write_triggers": [],
+   "row_level_security": false,
+   "row_level_security_policies": [],
+   "role_posture": {
+    "owner": "postgres",
+    "current_role_is_owner": false,
+    "current_role_can_assume_owner": false,
+    "privileges": {
+     "select": true,
+     "insert": false,
+     "update": false,
+     "delete": false,
+     "truncate": false,
+     "references": false,
+     "trigger": false
+    },
+    "row_security_forced": false,
+    "row_security_effective_for_current_role": false
+   },
+   "indexes": [
+    {
+     "name": "route_pkey",
+     "definition": "CREATE UNIQUE INDEX route_pkey ON v_rename3a.route USING btree (route_id)",
+     "catalog_key_columns": "{route_id}",
+     "catalog_leading_column": "route_id",
+     "catalog_usable": true,
+     "catalog_partial": false
+    },
+    {
+     "name": "route_route_id_tenant_id_principal_id_key",
+     "definition": "CREATE UNIQUE INDEX route_route_id_tenant_id_principal_id_key ON v_rename3a.route USING btree (route_id, tenant_id, principal_id)",
+     "catalog_key_columns": "{route_id,tenant_id,principal_id}",
+     "catalog_leading_column": "route_id",
+     "catalog_usable": true,
+     "catalog_partial": false
+    }
+   ],
+   "suggestions": {
+    "tenant_columns": [
+     "tenant_id"
+    ],
+    "conflict_columns": [],
+    "sensitive_columns": [],
+    "default_visible_columns": [
+     "depot_id",
+     "principal_id",
+     "route_state",
+     "route_id",
+     "tenant_id",
+     "revision_no"
+    ]
+   }
+  },
+  {
+   "schema": "v_rename3a",
+   "name": "scan",
+   "type": "table",
+   "writable": true,
+   "columns": [
+    {
+     "name": "revision_no",
+     "data_type": "integer",
+     "nullable": false,
+     "default": "1",
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 1,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "stop_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 2,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "scan_state",
+     "data_type": "text",
+     "enum_values": [
+      "open",
+      "done"
+     ],
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 3,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "tenant_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 4,
+     "suggestions": {
+      "tenant": true,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": true,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "principal_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 5,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "scan_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 6,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": true,
+      "large_or_binary": false
+     }
+    }
+   ],
+   "primary_key": [
+    "scan_id"
+   ],
+   "unique_constraints": [
+    {
+     "name": "scan_scan_id_tenant_id_principal_id_key",
+     "columns": [
+      "scan_id",
+      "tenant_id",
+      "principal_id"
+     ]
+    }
+   ],
+   "check_constraints": [
+    {
+     "name": "scan_revision_no_check",
+     "definition": "CHECK (revision_no > 0)"
+    },
+    {
+     "name": "scan_scan_state_check",
+     "definition": "CHECK (scan_state = ANY (ARRAY['open'::text, 'done'::text]))"
+    }
+   ],
+   "foreign_keys": [
+    {
+     "name": "scan_stop_id_fkey",
+     "columns": [
+      "stop_id"
+     ],
+     "referenced_schema": "v_rename3a",
+     "referenced_table": "stop",
+     "referenced_columns": [
+      "stop_id"
+     ],
+     "delete_rule": "NO ACTION"
+    }
+   ],
+   "referenced_by": [],
+   "write_triggers": [],
+   "row_level_security": false,
+   "row_level_security_policies": [],
+   "role_posture": {
+    "owner": "postgres",
+    "current_role_is_owner": false,
+    "current_role_can_assume_owner": false,
+    "privileges": {
+     "select": true,
+     "insert": false,
+     "update": false,
+     "delete": false,
+     "truncate": false,
+     "references": false,
+     "trigger": false
+    },
+    "row_security_forced": false,
+    "row_security_effective_for_current_role": false
+   },
+   "indexes": [
+    {
+     "name": "scan_pkey",
+     "definition": "CREATE UNIQUE INDEX scan_pkey ON v_rename3a.scan USING btree (scan_id)",
+     "catalog_key_columns": "{scan_id}",
+     "catalog_leading_column": "scan_id",
+     "catalog_usable": true,
+     "catalog_partial": false
+    },
+    {
+     "name": "scan_scan_id_tenant_id_principal_id_key",
+     "definition": "CREATE UNIQUE INDEX scan_scan_id_tenant_id_principal_id_key ON v_rename3a.scan USING btree (scan_id, tenant_id, principal_id)",
+     "catalog_key_columns": "{scan_id,tenant_id,principal_id}",
+     "catalog_leading_column": "scan_id",
+     "catalog_usable": true,
+     "catalog_partial": false
+    }
+   ],
+   "suggestions": {
+    "tenant_columns": [
+     "tenant_id"
+    ],
+    "conflict_columns": [],
+    "sensitive_columns": [],
+    "default_visible_columns": [
+     "revision_no",
+     "stop_id",
+     "scan_state",
+     "tenant_id",
+     "principal_id",
+     "scan_id"
+    ]
+   }
+  },
+  {
+   "schema": "v_rename3a",
+   "name": "stop",
+   "type": "table",
+   "writable": true,
+   "columns": [
+    {
+     "name": "tenant_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 1,
+     "suggestions": {
+      "tenant": true,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": true,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "stop_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 2,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": true,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "route_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 3,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "revision_no",
+     "data_type": "integer",
+     "nullable": false,
+     "default": "1",
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 4,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "principal_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 5,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "stop_state",
+     "data_type": "text",
+     "enum_values": [
+      "open",
+      "done"
+     ],
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 6,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    }
+   ],
+   "primary_key": [
+    "stop_id"
+   ],
+   "unique_constraints": [
+    {
+     "name": "stop_stop_id_tenant_id_principal_id_key",
+     "columns": [
+      "stop_id",
+      "tenant_id",
+      "principal_id"
+     ]
+    }
+   ],
+   "check_constraints": [
+    {
+     "name": "stop_revision_no_check",
+     "definition": "CHECK (revision_no > 0)"
+    },
+    {
+     "name": "stop_stop_state_check",
+     "definition": "CHECK (stop_state = ANY (ARRAY['open'::text, 'done'::text]))"
+    }
+   ],
+   "foreign_keys": [
+    {
+     "name": "stop_route_id_fkey",
+     "columns": [
+      "route_id"
+     ],
+     "referenced_schema": "v_rename3a",
+     "referenced_table": "route",
+     "referenced_columns": [
+      "route_id"
+     ],
+     "delete_rule": "NO ACTION"
+    }
+   ],
+   "referenced_by": [
+    {
+     "name": "scan_stop_id_fkey",
+     "schema": "v_rename3a",
+     "table": "scan",
+     "columns": [
+      "stop_id"
+     ],
+     "referenced_columns": [
+      "stop_id"
+     ],
+     "delete_rule": "NO ACTION"
+    }
+   ],
+   "write_triggers": [],
+   "row_level_security": false,
+   "row_level_security_policies": [],
+   "role_posture": {
+    "owner": "postgres",
+    "current_role_is_owner": false,
+    "current_role_can_assume_owner": false,
+    "privileges": {
+     "select": true,
+     "insert": false,
+     "update": false,
+     "delete": false,
+     "truncate": false,
+     "references": false,
+     "trigger": false
+    },
+    "row_security_forced": false,
+    "row_security_effective_for_current_role": false
+   },
+   "indexes": [
+    {
+     "name": "stop_pkey",
+     "definition": "CREATE UNIQUE INDEX stop_pkey ON v_rename3a.stop USING btree (stop_id)",
+     "catalog_key_columns": "{stop_id}",
+     "catalog_leading_column": "stop_id",
+     "catalog_usable": true,
+     "catalog_partial": false
+    },
+    {
+     "name": "stop_stop_id_tenant_id_principal_id_key",
+     "definition": "CREATE UNIQUE INDEX stop_stop_id_tenant_id_principal_id_key ON v_rename3a.stop USING btree (stop_id, tenant_id, principal_id)",
+     "catalog_key_columns": "{stop_id,tenant_id,principal_id}",
+     "catalog_leading_column": "stop_id",
+     "catalog_usable": true,
+     "catalog_partial": false
+    }
+   ],
+   "suggestions": {
+    "tenant_columns": [
+     "tenant_id"
+    ],
+    "conflict_columns": [],
+    "sensitive_columns": [],
+    "default_visible_columns": [
+     "tenant_id",
+     "stop_id",
+     "route_id",
+     "revision_no",
+     "principal_id",
+     "stop_state"
+    ]
+   }
+  }
+ ],
+ "warnings": [
+  "Inspection reads metadata only. Column classifications are suggestions, not a complete data-classification system."
+ ]
+}

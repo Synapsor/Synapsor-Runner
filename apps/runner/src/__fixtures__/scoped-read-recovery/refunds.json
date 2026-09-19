@@ -1,0 +1,1471 @@
+{
+ "engine": "postgres",
+ "server_version": "PostgreSQL 17.10 (Debian 17.10-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+ "current_user": "refunds_trial_reader",
+ "role_posture": {
+  "verified": true,
+  "superuser": false,
+  "bypass_rls": false,
+  "read_only": true,
+  "writable_relations": [],
+  "owned_relations": [],
+  "reasons": []
+ },
+ "inspected_at": "2026-09-19T15:09:59.141Z",
+ "schemas": [
+  "public",
+  "refunds",
+  "returns_ops",
+  "v_comp3_norls",
+  "v_comp3_rls",
+  "v_full",
+  "v_itemuniq",
+  "v_itemuniq2",
+  "v_mixed3_p",
+  "v_mixed3_t",
+  "v_nocust",
+  "v_noinspect",
+  "v_noitems",
+  "v_nonull",
+  "v_noquantity",
+  "v_plain2",
+  "v_plain3",
+  "v_plain4",
+  "v_rename3",
+  "v_rename3a",
+  "v_rename3b",
+  "v_scope2_norls",
+  "v_scope2_rls",
+  "v_scope3_norls",
+  "v_scope4_norls",
+  "v_simple3_rls",
+  "v_star"
+ ],
+ "tables": [
+  {
+   "schema": "refunds",
+   "name": "customers",
+   "type": "table",
+   "writable": true,
+   "columns": [
+    {
+     "name": "customer_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 1,
+     "suggestions": {
+      "tenant": true,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": true,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "tenant_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 2,
+     "suggestions": {
+      "tenant": true,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": true,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "principal_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 3,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "customer_ref",
+     "data_type": "text",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 4,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "loyalty_tier",
+     "data_type": "text",
+     "enum_values": [
+      "standard",
+      "gold",
+      "platinum"
+     ],
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 5,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "fraud_flag",
+     "data_type": "boolean",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 6,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "internal_risk_note",
+     "data_type": "text",
+     "nullable": true,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 7,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": true,
+      "sensitivity": {
+       "state": "high_confidence_sensitive",
+       "reason_codes": [
+        "private_or_risk_information"
+       ],
+       "reasons": [
+        "The field name or description indicates private notes, internal risk data, or a risk score."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "version",
+     "data_type": "integer",
+     "nullable": false,
+     "default": "1",
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 8,
+     "suggestions": {
+      "tenant": false,
+      "conflict": true,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    }
+   ],
+   "primary_key": [
+    "customer_id"
+   ],
+   "unique_constraints": [
+    {
+     "name": "customers_customer_id_tenant_id_principal_id_key",
+     "columns": [
+      "customer_id",
+      "tenant_id",
+      "principal_id"
+     ]
+    },
+    {
+     "name": "customers_customer_ref_key",
+     "columns": [
+      "customer_ref"
+     ]
+    }
+   ],
+   "check_constraints": [
+    {
+     "name": "customers_loyalty_tier_check",
+     "definition": "CHECK (loyalty_tier = ANY (ARRAY['standard'::text, 'gold'::text, 'platinum'::text]))"
+    },
+    {
+     "name": "customers_version_check",
+     "definition": "CHECK (version > 0)"
+    }
+   ],
+   "foreign_keys": [],
+   "referenced_by": [],
+   "write_triggers": [],
+   "row_level_security": true,
+   "row_level_security_policies": [
+    {
+     "name": "customers_trusted_scope",
+     "command": "ALL",
+     "permissive": true,
+     "roles": [
+      "public"
+     ],
+     "using_expression": "((tenant_id = (current_setting('app.tenant_id'::text, true))::uuid) AND (principal_id = (current_setting('app.principal_id'::text, true))::uuid))",
+     "check_expression": "((tenant_id = (current_setting('app.tenant_id'::text, true))::uuid) AND (principal_id = (current_setting('app.principal_id'::text, true))::uuid))"
+    }
+   ],
+   "role_posture": {
+    "owner": "postgres",
+    "current_role_is_owner": false,
+    "current_role_can_assume_owner": false,
+    "privileges": {
+     "select": true,
+     "insert": false,
+     "update": false,
+     "delete": false,
+     "truncate": false,
+     "references": false,
+     "trigger": false
+    },
+    "row_security_forced": true,
+    "row_security_effective_for_current_role": true,
+    "row_security_applicable_policies": [
+     "customers_trusted_scope"
+    ]
+   },
+   "indexes": [
+    {
+     "name": "customers_customer_id_tenant_id_principal_id_key",
+     "definition": "CREATE UNIQUE INDEX customers_customer_id_tenant_id_principal_id_key ON refunds.customers USING btree (customer_id, tenant_id, principal_id)",
+     "catalog_key_columns": "{customer_id,tenant_id,principal_id}",
+     "catalog_leading_column": "customer_id",
+     "catalog_usable": true,
+     "catalog_partial": false
+    },
+    {
+     "name": "customers_customer_ref_key",
+     "definition": "CREATE UNIQUE INDEX customers_customer_ref_key ON refunds.customers USING btree (customer_ref)",
+     "catalog_key_columns": "{customer_ref}",
+     "catalog_leading_column": "customer_ref",
+     "catalog_usable": true,
+     "catalog_partial": false
+    },
+    {
+     "name": "customers_pkey",
+     "definition": "CREATE UNIQUE INDEX customers_pkey ON refunds.customers USING btree (customer_id)",
+     "catalog_key_columns": "{customer_id}",
+     "catalog_leading_column": "customer_id",
+     "catalog_usable": true,
+     "catalog_partial": false
+    }
+   ],
+   "suggestions": {
+    "tenant_columns": [
+     "customer_id",
+     "tenant_id"
+    ],
+    "conflict_columns": [
+     "version"
+    ],
+    "sensitive_columns": [
+     "internal_risk_note"
+    ],
+    "default_visible_columns": [
+     "customer_id",
+     "tenant_id",
+     "principal_id",
+     "customer_ref",
+     "loyalty_tier",
+     "fraud_flag",
+     "version"
+    ]
+   }
+  },
+  {
+   "schema": "refunds",
+   "name": "orders",
+   "type": "table",
+   "writable": true,
+   "columns": [
+    {
+     "name": "order_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 1,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": true,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "tenant_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 2,
+     "suggestions": {
+      "tenant": true,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": true,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "principal_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 3,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "customer_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 4,
+     "suggestions": {
+      "tenant": true,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": true,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "order_ref",
+     "data_type": "text",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 5,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "order_status",
+     "data_type": "text",
+     "enum_values": [
+      "placed",
+      "shipped",
+      "delivered",
+      "cancelled"
+     ],
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 6,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "days_since_delivery",
+     "data_type": "integer",
+     "nullable": true,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 7,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "total_cents",
+     "data_type": "integer",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 8,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "version",
+     "data_type": "integer",
+     "nullable": false,
+     "default": "1",
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 9,
+     "suggestions": {
+      "tenant": false,
+      "conflict": true,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    }
+   ],
+   "primary_key": [
+    "order_id"
+   ],
+   "unique_constraints": [
+    {
+     "name": "orders_order_id_tenant_id_principal_id_key",
+     "columns": [
+      "order_id",
+      "tenant_id",
+      "principal_id"
+     ]
+    },
+    {
+     "name": "orders_order_ref_key",
+     "columns": [
+      "order_ref"
+     ]
+    }
+   ],
+   "check_constraints": [
+    {
+     "name": "orders_order_status_check",
+     "definition": "CHECK (order_status = ANY (ARRAY['placed'::text, 'shipped'::text, 'delivered'::text, 'cancelled'::text]))"
+    },
+    {
+     "name": "orders_version_check",
+     "definition": "CHECK (version > 0)"
+    }
+   ],
+   "foreign_keys": [],
+   "referenced_by": [
+    {
+     "name": "refund_requests_order_id_tenant_id_principal_id_fkey",
+     "schema": "refunds",
+     "table": "refund_requests",
+     "columns": [
+      "order_id",
+      "tenant_id",
+      "principal_id"
+     ],
+     "referenced_columns": [
+      "order_id",
+      "tenant_id",
+      "principal_id"
+     ],
+     "delete_rule": "NO ACTION"
+    }
+   ],
+   "write_triggers": [],
+   "row_level_security": true,
+   "row_level_security_policies": [
+    {
+     "name": "orders_trusted_scope",
+     "command": "ALL",
+     "permissive": true,
+     "roles": [
+      "public"
+     ],
+     "using_expression": "((tenant_id = (current_setting('app.tenant_id'::text, true))::uuid) AND (principal_id = (current_setting('app.principal_id'::text, true))::uuid))",
+     "check_expression": "((tenant_id = (current_setting('app.tenant_id'::text, true))::uuid) AND (principal_id = (current_setting('app.principal_id'::text, true))::uuid))"
+    }
+   ],
+   "role_posture": {
+    "owner": "postgres",
+    "current_role_is_owner": false,
+    "current_role_can_assume_owner": false,
+    "privileges": {
+     "select": true,
+     "insert": false,
+     "update": false,
+     "delete": false,
+     "truncate": false,
+     "references": false,
+     "trigger": false
+    },
+    "row_security_forced": true,
+    "row_security_effective_for_current_role": true,
+    "row_security_applicable_policies": [
+     "orders_trusted_scope"
+    ]
+   },
+   "indexes": [
+    {
+     "name": "orders_order_id_tenant_id_principal_id_key",
+     "definition": "CREATE UNIQUE INDEX orders_order_id_tenant_id_principal_id_key ON refunds.orders USING btree (order_id, tenant_id, principal_id)",
+     "catalog_key_columns": "{order_id,tenant_id,principal_id}",
+     "catalog_leading_column": "order_id",
+     "catalog_usable": true,
+     "catalog_partial": false
+    },
+    {
+     "name": "orders_order_ref_key",
+     "definition": "CREATE UNIQUE INDEX orders_order_ref_key ON refunds.orders USING btree (order_ref)",
+     "catalog_key_columns": "{order_ref}",
+     "catalog_leading_column": "order_ref",
+     "catalog_usable": true,
+     "catalog_partial": false
+    },
+    {
+     "name": "orders_pkey",
+     "definition": "CREATE UNIQUE INDEX orders_pkey ON refunds.orders USING btree (order_id)",
+     "catalog_key_columns": "{order_id}",
+     "catalog_leading_column": "order_id",
+     "catalog_usable": true,
+     "catalog_partial": false
+    }
+   ],
+   "suggestions": {
+    "tenant_columns": [
+     "tenant_id",
+     "customer_id"
+    ],
+    "conflict_columns": [
+     "version"
+    ],
+    "sensitive_columns": [],
+    "default_visible_columns": [
+     "order_id",
+     "tenant_id",
+     "principal_id",
+     "customer_id",
+     "order_ref",
+     "order_status",
+     "days_since_delivery",
+     "total_cents",
+     "version"
+    ]
+   }
+  },
+  {
+   "schema": "refunds",
+   "name": "refund_items",
+   "type": "table",
+   "writable": true,
+   "columns": [
+    {
+     "name": "item_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 1,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": true,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "tenant_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 2,
+     "suggestions": {
+      "tenant": true,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": true,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "principal_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 3,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "refund_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 4,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "sku",
+     "data_type": "text",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 5,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "quantity",
+     "data_type": "integer",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 6,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "inspection_result",
+     "data_type": "text",
+     "enum_values": [
+      "pending",
+      "passed",
+      "failed"
+     ],
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 7,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "version",
+     "data_type": "integer",
+     "nullable": false,
+     "default": "1",
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 8,
+     "suggestions": {
+      "tenant": false,
+      "conflict": true,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    }
+   ],
+   "primary_key": [
+    "item_id"
+   ],
+   "unique_constraints": [],
+   "check_constraints": [
+    {
+     "name": "refund_items_inspection_result_check",
+     "definition": "CHECK (inspection_result = ANY (ARRAY['pending'::text, 'passed'::text, 'failed'::text]))"
+    },
+    {
+     "name": "refund_items_version_check",
+     "definition": "CHECK (version > 0)"
+    }
+   ],
+   "foreign_keys": [
+    {
+     "name": "refund_items_refund_id_tenant_id_principal_id_fkey",
+     "columns": [
+      "refund_id",
+      "tenant_id",
+      "principal_id"
+     ],
+     "referenced_schema": "refunds",
+     "referenced_table": "refund_requests",
+     "referenced_columns": [
+      "refund_id",
+      "tenant_id",
+      "principal_id"
+     ],
+     "delete_rule": "NO ACTION"
+    }
+   ],
+   "referenced_by": [],
+   "write_triggers": [],
+   "row_level_security": true,
+   "row_level_security_policies": [
+    {
+     "name": "refund_items_trusted_scope",
+     "command": "ALL",
+     "permissive": true,
+     "roles": [
+      "public"
+     ],
+     "using_expression": "((tenant_id = (current_setting('app.tenant_id'::text, true))::uuid) AND (principal_id = (current_setting('app.principal_id'::text, true))::uuid))",
+     "check_expression": "((tenant_id = (current_setting('app.tenant_id'::text, true))::uuid) AND (principal_id = (current_setting('app.principal_id'::text, true))::uuid))"
+    }
+   ],
+   "role_posture": {
+    "owner": "postgres",
+    "current_role_is_owner": false,
+    "current_role_can_assume_owner": false,
+    "privileges": {
+     "select": true,
+     "insert": false,
+     "update": false,
+     "delete": false,
+     "truncate": false,
+     "references": false,
+     "trigger": false
+    },
+    "row_security_forced": true,
+    "row_security_effective_for_current_role": true,
+    "row_security_applicable_policies": [
+     "refund_items_trusted_scope"
+    ]
+   },
+   "indexes": [
+    {
+     "name": "refund_items_pkey",
+     "definition": "CREATE UNIQUE INDEX refund_items_pkey ON refunds.refund_items USING btree (item_id)",
+     "catalog_key_columns": "{item_id}",
+     "catalog_leading_column": "item_id",
+     "catalog_usable": true,
+     "catalog_partial": false
+    }
+   ],
+   "suggestions": {
+    "tenant_columns": [
+     "tenant_id"
+    ],
+    "conflict_columns": [
+     "version"
+    ],
+    "sensitive_columns": [],
+    "default_visible_columns": [
+     "item_id",
+     "tenant_id",
+     "principal_id",
+     "refund_id",
+     "sku",
+     "quantity",
+     "inspection_result",
+     "version"
+    ]
+   }
+  },
+  {
+   "schema": "refunds",
+   "name": "refund_requests",
+   "type": "table",
+   "writable": true,
+   "columns": [
+    {
+     "name": "refund_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 1,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": true,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "tenant_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 2,
+     "suggestions": {
+      "tenant": true,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": true,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "principal_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 3,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "order_id",
+     "data_type": "uuid",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 4,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "refund_ref",
+     "data_type": "text",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 5,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "request_state",
+     "data_type": "text",
+     "enum_values": [
+      "open",
+      "approved",
+      "rejected"
+     ],
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 6,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "amount_cents",
+     "data_type": "integer",
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 7,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "reason_code",
+     "data_type": "text",
+     "enum_values": [
+      "damaged",
+      "wrong_item",
+      "not_as_described",
+      "changed_mind"
+     ],
+     "nullable": false,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 8,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "customer_message",
+     "data_type": "text",
+     "nullable": true,
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 9,
+     "suggestions": {
+      "tenant": false,
+      "conflict": false,
+      "sensitive": true,
+      "sensitivity": {
+       "state": "unresolved_free_text",
+       "reason_codes": [
+        "unconstrained_free_text_name"
+       ],
+       "reasons": [
+        "The field name indicates unconstrained notes, comments, descriptions, or payload content."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    },
+    {
+     "name": "version",
+     "data_type": "integer",
+     "nullable": false,
+     "default": "1",
+     "generated": false,
+     "identity": false,
+     "ordinal_position": 10,
+     "suggestions": {
+      "tenant": false,
+      "conflict": true,
+      "sensitive": false,
+      "sensitivity": {
+       "state": "structurally_low_risk",
+       "reason_codes": [
+        "no_sensitive_structural_signal"
+       ],
+       "reasons": [
+        "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+       ],
+       "evidence_source": "database"
+      },
+      "immutable": false,
+      "large_or_binary": false
+     }
+    }
+   ],
+   "primary_key": [
+    "refund_id"
+   ],
+   "unique_constraints": [
+    {
+     "name": "refund_requests_refund_id_tenant_id_principal_id_key",
+     "columns": [
+      "refund_id",
+      "tenant_id",
+      "principal_id"
+     ]
+    },
+    {
+     "name": "refund_requests_refund_ref_key",
+     "columns": [
+      "refund_ref"
+     ]
+    }
+   ],
+   "check_constraints": [
+    {
+     "name": "refund_requests_reason_code_check",
+     "definition": "CHECK (reason_code = ANY (ARRAY['damaged'::text, 'wrong_item'::text, 'not_as_described'::text, 'changed_mind'::text]))"
+    },
+    {
+     "name": "refund_requests_request_state_check",
+     "definition": "CHECK (request_state = ANY (ARRAY['open'::text, 'approved'::text, 'rejected'::text]))"
+    },
+    {
+     "name": "refund_requests_version_check",
+     "definition": "CHECK (version > 0)"
+    }
+   ],
+   "foreign_keys": [
+    {
+     "name": "refund_requests_order_id_tenant_id_principal_id_fkey",
+     "columns": [
+      "order_id",
+      "tenant_id",
+      "principal_id"
+     ],
+     "referenced_schema": "refunds",
+     "referenced_table": "orders",
+     "referenced_columns": [
+      "order_id",
+      "tenant_id",
+      "principal_id"
+     ],
+     "delete_rule": "NO ACTION"
+    }
+   ],
+   "referenced_by": [
+    {
+     "name": "refund_items_refund_id_tenant_id_principal_id_fkey",
+     "schema": "refunds",
+     "table": "refund_items",
+     "columns": [
+      "refund_id",
+      "tenant_id",
+      "principal_id"
+     ],
+     "referenced_columns": [
+      "refund_id",
+      "tenant_id",
+      "principal_id"
+     ],
+     "delete_rule": "NO ACTION"
+    }
+   ],
+   "write_triggers": [],
+   "row_level_security": true,
+   "row_level_security_policies": [
+    {
+     "name": "refund_requests_trusted_scope",
+     "command": "ALL",
+     "permissive": true,
+     "roles": [
+      "public"
+     ],
+     "using_expression": "((tenant_id = (current_setting('app.tenant_id'::text, true))::uuid) AND (principal_id = (current_setting('app.principal_id'::text, true))::uuid))",
+     "check_expression": "((tenant_id = (current_setting('app.tenant_id'::text, true))::uuid) AND (principal_id = (current_setting('app.principal_id'::text, true))::uuid))"
+    }
+   ],
+   "role_posture": {
+    "owner": "postgres",
+    "current_role_is_owner": false,
+    "current_role_can_assume_owner": false,
+    "privileges": {
+     "select": true,
+     "insert": false,
+     "update": false,
+     "delete": false,
+     "truncate": false,
+     "references": false,
+     "trigger": false
+    },
+    "row_security_forced": true,
+    "row_security_effective_for_current_role": true,
+    "row_security_applicable_policies": [
+     "refund_requests_trusted_scope"
+    ]
+   },
+   "indexes": [
+    {
+     "name": "refund_requests_pkey",
+     "definition": "CREATE UNIQUE INDEX refund_requests_pkey ON refunds.refund_requests USING btree (refund_id)",
+     "catalog_key_columns": "{refund_id}",
+     "catalog_leading_column": "refund_id",
+     "catalog_usable": true,
+     "catalog_partial": false
+    },
+    {
+     "name": "refund_requests_refund_id_tenant_id_principal_id_key",
+     "definition": "CREATE UNIQUE INDEX refund_requests_refund_id_tenant_id_principal_id_key ON refunds.refund_requests USING btree (refund_id, tenant_id, principal_id)",
+     "catalog_key_columns": "{refund_id,tenant_id,principal_id}",
+     "catalog_leading_column": "refund_id",
+     "catalog_usable": true,
+     "catalog_partial": false
+    },
+    {
+     "name": "refund_requests_refund_ref_key",
+     "definition": "CREATE UNIQUE INDEX refund_requests_refund_ref_key ON refunds.refund_requests USING btree (refund_ref)",
+     "catalog_key_columns": "{refund_ref}",
+     "catalog_leading_column": "refund_ref",
+     "catalog_usable": true,
+     "catalog_partial": false
+    }
+   ],
+   "suggestions": {
+    "tenant_columns": [
+     "tenant_id"
+    ],
+    "conflict_columns": [
+     "version"
+    ],
+    "sensitive_columns": [
+     "customer_message"
+    ],
+    "default_visible_columns": [
+     "refund_id",
+     "tenant_id",
+     "principal_id",
+     "order_id",
+     "refund_ref",
+     "request_state",
+     "amount_cents",
+     "reason_code",
+     "version"
+    ]
+   }
+  }
+ ],
+ "warnings": [
+  "Inspection reads metadata only. Column classifications are suggestions, not a complete data-classification system."
+ ]
+}
