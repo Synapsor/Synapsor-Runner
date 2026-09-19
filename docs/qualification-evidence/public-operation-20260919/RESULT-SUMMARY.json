@@ -1,0 +1,303 @@
+{
+  "artifact": {
+    "frozen_at": "2026-09-19T19:34:22.431Z",
+    "purpose": "disabled removal confirmation, exact four-tool schemas and shared Action edit entry",
+    "cases": [
+      "known refunds removal; supported software discovery and disabled editing; no Action or execution activation"
+    ],
+    "product_commit": "097c446b88a2c908d511b75cfa278b65feebe2de",
+    "test_commit": "097c446b88a2c908d511b75cfa278b65feebe2de",
+    "report_commit": "recorded separately after verification",
+    "source_commit": "e0210e0cd2636460220b256b1a94d94daf56cc0c",
+    "source_status": "?? .claude/",
+    "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/public-operation-3eb09c4-20260919/frozen/installed",
+    "installed_tree_sha256": "23c6ea7b3f128da6d0022efdb2b1ba70650794f1ec42b71086729282dde26fd7",
+    "runner_version": "1.8.0",
+    "spec_version": "1.11.0",
+    "package_lock_sha256": "b9455cdf815d904db14ee206c34a5e2b355f4e3e44f6267d7363a2ad27d44c46",
+    "tarballs": [
+      {
+        "name": "synapsor-runner-1.8.0.tgz",
+        "sha256": "b3668ab29aec522f199eb47bdb7e8d9a7fb9d6367fc664dfdea40dc760a8bb9b"
+      },
+      {
+        "name": "synapsor-spec-1.11.0.tgz",
+        "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+      }
+    ]
+  },
+  "state": {
+    "removal-final": {
+      "all_tables_compared": 42,
+      "changed_tables": [
+        "control_policy_active",
+        "control_policy_deployments",
+        "control_policy_drafts",
+        "control_policy_events",
+        "control_policy_revisions"
+      ],
+      "source_rows": 0,
+      "source_unchanged": true,
+      "config_unchanged": true,
+      "active_authority_unchanged": true,
+      "business_history_unchanged": true,
+      "management_pointer_changes": [
+        {
+          "path": "/0/revision_id",
+          "before": "policy:a0319aad8065871cd91337e1322e37cb3ea7fcd7f9dc0d0a2a02c1c46f846e09",
+          "after": "policy:0b0dfe0c2f43d3a3212f06b2e98ccc1c95033c9bb1ee8c7bf77b3fae9930b52f"
+        }
+      ]
+    },
+    "optional-final": {
+      "all_tables_compared": 42,
+      "changed_tables": [
+        "control_policy_active",
+        "control_policy_deployments",
+        "control_policy_drafts",
+        "control_policy_events",
+        "control_policy_revisions"
+      ],
+      "source_rows": 0,
+      "source_unchanged": true,
+      "config_unchanged": true,
+      "active_authority_unchanged": true,
+      "business_history_unchanged": true,
+      "management_pointer_changes": [
+        {
+          "path": "/0/revision_id",
+          "before": "policy:d83419fb584d53acbf500751266042209da98c4655eab86b206fa5c509263ee2",
+          "after": "policy:e23486ae252716fd3f2b1aed28e9908ef59562865c051d4b1777538a42bb80ae"
+        }
+      ]
+    },
+    "software-final-read": {
+      "all_tables_compared": 42,
+      "changed_tables": [
+        "evidence_bundles",
+        "explore_budget_reservations",
+        "explore_privacy_releases",
+        "observed_subject_references",
+        "query_audit",
+        "sqlite_sequence"
+      ],
+      "source_rows": 504,
+      "source_unchanged": true,
+      "config_unchanged": true,
+      "active_authority_unchanged": true,
+      "business_history_unchanged": true,
+      "management_pointer_changes": []
+    },
+    "tournament-final-catalog": {
+      "all_tables_compared": 42,
+      "changed_tables": [],
+      "source_rows": 104,
+      "source_unchanged": true,
+      "config_unchanged": true,
+      "active_authority_unchanged": true,
+      "business_history_unchanged": true,
+      "management_pointer_changes": []
+    },
+    "runtime-primary": {
+      "all_tables_compared": 42,
+      "changed_tables": [],
+      "source_rows": 504,
+      "source_unchanged": true,
+      "config_unchanged": true,
+      "active_authority_unchanged": true,
+      "business_history_unchanged": true,
+      "management_pointer_changes": []
+    },
+    "runtime-secondary": {
+      "all_tables_compared": 42,
+      "changed_tables": [
+        "evidence_bundles",
+        "explore_budget_reservations",
+        "observed_subject_references",
+        "query_audit",
+        "sqlite_sequence"
+      ],
+      "source_rows": 504,
+      "source_unchanged": true,
+      "config_unchanged": true,
+      "active_authority_unchanged": true,
+      "business_history_unchanged": true,
+      "management_pointer_changes": []
+    },
+    "m4-final-action": {
+      "all_tables_compared": 42,
+      "changed_tables": [
+        "control_policy_deployments",
+        "control_policy_drafts",
+        "control_policy_events",
+        "control_policy_revisions"
+      ],
+      "source_rows": 504,
+      "source_unchanged": true,
+      "config_unchanged": true,
+      "active_authority_unchanged": true,
+      "business_history_unchanged": true,
+      "management_pointer_changes": []
+    },
+    "m4-final-w": {
+      "all_tables_compared": 42,
+      "changed_tables": [
+        "control_policy_deployments",
+        "control_policy_drafts",
+        "control_policy_events",
+        "control_policy_revisions"
+      ],
+      "source_rows": 504,
+      "source_unchanged": true,
+      "config_unchanged": true,
+      "active_authority_unchanged": true,
+      "business_history_unchanged": true,
+      "management_pointer_changes": []
+    }
+  },
+  "edits": {
+    "m4-final-action": {
+      "verdict": "FAILED",
+      "active_revision": "policy:f2df8db27f1d0b98288459d837470a648c0cf9595e6adcf53085a9793fe03849",
+      "disabled_revision": "policy:d028d956aa1d588896b244b05289bdeebbbdd6df5dc3521e79dd45b3cc9a6cc1",
+      "state": "disabled",
+      "rule_diff": [
+        {
+          "path": "/0/verification_boundary/resources/0/fields/1/model_visible",
+          "before": false,
+          "after": true
+        },
+        {
+          "path": "/0/verification_boundary/resources/0/fields/4/model_visible",
+          "before": true,
+          "after": false
+        }
+      ],
+      "atomic_effect_envelope_preserved": true,
+      "draft_retained_on_reopen": true,
+      "requested_threshold": 3,
+      "actual_threshold": 2,
+      "reasons": [
+        "verification model_visible metadata differs from baseline",
+        "requested threshold not changed during recovery"
+      ]
+    },
+    "m4-final-w": {
+      "verdict": "FAILED",
+      "active_revision": "policy:f2df8db27f1d0b98288459d837470a648c0cf9595e6adcf53085a9793fe03849",
+      "disabled_revision": "policy:9557b407c70623a4aae1a3e2577a0b89421287709d764ee253559eae6cbb6563",
+      "state": "disabled",
+      "rule_diff": [
+        {
+          "path": "/0/activated_at",
+          "before": "2026-09-16T03:45:15.744Z",
+          "after": "2026-09-19T19:41:25.526Z"
+        },
+        {
+          "path": "/0/rule/require/expressions/4/right/value",
+          "before": 2,
+          "after": 3
+        },
+        {
+          "path": "/0/verification_boundary/resources/0/fields/1/model_visible",
+          "before": false,
+          "after": true
+        },
+        {
+          "path": "/0/verification_boundary/resources/0/fields/4/model_visible",
+          "before": true,
+          "after": false
+        }
+      ],
+      "atomic_effect_envelope_preserved": true,
+      "draft_retained_on_reopen": true,
+      "requested_threshold": 3,
+      "actual_threshold": 3,
+      "reasons": [
+        "verification model_visible metadata differs from baseline"
+      ]
+    }
+  },
+  "provider": {
+    "reserved_attempts": 15,
+    "complete_captured_responses": 14,
+    "runtime": 6,
+    "authoring_including_refused_payload": 9,
+    "reported_cost_usd": 0.1043993,
+    "no_fallback": true,
+    "new_favorable_restarts": 0
+  },
+  "protocol_budget": {
+    "calls": 33,
+    "limit": 80
+  },
+  "read_oracle": {
+    "exact_own_rows": 29,
+    "other_context_rows_excluded": 87,
+    "aggregate_matches_owner_readback": true,
+    "suppressed_groups": 1,
+    "withheld_cells": 29,
+    "distinct_withheld_tokens": 2,
+    "note": "Legacy active reviewed analysis remains unchanged; these are equality-linkable withheld tokens, NOT a new unlinkable RUNNER ONLY qualification."
+  },
+  "full_suite": {
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "--maxWorkers=4",
+      "--minWorkers=1",
+      "--testTimeout=20000",
+      "--hookTimeout=20000"
+    ],
+    "start": 1789844571.459648,
+    "source_before": "ce4909e66cd0a5133697013b5a59ce1b20232d05e13d731d97158e458fb6a9f4",
+    "credentials": "absent",
+    "umask": "0077",
+    "pid": 471988,
+    "exit": 0,
+    "seconds": 1239.3718597888947,
+    "source_after": "ce4909e66cd0a5133697013b5a59ce1b20232d05e13d731d97158e458fb6a9f4"
+  },
+  "types": {
+    "command": [
+      "corepack",
+      "pnpm",
+      "typecheck"
+    ],
+    "start": 1789844327.8460643,
+    "source_before": "ce4909e66cd0a5133697013b5a59ce1b20232d05e13d731d97158e458fb6a9f4",
+    "credentials": "absent",
+    "umask": "0077",
+    "pid": 467735,
+    "exit": 0,
+    "seconds": 5.273803949356079,
+    "source_after": "ce4909e66cd0a5133697013b5a59ce1b20232d05e13d731d97158e458fb6a9f4"
+  },
+  "postgres": {
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "apps/runner/src/control-policy-authority-codec.test.ts",
+      "--maxWorkers=1",
+      "--minWorkers=1",
+      "--testTimeout=20000",
+      "--hookTimeout=20000",
+      "-t",
+      "postgres validated operator policy transactions.*(keeps the original Read|atomically saves only a validated disabled Action companion|retains partial coded|rescans and renames|persists exact disabled|commits complete Read|reopens, edits and switches|rescans stored reviews|refuses stale review and admits)"
+    ],
+    "start": 1789844407.0184216,
+    "source_before": "ce4909e66cd0a5133697013b5a59ce1b20232d05e13d731d97158e458fb6a9f4",
+    "credentials": "only owned SYNAPSOR_TEST_POSTGRES_URL",
+    "umask": "0077",
+    "pid": 468924,
+    "exit": 0,
+    "seconds": 13.010385751724243,
+    "source_after": "ce4909e66cd0a5133697013b5a59ce1b20232d05e13d731d97158e458fb6a9f4"
+  }
+}

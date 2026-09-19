@@ -26,6 +26,9 @@ if name in ['software-final-read','tournament-final-catalog'] or name.startswith
  env['SYNAPSOR_CANDIDATE_ROOT']=str(r/'frozen/installed')
 command=['node',str(r/'frozen/installed/node_modules/@synapsor/runner/dist/runner.mjs')]+args
 if args==['protocol']:
+ budget=r/'public/protocol-budget.json'
+ if not budget.exists():budget.write_text(json.dumps({'calls':0,'limit':80}))
+ base[5:5]=['--bind',str(budget),str(budget)]
  assert name in ['software-final-read','tournament-final-catalog'] or name.startswith('runtime-')
  command=['node',str(repo/'docs/qualification-evidence/public-operation-20260919/final-mcp.mjs')]
 else:assert args[:2] in [['boundary','draft'],['boundary','rescan'],['boundary','review'],['action','review']] or args[0]=='start'
