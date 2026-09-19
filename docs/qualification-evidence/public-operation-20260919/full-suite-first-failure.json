@@ -1,0 +1,44 @@
+{
+  "command": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "--maxWorkers=4",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "start": 1789842913.1331315,
+  "source_before": "fcc2b05d3fd5f3f0b9bc17d1810835fe38c843ca3d41e1cf2095c9554a9d3639",
+  "credentials": "absent",
+  "umask": "0077",
+  "pid": 439951,
+  "exit": 1,
+  "seconds": 1283.6928207874298,
+  "source_after": "fcc2b05d3fd5f3f0b9bc17d1810835fe38c843ca3d41e1cf2095c9554a9d3639",
+  "passed": 6561,
+  "failed": 2,
+  "skipped": 464,
+  "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/public-operation-3eb09c4-20260919/full-stable.log",
+  "log_sha256": "8183db4b8a6565601ec222d53368606a6f4736e26d8d847fa1c3f514ecc4876f",
+  "failures": [
+    {
+      "test": "Ask authoring/runtime separation > exposes exactly the authoring pair when named read and proposal tools also exist",
+      "file": "apps/runner/src/ask-mcp-gateway-authoring.test.ts:344",
+      "classification": "product schema publication omission",
+      "expected": "No auto-band schema when no automatic bands are reviewed",
+      "actual": "quantile/equal_width still present in newly expanded published grammar",
+      "correction": "Reuse existing automaticBandsReviewed for shared dimension grammar, not only prose."
+    },
+    {
+      "test": "Scoped Explore active boundary routing > keeps the production MCP surface at two read-only tools and routes an explicit reviewed boundary",
+      "file": "apps/runner/src/scoped-explore-boundary-set.test.ts:611",
+      "classification": "stale test schema shape",
+      "expected": "old non-nullable scalar boundary schema",
+      "actual": "explicit string-or-null union matching existing neutral-null behavior",
+      "correction": "Assert both exact union branches; retain surrounding runtime/authorization assertions."
+    }
+  ]
+}

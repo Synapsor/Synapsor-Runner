@@ -13,8 +13,8 @@ for row in c.execute("select name from sqlite_master where type='table' order by
 c.close();manifest={'tables':tables,'config_files':{}}
 for f in p.rglob('*'):
  if f.is_file() and f.suffix in ['.json','.yaml','.yml'] and '.synapsor' not in str(f.relative_to(p)) and 'node_modules' not in str(f):manifest['config_files'][str(f.relative_to(p))]=hashlib.sha256(f.read_bytes()).hexdigest()
-if name!='removal-final':
- db=json.loads((r/'software-restoration/database-private.json').read_text());assert subprocess.check_output(['docker','inspect','--format','{{index .Config.Labels "synapsor.task"}}',db['container']],text=True).strip()==db['tag'];manifest['source']={}
- for t,pk in [('release_slots','slot_id'),('build_candidates','candidate_id'),('build_checks','check_id')]:
-  q='select coalesce(json_agg(t),\'[]\') from (select * from release_ops.'+t+' order by '+pk+') t';rows=json.loads(subprocess.check_output(['docker','exec',db['container'],'psql','-U','postgres','-d','releaselab','-At','-c',q],text=True));manifest['source'][t]={'rows':len(rows),'sha256':save('source-'+t+'.json',rows)}
+if name not in ['removal-final','optional-final']:
+ tournament=name.startswith('tournament-');db=json.loads((r/('tournament-restoration/database-private.json' if tournament else 'software-restoration/database-private.json')).read_text());assert subprocess.check_output(['docker','inspect','--format','{{index .Config.Labels "synapsor.task"}}',db['container']],text=True).strip()==db['tag'];manifest['source']={}
+ for t,pk in ([('events','event_id'),('results','result_id')] if tournament else [('release_slots','slot_id'),('build_candidates','candidate_id'),('build_checks','check_id')]):
+  q='select coalesce(json_agg(t),\'[]\') from (select * from '+('tournament_ops.' if tournament else 'release_ops.')+t+' order by '+pk+') t';rows=json.loads(subprocess.check_output(['docker','exec',db['container'],'psql','-U','postgres','-d','tournamentlab' if tournament else 'releaselab','-At','-c',q],text=True));manifest['source'][t]={'rows':len(rows),'sha256':save('source-'+t+'.json',rows)}
 save('manifest.json',manifest);print(json.dumps({'name':name,'label':label,'tables':len(tables),'source_rows':sum(v['rows'] for v in manifest.get('source',{}).values())}))
