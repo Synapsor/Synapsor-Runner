@@ -1,3 +1,4 @@
+import * as actionAuthorities from "./action-rule-authority.js";
 import { startLocalUiServer } from "./local-ui.js";
 import { readActivationImpact, readActivationImpactLines } from "./read-activation-impact.js";
 import { createOptionalActionRuleRuntimeServices } from "./semantic-action-runtime.js";
@@ -5218,7 +5219,7 @@ describe("boundary operator-plane CLI", () => {
     } finally { await fixture.dispose(); }
   });
 
-  it.each(["selected", "deferred", "interrupted", "unchanged_pending", "narration_pending", "unchanged_closed"] as const)("retains the exact 30-to-10 policy edit across client selection (%s)", async control => {
+  it.each(["selected", "deferred", "interrupted", "planned_paraphrase", "draft_interrupted", "candidate_interrupted", "saved_interrupted", "disclosure_accepted", "disclosure_declined", "extra_change_declined", "read_drift", "competing_edit", "unchanged_pending", "narration_pending", "unchanged_closed", "already_satisfied"] as const)("retains the exact 30-to-10 policy edit across client selection (%s)", async control => {
     const fixture = await staleSemanticRevalidationFixture({ unusedVerificationField: true });
     const { root, inspection } = fixture;
     try {
@@ -5229,10 +5230,17 @@ describe("boundary operator-plane CLI", () => {
       const original = actionRuleModelDraftFromAuthority({ authority: saved.authority, outcome, review: saved.reviews[0]!, preserveVerificationFields: true });
       original.inputs = [{ name: "freeze_days", description: "Requested whole days.", type: { kind: "integer", unit: "days" }, minimum: 7, maximum: 90 }];
       original.approval = { ...original.approval, mode: "policy", auto_approve_when: { kind: "compare", operator: "lte",
-        left: { kind: "input", name: "freeze_days" }, right: { kind: "literal", value: 30, value_type: { kind: "integer", unit: "days" } } },
+        left: { kind: "input", name: "freeze_days" }, right: { kind: "literal", value: control === "already_satisfied" ? 10 : 30, value_type: { kind: "integer", unit: "days" } } },
         shared_limits: [{ id: "overall", kind: "count", scope: "boundary", maximum: 5, window_seconds: 86400 },
           { id: "per_org", kind: "count", scope: "tenant", maximum: 2, window_seconds: 86400 }] };
       const compiled = compileActionRuleModelDraft({ draft: original, builtCatalog: catalog, readBoundary: context.candidate, readBoundaryDigest: context.bundle.candidate_digest });
+      if (control.startsWith("disclosure")) {
+        const fields = compiled.loaded.authority.rules[0]!.verification_boundary.resources[0]!.fields;
+        const visible = fields.find(field => field.model_visible === true)!;
+        const privateField = fields.find(field => field.model_visible === false)!;
+        expect(visible).toBeDefined(); expect(privateField).toBeDefined();
+        visible.model_visible = false; privateField.model_visible = true;
+      }
       const baseline = buildActionRuleAuthorityDraft({ name: saved.authority.name, action_boundary_name: saved.authority.action_boundary.name,
         catalog: compiled.loaded.authority.catalog, rules: [...compiled.loaded.authority.rules, ...saved.authority.rules.slice(1)],
         approval_classes: [...compiled.loaded.authority.approval_classes, ...saved.authority.approval_classes.slice(1)],
@@ -5250,25 +5258,42 @@ describe("boundary operator-plane CLI", () => {
       const request = `Change ${outcome} automatic approval from at most 30 days to at most 10 days. Preserve every other rule and active authority; save a disabled revision.`;
       let resuming = false, interrupted = false, correctingPending = false;
       fixture.session.promptText = async () => request;
-      fixture.session.confirm = vi.fn(async (question) => question.startsWith("Close this Action request") ? control === "unchanged_closed" : true);
+      fixture.session.confirm = vi.fn(async (question) => question.startsWith("Close this Action request") ? ["unchanged_closed", "already_satisfied"].includes(control) : question.startsWith("Reconcile these saved Action disclosure") ? control !== "disclosure_declined" : question.startsWith("Save this exact disabled Action edit?") ? control !== "extra_change_declined" : true);
       fixture.session.chooseOption = async title => {
         if (title === "START BOUNDARY DRAFTING") return resuming ? "resume" : "model";
         if (["ACTIVATE READ BOUNDARY", "REPLACE ACTIVE READ BOUNDARY", "ACTIVATE ACTION BOUNDARY", "REPLACE ACTIVE ACTION BOUNDARY", "FINISH BOUNDARY REVIEW"].includes(title)) return "finish";
+        if (title === "UNCHANGED ACTION REQUEST" && ["unchanged_closed", "already_satisfied"].includes(control)) return control === "unchanged_closed" ? "cancelled" : "confirmed_current";
+        if (title === "SETUP NEEDS ATTENTION" && ["read_drift", "competing_edit"].includes(control)) return "pause";
         throw new Error(`Unexpected threshold edit menu: ${title}`);
       };
       const planner = vi.fn(async (input: Parameters<typeof planModelBoundaryJob>[0]) => {
         expect(input.jobIntent).toBe(request);
         return { state: "planned" as const, read_mode: "reuse" as const, action_mode: "revise" as const, action_outcome: outcome,
-          action_strategy: "rule_derived" as const, action_intent: request, summary: "Prepare the exact disabled approval edit.",
+          action_strategy: "rule_derived" as const, action_intent: control === "planned_paraphrase" ? "Adjust the approval threshold to ten days." : request, summary: "Prepare the exact disabled approval edit.",
           correction_used: false, authority_granted: false as const, source_database_changed: false as const };
       });
       const generator = vi.fn(async (input: Parameters<typeof generateModelActionRuleDraft>[0]): Promise<ModelActionRuleDraftResult> => {
         expect(input.intent).toBe(request);
+        if (control === "draft_interrupted" && !interrupted) {
+          interrupted = true;
+          throw new AskError("ASK_CANCELLED", "Declared interruption after the durable plan, before draft preparation.", 499);
+        }
         expect(input.existingDraft?.approval.auto_approve_when).toEqual(original.approval.auto_approve_when);
         const next = structuredClone(input.existingDraft!);
         if (!correctingPending && (control.startsWith("unchanged") || control === "narration_pending")) {
           if (control === "narration_pending") next.review.human_review = "A newly worded explanation, with the same approval rule.";
         } else next.approval.auto_approve_when = { ...original.approval.auto_approve_when!, right: { kind: "literal", value: 10, value_type: { kind: "integer", unit: "days" } } } as typeof original.approval.auto_approve_when;
+        if (control === "extra_change_declined") next.approval.required_approvals += 1;
+        if (control === "read_drift") {
+          const fresh = await loadBoundaryReviewContext(root);
+          const candidate = structuredClone(fresh.candidate);candidate.pack.resources[0]!.description = "Concurrent reviewed metadata change";
+          await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({ draft: fresh.draft, candidate,
+            confirmedDecisions: candidate.unresolved_decisions, actor: "test-reviewer", reason: "Concurrent Read edit", revision: (fresh.progress?.revision ?? 0) + 1 }));
+        }
+        if (control === "competing_edit") {
+          const other = structuredClone(baseline);other.reviews[0]!.then = "Concurrent review changed";
+          await writeActionRuleAuthorityDraft(root, other);
+        }
         return { state: "ready", compiled: compileActionRuleModelDraft({ draft: next, builtCatalog: input.builtCatalog,
           readBoundary: input.readBoundary, readBoundaryDigest: input.readBoundaryDigest }), provider: "openai", model: "gpt-test",
           correction_used: false, clarification_count: 0, authority_granted: false, source_database_changed: false,
@@ -5286,7 +5311,47 @@ describe("boundary operator-plane CLI", () => {
         };
         fixture.chats.push(chat); return chat;
       } };
-      await fixture.run(generator, undefined, overrides);
+      const write = actionAuthorities.writeActionRuleAuthorityDraftIfCurrent;
+      const save = vi.spyOn(actionAuthorities, "writeActionRuleAuthorityDraftIfCurrent").mockImplementation(async (...args) => {
+        if (!interrupted && (control === "candidate_interrupted" || control === "saved_interrupted")) {
+          interrupted = true;
+          if (control === "saved_interrupted") await write(...args);
+          throw new AskError("ASK_CANCELLED", "Declared interruption at the exact candidate-save boundary.", 499);
+        }
+        return write(...args);
+      });
+      try { await fixture.run(generator, undefined, overrides); } finally { save.mockRestore(); }
+      if (control === "read_drift" || control === "competing_edit" || control === "extra_change_declined") {
+        expect(generator).toHaveBeenCalledTimes(1);
+        const actual = await readActionRuleAuthorityDraft(root, baseline.authority.name);
+        if (control === "competing_edit") expect(actual?.reviews[0]!.then).toBe("Concurrent review changed");
+        else expect(actual).toBeUndefined();
+        expect(await readActionRuleAuthorityActivation(root)).toEqual(active);
+        const paused = JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
+        expect(paused.pending_action_revision.instruction).toBe(request);
+        expect(paused.action.completed_outcomes ?? []).toEqual([]);
+        return;
+      }
+      if (control === "disclosure_declined") {
+        expect(generator).not.toHaveBeenCalled();
+        expect(await readActionRuleAuthorityActivation(root)).toEqual(active);
+        expect(await readActionRuleAuthorityDraft(root, baseline.authority.name)).toBeUndefined();
+        const paused = JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
+        expect(paused.pending_action_revision.instruction).toBe(request);
+        expect(paused.reviewed_action_disclosures ?? []).toEqual([]);
+        expect(paused.action.completed_outcomes ?? []).toEqual([]);
+        return;
+      }
+      if (control === "candidate_interrupted" || control === "saved_interrupted") {
+        expect(interrupted).toBe(true);
+        const paused = JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
+        expect(paused.pending_action_revision.preparation.prepared_digest).toMatch(/^sha256:/u);
+        const persisted = await readActionRuleAuthorityDraft(root, baseline.authority.name);
+        if (control === "saved_interrupted") expect(persisted?.digest).toBe(paused.pending_action_revision.preparation.prepared_digest);
+        else expect(persisted).toBeUndefined();
+        resuming = true;
+        await fixture.run(generator, undefined, overrides);
+      }
       if (control === "interrupted") {
         expect(interrupted).toBe(true);
         expect(generator).not.toHaveBeenCalled();
@@ -5295,7 +5360,17 @@ describe("boundary operator-plane CLI", () => {
         resuming = true;
         await fixture.run(generator, undefined, overrides);
       }
-      expect(generator).toHaveBeenCalledTimes(1);
+      if (control === "draft_interrupted") {
+        expect(interrupted).toBe(true);
+        const paused = JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
+        expect(paused.stage).toBe("action_drafting");
+        expect(paused.action.intent).toBe(request);
+        expect(paused.action.completed_outcomes ?? []).toEqual([]);
+        expect((await readActionRuleAuthorityDraft(root, baseline.authority.name) ?? await readActionRuleAuthorityActivation(root))?.digest).toBe(baseline.digest);
+        resuming = true;
+        await fixture.run(generator, undefined, overrides);
+      }
+      expect(generator).toHaveBeenCalledTimes(["draft_interrupted", "candidate_interrupted"].includes(control) ? 2 : 1);
       const after = (await readActionRuleAuthorityDraft(root, baseline.authority.name)) ?? (await readActionRuleAuthorityActivation(root))!;
       const actual = actionRuleModelDraftFromAuthority({ authority: after.authority, outcome, review: after.reviews[0]!, preserveVerificationFields: true });
       const unchanged = control.startsWith("unchanged") || control === "narration_pending";
@@ -5307,6 +5382,8 @@ describe("boundary operator-plane CLI", () => {
       expect(after.authority.approval_classes.slice(1)).toEqual(baseline.authority.approval_classes.slice(1));
       expect(await readActionRuleAuthorityActivation(root)).toEqual(active);
       const state = JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
+      if (["unchanged_closed", "already_satisfied"].includes(control)) expect(state.action.closed_unchanged).toBe(control === "unchanged_closed" ? "cancelled" : "confirmed_current");
+      if (control === "disclosure_accepted") expect(state.reviewed_action_disclosures).toMatchObject([{outcome, read_digest: context.bundle.candidate_digest, authority_digest: baseline.digest}]);
       if (control.endsWith("pending")) {
         expect(after.authority).toEqual(active.authority);
         expect(state.pending_action_revision).toMatchObject({ outcome, instruction: request });
@@ -5321,6 +5398,13 @@ describe("boundary operator-plane CLI", () => {
         expect(resumedState.pending_action_revision).toBeUndefined();
         expect(await readActionRuleAuthorityActivation(root)).toEqual(active);
       } else expect(state.pending_action_revision).toBeUndefined();
+      if (["saved_interrupted", "unchanged_closed", "already_satisfied"].includes(control)) {
+        const count = generator.mock.calls.length; resuming = true;
+        await fixture.run(generator, undefined, overrides);
+        expect(generator).toHaveBeenCalledTimes(count);
+        const reopened = (await readActionRuleAuthorityDraft(root, baseline.authority.name) ?? await readActionRuleAuthorityActivation(root))!;
+        expect(reopened.authority).toEqual(after.authority);
+      }
     } finally { await fixture.dispose(); }
   }, 30_000);
 

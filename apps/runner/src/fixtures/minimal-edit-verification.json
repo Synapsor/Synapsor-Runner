@@ -1,0 +1,2634 @@
+{
+  "baseline": {
+    "schema_version": "synapsor.action-rule-authority.v1",
+    "name": "reviewed_staging_rules",
+    "catalog": {
+      "generation_lock_fingerprint": "sha256:9abb5f56e8c1a772508a6cd173e7f6f1484d9516e69613bb8e536ca412ef4232",
+      "relationships": [
+        {
+          "cardinality": "many_to_one",
+          "field_pairs": [
+            {
+              "local_field": "slot_id",
+              "target_field": "slot_id"
+            },
+            {
+              "local_field": "tenant_id",
+              "target_field": "tenant_id"
+            },
+            {
+              "local_field": "principal_id",
+              "target_field": "principal_id"
+            }
+          ],
+          "from_resource": "release_ops.build_candidates",
+          "name": "build_candidates_slot_id_tenant_id_principal_id_fkey",
+          "nullable": false,
+          "target_unique": true,
+          "to_resource": "release_ops.release_slots"
+        },
+        {
+          "cardinality": "many_to_one",
+          "field_pairs": [
+            {
+              "local_field": "candidate_id",
+              "target_field": "candidate_id"
+            },
+            {
+              "local_field": "tenant_id",
+              "target_field": "tenant_id"
+            },
+            {
+              "local_field": "principal_id",
+              "target_field": "principal_id"
+            }
+          ],
+          "from_resource": "release_ops.build_checks",
+          "name": "build_checks_candidate_id_tenant_id_principal_id_fkey",
+          "nullable": false,
+          "target_unique": true,
+          "to_resource": "release_ops.build_candidates"
+        }
+      ],
+      "resources": [
+        {
+          "engine": "postgres",
+          "fields": [
+            {
+              "name": "application_name",
+              "nullable": false,
+              "type": {
+                "comparison": "exact",
+                "kind": "string",
+                "max_length": 4096
+              }
+            },
+            {
+              "name": "candidate_id",
+              "nullable": false,
+              "type": {
+                "comparison": "exact",
+                "kind": "string",
+                "max_length": 36
+              }
+            },
+            {
+              "name": "candidate_ref",
+              "nullable": false,
+              "type": {
+                "comparison": "exact",
+                "kind": "string",
+                "max_length": 4096
+              }
+            },
+            {
+              "name": "candidate_state",
+              "nullable": false,
+              "type": {
+                "comparison": "exact",
+                "enum": [
+                  "sealed",
+                  "staged"
+                ],
+                "kind": "string",
+                "max_length": 6
+              }
+            },
+            {
+              "name": "internal_finding",
+              "nullable": false,
+              "type": {
+                "comparison": "exact",
+                "kind": "string",
+                "max_length": 4096
+              }
+            },
+            {
+              "name": "principal_id",
+              "nullable": false,
+              "type": {
+                "comparison": "exact",
+                "kind": "string",
+                "max_length": 36
+              }
+            },
+            {
+              "name": "security_hold",
+              "nullable": false,
+              "type": {
+                "kind": "boolean"
+              }
+            },
+            {
+              "name": "slot_id",
+              "nullable": false,
+              "type": {
+                "comparison": "exact",
+                "kind": "string",
+                "max_length": 36
+              }
+            },
+            {
+              "name": "tenant_id",
+              "nullable": false,
+              "type": {
+                "comparison": "exact",
+                "kind": "string",
+                "max_length": 36
+              }
+            },
+            {
+              "name": "version",
+              "nullable": false,
+              "type": {
+                "kind": "integer"
+              }
+            }
+          ],
+          "name": "release_ops.build_candidates",
+          "primary_key": "candidate_id",
+          "principal_scope_key": "principal_id",
+          "schema": "release_ops",
+          "source": "local_postgres",
+          "table": "build_candidates",
+          "tenant_key": "tenant_id",
+          "version_field": "version"
+        },
+        {
+          "engine": "postgres",
+          "fields": [
+            {
+              "name": "candidate_id",
+              "nullable": false,
+              "type": {
+                "comparison": "exact",
+                "kind": "string",
+                "max_length": 36
+              }
+            },
+            {
+              "name": "check_id",
+              "nullable": false,
+              "type": {
+                "comparison": "exact",
+                "kind": "string",
+                "max_length": 36
+              }
+            },
+            {
+              "name": "check_kind",
+              "nullable": false,
+              "type": {
+                "comparison": "exact",
+                "kind": "string",
+                "max_length": 4096
+              }
+            },
+            {
+              "name": "check_state",
+              "nullable": false,
+              "type": {
+                "comparison": "exact",
+                "enum": [
+                  "failed",
+                  "passed",
+                  "pending"
+                ],
+                "kind": "string",
+                "max_length": 7
+              }
+            },
+            {
+              "name": "elapsed_seconds",
+              "nullable": false,
+              "type": {
+                "kind": "integer",
+                "unit": "seconds"
+              }
+            },
+            {
+              "name": "principal_id",
+              "nullable": false,
+              "type": {
+                "comparison": "exact",
+                "kind": "string",
+                "max_length": 36
+              }
+            },
+            {
+              "name": "private_check_note",
+              "nullable": false,
+              "type": {
+                "comparison": "exact",
+                "kind": "string",
+                "max_length": 4096
+              }
+            },
+            {
+              "name": "tenant_id",
+              "nullable": false,
+              "type": {
+                "comparison": "exact",
+                "kind": "string",
+                "max_length": 36
+              }
+            },
+            {
+              "name": "version",
+              "nullable": false,
+              "type": {
+                "kind": "integer"
+              }
+            }
+          ],
+          "name": "release_ops.build_checks",
+          "primary_key": "check_id",
+          "principal_scope_key": "principal_id",
+          "schema": "release_ops",
+          "source": "local_postgres",
+          "table": "build_checks",
+          "tenant_key": "tenant_id",
+          "version_field": "version"
+        },
+        {
+          "engine": "postgres",
+          "fields": [
+            {
+              "name": "principal_id",
+              "nullable": false,
+              "type": {
+                "comparison": "exact",
+                "kind": "string",
+                "max_length": 36
+              }
+            },
+            {
+              "name": "slot_id",
+              "nullable": false,
+              "type": {
+                "comparison": "exact",
+                "kind": "string",
+                "max_length": 36
+              }
+            },
+            {
+              "name": "slot_ref",
+              "nullable": false,
+              "type": {
+                "comparison": "exact",
+                "kind": "string",
+                "max_length": 4096
+              }
+            },
+            {
+              "name": "slot_state",
+              "nullable": false,
+              "type": {
+                "comparison": "exact",
+                "enum": [
+                  "consumed",
+                  "ready",
+                  "retired"
+                ],
+                "kind": "string",
+                "max_length": 8
+              }
+            },
+            {
+              "name": "tenant_id",
+              "nullable": false,
+              "type": {
+                "comparison": "exact",
+                "kind": "string",
+                "max_length": 36
+              }
+            },
+            {
+              "name": "version",
+              "nullable": false,
+              "type": {
+                "kind": "integer"
+              }
+            }
+          ],
+          "name": "release_ops.release_slots",
+          "primary_key": "slot_id",
+          "principal_scope_key": "principal_id",
+          "schema": "release_ops",
+          "source": "local_postgres",
+          "table": "release_slots",
+          "tenant_key": "tenant_id",
+          "version_field": "version"
+        }
+      ],
+      "schema_version": "synapsor.action-rule-catalog.v1"
+    },
+    "action_boundary": {
+      "schema_version": "synapsor.semantic-action-boundary.v1",
+      "name": "reviewed_staging_actions",
+      "rules": [
+        {
+          "approval_policy_digest": "sha256:7742be978003ae53f416cf2d61655c0dc2b2a29c8cc321d1273d7d112e4d95cb",
+          "approval_mode": "policy",
+          "outcome": "release.seal_candidate",
+          "effect_envelope_digest": "sha256:6faf1ba9aefe25645a5f9d50d7729aacf8cffda7afbd027b206b6e8aea4528a5",
+          "action_rule_digest": "sha256:62fe7aaf3a575421f128b46edcd76c1664a8765caccfa2beafda45a6bf699114",
+          "compiled_plan_digest": "sha256:1b33446de97a0d7e785ff33b5e3574879aa927ae67f375e4257d353c9c0e92a2",
+          "approval_class": "release.sealing",
+          "operation": "update",
+          "target_resource": "release_ops.build_candidates",
+          "allowed_fields": [
+            "candidate_state"
+          ],
+          "max_rows": 1,
+          "writeback": {
+            "mode": "direct_sql",
+            "supervised_worker": "allowed"
+          }
+        }
+      ],
+      "digest": "sha256:37d57ce2b3531d1a2651f4af022913f8db19b1b000236ca1e765d7fbb2ab7101"
+    },
+    "rules": [
+      {
+        "read_boundary_name": "reviewed_staging",
+        "read_boundary_digest": "sha256:bc2df7660d0238ab7b678d35a5061a34bf3fbcf1ec834774781978305e13bf12",
+        "verification_boundary": {
+          "context": "trusted_context",
+          "generation_lock_fingerprint": "sha256:9abb5f56e8c1a772508a6cd173e7f6f1484d9516e69613bb8e536ca412ef4232",
+          "lock_order": [
+            "candidate",
+            "slot",
+            "checks"
+          ],
+          "name": "reviewed_release",
+          "resources": [
+            {
+              "binding": "candidate",
+              "cardinality": "one",
+              "fields": [
+                {
+                  "model_visible": false,
+                  "name": "candidate_id",
+                  "nullable": false,
+                  "type": {
+                    "comparison": "exact",
+                    "kind": "string",
+                    "max_length": 36
+                  }
+                },
+                {
+                  "model_visible": false,
+                  "name": "candidate_state",
+                  "nullable": false,
+                  "type": {
+                    "comparison": "exact",
+                    "enum": [
+                      "sealed",
+                      "staged"
+                    ],
+                    "kind": "string",
+                    "max_length": 6
+                  }
+                },
+                {
+                  "model_visible": false,
+                  "name": "principal_id",
+                  "nullable": false,
+                  "type": {
+                    "comparison": "exact",
+                    "kind": "string",
+                    "max_length": 36
+                  }
+                },
+                {
+                  "model_visible": false,
+                  "name": "security_hold",
+                  "nullable": false,
+                  "type": {
+                    "kind": "boolean"
+                  }
+                },
+                {
+                  "model_visible": true,
+                  "name": "slot_id",
+                  "nullable": false,
+                  "type": {
+                    "comparison": "exact",
+                    "kind": "string",
+                    "max_length": 36
+                  }
+                },
+                {
+                  "model_visible": false,
+                  "name": "tenant_id",
+                  "nullable": false,
+                  "type": {
+                    "comparison": "exact",
+                    "kind": "string",
+                    "max_length": 36
+                  }
+                },
+                {
+                  "model_visible": false,
+                  "name": "version",
+                  "nullable": false,
+                  "type": {
+                    "kind": "integer"
+                  }
+                }
+              ],
+              "lock": "for_update",
+              "max_rows": 1,
+              "overflow": "unsupported",
+              "primary_key": "candidate_id",
+              "resource": "release_ops.build_candidates",
+              "scope": {
+                "mode": "columns",
+                "principal_field": "principal_id",
+                "tenant_field": "tenant_id"
+              },
+              "source": {
+                "kind": "subject_ref"
+              },
+              "version_field": "version"
+            },
+            {
+              "binding": "checks",
+              "cardinality": "many",
+              "collection_consistency": "complete_locked",
+              "deterministic_order": [
+                {
+                  "direction": "asc",
+                  "field": "check_id"
+                }
+              ],
+              "fields": [
+                {
+                  "model_visible": false,
+                  "name": "candidate_id",
+                  "nullable": false,
+                  "type": {
+                    "comparison": "exact",
+                    "kind": "string",
+                    "max_length": 36
+                  }
+                },
+                {
+                  "model_visible": false,
+                  "name": "check_id",
+                  "nullable": false,
+                  "type": {
+                    "comparison": "exact",
+                    "kind": "string",
+                    "max_length": 36
+                  }
+                },
+                {
+                  "model_visible": false,
+                  "name": "check_state",
+                  "nullable": false,
+                  "type": {
+                    "comparison": "exact",
+                    "enum": [
+                      "failed",
+                      "passed",
+                      "pending"
+                    ],
+                    "kind": "string",
+                    "max_length": 7
+                  }
+                },
+                {
+                  "model_visible": false,
+                  "name": "elapsed_seconds",
+                  "nullable": false,
+                  "type": {
+                    "kind": "integer",
+                    "unit": "seconds"
+                  }
+                },
+                {
+                  "model_visible": false,
+                  "name": "principal_id",
+                  "nullable": false,
+                  "type": {
+                    "comparison": "exact",
+                    "kind": "string",
+                    "max_length": 36
+                  }
+                },
+                {
+                  "model_visible": false,
+                  "name": "tenant_id",
+                  "nullable": false,
+                  "type": {
+                    "comparison": "exact",
+                    "kind": "string",
+                    "max_length": 36
+                  }
+                },
+                {
+                  "model_visible": false,
+                  "name": "version",
+                  "nullable": false,
+                  "type": {
+                    "kind": "integer"
+                  }
+                }
+              ],
+              "lock": "for_update",
+              "max_rows": 12,
+              "overflow": "ineligible",
+              "primary_key": "check_id",
+              "resource": "release_ops.build_checks",
+              "scope": {
+                "mode": "columns",
+                "principal_field": "principal_id",
+                "tenant_field": "tenant_id"
+              },
+              "source": {
+                "direction": "inverse",
+                "field_pairs": [
+                  {
+                    "local_field": "candidate_id",
+                    "target_field": "candidate_id"
+                  },
+                  {
+                    "local_field": "tenant_id",
+                    "target_field": "tenant_id"
+                  },
+                  {
+                    "local_field": "principal_id",
+                    "target_field": "principal_id"
+                  }
+                ],
+                "from_binding": "candidate",
+                "kind": "relationship",
+                "relationship": "build_checks_candidate_id_tenant_id_principal_id_fkey"
+              },
+              "version_field": "version"
+            },
+            {
+              "binding": "slot",
+              "cardinality": "one",
+              "fields": [
+                {
+                  "model_visible": false,
+                  "name": "principal_id",
+                  "nullable": false,
+                  "type": {
+                    "comparison": "exact",
+                    "kind": "string",
+                    "max_length": 36
+                  }
+                },
+                {
+                  "model_visible": false,
+                  "name": "slot_id",
+                  "nullable": false,
+                  "type": {
+                    "comparison": "exact",
+                    "kind": "string",
+                    "max_length": 36
+                  }
+                },
+                {
+                  "model_visible": true,
+                  "name": "slot_state",
+                  "nullable": false,
+                  "type": {
+                    "comparison": "exact",
+                    "enum": [
+                      "consumed",
+                      "ready",
+                      "retired"
+                    ],
+                    "kind": "string",
+                    "max_length": 8
+                  }
+                },
+                {
+                  "model_visible": false,
+                  "name": "tenant_id",
+                  "nullable": false,
+                  "type": {
+                    "comparison": "exact",
+                    "kind": "string",
+                    "max_length": 36
+                  }
+                },
+                {
+                  "model_visible": false,
+                  "name": "version",
+                  "nullable": false,
+                  "type": {
+                    "kind": "integer"
+                  }
+                }
+              ],
+              "lock": "for_update",
+              "max_rows": 1,
+              "overflow": "unsupported",
+              "primary_key": "slot_id",
+              "resource": "release_ops.release_slots",
+              "scope": {
+                "mode": "columns",
+                "principal_field": "principal_id",
+                "tenant_field": "tenant_id"
+              },
+              "source": {
+                "direction": "forward",
+                "field_pairs": [
+                  {
+                    "local_field": "slot_id",
+                    "target_field": "slot_id"
+                  },
+                  {
+                    "local_field": "tenant_id",
+                    "target_field": "tenant_id"
+                  },
+                  {
+                    "local_field": "principal_id",
+                    "target_field": "principal_id"
+                  }
+                ],
+                "from_binding": "candidate",
+                "kind": "relationship",
+                "relationship": "build_candidates_slot_id_tenant_id_principal_id_fkey"
+              },
+              "version_field": "version"
+            }
+          ],
+          "schema_version": "synapsor.verification-boundary.v1",
+          "source": "local_postgres",
+          "transaction": {
+            "isolation": "read_committed",
+            "timezone": "UTC"
+          }
+        },
+        "effect_envelope": {
+          "allowed_fields": [
+            {
+              "name": "candidate_state",
+              "type": {
+                "comparison": "exact",
+                "enum": [
+                  "sealed",
+                  "staged"
+                ],
+                "kind": "string",
+                "max_length": 6
+              },
+              "values": [
+                "sealed"
+              ]
+            }
+          ],
+          "approval_classes": [
+            "release.sealing"
+          ],
+          "atomic_updates": [
+            {
+              "allowed_fields": [
+                {
+                  "name": "slot_state",
+                  "type": {
+                    "comparison": "exact",
+                    "enum": [
+                      "consumed",
+                      "ready",
+                      "retired"
+                    ],
+                    "kind": "string",
+                    "max_length": 8
+                  },
+                  "values": [
+                    "consumed"
+                  ]
+                }
+              ],
+              "conflict_key": "version",
+              "max_rows": 1,
+              "operation": "update",
+              "primary_key": "slot_id",
+              "principal_scope_key": "principal_id",
+              "target_binding": "slot",
+              "target_resource": "release_ops.release_slots",
+              "tenant_key": "tenant_id",
+              "version_advance": {
+                "column": "version",
+                "strategy": "integer_increment"
+              }
+            }
+          ],
+          "conflict_key": "version",
+          "max_rows": 1,
+          "name": "seal_candidate_effect",
+          "operation": "update",
+          "primary_key": "candidate_id",
+          "principal_scope_key": "principal_id",
+          "schema_version": "synapsor.derived-effect-envelope.v1",
+          "source": "local_postgres",
+          "target_binding": "candidate",
+          "target_resource": "release_ops.build_candidates",
+          "tenant_key": "tenant_id",
+          "version_advance": {
+            "column": "version",
+            "strategy": "integer_increment"
+          },
+          "writeback": {
+            "mode": "direct_sql",
+            "supervised_worker": "allowed"
+          }
+        },
+        "rule": {
+          "approval_class": "release.sealing",
+          "atomic_updates": [
+            {
+              "operation": "update",
+              "set": {
+                "slot_state": {
+                  "kind": "literal",
+                  "value": "consumed",
+                  "value_type": {
+                    "comparison": "exact",
+                    "kind": "string",
+                    "max_length": 16
+                  }
+                }
+              },
+              "target_binding": "slot",
+              "target_resource": "release_ops.release_slots"
+            }
+          ],
+          "context": "trusted_context",
+          "derive": {},
+          "effect": {
+            "operation": "update",
+            "set": {
+              "candidate_state": {
+                "kind": "literal",
+                "value": "sealed",
+                "value_type": {
+                  "comparison": "exact",
+                  "kind": "string",
+                  "max_length": 16
+                }
+              }
+            },
+            "target_binding": "candidate",
+            "target_resource": "release_ops.build_candidates"
+          },
+          "effect_envelope_ref": "seal_candidate_effect",
+          "name": "release.seal_candidate",
+          "outcome": "release.seal_candidate",
+          "require": {
+            "expressions": [
+              {
+                "expression": {
+                  "binding": "checks",
+                  "kind": "exists",
+                  "where": {
+                    "kind": "compare",
+                    "left": {
+                      "binding": "checks",
+                      "field": "check_state",
+                      "kind": "field"
+                    },
+                    "operator": "neq",
+                    "right": {
+                      "kind": "literal",
+                      "value": "passed",
+                      "value_type": {
+                        "comparison": "exact",
+                        "kind": "string",
+                        "max_length": 16
+                      }
+                    }
+                  }
+                },
+                "kind": "not"
+              },
+              {
+                "kind": "compare",
+                "left": {
+                  "binding": "candidate",
+                  "field": "candidate_state",
+                  "kind": "field"
+                },
+                "operator": "eq",
+                "right": {
+                  "kind": "literal",
+                  "value": "staged",
+                  "value_type": {
+                    "comparison": "exact",
+                    "kind": "string",
+                    "max_length": 16
+                  }
+                }
+              },
+              {
+                "kind": "compare",
+                "left": {
+                  "binding": "candidate",
+                  "field": "security_hold",
+                  "kind": "field"
+                },
+                "operator": "eq",
+                "right": {
+                  "kind": "literal",
+                  "value": false,
+                  "value_type": {
+                    "kind": "boolean"
+                  }
+                }
+              },
+              {
+                "kind": "compare",
+                "left": {
+                  "binding": "checks",
+                  "field": "elapsed_seconds",
+                  "kind": "aggregate",
+                  "operation": "sum"
+                },
+                "operator": "lte",
+                "right": {
+                  "kind": "literal",
+                  "value": 600,
+                  "value_type": {
+                    "kind": "integer",
+                    "unit": "seconds"
+                  }
+                }
+              },
+              {
+                "kind": "compare",
+                "left": {
+                  "binding": "checks",
+                  "kind": "aggregate",
+                  "operation": "count"
+                },
+                "operator": "gte",
+                "right": {
+                  "kind": "literal",
+                  "value": 2,
+                  "value_type": {
+                    "kind": "integer",
+                    "unit": "rows"
+                  }
+                }
+              },
+              {
+                "kind": "compare",
+                "left": {
+                  "binding": "slot",
+                  "field": "slot_state",
+                  "kind": "field"
+                },
+                "operator": "eq",
+                "right": {
+                  "kind": "literal",
+                  "value": "ready",
+                  "value_type": {
+                    "comparison": "exact",
+                    "kind": "string",
+                    "max_length": 16
+                  }
+                }
+              }
+            ],
+            "kind": "all"
+          },
+          "schema_version": "synapsor.action-rule.v1",
+          "source": "local_postgres",
+          "subjects": [
+            {
+              "binding": "candidate",
+              "input": "opaque_subject_ref",
+              "resource": "release_ops.build_candidates"
+            }
+          ],
+          "ttl_seconds": 600,
+          "verification_boundary_ref": "reviewed_release",
+          "x-runner-discovery": {
+            "aliases": [
+              "seal build",
+              "consume slot"
+            ],
+            "summary": "Seal a staged candidate whose checks passed and consume its reserved slot.",
+            "title": "Seal a tested build candidate"
+          }
+        },
+        "activated_at": "2026-09-16T03:45:15.744Z"
+      }
+    ],
+    "approval_classes": [
+      {
+        "name": "release.sealing",
+        "mode": "policy",
+        "rules": [
+          {
+            "outcome": "release.seal_candidate",
+            "auto_approve_when": {
+              "kind": "compare",
+              "left": {
+                "binding": "checks",
+                "field": "elapsed_seconds",
+                "kind": "aggregate",
+                "operation": "sum"
+              },
+              "operator": "lte",
+              "right": {
+                "kind": "literal",
+                "value": 120,
+                "value_type": {
+                  "kind": "integer",
+                  "unit": "seconds"
+                }
+              }
+            }
+          }
+        ],
+        "required_role": "release_supervisor",
+        "required_approvals": 1,
+        "shared_limits": [
+          {
+            "id": "automatic_seals_overall_24h",
+            "kind": "count",
+            "scope": "boundary",
+            "maximum": 8,
+            "window_seconds": 86400
+          },
+          {
+            "id": "automatic_seals_per_org_24h",
+            "kind": "count",
+            "scope": "tenant",
+            "maximum": 3,
+            "window_seconds": 86400
+          }
+        ]
+      }
+    ],
+    "digest": "sha256:d34194efbc719291dd71cf3107e357d92800c9d1f27eb8ea1b43189eef4fb1fa"
+  },
+  "review": {
+    "outcome": "release.seal_candidate",
+    "when": "Candidate staged, slot ready, no security hold, complete passing checks within the time budget.",
+    "then": "Candidate becomes sealed and its reserved slot becomes consumed, atomically.",
+    "refused": [
+      "A check failed or is pending",
+      "Fewer than two checks",
+      "Total elapsed check time above 600 seconds",
+      "More than twelve checks for one candidate",
+      "Security hold is set",
+      "Candidate is not staged or slot is not ready",
+      "Missing candidate/slot relationship"
+    ],
+    "human_review": "Valid requests over 120 seconds, or beyond the automatic caps, need the release supervisor.",
+    "examples": [
+      {
+        "kind": "eligible",
+        "scenario": "Staged candidate, ready slot, two passed checks totalling 40 seconds",
+        "result": "Sealed automatically and the slot is consumed"
+      },
+      {
+        "kind": "human_review",
+        "scenario": "Staged candidate with passing checks totalling 400 seconds",
+        "result": "Valid but sent to the release supervisor"
+      },
+      {
+        "kind": "ineligible",
+        "scenario": "One check still pending",
+        "result": "Refused; no proposal is created"
+      }
+    ]
+  },
+  "boundary": {
+    "activation": "disabled_unreviewed",
+    "budgets": {
+      "max_analysis_relationship_hops": 2,
+      "max_complexity": 24,
+      "max_derived_scope_hops": 2,
+      "max_differencing_queries": 16,
+      "max_dimensions": 3,
+      "max_extracted_cells_per_session": 4000,
+      "max_groups": 50,
+      "max_measures": 3,
+      "max_queries_per_session": 1000,
+      "max_ranked_groups": 500,
+      "max_relationship_hops": 2,
+      "max_response_bytes": 65536,
+      "max_response_cells": 500,
+      "max_rows": 50,
+      "max_time_ranges": 2,
+      "max_top_n": 25,
+      "rate_limit_per_minute": 120,
+      "statement_timeout_ms": 3000
+    },
+    "compiler_version": "1.7.0",
+    "database_server_authority": {
+      "engine": "postgres",
+      "features": {
+        "automatic_numeric_bands": true,
+        "schema_check_constraints": true
+      },
+      "schema_version": "synapsor.database-server-authority.v1",
+      "version_line": "17"
+    },
+    "database_server_tier": "full",
+    "database_server_version": "PostgreSQL 17.10 (Debian 17.10-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+    "deployment_profile": "staging",
+    "generation_lock_fingerprint": "sha256:9abb5f56e8c1a772508a6cd173e7f6f1484d9516e69613bb8e536ca412ef4232",
+    "pack": {
+      "name": "reviewed_staging",
+      "resources": [
+        {
+          "aggregate_measures": [],
+          "count_distinct_fields": [
+            "candidate_id",
+            "slot_id",
+            "candidate_state",
+            "security_hold",
+            "version"
+          ],
+          "field_enums": {
+            "candidate_state": [
+              "staged",
+              "sealed"
+            ]
+          },
+          "field_types": {
+            "application_name": "text",
+            "candidate_id": "uuid",
+            "candidate_ref": "text",
+            "candidate_state": "text",
+            "internal_finding": "text",
+            "principal_id": "uuid",
+            "security_hold": "boolean",
+            "slot_id": "uuid",
+            "tenant_id": "uuid",
+            "version": "integer"
+          },
+          "filterable_fields": {
+            "candidate_id": [
+              "eq",
+              "neq",
+              "in"
+            ],
+            "candidate_state": [
+              "eq",
+              "neq",
+              "in"
+            ],
+            "security_hold": [
+              "eq",
+              "neq",
+              "in"
+            ],
+            "slot_id": [
+              "eq",
+              "neq",
+              "in"
+            ],
+            "version": [
+              "eq",
+              "neq",
+              "lt",
+              "lte",
+              "gt",
+              "gte",
+              "in"
+            ]
+          },
+          "groupable_fields": [
+            "candidate_state",
+            "security_hold"
+          ],
+          "id": "release_ops.build_candidates",
+          "kept_out_fields": [
+            "tenant_id",
+            "principal_id"
+          ],
+          "minimum_cohort_size": 5,
+          "model_withheld_fields": [
+            "candidate_id",
+            "slot_id",
+            "security_hold",
+            "version"
+          ],
+          "presence_measure_fields": [
+            "candidate_state"
+          ],
+          "primary_key": "candidate_id",
+          "principal_key": "principal_id",
+          "relationships": [
+            {
+              "cardinality": "many_to_one",
+              "counted_entity": "candidate_id",
+              "id": "build_candidates_slot_id_tenant_id_principal_id_fkey",
+              "local_columns": [
+                "slot_id",
+                "tenant_id",
+                "principal_id"
+              ],
+              "max_fan_out": 1,
+              "nullable": false,
+              "path_depth": 1,
+              "proof": {
+                "digest": "sha256:367627d8d82140a4806cf25a8b6e0ea143678ccc52b4140063ddc8874ba88e09",
+                "links": [
+                  {
+                    "cardinality": "many_to_one",
+                    "constraint_name": "build_candidates_slot_id_tenant_id_principal_id_fkey",
+                    "max_fan_out": 1,
+                    "nullable": false,
+                    "source_columns": [
+                      "slot_id",
+                      "tenant_id",
+                      "principal_id"
+                    ],
+                    "source_resource": "release_ops.build_candidates",
+                    "target_columns": [
+                      "slot_id",
+                      "tenant_id",
+                      "principal_id"
+                    ],
+                    "target_resource": "release_ops.release_slots",
+                    "target_uniqueness": {
+                      "columns": [
+                        "slot_id",
+                        "tenant_id",
+                        "principal_id"
+                      ],
+                      "kind": "unique_constraint",
+                      "name": "release_slots_slot_id_tenant_id_principal_id_key"
+                    }
+                  }
+                ],
+                "source": "database_catalog"
+              },
+              "target_columns": [
+                "slot_id",
+                "tenant_id",
+                "principal_id"
+              ],
+              "target_resource": "release_ops.release_slots",
+              "unmatched_rows": "exclude"
+            }
+          ],
+          "rls_session": {
+            "principal_setting": "app.principal_id",
+            "tenant_setting": "app.tenant_id"
+          },
+          "schema": "release_ops",
+          "selectable_fields": [
+            "candidate_id",
+            "slot_id",
+            "candidate_ref",
+            "application_name",
+            "candidate_state",
+            "security_hold",
+            "version"
+          ],
+          "sortable_fields": [
+            "candidate_id",
+            "slot_id",
+            "candidate_state",
+            "security_hold",
+            "version"
+          ],
+          "suppression_aware_totals": true,
+          "table": "build_candidates",
+          "tenant_key": "tenant_id",
+          "time_bucket_fields": {}
+        },
+        {
+          "aggregate_measure_functions": {
+            "elapsed_seconds": [
+              "sum",
+              "avg",
+              "stddev_samp",
+              "stddev_pop",
+              "var_samp",
+              "var_pop"
+            ]
+          },
+          "aggregate_measures": [
+            "elapsed_seconds"
+          ],
+          "count_distinct_fields": [
+            "check_id",
+            "candidate_id",
+            "check_state",
+            "elapsed_seconds"
+          ],
+          "field_enums": {
+            "check_state": [
+              "passed",
+              "failed",
+              "pending"
+            ]
+          },
+          "field_types": {
+            "candidate_id": "uuid",
+            "check_id": "uuid",
+            "check_kind": "text",
+            "check_state": "text",
+            "elapsed_seconds": "integer",
+            "principal_id": "uuid",
+            "private_check_note": "text",
+            "tenant_id": "uuid",
+            "version": "integer"
+          },
+          "filterable_fields": {
+            "candidate_id": [
+              "eq",
+              "neq",
+              "in"
+            ],
+            "check_id": [
+              "eq",
+              "neq",
+              "in"
+            ],
+            "check_state": [
+              "eq",
+              "neq",
+              "in"
+            ],
+            "elapsed_seconds": [
+              "eq",
+              "neq",
+              "lt",
+              "lte",
+              "gt",
+              "gte",
+              "in"
+            ]
+          },
+          "groupable_fields": [
+            "check_state"
+          ],
+          "id": "release_ops.build_checks",
+          "kept_out_fields": [
+            "private_check_note",
+            "tenant_id",
+            "principal_id"
+          ],
+          "minimum_cohort_size": 5,
+          "model_withheld_fields": [
+            "check_id",
+            "candidate_id",
+            "check_state",
+            "elapsed_seconds"
+          ],
+          "primary_key": "check_id",
+          "principal_key": "principal_id",
+          "relationships": [
+            {
+              "cardinality": "many_to_one",
+              "counted_entity": "check_id",
+              "id": "build_checks_candidate_id_tenant_id_principal_id_fkey",
+              "local_columns": [
+                "candidate_id",
+                "tenant_id",
+                "principal_id"
+              ],
+              "max_fan_out": 1,
+              "nullable": false,
+              "path_depth": 1,
+              "proof": {
+                "digest": "sha256:e40fdad116753eef0589bf09fd0e09b93c2eaf085a041459562e919c3f6942e5",
+                "links": [
+                  {
+                    "cardinality": "many_to_one",
+                    "constraint_name": "build_checks_candidate_id_tenant_id_principal_id_fkey",
+                    "max_fan_out": 1,
+                    "nullable": false,
+                    "source_columns": [
+                      "candidate_id",
+                      "tenant_id",
+                      "principal_id"
+                    ],
+                    "source_resource": "release_ops.build_checks",
+                    "target_columns": [
+                      "candidate_id",
+                      "tenant_id",
+                      "principal_id"
+                    ],
+                    "target_resource": "release_ops.build_candidates",
+                    "target_uniqueness": {
+                      "columns": [
+                        "candidate_id",
+                        "tenant_id",
+                        "principal_id"
+                      ],
+                      "kind": "unique_constraint",
+                      "name": "build_candidates_candidate_id_tenant_id_principal_id_key"
+                    }
+                  }
+                ],
+                "source": "database_catalog"
+              },
+              "target_columns": [
+                "candidate_id",
+                "tenant_id",
+                "principal_id"
+              ],
+              "target_resource": "release_ops.build_candidates",
+              "unmatched_rows": "exclude"
+            },
+            {
+              "cardinality": "many_to_one",
+              "counted_entity": "check_id",
+              "id": "build_checks_candidate_id_tenant_id_principal_id_fkey__build_candidates_slot_id_tenant_id_principal_id_fkey",
+              "local_columns": [
+                "candidate_id",
+                "tenant_id",
+                "principal_id"
+              ],
+              "max_fan_out": 1,
+              "nullable": false,
+              "path_depth": 2,
+              "proof": {
+                "digest": "sha256:fe62ee0f4140f421739a860966cd3451c2e24ea152697e66a90ad425c29dc86b",
+                "links": [
+                  {
+                    "cardinality": "many_to_one",
+                    "constraint_name": "build_checks_candidate_id_tenant_id_principal_id_fkey",
+                    "max_fan_out": 1,
+                    "nullable": false,
+                    "source_columns": [
+                      "candidate_id",
+                      "tenant_id",
+                      "principal_id"
+                    ],
+                    "source_resource": "release_ops.build_checks",
+                    "target_columns": [
+                      "candidate_id",
+                      "tenant_id",
+                      "principal_id"
+                    ],
+                    "target_resource": "release_ops.build_candidates",
+                    "target_uniqueness": {
+                      "columns": [
+                        "candidate_id",
+                        "tenant_id",
+                        "principal_id"
+                      ],
+                      "kind": "unique_constraint",
+                      "name": "build_candidates_candidate_id_tenant_id_principal_id_key"
+                    }
+                  },
+                  {
+                    "cardinality": "many_to_one",
+                    "constraint_name": "build_candidates_slot_id_tenant_id_principal_id_fkey",
+                    "max_fan_out": 1,
+                    "nullable": false,
+                    "source_columns": [
+                      "slot_id",
+                      "tenant_id",
+                      "principal_id"
+                    ],
+                    "source_resource": "release_ops.build_candidates",
+                    "target_columns": [
+                      "slot_id",
+                      "tenant_id",
+                      "principal_id"
+                    ],
+                    "target_resource": "release_ops.release_slots",
+                    "target_uniqueness": {
+                      "columns": [
+                        "slot_id",
+                        "tenant_id",
+                        "principal_id"
+                      ],
+                      "kind": "unique_constraint",
+                      "name": "release_slots_slot_id_tenant_id_principal_id_key"
+                    }
+                  }
+                ],
+                "source": "database_catalog"
+              },
+              "target_columns": [
+                "slot_id",
+                "tenant_id",
+                "principal_id"
+              ],
+              "target_resource": "release_ops.release_slots",
+              "unmatched_rows": "exclude"
+            }
+          ],
+          "rls_session": {
+            "principal_setting": "app.principal_id",
+            "tenant_setting": "app.tenant_id"
+          },
+          "schema": "release_ops",
+          "selectable_fields": [
+            "check_id",
+            "candidate_id",
+            "check_state",
+            "elapsed_seconds"
+          ],
+          "sortable_fields": [
+            "check_id",
+            "candidate_id",
+            "check_state",
+            "elapsed_seconds"
+          ],
+          "suppression_aware_totals": true,
+          "table": "build_checks",
+          "tenant_key": "tenant_id",
+          "time_bucket_fields": {}
+        },
+        {
+          "aggregate_measures": [],
+          "count_distinct_fields": [
+            "slot_id",
+            "version"
+          ],
+          "field_enums": {
+            "slot_state": [
+              "ready",
+              "consumed",
+              "retired"
+            ]
+          },
+          "field_types": {
+            "principal_id": "uuid",
+            "slot_id": "uuid",
+            "slot_ref": "text",
+            "slot_state": "text",
+            "tenant_id": "uuid",
+            "version": "integer"
+          },
+          "filterable_fields": {
+            "slot_id": [
+              "eq",
+              "neq",
+              "in"
+            ],
+            "version": [
+              "eq",
+              "neq",
+              "lt",
+              "lte",
+              "gt",
+              "gte",
+              "in"
+            ]
+          },
+          "groupable_fields": [
+            "slot_ref"
+          ],
+          "id": "release_ops.release_slots",
+          "kept_out_fields": [
+            "tenant_id",
+            "principal_id"
+          ],
+          "minimum_cohort_size": 5,
+          "model_withheld_fields": [
+            "slot_id",
+            "version"
+          ],
+          "primary_key": "slot_id",
+          "principal_key": "principal_id",
+          "relationships": [],
+          "rls_session": {
+            "principal_setting": "app.principal_id",
+            "tenant_setting": "app.tenant_id"
+          },
+          "schema": "release_ops",
+          "selectable_fields": [
+            "slot_id",
+            "slot_ref",
+            "slot_state",
+            "version"
+          ],
+          "sortable_fields": [
+            "slot_id",
+            "version"
+          ],
+          "suppression_aware_totals": true,
+          "table": "release_slots",
+          "tenant_key": "tenant_id",
+          "time_bucket_fields": {}
+        }
+      ]
+    },
+    "reporting_timezone": "UTC",
+    "role_posture_fingerprint": "sha256:6436af072232447a9b734c4f130a77110a3ca4e9c04e43a3be1722ca3e053462",
+    "schema_version": "synapsor.exploration-boundary.v1",
+    "source": "local_postgres",
+    "spec_version": "1.9.0",
+    "trusted_context": {
+      "database_role_tenant": {
+        "engine": "postgres",
+        "setting": "app.tenant_id"
+      },
+      "principal_env": "SYNAPSOR_PRINCIPAL",
+      "provider": "environment",
+      "tenant_env": "SYNAPSOR_TENANT_ID"
+    },
+    "unresolved_decisions": [
+      "deployment profile: confirm development or staging authoring-only use",
+      "release_ops.build_candidates: confirm filter/sort/group/aggregate-only field permissions",
+      "release_ops.build_candidates: confirm minimum cohort and extraction/differencing budgets",
+      "release_ops.build_candidates: confirm principal scope principal_id",
+      "release_ops.build_candidates: confirm tenant key tenant_id",
+      "release_ops.build_candidates: confirm visible and kept-out fields",
+      "release_ops.build_candidates: review relationship build_candidates_slot_id_tenant_id_principal_id_fkey cardinality and scope on release_ops.release_slots",
+      "release_ops.build_checks: confirm filter/sort/group/aggregate-only field permissions",
+      "release_ops.build_checks: confirm minimum cohort and extraction/differencing budgets",
+      "release_ops.build_checks: confirm principal scope principal_id",
+      "release_ops.build_checks: confirm tenant key tenant_id",
+      "release_ops.build_checks: confirm visible and kept-out fields",
+      "release_ops.build_checks: review relationship build_checks_candidate_id_tenant_id_principal_id_fkey cardinality and scope on release_ops.build_candidates",
+      "release_ops.build_checks: review relationship build_checks_candidate_id_tenant_id_principal_id_fkey__build_candidates_slot_id_tenant_id_principal_id_fkey cardinality and scope on release_ops.release_slots",
+      "release_ops.release_slots: confirm filter/sort/group/aggregate-only field permissions",
+      "release_ops.release_slots: confirm minimum cohort and extraction/differencing budgets",
+      "release_ops.release_slots: confirm principal scope principal_id",
+      "release_ops.release_slots: confirm tenant key tenant_id",
+      "release_ops.release_slots: confirm visible and kept-out fields",
+      "trusted context: confirm tenant scope comes from the verified PostgreSQL credential setting app.tenant_id and principal scope remains outside model arguments"
+    ]
+  },
+  "inspection": {
+    "engine": "postgres",
+    "server_version": "PostgreSQL 17.10 (Debian 17.10-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+    "current_user": "release_trial_reader",
+    "role_posture": {
+      "verified": true,
+      "superuser": false,
+      "bypass_rls": false,
+      "read_only": true,
+      "writable_relations": [],
+      "owned_relations": [],
+      "reasons": []
+    },
+    "inspected_at": "2026-09-19T20:50:49.392Z",
+    "schemas": [
+      "public",
+      "release_ops"
+    ],
+    "tables": [
+      {
+        "schema": "release_ops",
+        "name": "build_candidates",
+        "type": "table",
+        "writable": true,
+        "approximate_row_count": 116,
+        "columns": [
+          {
+            "name": "candidate_id",
+            "data_type": "uuid",
+            "nullable": false,
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 1,
+            "suggestions": {
+              "tenant": false,
+              "conflict": false,
+              "sensitive": false,
+              "sensitivity": {
+                "state": "structurally_low_risk",
+                "reason_codes": [
+                  "no_sensitive_structural_signal"
+                ],
+                "reasons": [
+                  "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": true,
+              "large_or_binary": false
+            }
+          },
+          {
+            "name": "tenant_id",
+            "data_type": "uuid",
+            "nullable": false,
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 2,
+            "suggestions": {
+              "tenant": true,
+              "conflict": false,
+              "sensitive": false,
+              "sensitivity": {
+                "state": "structurally_low_risk",
+                "reason_codes": [
+                  "no_sensitive_structural_signal"
+                ],
+                "reasons": [
+                  "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": true,
+              "large_or_binary": false
+            }
+          },
+          {
+            "name": "principal_id",
+            "data_type": "uuid",
+            "nullable": false,
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 3,
+            "suggestions": {
+              "tenant": false,
+              "conflict": false,
+              "sensitive": false,
+              "sensitivity": {
+                "state": "structurally_low_risk",
+                "reason_codes": [
+                  "no_sensitive_structural_signal"
+                ],
+                "reasons": [
+                  "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": false,
+              "large_or_binary": false
+            }
+          },
+          {
+            "name": "slot_id",
+            "data_type": "uuid",
+            "nullable": false,
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 4,
+            "suggestions": {
+              "tenant": false,
+              "conflict": false,
+              "sensitive": false,
+              "sensitivity": {
+                "state": "structurally_low_risk",
+                "reason_codes": [
+                  "no_sensitive_structural_signal"
+                ],
+                "reasons": [
+                  "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": false,
+              "large_or_binary": false
+            }
+          },
+          {
+            "name": "candidate_ref",
+            "data_type": "text",
+            "nullable": false,
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 5,
+            "suggestions": {
+              "tenant": false,
+              "conflict": false,
+              "sensitive": false,
+              "sensitivity": {
+                "state": "structurally_low_risk",
+                "reason_codes": [
+                  "no_sensitive_structural_signal"
+                ],
+                "reasons": [
+                  "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": false,
+              "large_or_binary": false
+            }
+          },
+          {
+            "name": "application_name",
+            "data_type": "text",
+            "nullable": false,
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 6,
+            "suggestions": {
+              "tenant": false,
+              "conflict": false,
+              "sensitive": false,
+              "sensitivity": {
+                "state": "structurally_low_risk",
+                "reason_codes": [
+                  "no_sensitive_structural_signal"
+                ],
+                "reasons": [
+                  "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": false,
+              "large_or_binary": false
+            }
+          },
+          {
+            "name": "candidate_state",
+            "data_type": "text",
+            "enum_values": [
+              "staged",
+              "sealed"
+            ],
+            "nullable": false,
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 7,
+            "suggestions": {
+              "tenant": false,
+              "conflict": false,
+              "sensitive": false,
+              "sensitivity": {
+                "state": "structurally_low_risk",
+                "reason_codes": [
+                  "no_sensitive_structural_signal"
+                ],
+                "reasons": [
+                  "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": false,
+              "large_or_binary": false
+            }
+          },
+          {
+            "name": "security_hold",
+            "data_type": "boolean",
+            "nullable": false,
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 8,
+            "suggestions": {
+              "tenant": false,
+              "conflict": false,
+              "sensitive": false,
+              "sensitivity": {
+                "state": "structurally_low_risk",
+                "reason_codes": [
+                  "no_sensitive_structural_signal"
+                ],
+                "reasons": [
+                  "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": false,
+              "large_or_binary": false
+            }
+          },
+          {
+            "name": "internal_finding",
+            "data_type": "text",
+            "nullable": false,
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 9,
+            "suggestions": {
+              "tenant": false,
+              "conflict": false,
+              "sensitive": false,
+              "sensitivity": {
+                "state": "structurally_low_risk",
+                "reason_codes": [
+                  "no_sensitive_structural_signal"
+                ],
+                "reasons": [
+                  "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": false,
+              "large_or_binary": false
+            }
+          },
+          {
+            "name": "version",
+            "data_type": "integer",
+            "nullable": false,
+            "default": "1",
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 10,
+            "suggestions": {
+              "tenant": false,
+              "conflict": true,
+              "sensitive": false,
+              "sensitivity": {
+                "state": "structurally_low_risk",
+                "reason_codes": [
+                  "no_sensitive_structural_signal"
+                ],
+                "reasons": [
+                  "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": false,
+              "large_or_binary": false
+            }
+          }
+        ],
+        "primary_key": [
+          "candidate_id"
+        ],
+        "unique_constraints": [
+          {
+            "name": "build_candidates_candidate_id_tenant_id_principal_id_key",
+            "columns": [
+              "candidate_id",
+              "tenant_id",
+              "principal_id"
+            ]
+          },
+          {
+            "name": "build_candidates_candidate_ref_key",
+            "columns": [
+              "candidate_ref"
+            ]
+          },
+          {
+            "name": "build_candidates_slot_id_key",
+            "columns": [
+              "slot_id"
+            ]
+          }
+        ],
+        "check_constraints": [
+          {
+            "name": "build_candidates_candidate_state_check",
+            "definition": "CHECK (candidate_state = ANY (ARRAY['staged'::text, 'sealed'::text]))"
+          },
+          {
+            "name": "build_candidates_version_check",
+            "definition": "CHECK (version > 0)"
+          }
+        ],
+        "foreign_keys": [
+          {
+            "name": "build_candidates_slot_id_tenant_id_principal_id_fkey",
+            "columns": [
+              "slot_id",
+              "tenant_id",
+              "principal_id"
+            ],
+            "referenced_schema": "release_ops",
+            "referenced_table": "release_slots",
+            "referenced_columns": [
+              "slot_id",
+              "tenant_id",
+              "principal_id"
+            ],
+            "delete_rule": "NO ACTION"
+          }
+        ],
+        "referenced_by": [
+          {
+            "name": "build_checks_candidate_id_tenant_id_principal_id_fkey",
+            "schema": "release_ops",
+            "table": "build_checks",
+            "columns": [
+              "candidate_id",
+              "tenant_id",
+              "principal_id"
+            ],
+            "referenced_columns": [
+              "candidate_id",
+              "tenant_id",
+              "principal_id"
+            ],
+            "delete_rule": "NO ACTION"
+          }
+        ],
+        "write_triggers": [],
+        "row_level_security": true,
+        "row_level_security_policies": [
+          {
+            "name": "build_candidates_trusted_scope",
+            "command": "ALL",
+            "permissive": true,
+            "roles": [
+              "public"
+            ],
+            "using_expression": "((tenant_id = (current_setting('app.tenant_id'::text, true))::uuid) AND (principal_id = (current_setting('app.principal_id'::text, true))::uuid))",
+            "check_expression": "((tenant_id = (current_setting('app.tenant_id'::text, true))::uuid) AND (principal_id = (current_setting('app.principal_id'::text, true))::uuid))"
+          }
+        ],
+        "role_posture": {
+          "owner": "postgres",
+          "current_role_is_owner": false,
+          "current_role_can_assume_owner": false,
+          "privileges": {
+            "select": true,
+            "insert": false,
+            "update": false,
+            "delete": false,
+            "truncate": false,
+            "references": false,
+            "trigger": false
+          },
+          "row_security_forced": true,
+          "row_security_effective_for_current_role": true,
+          "row_security_applicable_policies": [
+            "build_candidates_trusted_scope"
+          ]
+        },
+        "indexes": [
+          {
+            "name": "build_candidates_candidate_id_tenant_id_principal_id_key",
+            "definition": "CREATE UNIQUE INDEX build_candidates_candidate_id_tenant_id_principal_id_key ON release_ops.build_candidates USING btree (candidate_id, tenant_id, principal_id)",
+            "catalog_key_columns": "{candidate_id,tenant_id,principal_id}",
+            "catalog_leading_column": "candidate_id",
+            "catalog_usable": true,
+            "catalog_partial": false
+          },
+          {
+            "name": "build_candidates_candidate_ref_key",
+            "definition": "CREATE UNIQUE INDEX build_candidates_candidate_ref_key ON release_ops.build_candidates USING btree (candidate_ref)",
+            "catalog_key_columns": "{candidate_ref}",
+            "catalog_leading_column": "candidate_ref",
+            "catalog_usable": true,
+            "catalog_partial": false
+          },
+          {
+            "name": "build_candidates_pkey",
+            "definition": "CREATE UNIQUE INDEX build_candidates_pkey ON release_ops.build_candidates USING btree (candidate_id)",
+            "catalog_key_columns": "{candidate_id}",
+            "catalog_leading_column": "candidate_id",
+            "catalog_usable": true,
+            "catalog_partial": false
+          },
+          {
+            "name": "build_candidates_slot_id_key",
+            "definition": "CREATE UNIQUE INDEX build_candidates_slot_id_key ON release_ops.build_candidates USING btree (slot_id)",
+            "catalog_key_columns": "{slot_id}",
+            "catalog_leading_column": "slot_id",
+            "catalog_usable": true,
+            "catalog_partial": false
+          }
+        ],
+        "suggestions": {
+          "tenant_columns": [
+            "tenant_id"
+          ],
+          "conflict_columns": [
+            "version"
+          ],
+          "sensitive_columns": [],
+          "default_visible_columns": [
+            "candidate_id",
+            "tenant_id",
+            "principal_id",
+            "slot_id",
+            "candidate_ref",
+            "application_name",
+            "candidate_state",
+            "security_hold",
+            "internal_finding",
+            "version"
+          ]
+        }
+      },
+      {
+        "schema": "release_ops",
+        "name": "build_checks",
+        "type": "table",
+        "writable": true,
+        "approximate_row_count": 272,
+        "columns": [
+          {
+            "name": "check_id",
+            "data_type": "uuid",
+            "nullable": false,
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 1,
+            "suggestions": {
+              "tenant": false,
+              "conflict": false,
+              "sensitive": false,
+              "sensitivity": {
+                "state": "structurally_low_risk",
+                "reason_codes": [
+                  "no_sensitive_structural_signal"
+                ],
+                "reasons": [
+                  "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": true,
+              "large_or_binary": false
+            }
+          },
+          {
+            "name": "tenant_id",
+            "data_type": "uuid",
+            "nullable": false,
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 2,
+            "suggestions": {
+              "tenant": true,
+              "conflict": false,
+              "sensitive": false,
+              "sensitivity": {
+                "state": "structurally_low_risk",
+                "reason_codes": [
+                  "no_sensitive_structural_signal"
+                ],
+                "reasons": [
+                  "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": true,
+              "large_or_binary": false
+            }
+          },
+          {
+            "name": "principal_id",
+            "data_type": "uuid",
+            "nullable": false,
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 3,
+            "suggestions": {
+              "tenant": false,
+              "conflict": false,
+              "sensitive": false,
+              "sensitivity": {
+                "state": "structurally_low_risk",
+                "reason_codes": [
+                  "no_sensitive_structural_signal"
+                ],
+                "reasons": [
+                  "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": false,
+              "large_or_binary": false
+            }
+          },
+          {
+            "name": "candidate_id",
+            "data_type": "uuid",
+            "nullable": false,
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 4,
+            "suggestions": {
+              "tenant": false,
+              "conflict": false,
+              "sensitive": false,
+              "sensitivity": {
+                "state": "structurally_low_risk",
+                "reason_codes": [
+                  "no_sensitive_structural_signal"
+                ],
+                "reasons": [
+                  "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": false,
+              "large_or_binary": false
+            }
+          },
+          {
+            "name": "check_kind",
+            "data_type": "text",
+            "nullable": false,
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 5,
+            "suggestions": {
+              "tenant": false,
+              "conflict": false,
+              "sensitive": false,
+              "sensitivity": {
+                "state": "structurally_low_risk",
+                "reason_codes": [
+                  "no_sensitive_structural_signal"
+                ],
+                "reasons": [
+                  "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": false,
+              "large_or_binary": false
+            }
+          },
+          {
+            "name": "check_state",
+            "data_type": "text",
+            "enum_values": [
+              "passed",
+              "failed",
+              "pending"
+            ],
+            "nullable": false,
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 6,
+            "suggestions": {
+              "tenant": false,
+              "conflict": false,
+              "sensitive": false,
+              "sensitivity": {
+                "state": "structurally_low_risk",
+                "reason_codes": [
+                  "no_sensitive_structural_signal"
+                ],
+                "reasons": [
+                  "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": false,
+              "large_or_binary": false
+            }
+          },
+          {
+            "name": "elapsed_seconds",
+            "data_type": "integer",
+            "nullable": false,
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 7,
+            "suggestions": {
+              "tenant": false,
+              "conflict": false,
+              "sensitive": false,
+              "sensitivity": {
+                "state": "structurally_low_risk",
+                "reason_codes": [
+                  "no_sensitive_structural_signal"
+                ],
+                "reasons": [
+                  "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": false,
+              "large_or_binary": false
+            }
+          },
+          {
+            "name": "private_check_note",
+            "data_type": "text",
+            "nullable": false,
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 8,
+            "suggestions": {
+              "tenant": false,
+              "conflict": false,
+              "sensitive": true,
+              "sensitivity": {
+                "state": "unresolved_free_text",
+                "reason_codes": [
+                  "unconstrained_free_text_name"
+                ],
+                "reasons": [
+                  "The field name indicates unconstrained notes, comments, descriptions, or payload content."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": false,
+              "large_or_binary": false
+            }
+          },
+          {
+            "name": "version",
+            "data_type": "integer",
+            "nullable": false,
+            "default": "1",
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 9,
+            "suggestions": {
+              "tenant": false,
+              "conflict": true,
+              "sensitive": false,
+              "sensitivity": {
+                "state": "structurally_low_risk",
+                "reason_codes": [
+                  "no_sensitive_structural_signal"
+                ],
+                "reasons": [
+                  "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": false,
+              "large_or_binary": false
+            }
+          }
+        ],
+        "primary_key": [
+          "check_id"
+        ],
+        "unique_constraints": [],
+        "check_constraints": [
+          {
+            "name": "build_checks_check_state_check",
+            "definition": "CHECK (check_state = ANY (ARRAY['passed'::text, 'failed'::text, 'pending'::text]))"
+          },
+          {
+            "name": "build_checks_elapsed_seconds_check",
+            "definition": "CHECK (elapsed_seconds >= 0)"
+          },
+          {
+            "name": "build_checks_version_check",
+            "definition": "CHECK (version > 0)"
+          }
+        ],
+        "foreign_keys": [
+          {
+            "name": "build_checks_candidate_id_tenant_id_principal_id_fkey",
+            "columns": [
+              "candidate_id",
+              "tenant_id",
+              "principal_id"
+            ],
+            "referenced_schema": "release_ops",
+            "referenced_table": "build_candidates",
+            "referenced_columns": [
+              "candidate_id",
+              "tenant_id",
+              "principal_id"
+            ],
+            "delete_rule": "NO ACTION"
+          }
+        ],
+        "referenced_by": [],
+        "write_triggers": [],
+        "row_level_security": true,
+        "row_level_security_policies": [
+          {
+            "name": "build_checks_trusted_scope",
+            "command": "ALL",
+            "permissive": true,
+            "roles": [
+              "public"
+            ],
+            "using_expression": "((tenant_id = (current_setting('app.tenant_id'::text, true))::uuid) AND (principal_id = (current_setting('app.principal_id'::text, true))::uuid))",
+            "check_expression": "((tenant_id = (current_setting('app.tenant_id'::text, true))::uuid) AND (principal_id = (current_setting('app.principal_id'::text, true))::uuid))"
+          }
+        ],
+        "role_posture": {
+          "owner": "postgres",
+          "current_role_is_owner": false,
+          "current_role_can_assume_owner": false,
+          "privileges": {
+            "select": true,
+            "insert": false,
+            "update": false,
+            "delete": false,
+            "truncate": false,
+            "references": false,
+            "trigger": false
+          },
+          "row_security_forced": true,
+          "row_security_effective_for_current_role": true,
+          "row_security_applicable_policies": [
+            "build_checks_trusted_scope"
+          ]
+        },
+        "indexes": [
+          {
+            "name": "build_checks_pkey",
+            "definition": "CREATE UNIQUE INDEX build_checks_pkey ON release_ops.build_checks USING btree (check_id)",
+            "catalog_key_columns": "{check_id}",
+            "catalog_leading_column": "check_id",
+            "catalog_usable": true,
+            "catalog_partial": false
+          }
+        ],
+        "suggestions": {
+          "tenant_columns": [
+            "tenant_id"
+          ],
+          "conflict_columns": [
+            "version"
+          ],
+          "sensitive_columns": [
+            "private_check_note"
+          ],
+          "default_visible_columns": [
+            "check_id",
+            "tenant_id",
+            "principal_id",
+            "candidate_id",
+            "check_kind",
+            "check_state",
+            "elapsed_seconds",
+            "version"
+          ]
+        }
+      },
+      {
+        "schema": "release_ops",
+        "name": "release_slots",
+        "type": "table",
+        "writable": true,
+        "approximate_row_count": 116,
+        "columns": [
+          {
+            "name": "slot_id",
+            "data_type": "uuid",
+            "nullable": false,
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 1,
+            "suggestions": {
+              "tenant": false,
+              "conflict": false,
+              "sensitive": false,
+              "sensitivity": {
+                "state": "structurally_low_risk",
+                "reason_codes": [
+                  "no_sensitive_structural_signal"
+                ],
+                "reasons": [
+                  "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": true,
+              "large_or_binary": false
+            }
+          },
+          {
+            "name": "tenant_id",
+            "data_type": "uuid",
+            "nullable": false,
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 2,
+            "suggestions": {
+              "tenant": true,
+              "conflict": false,
+              "sensitive": false,
+              "sensitivity": {
+                "state": "structurally_low_risk",
+                "reason_codes": [
+                  "no_sensitive_structural_signal"
+                ],
+                "reasons": [
+                  "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": true,
+              "large_or_binary": false
+            }
+          },
+          {
+            "name": "principal_id",
+            "data_type": "uuid",
+            "nullable": false,
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 3,
+            "suggestions": {
+              "tenant": false,
+              "conflict": false,
+              "sensitive": false,
+              "sensitivity": {
+                "state": "structurally_low_risk",
+                "reason_codes": [
+                  "no_sensitive_structural_signal"
+                ],
+                "reasons": [
+                  "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": false,
+              "large_or_binary": false
+            }
+          },
+          {
+            "name": "slot_ref",
+            "data_type": "text",
+            "nullable": false,
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 4,
+            "suggestions": {
+              "tenant": false,
+              "conflict": false,
+              "sensitive": false,
+              "sensitivity": {
+                "state": "structurally_low_risk",
+                "reason_codes": [
+                  "no_sensitive_structural_signal"
+                ],
+                "reasons": [
+                  "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": false,
+              "large_or_binary": false
+            }
+          },
+          {
+            "name": "slot_state",
+            "data_type": "text",
+            "enum_values": [
+              "ready",
+              "consumed",
+              "retired"
+            ],
+            "nullable": false,
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 5,
+            "suggestions": {
+              "tenant": false,
+              "conflict": false,
+              "sensitive": false,
+              "sensitivity": {
+                "state": "structurally_low_risk",
+                "reason_codes": [
+                  "no_sensitive_structural_signal"
+                ],
+                "reasons": [
+                  "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": false,
+              "large_or_binary": false
+            }
+          },
+          {
+            "name": "version",
+            "data_type": "integer",
+            "nullable": false,
+            "default": "1",
+            "generated": false,
+            "identity": false,
+            "ordinal_position": 6,
+            "suggestions": {
+              "tenant": false,
+              "conflict": true,
+              "sensitive": false,
+              "sensitivity": {
+                "state": "structurally_low_risk",
+                "reason_codes": [
+                  "no_sensitive_structural_signal"
+                ],
+                "reasons": [
+                  "No deterministic sensitive or unconstrained free-text signal was found in the available structural metadata."
+                ],
+                "evidence_source": "database"
+              },
+              "immutable": false,
+              "large_or_binary": false
+            }
+          }
+        ],
+        "primary_key": [
+          "slot_id"
+        ],
+        "unique_constraints": [
+          {
+            "name": "release_slots_slot_id_tenant_id_principal_id_key",
+            "columns": [
+              "slot_id",
+              "tenant_id",
+              "principal_id"
+            ]
+          },
+          {
+            "name": "release_slots_slot_ref_key",
+            "columns": [
+              "slot_ref"
+            ]
+          }
+        ],
+        "check_constraints": [
+          {
+            "name": "release_slots_slot_state_check",
+            "definition": "CHECK (slot_state = ANY (ARRAY['ready'::text, 'consumed'::text, 'retired'::text]))"
+          },
+          {
+            "name": "release_slots_version_check",
+            "definition": "CHECK (version > 0)"
+          }
+        ],
+        "foreign_keys": [],
+        "referenced_by": [
+          {
+            "name": "build_candidates_slot_id_tenant_id_principal_id_fkey",
+            "schema": "release_ops",
+            "table": "build_candidates",
+            "columns": [
+              "slot_id",
+              "tenant_id",
+              "principal_id"
+            ],
+            "referenced_columns": [
+              "slot_id",
+              "tenant_id",
+              "principal_id"
+            ],
+            "delete_rule": "NO ACTION"
+          }
+        ],
+        "write_triggers": [],
+        "row_level_security": true,
+        "row_level_security_policies": [
+          {
+            "name": "release_slots_trusted_scope",
+            "command": "ALL",
+            "permissive": true,
+            "roles": [
+              "public"
+            ],
+            "using_expression": "((tenant_id = (current_setting('app.tenant_id'::text, true))::uuid) AND (principal_id = (current_setting('app.principal_id'::text, true))::uuid))",
+            "check_expression": "((tenant_id = (current_setting('app.tenant_id'::text, true))::uuid) AND (principal_id = (current_setting('app.principal_id'::text, true))::uuid))"
+          }
+        ],
+        "role_posture": {
+          "owner": "postgres",
+          "current_role_is_owner": false,
+          "current_role_can_assume_owner": false,
+          "privileges": {
+            "select": true,
+            "insert": false,
+            "update": false,
+            "delete": false,
+            "truncate": false,
+            "references": false,
+            "trigger": false
+          },
+          "row_security_forced": true,
+          "row_security_effective_for_current_role": true,
+          "row_security_applicable_policies": [
+            "release_slots_trusted_scope"
+          ]
+        },
+        "indexes": [
+          {
+            "name": "release_slots_pkey",
+            "definition": "CREATE UNIQUE INDEX release_slots_pkey ON release_ops.release_slots USING btree (slot_id)",
+            "catalog_key_columns": "{slot_id}",
+            "catalog_leading_column": "slot_id",
+            "catalog_usable": true,
+            "catalog_partial": false
+          },
+          {
+            "name": "release_slots_slot_id_tenant_id_principal_id_key",
+            "definition": "CREATE UNIQUE INDEX release_slots_slot_id_tenant_id_principal_id_key ON release_ops.release_slots USING btree (slot_id, tenant_id, principal_id)",
+            "catalog_key_columns": "{slot_id,tenant_id,principal_id}",
+            "catalog_leading_column": "slot_id",
+            "catalog_usable": true,
+            "catalog_partial": false
+          },
+          {
+            "name": "release_slots_slot_ref_key",
+            "definition": "CREATE UNIQUE INDEX release_slots_slot_ref_key ON release_ops.release_slots USING btree (slot_ref)",
+            "catalog_key_columns": "{slot_ref}",
+            "catalog_leading_column": "slot_ref",
+            "catalog_usable": true,
+            "catalog_partial": false
+          }
+        ],
+        "suggestions": {
+          "tenant_columns": [
+            "tenant_id"
+          ],
+          "conflict_columns": [
+            "version"
+          ],
+          "sensitive_columns": [],
+          "default_visible_columns": [
+            "slot_id",
+            "tenant_id",
+            "principal_id",
+            "slot_ref",
+            "slot_state",
+            "version"
+          ]
+        }
+      }
+    ],
+    "warnings": [
+      "Inspection reads metadata only. Column classifications are suggestions, not a complete data-classification system."
+    ]
+  }
+}
