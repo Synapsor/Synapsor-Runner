@@ -611,8 +611,8 @@ describe("Scoped Explore active boundary routing", () => {
       expect(exploreTool.inputSchema).toMatchObject({
         properties: {
           boundary: expect.objectContaining({
-            type: "string",
-            pattern: "^(?:[a-z][a-z0-9_.-]{0,63})?$",
+            anyOf: [expect.objectContaining({ type: "string",
+              pattern: "^(?:[a-z][a-z0-9_.-]{0,63})?$" }), { type: "null" }],
           }),
           plan: expect.any(Object),
         },

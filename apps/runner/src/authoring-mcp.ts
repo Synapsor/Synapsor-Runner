@@ -140,6 +140,19 @@ export function createScopedExploreMcpServer(
       "Maximum returned rows. Omit to use Runner's conservative reviewed default.",
     ))),
   }).strict();
+  const reviewedDimensions = [
+    z.object({ field: fieldId, relationship: optionalModelArgument(relationshipId) }).strict(),
+    z.object({ numeric_band: numericBandId }).strict(),
+  ] as const;
+  const dimension = automaticBandsReviewed
+    ? z.union([...reviewedDimensions, z.object({
+      numeric_band: z.object({
+        field: fieldId,
+        buckets: modelInteger(z.number().int().min(2).max(16)),
+        method: z.enum(["quantile", "equal_width"]),
+      }).strict(),
+    }).strict()])
+    : z.union(reviewedDimensions);
   const aggregatePlan = z.object({
     kind: z.literal("aggregate"),
     resource: resourceId,
@@ -156,22 +169,7 @@ export function createScopedExploreMcpServer(
         ),
       }).strict(),
     ])).min(1)),
-    dimensions: optionalModelArgument(modelArray(z.array(z.union([
-      z.object({
-        field: fieldId,
-        relationship: optionalModelArgument(relationshipId),
-      }).strict(),
-      z.object({
-        numeric_band: numericBandId,
-      }).strict(),
-      z.object({
-        numeric_band: z.object({
-          field: fieldId,
-          buckets: modelInteger(z.number().int().min(2).max(16)),
-          method: z.enum(["quantile", "equal_width"]),
-        }).strict(),
-      }).strict(),
-    ])))),
+    dimensions: optionalModelArgument(modelArray(z.array(dimension))),
     time_bucket: optionalModelArgument(modelObject(z.object({
       field: fieldId,
       bucket: z.enum(EXPLORATION_TIME_BUCKETS),
