@@ -451,6 +451,8 @@ export type BoundaryReviewCommandOptions = {
   initialPolicyReview?: boolean;
   /** Returns after that one model-guided job instead of opening the Boundary list. */
   exitAfterAgentJob?: boolean;
+  /** Reports the existing shared editor result to a calling operator surface. */
+  onAuthoringResult?: (notice: BoundaryAccessNotice) => void;
 };
 
 export async function boundaryAssistCommand(
@@ -1009,6 +1011,7 @@ export async function boundaryReviewCommand(
       initialSavedReadRevision: options.initialSavedReadRevision,
       initialPolicyReview: options.initialPolicyReview ?? args.includes("--review-rules"),
       exitAfterAgentJob: options.exitAfterAgentJob,
+      onAuthoringResult: options.onAuthoringResult,
     });
   }
   let context = await loadBoundaryReviewContext(projectRoot);
@@ -1756,6 +1759,8 @@ async function interactiveBoundaryReviewLoop(input: {
   initialSavedReadRevision?: boolean;
   initialPolicyReview?: boolean;
   exitAfterAgentJob?: boolean;
+  /** Reports the existing shared editor result to a calling operator surface. */
+  onAuthoringResult?: (notice: BoundaryAccessNotice) => void;
 }): Promise<number> {
   let startAtBoundaryList = input.startAtBoundaryList;
   let continueSavedAgentJob = false;
@@ -1854,6 +1859,8 @@ async function interactiveBoundaryReviewLoop(input: {
           initialPolicyReview: input.initialPolicyReview,
           ...(continueSavedJob ? { continueSavedJob: true } : {}),
         });
+        input.onAuthoringResult?.(assist.notice);
+        if (input.exitAfterAgentJob && !assist.notice_presented) writeBoundaryAccessNotice(assist.notice);
         if (assist.activation_ready && !assist.notice_presented) {
           process.stdout.write([
             "",
@@ -1881,6 +1888,9 @@ async function interactiveBoundaryReviewLoop(input: {
         }
         if (assist.navigation) startAtBoundaryList = assist.navigation === "boundary_list";
       } catch (error) {
+        input.onAuthoringResult?.({ tone: "warning", title: "Model-guided edit blocked or interrupted.",
+          lines: [redactCliErrorMessage(error instanceof Error ? error.message : String(error)),
+            "Inspect the retained disabled draft; active authority and source data are unchanged."] });
         const recovery = await showBoundaryAuthoringFailure(input.session, error, true);
         if (recovery === "pause") return 0;
         startWithAgentJob = recovery === "resume";
@@ -17233,6 +17243,42 @@ async function reviewReadFromSavedActions(input: { projectRoot: string; boundary
   }
 }
 
+/** Both Action menus enter the same W editor, with the selected Read context.
+ * Review-only routing is a different operation and must not be selected here. */
+export async function runModelGuidedActionRevision(input: {
+  projectRoot: string;
+  boundaryName: string;
+  modelSuggestionSession?: ActionModelSuggestionSession;
+  clientSetup?: (projectRoot: string) => Promise<number>;
+}, dependencies: { schemaInspector?: typeof inspectDatabase; session?: BoundaryReviewInteractiveSession;
+  authoringOptions?: BoundaryReviewCommandOptions } = {}): Promise<BoundaryAccessNotice> {
+  const context = await loadBoundaryReviewContext(input.projectRoot);
+  if (context.candidate.pack.name !== input.boundaryName) return {
+    tone: "warning", title: "Edit blocked: select the linked Read boundary.",
+    lines: [`Open the saved ${input.boundaryName} boundary before editing this outcome.`,
+      "No model request or disabled edit was started."],
+  };
+  const linkedDrafts = async () => (await listActionRuleAuthorityDrafts(input.projectRoot))
+    .filter(draft => draft.authority.rules.some(rule => rule.read_boundary_name === input.boundaryName));
+  const before = new Set((await linkedDrafts()).map(draft => draft.digest));
+  let notice: BoundaryAccessNotice = { tone: "warning", title: "No disabled edit was saved.",
+    lines: ["Editing was not started. Reopen the model editor in an operator terminal."] };
+  await boundaryReviewCommand(["--project-root", input.projectRoot, "--access", "--job-first"],
+    dependencies.schemaInspector ?? inspectDatabase, dependencies.session, undefined, {
+      ...dependencies.authoringOptions, startWithAgentJob: true, exitAfterAgentJob: true,
+      clientSetup: input.clientSetup, modelAuthoringSession: input.modelSuggestionSession,
+      onAuthoringResult: result => { notice = result; },
+    });
+  if ((await linkedDrafts()).some(draft => !before.has(draft.digest))) return {
+    tone: "success", title: "Saved disabled Action edit.",
+    lines: ["The new revision is saved for exact review; active authority and execution were not carried forward.",
+      notice.title, ...notice.lines],
+  };
+  // Preserve cancellation, refusal and no-change explanations from the editor.
+  // Exit zero alone is never reported as a saved edit.
+  return { ...notice, lines: [...notice.lines, "No new disabled Action revision was saved by this visit."] };
+}
+
 async function reviewActionsCommand(
   args: string[],
   actionProjectInspector: ActionProjectInspector,
@@ -17256,36 +17302,10 @@ async function reviewActionsCommand(
     ...(optionalArg(args, "--store") ? { storePath: optionalArg(args, "--store") } : {}),
     ...(optionalArg(args, "--suggestion") ? { initialSuggestionId: optionalArg(args, "--suggestion") } : {}),
     ...(modelSuggestionSession ? { modelSuggestionSession } : {}),
-    ...(includeModelGuidedVerifiedActionRevision ? { modelGuidedVerifiedActionRevision: async ({ modelSuggestionSession: currentModel }) => {
-      const result = await boundaryReviewCommand(
-        ["--project-root", projectRoot, "--access", "--job-first", "--review-rules"],
-        inspectDatabase,
-        undefined,
-        undefined,
-        {
-          startWithAgentJob: true,
-          exitAfterAgentJob: true,
-          clientSetup,
-          ...(currentModel ?? modelSuggestionSession
-            ? { modelAuthoringSession: currentModel ?? modelSuggestionSession }
-            : {}),
-        },
-      );
-      return result === 0
-        ? {
-            tone: "success",
-            title: "Returned from model-guided Boundary drafting.",
-            lines: [
-              "The verified Action view will reload the active authority and any disabled replacement.",
-              "No authority changed except through an exact confirmation shown during that conversation.",
-            ],
-          }
-        : {
-            tone: "warning",
-            title: "Model-guided Boundary drafting did not complete.",
-            lines: ["The existing active authority and source data remain unchanged."],
-          };
-    } } : {}),
+    ...(includeModelGuidedVerifiedActionRevision ? { modelGuidedVerifiedActionRevision: input => runModelGuidedActionRevision({
+      ...input, modelSuggestionSession: input.modelSuggestionSession ?? modelSuggestionSession,
+      clientSetup,
+    }) } : {}),
   });
   return 0;
 }

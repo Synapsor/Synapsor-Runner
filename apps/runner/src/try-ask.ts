@@ -680,34 +680,10 @@ export async function tryAsk(
               storePath: reviewInput.storePath,
               env: reviewInput.env,
               modelSuggestionSession: reviewInput.modelSuggestionSession,
-              modelGuidedVerifiedActionRevision: async ({ modelSuggestionSession: currentModel }) => {
-                const { boundaryReviewCommand } = await import("./boundary-commands.js");
-                const { inspectDatabase } = await import("@synapsor-runner/schema-inspector");
-                const result = await boundaryReviewCommand(
-                  ["--project-root", reviewInput.projectRoot, "--access", "--job-first"],
-                  inspectDatabase,
-                  undefined,
-                  undefined,
-                  {
-                    startWithAgentJob: true,
-                    exitAfterAgentJob: true,
-                    modelAuthoringSession: currentModel ?? reviewInput.modelSuggestionSession,
-                  },
-                );
-                return result === 0
-                  ? {
-                      tone: "success" as const,
-                      title: "Returned from model-guided Boundary drafting.",
-                      lines: [
-                        "The verified Action view will reload the active authority and any disabled replacement.",
-                        "No authority changed except through an exact confirmation shown during that conversation.",
-                      ],
-                    }
-                  : {
-                      tone: "warning" as const,
-                      title: "Model-guided Boundary drafting did not complete.",
-                      lines: ["The existing active authority and source data remain unchanged."],
-                    };
+              modelGuidedVerifiedActionRevision: async input => {
+                const { runModelGuidedActionRevision } = await import("./boundary-commands.js");
+                return runModelGuidedActionRevision({ ...input,
+                  modelSuggestionSession: input.modelSuggestionSession ?? reviewInput.modelSuggestionSession });
               },
               returnToAsk: true,
             });

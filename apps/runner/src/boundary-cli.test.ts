@@ -36,6 +36,7 @@ import {
   main,
 } from "./cli.js";
 import {
+  runModelGuidedActionRevision,
   boundaryAssistCommand,
   actionBoundaryHasDeterministicPolicy,
   boundaryActivateCommand as boundaryActivateCommandInternal,
@@ -2923,6 +2924,33 @@ describe("boundary operator-plane CLI", () => {
       await fs.rm(root, { recursive: true, force: true });
     }
   }, 20_000);
+
+  it.each(["cancel", "decline", "wrong_boundary"])("routes Action editing through W and reports an unchanged exit: %s", async posture => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-action-editor-route-"));
+    const inspection = actionTargetInspection();
+    try {
+      const build = buildAutoBoundary({ inspection, sourceEnv: "DATABASE_URL", inspectedSchema: "public",
+        project: { root, package_manager: "npm", frameworks: [], schema_inputs: [], database_env_names: ["DATABASE_URL"] } });
+      await writeAutoBoundaryArtifacts({ projectRoot: root, build });
+      const before = await loadBoundaryReviewContext(root);
+      const screens: string[] = []; const planner = vi.fn(async () => { throw new Error("No model call is authorized by this control"); });
+      const session: BoundaryReviewInteractiveSession = { chooseResource: async () => undefined,
+        editFieldTiers: async () => undefined, promptText: async () => undefined, confirm: async () => false,
+        chooseOption: async title => { screens.push(title); return posture === "decline" && screens.length === 1 ? "model" : undefined; } };
+      const chat = testBoundaryAuthoringChat(session);
+      const result = await runModelGuidedActionRevision({ projectRoot: root,
+        boundaryName: posture === "wrong_boundary" ? "another_boundary" : before.candidate.pack.name,
+        modelSuggestionSession: { provider: "openai", model: "fixture", apiKey: "test-only" } }, {
+          schemaInspector: async () => inspection, session,
+          authoringOptions: { boundaryAuthoringChatFactory: () => chat, modelBoundaryJobPlanner: planner },
+        });
+      expect(planner).not.toHaveBeenCalled();
+      expect((await loadBoundaryReviewContext(root)).candidate).toEqual(before.candidate);
+      if (posture === "wrong_boundary") { expect(result.title).toContain("blocked"); expect(screens).toEqual([]); }
+      else { expect(screens[0]).toBe("START BOUNDARY DRAFTING"); expect(result.lines.join(" ")).toContain("No new disabled Action revision"); }
+      expect(result.title).not.toContain("Returned from model-guided");
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
 
   it.each(["own_save", "concurrent_change"])("revises a freshly saved Read mapping without accepting a competing revision (%s)", async posture => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-read-own-save-"));
