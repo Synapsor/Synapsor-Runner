@@ -1,0 +1,129 @@
+{
+  "nullable-baseline": {
+    "command": [
+      "node_modules/.bin/vitest",
+      "run",
+      "apps/runner/src/boundary-cli.test.ts",
+      "--maxWorkers=1",
+      "--minWorkers=1",
+      "--testTimeout=20000",
+      "--hookTimeout=20000",
+      "-t",
+      "stages an available relationship through the terminal editor without activating it"
+    ],
+    "start": 1789833097.7520676,
+    "source_before": "1124ff76474ffd38be135ee7f10faa39b220aaf195afaedfbeb23582a1775920",
+    "credentials": "absent",
+    "umask": "0077",
+    "pid": 150922,
+    "exit": 0,
+    "seconds": 6.991432189941406,
+    "source_after": "1124ff76474ffd38be135ee7f10faa39b220aaf195afaedfbeb23582a1775920"
+  },
+  "nullable-catalog-hypothesis": {
+    "command": [
+      "node_modules/.bin/vitest",
+      "run",
+      "apps/runner/src/boundary-cli.test.ts",
+      "--maxWorkers=1",
+      "--minWorkers=1",
+      "--testTimeout=20000",
+      "--hookTimeout=20000",
+      "-t",
+      "stages an available relationship through the terminal editor without activating it"
+    ],
+    "start": 1789833020.362503,
+    "source_before": "1124ff76474ffd38be135ee7f10faa39b220aaf195afaedfbeb23582a1775920",
+    "credentials": "absent",
+    "umask": "0077",
+    "pid": 148521,
+    "exit": 1,
+    "seconds": 7.325077772140503,
+    "source_after": "1124ff76474ffd38be135ee7f10faa39b220aaf195afaedfbeb23582a1775920"
+  },
+  "nullable-catalog-hypothesis02": {
+    "command": [
+      "node_modules/.bin/vitest",
+      "run",
+      "apps/runner/src/boundary-cli.test.ts",
+      "--maxWorkers=1",
+      "--minWorkers=1",
+      "--testTimeout=20000",
+      "--hookTimeout=20000",
+      "-t",
+      "stages an available relationship through the terminal editor without activating it"
+    ],
+    "start": 1789833056.1284258,
+    "source_before": "1124ff76474ffd38be135ee7f10faa39b220aaf195afaedfbeb23582a1775920",
+    "credentials": "absent",
+    "umask": "0077",
+    "pid": 149611,
+    "exit": 1,
+    "seconds": 12.351200819015503,
+    "source_after": "1124ff76474ffd38be135ee7f10faa39b220aaf195afaedfbeb23582a1775920"
+  },
+  "nullable-terminal-trace": {
+    "command": [
+      "node_modules/.bin/vitest",
+      "run",
+      "apps/runner/src/boundary-cli.test.ts",
+      "--maxWorkers=1",
+      "--minWorkers=1",
+      "--testTimeout=20000",
+      "--hookTimeout=20000",
+      "-t",
+      "stages an available relationship through the terminal editor without activating it"
+    ],
+    "start": 1789833122.9978943,
+    "source_before": "1124ff76474ffd38be135ee7f10faa39b220aaf195afaedfbeb23582a1775920",
+    "credentials": "absent",
+    "umask": "0077",
+    "pid": 151763,
+    "exit": 1,
+    "seconds": 7.139975547790527,
+    "source_after": "1124ff76474ffd38be135ee7f10faa39b220aaf195afaedfbeb23582a1775920"
+  },
+  "nullable-catalog-correction03": {
+    "command": [
+      "node_modules/.bin/vitest",
+      "run",
+      "apps/runner/src/boundary-cli.test.ts",
+      "apps/runner/src/scoped-read-recovery.test.ts",
+      "--maxWorkers=1",
+      "--minWorkers=1",
+      "--testTimeout=20000",
+      "--hookTimeout=20000",
+      "-t",
+      "stages an available relationship through the terminal editor without activating it|fresh public scoped Read|retains the private fraud|allows reviewed exclusion"
+    ],
+    "start": 1789833174.846467,
+    "source_before": "1124ff76474ffd38be135ee7f10faa39b220aaf195afaedfbeb23582a1775920",
+    "credentials": "absent",
+    "umask": "0077",
+    "pid": 153258,
+    "exit": 0,
+    "seconds": 30.590507745742798,
+    "source_after": "1124ff76474ffd38be135ee7f10faa39b220aaf195afaedfbeb23582a1775920"
+  },
+  "nullable-preexisting-fresh-control": {
+    "command": [
+      "node_modules/.bin/vitest",
+      "run",
+      "apps/runner/src/boundary-cli.test.ts",
+      "--maxWorkers=1",
+      "--minWorkers=1",
+      "--testTimeout=20000",
+      "--hookTimeout=20000",
+      "-t",
+      "stages an available relationship through the terminal editor without activating it"
+    ],
+    "start": 1789833217.0560281,
+    "source_before": "1124ff76474ffd38be135ee7f10faa39b220aaf195afaedfbeb23582a1775920",
+    "credentials": "absent",
+    "umask": "0077",
+    "pid": 154691,
+    "exit": 1,
+    "seconds": 11.94514775276184,
+    "source_after": "1124ff76474ffd38be135ee7f10faa39b220aaf195afaedfbeb23582a1775920"
+  }
+}

@@ -1,0 +1,104 @@
+{
+  "attempts": [
+    {
+      "attempt": 1,
+      "request_sha256": "72ade4fc8323f81ce680e8461069203dae587bf2c04a9db7f52cad5230684f77",
+      "response_sha256": "8d676c33c2717860d501ad7b2d3eb2b23050406e99385084664ee6c14fff1007",
+      "settings": {
+        "model": "openai/gpt-5.6-terra",
+        "provider": {
+          "require_parameters": true,
+          "allow_fallbacks": false,
+          "data_collection": "deny"
+        },
+        "tool_choice": {
+          "type": "function",
+          "function": {
+            "name": "runner__plan_boundary_job"
+          }
+        },
+        "max_tokens": 4000,
+        "stream": true
+      },
+      "tool_names": [
+        "runner__plan_boundary_job"
+      ],
+      "usage": {
+        "prompt_tokens": 3937,
+        "completion_tokens": 274,
+        "total_tokens": 4211,
+        "cost": 0.0130645,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 3805,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.0130645,
+          "upstream_inference_prompt_cost": 0.0097765,
+          "upstream_inference_completions_cost": 0.003288
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 0,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      }
+    },
+    {
+      "attempt": 2,
+      "request_sha256": "2d000ba193829f906ec1070420ddc6834431e300f2c9bacccd2ff0cf4b07eef3",
+      "response_sha256": "dbed216a7c3280b01ee3c8f1687c4ea4e16d8b15b32e3d67efb1b072debf2fff",
+      "settings": {
+        "model": "openai/gpt-5.6-terra",
+        "provider": {
+          "require_parameters": true,
+          "allow_fallbacks": false,
+          "data_collection": "deny"
+        },
+        "tool_choice": {
+          "type": "function",
+          "function": {
+            "name": "runner__submit_read_workloads"
+          }
+        },
+        "max_tokens": 4000,
+        "stream": true
+      },
+      "tool_names": [
+        "runner__submit_read_workloads"
+      ],
+      "usage": {
+        "prompt_tokens": 5979,
+        "completion_tokens": 388,
+        "total_tokens": 6367,
+        "cost": 0.019537,
+        "is_byok": false,
+        "prompt_tokens_details": {
+          "cached_tokens": 0,
+          "cache_write_tokens": 5846,
+          "audio_tokens": 0,
+          "video_tokens": 0
+        },
+        "cost_details": {
+          "upstream_inference_cost": 0.019537,
+          "upstream_inference_prompt_cost": 0.014881,
+          "upstream_inference_completions_cost": 0.004656
+        },
+        "completion_tokens_details": {
+          "reasoning_tokens": 240,
+          "image_tokens": 0,
+          "audio_tokens": 0
+        }
+      }
+    }
+  ],
+  "calls": 2,
+  "provider_reported_cost": 0.0326015,
+  "reopen": "local Read editor",
+  "restart": "saved local structural preflight; zero extra provider calls",
+  "authority": "unchanged; no activation",
+  "remaining_original_job": "required customer fraud dependency absent"
+}

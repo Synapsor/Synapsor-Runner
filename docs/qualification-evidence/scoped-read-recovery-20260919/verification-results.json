@@ -1,0 +1,395 @@
+[
+  {
+    "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919/j5-before-test-exit.json",
+    "sha256": "79c927c94a2baf1a7b3cb1b1f425ed856274b414475e8c377304ad6c641a2a11",
+    "result": {
+      "exit": 1,
+      "args": [
+        "bwrap",
+        "--die-with-parent",
+        "--ro-bind",
+        "/",
+        "/",
+        "--bind",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919",
+        "--bind",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919/test-tmp",
+        "/tmp",
+        "--bind",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919/test-var-tmp",
+        "/var/tmp",
+        "--bind",
+        "/home/sandesh-tiwari/Desktop/C++/synapsor-runner",
+        "/home/sandesh-tiwari/Desktop/C++/synapsor-runner",
+        "--proc",
+        "/proc",
+        "--dev",
+        "/dev",
+        "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.bin/vitest",
+        "run",
+        "apps/runner/src/scoped-read-recovery.test.ts",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ]
+    }
+  },
+  {
+    "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919/j5-after-test-exit.json",
+    "sha256": "d44fef8001ff328f7d18abbdcf7e1bc4916f4f39e8206c2e2b0feb8eb0072d80",
+    "result": {
+      "exit": 0,
+      "args": [
+        "bwrap",
+        "--die-with-parent",
+        "--ro-bind",
+        "/",
+        "/",
+        "--bind",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919",
+        "--bind",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919/test-tmp",
+        "/tmp",
+        "--bind",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919/test-var-tmp",
+        "/var/tmp",
+        "--bind",
+        "/home/sandesh-tiwari/Desktop/C++/synapsor-runner",
+        "/home/sandesh-tiwari/Desktop/C++/synapsor-runner",
+        "--proc",
+        "/proc",
+        "--dev",
+        "/dev",
+        "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/node_modules/.bin/vitest",
+        "run",
+        "apps/runner/src/scoped-read-recovery.test.ts",
+        "apps/runner/src/control-policy-fresh-authoring.test.ts",
+        "apps/runner/src/read-relationship-host.test.ts",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ]
+    }
+  },
+  {
+    "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919/j6-before-exit.json",
+    "sha256": "687340d3c4cad8c151190e7649f06e5f0c07552e582103b1db8b9be7ea92bf2f",
+    "result": {
+      "command": [
+        "node_modules/.bin/vitest",
+        "run",
+        "apps/runner/src/read-relationship-host.test.ts",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000",
+        "-t",
+        "unavailable structural request|resumes a declined supported"
+      ],
+      "start": 1789831086.1863005,
+      "source_before": "8b0e90287022d9a47004e134eaec1bebd8863413cc3583d4807594a31b21de5c",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 90289,
+      "exit": 1,
+      "seconds": 21.97737979888916,
+      "source_after": "8b0e90287022d9a47004e134eaec1bebd8863413cc3583d4807594a31b21de5c"
+    }
+  },
+  {
+    "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919/j6-focused-after-exit.json",
+    "sha256": "ff006505cd27279c074aa3357f766b0528b9d9cfa77e831ae4c1fe3293ab309c",
+    "result": {
+      "command": [
+        "node_modules/.bin/vitest",
+        "run",
+        "apps/runner/src/read-relationship-host.test.ts",
+        "apps/runner/src/read-relationship-preparation.test.ts",
+        "apps/runner/src/boundary-authoring-resume.test.ts",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "start": 1789831144.679554,
+      "source_before": "8b0e90287022d9a47004e134eaec1bebd8863413cc3583d4807594a31b21de5c",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 92142,
+      "exit": 0,
+      "seconds": 106.29031991958618,
+      "source_after": "8b0e90287022d9a47004e134eaec1bebd8863413cc3583d4807594a31b21de5c"
+    }
+  },
+  {
+    "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919/focused-composed-exit.json",
+    "sha256": "edcef742f235064b4f0a343fccaa8e1285ffe676c62eb664478fe33406664dc0",
+    "result": {
+      "command": [
+        "node_modules/.bin/vitest",
+        "run",
+        "apps/runner/src/scoped-read-recovery.test.ts",
+        "apps/runner/src/read-relationship-review.test.ts",
+        "apps/runner/src/boundary-authoring-resume.test.ts",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "start": 1789831339.5988724,
+      "source_before": "db4126134ced4ed58381bf1b4aba202fcb66fb80fedc1d5d6f2aef7230b38173",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 99415,
+      "exit": 0,
+      "seconds": 32.952534198760986,
+      "source_after": "db4126134ced4ed58381bf1b4aba202fcb66fb80fedc1d5d6f2aef7230b38173"
+    }
+  },
+  {
+    "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919/combined-read-exit.json",
+    "sha256": "c00feb2d7033b43b1c7672639876162569ab65089ef0b5e064084bcebbaf7686",
+    "result": {
+      "command": [
+        "node_modules/.bin/vitest",
+        "run",
+        "apps/runner/src/scoped-read-recovery.test.ts",
+        "apps/runner/src/auto-boundary.test.ts",
+        "apps/runner/src/boundary-rescan.test.ts",
+        "apps/runner/src/control-policy-fresh-authoring.test.ts",
+        "apps/runner/src/read-relationship-host.test.ts",
+        "apps/runner/src/read-relationship-review.test.ts",
+        "apps/runner/src/read-relationship-preparation.test.ts",
+        "apps/runner/src/boundary-authoring-resume.test.ts",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "start": 1789831686.3865695,
+      "source_before": "db4126134ced4ed58381bf1b4aba202fcb66fb80fedc1d5d6f2aef7230b38173",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 109406,
+      "exit": 0,
+      "seconds": 93.31767702102661,
+      "source_after": "db4126134ced4ed58381bf1b4aba202fcb66fb80fedc1d5d6f2aef7230b38173"
+    }
+  },
+  {
+    "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919/stable-types-exit.json",
+    "sha256": "806ee55d45ef51cc22de93a902770c47e50c3b4188122b767325c746947225df",
+    "result": {
+      "command": [
+        "node_modules/.bin/tsc",
+        "-b",
+        "--pretty",
+        "false"
+      ],
+      "start": 1789832125.6405191,
+      "source_before": "db4126134ced4ed58381bf1b4aba202fcb66fb80fedc1d5d6f2aef7230b38173",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 122136,
+      "exit": 1,
+      "seconds": 6.121327638626099,
+      "source_after": "db4126134ced4ed58381bf1b4aba202fcb66fb80fedc1d5d6f2aef7230b38173"
+    }
+  },
+  {
+    "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919/stable-types02-exit.json",
+    "sha256": "2c58ce9d7ac19b62dfcab251fd34b4bdb24716946ade87b831426573f83ea8b5",
+    "result": {
+      "command": [
+        "node_modules/.bin/tsc",
+        "-b",
+        "--pretty",
+        "false"
+      ],
+      "start": 1789832200.4184623,
+      "source_before": "1124ff76474ffd38be135ee7f10faa39b220aaf195afaedfbeb23582a1775920",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 124529,
+      "exit": 0,
+      "seconds": 3.4126780033111572,
+      "source_after": "1124ff76474ffd38be135ee7f10faa39b220aaf195afaedfbeb23582a1775920"
+    }
+  },
+  {
+    "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919/stable-full-exit.json",
+    "sha256": "afc4cf8dd2e85058e552af67321be7def1607f156064e13afb2d580dbe146cbf",
+    "result": {
+      "command": [
+        "node_modules/.bin/vitest",
+        "run",
+        "--maxWorkers=4",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "start": 1789832099.8167498,
+      "source_before": "db4126134ced4ed58381bf1b4aba202fcb66fb80fedc1d5d6f2aef7230b38173",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 120688,
+      "exit": -15,
+      "seconds": 86.7358865737915,
+      "source_after": "db4126134ced4ed58381bf1b4aba202fcb66fb80fedc1d5d6f2aef7230b38173"
+    }
+  },
+  {
+    "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919/stable-full-interruption.json",
+    "sha256": "090bc236afcbeb4a8c9fb1ed5e8d22dff12c60bd10886d040ba174f0c405d325",
+    "result": {
+      "at": "2026-09-19T15:36:26.516173+00:00",
+      "pid": 120688,
+      "reason": "Test fixture type failure discovered by concurrent typecheck; preserve partial suite, stop before editing the fixture. Not a completed pass."
+    }
+  },
+  {
+    "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919/postgres-read-persistence-exit.json",
+    "sha256": "76dc43a32341f22efc41ca18e91c36a0962d25d642fa776eaf0bbe3c092b87b1",
+    "result": {
+      "command": [
+        "node_modules/.bin/vitest",
+        "run",
+        "apps/runner/src/control-policy-authority-codec.test.ts",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000",
+        "-t",
+        "postgres validated operator policy transactions.*(keeps the original Read|retains partial coded|rescans and renames|persists exact disabled|commits complete Read|reopens, edits and switches|rescans stored reviews|refuses stale review and admits)"
+      ],
+      "start": 1789832552.813852,
+      "source_before": "1124ff76474ffd38be135ee7f10faa39b220aaf195afaedfbeb23582a1775920",
+      "credentials": "only owned SYNAPSOR_TEST_POSTGRES_URL",
+      "umask": "0077",
+      "pid": 134925,
+      "exit": 0,
+      "seconds": 13.091399431228638,
+      "source_after": "1124ff76474ffd38be135ee7f10faa39b220aaf195afaedfbeb23582a1775920"
+    }
+  },
+  {
+    "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919/stable-full02-exit.json",
+    "sha256": "e0024f825e068fb6ce0bff99f04f4c3a0dac846a6f86c2618be223366df71ba4",
+    "result": {
+      "command": [
+        "node_modules/.bin/vitest",
+        "run",
+        "--maxWorkers=4",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "start": 1789832232.2347956,
+      "source_before": "1124ff76474ffd38be135ee7f10faa39b220aaf195afaedfbeb23582a1775920",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 125518,
+      "exit": 1,
+      "seconds": 1236.9069933891296,
+      "source_after": "1124ff76474ffd38be135ee7f10faa39b220aaf195afaedfbeb23582a1775920"
+    }
+  },
+  {
+    "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919/stable-types03-exit.json",
+    "sha256": "ea3da6149b32dbaa6c5de58e45a3385aeb8c35dbdaf108e30dc0387774cd5b55",
+    "result": {
+      "command": [
+        "node_modules/.bin/tsc",
+        "-b",
+        "--pretty",
+        "false"
+      ],
+      "start": 1789833538.4404933,
+      "source_before": "f674eee80aaa758edacd38fefbfb1b76605ec782ea1a4c18bf8a7e04bec6d07b",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 171316,
+      "exit": 0,
+      "seconds": 5.583418369293213,
+      "source_after": "f674eee80aaa758edacd38fefbfb1b76605ec782ea1a4c18bf8a7e04bec6d07b"
+    }
+  },
+  {
+    "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919/nullable-structured-fixed-exit.json",
+    "sha256": "91dda483beb90d53a0039342cad2a8c5c47fca1eb24298296418066734cf84ec",
+    "result": {
+      "command": [
+        "node_modules/.bin/vitest",
+        "run",
+        "apps/runner/src/boundary-cli.test.ts",
+        "apps/runner/src/boundary-structured-authoring.test.ts",
+        "apps/runner/src/scoped-read-recovery.test.ts",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000",
+        "-t",
+        "structured boundary authoring|stages an available relationship through the terminal editor without activating it|fresh public scoped Read|retains the private fraud|allows reviewed exclusion"
+      ],
+      "start": 1789833514.4681716,
+      "source_before": "f674eee80aaa758edacd38fefbfb1b76605ec782ea1a4c18bf8a7e04bec6d07b",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 170491,
+      "exit": 0,
+      "seconds": 21.862736225128174,
+      "source_after": "f674eee80aaa758edacd38fefbfb1b76605ec782ea1a4c18bf8a7e04bec6d07b"
+    }
+  },
+  {
+    "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919/stable-full03-exit.json",
+    "sha256": "3a5dd8849af6314e713d55edbd45b0812349cdd815dae1674e40d25324f5b735",
+    "result": {
+      "command": [
+        "node_modules/.bin/vitest",
+        "run",
+        "--maxWorkers=4",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "start": 1789833562.2693293,
+      "source_before": "f674eee80aaa758edacd38fefbfb1b76605ec782ea1a4c18bf8a7e04bec6d07b",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 172234,
+      "exit": 0,
+      "seconds": 1435.7481532096863,
+      "source_after": "f674eee80aaa758edacd38fefbfb1b76605ec782ea1a4c18bf8a7e04bec6d07b"
+    }
+  },
+  {
+    "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919/postgres-final-read-exit.json",
+    "sha256": "72d7fc43f8eb4fff572705033c03d51cbfeb4153d83c6178cf8a627a1069d11b",
+    "result": {
+      "command": [
+        "node_modules/.bin/vitest",
+        "run",
+        "apps/runner/src/control-policy-authority-codec.test.ts",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000",
+        "-t",
+        "postgres validated operator policy transactions.*(keeps the original Read|retains partial coded|rescans and renames|persists exact disabled|commits complete Read|reopens, edits and switches|rescans stored reviews|refuses stale review and admits)"
+      ],
+      "start": 1789833588.5986264,
+      "source_before": "f674eee80aaa758edacd38fefbfb1b76605ec782ea1a4c18bf8a7e04bec6d07b",
+      "credentials": "only owned SYNAPSOR_TEST_POSTGRES_URL",
+      "umask": "0077",
+      "pid": 173296,
+      "exit": 0,
+      "seconds": 13.732547521591187,
+      "source_after": "f674eee80aaa758edacd38fefbfb1b76605ec782ea1a4c18bf8a7e04bec6d07b"
+    }
+  }
+]

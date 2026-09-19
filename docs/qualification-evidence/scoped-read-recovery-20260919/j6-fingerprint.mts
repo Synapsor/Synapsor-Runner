@@ -1,0 +1,11 @@
+import fs from 'node:fs/promises';
+import {inspectDatabase,schemaFingerprintForInspection,rolePostureFingerprint} from '/home/sandesh-tiwari/Desktop/C++/synapsor-runner/packages/schema-inspector/src/index.ts';
+const r='/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919';
+const db=JSON.parse(await fs.readFile(r+'/j6-database-private.json','utf8'));
+const inspection=await inspectDatabase({databaseUrlEnv:'DATABASE_URL',schema:'refunds',env:{DATABASE_URL:db.reader_url}});
+const old=JSON.parse(await fs.readFile(r+'/j6-inspection/read-authoring.json','utf8')).entries[0].candidate_lock;
+const result={schemas:inspection.schemas,schema:schemaFingerprintForInspection(inspection),expected_schema:old.schema_fingerprint,role:rolePostureFingerprint(inspection),expected_role:old.role_posture_fingerprint};
+console.log(JSON.stringify(result));await fs.writeFile(r+'/j6-matching-preflight.json',JSON.stringify(result,null,2));await fs.writeFile(r+'/j6-matching-inspection.json',JSON.stringify(inspection,null,2));
+const {resourceAuthorityDependencyFingerprint}=await import('/home/sandesh-tiwari/Desktop/C++/synapsor-runner/apps/runner/src/auto-boundary.ts');
+console.log('Resource equality:',Object.entries(old.authority_dependencies.resources).map(([id,d])=>({id,same:resourceAuthorityDependencyFingerprint(d as any,inspection)===(d as any).fingerprint})));
+for(const schemas of [['refunds'],['public','refunds']]) console.log('Diagnostic only schemas',schemas,schemaFingerprintForInspection({...inspection,schemas})===old.schema_fingerprint);

@@ -1,0 +1,79 @@
+{
+  "started_at": "2026-09-19T15:35:11.768796+00:00",
+  "network": "unshared network namespace; npm offline; writable disposable cache copy",
+  "home": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-read-recovery-515d260-20260919/offline-home",
+  "commands": [
+    {
+      "name": "trusted-core",
+      "args": [
+        "node",
+        "scripts/check-trusted-core-dependencies.mjs"
+      ],
+      "phase": "source",
+      "source_immutable_during_full_suite": true,
+      "started_at": "2026-09-19T15:35:11.769102+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-19T15:35:14.443642+00:00"
+    },
+    {
+      "name": "licenses",
+      "args": [
+        "node",
+        "scripts/check-license-content.mjs"
+      ],
+      "phase": "source",
+      "source_immutable_during_full_suite": true,
+      "started_at": "2026-09-19T15:35:14.444460+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-19T15:35:16.315802+00:00"
+    },
+    {
+      "name": "human-commands",
+      "args": [
+        "node",
+        "scripts/verify-human-command-surface.mjs"
+      ],
+      "phase": "source",
+      "source_immutable_during_full_suite": true,
+      "started_at": "2026-09-19T15:35:16.316372+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-19T15:35:17.785122+00:00"
+    },
+    {
+      "name": "dsl-sources",
+      "args": [
+        "bash",
+        "scripts/verify-dsl-source-paths.sh"
+      ],
+      "phase": "source",
+      "source_immutable_during_full_suite": true,
+      "started_at": "2026-09-19T15:35:17.785480+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-19T15:35:19.561879+00:00"
+    },
+    {
+      "name": "cursor-plugin",
+      "args": [
+        "node",
+        "scripts/verify-cursor-plugin.mjs"
+      ],
+      "phase": "source",
+      "source_immutable_during_full_suite": true,
+      "started_at": "2026-09-19T15:35:19.562229+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-19T15:35:19.727056+00:00"
+    },
+    {
+      "name": "mcp-client-configs",
+      "args": [
+        "node",
+        "scripts/verify-mcp-client-configs.mjs"
+      ],
+      "phase": "source",
+      "source_immutable_during_full_suite": true,
+      "started_at": "2026-09-19T15:35:19.727459+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-19T15:35:56.741184+00:00"
+    }
+  ]
+}
