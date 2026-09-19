@@ -291,7 +291,7 @@ import {
   type ModelReadBoundaryRevisionResult,
 } from "./read-boundary-revision-model.js";
 import { parseReadPolicySettings } from "./read-boundary-policy-revision.js";
-import { assertReviewedReadRelationshipRetained, reviewReadRelationship, validateReviewedReadRelationship } from "./read-relationship-review.js";
+import { ReadRelationshipUnavailableError, assertReviewedReadRelationshipRetained, reviewReadRelationship, validateReviewedReadRelationship } from "./read-relationship-review.js";
 import { prepareReadWorkloadRelationship, validateReadWorkloadRelationshipPreparation } from "./read-relationship-preparation.js";
 import { readBoundaryReviewSections, readRevisionDiff, reviewSectionLines, loadReadReviewDiff, saveReadReviewDiff, type ReviewSection } from "./read-boundary-review-view.js";
 import { readDiscoveryCompatibility, readOptionalExplorationDraft } from "./auto-boundary.js";
@@ -3206,7 +3206,8 @@ async function showBoundaryAuthoringFailure(
     session.present?.("Setup paused", ["Your saved work is available when you resume."], "warning");
     return "pause";
   }
-  const summary = ["This setup step could not finish. Your saved job can be reopened without starting over.",
+  const relationshipBlocked = error instanceof ReadRelationshipUnavailableError;
+  const summary = relationshipBlocked ? error.details : ["This setup step could not finish. Your saved job can be reopened without starting over.",
     ...notice.lines, "Recovery choices do not enable permissions or change customer data."];
   if (!session.chooseOption) {
     await showManualReadActivationBlocker(session, "Setup needs attention", summary);
@@ -3214,14 +3215,17 @@ async function showBoundaryAuthoringFailure(
   }
   while (true) {
     const choice = await session.chooseOption("SETUP NEEDS ATTENTION", [
-      { value: "resume", label: "Reopen saved setup", detail: "Retain your job and rules; retry only after resolving the reported prerequisite." },
+      { value: "resume", label: "Reopen saved setup", detail: relationshipBlocked
+        ? "Review Read resources and paths locally; the job remains pending. No model retry."
+        : "Retain your job and rules; retry only after resolving the reported prerequisite." },
       { value: "details", label: "Inspect the exact failure", detail: "Local diagnostics; no model request or permission change." },
       { value: "pause", label: "Save and continue later" },
       { value: "manual", label: "Open the manual editor" },
     ], { initialValue: "pause", reviewOnly: true, displayContext: true, context: summary });
     if (choice === "details") {
       await showManualReadActivationBlocker(session, "Setup failure details", details);
-    } else return choice === "resume" || choice === "manual" ? choice : "pause";
+    } else return choice === "resume" && relationshipBlocked ? "manual"
+      : choice === "resume" || choice === "manual" ? choice : "pause";
   }
 }
 
@@ -4353,6 +4357,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   let activeResume = availableResume;
   let resumeRead: BoundaryAuthoringResumeRead | undefined = availableResume?.read;
   let resumeReadIntent = availableResume?.read_intent;
+  let pendingReadRelationship = availableResume?.pending_read_relationship;
   let pendingJobRevision = availableResume?.pending_job_revision;
   let pendingReadRevision = availableResume?.pending_read_revision;
   let privateReadMetadataDigest = availableResume?.private_read_metadata_digest;
@@ -4421,6 +4426,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         ...(intendedClient ? { intendedClient } : {}),
         ...(authoringConversation?.policySources?.snapshots.length ? { policySourceSession: authoringConversation.policySources.id } : {}),
         ...(resumeReadIntent ? { readIntent: resumeReadIntent } : {}),
+        pendingReadRelationship: pendingReadRelationship ?? null,
         ...(pendingJobRevision ? { pendingJobRevision } : {}),
         ...(pendingReadRevision ? { pendingReadRevision } : {}),
         ...(privateReadMetadataDigest ? { privateReadMetadataDigest } : {}),
@@ -4714,6 +4720,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       activeResume = editingSavedJob ? availableResume : undefined;
       resumeRead = editingSavedJob ? availableResume!.read : undefined;
       resumeReadIntent = editingSavedJob ? availableResume!.read_intent : undefined;
+      if (!editingSavedJob) pendingReadRelationship = undefined;
       resumeAction = editingSavedJob ? availableResume!.action : undefined;
       if (!editingSavedJob) reviewedVersionFields = [];
       if (!editingSavedJob) readPrerequisiteDecisions = [];
@@ -6090,6 +6097,61 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         }
       }
     }
+    const prepareRequestedRelationship = async (request: { resource: string }, currentBoundary: ExplorationBoundaryDraft) => {
+      pendingReadRelationship = { resource: request.resource };
+      await persistAuthoringResume("read_mapping");
+      await assertAuthoringResumeCurrent(undefined);
+      const previous = context;
+      if (explorationBoundaryCandidateDigest(currentBoundary) !== previous.bundle.candidate_digest) {
+        throw new Error("READ_RELATIONSHIP_CANDIDATE_STALE: Reopen the current disabled Read mapping before reviewing a path.");
+      }
+      const assertCurrent = async () => {
+        await assertAuthoringResumeCurrent(undefined);
+        const current = await loadBoundaryReviewContext(input.projectRoot);
+        if (canonicalJsonDigest(current.bundle.mutation_bindings)
+          !== canonicalJsonDigest(previous.bundle.mutation_bindings)) {
+          throw new Error("READ_RELATIONSHIP_CANDIDATE_STALE: The current Read review or authoring epoch changed.");
+        }
+      };
+      const prepare = (candidate: ExplorationBoundaryDraft) => prepareExactBoundaryCandidateMutation(input.projectRoot, {
+        candidate, expected_generated_boundary_digest: previous.bundle.candidate_digest,
+        expected_candidate_digest: explorationBoundaryCandidateDigest(candidate),
+        expected_bindings: previous.bundle.mutation_bindings,
+        actor: localInteractiveActor(), reason: "Review one exact inspected relationship for the unfinished disabled Read mapping.",
+      }, input.schemaInspector);
+      // Fresh validation only: this preview is not saved or activated.
+      await assertCurrent();
+      const inspected = await prepare(currentBoundary);
+      if (inspected.build.exploration_boundary.generation_lock_fingerprint !== currentBoundary.generation_lock_fingerprint) {
+        throw new Error("READ_RELATIONSHIP_PROOF_STALE: Revalidate the saved job through normal rescan before reviewing its current generated paths.");
+      }
+      const prepared = await prepareReadWorkloadRelationship({ projectRoot: input.projectRoot,
+        boundary: currentBoundary, generatedBoundary: inspected.build.exploration_boundary,
+        fromResource: request.resource, session: input.session, modelLabel: boundaryModelLabel(mappingSession), assertCurrent });
+      if (!prepared) return undefined;
+      const preview = await prepare(prepared.candidate);
+      const verified = { ...prepared, generated_boundary: preview.build.exploration_boundary, candidate: preview.candidate };
+      validateReadWorkloadRelationshipPreparation(verified, currentBoundary);
+      await assertCurrent();
+      const saved = await commitExactBoundaryCandidateMutation(input.projectRoot, preview);
+      if (saved.candidate_digest !== preview.candidate_digest || saved.candidate_digest === previous.bundle.candidate_digest) {
+        throw new Error("READ_RELATIONSHIP_SAVE_UNCONFIRMED: No changed exact relationship revision was acknowledged. Resume the current saved job.");
+      }
+      context = await reloadReadReviewAfterCommit(input.projectRoot, saved);
+      mappingBoundary = context.candidate;
+      validateReadWorkloadRelationshipPreparation({ ...verified, candidate: mappingBoundary }, currentBoundary);
+      pendingReadRelationship = undefined;
+      await persistAuthoringResume("read_mapping");
+      await assertAuthoringResumeCurrent(undefined);
+      return { ...verified, candidate: mappingBoundary };
+    };
+    // Retry the saved structural step locally; a restart does not buy another
+    // model attempt at an unchanged missing prerequisite. Current proof and
+    // explicit operator selection are required again, never cached consent.
+    if (pendingReadRelationship) {
+      const prepared = await prepareRequestedRelationship(pendingReadRelationship, mappingBoundary);
+      if (!prepared) throw new Error("READ_RELATIONSHIP_REVIEW_PENDING: The saved relationship remains pending; no model request was made.");
+    }
     while (!workload && !mapped) {
       if (!intent) throw new Error("A new Read mapping requires a reviewed Read intent.");
       let failure: BoundaryModelDraftFailure | undefined;
@@ -6112,50 +6174,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             ...(mappingSession.conversation ? { conversation: mappingSession.conversation } : {}),
             deferNarration: Boolean(input.authoringChat),
             egressAcknowledged: true,
-            relationshipReviewHandler: async (request, currentBoundary) => {
-              const previous = context;
-              if (explorationBoundaryCandidateDigest(currentBoundary) !== previous.bundle.candidate_digest) {
-                throw new Error("READ_RELATIONSHIP_CANDIDATE_STALE: Reopen the current disabled Read mapping before reviewing a path.");
-              }
-              const assertCurrent = async () => {
-                await assertAuthoringResumeCurrent(undefined);
-                const current = await loadBoundaryReviewContext(input.projectRoot);
-                if (canonicalJsonDigest(current.bundle.mutation_bindings)
-                  !== canonicalJsonDigest(previous.bundle.mutation_bindings)) {
-                  throw new Error("READ_RELATIONSHIP_CANDIDATE_STALE: The current Read review or authoring epoch changed.");
-                }
-              };
-              const prepare = (candidate: ExplorationBoundaryDraft) => prepareExactBoundaryCandidateMutation(input.projectRoot, {
-                candidate, expected_generated_boundary_digest: previous.bundle.candidate_digest,
-                expected_candidate_digest: explorationBoundaryCandidateDigest(candidate),
-                expected_bindings: previous.bundle.mutation_bindings,
-                actor: localInteractiveActor(), reason: "Review one exact inspected relationship for the unfinished disabled Read mapping.",
-              }, input.schemaInspector);
-              // Fresh validation only: this preview is not saved or activated.
-              await assertCurrent();
-              const inspected = await prepare(currentBoundary);
-              if (inspected.build.exploration_boundary.generation_lock_fingerprint !== currentBoundary.generation_lock_fingerprint) {
-                throw new Error("READ_RELATIONSHIP_PROOF_STALE: Revalidate the saved job through normal rescan before reviewing its current generated paths.");
-              }
-              const prepared = await prepareReadWorkloadRelationship({ projectRoot: input.projectRoot,
-                boundary: currentBoundary, generatedBoundary: inspected.build.exploration_boundary,
-                fromResource: request.resource, session: input.session, modelLabel: boundaryModelLabel(mappingSession), assertCurrent });
-              if (!prepared) return undefined;
-              const preview = await prepare(prepared.candidate);
-              const verified = { ...prepared, generated_boundary: preview.build.exploration_boundary, candidate: preview.candidate };
-              validateReadWorkloadRelationshipPreparation(verified, currentBoundary);
-              await assertCurrent();
-              const saved = await commitExactBoundaryCandidateMutation(input.projectRoot, preview);
-              if (saved.candidate_digest !== preview.candidate_digest || saved.candidate_digest === previous.bundle.candidate_digest) {
-                throw new Error("READ_RELATIONSHIP_SAVE_UNCONFIRMED: No changed exact relationship revision was acknowledged. Resume the current saved job.");
-              }
-              context = await reloadReadReviewAfterCommit(input.projectRoot, saved);
-              mappingBoundary = context.candidate;
-              validateReadWorkloadRelationshipPreparation({ ...verified, candidate: mappingBoundary }, currentBoundary);
-              await persistAuthoringResume("read_mapping");
-              await assertAuthoringResumeCurrent(undefined);
-              return { ...verified, candidate: mappingBoundary };
-            },
+            relationshipReviewHandler: prepareRequestedRelationship,
             valueRequestHandler: (request) => promptReadBoundaryValueContext({
               session: input.session,
               model: mappingSession,

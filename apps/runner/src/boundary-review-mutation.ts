@@ -64,7 +64,7 @@ import {
 } from "./boundary-review-persistence.js";
 import { readProjectReadAuthoring, saveProjectReadProgress,
   type ReadAuthoringBindings } from "./control-policy-read-authoring-project.js";
-import { readAuthoringCatalog } from "./control-policy-read-authoring.js";
+import { preparedReadAuthoringDraft, readAuthoringCatalog } from "./control-policy-read-authoring.js";
 import {
   backupLegacyBoundaryReviewOverrides,
   boundaryReviewOverridesForCandidate,
@@ -1772,7 +1772,7 @@ async function commitPreparedBoundaryReviewMutationUnlocked(input: Parameters<ty
       currentById.get(confirmation.id)?.input_digest === confirmation.input_digest)
     .map((confirmation) => currentById.get(confirmation.id)!.decision);
   const progress = createBoundaryReviewProgress({
-    draft: input.build.exploration_boundary,
+    draft: preparedReadAuthoringDraft(input.build),
     candidate: input.candidate,
     confirmedDecisions: retainedConfirmations,
     ...(input.previousProgress ? { previous: input.previousProgress } : {}),
@@ -1791,7 +1791,7 @@ async function commitPreparedBoundaryReviewMutationUnlocked(input: Parameters<ty
   if (current.authoring) {
     const binding = await saveProjectReadProgress({ projectRoot: input.projectRoot, expected: input.bindings.authoring, progress,
       actor: input.actor, verifiedDecision: input.verifiedDecision,
-      replacement: { draft: input.build.exploration_boundary, draft_lock: input.build.lock, candidate_lock: input.build.lock,
+      replacement: { draft: preparedReadAuthoringDraft(input.build), draft_lock: input.build.lock, candidate_lock: input.build.lock,
         catalog: readAuthoringCatalog(input.build) } }, permit);
     if (!binding) throw new Error("The saved review repository changed before the edit could be saved.");
     return { candidate_digest: progress.candidate_digest, review_revision: progress.revision, progress,
@@ -1812,7 +1812,7 @@ async function commitPreparedBoundaryReviewMutationUnlocked(input: Parameters<ty
   }, permit);
   await synchronizeBoundaryLibrary({
     projectRoot: input.projectRoot,
-    draft: input.build.exploration_boundary,
+    draft: preparedReadAuthoringDraft(input.build),
     currentCandidate: input.candidate,
     currentProgress: progress,
   }, permit);

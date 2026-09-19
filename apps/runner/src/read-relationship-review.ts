@@ -32,6 +32,40 @@ type ReviewableReadRelationship = {
   relationship_fingerprint: `sha256:${string}`;
 };
 
+export class ReadRelationshipUnavailableError extends Error {
+  readonly code = "READ_RELATIONSHIP_RESTORE_UNAVAILABLE";
+  constructor(readonly details: string[]) {
+    super(`READ_RELATIONSHIP_RESTORE_UNAVAILABLE: ${details.join(" ")}`);
+  }
+}
+
+/** Only catalog identifiers are displayed, never the model's free-form question.
+ * An unavailable path is not consent to invent a join or omit a required fact. */
+function unavailableRelationship(input: Parameters<typeof reviewableRelationships>[0]): ReadRelationshipUnavailableError {
+  const root = input.generatedBoundary.pack.resources.find(r => r.id === input.fromResource);
+  const included = new Set(input.boundary.pack.resources.map(r => r.id));
+  const maximum = reviewedAnalysisRelationshipHopLimit(input.boundary.budgets);
+  const paths = root?.relationships.filter(r => !input.toResource || r.target_resource === input.toResource) ?? [];
+  const current = input.boundary.pack.resources.find(r => r.id === input.fromResource);
+  const reasons = new Set<string>();
+  if (!root || !current) reasons.add("The requested root is not in both the generated catalog and the included Read selection.");
+  else if (!paths.length) reasons.add("The inspected catalog supplies no generated outgoing path for this request; an operator answer cannot create a relationship.");
+  for (const p of paths) {
+    if (current?.relationships.some(r => r.id === p.id)) reasons.add("The generated path is already included; use the current catalog instead of requesting restoration.");
+    const missing = requiredResources(p).filter(id => !included.has(id));
+    if (missing.length) reasons.add(`Path to ${terminal(p.target_resource)} needs excluded resources: ${missing.map(terminal).join(", ")}. Review resource selection and its policy impact first.`);
+    if ((p.proof?.links.length ?? p.path_depth ?? 1) > maximum) reasons.add(`Path to ${terminal(p.target_resource)} exceeds the current ${maximum}-hop analysis limit; a separate explicit budget review is required.`);
+    if (p.unmatched_rows === "review_required") reasons.add(`Path to ${terminal(p.target_resource)} has nullable rows with no reviewed unmatched-row decision.`);
+  }
+  if (!reasons.size) reasons.add("The available metadata does not establish an exact many-to-one path with complete keys and uniqueness proof.");
+  return new ReadRelationshipUnavailableError([
+    `Read root: ${root ? terminal(root.id) : "not in the current catalog"}. Analysis limit: ${maximum} hops.`,
+    ...[...reasons].slice(0, 3),
+    "The disabled draft and saved requirements remain pending. Excluding a required resource also removes its private verification facts; it does not complete the job.",
+    "Review resources and exact paths, or save and resolve the source prerequisite. No access or source data changed.",
+  ]);
+}
+
 function terminal(value: string): string {
   return safeTerminalText(value);
 }
@@ -151,9 +185,7 @@ export async function reviewReadRelationship(input: {
   await input.assertCurrent();
   const candidates = reviewableRelationships(input);
   if (!candidates.length) {
-    throw new Error(
-      "READ_RELATIONSHIP_RESTORE_UNAVAILABLE: No exact generated many-to-one path between the requested included resources can be restored without adding a resource, exceeding the reviewed hop limit, or deciding nullable rows. Keep the disabled Read draft unchanged.",
-    );
+    throw unavailableRelationship(input);
   }
   if (candidates.length > MAX_REVIEWABLE_RELATIONSHIPS
     || Buffer.byteLength(JSON.stringify(candidates)) > MAX_REVIEW_METADATA_BYTES) {

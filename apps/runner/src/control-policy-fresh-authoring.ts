@@ -8,7 +8,7 @@ import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
 import { createBoundaryReviewProgress, newBoundaryReviewId } from "./boundary-review-domain.js";
 import { decodeOperatorAuthority, encodeOperatorAuthority, validateOperatorPolicySnapshot } from "./control-policy-authority-codec.js";
 import { readProjectReadAuthoring, type ProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
-import { readAuthoringCatalog, type StoredReadAuthoring } from "./control-policy-read-authoring.js";
+import { preparedReadAuthoringDraft, readAuthoringCatalog, type StoredReadAuthoring } from "./control-policy-read-authoring.js";
 import { migrateProjectControlPolicies, type ControlPolicyMigrationSnapshot } from "./control-policy-store.js";
 import type { ControlPolicyPointer, ControlPolicyRevision } from "@synapsor-runner/proposal-store";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
@@ -90,7 +90,7 @@ export async function resumeFreshGovernedAuthoring(input: {
 function initialSnapshot(build: AutoBoundaryBuild, actor: string): ControlPolicyMigrationSnapshot {
   const candidate = recommendedBoundaryReviewCandidate(build.exploration_boundary);
   const progress = createBoundaryReviewProgress({
-    draft: build.exploration_boundary,
+    draft: preparedReadAuthoringDraft(build),
     candidate,
     boundaryId: newBoundaryReviewId(),
     reviewOverrides: build.overrides,
@@ -103,7 +103,7 @@ function initialSnapshot(build: AutoBoundaryBuild, actor: string): ControlPolicy
     type: "read_authoring",
     selected_boundary_id: progress.boundary_id,
     entries: [{
-      draft: build.exploration_boundary,
+      draft: preparedReadAuthoringDraft(build),
       draft_lock: build.lock,
       candidate_lock: build.lock,
       progress,

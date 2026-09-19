@@ -136,6 +136,9 @@ export type BoundaryAuthoringResumeState = {
   policy_source_session?: string;
   /** Concise model-planned Read behavior retained before an analysis exists. */
   read_intent?: string;
+  /** Unfinished structural request, rechecked locally before another provider call.
+   * It is not relationship authority or a previously accepted review. */
+  pending_read_relationship?: { resource: string };
   /** Unclassified edit of the saved job; never replaces its canonical intent. */
   pending_job_revision?: string;
   pending_policy_review?: BoundaryPolicyReviewRequest;
@@ -208,6 +211,7 @@ export function buildBoundaryAuthoringResumeState(input: {
   pendingPolicyReview?: BoundaryPolicyReviewRequest | null;
   completedPolicyReviews?: BoundaryPolicyReviewCompletion[];
   pendingReadRevision?: string;
+  pendingReadRelationship?: { resource: string } | null;
   privateReadMetadataDigest?: `sha256:${string}`;
   metadataDestinationDigest?: `sha256:${string}`;
   pendingActionRemoval?: BoundaryAuthoringActionRemoval;
@@ -264,6 +268,11 @@ export function buildBoundaryAuthoringResumeState(input: {
         }
       : {}),
     ...(input.read ? { read: normalizeRead(input.read) } : {}),
+    ...((input.pendingReadRelationship === undefined
+      ? input.previous?.job_intent === input.jobIntent.trim() && input.previous.binding.boundary_name === input.binding.boundary_name
+        ? input.previous.pending_read_relationship : undefined
+      : input.pendingReadRelationship)
+      ? { pending_read_relationship: normalizePendingReadRelationship(input.pendingReadRelationship ?? input.previous!.pending_read_relationship!) } : {}),
     ...(input.pendingJobRevision ? { pending_job_revision: reviewedText(input.pendingJobRevision,
       "Job revision request", MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS) } : {}),
     ...((input.pendingPolicyReview === undefined ? input.previous?.pending_policy_review : input.pendingPolicyReview)
@@ -493,6 +502,7 @@ export function assertBoundaryAuthoringResumeState(
     throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: saved conversation history exceeds its reviewed bounds.");
   }
   if (value.read !== undefined) normalizeRead(value.read as BoundaryAuthoringResumeRead);
+  if (value.pending_read_relationship !== undefined) normalizePendingReadRelationship(value.pending_read_relationship);
   if (value.policy_source_session !== undefined) normalizeSourceSession(value.policy_source_session);
   if (value.intended_client !== undefined) normalizeIntendedClient(value.intended_client);
   if (value.read_intent !== undefined) {
@@ -651,6 +661,14 @@ function normalizeBinding(value: BoundaryAuthoringResumeBinding): BoundaryAuthor
     schema_fingerprint: reviewedDigest(value.schema_fingerprint, "schema fingerprint"),
     role_posture_fingerprint: reviewedDigest(value.role_posture_fingerprint, "role posture fingerprint"),
   };
+}
+
+function normalizePendingReadRelationship(value: unknown): { resource: string } {
+  if (!isRecord(value) || Object.keys(value).length !== 1 || typeof value.resource !== "string"
+    || !value.resource.trim() || value.resource.length > 256 || /[\x00-\x1f\x7f]/u.test(value.resource)) {
+    throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The pending Read relationship must name one catalog resource.");
+  }
+  return { resource: value.resource };
 }
 
 function normalizeRead(value: BoundaryAuthoringResumeRead): BoundaryAuthoringResumeRead {

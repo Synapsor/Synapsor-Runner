@@ -1,6 +1,6 @@
 import { z } from "zod";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { AUTO_BOUNDARY_VERSION, assertStoredExplorationMetadata, assertStoredExplorationPolicy, explorationBoundaryCandidateDigest, generationLockSharedFactsDigest, generationReviewEvidenceDigest, parseAutoBoundaryPolicyBaseline,
+import { AUTO_BOUNDARY_VERSION, assertStoredExplorationMetadata, assertStoredExplorationPolicy, explorationBoundaryCandidateDigest, generationLockSharedFactsDigest, generationReviewEvidenceDigest, parseAutoBoundaryPolicyBaseline, reviewExplorationBoundaryCandidate,
   type AutoBoundaryBuild, type ExplorationBoundaryDraft, type GenerationLock } from "./auto-boundary.js";
 import { normalizeStoredBoundaryReviewProgress, type BoundaryReviewProgress } from "./boundary-review-domain.js";
 import { BOUNDARY_REVIEW_PROGRESS_VERSION } from "./boundary-review-progress-types.js";
@@ -63,6 +63,17 @@ export type StoredReadAuthoring = {
 export function readAuthoringCatalog(build: AutoBoundaryBuild): NonNullable<PreparedReadEntry["catalog"]> {
   return structuredClone({ lock: build.lock, review: build.review, policy_baseline: build.policy_baseline,
     evidence_project: build.graph.project });
+}
+
+/** Prepare freshly generated metadata for disabled policy storage. The generated
+ * catalog includes reviewable paths beyond the current query budget; retain that
+ * catalog separately, while storing the same canonical policy the review uses.
+ * Never apply this to an existing stored revision or during transfer validation. */
+export function preparedReadAuthoringDraft(build: AutoBoundaryBuild): ExplorationBoundaryDraft {
+  const draft = build.exploration_boundary;
+  return draft.pack.resources.length
+    ? reviewExplorationBoundaryCandidate(draft, structuredClone(draft)).candidate
+    : structuredClone(draft);
 }
 
 /** Exact disabled state, not a legacy repair or a fresh schema review. Both

@@ -40,7 +40,7 @@ import { assertKnownOptions, optionalArg } from "./cli-options.js";
 import { shellQuote } from "./cli-format.js";
 import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 import { assertReadAuthoringBindings, type ReadAuthoringBindings } from "./control-policy-record.js";
-import { readAuthoringCatalog } from "./control-policy-read-authoring.js";
+import { preparedReadAuthoringDraft, readAuthoringCatalog } from "./control-policy-read-authoring.js";
 import { rebindActionCatalogForReadPolicyRevision } from "./action-rule-read-revision.js";
 import { loadActionRuleIntentSkeletons } from "./action-rule-intent-skeleton.js";
 import { openBoundProjectControlPolicies } from "./control-policy-store.js";
@@ -409,7 +409,7 @@ async function prepareStructuredDraft(
     throw new Error("STRUCTURED_DRAFT_REPOSITORY_REQUIRED: initialize the current disabled Read draft in governed policy storage before submitting a Read change.");
   }
   const progress = read && createBoundaryReviewProgress({
-    draft: read.build.exploration_boundary,
+    draft: preparedReadAuthoringDraft(read.build),
     candidate: read.candidate,
     confirmedDecisions: [],
     previous: read.previous_progress,
@@ -423,7 +423,7 @@ async function prepareStructuredDraft(
     next.entries = next.entries.map((entry) => entry.progress.boundary_id !== current.selected!.progress.boundary_id
       ? entry
       : {
-          draft: read.build.exploration_boundary,
+          draft: preparedReadAuthoringDraft(read.build),
           draft_lock: read.build.lock,
           candidate_lock: read.build.lock,
           progress,

@@ -1,7 +1,7 @@
 import type { AutoBoundaryBuild } from "./auto-boundary.js";
 import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
 import { createBoundaryReviewProgress, newBoundaryReviewId } from "./boundary-review-domain.js";
-import { readAuthoringCatalog, type StoredReadAuthoring } from "./control-policy-read-authoring.js";
+import { preparedReadAuthoringDraft, readAuthoringCatalog, type StoredReadAuthoring } from "./control-policy-read-authoring.js";
 import { assertReadAuthoringBindings, readProjectReadAuthoring, saveProjectReadAuthoring,
   type ReadAuthoringBindings } from "./control-policy-read-authoring-project.js";
 
@@ -17,8 +17,8 @@ export async function saveInitialGovernedBoundaryReview(input: {
   if (current.authoring.entries.length || current.authoring.selected_boundary_id !== null) {
     throw new Error("A saved Read review already exists. Resume or rescan it; initial generation cannot replace it.");
   }
-  const draft = frozen.build.exploration_boundary;
-  const candidate = recommendedBoundaryReviewCandidate(draft);
+  const draft = preparedReadAuthoringDraft(frozen.build);
+  const candidate = recommendedBoundaryReviewCandidate(frozen.build.exploration_boundary);
   const progress = createBoundaryReviewProgress({ draft, candidate, boundaryId: newBoundaryReviewId(),
     reviewOverrides: frozen.build.overrides, confirmedDecisions: [], actor: frozen.actor, revision: 1 });
   const authoring: StoredReadAuthoring = { type: "read_authoring", selected_boundary_id: progress.boundary_id,

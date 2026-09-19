@@ -59,7 +59,7 @@ import {
 import { assertDatabaseRoleSafeForModelReads } from "./database-role-posture.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import { readProjectReadAuthoring, saveProjectReadAuthoring, type ReadAuthoringBindings } from "./control-policy-read-authoring-project.js";
-import { readAuthoringCatalog, type StoredReadAuthoring } from "./control-policy-read-authoring.js";
+import { preparedReadAuthoringDraft, readAuthoringCatalog, type StoredReadAuthoring } from "./control-policy-read-authoring.js";
 
 export { resolveConfiguredTrustedContextAuthority } from "./configured-trusted-context.js";
 
@@ -377,7 +377,7 @@ export async function prepareBoundaryRescan(input: {
         });
     const retained = retainedReviewDecisions(previous, candidate);
     const progress = createBoundaryReviewProgress({
-      draft: build.exploration_boundary,
+      draft: preparedReadAuthoringDraft(build),
       candidate,
       confirmedDecisions: retained.decisions,
       previous,
@@ -396,7 +396,7 @@ export async function prepareBoundaryRescan(input: {
         previousInvalidations.has(invalidationKey(item)) || !safeIds.has(item.id));
     }
     nextBoundaries[boundaryName] = progress;
-    if (storedEntry) nextStoredEntries.push({ draft: build.exploration_boundary, draft_lock: build.lock,
+    if (storedEntry) nextStoredEntries.push({ draft: preparedReadAuthoringDraft(build), draft_lock: build.lock,
       ...(candidate.pack.resources.length === 0 ? { stage: "metadata_only" as const } : {}),
       candidate_lock: build.lock, progress,
       catalog: readAuthoringCatalog(build) });
