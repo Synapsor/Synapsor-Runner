@@ -87,3 +87,8 @@ Final launcher mount-order failure occurred before application/provider startup;
 All 39 original reproduction-package files retain hashes/modes; all 19 stopped-project files match the declared pre-final checkpoint. The latter is explicitly a checkpoint, not an invented pre-task hash. Originals were read-only throughout. Both complete installation manifests verify unchanged. Owned databases/logs and project states were archived before stopping the two label/name-verified task containers; they were not removed. Public CLI processes exited normally. No unrelated service was stopped.
 
 **One next decision:** authorize the narrowly defined missing relationship/collection capability needed by the original refunds job, or keep that job blocked. Evidence: the fresh inverse-items request, restored copies' customer-fraud requests, and absent refunds orders→customers FK. This report does not authorize implementing it. The separately recorded fresh nullable onboarding limitation stays on the backlog; no broader repair campaign starts here. STOP for independent review.
+
+
+### Independent acceptance and comparison qualification — 2026-09-19
+
+Claude independently accepts J5 canonical preparation and J6 local negative recovery/preservation on e60532d3…; original job remains blocked. Actual saved recommended subsets are a,b,c versus route,stop,scan (mapped b,c,d), not mapped-equal. The prior full-generated-seed comparison remains valid at that scope; selected relationship shapes are isomorphic. No recommendation ordering or old evidence changed. Durable reviewer record: /home/sandesh-tiwari/Desktop/Synapsor Tutorials/independent-verification-20260919/README.md. A separate public-operation assignment now addresses removal disclosure, J1/J2 and M4.

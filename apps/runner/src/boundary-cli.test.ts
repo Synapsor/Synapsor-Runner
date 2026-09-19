@@ -12341,8 +12341,10 @@ describe("boundary operator-plane CLI", () => {
       promptText: async () => {
         throw new Error("Focused add/remove must not request repeated reviewer text.");
       },
-      confirm: async () => {
-        throw new Error("Explicit Add and Remove keys stage only a disabled draft and need no extra prompt.");
+      confirm: async (_prompt, options) => {
+        expect(options?.defaultValue).toBe(false);
+        expect(options?.context?.join("\n")).toContain("private verification");
+        return true;
       },
     };
     let output = "";

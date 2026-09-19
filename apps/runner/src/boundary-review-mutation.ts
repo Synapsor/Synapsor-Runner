@@ -69,6 +69,7 @@ import {
   backupLegacyBoundaryReviewOverrides,
   boundaryReviewOverridesForCandidate,
 } from "./boundary-review-policy.js";
+import { readBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { detectProjectContext } from "./project-detection.js";
 import { readGuidedOnboardingState } from "./guided-project.js";
 import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
@@ -374,6 +375,11 @@ export type BoundaryResourceRemovalBlocker = {
 
 export type BoundaryResourceRemovalImpact = {
   resource_id: string;
+  candidate_name: string;
+  availability_removed: ["public_read", "private_verification"];
+  // Structural bindings are not a complete inventory of policy requirements.
+  requirement_impact: "unknown";
+  job_status: "pending" | "unknown";
   blocking_dependencies: BoundaryResourceRemovalBlocker[];
   pruned_relationships: Array<{
     resource_id: string;
@@ -382,10 +388,34 @@ export type BoundaryResourceRemovalImpact = {
   }>;
 };
 
+async function removalJobStatus(projectRoot: string, state: BoundaryReviewFiles): Promise<"pending" | "unknown"> {
+  const saved = await readBoundaryAuthoringResumeState(projectRoot, {
+    boundary_name: state.candidate.pack.name,
+    generation_lock_fingerprint: state.draft.generation_lock_fingerprint,
+    schema_fingerprint: state.lock.schema_fingerprint,
+    role_posture_fingerprint: state.lock.role_posture_fingerprint,
+  });
+  return saved.status === "ready" || saved.status === "stale" ? "pending" : "unknown";
+}
+
+export function boundaryResourceRemovalDisclosure(impact: BoundaryResourceRemovalImpact): string[] {
+  return [
+    `Remove ${impact.resource_id} from disabled candidate ${impact.candidate_name}.`,
+    "This removes its availability here for public reads and private verification.",
+    "Dependency impact: unknown for policy requirements; structural bindings were checked.",
+    "Removing the resource does not resolve an outstanding requirement or waive the policy.",
+    "Active authority and source data stay unchanged.",
+    impact.job_status === "pending"
+      ? "Job stays incomplete: saved pending work is retained."
+      : "Job completeness is unverified; removal does not establish readiness.",
+    "Next: resolve pending requirements and review the remaining disabled draft.",
+  ];
+}
+
 export function boundaryResourceRemovalImpact(
   candidate: ExplorationBoundaryDraft,
   resourceId: string,
-  options: { also_removing?: Iterable<string> } = {},
+  options: { also_removing?: Iterable<string>; job_status?: "pending" | "unknown" } = {},
 ): BoundaryResourceRemovalImpact {
   const alsoRemoving = new Set(options.also_removing ?? [resourceId]);
   alsoRemoving.add(resourceId);
@@ -467,6 +497,10 @@ export function boundaryResourceRemovalImpact(
 
   return {
     resource_id: resourceId,
+    candidate_name: candidate.pack.name,
+    availability_removed: ["public_read", "private_verification"],
+    requirement_impact: "unknown",
+    job_status: options.job_status ?? "unknown",
     blocking_dependencies: blockers.sort((left, right) =>
       right.path_depth - left.path_depth
       || left.resource_id.localeCompare(right.resource_id)
@@ -549,6 +583,7 @@ export type BoundaryReviewMutationBatchPreview = {
   build: AutoBoundaryBuild;
   previous_progress?: BoundaryReviewProgress;
   boundary_root: string;
+  resource_removal_impacts?: BoundaryResourceRemovalImpact[];
   source_database_changed: false;
 };
 
@@ -977,7 +1012,9 @@ export async function prepareBoundaryResourceReviewMutation(
   }
   validateBoundaryRequestAgainstResource(request, reviewed);
   const resourceRemovalImpact = request.exclude
-    ? boundaryResourceRemovalImpact(state.candidate, request.resource_id)
+    ? boundaryResourceRemovalImpact(state.candidate, request.resource_id, {
+      job_status: await removalJobStatus(projectRoot, state),
+    })
     : undefined;
   if (resourceRemovalImpact) assertBoundaryResourceRemovalAllowed(resourceRemovalImpact);
   const previousBindings = reviewBindings(state);
@@ -1134,9 +1171,11 @@ export async function prepareBoundaryReviewMutationBatch(
     throw new Error(`Boundary-review decision file references unknown resource ${unknown[0]!.resource_id}.`);
   }
   const removedResources = requests.filter(request => request.exclude).map(request => request.resource_id);
-  for (const resourceId of removedResources) {
-    assertBoundaryResourceRemovalAllowed(boundaryResourceRemovalImpact(state.candidate, resourceId, { also_removing: removedResources }));
-  }
+  const jobStatus = removedResources.length ? await removalJobStatus(projectRoot, state) : "unknown";
+  const removalImpacts = removedResources.map(resourceId => boundaryResourceRemovalImpact(
+    state.candidate, resourceId, { also_removing: removedResources, job_status: jobStatus },
+  ));
+  for (const impact of removalImpacts) assertBoundaryResourceRemovalAllowed(impact);
   for (const request of requests) {
     validateBoundaryRequestAgainstResource(
       request,
@@ -1293,6 +1332,7 @@ export async function prepareBoundaryReviewMutationBatch(
     build,
     ...(state.progress ? { previous_progress: state.progress } : {}),
     boundary_root: state.boundary_root,
+    ...(removalImpacts.length ? { resource_removal_impacts: removalImpacts } : {}),
     source_database_changed: false,
   };
 }

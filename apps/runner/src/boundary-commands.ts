@@ -350,6 +350,7 @@ import {
   type BoundaryReviewInteractiveSession,
 } from "./boundary-cli-picker.js";
 import {
+  boundaryResourceRemovalDisclosure,
   commitBoundaryReviewMutationBatch,
   commitExactBoundaryCandidateMutation,
   prepareExactBoundaryCandidateMutation,
@@ -14426,15 +14427,13 @@ async function interactiveBoundaryResourceRemoval(input: {
       footer: "No draft or active authority changed. Resolve the dependency, then press R again.",
     };
   }
-  if (!input.focusedAccess) {
-    process.stdout.write(formatBoundaryMutationPreview(preview, input.view));
-    if (!await input.session.confirm(
-      "Save this table removal on the disabled next boundary now?",
-      { defaultValue: true },
-    )) {
-      process.stdout.write("Table removal discarded. Nothing was saved or activated.\n");
-      return 0;
-    }
+  if (!input.focusedAccess) process.stdout.write(formatBoundaryMutationPreview(preview, input.view));
+  if (await input.session.confirm(
+    "Remove this resource? Enter keeps it; y saves disabled removal.",
+    { defaultValue: false, context: boundaryResourceRemovalDisclosure(preview.resource_removal_impact!) },
+  ) !== true) {
+    process.stdout.write("Resource kept. Nothing was saved or activated.\n");
+    return 0;
   }
   const committed = await commitBoundaryResourceReviewMutation(input.projectRoot, preview);
   const prunedRelationships = preview.resource_removal_impact?.pruned_relationships ?? [];
@@ -15571,7 +15570,10 @@ function formatFocusedBoundaryEditSaved(
     `Draft ${action}: ${resourceId}`,
     ...notes,
     `Saved in disabled boundary revision ${revision}. Agent authority changed: no.`,
-    "Next: review and activate the complete boundary, or go back to keep editing.",
+    ...(action === "removed"
+      ? ["Removal does not complete the job; incomplete or unverified work remains pending.",
+        "Next: resolve pending requirements and review the remaining disabled draft."]
+      : ["Next: review and activate the complete boundary, or go back to keep editing."]),
     "",
   ].join("\n");
 }
@@ -15897,6 +15899,7 @@ function boundaryBatchMutationPublicPreview(
     candidate_digest: preview.candidate_digest,
     generated_contract_digest: preview.generated_contract_digest,
     semantic_diff: preview.semantic_diff,
+    ...(preview.resource_removal_impacts ? { resource_removal_impacts: preview.resource_removal_impacts } : {}),
     source_database_changed: false,
     authority_activated: false,
   };
@@ -15991,6 +15994,7 @@ function formatBoundaryMutationPreview(
     requested.length === 1 ? "Requested change:" : "Requested changes:",
     ...requested.map((line) => `  ${line}`),
     "",
+    ...(preview.resource_removal_impact ? boundaryResourceRemovalDisclosure(preview.resource_removal_impact) : []),
     "Validated effect:",
     ...(effective.length ? effective : ["  Reviewed metadata changes only; runtime authority is unchanged."]),
     "  Everything else: unchanged.",
@@ -16003,7 +16007,9 @@ function formatBoundaryMutationPreview(
     "",
     ...(applyCommand
       ? [`Next: ${applyCommand}`]
-      : ["Press Enter at the next prompt to save this disabled decision; type n to discard it."]),
+      : [preview.resource_removal_impact
+        ? "Removal requires explicit confirmation; Enter keeps the resource."
+        : "Press Enter at the next prompt to save this disabled decision; type n to discard it."]),
     "",
   ].join("\n");
 }
@@ -16142,6 +16148,7 @@ function formatBoundaryBatchMutationPreview(
     `  changed authority: ${preview.semantic_diff.filter((item) => item.authority_changed).length}`,
     ...preview.semantic_diff.map((item) =>
       `  - ${item.resource_id}: ${item.before_included ? "included" : "blocked"} -> ${item.after_included ? "included" : "excluded"}`),
+    ...(preview.resource_removal_impacts ?? []).flatMap(boundaryResourceRemovalDisclosure),
     `  candidate digest: ${preview.candidate_digest}`,
     `  decision digest: ${preview.decision_digest}`,
     "  authority activated: no",
