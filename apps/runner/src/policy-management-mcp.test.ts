@@ -59,8 +59,8 @@ describe("owner settings through the existing MCP server", () => {
       const names = ["app.describe_actions", "app.describe_data", "app.explore_data", "app.request_change"];
       const listed = (await acme.listTools()).tools;
       expect(listed.map((tool) => tool.name).sort()).toEqual(names);
-      for (const tool of listed) expect(tool.inputSchema.properties).toHaveProperty("policy_view");
-      if (!settingsOnly) expect(listed.find((tool) => tool.name === "app.describe_actions")!.inputSchema.properties).toHaveProperty("query");
+      for (const tool of listed) expect(JSON.stringify(tool.inputSchema)).toContain('"policy_view"');
+      if (!settingsOnly) expect(JSON.stringify(listed.find((tool) => tool.name === "app.describe_actions")!.inputSchema)).toContain('"query"');
       else for (const tool of listed) {
         expect(tool.inputSchema.required).toContain("policy_view");
         expect(tool._meta).toMatchObject({ "synapsor/owner-settings-only": true });

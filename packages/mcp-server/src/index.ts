@@ -68,7 +68,7 @@ export {
   DESCRIBE_ACTIONS_TOOL,
   REQUEST_CHANGE_TOOL,
 } from "./semantic-actions.js";
-export { semanticActionInputSchema } from "./semantic-action-schema.js";
+export { semanticActionInputSchema, semanticActionCatalogJsonSchema } from "./semantic-action-schema.js";
 export type { SemanticActionContinuation, CatalogAuthorization } from "./semantic-actions.js";
 export { ScopedCatalogIndex, ScopedCatalogSession, CATALOG_LIMITS, catalogResponseBytes, catalogContractSizeError } from "./scoped-catalog.js";
 export type { CatalogRequest, CatalogEntry } from "./scoped-catalog.js";
@@ -216,3 +216,5 @@ export {
   type SubjectReferenceAuthorityContext,
   type SubjectReferenceService,
 } from "./subject-references.js";
+
+export { publishToolInputContracts, mcpToolInputJsonSchema } from "./tool-schema-publication.js";

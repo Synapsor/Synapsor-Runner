@@ -33,7 +33,7 @@ import type {
   ResolvedSubjectRequest,
   SubjectReferenceService,
 } from "./subject-references.js";
-import { semanticActionInputSchema } from "./semantic-action-schema.js";
+import { semanticActionCatalogSchema } from "./semantic-action-schema.js";
 import { ScopedCatalogIndex, ScopedCatalogSession, type CatalogRequest } from "./scoped-catalog.js";
 import { OwnerRuntimeError } from "./owner-runtime-identity.js";
 import { PostgresRlsPrerequisiteError } from "@synapsor-runner/postgres";
@@ -383,11 +383,9 @@ function actionCatalogContext(exactDetail = false): Record<string, unknown> {
 }
 
 function parseCatalogRequest(args: Record<string, unknown>): CatalogRequest {
-  const parsed = semanticActionInputSchema(DESCRIBE_ACTIONS_TOOL).safeParse(args);
-  // Keep the registered schema an object: the MCP SDK otherwise advertises a
-  // top-level refinement as an empty object. Enforce the cross-field rule here.
-  if (!parsed.success || args.outcome !== undefined && (args.query !== undefined || args.limit !== undefined || args.cursor !== undefined)) {
-    throw new McpRuntimeError("ARGUMENT_INVALID", "Use outcome alone for detail, or query (up to 256 characters), limit (1-20) and the returned cursor for discovery.");
+  const parsed = semanticActionCatalogSchema.safeParse(args);
+  if (!parsed.success) {
+    throw new McpRuntimeError("ARGUMENT_INVALID", "Use outcome alone for detail, or query (up to 256 characters), limit (1-20) and the returned cursor for discovery. Optional null means omitted; do not combine meaningful listing fields with outcome.");
   }
   return { ...(typeof args.outcome === "string" ? { detail: args.outcome } : {}),
     ...(typeof args.query === "string" ? { query: args.query } : {}),

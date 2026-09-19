@@ -6,6 +6,9 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import {
   createInactiveSemanticActionRuntime,
   semanticActionInputSchema,
+  semanticActionCatalogJsonSchema,
+  publishToolInputContracts,
+  mcpToolInputJsonSchema,
   McpRuntimeError,
   type SemanticActionRuntime,
   projectAuthorityMetadataForModel,
@@ -53,7 +56,7 @@ const resourceId = z.string().min(1).max(256)
   .describe("Exact root resource id.");
 // Smaller models often serialize an omitted optional JSON field as null.
 const optionalModelArgument = <T extends z.ZodTypeAny>(schema: T) =>
-  z.preprocess((value) => value === null ? undefined : value, schema.optional());
+  schema.nullish().transform((value): z.infer<T> | undefined => value ?? undefined);
 const modelInteger = <T extends z.ZodNumber>(schema: T) => z.preprocess((value) => {
   if (typeof value !== "string") return value;
   const normalized = value.trim();
@@ -225,19 +228,11 @@ export function createScopedExploreMcpServer(
     boundary: optionalBoundarySelector,
     plan,
   }).strict();
-  const reviewedOptionalControls = [
-    "time_window",
-    'order_by kind "comparison_change"',
-    ...(automaticBandsReviewed ? ['auto-band methods "quantile" or "equal_width"'] : []),
-  ].join(", ");
-  const exploreDiscoveryInput = z.object({
-    boundary: optionalBoundarySelector,
-    plan: z.object({
-      kind: z.string().describe('Exactly "rows" or "aggregate".'),
-      resource: resourceId,
-    }).passthrough().describe(
-      `Copy one complete plan from app.describe_data or this tool description. Optional reviewed controls include ${reviewedOptionalControls}. Dimension-by-time returns one row per dimension/time combination. Runner strictly validates every nested key before execution.`,
-    ),
+
+  // Keep the dispatcher responsible for safe, actionable grammar diagnostics.
+  // tools/list publishes exploreInput below; this envelope never authorizes a plan.
+  const exploreDiscoveryInput = z.object({ boundary: optionalBoundarySelector,
+    plan: z.object({ kind: z.string(), resource: resourceId }).passthrough(),
   }).strict();
 
   const server = new McpServer(
@@ -245,6 +240,11 @@ export function createScopedExploreMcpServer(
     { capabilities: { tools: {} } },
   );
   const policyManagement = options.policyManagement;
+  publishToolInputContracts(server, name => name === "app.describe_actions"
+    ? semanticActionCatalogJsonSchema(policyManagement ? policyManagementToolInputSchema(name) : undefined)
+    : name === SCOPED_EXPLORE_QUERY_TOOL
+      ? mcpToolInputJsonSchema(policyManagement ? z.union([exploreInput, policyManagementToolInputSchema(name)]) : exploreInput)
+      : undefined);
   const settingsHint = policyManagement ? " For your own agent settings, use policy_view: agent_rules instead of source-data arguments; app.explore_data section summary provides its current typed control reference." : "";
   if (options.semanticActions || policyManagement) {
     const actions = options.semanticActions ?? createInactiveSemanticActionRuntime();

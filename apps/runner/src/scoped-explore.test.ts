@@ -1,3 +1,5 @@
+import { WorkbenchAskSession, askToolSurfaceDigest, type AskToolGateway } from "./model-ask.js";
+import { Ajv } from "ajv";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -514,9 +516,10 @@ describe("Scoped Explore", () => {
         expect(tool.description).toContain("Follow next_cursor until null.");
       }
       const actionSchema = (await client.listTools()).tools.find((tool) => tool.name === "app.describe_actions")!.inputSchema;
-      expect(actionSchema.properties).toHaveProperty("query");
-      expect(actionSchema.properties).toHaveProperty("cursor");
-      expect(actionSchema.properties).toHaveProperty("limit");
+      expect(actionSchema.anyOf).toHaveLength(2);
+      expect(JSON.stringify(actionSchema)).toContain('"query"');
+      expect(JSON.stringify(actionSchema)).toContain('"cursor"');
+      expect(JSON.stringify(actionSchema)).toContain('"limit"');
       expect((await client.callTool({ name: "app.describe_actions", arguments: { outcome: "some.action", query: "mixed" } })).isError).toBe(true);
       expect((await client.callTool({ name: "app.describe_actions", arguments: {} })).structuredContent).toMatchObject({ actions: [] });
       const args = { outcome: "customer.update_preference", subject_refs: { customer: `obj_${"a".repeat(40)}` }, inputs: { ceiling: 2500 } };
@@ -525,6 +528,69 @@ describe("Scoped Explore", () => {
       expect(denied.structuredContent).toMatchObject({ error_code: "SEMANTIC_ACTION_UNAVAILABLE" });
       expect(dispatch).toHaveBeenLastCalledWith("app.request_change", args);
       expect((await client.listTools()).tools.map((tool) => tool.name).sort()).toEqual(names);
+    } finally { await client.close(); await server.close(); await runtime.close(); }
+  });
+
+  it("publishes exclusive Action operations and complete existing Explore grammar on the wire", async () => {
+    const fixture = await activatedFixture();
+    const runtime = await createScopedExploreRuntime({ projectRoot: fixture.root, transport: "stdio", env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection, executor: fixedExecutor([]) });
+    const server = createScopedExploreMcpServer(runtime, { semanticActions: createInactiveSemanticActionRuntime() });
+    const client = new Client({ name: "operation-contract", version: "1" });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    try {
+      await server.connect(b); await client.connect(a);
+      const tools = (await client.listTools()).tools;
+      const ajv = new Ajv({ strict: false, validateFormats: false });
+      const actions = ajv.compile(tools.find(t => t.name === "app.describe_actions")!.inputSchema);
+      expect(actions({ outcome: "some.action", query: "mixed", limit: 3 })).toBe(false);
+      for (const args of [{}, { outcome: "some.action" }, { query: "some", limit: 2 },
+        { outcome: "some.action", query: null, limit: null, cursor: null },
+        { outcome: null, query: "some", limit: 2, cursor: null }]) expect(actions(args)).toBe(true);
+      expect(actions({ cursor: "" })).toBe(false);
+      expect((await client.callTool({ name: "app.describe_actions", arguments: { outcome: null, query: "some", limit: 2, cursor: null } })).isError).not.toBe(true);
+      const explore = ajv.compile(tools.find(t => t.name === "app.explore_data")!.inputSchema);
+      const rows = { plan: { kind: "rows", resource: "public.subscriptions", select: ["region"] } };
+      const aggregate = { plan: { kind: "aggregate", resource: "public.subscriptions", measures: [{ function: "count" }] } };
+      expect(explore(rows)).toBe(true); expect(explore(aggregate)).toBe(true);
+      for (const plan of [{ kind: "rows", resource: "public.subscriptions" },
+        { ...rows.plan, select: [] }, { ...rows.plan, measures: [{ function: "count" }] },
+        { ...aggregate.plan, select: ["region"] }, { ...rows.plan, where: [{ field: "region", op: "sql", value: "x" }] }]) {
+        expect(explore({ plan })).toBe(false);
+        expect((await client.callTool({ name: "app.explore_data", arguments: { plan } })).isError).toBe(true);
+      }
+      for (const args of [rows, aggregate]) expect((await client.callTool({ name: "app.explore_data", arguments: args })).isError).not.toBe(true);
+      // The adapter sees tools/list bytes, not a separately authored schema.
+      const definitions = tools.map(tool => ({ name: tool.name, description: tool.description ?? "",
+        input_schema: tool.inputSchema as Record<string, unknown> }));
+      const gateway: AskToolGateway = { mode: "runtime", listTools: () => definitions,
+        callTool: async (name, args) => {
+          const result = await client.callTool({ name, arguments: args });
+          return { ok: !result.isError, value: result.structuredContent as Record<string, unknown> };
+        }, close: async () => undefined };
+      for (const provider of ["openai", "openrouter"] as const) {
+        const ask = new WorkbenchAskSession();
+        ask.configure({ provider, model: provider === "openai" ? "gpt-5.6-terra" : "x-ai/grok-4.6",
+          api_key: "local-transport-only", authority_digest: askToolSurfaceDigest(definitions), egress_acknowledged: true });
+        let requests = 0;
+        const result = await ask.run("Show subscriptions", gateway, { requestJson: async request => {
+          requests++;
+          const transmitted = request.body.tools as Array<Record<string, any>>;
+          const schemas = transmitted.map(tool => provider === "openai" ? tool.parameters : tool.function.parameters);
+          expect(schemas).toEqual(definitions.map(tool => tool.input_schema));
+          expect(request.endpoint.pathname).toBe(provider === "openai" ? "/v1/responses" : "/api/v1/chat/completions");
+          if (requests === 1) return { status: 200, body: provider === "openai"
+            ? { output: [{ type: "function_call", call_id: "read", name: "app__explore_data", arguments: JSON.stringify(rows) }] }
+            : { choices: [{ finish_reason: "tool_calls", message: { role: "assistant", content: null,
+              tool_calls: [{ id: "read", type: "function", function: { name: "app__explore_data", arguments: JSON.stringify(rows) } }] } }] } };
+          return { status: 200, body: provider === "openai"
+            ? { output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: "The reviewed query returned no rows." }] }] }
+            : { choices: [{ finish_reason: "stop", message: { role: "assistant", content: "The reviewed query returned no rows." } }] } };
+        } });
+        expect(result.tool_calls).toHaveLength(1);
+        expect(result.tool_calls[0]?.status, JSON.stringify(result.tool_calls)).toBe("ok");
+        expect(requests).toBeGreaterThanOrEqual(1); expect(requests).toBeLessThanOrEqual(2);
+      }
     } finally { await client.close(); await server.close(); await runtime.close(); }
   });
 

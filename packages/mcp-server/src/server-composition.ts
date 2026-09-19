@@ -1,8 +1,9 @@
+import { publishToolInputContracts } from "./tool-schema-publication.js";
 import type {
   Readable,
   Writable,
 } from "node:stream";
-import { semanticActionInputSchema } from "./semantic-action-schema.js";
+import { semanticActionInputSchema, semanticActionCatalogJsonSchema } from "./semantic-action-schema.js";
 import {
   McpServer,
   ResourceTemplate,
@@ -94,6 +95,7 @@ export function createSynapsorMcpServer(runtime: McpRuntime, options: SynapsorMc
     { name: "synapsor-runner", version: "0.1.0" },
     { capabilities: { tools: {}, resources: {} } },
   );
+  publishToolInputContracts(server, name => name === DESCRIBE_ACTIONS_TOOL ? semanticActionCatalogJsonSchema() : undefined);
   const toolNameStyle = options.toolNameStyle ?? "canonical";
   const resultFormat = options.resultFormat ?? runtime.config.result_format ?? 1;
   const authorityMetadata = modelAuthorityMetadataMode(runtime.config);
