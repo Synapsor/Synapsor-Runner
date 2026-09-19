@@ -377,7 +377,7 @@ export async function prepareBoundaryRescan(input: {
         });
     const retained = retainedReviewDecisions(previous, candidate);
     const progress = createBoundaryReviewProgress({
-      draft: preparedReadAuthoringDraft(build),
+      draft: storedEntry ? preparedReadAuthoringDraft(build) : build.exploration_boundary,
       candidate,
       confirmedDecisions: retained.decisions,
       previous,

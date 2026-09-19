@@ -1772,7 +1772,7 @@ async function commitPreparedBoundaryReviewMutationUnlocked(input: Parameters<ty
       currentById.get(confirmation.id)?.input_digest === confirmation.input_digest)
     .map((confirmation) => currentById.get(confirmation.id)!.decision);
   const progress = createBoundaryReviewProgress({
-    draft: preparedReadAuthoringDraft(input.build),
+    draft: current.authoring ? preparedReadAuthoringDraft(input.build) : input.build.exploration_boundary,
     candidate: input.candidate,
     confirmedDecisions: retainedConfirmations,
     ...(input.previousProgress ? { previous: input.previousProgress } : {}),
@@ -1812,7 +1812,7 @@ async function commitPreparedBoundaryReviewMutationUnlocked(input: Parameters<ty
   }, permit);
   await synchronizeBoundaryLibrary({
     projectRoot: input.projectRoot,
-    draft: preparedReadAuthoringDraft(input.build),
+    draft: input.build.exploration_boundary,
     currentCandidate: input.candidate,
     currentProgress: progress,
   }, permit);
