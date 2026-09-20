@@ -16,6 +16,7 @@ async function operator(proposal: StoredProposal, action: OperatorDecision["acti
   return resolveOperatorIdentity({ config: { provider: "signed_key", operators: { reviewer: { public_key_path: "public.pem", roles } } },
     configPath: path.join(d, "config.json"), proposal, action, reason, identity: "reviewer", privateKeyPath: path.join(d, "private.pem") });
 }
+import { semanticRequestLifecycle } from "../../../packages/mcp-server/src/semantic-request-lifecycle.js";
 import { afterEach, describe, expect, it } from "vitest";
 import { ProposalStore, blockedClosureDecisionReason, type OperatorDecision, type StoredProposal } from "@synapsor-runner/proposal-store";
 import { atomicFixture, atomicMemoryLoader, atomicRows } from "../../../packages/action-rules/src/testing/atomic-fixture.js";
@@ -256,7 +257,14 @@ describe.skipIf(!pgUrl)("native PostgreSQL control-store blocked closure", () =>
 
   it.each(["tenant", "boundary"] as const)("keeps %s consumption in the native accounting transaction", async scope => {
     for (const maximum of [1, 2]) await pgFixture(async f => {
+      const old = (await f.native.getProposal(f.input.proposalId))!;
+      expect(await semanticRequestLifecycle(f.native, old)).toMatchObject({ approval: "automatic", execution: "held", sourceChanged: false,
+        lifecycle: { execution: "failed", disposition: "blocked", automatic_retry_scheduled: false } });
       await f.native.closeBlockedWorkerItem(f.input);
+      const history = await f.pool.query(`SELECT * FROM "${f.schema}".ledger_entries ORDER BY entry_key`);
+      expect(await semanticRequestLifecycle(f.native, old)).toMatchObject({ approval: "automatic", execution: "held", sourceChanged: false,
+        lifecycle: { execution: "failed", disposition: "closed", automatic_retry_scheduled: false } });
+      expect((await f.pool.query(`SELECT * FROM "${f.schema}".ledger_entries ORDER BY entry_key`)).rows).toEqual(history.rows);
       const fixture = atomicFixture("postgres"), id = "wrp_pg_replacement";
       const decision = await fixture.decide(atomicMemoryLoader("postgres", atomicRows()), id);
       if (decision.result !== "eligible") throw new Error("Eligible replacement required");

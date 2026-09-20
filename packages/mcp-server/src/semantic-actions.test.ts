@@ -482,7 +482,7 @@ describe("fixed semantic Action MCP", () => {
 
   it.each([
     [false, false, "approved_pending_execution"],
-    [false, true, "approved_pending_execution"],
+    [false, true, "attention_required"],
     [true, false, "attention_required"],
     [true, true, "completed"],
   ] as const)("requires durable execution AND a receipt before reporting completion (%s, %s)", async (applied, receipt, expectedStatus) => {
@@ -497,12 +497,13 @@ describe("fixed semantic Action MCP", () => {
       const saved = read(id);
       return saved && continued && applied ? { ...saved, state: "applied", source_database_mutated: true } : saved;
     });
+    const receiptTime = new Date().toISOString();
     vi.spyOn(fixture.store, "receipts").mockImplementation(() => receipt ? [{
       receipt_id: 1, writeback_job_id: "job_test", proposal_id: proposalId, runner_id: "test_worker",
-      status: "applied", idempotency_key: "test", source_database_mutated: true, created_at: new Date().toISOString(),
+      status: "applied", idempotency_key: "test", source_database_mutated: true, created_at: receiptTime,
       receipt: { schema_version: "synapsor.execution-receipt.v1", writeback_job_id: "job_test", proposal_id: proposalId,
         runner_id: "test_worker", status: "applied", rows_affected: 1, idempotency_key: "test",
-        source_database_mutated: true, executed_at: new Date().toISOString(), receipt_hash: `sha256:${"a".repeat(64)}` },
+        source_database_mutated: true, executed_at: receiptTime, receipt_hash: `sha256:${"a".repeat(64)}` },
     }] : []);
     try {
       const ref = await issueSubject(fixture);
@@ -510,7 +511,7 @@ describe("fixed semantic Action MCP", () => {
         outcome: "billing.pause_notifications", subject_refs: { preference: ref },
       });
       expect(result).toMatchObject({ status: expectedStatus, execution: applied && receipt ? "completed" : "held",
-        source_database_changed: applied });
+        source_database_changed: applied && receipt ? true : applied || receipt ? null : false });
       if (applied && receipt) {
         expect(result.execution_receipt).toEqual({ verified: true, status: "applied", source_database_changed: true });
       } else {
@@ -520,6 +521,97 @@ describe("fixed semantic Action MCP", () => {
       if (!applied) expect(await fixture.store.approvals(proposalId)).toHaveLength(1);
     } finally { fixture.store.close(); }
   });
+
+  it.each([
+    ["queued", "approved", "queued", "queued", "open", false],
+    ["leased", "pending_worker", "held", "in_progress", "open", null],
+    ["retry_wait", "approved", "held", "retry_wait", "open", null],
+    ["blocked", "failed", "held", "failed", "blocked", null],
+    ["discarded", "failed", "held", "failed", "closed", null],
+    ["completed", "applied", "completed", "applied", "open", true],
+    ["reconciliation_required", "reconciliation_required", "held", "unknown", "reconciliation_required", null],
+  ] as const)("projects synthetic %s execution through real MCP replay without rewriting automatic history", async (queueStatus, state, execution, outcome, disposition, sourceChanged) => {
+    const f = createFixtureRuntime({ automaticApproval: true,
+      onProposalReady: async () => ({ execution: "human_review", source_database_changed: false }) });
+    const args = { outcome: "billing.pause_notifications", subject_refs: { preference: await issueSubject(f) } };
+    await f.semanticActions.callTool(REQUEST_CHANGE_TOOL, args);
+    const original = f.store.listProposals()[0]!;
+    const proposal = { ...original, state, source_database_mutated: state === "applied" };
+    // Synthetic outcome controls only: normal admission/approval and real opaque
+    // reference, with read responses representing worker states (no source run).
+    vi.spyOn(f.store, "getProposal").mockReturnValue(proposal);
+    vi.spyOn(f.store, "getWorkerQueueItem").mockReturnValue({ proposal_id: original.proposal_id,
+      status: queueStatus, execution_mode: "supervised_worker", attempts: queueStatus === "queued" ? 0 : 1,
+      max_attempts: 5, next_attempt_at: "2099-01-01T00:00:00.000Z", created_at: original.created_at,
+      updated_at: original.updated_at, last_error_code: "PRIVATE_CAUSE_DO_NOT_DISCLOSE" });
+    if (state === "failed" || state === "applied") {
+      const status = state;
+      vi.spyOn(f.store, "receipts").mockReturnValue([{ receipt_id: 1, writeback_job_id: "private_job",
+        proposal_id: original.proposal_id, runner_id: "private_worker", status, idempotency_key: "private_idempotency",
+        source_database_mutated: state === "applied", created_at: original.created_at,
+        receipt: { schema_version: "synapsor.execution-receipt.v1", writeback_job_id: "private_job", proposal_id: original.proposal_id,
+          runner_id: "private_worker", status, rows_affected: state === "applied" ? 1 : 0, idempotency_key: "private_idempotency",
+          source_database_mutated: state === "applied", executed_at: original.created_at,
+          receipt_hash: `sha256:${"f".repeat(64)}`, safe_error_code: "PRIVATE_CAUSE_DO_NOT_DISCLOSE" } }]);
+    }
+    const tables = () => f.store.db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all()
+      .map(row => [row.name, f.store.db.prepare(`SELECT * FROM "${String(row.name).replaceAll('"', '""')}"`).all()]);
+    const runtime = createMcpRuntime(serverConfig, { store: f.store, semanticActions: f.semanticActions });
+    const server = createSynapsorMcpServer(runtime), client = new Client({ name: "replay-lifecycle", version: "1" });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    try {
+      await server.connect(st); await client.connect(ct);
+      const before = tables();
+      const response = await client.callTool({ name: REQUEST_CHANGE_TOOL, arguments: args });
+      expect(response.isError).not.toBe(true);
+      const data = response.structuredContent as Record<string, any>;
+      expect(data).toMatchObject({ request_disposition: "already_recorded", authorization: { approval: "automatic", execution },
+        execution, lifecycle: { execution: outcome, disposition, automatic_retry_scheduled: queueStatus === "reconciliation_required" ? null : queueStatus === "retry_wait" },
+        invocation: { operation: "returned_existing_request", source_database_changed: false }, source_database_changed: sourceChanged });
+      expect(data.proposal.approval).toBe("automatically approved; apply remains a separate authority");
+      expect(JSON.parse((response.content as Array<{text:string}>)[0]!.text)).toEqual(data);
+      expect(JSON.stringify(response)).not.toMatch(/pending human review|limit did not pass|current authoritative facts|PRIVATE_CAUSE|private_job|private_worker|private_idempotency|raw-preference-42|acct_northstar|customer_maya/u);
+      expect(tables()).toEqual(before);
+      expect(f.queries).toHaveLength(1); // replay does not load source facts again
+      expect(data.lifecycle.next_retry_at).toBe(queueStatus === "retry_wait" ? "2099-01-01T00:00:00.000Z" : null);
+    } finally { await client.close(); await server.close(); await runtime.close(); }
+  });
+
+  it.each(["missing_approval", "wrong_approval", "conflicting_approval", "missing_receipt", "wrong_receipt", "duplicate_receipt", "changed_approval", "changed_receipt", "changed_event", "changed_queue", "changed_proposal"] as const)(
+    "keeps synthetic %s evidence unknown instead of inventing a historical decision or effect", async mode => {
+      const f = createFixtureRuntime({ automaticApproval: true });
+      try {
+        const args = { outcome: "billing.pause_notifications", subject_refs: { preference: await issueSubject(f) } };
+        await f.semanticActions.callTool(REQUEST_CHANGE_TOOL, args);
+        const original = f.store.listProposals()[0]!, approval = f.store.approvals(original.proposal_id)[0]!;
+        const proposal = { ...original, state: "failed" as const };
+        const queue = { proposal_id: original.proposal_id, status: "blocked" as const, execution_mode: "supervised_worker" as const,
+          attempts: 1, max_attempts: 9, next_attempt_at: original.created_at, created_at: original.created_at, updated_at: original.updated_at };
+        vi.spyOn(f.store, "getProposal").mockReturnValue(proposal);
+        vi.spyOn(f.store, "getWorkerQueueItem").mockReturnValue(queue);
+        if (mode === "missing_approval") vi.spyOn(f.store, "approvals").mockReturnValue([]);
+        if (mode === "wrong_approval") vi.spyOn(f.store, "approvals").mockReturnValue([{ ...approval, proposal_hash: `sha256:${"f".repeat(64)}` }]);
+        if (mode === "conflicting_approval") vi.spyOn(f.store, "approvals").mockReturnValue([approval, { ...approval, approval_id: approval.approval_id + 1, status: "rejected" }]);
+        if (mode === "changed_approval") vi.spyOn(f.store, "approvals").mockReturnValueOnce([approval]).mockReturnValue([]);
+        if (mode === "changed_event") { const savedEvents = f.store.events(original.proposal_id); vi.spyOn(f.store, "events").mockReturnValueOnce([]).mockReturnValue(savedEvents); }
+        if (mode === "changed_queue") vi.spyOn(f.store, "getWorkerQueueItem").mockReturnValueOnce(queue).mockReturnValue({ ...queue, status: "discarded" });
+        if (mode === "changed_proposal") vi.spyOn(f.store, "getProposal").mockReturnValueOnce(proposal).mockReturnValueOnce(proposal).mockReturnValue({ ...proposal, state: "applied" });
+        const receipt = { receipt_id: 1, writeback_job_id: "synthetic", proposal_id: original.proposal_id, runner_id: "worker", status: "failed",
+          idempotency_key: "synthetic", source_database_mutated: false, created_at: original.created_at,
+          receipt: { schema_version: "synapsor.execution-receipt.v1" as const, writeback_job_id: "synthetic", proposal_id: original.proposal_id, runner_id: "worker",
+            status: "failed" as const, rows_affected: 0, idempotency_key: "synthetic", source_database_mutated: false, executed_at: original.created_at,
+            receipt_hash: `sha256:${"f".repeat(64)}` as const } };
+        if (mode === "wrong_receipt") vi.spyOn(f.store, "receipts").mockReturnValue([{...receipt, proposal_id:"another"}]);
+        if (mode === "duplicate_receipt") vi.spyOn(f.store, "receipts").mockReturnValue([receipt, {...receipt, receipt_id:2}]);
+        if (mode === "changed_receipt") vi.spyOn(f.store, "receipts").mockReturnValueOnce([receipt]).mockReturnValue([]);
+        const before = f.store.sharedLedgerEntries();
+        const response = await f.semanticActions.callTool(REQUEST_CHANGE_TOOL, args);
+        expect(response).toMatchObject({ request_disposition: "already_recorded", execution: "held", source_database_changed: null });
+        expect(JSON.stringify(response)).not.toMatch(/pending human review|limit did not pass|current authoritative facts/);
+        if (mode.includes("approval") || mode.startsWith("changed_")) expect(response.authorization).toMatchObject({approval:"unknown"});
+        expect(f.store.sharedLedgerEntries()).toEqual(before);
+      } finally { f.store.close(); }
+    });
 
   it("keeps fixed tools discoverable while a stale outcome is blocked before facts or proposals", async () => {
     let unavailable = ["billing.pause_notifications"];
@@ -1032,8 +1124,10 @@ describe("fixed semantic Action MCP", () => {
     const continuations: string[] = [];
     const fixture = createFixtureRuntime({
       automaticApproval: true,
-      onProposalReady: async ({ proposal }) => {
+      onProposalReady: async ({ proposal, activated }) => {
         continuations.push(proposal.state);
+        if (proposal.state === "approved") fixture.store.enqueueWorkerProposal({ proposal_id: proposal.proposal_id,
+          execution_mode: "supervised_worker", contract_digest: activated.action_boundary_digest });
         return {
           execution: proposal.state === "approved" ? "queued" : "human_review",
           source_database_changed: false,
@@ -1079,12 +1173,18 @@ describe("fixed semantic Action MCP", () => {
         },
         proposal: {
           status: "pending_review",
-          approval: "pending human review because an automatic-approval limit did not pass",
+          approval: "pending human review because a recorded automatic-approval limit did not pass",
         },
         execution: "human_review",
         source_database_changed: false,
       });
       expect(continuations).toEqual(["approved", "pending_review"]);
+      // Exhaustion caused a new recorded review result; it cannot rewrite the
+      // original automatic decision on replay.
+      const oldHistory = fixture.store.approvals(fixture.store.listProposals().find(p => p.state === "approved")!.proposal_id);
+      expect(await fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, { outcome: "billing.pause_notifications", subject_refs: { preference: firstRef } }))
+        .toMatchObject({ request_disposition: "already_recorded", authorization: { approval: "automatic" }, lifecycle: { execution: "queued" } });
+      expect(fixture.store.approvals(fixture.store.listProposals().find(p => p.state === "approved")!.proposal_id)).toEqual(oldHistory);
       const proposals = await fixture.store.listProposals();
       expect(proposals.map((proposal) => proposal.state).sort()).toEqual(["approved", "pending_review"]);
       expect(await fixture.store.approvals?.(proposals.find((proposal) => proposal.state === "approved")!.proposal_id)).toHaveLength(1);
@@ -1173,6 +1273,9 @@ describe("fixed semantic Action MCP", () => {
         },
         source_database_changed: false,
       });
+      fixture.store.enqueueWorkerProposal({ proposal_id: proposal.proposal_id, execution_mode: "supervised_worker", contract_digest: fixture.activated.action_boundary_digest });
+      expect(await fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, request)).toMatchObject({ authorization: { approval: "human", execution: "queued" },
+        lifecycle: { execution: "queued", disposition: "open", automatic_retry_scheduled: false } });
     } finally {
       fixture.store.close();
     }

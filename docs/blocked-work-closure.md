@@ -22,3 +22,41 @@ Successful closure preserves the failed proposal, approval, attempt, job and can
 In the connected application, use `app.explore_data` to obtain a fresh permitted subject reference, then make a separate `app.request_change`. Runner reads current facts and checks current authority, eligibility and allowance again. The earlier approval still counts until its normal window expires. A fresh request may be refused or require human review, including when the old Action has been removed. Closure never reactivates it.
 
 Control mutations use the existing SQLite writer transaction or PostgreSQL schema advisory writer lock. Source inspection and signing happen before that lock; the exact assessment is revalidated under it. All cooperating workers must run the new producer before their failures can qualify. This does not establish multi-host durability or arbitrary clock-skew tolerance.
+
+## Checking an original request through MCP
+
+Repeat the identical `app.request_change` arguments, including the original opaque
+references, while their normal lifetime, caller scope and current authority permit
+it. `request_disposition: already_recorded` returns that original request. It does
+not predict whether a new request would be approved. A later successful request
+for the same subject does not replace the original failure or receipt.
+
+The recorded approval, execution and administrative disposition are separate:
+
+- `authorization.approval` uses applicable durable approval history. A failed or
+  closed request can retain `automatic` or `human`; missing or contradictory
+  approval evidence is `unknown`. Only actual pending review is described as
+  human review, and an allowance explanation requires a recorded limit deferral.
+- `lifecycle.execution` distinguishes `not_started`, `queued`, `in_progress`,
+  `retry_wait`, `applied`, `failed` and `unknown`. Existing `execution: held` is
+  retained for failures, running attempts and retry waits; inspect `lifecycle`
+  for the distinction. `lifecycle.disposition` reports `open`, `blocked`, `closed`,
+  `reconciliation_required` or `unknown` independently.
+- Only a durable retry-wait state supplies `automatic_retry_scheduled: true` and
+  `next_retry_at`. Closure does not retry, refund or turn a failed receipt into a
+  successful one. Unknown retry evidence is null, not a promised retry.
+- `source_database_changed` concerns the original request's established effect:
+  true with its matching applied receipt, false for established unstarted work
+  or validated rollback/closure evidence, and null when unavailable. A failure
+  code, zero rows, missing receipt or current row equality alone cannot establish
+  historical no effect. `invocation.source_database_changed: false` on replay
+  separately says this replay performed no new source effect; it does not say
+  that the database is unchanged now.
+
+`ok: true` and a successful MCP transport mean status was returned, not that the
+business operation succeeded. Text and structured content describe the same
+projection. Bounded control-record rereads conservatively withhold details across
+a detected concurrent change; they are not an atomic snapshot. Projection does
+not inspect source rows, reconcile, close work or acquire new execution authority.
+Private failure causes, signing evidence and raw request/worker identifiers stay
+outside this client view. Operator inspection retains its existing permissions.

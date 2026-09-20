@@ -85,6 +85,12 @@ describe("composed semantic Action runtime", () => {
         execution_config_digest: executionBindingDigest(f.initial), writer_reference: "FIRST_WRITER", receipt_namespace: { schema: "billing", table: "synapsor_writeback_receipts" },
       });
       f.store.blockWorkerItem({ proposalId: p.proposal_id, workerId: "fixture_worker", leaseId: queue.lease_id!, errorCode: "SEMANTIC_AUTHORITY_STALE" });
+      const beforeReplay = f.store.sharedLedgerEntries();
+      expect(await f.request(outcome)).toMatchObject({ request_disposition: "already_recorded",
+        authorization: { approval: "automatic", execution: "held" }, proposal: { status: "failed" },
+        lifecycle: { execution: "failed", disposition: "blocked", automatic_retry_scheduled: false },
+        source_database_changed: mode === "unclosed_legacy" ? null : false });
+      expect(f.store.sharedLedgerEntries()).toEqual(beforeReplay);
       const a = f.store.assessBlockedWorkerClosure(p.proposal_id), reason = "Resolve derived no-effect fixture";
       if (mode === "removed") await f.removeAction(); // administrative close needs no active Action
       const identity = await closureFixtureIdentity(p, "worker_discard", blockedClosureDecisionReason(a.assessment_digest, reason));
@@ -93,7 +99,10 @@ describe("composed semantic Action runtime", () => {
       else expect(f.store.closeBlockedWorkerItem({ proposalId: p.proposal_id, assessment_digest: a.assessment_digest, reason, identity,
         source: { assessment_digest: a.assessment_digest, source_binding_digest: a.source_binding_digest!, state: "absent" } })).toMatchObject({ status: "closed" });
       if (mode !== "removed") {
-        expect(await f.request(outcome)).toMatchObject({ request_disposition: "already_recorded", proposal: { status: "failed" } });
+        expect(await f.request(outcome)).toMatchObject({ request_disposition: "already_recorded", proposal: { status: "failed" },
+          authorization: { approval: "automatic", execution: "held" },
+          lifecycle: { execution: "failed", disposition: mode === "unclosed_legacy" ? "blocked" : "closed", automatic_retry_scheduled: false },
+          source_database_changed: mode === "unclosed_legacy" ? null : false });
       }
       f.changeFacts(mode !== "ineligible");
       if (mode === "available" || mode === "unclosed_legacy") {

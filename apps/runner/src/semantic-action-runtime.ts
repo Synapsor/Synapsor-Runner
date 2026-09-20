@@ -448,7 +448,8 @@ function admitActionServices<T extends Omit<ActionRuleRuntimeServices, "authorit
   const call = services.semanticActions.callTool.bind(services.semanticActions);
   services.semanticActions.callTool = (name, args) => withProjectRuntimeAdmission(projectRoot, async () => {
     const result = await call(name, args);
-    if (name === "app.request_change" && result.execution === "held"
+    if (name === "app.request_change" && result.execution === "held" && result.status === "approved_pending_execution"
+      && (result.lifecycle as { execution?: unknown } | undefined)?.execution === "not_started"
       && result.result_summary && typeof result.result_summary === "object" && !Array.isArray(result.result_summary)) {
       return { ...result, result_summary: { ...result.result_summary,
         next: "Execution is held. Ask the operator to inspect saved execution, runtime configuration and worker diagnostics, then retry this same request. Do not create a replacement request or edit stored policy hashes." } };

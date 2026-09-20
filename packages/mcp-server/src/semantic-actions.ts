@@ -22,6 +22,7 @@ import {
   canonicalJsonStringify,
   protocolVersions,
 } from "@synapsor-runner/protocol";
+import { semanticRequestLifecycle, type SemanticRequestExecution } from "./semantic-request-lifecycle.js";
 import { buildDerivedChangeSet } from "./proposal-builder.js";
 import { McpRuntimeError } from "./runtime-errors.js";
 import type {
@@ -91,7 +92,7 @@ async function withSubjectRequestTurn<T>(store: ProposalRuntimeStore,
 }
 
 export type SemanticActionContinuation = {
-  execution: "human_review" | "not_enabled" | "queued" | "held" | "completed";
+  execution: SemanticRequestExecution;
   source_database_changed: boolean;
 };
 
@@ -621,25 +622,12 @@ async function semanticProposalResult(
   disposition: "created" | "existing",
   continuation?: SemanticActionContinuation,
 ): Promise<Record<string, unknown>> {
-  // A continuation may have run synchronously. Its label is not execution
-  // evidence: reload durable state and require the successful receipt.
-  proposal = await store.getProposal(proposal.proposal_id) ?? proposal;
+  const projection = await semanticRequestLifecycle(store, proposal, continuation);
+  proposal = projection.proposal;
   if (proposal.change_set.schema_version !== protocolVersions.changeSetV4) {
     throw new McpRuntimeError("SEMANTIC_ACTION_UNAVAILABLE", "Runner could not load the semantic proposal result safely.");
   }
-  const completed = proposal.state === "applied" && (await store.receipts(proposal.proposal_id)).some((record) =>
-    record.proposal_id === proposal.proposal_id && record.status === "applied"
-    && record.receipt.status === "applied" && record.receipt.source_database_mutated === true
-    && record.receipt.rows_affected > 0);
-  const execution = completed ? "completed"
-    : continuation?.execution === "completed" || proposal.state === "applied" ? "held"
-    : continuation?.execution ?? (proposal.state === "approved" || proposal.state === "pending_worker"
-        ? "not_enabled"
-        : proposal.state === "pending_review"
-          ? "human_review"
-          : "held");
-  const approval = await semanticApprovalStatus(store, proposal);
-  const status = semanticActionStatus(proposal.state, execution);
+  const { approval, execution, status } = projection;
   const effect = activated.compiled.effect_envelope;
   return {
     ok: true,
@@ -651,38 +639,33 @@ async function semanticProposalResult(
       guidance: "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
       completion_evidence: "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not.",
     },
-    ...(completed ? { execution_receipt: { verified: true, status: "applied", source_database_changed: true } } : {}),
+    ...(projection.executionReceipt ? { execution_receipt: projection.executionReceipt } : {}),
+    invocation: { operation: disposition === "existing" ? "returned_existing_request" : "created_request",
+      source_database_changed: disposition === "existing" ? false : projection.sourceChanged === true },
+    lifecycle: projection.lifecycle,
     result_summary: {
       description: humanizeOutcome(proposal.action),
       change: `Primary component: ${effect.operation === "update" ? "update" : "insert"} one reviewed ${effect.target_resource} record using only the exact Runner-derived effect.`,
       fields: effect.allowed_fields.map((field) => field.name),
       values_disclosed: false,
-      ...(status === "completed"
-        ? { next: "Re-read the reviewed resource to present current source values." }
-        : {}),
+      next: projection.next,
     },
     authorization: {
-      eligibility: "verified",
+      eligibility: projection.stable ? "verified" : "unknown",
+      eligibility_basis: disposition === "existing" ? "original_request" : "current_request",
       approval,
       execution,
     },
     proposal: {
-      status: proposal.state,
-      approval: proposal.state === "approved" || proposal.state === "pending_worker" || proposal.state === "applied"
-        ? approval === "automatic"
-          ? "automatically approved; apply remains a separate authority"
-          : approval === "human"
-            ? "approved by a human reviewer; apply remains a separate authority"
-            : "approved; approval provenance is available to the operator"
-        : proposal.change_set.semantic_authority.proof.approval_path === "automatic_eligible"
-          ? "pending human review because an automatic-approval limit did not pass"
-          : "human review required",
+      status: projection.stable ? proposal.state : "unavailable",
+      approval: projection.approvalText,
     },
     execution,
-    eligibility: "verified from current authoritative facts",
+    eligibility: !projection.stable ? "verification details unavailable during this status read"
+      : disposition === "existing" ? "verified for the original request; not re-evaluated by this replay" : "verified from current authoritative facts",
     business_effects: actionRulePublicEffects(activated.compiled),
     exact_effect: "Runner-derived and sealed in the operator proposal record",
-    source_database_changed: proposal.source_database_mutated,
+    source_database_changed: projection.sourceChanged,
     model_authority: {
       supplied_outcome_and_opaque_subjects_only: !Object.keys(proposal.change_set.semantic_authority.business_inputs ?? {}).length,
       supplied_only_reviewed_business_inputs: true,
@@ -691,33 +674,6 @@ async function semanticProposalResult(
       apply: false,
     },
   };
-}
-
-async function semanticApprovalStatus(
-  store: ProposalRuntimeStore,
-  proposal: StoredProposal,
-): Promise<"automatic" | "human" | "pending_human_review" | "not_approved" | "approved"> {
-  if (proposal.state === "pending_review") return "pending_human_review";
-  if (proposal.state === "rejected" || proposal.state === "canceled") return "not_approved";
-  if (proposal.state !== "approved" && proposal.state !== "pending_worker" && proposal.state !== "applied") {
-    return "approved";
-  }
-  const approvals = await store.approvals?.(proposal.proposal_id);
-  const accepted = approvals?.filter((approval) => approval.status === "approved") ?? [];
-  if (accepted.some((approval) => approval.approver.startsWith("policy:"))) return "automatic";
-  if (accepted.length > 0) return "human";
-  return "approved";
-}
-
-function semanticActionStatus(
-  state: StoredProposal["state"],
-  execution: SemanticActionContinuation["execution"],
-): "completed" | "approved_pending_execution" | "pending_human_review" | "closed" | "attention_required" {
-  if (execution === "completed") return "completed";
-  if (state === "approved" || state === "pending_worker") return "approved_pending_execution";
-  if (state === "pending_review") return "pending_human_review";
-  if (state === "rejected" || state === "canceled") return "closed";
-  return "attention_required";
 }
 
 function humanizeOutcome(outcome: string): string {
