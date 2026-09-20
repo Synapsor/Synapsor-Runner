@@ -1,6 +1,6 @@
 # Proven-no-effect blocked-work closure
 
-Implemented and exercised the bounded lifecycle on one unchanged installed candidate. **R0, R1 and R2 lifecycle checks passed; independent operational acceptance remains pending.** One separate MCP replay wording defect is preserved, not repaired. Original Stage B remains **ATTEMPTED / NOT PASSED**.
+Implemented and exercised the bounded lifecycle on one unchanged installed candidate. **R0, R1 and R2 lifecycle checks passed; independent operational acceptance now PASS for the exact tested recovery class.** One separate MCP replay wording defect is preserved, not repaired. Original Stage B remains **ATTEMPTED / NOT PASSED**.
 
 ## Identity and scope
 
@@ -66,7 +66,7 @@ All four starts were built from empty projects and original504 business rows thr
 
 Untouched `sealed-starts/{r0,r1,t0,t1}` includes whole project/home, separate private synthetic signing-key archives, matching schema/data/complete dumps, password-free roles, grants/readiness/all-table readbacks and public setup transcripts. Manifest SHA256 `479a3117daf3fe0e64cc6a6b436babc7a51f14c68265842f2988a2c0da7e7744`, 428 entries. `BOOTSTRAP.md` gives the executed fresh-key-from-empty fallback and logical-path restore; no reviewed bindings were rewritten.
 
-The independent tester personally restored T0/T1 with fresh credentials into its own PostgreSQL17.10 containers, checked all42 tables/configs/504 rows, signed-key pairing, exact four tools, own Read and worker check. **Restoration prerequisite PASS only**: review SHA256 `477bd3fc6c65f5642f3da899389e86666e94ebf23d8317144a7702851b11f5bc`, resolved by `RESTORATION.json`. It did not run requests/workers in that lane or repeat the setup receipt probe/full suite. Independent operational acceptance is still pending.
+The independent tester personally restored T0/T1 with fresh credentials into its own PostgreSQL17.10 containers, checked all42 tables/configs/504 rows, signed-key pairing, exact four tools, own Read and worker check. **Restoration prerequisite PASS only**: review SHA256 `477bd3fc6c65f5642f3da899389e86666e94ebf23d8317144a7702851b11f5bc`, resolved by `RESTORATION.json`. It did not run requests/workers in that lane or repeat the setup receipt probe/full suite. The later independent operational review passed the exact supported class; see the acceptance addendum below.
 
 Finished-state archives/dumps were saved before removing only this task's labelled container. The R1 `state-refused` full-table/source readback is supplementary failure evidence, never an untouched/executable start. Completed R0/R1 archives must not be reversed into starts. Candidate/original installed trees, original fixture inputs, historical W1/W2 receipt tables and all sealed entries were reverified unchanged. Reviewer containers were not touched.
 
@@ -76,7 +76,18 @@ The supported class is future, single-attempt, nondelegated PostgreSQL semantic-
 
 Existing inclusive rolling windows and admission-time clock assumptions are unchanged. This is local reviewed identity and single-host evidence, not production authentication, multi-host durability, arbitrary clock-skew tolerance or universal exactly-once. Prior M6 and O2/P1 acceptance stay artifact-specific; prior W1/W2 were independently inspected, not executed. M4E2/E3 and original Stage B remain separate.
 
-1. Independent operational acceptance of this exact candidate using the untouched T0/T1 starts is the immediate handoff.
+1. Independent operational acceptance is complete for this exact candidate and supported class; no broader qualification transfers.
 2. Separately decide the bounded MCP failed-replay wording repair in `MCP-REPLAY-PRESENTATION.md`. The observed old replay correctly retains lifecycle identity but falsely mentions pending human review despite its retained approval. That excluded reporting path was preserved and not expanded here.
 
 STOP for review; no new qualification or runtime campaign started.
+
+
+## Independent acceptance addendum
+
+The independent reviewer personally executed fresh T0/T1 requests, missing-writer preservation, same-request effect/receipts, owner drift and real stale rollback proof, default cancellation, signed exact closure, repeat, source-container restart and finite no-work check, fresh approval/effect, applied-close refusal and old replay. Verdict: **PASS for the tested future single-attempt nondelegated PostgreSQL semantic-v5/source_db/precreated-receipt acknowledged-rollback class**, on unchanged tree `fb6d6d923eb842b5bd2f17decb4b625a4b682b483d3a47aa510f96f8af6710a5`.
+
+Its separate live counters were 4 requests, 5 finite workers, 2 effects, 1 owner increment, 8 closure/inspection commands and 0 providers in approximately 688 seconds. It additionally executed 28/28 focused SQLite/native PostgreSQL controls. The main heavy suite and package gates remained inspected evidence, not independently rerun. It independently rehashed all 7,569 installed and 428 sealed entries, 84 files in the original handoff index, 33 gate record/log pairs and 17 offline logs. Its containers were removed after final-state preservation.
+
+The old-request MCP wording defect independently reproduced and remains a **separate FAIL**, without changing the bounded recovery verdict. Unsupported recovery classes and Stage B remain unqualified. No new implementation or testing followed receipt of this review.
+
+Exact review: `/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/recovery-independent-final-review-20260920/REVIEW.md`, SHA256 `262c802a2d3ade722d7ae99b7821b8c1df5862f1cb71a0d3635c83f43780be32`. `INDEPENDENT-ACCEPTANCE.json` records all report/result/finding/bundle hashes. The original handoff/evidence index at f52ca02 remains historical; this addendum changes reports only.

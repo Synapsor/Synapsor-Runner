@@ -1,0 +1,29 @@
+{
+  "recorded_at": "2026-09-20T09:21:09.967020+00:00",
+  "candidate_tree": "fb6d6d923eb842b5bd2f17decb4b625a4b682b483d3a47aa510f96f8af6710a5",
+  "reviewed_handoff_commit": "f52ca023ac2e9d8464ea417205fed3cdc2c1598b",
+  "verdict": "PASS for tested future single-attempt nondelegated PostgreSQL semantic-v5 source_db/precreated acknowledged-rollback closure contract",
+  "separate_verdict": "FAIL: old-request replay explanation falsely describes human review/limit failure",
+  "stage_b": "ATTEMPTED / NOT PASSED",
+  "personally_executed": "T0/T1 live recovery and 28/28 supplemental SQLite/native PostgreSQL controls",
+  "inspected_not_rerun": "implementer full suite, types, ten offline gates and original 48-test PostgreSQL/SQLite contention gates",
+  "files": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/recovery-independent-final-review-20260920/REVIEW.md",
+      "sha256": "262c802a2d3ade722d7ae99b7821b8c1df5862f1cb71a0d3635c83f43780be32"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/recovery-independent-final-review-20260920/RESULT.json",
+      "sha256": "6e862f7bd7d658e28d892112e865cb0934a404d9416614b98fcad1d7c729970a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/recovery-independent-final-review-20260920/MCP-REPLAY-FINDING.md",
+      "sha256": "737c06e8e2343fd4cc62c80c74d1632d5c11879480ee1b66e2b3f52194764c4b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/recovery-independent-final-review-20260920/review-bundle.tar.gz",
+      "sha256": "46c2d97633065364c94ce535c3a1a0b17e58f720e6eba4e530dc3cda2a4d4dce"
+    }
+  ],
+  "follow_up": "record acceptance only; no product changes or further tests"
+}
