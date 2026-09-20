@@ -29,7 +29,7 @@ describe("faithful source counting across additions", () => {
     expect(()=>parse(saved.reply,d)).toThrow("COUNTING_REQUIREMENT_AMBIGUOUS");
   });
   it("keeps genuine boundary-wide null/null without a singleton proof", () => {
-    const source=policyTextSnapshot(Buffer.from("At most two automatic approvals overall in the rolling 24 hours."),"rules.txt");
+    const source=policyTextSnapshot(Buffer.from("At most two automatic approvals across all outcomes in the rolling 24 hours."),"rules.txt");
     const d=structuredClone(saved.draft);const p=structuredClone(counter(saved.reply));p.start=p.end=1;delete p.operator_message_id;
     for(const c of p.counter_requirements)delete c.operator_message_id;
     const report=parse({passages:[p]},d,source,[]);

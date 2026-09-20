@@ -61,7 +61,7 @@ describe('faithful current counter description, exact NEW-SB-A capture',()=>{
   });
   it.each(['openai','openrouter'] as const)('%s sends exact-capture feedback, then preserves the separately exposed source-association refusal',async provider=>{
     const f=fixture(),t=transport(f,[f.response,f.corrected],provider);
-    await expect(t.run()).rejects.toThrow('COUNTING_REQUIREMENT_MISMATCH');
+    await expect(t.run()).rejects.toThrow('COUNTING_REQUIREMENT_AMBIGUOUS');
     expect(t.requests).toHaveLength(2);const sent=JSON.stringify(t.requests[1]);
     expect(sent).toContain('COUNTING_CURRENT_DESCRIPTION_MISMATCH');expect(sent).toContain('current_evidence');
     expect(sent).toContain('/automatic_limits/0/history_selector/capability');expect(sent).toContain('/automatic_limits/1/history_selector/capability');

@@ -53,7 +53,10 @@ export function countingSourceRequirements(source: PolicyTextSnapshot, draft: un
     terms: [a.outcome.split(".").at(-1), a.discovery?.title, ...(a.discovery?.aliases ?? [])].filter((x): x is string => typeof x === "string").map(words) }));
   const resolve = (phrase: string): string | null | undefined => {
     const tokens = words(phrase).filter(w => !["approval", "request"].includes(w));
-    if (!tokens.length || tokens.every(w => ["action", "outcome", "capability"].includes(w))) return null;
+    // An omitted outcome name is unresolved, not positive evidence that every
+    // outcome consumes the allowance. Exact source-bound operator reviews below
+    // can resolve the referent without editing the source or current selector.
+    if (!tokens.length || tokens.every(w => ["action", "outcome", "capability"].includes(w))) return undefined;
     const matches = outcomes.filter(a => a.terms.some(term => tokens.every(token => term.includes(token))));
     return matches.length === 1 ? matches[0]!.outcome : undefined;
   };
@@ -63,9 +66,15 @@ export function countingSourceRequirements(source: PolicyTextSnapshot, draft: un
     // examples of actors, or a provider's prose about the current implementation.
     if (!/\b(?:at most|maximum|limit|cap|allowance|no more than)\b/iu.test(line)) continue;
     const phrases = [...line.matchAll(/\bautomatic\s+([a-z][a-z -]*?)(?=\s+(?:overall|per|across|within|in|during|for|shared|with|and|only)\b|[,.;:]|$)/giu)];
-    const required = [...new Set(phrases.map(m => resolve(m[1]!)).filter(x => x !== undefined))];
+    // This deliberately small positive form states the counting domain. Scope
+    // words such as overall/per tenant, or a generic noun, do not state it.
+    // Quoted, conditional or contradictory prose needs the existing review.
+    const resolved = phrases.map(m => resolve(m[1]!) ?? (
+      /^automatic\s+(?:approvals|requests|actions|outcomes|capabilities)\s+across\s+all\s+outcomes\b/iu.test(line.slice(m.index))
+      && !/["“”]|^\s*>|\b(?:not|never|unless|except|only|instead)\b/iu.test(line) ? null : undefined));
+    const required = [...new Set(resolved.filter(x => x !== undefined))];
     if (!phrases.length) continue;
-    const ambiguous = required.length !== 1 || phrases.some(m => resolve(m[1]!) === undefined);
+    const ambiguous = required.length !== 1 || resolved.some(x => x === undefined);
     const capability = ambiguous ? null : required[0]!;
     let decision: string | undefined;
     for (const message of messages) {
