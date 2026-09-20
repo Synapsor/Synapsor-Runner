@@ -49,16 +49,18 @@ export function actionRuleEffectLines(input: Parameters<typeof actionRuleEffectI
   ];
 }
 
-/** The legacy primary fields were public already. New companion details are
- * disclosed only for resources already named by the public subject contract.
- * Private expressions, predicates and related-source metadata never cross here. */
+/** The legacy primary fields were public already. A subject permits its resource
+ * name, not companion mutation-field disclosure. Exact companion assignments
+ * remain operator-only; do not infer permission from historical annotations. */
 export function actionRulePublicEffects(input: Parameters<typeof actionRuleEffectInventory>[0]) {
   const inventory = actionRuleEffectInventory(input);
   return { schema_version: inventory.schema_version, completeness: "all_components_with_restricted_details" as const,
     components: inventory.components.map(c => {
       const disclosed = c.role === "primary" || input.rule.subjects.some(s => s.resource === c.resource);
       return { role: c.role, operation: c.operation,
-        ...(disclosed ? { resource: c.resource, fields: Object.keys(c.changes) } : { target: "related reviewed record", details: "Operator-only physical target and fields." }),
+        ...(disclosed ? { resource: c.resource } : { target: "related reviewed record" }),
+        ...(c.role === "primary" ? { fields: Object.keys(c.changes) }
+          : { details: "Operator-only exact fields and assignments; resource shown only when already public." }),
         transformation: "Exact Runner-derived assignment; values and private expressions are not disclosed.",
         max_rows: c.max_rows,
         system_managed: c.system_managed.version_advance ? "Reviewed integer version counter advances by one." : "No version advance.",

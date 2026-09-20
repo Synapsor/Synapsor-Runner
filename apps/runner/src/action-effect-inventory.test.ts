@@ -31,6 +31,16 @@ describe("canonical effect inventory", () => {
     expect(actionRuleEffectInventory(c).components).toHaveLength(1);
     expect(actionRuleEffectInventory(c).transaction.grouping).toBe("single_effect");
   });
+  it("does not infer companion field disclosure from a public subject resource", () => {
+    const f = fixture(), s = f.rules[0]!, slot = s.verification_boundary.resources.find(r => r.binding === "slot")!;
+    slot.source = { kind: "subject_ref" };
+    s.rule.subjects.push({ binding: "slot", resource: slot.resource, input: "opaque_subject_ref" });
+    const c = compile(f), visible = actionRulePublicEffects(c);
+    expect(visible.components[1]).toMatchObject({ resource: slot.resource, role: "atomic_companion", max_rows: 1 });
+    expect(visible.components[1]).not.toHaveProperty("fields");
+    expect(JSON.stringify(visible.components[1])).not.toMatch(/slot_state|consumed/);
+    expect(actionRuleEffectLines(c).join("\n")).toContain('"value":"consumed"');
+  });
   it("retains distinct bindings and reordering through the four-target supported compiler", () => {
     const f = fixture(), s = f.rules[0]!, slot = s.verification_boundary.resources.find(r => r.binding === "slot")!;
     // Same relation and field names, different exact subject bindings. No summed bound.
