@@ -1,0 +1,127 @@
+[
+  {
+    "observed": "> Change a verified outcome with a model",
+    "send": "\u001b[B",
+    "reason": "Follow previously observed public execution setup route; separate checks and review remain enabled"
+  },
+  {
+    "observed": "> Verified Action Boundary [ACTIVE]",
+    "send": "\r",
+    "reason": "Follow previously observed public execution setup route; separate checks and review remain enabled"
+  },
+  {
+    "observed": "> Describe a verified outcome change with a model",
+    "send": "\u001b[B",
+    "reason": "Follow previously observed public execution setup route; separate checks and review remain enabled"
+  },
+  {
+    "observed": "> Review supervised execution for release.seal_candidate",
+    "send": "\r",
+    "reason": "Follow previously observed public execution setup route; separate checks and review remain enabled"
+  },
+  {
+    "observed": "> Keep the exact reviewed selection",
+    "send": "\r",
+    "reason": "Follow previously observed public execution setup route; separate checks and review remain enabled"
+  },
+  {
+    "observed": "> Check the configured write connection",
+    "send": "\r",
+    "reason": "Run live narrow-writer/receipt verification; no execution consent yet"
+  },
+  {
+    "observed": "Writer verification: PASSED",
+    "send": "\u001b[6~",
+    "reason": "Inspect complete worker handoff and execution default-No confirmation"
+  },
+  {
+    "observed": "Enable supervised source execution for release.seal_candidate?",
+    "send": "\u001b[A",
+    "reason": "Explicitly select authorized fresh-fixture execution after verified writer and rolled-back receipt probe"
+  },
+  {
+    "observed": "> Yes",
+    "send": "\r",
+    "reason": "Enable only this exact outcome; worker startup remains separate"
+  },
+  {
+    "observed": "> Change a verified outcome with a model",
+    "send": "\u001b[B",
+    "reason": "Open supported Continue client setup handoff"
+  },
+  {
+    "observed": "> Verified Action Boundary [ACTIVE]",
+    "send": "\r",
+    "reason": "Open supported Continue client setup handoff"
+  },
+  {
+    "observed": "> Describe a verified outcome change with a model",
+    "send": "\u001b[A",
+    "reason": "Select public reviewed local-client setup; no business edits"
+  },
+  {
+    "observed": "> Edit business rules manually",
+    "send": "\u001b[A",
+    "reason": "Select public reviewed local-client setup; no business edits"
+  },
+  {
+    "observed": "> Continue client setup",
+    "send": "\r",
+    "reason": "Select public reviewed local-client setup; no business edits"
+  },
+  {
+    "observed": "> Local stdio MCP",
+    "send": "\r",
+    "reason": "Prepare local development MCP client identity through supported operator route"
+  },
+  {
+    "observed": "> Claude Code",
+    "send": "\r",
+    "reason": "Review project-scoped four-tool client entry; deterministic client will use its launcher"
+  },
+  {
+    "observed": "> Use the existing default local setup",
+    "send": "\r",
+    "reason": "Use compatible reviewed default local identity route for this fresh project"
+  },
+  {
+    "observed": "Install the reviewed Synapsor MCP entry in .mcp.json? Type yes to continue:",
+    "send": "yes\r",
+    "reason": "Explicitly confirm four-tool local project client installation"
+  },
+  {
+    "observed": "Use a trusted local test identity for this setup session?",
+    "send": "y",
+    "reason": "Review task-owned synthetic local identity, no production authentication claim"
+  },
+  {
+    "observed": "Trusted local test tenant value for SYNAPSOR_TENANT_ID (hidden)",
+    "secret_role": "tenant_id",
+    "reason": "Supply predeclared owned fixture tenant through hidden trusted operator input"
+  },
+  {
+    "observed": "Trusted local test principal value for SYNAPSOR_PRINCIPAL (hidden)",
+    "secret_role": "principal_id",
+    "reason": "Supply predeclared synthetic principal through hidden trusted operator input"
+  },
+  {
+    "observed": "Verify this configured client connection now?",
+    "send": "y",
+    "reason": "Verify installed generated launcher and four-tool catalog without source queries or requests"
+  },
+  {
+    "observed": "Start the reviewed execution worker here?",
+    "send": "n",
+    "reason": "Keep worker stopped; only separately counted finite R0/R1 worker runs are authorized in this schedule"
+  },
+  {
+    "observed": "VERIFIED ACTION BOUNDARY",
+    "send": "\u001b",
+    "reason": "Close setup after reviewed identity and positive four-tool connection; finite workers remain separate"
+  },
+  {
+    "observed": "Esc Back   Q Quit",
+    "send": "q",
+    "reason": "Close setup after reviewed identity and positive four-tool connection; finite workers remain separate"
+  }
+]

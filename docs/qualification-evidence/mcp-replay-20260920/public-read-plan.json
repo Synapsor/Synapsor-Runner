@@ -1,0 +1,5 @@
+[
+  {"name":"app.describe_actions","arguments":{"outcome":"release.seal_candidate"},"expected":"ok"},
+  {"name":"app.describe_data","arguments":{"resource":"release_ops.build_candidates"},"expected":"ok"},
+  {"name":"app.explore_data","arguments":{"plan":{"kind":"rows","resource":"release_ops.build_candidates","select":["candidate_ref","candidate_state","application_name"]}},"expected":"ok"}
+]

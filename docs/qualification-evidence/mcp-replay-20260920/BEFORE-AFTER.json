@@ -1,0 +1,55 @@
+{
+  "original_capture_sha256": "2455368314db7a48ebb6c81b32adeb49e8a680fd2d15ad7a3a8f4d2033ad5a7b",
+  "baseline_structured_exactly_equals_captured_original": true,
+  "baseline_gate": "captured-before-3-exit.json",
+  "after_gate": "captured-final-exit.json",
+  "diagnostic_scope": "actual result builder and final tool projection from read-only captured copy; no current access/TTL claim",
+  "before": {
+    "status": "attention_required",
+    "request_disposition": "already_recorded",
+    "authorization": {
+      "eligibility": "verified",
+      "approval": "approved",
+      "execution": "human_review"
+    },
+    "proposal": {
+      "status": "failed",
+      "approval": "pending human review because an automatic-approval limit did not pass"
+    },
+    "execution": "human_review",
+    "eligibility": "verified from current authoritative facts",
+    "source_database_changed": false
+  },
+  "after": {
+    "status": "closed",
+    "request_disposition": "already_recorded",
+    "authorization": {
+      "eligibility": "verified",
+      "eligibility_basis": "original_request",
+      "approval": "automatic",
+      "execution": "held"
+    },
+    "proposal": {
+      "status": "failed",
+      "approval": "automatically approved; apply remains a separate authority"
+    },
+    "execution": "held",
+    "eligibility": "verified for the original request; not re-evaluated by this replay",
+    "source_database_changed": false,
+    "lifecycle": {
+      "execution": "failed",
+      "disposition": "closed",
+      "automatic_retry_scheduled": false,
+      "next_retry_at": null
+    },
+    "invocation": {
+      "operation": "returned_existing_request",
+      "source_database_changed": false
+    },
+    "execution_receipt": {
+      "verified": true,
+      "status": "failed",
+      "source_database_changed": false
+    }
+  }
+}

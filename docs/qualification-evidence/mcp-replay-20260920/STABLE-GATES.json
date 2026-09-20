@@ -1,0 +1,303 @@
+{
+  "recorded_at": "2026-09-20T10:25:02.946582+00:00",
+  "full_suite": {
+    "passed": 6671,
+    "skipped": 476,
+    "files_passed": 321,
+    "files_skipped": 21,
+    "exit": 0
+  },
+  "explicit_postgres": {
+    "passed": 48,
+    "files": 4,
+    "exit": 0,
+    "scope": "real PostgreSQL control-store closure/rollback/accounting and real PostgreSQL semantic source; not merely PostgreSQL business rows with SQLite control"
+  },
+  "gates": [
+    {
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "--config",
+        "docs/qualification-evidence/mcp-replay-20260920/captured-vitest.config.mjs"
+      ],
+      "start": 1789898480.7425268,
+      "source_before": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 1378371,
+      "exit": 0,
+      "seconds": 2.279053211212158,
+      "source_after": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c",
+      "name": "captured-final",
+      "record_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/captured-final-exit.json",
+      "record_sha256": "1a89408622a570b63b7349efe212769ecbb4dfd7f6553627ccb89fcaf5cab2ab",
+      "log_sha256": "ee0bbef47d1048f085b5c84f9dc7198273f3e49157dc362d2b7c3b0612f51bc6"
+    },
+    {
+      "command": [
+        "corepack",
+        "pnpm",
+        "typecheck"
+      ],
+      "start": 1789898451.8022945,
+      "source_before": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 1377949,
+      "exit": 0,
+      "seconds": 2.060964345932007,
+      "source_after": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c",
+      "name": "final-types",
+      "record_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/final-types-exit.json",
+      "record_sha256": "7ea9b9bf5934674def6beebf1f6d07607b60ff34426666bd45d28d5bfada0bad",
+      "log_sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5"
+    },
+    {
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "--maxWorkers=4",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "start": 1789898505.9176881,
+      "source_before": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 1378913,
+      "exit": 0,
+      "seconds": 1257.8427956104279,
+      "source_after": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c",
+      "name": "stable-full",
+      "record_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/stable-full-exit.json",
+      "record_sha256": "399703df5edaf25aa6534d6f9bebaf6af5e7313f81d339f8d191acd3a5cc4157",
+      "log_sha256": "27bd0e4dd92b6c1dac5ce893dff68e280fb294f0e4a206d64bd274edb733db45"
+    },
+    {
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/worker-blocked-closure.test.ts",
+        "apps/runner/src/semantic-atomic-postgres.test.ts",
+        "apps/runner/src/runtime-bridge-admission.test.ts",
+        "packages/proposal-store/src/worker-cancellation-role.test.ts",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=30000",
+        "--hookTimeout=30000"
+      ],
+      "start": 1789899773.1358056,
+      "source_before": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c",
+      "credentials": "only owned SYNAPSOR_TEST_POSTGRES_URL",
+      "umask": "0077",
+      "pid": 1403598,
+      "exit": 0,
+      "seconds": 18.304256200790405,
+      "source_after": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c",
+      "name": "postgres-final",
+      "record_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/postgres-final-exit.json",
+      "record_sha256": "9dffd4f5c6711a08686e8605caa0598e4254a95b77a9d4ce898ac59c89368801",
+      "log_sha256": "89c8738003c1d7762344467cd9efd38bc7c702dcba9487a12cc40139a2469998"
+    }
+  ],
+  "offline": {
+    "started_at": "2026-09-20T10:23:19.201324+00:00",
+    "network": "unshared network namespace; npm offline; writable disposable cache copy",
+    "home": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/offline-home",
+    "commands": [
+      {
+        "name": "trusted-core",
+        "args": [
+          "node",
+          "scripts/check-trusted-core-dependencies.mjs"
+        ],
+        "phase": "all",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-20T10:23:19.249003+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-20T10:23:20.717472+00:00",
+        "source_before": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c",
+        "source_after": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c"
+      },
+      {
+        "name": "licenses",
+        "args": [
+          "node",
+          "scripts/check-license-content.mjs"
+        ],
+        "phase": "all",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-20T10:23:20.799933+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-20T10:23:21.766645+00:00",
+        "source_before": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c",
+        "source_after": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c"
+      },
+      {
+        "name": "human-commands",
+        "args": [
+          "node",
+          "scripts/verify-human-command-surface.mjs"
+        ],
+        "phase": "all",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-20T10:23:21.863733+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-20T10:23:22.629769+00:00",
+        "source_before": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c",
+        "source_after": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c"
+      },
+      {
+        "name": "dsl-sources",
+        "args": [
+          "bash",
+          "scripts/verify-dsl-source-paths.sh"
+        ],
+        "phase": "all",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-20T10:23:22.711757+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-20T10:23:24.001710+00:00",
+        "source_before": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c",
+        "source_after": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c"
+      },
+      {
+        "name": "cursor-plugin",
+        "args": [
+          "node",
+          "scripts/verify-cursor-plugin.mjs"
+        ],
+        "phase": "all",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-20T10:23:24.096216+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-20T10:23:24.210993+00:00",
+        "source_before": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c",
+        "source_after": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c"
+      },
+      {
+        "name": "mcp-client-configs",
+        "args": [
+          "node",
+          "scripts/verify-mcp-client-configs.mjs"
+        ],
+        "phase": "all",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-20T10:23:24.291940+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-20T10:23:43.705297+00:00",
+        "source_before": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c",
+        "source_after": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c"
+      },
+      {
+        "name": "local-package",
+        "args": [
+          "bash",
+          "scripts/verify-local-runner.sh"
+        ],
+        "phase": "all",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-20T10:23:43.794483+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-20T10:24:21.556684+00:00",
+        "source_before": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c",
+        "source_after": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c"
+      },
+      {
+        "name": "bundle-freshness",
+        "args": [
+          "node",
+          "scripts/verify-local-runner-bundle-freshness.mjs"
+        ],
+        "phase": "all",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-20T10:24:21.653144+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-20T10:24:27.230595+00:00",
+        "source_before": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c",
+        "source_after": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c"
+      },
+      {
+        "name": "public-commands",
+        "args": [
+          "bash",
+          "scripts/verify-public-commands.sh"
+        ],
+        "phase": "all",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-20T10:24:27.317896+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-20T10:25:10.086026+00:00",
+        "source_before": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c",
+        "source_after": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c"
+      },
+      {
+        "name": "packed-offline",
+        "args": [
+          "bash",
+          "scripts/verify-packed-runner.sh"
+        ],
+        "phase": "all",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-20T10:25:10.187776+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-20T10:27:03.586591+00:00",
+        "source_before": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c",
+        "source_after": "b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c"
+      }
+    ]
+  },
+  "offline_logs": [
+    {
+      "name": "trusted-core",
+      "sha256": "a5d547e1ec7ad5c1686a042dd171e76694b4c04cb82f624b810bc09882324c43"
+    },
+    {
+      "name": "licenses",
+      "sha256": "81c81f063c5391a1e9f237b114a7ba197da9b6cece450fa3fd851f6fcac80bac"
+    },
+    {
+      "name": "human-commands",
+      "sha256": "4ca02cff1d23604455f2707b16fc58bea2d0beb7f6adff085887cbdae1379222"
+    },
+    {
+      "name": "dsl-sources",
+      "sha256": "3bd663b10b211bb9dbfa01117dd164a3a851d9936e4be1568a6bd5f9ccf7d50a"
+    },
+    {
+      "name": "cursor-plugin",
+      "sha256": "cc12e22d29ebd660345c60ee249826505ffccb62bb45e1b39590202b7ee7135f"
+    },
+    {
+      "name": "mcp-client-configs",
+      "sha256": "a61f33a0918009a044aaaede959658bba3184fb54d00088b5a29142595b0f3cd"
+    },
+    {
+      "name": "local-package",
+      "sha256": "424b48f200bd774e8c4dcabbc6401b5845a059d473ff970cda3023ab10cc1d7a"
+    },
+    {
+      "name": "bundle-freshness",
+      "sha256": "4534215e15034b5b5391ab51d71121ebc119c68a2226f6194462a8558e9489b7"
+    },
+    {
+      "name": "public-commands",
+      "sha256": "2121e7f079daf2f2826853340dcdbf7349aeb7e7ed01ffc464e8202cec41e559"
+    },
+    {
+      "name": "packed-offline",
+      "sha256": "c78c4b074908bc2fb787159fd4829411a9d0db717ef14ebace846f4cb10358a9"
+    }
+  ]
+}

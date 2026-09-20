@@ -1,0 +1,17 @@
+
+  apps/runner/dist/runner.mjs  11.3mb ⚠️
+
+⚡ Done in 206ms
+
+  apps/runner/dist/authoring.mjs  193.0kb
+
+⚡ Done in 11ms
+
+  apps/runner/dist/shadow.mjs  541.1kb
+
+⚡ Done in 12ms
+
+  apps/runner/dist/runtime.mjs  1.6mb ⚠️
+
+⚡ Done in 51ms
+local runner verified in /tmp/tmp.WqQ9IijfQl

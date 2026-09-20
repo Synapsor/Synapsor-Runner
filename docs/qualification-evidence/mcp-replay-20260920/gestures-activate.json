@@ -1,0 +1,32 @@
+[
+  {
+    "observed": "> Verified Action Boundary [DISABLED DRAFT]",
+    "send": "\r",
+    "reason": "Inspect exact saved proposal authority"
+  },
+  {
+    "observed": "> Activate this exact proposal authority",
+    "send": "\r",
+    "reason": "Open exact proposal-authority confirmation for reviewed two-target rule"
+  },
+  {
+    "observed": "PgUp/PgDn Scroll hidden details",
+    "send": "\u001b[6~",
+    "reason": "Inspect complete confirmation and default-No decision"
+  },
+  {
+    "observed": "Activate verified Action Boundary \"reviewed_staging_actions\"?",
+    "send": "\u001b[A",
+    "reason": "Select explicit Yes for proposal authority only"
+  },
+  {
+    "observed": "> Yes",
+    "send": "\r",
+    "reason": "Confirm exact known two-target proposal authority"
+  },
+  {
+    "observed": "> Change a verified outcome with a model",
+    "send": "q",
+    "reason": "Leave proposal authority active; receipt and execution reviews remain separate"
+  }
+]

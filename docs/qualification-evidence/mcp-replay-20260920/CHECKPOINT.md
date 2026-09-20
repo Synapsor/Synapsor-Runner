@@ -1,0 +1,5 @@
+# M3/replay checkpoint — 2026-09-20T10:27:25.060893+00:00
+
+Product/tests36a5e0e3034127f842a2053048a13ca9e05639a1. Stable full suite completed exit0:6671passed/476skipped,321passed/21skipped files. Source b5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c unchanged. Final types, exact captured-state replay and explicit real PostgreSQL gate48passed all exit0. All ten offline checks passed attempt2 on the same unchanged source. Commands, exits, logs and hashes are in STABLE-GATES.json. Failed development attempts remain in DEVELOPMENT-GATES.json; none is relabelled as the whole-suite result.
+
+Next: commit this checkpoint and freeze one new installation, then public setup/seal R1/T1 before any request. Tester restoration confirmation is required before the single main final episode. Preflight now has a separately frozen standalone copy of the tested resolver and Node/file hashes, without mutable workspace/tsx imports. The final schedule is PREPARED, NOT EXECUTED. Provider/request/worker/effect final counters remain zero. Original finite budgets retained. Stage B remains ATTEMPTED / NOT PASSED.
