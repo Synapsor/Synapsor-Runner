@@ -8,7 +8,8 @@ os.umask(0o077)
 r=Path('/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/effect-continuation-f83209f-20260919')
 s=r/'public/deployment/project';proof=json.loads((r/'public/deployment/inspection-post-publication.json').read_text())
 assert proof['active']['authority']['action_boundary']['digest']=='sha256:92ee7d3c1c570fe4db81981d11438ff818448e04e59d775999b3cbf0950a8849'
-assert not proof['execution']['enabled'];assert proof['receipt']['selection']['receipts']['authority']=='source_db';assert not proof['receipt']['selection_current']
+# Persisted old execution records remain, but none authorizes the new revision.
+assert all(p['action_boundary_digest'] != proof['active']['authority']['action_boundary']['digest'] for p in proof['execution']['policies']);assert proof['receipt']['selection']['receipts']['authority']=='source_db';assert not proof['receipt']['selection_current']
 # Exclusive lock proves the task has closed its local ledger clients before copying.
 c=sqlite3.connect(s/'.synapsor/local.db',timeout=1);c.execute('begin exclusive');c.rollback();c.close()
 f=r/'post-publication-controls';f.mkdir();archive=f/'published-before-setup.tgz'

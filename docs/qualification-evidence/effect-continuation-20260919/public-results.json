@@ -1,0 +1,176 @@
+{
+  "artifact": "7b99cc6fdc37db2ee6d357932d1f04fe714be323893a21c4fe768df6e3f96244",
+  "source": "b563c88efa34c52e98b3aec74a6e078cfe7d608b",
+  "product_tests": "4b4f362aa06cfb0e42005a1f853bc2cc6e408e09",
+  "original_exact_draft_published": true,
+  "read_active_and_disabled_unchanged": true,
+  "authority_changes": [
+    {
+      "case": "deployment",
+      "epochs": [
+        15,
+        18
+      ],
+      "changed_active_records": [
+        {
+          "kind": "action",
+          "name": "reviewed_staging_rules",
+          "before": "policy:f2df8db27f1d0b98288459d837470a648c0cf9595e6adcf53085a9793fe03849",
+          "after": "policy:c7f835860e653004657dc847b13d4c2e18962d8bf31b0b77b7ced2a631998d08"
+        },
+        {
+          "kind": "execution",
+          "name": "supervised_worker",
+          "before": "policy:7f8935bfdc85e78d4759ad878763f1a0e47c8a37060591c430c3bc30ccbdc303",
+          "after": "policy:aad1fc92225e9c536b51b199d94ca9c0535f0addbc312bb2b11959b65eb613bb"
+        },
+        {
+          "kind": "management",
+          "name": "semantic_receipts_77988288586637b3599a58acaf15a1f7758e248366acebcb1a74955ee32e765d",
+          "before": "policy:043b8b65a29dbc15d1b8fc4de3e012ce45ee2e71e4bf51d86e3880f73f22958d",
+          "after": "policy:eadba7656bf4da1f0d8d4461cd8a30ddc8266ee09684fa40a6606248a5620c3c"
+        }
+      ],
+      "new_revision_ids": [
+        "policy:aad1fc92225e9c536b51b199d94ca9c0535f0addbc312bb2b11959b65eb613bb",
+        "policy:eadba7656bf4da1f0d8d4461cd8a30ddc8266ee09684fa40a6606248a5620c3c",
+        "policy:c7f835860e653004657dc847b13d4c2e18962d8bf31b0b77b7ced2a631998d08"
+      ]
+    },
+    {
+      "case": "decline",
+      "epochs": [
+        16,
+        17
+      ],
+      "changed_active_records": [
+        {
+          "kind": "management",
+          "name": "semantic_receipts_77988288586637b3599a58acaf15a1f7758e248366acebcb1a74955ee32e765d",
+          "before": "policy:043b8b65a29dbc15d1b8fc4de3e012ce45ee2e71e4bf51d86e3880f73f22958d",
+          "after": "policy:eadba7656bf4da1f0d8d4461cd8a30ddc8266ee09684fa40a6606248a5620c3c"
+        }
+      ],
+      "new_revision_ids": [
+        "policy:eadba7656bf4da1f0d8d4461cd8a30ddc8266ee09684fa40a6606248a5620c3c"
+      ]
+    },
+    {
+      "case": "pending",
+      "epochs": [
+        16,
+        17
+      ],
+      "changed_active_records": [
+        {
+          "kind": "management",
+          "name": "semantic_receipts_77988288586637b3599a58acaf15a1f7758e248366acebcb1a74955ee32e765d",
+          "before": "policy:043b8b65a29dbc15d1b8fc4de3e012ce45ee2e71e4bf51d86e3880f73f22958d",
+          "after": "policy:eadba7656bf4da1f0d8d4461cd8a30ddc8266ee09684fa40a6606248a5620c3c"
+        }
+      ],
+      "new_revision_ids": [
+        "policy:eadba7656bf4da1f0d8d4461cd8a30ddc8266ee09684fa40a6606248a5620c3c"
+      ]
+    },
+    {
+      "case": "read",
+      "epochs": [
+        15,
+        15
+      ],
+      "changed_active_records": [],
+      "new_revision_ids": []
+    }
+  ],
+  "selection_before": {
+    "source": "local_postgres",
+    "action_digest": "sha256:37d57ce2b3531d1a2651f4af022913f8db19b1b000236ca1e765d7fbb2ab7101",
+    "binding_digest": "sha256:9007691a6c8492dd5d9e6d8e050c9351bf2c960990605cc484d431b43aa4f0a7",
+    "selection": {
+      "schema_version": "synapsor.semantic-receipt-selection.v1",
+      "project_id": "e2cdd5e1-631f-42bc-be6d-1e9c91e07c4d",
+      "deployment_id": "d9768745-63e0-4080-a9f5-2920067a4c87",
+      "outcome": "release.seal_candidate",
+      "binding_digest": "sha256:9007691a6c8492dd5d9e6d8e050c9351bf2c960990605cc484d431b43aa4f0a7",
+      "write_url_env": "SYNAPSOR_WRITE_RELEASE_SEAL_CANDIDATE_77988288",
+      "receipts": {
+        "authority": "source_db",
+        "provisioning": "precreated",
+        "schema": "release_ops",
+        "table": "synapsor_writeback_receipts"
+      }
+    },
+    "selection_current": true,
+    "revision_id": "policy:043b8b65a29dbc15d1b8fc4de3e012ce45ee2e71e4bf51d86e3880f73f22958d",
+    "epoch": 15,
+    "requirements": {
+      "source_digest": null,
+      "passages": []
+    }
+  },
+  "selection_after": {
+    "source": "local_postgres",
+    "action_digest": "sha256:92ee7d3c1c570fe4db81981d11438ff818448e04e59d775999b3cbf0950a8849",
+    "binding_digest": "sha256:4377f48bd9fd173b8567cb0ee26a742ab4ef4fbbaa9efdfab26cb819b49a329f",
+    "selection": {
+      "schema_version": "synapsor.semantic-receipt-selection.v1",
+      "project_id": "e2cdd5e1-631f-42bc-be6d-1e9c91e07c4d",
+      "deployment_id": "d9768745-63e0-4080-a9f5-2920067a4c87",
+      "outcome": "release.seal_candidate",
+      "binding_digest": "sha256:4377f48bd9fd173b8567cb0ee26a742ab4ef4fbbaa9efdfab26cb819b49a329f",
+      "write_url_env": "SYNAPSOR_WRITE_RELEASE_SEAL_CANDIDATE_77988288",
+      "receipts": {
+        "authority": "source_db",
+        "provisioning": "precreated",
+        "schema": "release_ops",
+        "table": "synapsor_writeback_receipts"
+      }
+    },
+    "selection_current": true,
+    "revision_id": "policy:eadba7656bf4da1f0d8d4461cd8a30ddc8266ee09684fa40a6606248a5620c3c",
+    "epoch": 18,
+    "requirements": {
+      "source_digest": null,
+      "passages": []
+    }
+  },
+  "execution_after": [
+    {
+      "action_boundary_digest": "sha256:92ee7d3c1c570fe4db81981d11438ff818448e04e59d775999b3cbf0950a8849",
+      "concurrency": 1,
+      "lease_seconds": 300,
+      "max_attempts": 5,
+      "mode": "supervised_worker",
+      "outcome": "release.seal_candidate",
+      "proposal_ttl_seconds": 86400,
+      "queue_limit": 100,
+      "rate_limit": {
+        "executions": 60,
+        "window_seconds": 60
+      },
+      "require_least_privilege_writer": true,
+      "worker_identity": "semantic_action_worker",
+      "write_url_env": "SYNAPSOR_WRITE_RELEASE_SEAL_CANDIDATE_77988288",
+      "writer_posture_fingerprint": "sha256:f16134e8a228fdcdcea97545a801587ab20ed62904c50edcacc84af0edcda19b"
+    }
+  ],
+  "decline_and_missing_have_no_applicable_execution": true,
+  "T1": {
+    "deterministic_calls": 16,
+    "provider_calls": 3,
+    "provider_cost_usd": 0.0203919,
+    "provider_tools": 5,
+    "own_rows": 29,
+    "model": "openai/gpt-5.6-terra",
+    "no_final_narrative_requested": true
+  },
+  "T2": "PASS complete operator effects, public restricted projection, disabled reopen and export",
+  "T3_explicit_values": "PASS publication/renewal/actual verification/decline/enable/restart; no business dispatch",
+  "M6_advertised_blank_defaults": "FAIL Enter keeps text conflicts with undefined empty input from public Action text adapter",
+  "O1_missing_control": "writer posture failure before receipt probe; no fallback; no new execution authority",
+  "business_rows": 504,
+  "source_receipts_added": 0,
+  "overall": "PARTIAL; default continuation defect retained, no overall clean acceptance",
+  "historical_stage_b": "ATTEMPTED / NOT PASSED"
+}

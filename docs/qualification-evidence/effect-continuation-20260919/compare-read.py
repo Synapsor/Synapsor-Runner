@@ -36,6 +36,12 @@ for line in (d/'protocol.jsonl').read_text().splitlines():
  assert v['source_database_changed'] is False
  verified.append({'returned_rows':len(rows),'columns':list(rows[0]),'all_rows_in_configured_context':True,'public_values_match_source':True})
 assert verified and refused>0
-if placeholders:assert len(placeholders)==len(set(placeholders)), 'Private cells linked by repeated placeholder'
-result={'pass':True,'source_row_count':len(source),'own_context_rows':len(allowed),'verified_reads':verified,'refusals':refused,'private_placeholder_cells':len(placeholders),'all_placeholder_cells_unlinkable_in_observed_outputs':bool(placeholders),'business_tool_dispatches':0}
+# This unchanged legacy revision explicitly grants equality/filter/group analysis.
+revisions=json.loads((d/'state-before/control_policy_revisions.json').read_text())
+record=next(x for x in revisions if x['revision_id']=='policy:903206814a327ab774aaee2b3683dcc958f646a9a14c7deffba8fd84988d0d37')
+boundary=json.loads(record['content_json'])['boundary']
+resource=next(x for x in boundary['pack']['resources'] if x['id']=='release_ops.build_candidates')
+assert 'security_hold' in resource['model_withheld_fields']
+assert resource['filterable_fields']['security_hold'] and 'security_hold' in resource['groupable_fields']
+result={'pass':True,'source_row_count':len(source),'own_context_rows':len(allowed),'verified_reads':verified,'refusals':refused,'private_placeholder_cells':len(placeholders),'distinct_private_placeholders':len(set(placeholders)),'equality_analysis_reviewed_in_unchanged_policy':True,'unlinkability_not_claimed':True,'business_tool_dispatches':0}
 (d/'read-oracle.json').write_text(json.dumps(result,indent=2));print(json.dumps(result))
