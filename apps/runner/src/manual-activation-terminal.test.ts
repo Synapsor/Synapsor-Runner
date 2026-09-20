@@ -9,7 +9,8 @@ import { shellQuote } from "./cli-format.js";
 
 // Real Unix PTYs exercise alternate-screen ownership, not just mocked keys.
 describe.skipIf(process.platform !== "linux")("manual activation in a real terminal", () => {
-  it.each([48, 120].flatMap((columns) => ["ready", "oversized", "drift"].map((mode) => ({ columns, mode }))))(
+  it.each([... [48, 100, 120].flatMap((columns) => ["ready", "oversized", "drift"].map((mode) => ({ columns, mode }))),
+    { columns: 100, mode: "cancel" }])(
     "$mode at $columns columns keeps review and activation distinct", async ({ columns, mode }) => {
       const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-manual-pty-"));
       const helper = fileURLToPath(new URL("./test-fixtures/manual-activation-terminal.ts", import.meta.url));
@@ -27,16 +28,24 @@ describe.skipIf(process.platform !== "linux")("manual activation in a real termi
       child.stderr.on("data", (chunk) => { output += String(chunk); });
       const exited = new Promise<number | null>((resolve, reject) => { child.once("exit", resolve); child.once("error", reject); });
       const screen = () => Array.from({ length: terminal.rows }, (_, i) => terminal.buffer.active.getLine(i)?.translateToString(true) ?? "").join("\n");
-      const waitFor = async (match: string) => {
+      const waitFor = async (match: string, visible = false) => {
         const started = Date.now();
-        while (!output.includes(match)) {
+        for (;;) {
+          await paint;
+          if (output.includes(match) && (!visible || screen().includes(match))) return;
           if (Date.now() - started > 12_000 || child.exitCode !== null) throw new Error(`Missing terminal state ${match}: ${output.slice(-2500)}`);
           await new Promise((resolve) => setTimeout(resolve, 30));
         }
-        await paint;
+      };
+      const waitForEditor = async () => {
+        await waitFor("EDIT ACCESS", true);
+        // The renderer writes rows separately. Receiving/painting its header
+        // does not mean later PTY chunks containing the controls arrived yet.
+        // Await the actual current-frame control, never old scrollback text.
+        await waitFor(mode === "oversized" ? "Inspect activation blocker" : "Review + activate", true);
       };
       try {
-        await waitFor("EDIT ACCESS");
+        await waitForEditor();
         if (mode === "oversized") {
           expect(screen()).toContain("ACTIVATION BLOCKED");
           expect(screen()).toContain("Inspect activation blocker");
@@ -46,7 +55,8 @@ describe.skipIf(process.platform !== "linux")("manual activation in a real termi
         child.stdin.write("C");
         if (mode === "oversized") {
           await waitFor("READ ACCESS IS NOT READY");
-          await waitFor("pending review");
+          await waitFor("pending review", true);
+          await waitFor("complete MCP response", true);
           expect(output).not.toContain("[y/N]");
           const blocked = screen();
           child.stdin.write("Y");
@@ -55,17 +65,27 @@ describe.skipIf(process.platform !== "linux")("manual activation in a real termi
         } else {
           await waitFor("[y/N]");
           output = "";
-          child.stdin.write("Y");
-          await waitFor(mode === "drift" ? "Boundary activation did not complete" : "ACTIVATION SUCCEEDED");
+          child.stdin.write(mode === "cancel" ? "\r" : "Y");
+          if (mode === "cancel") {
+            await waitFor("Enter alone does not activate", true);
+            expect(screen()).toContain("Y Yes");
+            child.stdin.write("N");
+            await waitFor("ACTIVATION NOT CONFIRMED", true);
+            await waitFor("Y Yes", true);
+            child.stdin.write("N");
+          }
+          if (mode !== "cancel") await waitFor(mode === "drift" ? "Boundary activation did not complete" : "ACTIVATION SUCCEEDED");
         }
-        if (mode !== "ready") {
+        if (mode !== "ready" && mode !== "cancel") {
+          // The failure heading is also streamed before its diagnostic body.
+          await waitFor(mode === "drift" ? "Generation lock is stale" : "complete MCP response", true);
           expect(output).toContain(mode === "drift" ? "Generation lock is stale" : "complete MCP response");
           expect(screen()).not.toContain("EDIT ACCESS");
           output = "";
           child.stdin.write("\r");
         }
         // Wait for the returned editor frame before sending Q, not the review dialog.
-        await waitFor("EDIT ACCESS");
+        await waitForEditor();
         child.stdin.write("Q");
         await waitFor("PERSISTED_ACTIVE_COUNT=");
         expect(output).toContain(`PERSISTED_ACTIVE_COUNT=${mode === "ready" ? 1 : 0}`);
