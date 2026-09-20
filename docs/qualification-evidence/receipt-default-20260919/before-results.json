@@ -1,0 +1,11 @@
+{
+  "old_tree": "7b99cc6fdc37db2ee6d357932d1f04fe714be323893a21c4fe768df6e3f96244",
+  "executed_now": [
+    "writer",
+    "schema",
+    "table"
+  ],
+  "all_blank_inputs_returned_without_renewal": true,
+  "all42tables_configs_and504rows_unchanged": true,
+  "native_composed_tests": "3 failed at expected next prompt before repair"
+}

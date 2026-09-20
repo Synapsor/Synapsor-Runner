@@ -1,0 +1,15 @@
+{
+  "started_at": "2026-09-20T01:47:42.331331+00:00",
+  "baseline": "feecc2b7f9aa10c65f28ace812583a63c3b0239d",
+  "hours": {
+    "development": 2,
+    "fixtures": 1,
+    "stable_and_package": 2,
+    "installed_and_delivery": 1
+  },
+  "optional_readonly_worker_ticket_minutes": 30,
+  "provider_calls": 0,
+  "scope": "M6 text defaults; no publication, execution enable, worker or business call",
+  "independent_review": "PENDING; Claude unavailable until Monday",
+  "raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-default-feecc2b-20260919"
+}

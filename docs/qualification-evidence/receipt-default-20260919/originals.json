@@ -1,0 +1,37 @@
+[
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/effect-continuation-f83209f-20260919/public/decline/terminal-1.log",
+    "sha256": "50e6c49cad602eb66983845a48fcf47de76c0cc036be4c817aaa1edacd590df7",
+    "mode": "0o600"
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/effect-continuation-f83209f-20260919/public/decline/inspection-blank-return.json",
+    "sha256": "fa93f33cf38da6fc953a599940d7e35042d1282c6a143e4f2dfa9152fd5985b7",
+    "mode": "0o600"
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/effect-continuation-f83209f-20260919/post-publication-controls/published-before-setup.tgz",
+    "sha256": "246f0e50305ca67e593a228f1ce6e53d831bdf4e7f10a4352d329828b5544390",
+    "mode": "0o400"
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/effect-continuation-f83209f-20260919/saved-final/releaselab.dump",
+    "sha256": "67736d4cbf8d48f78385a40d69d1ed969a19f5883fd880e2e047f4a0b57d674f",
+    "mode": "0o400"
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/effect-continuation-f83209f-20260919/saved-final/pendinglab.dump",
+    "sha256": "6ab5ae73042bfde15d57941893d86c6ca39310ba205dbca3980719b09faf2b42",
+    "mode": "0o400"
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/effect-continuation-f83209f-20260919/saved-final/roles-no-passwords.sql",
+    "sha256": "8387acdc6c701a5c63b450713db61aceb32f2d2fc64820d7cdd4ccb37ca31986",
+    "mode": "0o400"
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/effect-continuation-f83209f-20260919/frozen/installed-artifact-manifest.json",
+    "sha256": "c2742b40e00472424d029674067ed81d6ad76c8dc67d2ccf07aea51b80f98631",
+    "mode": "0o600"
+  }
+]

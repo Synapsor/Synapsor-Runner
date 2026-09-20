@@ -1,0 +1,24 @@
+{
+  "command": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/control-policy-authority-codec.test.ts",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000",
+    "-t",
+    "postgres validated operator policy transactions.*(keeps the original Read|atomically saves only a validated disabled Action companion|persists exact disabled|reopens, edits and switches|rescans stored reviews|refuses stale review and admits)"
+  ],
+  "start": 1789869466.8297508,
+  "source_before": "e27c4807325855fd0619f35a51d13e3d1452e545d387fd015aefc2b1173e6801",
+  "credentials": "only owned SYNAPSOR_TEST_POSTGRES_URL",
+  "umask": "0077",
+  "pid": 877663,
+  "exit": 0,
+  "seconds": 10.285929918289185,
+  "source_after": "e27c4807325855fd0619f35a51d13e3d1452e545d387fd015aefc2b1173e6801"
+}

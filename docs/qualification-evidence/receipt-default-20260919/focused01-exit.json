@@ -1,0 +1,26 @@
+{
+  "command": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/semantic-receipt-setup.test.ts",
+    "apps/runner/src/action-tui.test.ts",
+    "apps/runner/src/boundary-cli-picker.test.ts",
+    "apps/runner/src/boundary-authoring-chat.test.ts",
+    "apps/runner/src/terminal-prompt.test.ts",
+    "--maxWorkers=3",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "start": 1789869296.9452262,
+  "source_before": "e27c4807325855fd0619f35a51d13e3d1452e545d387fd015aefc2b1173e6801",
+  "credentials": "absent",
+  "umask": "0077",
+  "pid": 873797,
+  "exit": 0,
+  "seconds": 82.2520043849945,
+  "source_after": "e27c4807325855fd0619f35a51d13e3d1452e545d387fd015aefc2b1173e6801"
+}

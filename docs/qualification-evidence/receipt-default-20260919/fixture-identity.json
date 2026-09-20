@@ -1,0 +1,22 @@
+{
+  "archive": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/effect-continuation-f83209f-20260919/post-publication-controls/published-before-setup.tgz",
+  "archive_sha256": "246f0e50305ca67e593a228f1ce6e53d831bdf4e7f10a4352d329828b5544390",
+  "cases": [
+    "before-writer",
+    "before-schema",
+    "before-table",
+    "R1",
+    "R2-writer",
+    "R2-schema",
+    "R2-table",
+    "R2-review",
+    "R3"
+  ],
+  "source_rows": 504,
+  "source_dumps": [
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/effect-continuation-f83209f-20260919/saved-final/releaselab.dump",
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/effect-continuation-f83209f-20260919/saved-final/pendinglab.dump"
+  ],
+  "new_business_permissions": false,
+  "fresh_local_passwords_only": true
+}
