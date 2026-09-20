@@ -1,0 +1,2498 @@
+{
+  "classification": "Exact authoring context and response extracted after stopped NEW-SB-A-15; no source rows or credentials",
+  "context": {
+    "draft": {
+      "read": {
+        "activation": "disabled_unreviewed",
+        "budgets": {
+          "max_analysis_relationship_hops": 2,
+          "max_complexity": 24,
+          "max_derived_scope_hops": 2,
+          "max_differencing_queries": 16,
+          "max_dimensions": 3,
+          "max_extracted_cells_per_session": 4000,
+          "max_groups": 50,
+          "max_measures": 3,
+          "max_queries_per_session": 1000,
+          "max_ranked_groups": 500,
+          "max_relationship_hops": 2,
+          "max_response_bytes": 65536,
+          "max_response_cells": 500,
+          "max_rows": 50,
+          "max_time_ranges": 2,
+          "max_top_n": 25,
+          "rate_limit_per_minute": 120,
+          "statement_timeout_ms": 3000
+        },
+        "compiler_version": "1.7.0",
+        "database_server_authority": {
+          "engine": "postgres",
+          "features": {
+            "automatic_numeric_bands": true,
+            "schema_check_constraints": true
+          },
+          "schema_version": "synapsor.database-server-authority.v1",
+          "version_line": "17"
+        },
+        "database_server_tier": "full",
+        "database_server_version": "PostgreSQL 17.10 (Debian 17.10-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+        "deployment_profile": "staging",
+        "generation_lock_fingerprint": "sha256:da7126d168cbe7f380cea3aac8334e44576b2157b59160e15d4af134452c3e6c",
+        "pack": {
+          "name": "reviewed_staging",
+          "resources": [
+            {
+              "aggregate_measures": [],
+              "count_distinct_fields": [],
+              "field_enums": {},
+              "field_types": {
+                "animal_id": "text",
+                "center_id": "text",
+                "confidential_medical_note": "text",
+                "coordinator_id": "text",
+                "exact_rescue_location": "text",
+                "handling_risk_score": "integer",
+                "medical_clearance_state": "text",
+                "public_name": "text",
+                "quarantine_complete": "boolean",
+                "species_group": "text"
+              },
+              "filterable_fields": {},
+              "groupable_fields": [],
+              "id": "release_ops.animals",
+              "kept_out_fields": [
+                "medical_clearance_state",
+                "handling_risk_score",
+                "confidential_medical_note",
+                "center_id",
+                "coordinator_id"
+              ],
+              "minimum_cohort_size": 5,
+              "primary_key": "animal_id",
+              "principal_key": "coordinator_id",
+              "relationship_only": true,
+              "relationships": [],
+              "rls_session": {
+                "principal_setting": "synapsor.coordinator_id",
+                "tenant_setting": "synapsor.center_id"
+              },
+              "schema": "release_ops",
+              "selectable_fields": [
+                "public_name",
+                "species_group"
+              ],
+              "sortable_fields": [],
+              "suppression_aware_totals": true,
+              "table": "animals",
+              "tenant_key": "center_id",
+              "time_bucket_fields": {}
+            },
+            {
+              "aggregate_measures": [],
+              "count_distinct_fields": [],
+              "field_enums": {},
+              "field_types": {
+                "accepting_releases": "boolean",
+                "center_id": "text",
+                "coordinator_id": "text",
+                "habitat_site_id": "text",
+                "public_site_name": "text",
+                "sensitive_location_note": "text",
+                "site_state": "text"
+              },
+              "filterable_fields": {},
+              "groupable_fields": [],
+              "id": "release_ops.habitat_sites",
+              "kept_out_fields": [
+                "sensitive_location_note",
+                "center_id",
+                "coordinator_id"
+              ],
+              "minimum_cohort_size": 5,
+              "primary_key": "habitat_site_id",
+              "principal_key": "coordinator_id",
+              "relationship_only": true,
+              "relationships": [],
+              "rls_session": {
+                "principal_setting": "synapsor.coordinator_id",
+                "tenant_setting": "synapsor.center_id"
+              },
+              "schema": "release_ops",
+              "selectable_fields": [
+                "public_site_name"
+              ],
+              "sortable_fields": [],
+              "suppression_aware_totals": true,
+              "table": "habitat_sites",
+              "tenant_key": "center_id",
+              "time_bucket_fields": {}
+            },
+            {
+              "aggregate_measures": [],
+              "count_distinct_fields": [],
+              "field_enums": {
+                "assessment_state": [
+                  "ready",
+                  "cleared",
+                  "postponed"
+                ]
+              },
+              "field_types": {
+                "animal_id": "text",
+                "assessment_id": "text",
+                "assessment_state": "text",
+                "center_id": "text",
+                "coordinator_id": "text",
+                "habitat_site_id": "text",
+                "internal_staff_note": "text",
+                "next_review_days": "integer",
+                "planned_release_days": "integer",
+                "public_label": "text",
+                "row_version": "integer"
+              },
+              "filterable_fields": {},
+              "groupable_fields": [],
+              "id": "release_ops.release_assessments",
+              "kept_out_fields": [
+                "internal_staff_note",
+                "center_id",
+                "coordinator_id"
+              ],
+              "minimum_cohort_size": 5,
+              "primary_key": "assessment_id",
+              "principal_key": "coordinator_id",
+              "relationships": [
+                {
+                  "cardinality": "many_to_one",
+                  "counted_entity": "assessment_id",
+                  "id": "release_assessments_animal_id_center_id_coordinator_id_fkey",
+                  "local_columns": [
+                    "animal_id",
+                    "center_id",
+                    "coordinator_id"
+                  ],
+                  "max_fan_out": 1,
+                  "nullable": false,
+                  "path_depth": 1,
+                  "proof": {
+                    "digest": "sha256:bc840017e562b10d3b8e3db694d0af9745d8035920cf382114fa42c5886d27cf",
+                    "links": [
+                      {
+                        "cardinality": "many_to_one",
+                        "constraint_name": "release_assessments_animal_id_center_id_coordinator_id_fkey",
+                        "max_fan_out": 1,
+                        "nullable": false,
+                        "source_columns": [
+                          "animal_id",
+                          "center_id",
+                          "coordinator_id"
+                        ],
+                        "source_resource": "release_ops.release_assessments",
+                        "target_columns": [
+                          "animal_id",
+                          "center_id",
+                          "coordinator_id"
+                        ],
+                        "target_resource": "release_ops.animals",
+                        "target_uniqueness": {
+                          "columns": [
+                            "animal_id",
+                            "center_id",
+                            "coordinator_id"
+                          ],
+                          "kind": "unique_constraint",
+                          "name": "animals_animal_id_center_id_coordinator_id_key"
+                        }
+                      }
+                    ],
+                    "source": "database_catalog"
+                  },
+                  "target_columns": [
+                    "animal_id",
+                    "center_id",
+                    "coordinator_id"
+                  ],
+                  "target_resource": "release_ops.animals",
+                  "unmatched_rows": "exclude"
+                },
+                {
+                  "cardinality": "many_to_one",
+                  "counted_entity": "assessment_id",
+                  "id": "release_assessments_habitat_site_id_center_id_coordinator__fkey",
+                  "local_columns": [
+                    "habitat_site_id",
+                    "center_id",
+                    "coordinator_id"
+                  ],
+                  "max_fan_out": 1,
+                  "nullable": false,
+                  "path_depth": 1,
+                  "proof": {
+                    "digest": "sha256:faa480d2cf8c3acaf3665af988b37c8422830e8df41f20afb21a4803a7307d08",
+                    "links": [
+                      {
+                        "cardinality": "many_to_one",
+                        "constraint_name": "release_assessments_habitat_site_id_center_id_coordinator__fkey",
+                        "max_fan_out": 1,
+                        "nullable": false,
+                        "source_columns": [
+                          "habitat_site_id",
+                          "center_id",
+                          "coordinator_id"
+                        ],
+                        "source_resource": "release_ops.release_assessments",
+                        "target_columns": [
+                          "habitat_site_id",
+                          "center_id",
+                          "coordinator_id"
+                        ],
+                        "target_resource": "release_ops.habitat_sites",
+                        "target_uniqueness": {
+                          "columns": [
+                            "habitat_site_id",
+                            "center_id",
+                            "coordinator_id"
+                          ],
+                          "kind": "unique_constraint",
+                          "name": "habitat_sites_habitat_site_id_center_id_coordinator_id_key"
+                        }
+                      }
+                    ],
+                    "source": "database_catalog"
+                  },
+                  "target_columns": [
+                    "habitat_site_id",
+                    "center_id",
+                    "coordinator_id"
+                  ],
+                  "target_resource": "release_ops.habitat_sites",
+                  "unmatched_rows": "exclude"
+                }
+              ],
+              "rls_session": {
+                "principal_setting": "synapsor.coordinator_id",
+                "tenant_setting": "synapsor.center_id"
+              },
+              "schema": "release_ops",
+              "selectable_fields": [
+                "public_label",
+                "assessment_state"
+              ],
+              "sortable_fields": [],
+              "suppression_aware_totals": true,
+              "table": "release_assessments",
+              "tenant_key": "center_id",
+              "time_bucket_fields": {}
+            }
+          ]
+        },
+        "reporting_timezone": "UTC",
+        "role_posture_fingerprint": "sha256:027639ec64e308d70a2e90f697b4d7da718cccf7ff603732429c3d82581efeb0",
+        "schema_version": "synapsor.exploration-boundary.v1",
+        "source": "local_postgres",
+        "spec_version": "1.9.0",
+        "trusted_context": {
+          "database_role_tenant": {
+            "engine": "postgres",
+            "setting": "synapsor.center_id"
+          },
+          "principal_env": "SYNAPSOR_PRINCIPAL",
+          "provider": "environment",
+          "tenant_env": "SYNAPSOR_TENANT_ID"
+        },
+        "unresolved_decisions": [
+          "deployment profile: confirm development or staging authoring-only use",
+          "release_ops.animals: confirm filter/sort/group/aggregate-only field permissions",
+          "release_ops.animals: confirm minimum cohort and extraction/differencing budgets",
+          "release_ops.animals: confirm principal scope coordinator_id",
+          "release_ops.animals: confirm tenant key center_id",
+          "release_ops.animals: confirm visible and kept-out fields",
+          "release_ops.habitat_sites: confirm filter/sort/group/aggregate-only field permissions",
+          "release_ops.habitat_sites: confirm minimum cohort and extraction/differencing budgets",
+          "release_ops.habitat_sites: confirm principal scope coordinator_id",
+          "release_ops.habitat_sites: confirm tenant key center_id",
+          "release_ops.habitat_sites: confirm visible and kept-out fields",
+          "release_ops.release_assessments: confirm filter/sort/group/aggregate-only field permissions",
+          "release_ops.release_assessments: confirm minimum cohort and extraction/differencing budgets",
+          "release_ops.release_assessments: confirm principal scope coordinator_id",
+          "release_ops.release_assessments: confirm tenant key center_id",
+          "release_ops.release_assessments: confirm visible and kept-out fields",
+          "release_ops.release_assessments: review relationship release_assessments_animal_id_center_id_coordinator_id_fkey cardinality and scope on release_ops.animals",
+          "release_ops.release_assessments: review relationship release_assessments_habitat_site_id_center_id_coordinator__fkey cardinality and scope on release_ops.habitat_sites",
+          "trusted context: confirm tenant scope comes from the verified PostgreSQL credential setting synapsor.center_id and principal scope remains outside model arguments"
+        ]
+      },
+      "actions": [
+        {
+          "schema_version": "synapsor.action-rule-model-draft.v1",
+          "inputs": [
+            {
+              "description": "Requested release-window length in whole days.",
+              "maximum": 7,
+              "minimum": 1,
+              "name": "release_window_days",
+              "type": {
+                "kind": "integer",
+                "unit": "days"
+              }
+            }
+          ],
+          "name": "release.request_clearance",
+          "outcome": "release.clear_assessment",
+          "discovery": {
+            "aliases": [
+              "release assessment clearance",
+              "clear release assessment",
+              "request release clearance"
+            ],
+            "summary": "Request clearance for a selected release assessment and a release window of one to seven days.",
+            "title": "Request release-assessment clearance"
+          },
+          "verification": {
+            "name": "release.clearance_verification",
+            "resources": [
+              {
+                "binding": "assessment",
+                "resource": "release_ops.release_assessments",
+                "source": {
+                  "kind": "subject_ref"
+                },
+                "fields": [
+                  "animal_id",
+                  "assessment_state",
+                  "habitat_site_id"
+                ]
+              },
+              {
+                "binding": "animal",
+                "resource": "release_ops.animals",
+                "source": {
+                  "kind": "relationship",
+                  "from_binding": "assessment",
+                  "relationship": "release_assessments_animal_id_center_id_coordinator_id_fkey",
+                  "direction": "forward"
+                },
+                "fields": [
+                  "handling_risk_score",
+                  "medical_clearance_state",
+                  "quarantine_complete"
+                ]
+              },
+              {
+                "binding": "habitat_site",
+                "resource": "release_ops.habitat_sites",
+                "source": {
+                  "kind": "relationship",
+                  "from_binding": "assessment",
+                  "relationship": "release_assessments_habitat_site_id_center_id_coordinator__fkey",
+                  "direction": "forward"
+                },
+                "fields": [
+                  "accepting_releases",
+                  "site_state"
+                ]
+              }
+            ]
+          },
+          "effect": {
+            "name": "release.clear_assessment_effect",
+            "operation": "update",
+            "target_resource": "release_ops.release_assessments",
+            "target_binding": "assessment",
+            "allowed_fields": [
+              {
+                "name": "assessment_state",
+                "values": [
+                  "cleared"
+                ]
+              },
+              {
+                "name": "planned_release_days",
+                "minimum": 1,
+                "maximum": 7
+              }
+            ],
+            "set": {
+              "assessment_state": {
+                "kind": "literal",
+                "value": "cleared",
+                "value_type": {
+                  "comparison": "exact",
+                  "enum": [
+                    "cleared",
+                    "postponed",
+                    "ready"
+                  ],
+                  "kind": "string",
+                  "max_length": 9
+                }
+              },
+              "planned_release_days": {
+                "kind": "input",
+                "name": "release_window_days"
+              }
+            },
+            "writeback": "supervised"
+          },
+          "require": {
+            "expressions": [
+              {
+                "kind": "compare",
+                "left": {
+                  "binding": "animal",
+                  "field": "handling_risk_score",
+                  "kind": "field"
+                },
+                "operator": "lte",
+                "right": {
+                  "kind": "literal",
+                  "value": 40,
+                  "value_type": {
+                    "kind": "integer"
+                  }
+                }
+              },
+              {
+                "kind": "compare",
+                "left": {
+                  "binding": "animal",
+                  "field": "medical_clearance_state",
+                  "kind": "field"
+                },
+                "operator": "eq",
+                "right": {
+                  "kind": "literal",
+                  "value": "cleared",
+                  "value_type": {
+                    "comparison": "exact",
+                    "enum": [
+                      "cleared",
+                      "held"
+                    ],
+                    "kind": "string",
+                    "max_length": 7
+                  }
+                }
+              },
+              {
+                "kind": "compare",
+                "left": {
+                  "binding": "animal",
+                  "field": "quarantine_complete",
+                  "kind": "field"
+                },
+                "operator": "eq",
+                "right": {
+                  "kind": "literal",
+                  "value": true,
+                  "value_type": {
+                    "kind": "boolean"
+                  }
+                }
+              },
+              {
+                "kind": "compare",
+                "left": {
+                  "binding": "assessment",
+                  "field": "assessment_state",
+                  "kind": "field"
+                },
+                "operator": "eq",
+                "right": {
+                  "kind": "literal",
+                  "value": "ready",
+                  "value_type": {
+                    "comparison": "exact",
+                    "enum": [
+                      "cleared",
+                      "postponed",
+                      "ready"
+                    ],
+                    "kind": "string",
+                    "max_length": 9
+                  }
+                }
+              },
+              {
+                "kind": "compare",
+                "left": {
+                  "binding": "habitat_site",
+                  "field": "accepting_releases",
+                  "kind": "field"
+                },
+                "operator": "eq",
+                "right": {
+                  "kind": "literal",
+                  "value": true,
+                  "value_type": {
+                    "kind": "boolean"
+                  }
+                }
+              },
+              {
+                "kind": "compare",
+                "left": {
+                  "binding": "habitat_site",
+                  "field": "site_state",
+                  "kind": "field"
+                },
+                "operator": "eq",
+                "right": {
+                  "kind": "literal",
+                  "value": "open",
+                  "value_type": {
+                    "comparison": "exact",
+                    "enum": [
+                      "closed",
+                      "open"
+                    ],
+                    "kind": "string",
+                    "max_length": 6
+                  }
+                }
+              },
+              {
+                "kind": "compare",
+                "left": {
+                  "kind": "input",
+                  "name": "release_window_days"
+                },
+                "operator": "gte",
+                "right": {
+                  "kind": "literal",
+                  "value": 1,
+                  "value_type": {
+                    "kind": "integer",
+                    "unit": "days"
+                  }
+                }
+              },
+              {
+                "kind": "compare",
+                "left": {
+                  "kind": "input",
+                  "name": "release_window_days"
+                },
+                "operator": "lte",
+                "right": {
+                  "kind": "literal",
+                  "value": 7,
+                  "value_type": {
+                    "kind": "integer",
+                    "unit": "days"
+                  }
+                }
+              }
+            ],
+            "kind": "all"
+          },
+          "derive": {},
+          "approval": {
+            "class_name": "release.clearance_approval",
+            "mode": "policy",
+            "auto_approve_when": {
+              "kind": "compare",
+              "left": {
+                "binding": "animal",
+                "field": "handling_risk_score",
+                "kind": "field"
+              },
+              "operator": "lte",
+              "right": {
+                "kind": "literal",
+                "value": 20,
+                "value_type": {
+                  "kind": "integer"
+                }
+              }
+            },
+            "required_role": "release_supervisor",
+            "required_approvals": 1,
+            "shared_limits": [
+              {
+                "id": "clearance_center_24h",
+                "kind": "count",
+                "scope": "tenant",
+                "maximum": 2,
+                "window_seconds": 86400,
+                "capability": "release.clear_assessment"
+              },
+              {
+                "id": "clearance_outcome_24h",
+                "kind": "count",
+                "scope": "capability",
+                "maximum": 8,
+                "window_seconds": 86400,
+                "capability": "release.clear_assessment"
+              }
+            ]
+          },
+          "ttl_seconds": 300,
+          "review": {
+            "when": "The selected assessment is ready, its related animal is medically cleared and has completed quarantine, handling risk is no more than 40, the related habitat is open and accepting releases, and the requested window is 1\u20137 days.",
+            "then": "Propose clearing that assessment and recording the requested release-window days. Completion can occur only after separate execution enablement and a supervised worker runs.",
+            "refused": [
+              "Refuse when any required assessment, animal, habitat, risk, or requested-day condition is not currently satisfied.",
+              "Do not send an ineligible request to human review."
+            ],
+            "human_review": "A valid request with handling risk 21\u201340, or a valid low-risk request that exceeds an automatic-approval limit, requires one release-supervisor approval.",
+            "examples": [
+              {
+                "kind": "eligible",
+                "scenario": "A ready assessment has a medically cleared, quarantine-complete animal with risk 18; its habitat is open and accepting releases; 4 days are requested.",
+                "result": "The request is valid and may be automatically approved if both rolling limits allow it."
+              },
+              {
+                "kind": "human_review",
+                "scenario": "A ready assessment has a medically cleared, quarantine-complete animal with risk 28; its habitat is open and accepting releases; 5 days are requested.",
+                "result": "The valid request requires one release-supervisor approval."
+              },
+              {
+                "kind": "ineligible",
+                "scenario": "The habitat is closed, even though the assessment and animal conditions otherwise meet the policy.",
+                "result": "The request is refused and is not sent for human review."
+              }
+            ]
+          }
+        }
+      ],
+      "runner_evidence": {
+        "source_constraints": {
+          "generation_lock_fingerprint": "sha256:da7126d168cbe7f380cea3aac8334e44576b2157b59160e15d4af134452c3e6c",
+          "schema_fingerprint": "sha256:41a527b52e07acb90124696226ab3d6a33e15c80cfa685715afa1f6929287a16",
+          "resources": {
+            "release_ops.animals": {
+              "resource": "release_ops.animals",
+              "columns": {
+                "animal_id": {
+                  "nullable": false
+                },
+                "center_id": {
+                  "nullable": false
+                },
+                "coordinator_id": {
+                  "nullable": false
+                },
+                "public_name": {
+                  "nullable": false
+                },
+                "species_group": {
+                  "nullable": false
+                },
+                "medical_clearance_state": {
+                  "nullable": false
+                },
+                "quarantine_complete": {
+                  "nullable": false
+                },
+                "handling_risk_score": {
+                  "nullable": false
+                },
+                "confidential_medical_note": {
+                  "nullable": false
+                },
+                "exact_rescue_location": {
+                  "nullable": false
+                }
+              },
+              "primary_key": {
+                "columns": [
+                  "animal_id"
+                ],
+                "column_count": 1,
+                "non_null_columns": [
+                  "animal_id"
+                ],
+                "all_columns_non_null": true,
+                "unconditional": true
+              },
+              "unique_constraints": {
+                "animals_animal_id_center_id_coordinator_id_key": {
+                  "columns": [
+                    "animal_id",
+                    "center_id",
+                    "coordinator_id"
+                  ],
+                  "column_count": 3,
+                  "non_null_columns": [
+                    "animal_id",
+                    "center_id",
+                    "coordinator_id"
+                  ],
+                  "all_columns_non_null": true,
+                  "unconditional": true
+                }
+              },
+              "check_constraints": {
+                "animals_handling_risk_score_check": {
+                  "definition": "CHECK (handling_risk_score >= 0 AND handling_risk_score <= 100)",
+                  "enforced": true
+                },
+                "animals_medical_clearance_state_check": {
+                  "definition": "CHECK (medical_clearance_state = ANY (ARRAY['cleared'::text, 'held'::text]))",
+                  "enforced": true
+                }
+              }
+            },
+            "release_ops.habitat_sites": {
+              "resource": "release_ops.habitat_sites",
+              "columns": {
+                "habitat_site_id": {
+                  "nullable": false
+                },
+                "center_id": {
+                  "nullable": false
+                },
+                "coordinator_id": {
+                  "nullable": false
+                },
+                "public_site_name": {
+                  "nullable": false
+                },
+                "site_state": {
+                  "nullable": false
+                },
+                "accepting_releases": {
+                  "nullable": false
+                },
+                "sensitive_location_note": {
+                  "nullable": false
+                }
+              },
+              "primary_key": {
+                "columns": [
+                  "habitat_site_id"
+                ],
+                "column_count": 1,
+                "non_null_columns": [
+                  "habitat_site_id"
+                ],
+                "all_columns_non_null": true,
+                "unconditional": true
+              },
+              "unique_constraints": {
+                "habitat_sites_habitat_site_id_center_id_coordinator_id_key": {
+                  "columns": [
+                    "habitat_site_id",
+                    "center_id",
+                    "coordinator_id"
+                  ],
+                  "column_count": 3,
+                  "non_null_columns": [
+                    "habitat_site_id",
+                    "center_id",
+                    "coordinator_id"
+                  ],
+                  "all_columns_non_null": true,
+                  "unconditional": true
+                }
+              },
+              "check_constraints": {
+                "habitat_sites_site_state_check": {
+                  "definition": "CHECK (site_state = ANY (ARRAY['open'::text, 'closed'::text]))",
+                  "enforced": true
+                }
+              }
+            },
+            "release_ops.release_assessments": {
+              "resource": "release_ops.release_assessments",
+              "columns": {
+                "assessment_id": {
+                  "nullable": false
+                },
+                "center_id": {
+                  "nullable": false
+                },
+                "coordinator_id": {
+                  "nullable": false
+                },
+                "public_label": {
+                  "nullable": false
+                },
+                "animal_id": {
+                  "nullable": false
+                },
+                "habitat_site_id": {
+                  "nullable": false
+                },
+                "assessment_state": {
+                  "nullable": false
+                },
+                "planned_release_days": {
+                  "nullable": true
+                },
+                "next_review_days": {
+                  "nullable": true
+                },
+                "row_version": {
+                  "nullable": false
+                },
+                "internal_staff_note": {
+                  "nullable": false
+                }
+              },
+              "primary_key": {
+                "columns": [
+                  "assessment_id"
+                ],
+                "column_count": 1,
+                "non_null_columns": [
+                  "assessment_id"
+                ],
+                "all_columns_non_null": true,
+                "unconditional": true
+              },
+              "unique_constraints": {
+                "release_assessments_public_label_center_id_coordinator_id_key": {
+                  "columns": [
+                    "public_label",
+                    "center_id",
+                    "coordinator_id"
+                  ],
+                  "column_count": 3,
+                  "non_null_columns": [
+                    "public_label",
+                    "center_id",
+                    "coordinator_id"
+                  ],
+                  "all_columns_non_null": true,
+                  "unconditional": true
+                }
+              },
+              "check_constraints": {
+                "release_assessments_assessment_state_check": {
+                  "definition": "CHECK (assessment_state = ANY (ARRAY['ready'::text, 'cleared'::text, 'postponed'::text]))",
+                  "enforced": true
+                },
+                "release_assessments_next_review_days_check": {
+                  "definition": "CHECK (next_review_days >= 1 AND next_review_days <= 3)",
+                  "enforced": true
+                },
+                "release_assessments_planned_release_days_check": {
+                  "definition": "CHECK (planned_release_days >= 1 AND planned_release_days <= 7)",
+                  "enforced": true
+                },
+                "release_assessments_row_version_check": {
+                  "definition": "CHECK (row_version > 0)",
+                  "enforced": true
+                }
+              }
+            }
+          }
+        },
+        "read_review": {
+          "meaning": "read.unresolved_decisions lists candidate review requirements, NOT current outstanding decisions. The following current digest-bound review status is authoritative for their confirmation, not activation.",
+          "confirmed": [
+            "deployment profile: confirm development or staging authoring-only use",
+            "release_ops.animals: confirm filter/sort/group/aggregate-only field permissions",
+            "release_ops.animals: confirm minimum cohort and extraction/differencing budgets",
+            "release_ops.animals: confirm principal scope coordinator_id",
+            "release_ops.animals: confirm tenant key center_id",
+            "release_ops.animals: confirm visible and kept-out fields",
+            "release_ops.habitat_sites: confirm filter/sort/group/aggregate-only field permissions",
+            "release_ops.habitat_sites: confirm minimum cohort and extraction/differencing budgets",
+            "release_ops.habitat_sites: confirm principal scope coordinator_id",
+            "release_ops.habitat_sites: confirm tenant key center_id",
+            "release_ops.habitat_sites: confirm visible and kept-out fields",
+            "release_ops.release_assessments: confirm filter/sort/group/aggregate-only field permissions",
+            "release_ops.release_assessments: confirm minimum cohort and extraction/differencing budgets",
+            "release_ops.release_assessments: confirm principal scope coordinator_id",
+            "release_ops.release_assessments: confirm tenant key center_id",
+            "release_ops.release_assessments: confirm visible and kept-out fields",
+            "release_ops.release_assessments: review relationship release_assessments_animal_id_center_id_coordinator_id_fkey cardinality and scope on release_ops.animals",
+            "release_ops.release_assessments: review relationship release_assessments_habitat_site_id_center_id_coordinator__fkey cardinality and scope on release_ops.habitat_sites",
+            "trusted context: confirm tenant scope comes from the verified PostgreSQL credential setting synapsor.center_id and principal scope remains outside model arguments"
+          ],
+          "pending": [],
+          "activation": "separate_operator_review"
+        },
+        "privacy_review": [],
+        "read_access": {
+          "release_ops.animals": {
+            "resource": "release_ops.animals",
+            "label": null,
+            "description": null,
+            "trusted_tenant_field": "center_id",
+            "trusted_principal_field": "coordinator_id",
+            "explicit_principal_column": "coordinator_id",
+            "database_scope_proof": {
+              "resource": "release_ops.animals",
+              "source": "local_postgres",
+              "schema": "release_ops",
+              "table": "animals",
+              "operation": "SELECT",
+              "tenant": {
+                "field": "center_id",
+                "setting": "synapsor.center_id"
+              },
+              "principal": {
+                "field": "coordinator_id",
+                "setting": "synapsor.coordinator_id"
+              },
+              "policy_fingerprint": "sha256:c4da46c876761ff5fa88acebdc7dd7d0f7a5b054ea940af819c9deed8cff482c",
+              "generation_lock_fingerprint": "sha256:da7126d168cbe7f380cea3aac8334e44576b2157b59160e15d4af134452c3e6c",
+              "schema_fingerprint": "sha256:41a527b52e07acb90124696226ab3d6a33e15c80cfa685715afa1f6929287a16",
+              "role_posture_fingerprint": "sha256:027639ec64e308d70a2e90f697b4d7da718cccf7ff603732429c3d82581efeb0",
+              "policy_count": 1,
+              "enforcement": "inspected_postgres_rls",
+              "meaning": "Exact current-reader RLS restricts this source to these distinct trusted session identities. The principal field need not be repeated in the compiled SQL column scope or projected for Action verification. This proves record scope only, not an additional business predicate, public field access, authenticated-client wiring, writer readiness, activation or execution. Policy SQL and source rows are not included."
+            },
+            "database_session_scope": {
+              "principal_setting": "synapsor.coordinator_id",
+              "tenant_setting": "synapsor.center_id"
+            },
+            "principal_scope_configured": true,
+            "independently_queryable": false,
+            "reviewed_entry_paths": [
+              {
+                "root_resource": "release_ops.release_assessments",
+                "relationship": "release_assessments_animal_id_center_id_coordinator_id_fkey",
+                "customer_scoped_root": true
+              }
+            ],
+            "customer_scoped_access": true,
+            "fields": {
+              "animal_id": {
+                "field": "animal_id",
+                "label": null,
+                "description": null,
+                "actual_values_returned": false,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": false,
+                "role_candidates": [
+                  "record_identity",
+                  "internal_identifier_candidate"
+                ]
+              },
+              "center_id": {
+                "field": "center_id",
+                "label": null,
+                "description": null,
+                "actual_values_returned": false,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": true,
+                "role_candidates": [
+                  "internal_identifier_candidate",
+                  "trusted_scope"
+                ]
+              },
+              "confidential_medical_note": {
+                "field": "confidential_medical_note",
+                "label": null,
+                "description": null,
+                "actual_values_returned": false,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": true,
+                "role_candidates": []
+              },
+              "coordinator_id": {
+                "field": "coordinator_id",
+                "label": null,
+                "description": null,
+                "actual_values_returned": false,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": true,
+                "role_candidates": [
+                  "internal_identifier_candidate",
+                  "trusted_scope"
+                ]
+              },
+              "exact_rescue_location": {
+                "field": "exact_rescue_location",
+                "label": null,
+                "description": null,
+                "actual_values_returned": false,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": false,
+                "role_candidates": []
+              },
+              "handling_risk_score": {
+                "field": "handling_risk_score",
+                "label": null,
+                "description": null,
+                "actual_values_returned": false,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": true,
+                "role_candidates": []
+              },
+              "medical_clearance_state": {
+                "field": "medical_clearance_state",
+                "label": null,
+                "description": null,
+                "actual_values_returned": false,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": true,
+                "role_candidates": []
+              },
+              "public_name": {
+                "field": "public_name",
+                "label": null,
+                "description": null,
+                "actual_values_returned": true,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": false,
+                "role_candidates": []
+              },
+              "quarantine_complete": {
+                "field": "quarantine_complete",
+                "label": null,
+                "description": null,
+                "actual_values_returned": false,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": false,
+                "role_candidates": []
+              },
+              "species_group": {
+                "field": "species_group",
+                "label": null,
+                "description": null,
+                "actual_values_returned": true,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": false,
+                "role_candidates": []
+              }
+            }
+          },
+          "release_ops.habitat_sites": {
+            "resource": "release_ops.habitat_sites",
+            "label": null,
+            "description": null,
+            "trusted_tenant_field": "center_id",
+            "trusted_principal_field": "coordinator_id",
+            "explicit_principal_column": "coordinator_id",
+            "database_scope_proof": {
+              "resource": "release_ops.habitat_sites",
+              "source": "local_postgres",
+              "schema": "release_ops",
+              "table": "habitat_sites",
+              "operation": "SELECT",
+              "tenant": {
+                "field": "center_id",
+                "setting": "synapsor.center_id"
+              },
+              "principal": {
+                "field": "coordinator_id",
+                "setting": "synapsor.coordinator_id"
+              },
+              "policy_fingerprint": "sha256:c4da46c876761ff5fa88acebdc7dd7d0f7a5b054ea940af819c9deed8cff482c",
+              "generation_lock_fingerprint": "sha256:da7126d168cbe7f380cea3aac8334e44576b2157b59160e15d4af134452c3e6c",
+              "schema_fingerprint": "sha256:41a527b52e07acb90124696226ab3d6a33e15c80cfa685715afa1f6929287a16",
+              "role_posture_fingerprint": "sha256:027639ec64e308d70a2e90f697b4d7da718cccf7ff603732429c3d82581efeb0",
+              "policy_count": 1,
+              "enforcement": "inspected_postgres_rls",
+              "meaning": "Exact current-reader RLS restricts this source to these distinct trusted session identities. The principal field need not be repeated in the compiled SQL column scope or projected for Action verification. This proves record scope only, not an additional business predicate, public field access, authenticated-client wiring, writer readiness, activation or execution. Policy SQL and source rows are not included."
+            },
+            "database_session_scope": {
+              "principal_setting": "synapsor.coordinator_id",
+              "tenant_setting": "synapsor.center_id"
+            },
+            "principal_scope_configured": true,
+            "independently_queryable": false,
+            "reviewed_entry_paths": [
+              {
+                "root_resource": "release_ops.release_assessments",
+                "relationship": "release_assessments_habitat_site_id_center_id_coordinator__fkey",
+                "customer_scoped_root": true
+              }
+            ],
+            "customer_scoped_access": true,
+            "fields": {
+              "accepting_releases": {
+                "field": "accepting_releases",
+                "label": null,
+                "description": null,
+                "actual_values_returned": false,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": false,
+                "role_candidates": []
+              },
+              "center_id": {
+                "field": "center_id",
+                "label": null,
+                "description": null,
+                "actual_values_returned": false,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": true,
+                "role_candidates": [
+                  "internal_identifier_candidate",
+                  "trusted_scope"
+                ]
+              },
+              "coordinator_id": {
+                "field": "coordinator_id",
+                "label": null,
+                "description": null,
+                "actual_values_returned": false,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": true,
+                "role_candidates": [
+                  "internal_identifier_candidate",
+                  "trusted_scope"
+                ]
+              },
+              "habitat_site_id": {
+                "field": "habitat_site_id",
+                "label": null,
+                "description": null,
+                "actual_values_returned": false,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": false,
+                "role_candidates": [
+                  "record_identity",
+                  "internal_identifier_candidate"
+                ]
+              },
+              "public_site_name": {
+                "field": "public_site_name",
+                "label": null,
+                "description": null,
+                "actual_values_returned": true,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": false,
+                "role_candidates": []
+              },
+              "sensitive_location_note": {
+                "field": "sensitive_location_note",
+                "label": null,
+                "description": null,
+                "actual_values_returned": false,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": true,
+                "role_candidates": []
+              },
+              "site_state": {
+                "field": "site_state",
+                "label": null,
+                "description": null,
+                "actual_values_returned": false,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": false,
+                "role_candidates": []
+              }
+            }
+          },
+          "release_ops.release_assessments": {
+            "resource": "release_ops.release_assessments",
+            "label": null,
+            "description": null,
+            "trusted_tenant_field": "center_id",
+            "trusted_principal_field": "coordinator_id",
+            "explicit_principal_column": "coordinator_id",
+            "database_scope_proof": {
+              "resource": "release_ops.release_assessments",
+              "source": "local_postgres",
+              "schema": "release_ops",
+              "table": "release_assessments",
+              "operation": "SELECT",
+              "tenant": {
+                "field": "center_id",
+                "setting": "synapsor.center_id"
+              },
+              "principal": {
+                "field": "coordinator_id",
+                "setting": "synapsor.coordinator_id"
+              },
+              "policy_fingerprint": "sha256:c4da46c876761ff5fa88acebdc7dd7d0f7a5b054ea940af819c9deed8cff482c",
+              "generation_lock_fingerprint": "sha256:da7126d168cbe7f380cea3aac8334e44576b2157b59160e15d4af134452c3e6c",
+              "schema_fingerprint": "sha256:41a527b52e07acb90124696226ab3d6a33e15c80cfa685715afa1f6929287a16",
+              "role_posture_fingerprint": "sha256:027639ec64e308d70a2e90f697b4d7da718cccf7ff603732429c3d82581efeb0",
+              "policy_count": 1,
+              "enforcement": "inspected_postgres_rls",
+              "meaning": "Exact current-reader RLS restricts this source to these distinct trusted session identities. The principal field need not be repeated in the compiled SQL column scope or projected for Action verification. This proves record scope only, not an additional business predicate, public field access, authenticated-client wiring, writer readiness, activation or execution. Policy SQL and source rows are not included."
+            },
+            "database_session_scope": {
+              "principal_setting": "synapsor.coordinator_id",
+              "tenant_setting": "synapsor.center_id"
+            },
+            "principal_scope_configured": true,
+            "independently_queryable": true,
+            "reviewed_entry_paths": [],
+            "customer_scoped_access": true,
+            "fields": {
+              "animal_id": {
+                "field": "animal_id",
+                "label": null,
+                "description": null,
+                "actual_values_returned": false,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": false,
+                "role_candidates": [
+                  "internal_identifier_candidate",
+                  "relationship_key"
+                ]
+              },
+              "assessment_id": {
+                "field": "assessment_id",
+                "label": null,
+                "description": null,
+                "actual_values_returned": false,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": false,
+                "role_candidates": [
+                  "record_identity",
+                  "internal_identifier_candidate"
+                ]
+              },
+              "assessment_state": {
+                "field": "assessment_state",
+                "label": null,
+                "description": null,
+                "actual_values_returned": true,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": false,
+                "role_candidates": []
+              },
+              "center_id": {
+                "field": "center_id",
+                "label": null,
+                "description": null,
+                "actual_values_returned": false,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": true,
+                "role_candidates": [
+                  "internal_identifier_candidate",
+                  "trusted_scope",
+                  "relationship_key"
+                ]
+              },
+              "coordinator_id": {
+                "field": "coordinator_id",
+                "label": null,
+                "description": null,
+                "actual_values_returned": false,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": true,
+                "role_candidates": [
+                  "internal_identifier_candidate",
+                  "trusted_scope",
+                  "relationship_key"
+                ]
+              },
+              "habitat_site_id": {
+                "field": "habitat_site_id",
+                "label": null,
+                "description": null,
+                "actual_values_returned": false,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": false,
+                "role_candidates": [
+                  "internal_identifier_candidate",
+                  "relationship_key"
+                ]
+              },
+              "internal_staff_note": {
+                "field": "internal_staff_note",
+                "label": null,
+                "description": null,
+                "actual_values_returned": false,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": true,
+                "role_candidates": [
+                  "private_policy_candidate"
+                ]
+              },
+              "next_review_days": {
+                "field": "next_review_days",
+                "label": null,
+                "description": null,
+                "actual_values_returned": false,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": false,
+                "role_candidates": []
+              },
+              "planned_release_days": {
+                "field": "planned_release_days",
+                "label": null,
+                "description": null,
+                "actual_values_returned": false,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": false,
+                "role_candidates": []
+              },
+              "public_label": {
+                "field": "public_label",
+                "label": null,
+                "description": null,
+                "actual_values_returned": true,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": false,
+                "role_candidates": []
+              },
+              "row_version": {
+                "field": "row_version",
+                "label": null,
+                "description": null,
+                "actual_values_returned": false,
+                "model_analysis": [],
+                "private_read_selection": false,
+                "kept_out": false,
+                "role_candidates": [
+                  "conflict_or_version_guard"
+                ]
+              }
+            }
+          }
+        },
+        "actions": {
+          "release.clear_assessment": {
+            "outcome": "release.clear_assessment",
+            "scoped_bindings": {
+              "animal": {
+                "binding": "animal",
+                "resource": "release_ops.animals",
+                "scope": {
+                  "mode": "columns",
+                  "principal_field": "coordinator_id",
+                  "tenant_field": "center_id"
+                },
+                "source": {
+                  "direction": "forward",
+                  "field_pairs": [
+                    {
+                      "local_field": "animal_id",
+                      "target_field": "animal_id"
+                    },
+                    {
+                      "local_field": "center_id",
+                      "target_field": "center_id"
+                    },
+                    {
+                      "local_field": "coordinator_id",
+                      "target_field": "coordinator_id"
+                    }
+                  ],
+                  "from_binding": "assessment",
+                  "kind": "relationship",
+                  "relationship": "release_assessments_animal_id_center_id_coordinator_id_fkey"
+                },
+                "database_scope_proof": {
+                  "resource": "release_ops.animals",
+                  "source": "local_postgres",
+                  "schema": "release_ops",
+                  "table": "animals",
+                  "operation": "SELECT",
+                  "tenant": {
+                    "field": "center_id",
+                    "setting": "synapsor.center_id"
+                  },
+                  "principal": {
+                    "field": "coordinator_id",
+                    "setting": "synapsor.coordinator_id"
+                  },
+                  "policy_fingerprint": "sha256:c4da46c876761ff5fa88acebdc7dd7d0f7a5b054ea940af819c9deed8cff482c",
+                  "generation_lock_fingerprint": "sha256:da7126d168cbe7f380cea3aac8334e44576b2157b59160e15d4af134452c3e6c",
+                  "schema_fingerprint": "sha256:41a527b52e07acb90124696226ab3d6a33e15c80cfa685715afa1f6929287a16",
+                  "role_posture_fingerprint": "sha256:027639ec64e308d70a2e90f697b4d7da718cccf7ff603732429c3d82581efeb0",
+                  "policy_count": 1,
+                  "enforcement": "inspected_postgres_rls",
+                  "meaning": "Exact current-reader RLS restricts this source to these distinct trusted session identities. The principal field need not be repeated in the compiled SQL column scope or projected for Action verification. This proves record scope only, not an additional business predicate, public field access, authenticated-client wiring, writer readiness, activation or execution. Policy SQL and source rows are not included."
+                },
+                "row_identity": "animal_id",
+                "conflict_field": null,
+                "fields": {
+                  "animal_id": {
+                    "name": "animal_id",
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 4096
+                    },
+                    "nullable": false,
+                    "model_visible": false,
+                    "read_access_present": true,
+                    "actual_values_returned": false,
+                    "model_analysis": [],
+                    "private_read_selection": false,
+                    "private_action_verification": true
+                  },
+                  "center_id": {
+                    "name": "center_id",
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 4096
+                    },
+                    "nullable": false,
+                    "model_visible": false,
+                    "read_access_present": true,
+                    "actual_values_returned": false,
+                    "model_analysis": [],
+                    "private_read_selection": false,
+                    "private_action_verification": true
+                  },
+                  "coordinator_id": {
+                    "name": "coordinator_id",
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 4096
+                    },
+                    "nullable": false,
+                    "model_visible": false,
+                    "read_access_present": true,
+                    "actual_values_returned": false,
+                    "model_analysis": [],
+                    "private_read_selection": false,
+                    "private_action_verification": true
+                  },
+                  "handling_risk_score": {
+                    "name": "handling_risk_score",
+                    "type": {
+                      "kind": "integer"
+                    },
+                    "nullable": false,
+                    "model_visible": false,
+                    "read_access_present": true,
+                    "actual_values_returned": false,
+                    "model_analysis": [],
+                    "private_read_selection": false,
+                    "private_action_verification": true
+                  },
+                  "medical_clearance_state": {
+                    "name": "medical_clearance_state",
+                    "type": {
+                      "comparison": "exact",
+                      "enum": [
+                        "cleared",
+                        "held"
+                      ],
+                      "kind": "string",
+                      "max_length": 7
+                    },
+                    "nullable": false,
+                    "model_visible": false,
+                    "read_access_present": true,
+                    "actual_values_returned": false,
+                    "model_analysis": [],
+                    "private_read_selection": false,
+                    "private_action_verification": true
+                  },
+                  "quarantine_complete": {
+                    "name": "quarantine_complete",
+                    "type": {
+                      "kind": "boolean"
+                    },
+                    "nullable": false,
+                    "model_visible": false,
+                    "read_access_present": true,
+                    "actual_values_returned": false,
+                    "model_analysis": [],
+                    "private_read_selection": false,
+                    "private_action_verification": true
+                  }
+                }
+              },
+              "assessment": {
+                "binding": "assessment",
+                "resource": "release_ops.release_assessments",
+                "scope": {
+                  "mode": "columns",
+                  "principal_field": "coordinator_id",
+                  "tenant_field": "center_id"
+                },
+                "source": {
+                  "kind": "subject_ref"
+                },
+                "database_scope_proof": {
+                  "resource": "release_ops.release_assessments",
+                  "source": "local_postgres",
+                  "schema": "release_ops",
+                  "table": "release_assessments",
+                  "operation": "SELECT",
+                  "tenant": {
+                    "field": "center_id",
+                    "setting": "synapsor.center_id"
+                  },
+                  "principal": {
+                    "field": "coordinator_id",
+                    "setting": "synapsor.coordinator_id"
+                  },
+                  "policy_fingerprint": "sha256:c4da46c876761ff5fa88acebdc7dd7d0f7a5b054ea940af819c9deed8cff482c",
+                  "generation_lock_fingerprint": "sha256:da7126d168cbe7f380cea3aac8334e44576b2157b59160e15d4af134452c3e6c",
+                  "schema_fingerprint": "sha256:41a527b52e07acb90124696226ab3d6a33e15c80cfa685715afa1f6929287a16",
+                  "role_posture_fingerprint": "sha256:027639ec64e308d70a2e90f697b4d7da718cccf7ff603732429c3d82581efeb0",
+                  "policy_count": 1,
+                  "enforcement": "inspected_postgres_rls",
+                  "meaning": "Exact current-reader RLS restricts this source to these distinct trusted session identities. The principal field need not be repeated in the compiled SQL column scope or projected for Action verification. This proves record scope only, not an additional business predicate, public field access, authenticated-client wiring, writer readiness, activation or execution. Policy SQL and source rows are not included."
+                },
+                "row_identity": "assessment_id",
+                "conflict_field": "row_version",
+                "fields": {
+                  "animal_id": {
+                    "name": "animal_id",
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 4096
+                    },
+                    "nullable": false,
+                    "model_visible": false,
+                    "read_access_present": true,
+                    "actual_values_returned": false,
+                    "model_analysis": [],
+                    "private_read_selection": false,
+                    "private_action_verification": true
+                  },
+                  "assessment_id": {
+                    "name": "assessment_id",
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 4096
+                    },
+                    "nullable": false,
+                    "model_visible": false,
+                    "read_access_present": true,
+                    "actual_values_returned": false,
+                    "model_analysis": [],
+                    "private_read_selection": false,
+                    "private_action_verification": true
+                  },
+                  "assessment_state": {
+                    "name": "assessment_state",
+                    "type": {
+                      "comparison": "exact",
+                      "enum": [
+                        "cleared",
+                        "postponed",
+                        "ready"
+                      ],
+                      "kind": "string",
+                      "max_length": 9
+                    },
+                    "nullable": false,
+                    "model_visible": true,
+                    "read_access_present": true,
+                    "actual_values_returned": true,
+                    "model_analysis": [],
+                    "private_read_selection": false,
+                    "private_action_verification": false
+                  },
+                  "center_id": {
+                    "name": "center_id",
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 4096
+                    },
+                    "nullable": false,
+                    "model_visible": false,
+                    "read_access_present": true,
+                    "actual_values_returned": false,
+                    "model_analysis": [],
+                    "private_read_selection": false,
+                    "private_action_verification": true
+                  },
+                  "coordinator_id": {
+                    "name": "coordinator_id",
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 4096
+                    },
+                    "nullable": false,
+                    "model_visible": false,
+                    "read_access_present": true,
+                    "actual_values_returned": false,
+                    "model_analysis": [],
+                    "private_read_selection": false,
+                    "private_action_verification": true
+                  },
+                  "habitat_site_id": {
+                    "name": "habitat_site_id",
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 4096
+                    },
+                    "nullable": false,
+                    "model_visible": false,
+                    "read_access_present": true,
+                    "actual_values_returned": false,
+                    "model_analysis": [],
+                    "private_read_selection": false,
+                    "private_action_verification": true
+                  },
+                  "row_version": {
+                    "name": "row_version",
+                    "type": {
+                      "kind": "integer"
+                    },
+                    "nullable": false,
+                    "model_visible": false,
+                    "read_access_present": true,
+                    "actual_values_returned": false,
+                    "model_analysis": [],
+                    "private_read_selection": false,
+                    "private_action_verification": true
+                  }
+                }
+              },
+              "habitat_site": {
+                "binding": "habitat_site",
+                "resource": "release_ops.habitat_sites",
+                "scope": {
+                  "mode": "columns",
+                  "principal_field": "coordinator_id",
+                  "tenant_field": "center_id"
+                },
+                "source": {
+                  "direction": "forward",
+                  "field_pairs": [
+                    {
+                      "local_field": "habitat_site_id",
+                      "target_field": "habitat_site_id"
+                    },
+                    {
+                      "local_field": "center_id",
+                      "target_field": "center_id"
+                    },
+                    {
+                      "local_field": "coordinator_id",
+                      "target_field": "coordinator_id"
+                    }
+                  ],
+                  "from_binding": "assessment",
+                  "kind": "relationship",
+                  "relationship": "release_assessments_habitat_site_id_center_id_coordinator__fkey"
+                },
+                "database_scope_proof": {
+                  "resource": "release_ops.habitat_sites",
+                  "source": "local_postgres",
+                  "schema": "release_ops",
+                  "table": "habitat_sites",
+                  "operation": "SELECT",
+                  "tenant": {
+                    "field": "center_id",
+                    "setting": "synapsor.center_id"
+                  },
+                  "principal": {
+                    "field": "coordinator_id",
+                    "setting": "synapsor.coordinator_id"
+                  },
+                  "policy_fingerprint": "sha256:c4da46c876761ff5fa88acebdc7dd7d0f7a5b054ea940af819c9deed8cff482c",
+                  "generation_lock_fingerprint": "sha256:da7126d168cbe7f380cea3aac8334e44576b2157b59160e15d4af134452c3e6c",
+                  "schema_fingerprint": "sha256:41a527b52e07acb90124696226ab3d6a33e15c80cfa685715afa1f6929287a16",
+                  "role_posture_fingerprint": "sha256:027639ec64e308d70a2e90f697b4d7da718cccf7ff603732429c3d82581efeb0",
+                  "policy_count": 1,
+                  "enforcement": "inspected_postgres_rls",
+                  "meaning": "Exact current-reader RLS restricts this source to these distinct trusted session identities. The principal field need not be repeated in the compiled SQL column scope or projected for Action verification. This proves record scope only, not an additional business predicate, public field access, authenticated-client wiring, writer readiness, activation or execution. Policy SQL and source rows are not included."
+                },
+                "row_identity": "habitat_site_id",
+                "conflict_field": null,
+                "fields": {
+                  "accepting_releases": {
+                    "name": "accepting_releases",
+                    "type": {
+                      "kind": "boolean"
+                    },
+                    "nullable": false,
+                    "model_visible": false,
+                    "read_access_present": true,
+                    "actual_values_returned": false,
+                    "model_analysis": [],
+                    "private_read_selection": false,
+                    "private_action_verification": true
+                  },
+                  "center_id": {
+                    "name": "center_id",
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 4096
+                    },
+                    "nullable": false,
+                    "model_visible": false,
+                    "read_access_present": true,
+                    "actual_values_returned": false,
+                    "model_analysis": [],
+                    "private_read_selection": false,
+                    "private_action_verification": true
+                  },
+                  "coordinator_id": {
+                    "name": "coordinator_id",
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 4096
+                    },
+                    "nullable": false,
+                    "model_visible": false,
+                    "read_access_present": true,
+                    "actual_values_returned": false,
+                    "model_analysis": [],
+                    "private_read_selection": false,
+                    "private_action_verification": true
+                  },
+                  "habitat_site_id": {
+                    "name": "habitat_site_id",
+                    "type": {
+                      "comparison": "exact",
+                      "kind": "string",
+                      "max_length": 4096
+                    },
+                    "nullable": false,
+                    "model_visible": false,
+                    "read_access_present": true,
+                    "actual_values_returned": false,
+                    "model_analysis": [],
+                    "private_read_selection": false,
+                    "private_action_verification": true
+                  },
+                  "site_state": {
+                    "name": "site_state",
+                    "type": {
+                      "comparison": "exact",
+                      "enum": [
+                        "closed",
+                        "open"
+                      ],
+                      "kind": "string",
+                      "max_length": 6
+                    },
+                    "nullable": false,
+                    "model_visible": false,
+                    "read_access_present": true,
+                    "actual_values_returned": false,
+                    "model_analysis": [],
+                    "private_read_selection": false,
+                    "private_action_verification": true
+                  }
+                }
+              }
+            },
+            "automatic_limits": [
+              {
+                "id": "clearance_center_24h",
+                "kind": "count",
+                "scope": "tenant",
+                "maximum": 2,
+                "window_seconds": 86400,
+                "capability": "release.clear_assessment",
+                "applies_to_outcome": true,
+                "history_selector": {
+                  "action_boundary_name": "reviewed_staging_actions",
+                  "approval_status": "approved",
+                  "approval_kind": "boundary_automatic",
+                  "window_seconds": 86400,
+                  "time_bounds": "inclusive: now - window_seconds through now",
+                  "capability": "release.clear_assessment",
+                  "tenant": "current_proposal.tenant_id",
+                  "principal": null,
+                  "business_object": null,
+                  "object_id": null
+                },
+                "tenant_bindings": [
+                  {
+                    "resource": "release_ops.animals",
+                    "field": "center_id"
+                  },
+                  {
+                    "resource": "release_ops.release_assessments",
+                    "field": "center_id"
+                  },
+                  {
+                    "resource": "release_ops.habitat_sites",
+                    "field": "center_id"
+                  }
+                ],
+                "explanation": "This ledger scope groups by the SAME trusted tenant value used for these exact field bindings. It is not a second or broader business tenant. Use reviewed labels/relationships to interpret its business meaning; do not assume tenant means account in other deployments."
+              },
+              {
+                "id": "clearance_outcome_24h",
+                "kind": "count",
+                "scope": "capability",
+                "maximum": 8,
+                "window_seconds": 86400,
+                "capability": "release.clear_assessment",
+                "applies_to_outcome": true,
+                "history_selector": {
+                  "action_boundary_name": "reviewed_staging_actions",
+                  "approval_status": "approved",
+                  "approval_kind": "boundary_automatic",
+                  "window_seconds": 86400,
+                  "time_bounds": "inclusive: now - window_seconds through now",
+                  "capability": "release.clear_assessment",
+                  "tenant": null,
+                  "principal": null,
+                  "business_object": null,
+                  "object_id": null
+                }
+              }
+            ],
+            "effect": {
+              "target_resource": "release_ops.release_assessments",
+              "target_binding": "assessment",
+              "operation": "update",
+              "fields": [
+                "assessment_state",
+                "planned_release_days"
+              ],
+              "version_advance": {
+                "column": "row_version",
+                "strategy": "integer_increment"
+              },
+              "source_counter_maintenance": {
+                "status": "owner_confirmed_operating_prerequisite",
+                "resource": "release_ops.release_assessments",
+                "field": "row_version",
+                "maintenance": "all_writers_increment",
+                "proof_digest": "sha256:66c9dbef67e6461b30302ac348008920e8b8b66f5cf6db32c2a1d67ec0056d4c",
+                "read_boundary_digest": "sha256:42947f9d8d549e3a34de616b505c188d69765967712485748ba196ccf57a61f3",
+                "generation_lock_fingerprint": "sha256:da7126d168cbe7f380cea3aac8334e44576b2157b59160e15d4af134452c3e6c",
+                "role_posture_fingerprint": "sha256:027639ec64e308d70a2e90f697b4d7da718cccf7ff603732429c3d82581efeb0",
+                "external_writers_verified": false,
+                "production_integration_verified": false
+              },
+              "source_fields_modified": [
+                "assessment_state",
+                "planned_release_days",
+                "row_version"
+              ],
+              "unrelated_fields": "Fields outside source_fields_modified are not authorized for modification by this envelope. Version advancement is Runner-owned, not a caller-supplied business field."
+            },
+            "execution": {
+              "configured_mode": "direct_sql",
+              "supported_automatic_completion": true,
+              "activation": "separate_operator_review",
+              "prerequisites": [
+                "reviewed writer",
+                "execution enabled for this exact Action revision",
+                "running worker"
+              ],
+              "semantics": "With direct_sql configured and separately enabled, the worker processes approved requests without a per-request staff step. Approval alone is not completion. A disabled configuration is prepared behavior, not missing business logic."
+            }
+          }
+        },
+        "action_subject_compatibility": {
+          "client": "four_tool",
+          "read_digest": "sha256:c6e87d204d30041ad0354af2103302dfa70ed3082d2e4a15220ff9edb4dcef5c",
+          "action_digest": "sha256:66466d3ab46df930b123a0b5ecb481ca3290a8e3bf34fc8290e46db129940f70",
+          "compatible": true,
+          "subjects": [
+            {
+              "outcome": "release.clear_assessment",
+              "binding": "assessment",
+              "resource": "release_ops.release_assessments",
+              "obtainable": true
+            }
+          ]
+        },
+        "counting_decisions": [],
+        "counting_interpretations": [],
+        "runtime_contract": {
+          "authoring_provider": {
+            "provider": "openrouter",
+            "model": "openai/gpt-5.6-terra",
+            "purpose": "disabled_policy_authoring",
+            "provider_response_verified": false,
+            "runtime_client_verified": false,
+            "authority_granted": false,
+            "meaning": "The host selected this provider and model for the current authoring session, not a runtime MCP client. This selection does not prove a successful provider response or the semantic correctness of its drafts. Compare an authoring-model requirement here, separately from later managed runtime-client installation and connection. It grants no data, approval, activation or execution authority."
+          },
+          "onboarding_reader": {
+            "source": "local_postgres",
+            "engine": "postgres",
+            "generation_lock_fingerprint": "sha256:da7126d168cbe7f380cea3aac8334e44576b2157b59160e15d4af134452c3e6c",
+            "schema_fingerprint": "sha256:41a527b52e07acb90124696226ab3d6a33e15c80cfa685715afa1f6929287a16",
+            "role_posture_fingerprint": "sha256:027639ec64e308d70a2e90f697b4d7da718cccf7ff603732429c3d82581efeb0",
+            "role_verified": true,
+            "read_only": true,
+            "non_owner": true,
+            "non_bypass": true,
+            "live_connection_rechecked": false,
+            "writer_separation_verified": false,
+            "production_integration_verified": false,
+            "meaning": "Current generation-lock-bound metadata establishes only the inspected onboarding reader's role posture, not RLS or additional business predicates. It is not a new live credential check and reveals no credentials. When these exact facts satisfy the requested reader posture, do not ask to provision it again. This does not verify a separate writer, client connection, authenticated identity, grants after inspection, production integration or execution. Compare record scope separately against read_access database_scope_proof."
+          },
+          "trusted_time": {
+            "binding": "transaction_time",
+            "origin": "runner_supplied_evaluation_time",
+            "database_clock_verified": false,
+            "model_supplied": false,
+            "meaning": "Action predicates receive a trusted timestamp from Runner's proposal evaluation or execution re-verification context. The binding name does not establish database-server clock origin, a SQL CURRENT_TIMESTAMP expression or equality to a database transaction-start timestamp. A policy requiring that particular clock origin remains unresolved; do not silently replace it with trusted current UTC evaluation time. This describes only the existing time binding, not a new predicate or execution capability."
+          },
+          "authoring_lifecycle": {
+            "current_policy_snapshot": {
+              "digest": "sha256:d4e783115e819649c2be8fa5cfc7abe9d31f891c51eb0315b0a44a0c90388cd5",
+              "version": 1,
+              "bytes": 2948,
+              "lines": 29
+            },
+            "retained_business_answers": 2,
+            "retained_read_interpretations": 0,
+            "sources": "Complete versioned local snapshots are restored on resume, not silently reread from an edited original file. Replacing or removing rules is an explicit operator operation with separate model-transfer consent.",
+            "revisions": "Business and permission edits prepare disabled revisions. Current active authority remains separate until exact operator activation; model prose and saved answers never activate authority.",
+            "resume": "Saved job progress, accepted meanings and existing action revisions are retained. Changed schema, reader posture or Read dependencies require revalidation; unsupported rules and unanswered decisions remain pending. A saved checkpoint is not proof that the entire policy is implemented or a future external client will obey it.",
+            "automatic_activation": false,
+            "external_client_behavior_verified": false
+          },
+          "deployment_profile": {
+            "configured_profile": "staging",
+            "identity_provider": "environment",
+            "local_identity_mode": true,
+            "production_authentication_verified": false,
+            "meaning": "Development and staging are local environment-bound identity profiles. The profile name does not establish whether source data is synthetic, where the system is deployed, or whether a production authentication integration was verified. Compare the actual required identity and deployment controls, not an informal environment label. An explicit requirement for a specific profile still needs review; never downgrade production or waive authentication, privacy or execution requirements."
+          },
+          "agent_interface": {
+            "tools": [
+              "app.describe_data",
+              "app.explore_data",
+              "app.describe_actions",
+              "app.request_change"
+            ],
+            "surface": "fixed_four_tools",
+            "discovery": "Activated reading permissions and business outcomes are discovered through these tools. Supported reviewed rule changes update their catalogs, not the tool list. No per-outcome MCP tool or bespoke runtime adapter is required.",
+            "limits": "Only supported, validated and explicitly activated boundaries are available. A fixed interface does not provide arbitrary SQL, unsupported effects, model-supplied scope, approval or execution authority. New grants and execution policies still require separate review; pending requests retain their reviewed version checks.",
+            "configuration_checked": false,
+            "connection_verified": false,
+            "deployment": "This is Runner's supported interface contract, not proof that a particular client is installed, configured or connected. Use runner_client_connection for the separate later installation and handshake check."
+          },
+          "read_eligibility": {
+            "trusted_record_scope_configured": true,
+            "record_scope_meaning": "customer_scoped_access and the reviewed tenant/principal mappings establish the configured restriction to the customer's permitted records. Runtime enforces these bindings on queries; actual session wiring is a separate deployment check. This is distinct from an additional current business fact such as admission, entitlement status or unrevoked consent. Do not infer that extra fact merely from the words authorized or permitted.",
+            "runner_private_source_predicates_supported": true,
+            "configured_current_state_prerequisite": null,
+            "supported_shape": "One private authoritative status register with a non-null unique trusted tenant/person pair, a reviewed positive enum status, and inclusive-start/exclusive-end UTC effective dates. Other business Read predicates remain unsupported here.",
+            "action_requirements_apply_to_reads": false,
+            "database_business_predicates_verified": false,
+            "database_business_predicates_meaning": "This flag makes no general claim about arbitrary business predicates. It does not negate trusted record-scope enforcement or the exact configured_current_state_prerequisite. Check the specific additional condition required by the source policy, if any, against that exact configuration.",
+            "meaning": "Read scope proves whose records may be accessed, not current eligibility. Only configured_current_state_prerequisite supplies Runner's private current-state Read condition: every data query transaction checks trusted subject, reviewed positive status and the current half-open effective interval; missing or non-qualifying evidence denies. A null configuration means this check is NOT implemented, despite engine support. Field filters, relationships, authentication and Action require conditions do not supply Read eligibility. Tenant/principal RLS metadata is not proof of extra business enforcement.",
+            "next_step": "If required Read evidence matches the supported shape but the configured prerequisite is null, use the model-guided Read revision to review its private source metadata and business meaning. Missing evidence keeps setup pending; unsupported shapes need a concrete support gap. Do not expose the register publicly, infer eligibility, waive the requirement or activate broader access. The disabled prerequisite still needs separate Read activation."
+          },
+          "approval": "Automatic approval counts are taken atomically from Runner's proposal/approval ledger with the configured scope, capability and window. Limits govern automatic approval, not authorized human fallback. Invalid eligibility is refused before approval.",
+          "approval_counter_selection": {
+            "outcome_domain": {
+              "boundary_name": "reviewed_staging_actions",
+              "proposed_revision": "sha256:66466d3ab46df930b123a0b5ecb481ca3290a8e3bf34fc8290e46db129940f70",
+              "proposed_outcomes": [
+                "release.clear_assessment"
+              ],
+              "current_revision": null,
+              "current_outcomes": [],
+              "retained_automatic_outcomes": [],
+              "complete": true,
+              "store_binding_digest": "sha256:d0cbba3da6217e63a99c8e3ad85b8ec1ffcce24f29e50dbd88160a54be46f773",
+              "history_scope": "all_retained_boundary_automatic_approvals"
+            },
+            "evidence": "Each automatic_limits entry supplies its exact history_selector and applies_to_outcome, derived from the current compiled authority. Null selectors mean no filter, not missing configuration. Tenant/principal/object selectors reference the current trusted proposal; no runtime identity values are supplied here.",
+            "diagnostic_only": [
+              "limit.id"
+            ],
+            "not_history_filters": [
+              "limit.id",
+              "approval_class",
+              "action_boundary_digest"
+            ],
+            "semantics": "The evaluator selects automatic approval records tagged with this Action Boundary name and status approved; human approvals have no boundary tag and are excluded. It filters by inclusive time window and the listed optional capability/tenant/principal/object filters. Different limit IDs or approval classes do NOT create separate counters. The same selectors share the same history across outcomes and authority revisions; matching IDs do not combine different selectors. Compare kind, maximum and optional total field separately from the history selector. A capability filter, capability scope, different trusted scope or different window can change the selected history. Reconcile a false grouping claim in the report; do not rename IDs or change valid business rules to satisfy it."
+          },
+          "request_identity": "The fixed request_change operation accepts outcome, scoped subject_refs and reviewed business inputs, not a client-supplied request ID. Repeating the same claimed references, outcome and inputs reuses the recorded proposal. New references or a different reviewed request are not an unlimited delivery-retry exemption. Execution uses the sealed proposal's idempotency identity.",
+          "conflict_protection": "Runner records immutable eligibility/effect evidence, re-verifies current facts and approved effect at execution, and checks configured version fields. A changed version or changed approved effect refuses stale execution; do not require duplicate equality predicates in require for these Runner-owned checks.",
+          "version_advancement": "Each compiled action effect lists its exact version_advance, or null when none is configured. integer_increment advances that column in the same guarded source transaction as the successful change. Refused, rolled-back and replayed requests do not advance it again. A conflict field alone is not proof of advancement; neither is this contract permission to add an unconfigured version update.",
+          "source_counter_maintenance": "Each effect and atomic_updates entry supplies source_counter_maintenance: an exact host-confirmed operating prerequisite, validated against the current Read dependency, inspection, role posture, generation lock, catalog, compiled update target and saved review digest, or null when no matching current confirmation is available. Cite that exact entry for a source-owner obligation to maintain the counter on every update. This is not independent proof that external writers enforce the obligation: external_writers_verified and production_integration_verified remain false. If the policy requires formal independent enforcement, keep that requirement pending until its actual evidence is supplied. Neither model text, source-policy wording, structural suitability nor compiled version advancement substitutes for host confirmation; a null entry cannot support a positive maintenance claim. This metadata grants no Read visibility, activation or execution authority.",
+          "saved_execution_review": null,
+          "receipt_configuration": {
+            "status": "absent",
+            "digest": "sha256:74234e98afe7498fb5daf1f36ac2d78acc339464f950703b8c019892f982b90b",
+            "modes": []
+          },
+          "receipts": "Runner supports distinct receipt authorities. runner_ledger records processing and execution receipts in the control ledger, separately from source effects; it is not a source-atomic receipt. For supported direct SQL effects, source_db records the applied receipt in the same source transaction as the guarded effects. It requires separately reviewed receipt objects and writer grants through writeback setup (precreated or reviewed auto-migration), then execution verification and a worker. Receipt mode and readiness are not established by this disabled draft. A source-atomic requirement cannot be satisfied by a control-ledger receipt or by adding a model-authored audit INSERT. Independent source readback is a separate verification step, not an automatic client behavior guarantee. request_change distinguishes queued/human_review/not_enabled/completed; completed requires applied state. Pending/failed is not completed.",
+          "client_responsibilities": "The application authenticates the person, supplies trusted session identity, captures their selection and uses returned execution status/receipts for messages. A scoped subject reference authorizes one reviewed row; it does not prove the human clicked a UI. When an effective date is in the future, recording the change is not proof its benefits are already in force. Boundary rules cannot prove arbitrary client UI wording.",
+          "client_contract": {
+            "mode": "interactive_four_tool",
+            "client": "claude-code",
+            "origin": "PRODUCT-CLIENT-CONTRACT",
+            "ownership": "explicit_unverified"
+          },
+          "application_obligations": {
+            "customer_selection": "The client captures the customer's intended choice and submits that reviewed subject reference. Runner independently verifies its scope and eligibility; it cannot prove the human selected it.",
+            "status_presentation": "The client presents returned statuses and receipts accurately. Approval, a queued request or a failed execution is not completion. A recorded future-effective change does not mean benefits are already in force.",
+            "independent_source_readback": {
+              "phase": "after_execution",
+              "verified": false,
+              "receipt_proves_observation": false,
+              "observation_scope": null,
+              "meaning": "An independent client or source owner observes the source after a particular execution and compares it with that exact intended change. This required observation remains external and unverified here; it cannot be performed before the change exists. Neither a receipt, selected receipt mode, execution setup, past test nor conversation establishes this observation. No private source rows or external verifier files are imported into authoring evidence. Business review may finish while this later obligation remains visible; claiming independently verified completion may not.",
+              "limits": "This is only a separately performed observation, not an automatic runtime postcondition, transactional readback expression or guarantee for every future execution. If the policy requires such an automated guarantee, keep that precise unsupported requirement unresolved rather than assigning it away. Source_db atomic receipt requirements remain distinct."
+            }
+          },
+          "deployment_prerequisites": {
+            "runner_execution_setup": {
+              "supported": true,
+              "receipt_modes_supported": [
+                "runner_ledger",
+                "source_db"
+              ],
+              "receipt_mode_checked": false,
+              "outcomes": [
+                {
+                  "outcome": "release.clear_assessment",
+                  "configured_mode": "direct_sql"
+                }
+              ],
+              "stage": "after_authority_review",
+              "configuration_checked": false,
+              "verified": false,
+              "meaning": "Only deployment of already compiled direct SQL effects: review a separate writer and exact database grants, separately enable execution, review the required receipt authority and its exact source objects/grants if applicable, then configure and start a worker. These are not prerequisites for reviewing disabled business rules. This evidence never asserts that the writer, grants, execution or worker are ready. Reader credentials stay separate. Proposal-only effects, missing actions, unsupported transactions, business eligibility, privacy and approval conditions cannot use this prerequisite.",
+              "next_step": "After authority review, use execution setup to prepare the exact writer handoff or verify an existing dedicated writer. If administration is needed, save and resume this job after the administrator applies only the reviewed requirements. Execution remains off until separately enabled; completion requires a successful receipt."
+            },
+            "runner_client_connection": {
+              "supported": true,
+              "supported_clients": [
+                "claude-code",
+                "cursor",
+                "vscode"
+              ],
+              "transport": "local_stdio",
+              "stage": "after_authority_review",
+              "configuration_checked": false,
+              "verified": false,
+              "meaning": "Runner supports managed local stdio client installation at the later client handoff. This is not external application business implementation or a prerequisite for reviewing disabled authority. It does not prove a client is installed or connected, authenticate a customer, grant authority, or start a worker. Custom clients and production HTTP requirements need their own review.",
+              "next_step": "After authority review, choose a supported client in client setup and review its installation and connection check. Connection, authenticated identity, application responsibilities and execution readiness remain separate and unverified."
+            },
+            "authenticated_identity": {
+              "reviewed_customer_scope": true,
+              "verified": false,
+              "meaning": "Only connecting an authenticated application session to the already reviewed tenant/principal bindings remains a deployment step. Runtime refuses missing identity. This does not settle which customers are authorized or permit weakening database scope. Metadata-only drafting needs no actual identity values.",
+              "next_step": "After authority review, choose a client and configure runtime identity. A local fixed-identity test is not production authentication verification; production must supply identity from its authenticated session, never model arguments."
+            }
+          }
+        }
+      }
+    },
+    "messages": [
+      "Use the attached policy to draft the disabled release-clearance job I described, including its eligibility, requested days, automatic versus human approval, and separate supervised execution.",
+      "synapsor.center_id represents the rehabilitation center organization and binds to center_id. synapsor.coordinator_id represents the authenticated coordinator person and binds to coordinator_id. Both restrictions apply to every public and private source row."
+    ],
+    "source_document": {
+      "id": "e631e9a6-e7d6-4428-a423-be36465405f7",
+      "snapshots": [
+        {
+          "version": 1,
+          "name": "rules.txt",
+          "text": "# Wildlife release-assessment job\n\nThe rehabilitation center wants an assistant to find release assessments by their public label, explain the non-sensitive release status, and request one of the reviewed outcomes below. The assistant may never read confidential medical notes, sensitive rescue locations, sensitive habitat locations, internal staff notes, or unrestricted populations/analytics.\n\n## Outcome 1: clear a release assessment\n\nAn assessment may be proposed for clearance only when:\n\n- the assessment currently has state `ready`;\n- its related animal has medical clearance state `cleared`;\n- that animal has completed quarantine;\n- that animal's handling-risk score is no more than `40`;\n- its related habitat site has state `open` and currently accepts releases; and\n- the requested release window is an integer from `1` through `7` days.\n\nThe exact effect changes only that assessment's state to `cleared` and records the requested release-window days. It must update at most one row, use the assessment's current version guard, and advance its maintained version exactly once.\n\nEligible requests with handling-risk score at most `20` may be automatically approved. Eligible requests with handling-risk score `21` through `40` require one human approval from `release_supervisor`. Ineligible requests are refused; human review is not a fallback for failed eligibility.\n\nFor automatic approvals, allow at most `8` for this exact clearance outcome across the Action in a rolling 24-hour window and at most `2` for the same trusted rehabilitation center in that rolling 24-hour window. Both counts are outcome-specific and include committed approvals even if execution has not completed. They are not per assessment row and must not reset on policy edits.\n\n## Scope, privacy, receipts, and duties\n\nTrusted local-development identity supplies both `center_id` and `coordinator_id`; model/user inputs never choose them. Every public and private source row is restricted by exact reviewed PostgreSQL RLS equality to those two settings. The assistant receives only the public assessment label/status and explicitly reviewed non-sensitive related descriptions. All medical eligibility fields and habitat acceptance fields are Action-private verification facts unless separately reviewed for public Read.\n\nUse the local Runner ledger receipt mode for this case. Receipt selection and execution authorization remain separate, explicit reviews and default to No. A request/approval must not change the source; only a separately invoked finite worker may apply an authorized effect.\n\nThe client must obtain the user's intended public assessment through reviewed discovery/reference, submit the exact desired days, and report queued/pending/approved/applied status truthfully. It must not call approval or queueing completion. Local identity configuration is only a test identity, not production authentication or independent proof of user intent.\n",
+          "bytes": 2948,
+          "lines": 29,
+          "digest": "sha256:d4e783115e819649c2be8fa5cfc7abe9d31f891c51eb0315b0a44a0c90388cd5"
+        }
+      ],
+      "approvals": [
+        {
+          "digest": "sha256:d4e783115e819649c2be8fa5cfc7abe9d31f891c51eb0315b0a44a0c90388cd5",
+          "destination": "openrouter[openai/gpt-5.6-terra] at https://openrouter.ai/api/v1"
+        }
+      ],
+      "active": 1,
+      "operator_messages": [
+        "Use the attached policy to draft the disabled release-clearance job I described, including its eligibility, requested days, automatic versus human approval, and separate supervised execution.",
+        "synapsor.center_id represents the rehabilitation center organization and binds to center_id. synapsor.coordinator_id represents the authenticated coordinator person and binds to coordinator_id. Both restrictions apply to every public and private source row."
+      ],
+      "coverage_episodes": [
+        {
+          "id": "eb4d3eca-0545-40c9-8e16-b086fadf1550",
+          "context": "sha256:3ca591c755f4acd6d3bdae45cc037a448fdf150af46457eef075f08f608c8ea2",
+          "started_at": "2026-09-20T17:52:03.529Z",
+          "submissions": [
+            {
+              "number": 1,
+              "reserved_at": "2026-09-20T17:52:03.607Z",
+              "completed_at": "2026-09-20T17:52:48.258Z",
+              "validated": false,
+              "diagnostic": "{\"context\":\"sha256:6aa70b39710836a64d4441f534d23c2783b7298b4865655a2b5f0431799de148\",\"findings\":[{\"code\":\"COVERAGE_VALIDATION_INCOMPLETE\",\"component\":\"/passages/9\",\"component_identity\":\"sha256:dbff1ad6c55f46efe69e19ba3b0a0f41ea70d5784d40a34d665d8dcb9701988b\",\"identity\":\"sha256:1345f719ac87efe994f4b1d5be755c37382a88e33534c6bbe00126733f2314c6\",\"reason\":\"Complete coverage validation did not finish; no partial review was accepted.\",\"repair\":\"Keep the saved review pending. Use the current attached-rules review to resolve its requirement or revalidate its evidence; no business edit was inferred.\",\"structural\":false,\"passage_identity\":\"sha256:eef80edbc7388fe1f0db5afdd88f174e649c6f154a903c8a84df96e2c8e6cdfc\"}],\"limited\":false,\"unevaluated\":[\"/passages/9\",\"whole-report acceptance, retained obligations and persistence\"],\"complete_validation\":false}"
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "response": {
+    "passages": [
+      {
+        "start": 1,
+        "end": 1,
+        "disposition": "background",
+        "interpretation": "Document heading; it imposes no business behavior.",
+        "draft_paths": [],
+        "topic": "Document heading",
+        "responsibility": "runner",
+        "issue_kind": "coverage_link",
+        "next_step": "No action is needed."
+      },
+      {
+        "start": 3,
+        "end": 3,
+        "disposition": "conflict",
+        "interpretation": "The public assessment label is returned, but the current Read boundary exposes no filterable field for public_label. It therefore does not yet support finding an assessment by its public label.",
+        "draft_paths": [
+          "/read",
+          "/runner_evidence/read_access/release_ops.release_assessments/fields/public_label"
+        ],
+        "topic": "Find assessment by public label",
+        "responsibility": "runner",
+        "issue_kind": "coverage_link",
+        "next_step": "Revise the disabled Read boundary to support reviewed public-label discovery."
+      },
+      {
+        "start": 3,
+        "end": 3,
+        "disposition": "implemented",
+        "interpretation": "The Read boundary returns release_assessments.public_label and assessment_state, so it can present the non-sensitive release status; the clearance outcome is separately prepared as release.clear_assessment.",
+        "draft_paths": [
+          "/read",
+          "/runner_evidence/read_access/release_ops.release_assessments/fields/public_label",
+          "/runner_evidence/read_access/release_ops.release_assessments/fields/assessment_state",
+          "/actions/0",
+          "/runner_evidence/actions/release.clear_assessment/outcome"
+        ],
+        "topic": "Public status and clearance request",
+        "responsibility": "runner",
+        "issue_kind": "coverage_link",
+        "next_step": "Keep Read and Action activation separate."
+      },
+      {
+        "start": 3,
+        "end": 3,
+        "disposition": "implemented",
+        "interpretation": "Confidential medical notes, rescue and habitat location notes, and internal staff notes return no actual values and allow no model analysis. The Read boundary has no aggregate, grouping, measure, or filter permissions, and bounded record access prevents unrestricted population analytics.",
+        "draft_paths": [
+          "/read",
+          "/runner_evidence/read_access/release_ops.animals/fields/confidential_medical_note",
+          "/runner_evidence/read_access/release_ops.animals/fields/exact_rescue_location",
+          "/runner_evidence/read_access/release_ops.habitat_sites/fields/sensitive_location_note",
+          "/runner_evidence/read_access/release_ops.release_assessments/fields/internal_staff_note"
+        ],
+        "topic": "Sensitive data and analytics privacy",
+        "responsibility": "runner",
+        "issue_kind": "coverage_link",
+        "next_step": "Retain these fields as non-returned and non-analyzable."
+      },
+      {
+        "start": 5,
+        "end": 5,
+        "disposition": "background",
+        "interpretation": "Outcome heading; the operative outcome requirements are assessed below.",
+        "draft_paths": [],
+        "topic": "Outcome heading",
+        "responsibility": "runner",
+        "issue_kind": "coverage_link",
+        "next_step": "No action is needed."
+      },
+      {
+        "start": 7,
+        "end": 7,
+        "disposition": "background",
+        "interpretation": "Eligibility introduction; its individual conditions are assessed on lines 9 through 14.",
+        "draft_paths": [],
+        "topic": "Eligibility introduction",
+        "responsibility": "runner",
+        "issue_kind": "coverage_link",
+        "next_step": "No action is needed."
+      },
+      {
+        "start": 9,
+        "end": 14,
+        "disposition": "implemented",
+        "interpretation": "The Action privately loads the selected assessment, related animal, and related habitat, and requires ready assessment state, cleared medical state, completed quarantine, risk no more than 40, open and accepting habitat, and integer requested days from 1 through 7 before a proposal can be created.",
+        "draft_paths": [
+          "/actions/0/inputs",
+          "/actions/0/verification",
+          "/actions/0/require",
+          "/runner_evidence/actions/release.clear_assessment/scoped_bindings/assessment/fields/assessment_state",
+          "/runner_evidence/actions/release.clear_assessment/scoped_bindings/animal/fields/medical_clearance_state",
+          "/runner_evidence/actions/release.clear_assessment/scoped_bindings/animal/fields/quarantine_complete",
+          "/runner_evidence/actions/release.clear_assessment/scoped_bindings/animal/fields/handling_risk_score",
+          "/runner_evidence/actions/release.clear_assessment/scoped_bindings/habitat_site/fields/site_state",
+          "/runner_evidence/actions/release.clear_assessment/scoped_bindings/habitat_site/fields/accepting_releases"
+        ],
+        "topic": "Clearance eligibility",
+        "responsibility": "runner",
+        "issue_kind": "coverage_link",
+        "next_step": "Keep these private facts and required conditions in the disabled Action."
+      },
+      {
+        "start": 16,
+        "end": 16,
+        "disposition": "implemented",
+        "interpretation": "The compiled direct-SQL effect updates the selected assessment binding only, authorizes only assessment_state and planned_release_days, applies the current row-version conflict guard, and compiles one Runner-owned integer increment of row_version in the same guarded transaction. The current source-owner all-writers maintenance operating prerequisite is confirmed for this generation, although independent external-writer and production-integration assurance is not asserted.",
+        "draft_paths": [
+          "/actions/0/effect",
+          "/runner_evidence/actions/release.clear_assessment/effect",
+          "/runner_evidence/actions/release.clear_assessment/scoped_bindings/assessment",
+          "/runner_evidence/actions/release.clear_assessment/effect/source_counter_maintenance",
+          "/runner_evidence/runtime_contract/version_advancement",
+          "/runner_evidence/runtime_contract/conflict_protection"
+        ],
+        "topic": "Guarded single-row clearance effect",
+        "responsibility": "runner",
+        "issue_kind": "coverage_link",
+        "next_step": "Retain separate execution review, consent, and worker startup before any effect can run."
+      },
+      {
+        "start": 18,
+        "end": 18,
+        "disposition": "implemented",
+        "interpretation": "After eligibility succeeds, risk at most 20 satisfies the automatic-approval predicate; risk 21 through 40 cannot satisfy it and requires one release_supervisor approval. The require conditions run before approval, so failed eligibility is refused rather than routed to human review.",
+        "draft_paths": [
+          "/actions/0/approval",
+          "/actions/0/require",
+          "/actions/0/review",
+          "/runner_evidence/runtime_contract/approval"
+        ],
+        "topic": "Risk-based approval and refusal",
+        "responsibility": "runner",
+        "issue_kind": "coverage_link",
+        "next_step": "Keep the required role and one-approval fallback for valid nonautomatic requests."
+      },
+      {
+        "start": 20,
+        "end": 20,
+        "disposition": "implemented",
+        "interpretation": "Both automatic limits select approved boundary-automatic history in the inclusive rolling 24-hour window, not assessment rows or human approvals. Their capability selector is intentionally null, meaning no capability filter; the complete current and retained automatic-outcome domain contains only release.clear_assessment, so this is equivalent to the required exact-outcome count for the current boundary and must be revalidated if that domain changes. The tenant limit groups by the operator-confirmed center_id rehabilitation-center value; maxima are 8 across the Action and 2 per center, with history retained across revisions.",
+        "draft_paths": [
+          "/actions/0/approval",
+          "/runner_evidence/actions/release.clear_assessment/automatic_limits",
+          "/runner_evidence/runtime_contract/approval_counter_selection"
+        ],
+        "topic": "Rolling outcome-specific automatic limits",
+        "responsibility": "runner",
+        "issue_kind": "coverage_link",
+        "next_step": "Revalidate the complete outcome domain before adding or retaining any other automatic outcome.",
+        "counter_requirements": [
+          {
+            "path": "/runner_evidence/actions/release.clear_assessment/automatic_limits/0/history_selector/capability",
+            "current_capability": null,
+            "required_capability": null
+          },
+          {
+            "path": "/runner_evidence/actions/release.clear_assessment/automatic_limits/1/history_selector/capability",
+            "current_capability": null,
+            "required_capability": null
+          }
+        ]
+      },
+      {
+        "start": 22,
+        "end": 22,
+        "disposition": "background",
+        "interpretation": "Section heading; the operative scope, privacy, receipt, and client duties are assessed below.",
+        "draft_paths": [],
+        "topic": "Scope and duties heading",
+        "responsibility": "runner",
+        "issue_kind": "coverage_link",
+        "next_step": "No action is needed."
+      },
+      {
+        "start": 24,
+        "end": 24,
+        "disposition": "implemented",
+        "interpretation": "All Action bindings and all Read resources are restricted by inspected PostgreSQL RLS to trusted synapsor.center_id and synapsor.coordinator_id bindings. The operator clarified that these represent the rehabilitation-center organization and authenticated coordinator respectively; neither is an Action input. Public Read returns only the assessment label and status plus public related descriptions, while medical eligibility and habitat acceptance remain Action-private and are neither returned nor available for model analysis.",
+        "draft_paths": [
+          "/read",
+          "/actions/0/inputs",
+          "/actions/0/verification",
+          "/runner_evidence/read_access/release_ops.animals",
+          "/runner_evidence/read_access/release_ops.habitat_sites",
+          "/runner_evidence/read_access/release_ops.release_assessments",
+          "/runner_evidence/actions/release.clear_assessment/scoped_bindings/animal/fields/medical_clearance_state",
+          "/runner_evidence/actions/release.clear_assessment/scoped_bindings/animal/fields/quarantine_complete",
+          "/runner_evidence/actions/release.clear_assessment/scoped_bindings/animal/fields/handling_risk_score",
+          "/runner_evidence/actions/release.clear_assessment/scoped_bindings/habitat_site/fields/accepting_releases"
+        ],
+        "topic": "Trusted dual scope and private verification",
+        "responsibility": "runner",
+        "issue_kind": "coverage_link",
+        "next_step": "Preserve injected scope and private verification when revising the disabled boundaries.",
+        "operator_message_id": 2,
+        "field_checks": [
+          {
+            "resource": "release_ops.animals",
+            "field": "confidential_medical_note",
+            "expectation": "private"
+          },
+          {
+            "resource": "release_ops.animals",
+            "field": "exact_rescue_location",
+            "expectation": "private"
+          },
+          {
+            "resource": "release_ops.habitat_sites",
+            "field": "sensitive_location_note",
+            "expectation": "private"
+          },
+          {
+            "resource": "release_ops.release_assessments",
+            "field": "internal_staff_note",
+            "expectation": "private"
+          },
+          {
+            "resource": "release_ops.animals",
+            "field": "medical_clearance_state",
+            "expectation": "private"
+          },
+          {
+            "resource": "release_ops.animals",
+            "field": "quarantine_complete",
+            "expectation": "private"
+          },
+          {
+            "resource": "release_ops.animals",
+            "field": "handling_risk_score",
+            "expectation": "private"
+          },
+          {
+            "resource": "release_ops.habitat_sites",
+            "field": "accepting_releases",
+            "expectation": "private"
+          }
+        ]
+      },
+      {
+        "start": 24,
+        "end": 24,
+        "disposition": "needs_decision",
+        "interpretation": "The reviewed RLS scope is prepared, but connecting an authenticated runtime session to the center/coordinator bindings remains unverified. The configured staging profile is local identity and is not production authentication.",
+        "draft_paths": [
+          "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+        ],
+        "topic": "Authenticated identity wiring",
+        "responsibility": "deployment",
+        "issue_kind": "missing_configuration",
+        "next_step": "After authority review, configure authenticated session identity for the reviewed center and coordinator bindings.",
+        "deployment_prerequisite": "authenticated_identity"
+      },
+      {
+        "start": 26,
+        "end": 26,
+        "disposition": "needs_decision",
+        "interpretation": "The required Runner-ledger receipt mode has not been selected: receipt configuration is absent. The Action is correctly supervised, so requests and approvals do not write the source, and prepared direct-SQL completion remains separately reviewed and disabled.",
+        "draft_paths": [
+          "/runner_evidence/runtime_contract/receipt_configuration",
+          "/actions/0/effect",
+          "/runner_evidence/actions/release.clear_assessment/execution"
+        ],
+        "topic": "Runner-ledger receipt selection",
+        "responsibility": "runner",
+        "issue_kind": "missing_configuration",
+        "next_step": "Select and separately review the required Runner-ledger receipt mode before activation."
+      },
+      {
+        "start": 26,
+        "end": 26,
+        "disposition": "implemented",
+        "interpretation": "The supervised writeback compiles to no source write during request or approval. The prepared direct-SQL effect is supported only for a separately enabled finite worker after writer review and execution consent; approval alone is not completion.",
+        "draft_paths": [
+          "/actions/0/effect",
+          "/runner_evidence/actions/release.clear_assessment/execution",
+          "/runner_evidence/runtime_contract/approval"
+        ],
+        "topic": "Separate supervised completion",
+        "responsibility": "runner",
+        "issue_kind": "coverage_link",
+        "next_step": "Keep writer review, execution enablement, and worker startup as later prerequisites."
+      },
+      {
+        "start": 26,
+        "end": 26,
+        "disposition": "needs_decision",
+        "interpretation": "A dedicated writer, grants, execution consent, receipt readiness, and worker startup have not been configured for the prepared direct-SQL effect.",
+        "draft_paths": [
+          "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+        ],
+        "topic": "Execution setup",
+        "responsibility": "deployment",
+        "issue_kind": "missing_configuration",
+        "next_step": "After authority review, complete the dedicated-writer and worker setup for this exact Action revision.",
+        "deployment_prerequisite": "runner_execution_setup"
+      },
+      {
+        "start": 28,
+        "end": 28,
+        "disposition": "implemented",
+        "interpretation": "The Action accepts the exact integer release-window input and is compatible with an obtainable scoped assessment subject reference. It does not treat proposal, approval, or queuing as source completion.",
+        "draft_paths": [
+          "/actions/0/inputs",
+          "/runner_evidence/action_subject_compatibility",
+          "/runner_evidence/runtime_contract/request_identity",
+          "/runner_evidence/runtime_contract/receipts"
+        ],
+        "topic": "Reviewed reference and requested days",
+        "responsibility": "runner",
+        "issue_kind": "coverage_link",
+        "next_step": "Keep desired days as the reviewed integer input and completion status tied to applied state."
+      },
+      {
+        "start": 28,
+        "end": 28,
+        "disposition": "needs_decision",
+        "interpretation": "Capturing the user's intended public assessment through reviewed discovery/reference is an unverified client responsibility; Runner can verify the scoped reference but cannot prove the person's selection.",
+        "draft_paths": [
+          "/runner_evidence/runtime_contract/application_obligations/customer_selection"
+        ],
+        "topic": "Client captures assessment selection",
+        "responsibility": "application",
+        "issue_kind": "missing_configuration",
+        "next_step": "Assign the client owner to capture the user's intended assessment selection.",
+        "application_obligations": [
+          "customer_selection"
+        ]
+      },
+      {
+        "start": 28,
+        "end": 28,
+        "disposition": "needs_decision",
+        "interpretation": "Truthful presentation of queued, pending, approved, and applied status is an unverified client responsibility. Runner supplies status semantics but cannot prove client wording or prevent a client from calling queued or approved completion.",
+        "draft_paths": [
+          "/runner_evidence/runtime_contract/application_obligations/status_presentation"
+        ],
+        "topic": "Truthful client status",
+        "responsibility": "application",
+        "issue_kind": "missing_configuration",
+        "next_step": "Assign the client owner to present returned request statuses truthfully.",
+        "application_obligations": [
+          "status_presentation"
+        ]
+      },
+      {
+        "start": 28,
+        "end": 28,
+        "disposition": "needs_decision",
+        "interpretation": "Claude Code is a supported managed local-stdio client, but its installation and connection have not been checked. This later connection step does not establish authenticated identity, client duties, or execution readiness.",
+        "draft_paths": [
+          "/runner_evidence/runtime_contract/deployment_prerequisites/runner_client_connection"
+        ],
+        "topic": "Claude Code connection",
+        "responsibility": "deployment",
+        "issue_kind": "missing_configuration",
+        "next_step": "After authority review, install and verify the selected Claude Code connection.",
+        "deployment_prerequisite": "runner_client_connection"
+      }
+    ]
+  }
+}

@@ -1,4 +1,4 @@
-import { CoverageComponentError, CoverageComponentsError, recordCoverageFindingSubject, recordCheckedCoveragePassage, coverageFinding, MAX_COVERAGE_FINDINGS, MAX_COVERAGE_FEEDBACK_BYTES, MAX_COVERAGE_SUBMISSIONS, permitsSecondCoverageCorrection, type CoverageFeedback } from "./authoring-coverage-feedback.js";
+import { CoverageComponentError, CoverageComponentsError, CoverageCurrentDescriptionError, recordCoverageFindingSubject, recordCheckedCoveragePassage, coverageFinding, MAX_COVERAGE_FINDINGS, MAX_COVERAGE_FEEDBACK_BYTES, MAX_COVERAGE_SUBMISSIONS, permitsSecondCoverageCorrection, type CoverageFeedback } from "./authoring-coverage-feedback.js";
 import { clientDutyInventory } from "./authoring-client-duties.js";
 import { assessReviewObligation, deferredReviewObligation, receiptSelectionComponent } from "./authoring-obligation-review.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
@@ -352,7 +352,9 @@ function parseCoveragePassage(raw: unknown, index: number, source: PolicyTextSna
       if (new Set(entry.counter_requirements.map(check => check?.path)).size !== entry.counter_requirements.length) {
         throw new Error("COUNTING_COMPARISON_INVALID: Each counter component must appear once per passage; preserve separate counter roots and their own support.");
       }
-      for (const check of entry.counter_requirements) {
+      const descriptionErrors: CoverageComponentError[] = [];
+      const actions = draftValue(draft, "/actions") as Array<{ outcome: string }>;
+      for (const [counterIndex, check] of entry.counter_requirements.entries()) {
         if (!check || Object.keys(check).some((key) => !["path", "current_capability", "required_capability", "operator_message_id", "operator_clarification"].includes(key))
           || typeof check.path !== "string" || !/^\/runner_evidence\/actions\/[^/]+\/automatic_limits\/\d+\/history_selector\/capability$/u.test(check.path)
           || !draftPaths.some((pointer) => check.path === pointer || check.path.startsWith(`${pointer}/`))
@@ -360,15 +362,23 @@ function parseCoveragePassage(raw: unknown, index: number, source: PolicyTextSna
           throw new Error(`Counter requirements must name an exact referenced history_selector/capability, its current filter and the policy-required filter; diagnostic IDs are not filters. Select path from ${JSON.stringify(counterCapabilityReferences(draft))} and include its parent evidence in draft_paths. Omit counter_requirements entirely when no capability-filter comparison is needed.`);
         }
         const actual = draftValue(draft, check.path);
-        if (actual !== check.current_capability) throw new Error(`Counter evidence changed at ${check.path}; reconcile the current filter before proposing any repair.`);
+        if (actual !== null && typeof actual !== "string") throw new Error("COUNTING_CONFIGURATION_INCOMPLETE: The referenced current selector is unavailable in this prepared context.");
+        if (actual !== check.current_capability) {
+          // Only existing consented identifiers may be echoed; model strings
+          // can contain unrelated private data. No required value is inferred.
+          const submitted = check.current_capability === null || Array.isArray(actions) && actions.some(action => action.outcome === check.current_capability)
+            ? check.current_capability : { withheld: true as const };
+          descriptionErrors.push(new CoverageComponentError(`/passages/${index}/counter_requirements/${counterIndex}`,
+            new CoverageCurrentDescriptionError({path: check.path, actual, submitted})));
+        }
         if (check.required_capability !== null) {
-          const actions = draftValue(draft, "/actions") as Array<{ outcome: string }>;
           if (!Array.isArray(actions) || actions.filter((action) => action.outcome === check.required_capability).length !== 1) {
             throw new Error("The required counter capability must be one exact existing outcome, or null for shared history.");
           }
         }
 
       }
+      if (descriptionErrors.length) throw new CoverageComponentsError(descriptionErrors);
     }
     if (entry.field_checks !== undefined) {
       if (!Array.isArray(entry.field_checks) || entry.field_checks.length > 160) throw new Error("Use at most 160 exact field privacy checks per passage.");

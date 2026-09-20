@@ -97,7 +97,7 @@ describe("exact installed mixed counting review", () => {
     if (mode === "stale_decision") draft.runner_evidence.counting_interpretations[0].operator_history_digest = canonicalJsonDigest("changed");
     if (mode === "broad_only") { p.draft_paths = ["/actions/0/approval", "/runner_evidence"]; code = "COUNTING_REFERENCE_OVERBROAD"; }
     if (mode === "bad_pointer") { p.counter_requirements[0].path = "/actions/0/approval"; code = "Counter requirements must name an exact"; }
-    if (mode === "wrong_value") { p.counter_requirements[0].current_capability = "wrong"; code = "Counter evidence changed"; }
+    if (mode === "wrong_value") { p.counter_requirements[0].current_capability = "wrong"; code = "COUNTING_CURRENT_DESCRIPTION_MISMATCH"; }
     if (mode === "incomplete") domain.complete = false;
     if (mode === "other_history") domain.retained_automatic_outcomes.push("another.outcome");
     if (mode === "other_current") domain.current_outcomes.push("another.outcome");

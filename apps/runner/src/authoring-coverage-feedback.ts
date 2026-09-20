@@ -9,8 +9,17 @@ export class CoverageComponentError extends Error {
 export class CoverageComponentsError extends Error {
   constructor(readonly errors: CoverageComponentError[]) { super(errors[0]!.message); }
 }
+/** Constructed only after the exact reference has resolved in the prepared,
+ * consented context. A transcription finding never establishes required policy. */
+export class CoverageCurrentDescriptionError extends Error {
+  readonly code = 'COUNTING_CURRENT_DESCRIPTION_MISMATCH';
+  constructor(readonly evidence: { path: string; actual: string | null; submitted: string | null | { withheld: true } }) {
+    super('COUNTING_CURRENT_DESCRIPTION_MISMATCH: The submitted current selector does not describe the prepared configuration.');
+  }
+}
 export type CoverageFinding = {
   code: string; component: string; identity: string; component_identity: string; passage_identity?: string; reason: string; repair: string; structural: boolean;
+  current_evidence?: CoverageCurrentDescriptionError['evidence'];
 };
 export type CoverageFeedback = {
   context: string; findings: CoverageFinding[]; limited: boolean;
@@ -34,6 +43,14 @@ export const MAX_COVERAGE_SUBMISSIONS = 3;
 
 export function coverageFinding(error: unknown, component: string, identityBasis: unknown): CoverageFinding {
   if (error instanceof CoverageComponentError) component = error.component;
+  const cause = error instanceof CoverageComponentError ? error.cause : error;
+  if (cause instanceof CoverageCurrentDescriptionError) return {
+    code: cause.code, component, component_identity: canonicalJsonDigest(identityBasis),
+    identity: canonicalJsonDigest({component: identityBasis, code: cause.code}), structural: true,
+    current_evidence: cause.evidence,
+    reason: 'The submitted current_capability misdescribes the exact configuration supplied in this review context; this does not establish that configuration changed.',
+    repair: 'Resubmit this counter with current_capability equal to current_evidence.actual. This is an observation, not an owner decision. Do not infer required_capability from it: establish required meaning independently from its authentic source/support, and keep a real disagreement unresolved. Do not change selectors, invent singleton equivalence, omit a counter or drop other claims. Return the complete replacement review.',
+  };
   const message = error instanceof Error ? error.message : '';
   let code = 'COVERAGE_VALIDATION_INCOMPLETE', structural = false;
   let reason = 'Complete coverage validation did not finish; no partial review was accepted.';
