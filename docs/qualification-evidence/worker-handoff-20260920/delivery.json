@@ -1,0 +1,20 @@
+{
+  "recorded_at": "2026-09-20T05:35:34.314182+00:00",
+  "branch": "codex/tui-safe-action-control-plane",
+  "baseline": "63aa6648e49c7eb7b3e5d9589835ac5d21b99346",
+  "product_commit": "3a20a24f992e9f0828d2b457ae55daabbb3d512c",
+  "test_commit": "3a20a24f992e9f0828d2b457ae55daabbb3d512c",
+  "frozen_source_commit": "904b1e5782828f0448026e78099ef7fb27c989b0",
+  "qualification_report_commit": "af7c7a45b63cd7e3f43632ce80e4f32f946a6c71",
+  "installed_tree_sha256": "33bf5f661c93cbd5a93677ff59b66dd558053a7ed62b054b9544769d84706c5b",
+  "report": "docs/qualification-evidence/worker-handoff-20260920/FINAL-REPORT.md",
+  "reviewer_handoff": "docs/qualification-evidence/worker-handoff-20260920/REVIEWER-HANDOFF.md",
+  "next_decision": "docs/qualification-evidence/worker-handoff-20260920/RECOVERY-DECISION.md",
+  "raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/worker-handoff-63aa664-20260920",
+  "push_remote": "backup",
+  "private_destination": "https://github.com/Synapsor/Synapsor-Runner-Backup.git",
+  "actual_push_result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/worker-handoff-63aa664-20260920/delivery-result.json",
+  "delivery_commit_note": "Metadata-only commit follows the qualification report; actual canonical tip and remote verification are recorded in the raw delivery result and tracker after push.",
+  "Stage_B": "ATTEMPTED_NOT_PASSED",
+  "independent_current_acceptance": "PENDING"
+}
