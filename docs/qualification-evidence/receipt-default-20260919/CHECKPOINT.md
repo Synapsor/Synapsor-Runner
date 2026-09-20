@@ -12,3 +12,5 @@ Explicit PostgreSQL receipt gate exit 0: 1 pass/28 filtered skips. Review/persis
 Full stable exit 0: 6,618 passed / 465 skipped,319 files passed /21 skipped,1252.05s. Actual child status preserved; source before/after e27c4807 unchanged. No duplicate suite. Four remaining offline package checks now running.
 
 All ten offline checks attempt1 exit 0. Full suite/types/selected PG complete on product 8ce3389. Next: freeze one complete installation from this coherent checkpoint; then R1, four R2 cancellations, R3 and restart readbacks. Installed results still unverified.
+
+2026-09-20T02:28Z: single9ae3a71d candidate: R1 defaults/real verifier/default-No/restart PASS; R2 four cancellations/restart PASS; R3 writer-posture refusal PASS (probe not reached).42-table/config/504-row preservation established with only exact receipt-management renewal at epoch17 in R1/R3. Original/final artifacts and13 protected inputs unchanged. Saved nine projects/three databases/logs; owned container removed. Primary report/handoff ready, independent PENDING. Next: optional <=30min read-only O2/P1 preparation; no worker invocation; final evidence commit/private-backup delivery.

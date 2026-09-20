@@ -1,0 +1,36 @@
+{
+  "frozen_at": "2026-09-20T02:22:11.909Z",
+  "purpose": "M6 structured text defaults and cancellation; receipt renewal and verification, no execution enable",
+  "cases": [
+    "R1 blank text defaults, exact receipt selection, real verifier, default-No execution and restart",
+    "R2 Escape at each text field and final review; no partial selection",
+    "R3 retained source_db intent and missing prerequisite refusal"
+  ],
+  "product_commit": "8ce338988da92ea37eb6711153965a7ce873440a",
+  "test_commit": "8ce338988da92ea37eb6711153965a7ce873440a",
+  "report_commit": "recorded separately after verification",
+  "source_commit": "9f11692ff6b84d5f1df3bc5e720463659c20204c",
+  "source_status": "?? .claude/",
+  "unpackaged_unrelated_directory": ".claude/ (preserved, no contents read)",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-default-feecc2b-20260919/frozen/installed",
+  "installed_tree_sha256": "9ae3a71d4dd5aeac4121b24a6ef6f5ac7b799023cf10242aac79252530fca3ea",
+  "node": {
+    "version": "v22.22.2",
+    "executable": "/usr/bin/node",
+    "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+  },
+  "runner_version": "1.8.0",
+  "spec_version": "1.11.0",
+  "package_lock_sha256": "bbc5aaf210a5e5a844ff66e09d66e39787bd29ff95087ee3e903a44e220fb3d2",
+  "tarballs": [
+    {
+      "name": "synapsor-runner-1.8.0.tgz",
+      "sha256": "dedaaaef58696be4e241f878d0926226a6c71a3fc2ef26c6f34b8d70ffbcef15"
+    },
+    {
+      "name": "synapsor-spec-1.11.0.tgz",
+      "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+    }
+  ],
+  "entries": 7569
+}

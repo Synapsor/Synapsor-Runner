@@ -4,7 +4,7 @@ Status: **PENDING**. All new results in this package are implementer evidence. C
 
 ## Scope and starts
 
-Canonical branch `codex/tui-safe-action-control-plane`, baseline feecc2b7f9aa10c65f28ace812583a63c3b0239d. Product/tests `8ce338988da92ea37eb6711153965a7ce873440a`. Final source/tree identity will be recorded in FINAL-REPORT.md and the complete installed-artifact manifest after freezing.
+Canonical branch `codex/tui-safe-action-control-plane`, baseline feecc2b7f9aa10c65f28ace812583a63c3b0239d. Product/tests `8ce338988da92ea37eb6711153965a7ce873440a`. Frozen source `9f11692ff6b84d5f1df3bc5e720463659c20204c`; full installed tree `9ae3a71d4dd5aeac4121b24a6ef6f5ac7b799023cf10242aac79252530fca3ea`. See ARTIFACT.json and the complete manifest.
 
 Raw evidence: `/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-default-feecc2b-20260919`.
 
@@ -48,3 +48,5 @@ All commands below ran through `python3 docs/qualification-evidence/receipt-defa
 - Installed driver: `python3 docs/qualification-evidence/receipt-default-20260919/pty-case.py R1`, substituting each R2 case or R3; second argument `restart` for the recorded reopen controls. **Do not rerun these commands against the already-used task copies.** Restore and retarget the reviewed harness to fresh owned starts first.
 
 Use the exit JSONs as the authoritative exact invocation (including worker counts), not reconstructed shell examples.
+
+Implementer installed results: R1, all four R2 starts, R3 refusal control and both restart checks passed. Final scorecard, exact legitimate management changes, source receipt state and the preserved measurement-helper correction are in FINAL-REPORT.md. Independent acceptance remains PENDING.

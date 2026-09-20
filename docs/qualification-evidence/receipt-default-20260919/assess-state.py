@@ -7,7 +7,9 @@ r=Path('/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911
 case,label=sys.argv[1:];d=r/'public'/case;b=d/'state-before';a=d/('state-'+label)
 def read(p):return json.loads(p.read_text())
 x=read(d/('inspection-'+label+'.json'));base=read(r/'public/R1/inspection-before.json')
-assert x['active']==base['active'] and x['draft']==base['draft'],'Read/Action changed'
+assert x['active']==base['active'],'Action changed'
+assert ('draft' in x)==('draft' in base),'Disabled draft presence changed'
+if 'draft' in x:assert x['draft']==base['draft'],'Disabled draft changed'
 assert x['execution']==base['execution'],'Execution configuration changed'
 assert not any(p['action_boundary_digest']==x['receipt']['action_digest'] for p in x['execution']['policies']),'Applicable execution authorization exists'
 old=read(b/'control_policy_active.json');new=read(a/'control_policy_active.json')

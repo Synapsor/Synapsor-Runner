@@ -1,0 +1,1232 @@
+{
+  "tree": "9ae3a71d4dd5aeac4121b24a6ef6f5ac7b799023cf10242aac79252530fca3ea",
+  "provider_calls": 0,
+  "independent_review": "PENDING",
+  "cases": [
+    {
+      "case": "R1",
+      "assessment": {
+        "case": "R1",
+        "label": "after",
+        "pass": true,
+        "all_tables_compared": 42,
+        "changed_tables": [
+          "control_policy_active",
+          "control_policy_deployments",
+          "control_policy_events",
+          "control_policy_revisions"
+        ],
+        "all_configs_unchanged": true,
+        "source_504_rows_unchanged": true,
+        "read_action_and_execution_unchanged": true,
+        "source_db_intent_unchanged": true,
+        "selection_current": true,
+        "receipt_epoch": 17,
+        "execution_applicable_to_current_action": false,
+        "retained_obsolete_execution_record": true
+      },
+      "schedules": [
+        {
+          "status": "completed",
+          "case": "R1",
+          "restart": false,
+          "exit": 0,
+          "keys_and_observations": [
+            {
+              "at": "2026-09-20T02:23:23.661785+00:00",
+              "observed": "ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:23:23.662009+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:23:23.662014+00:00",
+              "key": "\u001b[B",
+              "reason": "Select existing verified Action"
+            },
+            {
+              "at": "2026-09-20T02:23:23.717179+00:00",
+              "observed": "> Verified Action Boundary"
+            },
+            {
+              "at": "2026-09-20T02:23:23.717213+00:00",
+              "key": "\r",
+              "reason": "Inspect existing authority"
+            },
+            {
+              "at": "2026-09-20T02:23:23.841114+00:00",
+              "observed": "VERIFIED ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:23:23.841325+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:23:23.841328+00:00",
+              "key": "\u001b[B",
+              "reason": "Select Review supervised execution"
+            },
+            {
+              "at": "2026-09-20T02:23:23.895415+00:00",
+              "observed": "> Review supervised execution for release.seal_candidate"
+            },
+            {
+              "at": "2026-09-20T02:23:23.895442+00:00",
+              "key": "\r",
+              "reason": "Receipt/setup review only"
+            },
+            {
+              "at": "2026-09-20T02:23:24.001758+00:00",
+              "observed": "Select receipt storage for this outcome"
+            },
+            {
+              "at": "2026-09-20T02:23:24.001991+00:00",
+              "observed": "> Source database"
+            },
+            {
+              "at": "2026-09-20T02:23:24.002001+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:23:24.002702+00:00",
+              "key": "\r",
+              "reason": "Retain Source database intent for review"
+            },
+            {
+              "at": "2026-09-20T02:23:24.056715+00:00",
+              "observed": "Dedicated write connection variable"
+            },
+            {
+              "at": "2026-09-20T02:23:24.056750+00:00",
+              "observed": "[Esc Back]:"
+            },
+            {
+              "at": "2026-09-20T02:23:24.057151+00:00",
+              "key": "\r",
+              "reason": "Submit displayed text default"
+            },
+            {
+              "at": "2026-09-20T02:23:24.109039+00:00",
+              "observed": "Source receipt schema"
+            },
+            {
+              "at": "2026-09-20T02:23:24.109058+00:00",
+              "observed": "[Esc Back]:"
+            },
+            {
+              "at": "2026-09-20T02:23:24.109268+00:00",
+              "key": "\r",
+              "reason": "Submit displayed text default"
+            },
+            {
+              "at": "2026-09-20T02:23:24.160320+00:00",
+              "observed": "Source receipt table"
+            },
+            {
+              "at": "2026-09-20T02:23:24.160346+00:00",
+              "observed": "[Esc Back]:"
+            },
+            {
+              "at": "2026-09-20T02:23:24.160578+00:00",
+              "key": "\r",
+              "reason": "Submit displayed text default"
+            },
+            {
+              "at": "2026-09-20T02:23:24.256771+00:00",
+              "observed": "Save this exact receipt setup selection?"
+            },
+            {
+              "at": "2026-09-20T02:23:24.256803+00:00",
+              "observed": "> No"
+            },
+            {
+              "at": "2026-09-20T02:23:24.256814+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:23:24.257128+00:00",
+              "key": "\u001b[A",
+              "reason": "Select Yes for exact receipt selection only"
+            },
+            {
+              "at": "2026-09-20T02:23:24.309678+00:00",
+              "observed": "> Yes"
+            },
+            {
+              "at": "2026-09-20T02:23:24.309702+00:00",
+              "observed": "Save this exact receipt setup selection?"
+            },
+            {
+              "at": "2026-09-20T02:23:24.309704+00:00",
+              "key": "\r",
+              "reason": "Explicitly save selected receipt intent"
+            },
+            {
+              "at": "2026-09-20T02:23:24.430399+00:00",
+              "observed": "Check your write connection"
+            },
+            {
+              "at": "2026-09-20T02:23:24.430427+00:00",
+              "observed": "> Check the configured write connection"
+            },
+            {
+              "at": "2026-09-20T02:23:24.430435+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:23:24.430440+00:00",
+              "key": "\r",
+              "reason": "Run verifier only"
+            },
+            {
+              "at": "2026-09-20T02:23:24.645288+00:00",
+              "observed": "Writer verification: PASSED"
+            },
+            {
+              "at": "2026-09-20T02:23:24.645336+00:00",
+              "observed": "Receipt probe: PASSED, rolled back"
+            },
+            {
+              "at": "2026-09-20T02:23:24.645581+00:00",
+              "observed": "> No"
+            },
+            {
+              "at": "2026-09-20T02:23:24.645608+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:23:24.646037+00:00",
+              "key": "\r",
+              "reason": "Decline execution with unchanged default No"
+            },
+            {
+              "at": "2026-09-20T02:23:24.699697+00:00",
+              "observed": "VERIFIED ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:23:24.699947+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:23:24.699959+00:00",
+              "key": "\u001b",
+              "reason": "Back from verified Action menu"
+            },
+            {
+              "at": "2026-09-20T02:23:25.284737+00:00",
+              "observed": "ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:23:25.284773+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:23:25.284778+00:00",
+              "key": "q",
+              "reason": "Quit without any operation"
+            }
+          ],
+          "provider_calls": 0
+        },
+        {
+          "status": "completed",
+          "case": "R1",
+          "restart": true,
+          "exit": 0,
+          "keys_and_observations": [
+            {
+              "at": "2026-09-20T02:25:46.787114+00:00",
+              "observed": "ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:25:46.787330+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:25:46.787336+00:00",
+              "key": "\u001b[B",
+              "reason": "Select existing verified Action"
+            },
+            {
+              "at": "2026-09-20T02:25:46.839124+00:00",
+              "observed": "> Verified Action Boundary"
+            },
+            {
+              "at": "2026-09-20T02:25:46.839143+00:00",
+              "key": "\r",
+              "reason": "Inspect existing authority"
+            },
+            {
+              "at": "2026-09-20T02:25:46.961119+00:00",
+              "observed": "VERIFIED ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:25:46.961543+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:25:46.961564+00:00",
+              "key": "\u001b[B",
+              "reason": "Select Review supervised execution"
+            },
+            {
+              "at": "2026-09-20T02:25:47.013533+00:00",
+              "observed": "> Review supervised execution for release.seal_candidate"
+            },
+            {
+              "at": "2026-09-20T02:25:47.013551+00:00",
+              "key": "\r",
+              "reason": "Receipt/setup review only"
+            },
+            {
+              "at": "2026-09-20T02:25:47.101054+00:00",
+              "observed": "Review saved receipt setup"
+            },
+            {
+              "at": "2026-09-20T02:25:47.101274+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:25:47.101862+00:00",
+              "key": "\u001b",
+              "reason": "Cancel selection menu without saving"
+            },
+            {
+              "at": "2026-09-20T02:25:47.656971+00:00",
+              "observed": "VERIFIED ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:25:47.657175+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:25:47.657180+00:00",
+              "key": "\u001b",
+              "reason": "Back from verified Action menu"
+            },
+            {
+              "at": "2026-09-20T02:25:48.241557+00:00",
+              "observed": "ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:25:48.241759+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:25:48.241763+00:00",
+              "key": "q",
+              "reason": "Quit without any operation"
+            }
+          ],
+          "provider_calls": 0
+        }
+      ]
+    },
+    {
+      "case": "R2-writer",
+      "assessment": {
+        "case": "R2-writer",
+        "label": "after",
+        "pass": true,
+        "all_tables_compared": 42,
+        "changed_tables": [],
+        "all_configs_unchanged": true,
+        "source_504_rows_unchanged": true,
+        "read_action_and_execution_unchanged": true,
+        "source_db_intent_unchanged": true,
+        "selection_current": false,
+        "receipt_epoch": 16,
+        "execution_applicable_to_current_action": false,
+        "retained_obsolete_execution_record": true
+      },
+      "schedules": [
+        {
+          "status": "completed",
+          "case": "R2-writer",
+          "restart": false,
+          "exit": 0,
+          "keys_and_observations": [
+            {
+              "at": "2026-09-20T02:23:56.815577+00:00",
+              "observed": "ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:23:56.815798+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:23:56.815804+00:00",
+              "key": "\u001b[B",
+              "reason": "Select existing verified Action"
+            },
+            {
+              "at": "2026-09-20T02:23:56.871645+00:00",
+              "observed": "> Verified Action Boundary"
+            },
+            {
+              "at": "2026-09-20T02:23:56.871688+00:00",
+              "key": "\r",
+              "reason": "Inspect existing authority"
+            },
+            {
+              "at": "2026-09-20T02:23:57.008174+00:00",
+              "observed": "VERIFIED ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:23:57.008420+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:23:57.008428+00:00",
+              "key": "\u001b[B",
+              "reason": "Select Review supervised execution"
+            },
+            {
+              "at": "2026-09-20T02:23:57.062075+00:00",
+              "observed": "> Review supervised execution for release.seal_candidate"
+            },
+            {
+              "at": "2026-09-20T02:23:57.062112+00:00",
+              "key": "\r",
+              "reason": "Receipt/setup review only"
+            },
+            {
+              "at": "2026-09-20T02:23:57.177039+00:00",
+              "observed": "Select receipt storage for this outcome"
+            },
+            {
+              "at": "2026-09-20T02:23:57.177070+00:00",
+              "observed": "> Source database"
+            },
+            {
+              "at": "2026-09-20T02:23:57.177079+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:23:57.177702+00:00",
+              "key": "\r",
+              "reason": "Retain Source database intent for review"
+            },
+            {
+              "at": "2026-09-20T02:23:57.232950+00:00",
+              "observed": "Dedicated write connection variable"
+            },
+            {
+              "at": "2026-09-20T02:23:57.232991+00:00",
+              "observed": "[Esc Back]:"
+            },
+            {
+              "at": "2026-09-20T02:23:57.233360+00:00",
+              "key": "\u001b",
+              "reason": "Cancel this text prompt"
+            },
+            {
+              "at": "2026-09-20T02:23:57.789259+00:00",
+              "observed": "VERIFIED ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:23:57.789458+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:23:57.789466+00:00",
+              "key": "\u001b",
+              "reason": "Back from verified Action menu"
+            },
+            {
+              "at": "2026-09-20T02:23:58.394544+00:00",
+              "observed": "ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:23:58.394771+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:23:58.394775+00:00",
+              "key": "q",
+              "reason": "Quit without any operation"
+            }
+          ],
+          "provider_calls": 0
+        }
+      ]
+    },
+    {
+      "case": "R2-schema",
+      "assessment": {
+        "case": "R2-schema",
+        "label": "after",
+        "pass": true,
+        "all_tables_compared": 42,
+        "changed_tables": [],
+        "all_configs_unchanged": true,
+        "source_504_rows_unchanged": true,
+        "read_action_and_execution_unchanged": true,
+        "source_db_intent_unchanged": true,
+        "selection_current": false,
+        "receipt_epoch": 16,
+        "execution_applicable_to_current_action": false,
+        "retained_obsolete_execution_record": true
+      },
+      "schedules": [
+        {
+          "status": "completed",
+          "case": "R2-schema",
+          "restart": false,
+          "exit": 0,
+          "keys_and_observations": [
+            {
+              "at": "2026-09-20T02:24:34.313363+00:00",
+              "observed": "ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:24:34.313640+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:24:34.313655+00:00",
+              "key": "\u001b[B",
+              "reason": "Select existing verified Action"
+            },
+            {
+              "at": "2026-09-20T02:24:34.366475+00:00",
+              "observed": "> Verified Action Boundary"
+            },
+            {
+              "at": "2026-09-20T02:24:34.366494+00:00",
+              "key": "\r",
+              "reason": "Inspect existing authority"
+            },
+            {
+              "at": "2026-09-20T02:24:34.480646+00:00",
+              "observed": "VERIFIED ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:24:34.480858+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:24:34.480861+00:00",
+              "key": "\u001b[B",
+              "reason": "Select Review supervised execution"
+            },
+            {
+              "at": "2026-09-20T02:24:34.532644+00:00",
+              "observed": "> Review supervised execution for release.seal_candidate"
+            },
+            {
+              "at": "2026-09-20T02:24:34.532671+00:00",
+              "key": "\r",
+              "reason": "Receipt/setup review only"
+            },
+            {
+              "at": "2026-09-20T02:24:34.617004+00:00",
+              "observed": "Select receipt storage for this outcome"
+            },
+            {
+              "at": "2026-09-20T02:24:34.617047+00:00",
+              "observed": "> Source database"
+            },
+            {
+              "at": "2026-09-20T02:24:34.617064+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:24:34.617988+00:00",
+              "key": "\r",
+              "reason": "Retain Source database intent for review"
+            },
+            {
+              "at": "2026-09-20T02:24:34.670091+00:00",
+              "observed": "Dedicated write connection variable"
+            },
+            {
+              "at": "2026-09-20T02:24:34.670138+00:00",
+              "observed": "[Esc Back]:"
+            },
+            {
+              "at": "2026-09-20T02:24:34.670509+00:00",
+              "key": "\r",
+              "reason": "Submit displayed text default"
+            },
+            {
+              "at": "2026-09-20T02:24:34.722426+00:00",
+              "observed": "Source receipt schema"
+            },
+            {
+              "at": "2026-09-20T02:24:34.722461+00:00",
+              "observed": "[Esc Back]:"
+            },
+            {
+              "at": "2026-09-20T02:24:34.722819+00:00",
+              "key": "\u001b",
+              "reason": "Cancel this text prompt"
+            },
+            {
+              "at": "2026-09-20T02:24:35.277203+00:00",
+              "observed": "VERIFIED ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:24:35.277242+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:24:35.277251+00:00",
+              "key": "\u001b",
+              "reason": "Back from verified Action menu"
+            },
+            {
+              "at": "2026-09-20T02:24:35.860052+00:00",
+              "observed": "ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:24:35.860308+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:24:35.860316+00:00",
+              "key": "q",
+              "reason": "Quit without any operation"
+            }
+          ],
+          "provider_calls": 0
+        },
+        {
+          "status": "completed",
+          "case": "R2-schema",
+          "restart": true,
+          "exit": 0,
+          "keys_and_observations": [
+            {
+              "at": "2026-09-20T02:26:05.579856+00:00",
+              "observed": "ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:26:05.580117+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:26:05.580128+00:00",
+              "key": "\u001b[B",
+              "reason": "Select existing verified Action"
+            },
+            {
+              "at": "2026-09-20T02:26:05.631853+00:00",
+              "observed": "> Verified Action Boundary"
+            },
+            {
+              "at": "2026-09-20T02:26:05.631869+00:00",
+              "key": "\r",
+              "reason": "Inspect existing authority"
+            },
+            {
+              "at": "2026-09-20T02:26:05.741231+00:00",
+              "observed": "VERIFIED ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:26:05.741282+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:26:05.741289+00:00",
+              "key": "\u001b[B",
+              "reason": "Select Review supervised execution"
+            },
+            {
+              "at": "2026-09-20T02:26:05.792967+00:00",
+              "observed": "> Review supervised execution for release.seal_candidate"
+            },
+            {
+              "at": "2026-09-20T02:26:05.792985+00:00",
+              "key": "\r",
+              "reason": "Receipt/setup review only"
+            },
+            {
+              "at": "2026-09-20T02:26:05.877323+00:00",
+              "observed": "Select receipt storage for this outcome"
+            },
+            {
+              "at": "2026-09-20T02:26:05.877576+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:26:05.878514+00:00",
+              "key": "\u001b",
+              "reason": "Cancel selection menu without saving"
+            },
+            {
+              "at": "2026-09-20T02:26:06.441183+00:00",
+              "observed": "VERIFIED ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:26:06.441450+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:26:06.441466+00:00",
+              "key": "\u001b",
+              "reason": "Back from verified Action menu"
+            },
+            {
+              "at": "2026-09-20T02:26:07.036494+00:00",
+              "observed": "ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:26:07.036729+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:26:07.036736+00:00",
+              "key": "q",
+              "reason": "Quit without any operation"
+            }
+          ],
+          "provider_calls": 0
+        }
+      ]
+    },
+    {
+      "case": "R2-table",
+      "assessment": {
+        "case": "R2-table",
+        "label": "after",
+        "pass": true,
+        "all_tables_compared": 42,
+        "changed_tables": [],
+        "all_configs_unchanged": true,
+        "source_504_rows_unchanged": true,
+        "read_action_and_execution_unchanged": true,
+        "source_db_intent_unchanged": true,
+        "selection_current": false,
+        "receipt_epoch": 16,
+        "execution_applicable_to_current_action": false,
+        "retained_obsolete_execution_record": true
+      },
+      "schedules": [
+        {
+          "status": "completed",
+          "case": "R2-table",
+          "restart": false,
+          "exit": 0,
+          "keys_and_observations": [
+            {
+              "at": "2026-09-20T02:24:50.764694+00:00",
+              "observed": "ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:24:50.765231+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:24:50.765243+00:00",
+              "key": "\u001b[B",
+              "reason": "Select existing verified Action"
+            },
+            {
+              "at": "2026-09-20T02:24:50.817455+00:00",
+              "observed": "> Verified Action Boundary"
+            },
+            {
+              "at": "2026-09-20T02:24:50.817468+00:00",
+              "key": "\r",
+              "reason": "Inspect existing authority"
+            },
+            {
+              "at": "2026-09-20T02:24:50.929510+00:00",
+              "observed": "VERIFIED ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:24:50.929761+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:24:50.929769+00:00",
+              "key": "\u001b[B",
+              "reason": "Select Review supervised execution"
+            },
+            {
+              "at": "2026-09-20T02:24:50.981268+00:00",
+              "observed": "> Review supervised execution for release.seal_candidate"
+            },
+            {
+              "at": "2026-09-20T02:24:50.981280+00:00",
+              "key": "\r",
+              "reason": "Receipt/setup review only"
+            },
+            {
+              "at": "2026-09-20T02:24:51.066429+00:00",
+              "observed": "Select receipt storage for this outcome"
+            },
+            {
+              "at": "2026-09-20T02:24:51.066705+00:00",
+              "observed": "> Source database"
+            },
+            {
+              "at": "2026-09-20T02:24:51.066731+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:24:51.067530+00:00",
+              "key": "\r",
+              "reason": "Retain Source database intent for review"
+            },
+            {
+              "at": "2026-09-20T02:24:51.119717+00:00",
+              "observed": "Dedicated write connection variable"
+            },
+            {
+              "at": "2026-09-20T02:24:51.119741+00:00",
+              "observed": "[Esc Back]:"
+            },
+            {
+              "at": "2026-09-20T02:24:51.119987+00:00",
+              "key": "\r",
+              "reason": "Submit displayed text default"
+            },
+            {
+              "at": "2026-09-20T02:24:51.172267+00:00",
+              "observed": "Source receipt schema"
+            },
+            {
+              "at": "2026-09-20T02:24:51.172302+00:00",
+              "observed": "[Esc Back]:"
+            },
+            {
+              "at": "2026-09-20T02:24:51.172665+00:00",
+              "key": "\r",
+              "reason": "Submit displayed text default"
+            },
+            {
+              "at": "2026-09-20T02:24:51.224043+00:00",
+              "observed": "Source receipt table"
+            },
+            {
+              "at": "2026-09-20T02:24:51.224079+00:00",
+              "observed": "[Esc Back]:"
+            },
+            {
+              "at": "2026-09-20T02:24:51.224453+00:00",
+              "key": "\u001b",
+              "reason": "Cancel this text prompt"
+            },
+            {
+              "at": "2026-09-20T02:24:51.780891+00:00",
+              "observed": "VERIFIED ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:24:51.781099+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:24:51.781111+00:00",
+              "key": "\u001b",
+              "reason": "Back from verified Action menu"
+            },
+            {
+              "at": "2026-09-20T02:24:52.364334+00:00",
+              "observed": "ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:24:52.364547+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:24:52.364551+00:00",
+              "key": "q",
+              "reason": "Quit without any operation"
+            }
+          ],
+          "provider_calls": 0
+        }
+      ]
+    },
+    {
+      "case": "R2-review",
+      "assessment": {
+        "case": "R2-review",
+        "label": "after",
+        "pass": true,
+        "all_tables_compared": 42,
+        "changed_tables": [],
+        "all_configs_unchanged": true,
+        "source_504_rows_unchanged": true,
+        "read_action_and_execution_unchanged": true,
+        "source_db_intent_unchanged": true,
+        "selection_current": false,
+        "receipt_epoch": 16,
+        "execution_applicable_to_current_action": false,
+        "retained_obsolete_execution_record": true
+      },
+      "schedules": [
+        {
+          "status": "completed",
+          "case": "R2-review",
+          "restart": false,
+          "exit": 0,
+          "keys_and_observations": [
+            {
+              "at": "2026-09-20T02:25:09.571156+00:00",
+              "observed": "ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:25:09.571454+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:25:09.571468+00:00",
+              "key": "\u001b[B",
+              "reason": "Select existing verified Action"
+            },
+            {
+              "at": "2026-09-20T02:25:09.623242+00:00",
+              "observed": "> Verified Action Boundary"
+            },
+            {
+              "at": "2026-09-20T02:25:09.623267+00:00",
+              "key": "\r",
+              "reason": "Inspect existing authority"
+            },
+            {
+              "at": "2026-09-20T02:25:09.755596+00:00",
+              "observed": "VERIFIED ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:25:09.756064+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:25:09.756075+00:00",
+              "key": "\u001b[B",
+              "reason": "Select Review supervised execution"
+            },
+            {
+              "at": "2026-09-20T02:25:09.808322+00:00",
+              "observed": "> Review supervised execution for release.seal_candidate"
+            },
+            {
+              "at": "2026-09-20T02:25:09.808341+00:00",
+              "key": "\r",
+              "reason": "Receipt/setup review only"
+            },
+            {
+              "at": "2026-09-20T02:25:09.899584+00:00",
+              "observed": "Select receipt storage for this outcome"
+            },
+            {
+              "at": "2026-09-20T02:25:09.899838+00:00",
+              "observed": "> Source database"
+            },
+            {
+              "at": "2026-09-20T02:25:09.899860+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:25:09.900738+00:00",
+              "key": "\r",
+              "reason": "Retain Source database intent for review"
+            },
+            {
+              "at": "2026-09-20T02:25:09.954771+00:00",
+              "observed": "Dedicated write connection variable"
+            },
+            {
+              "at": "2026-09-20T02:25:09.954808+00:00",
+              "observed": "[Esc Back]:"
+            },
+            {
+              "at": "2026-09-20T02:25:09.955164+00:00",
+              "key": "\r",
+              "reason": "Submit displayed text default"
+            },
+            {
+              "at": "2026-09-20T02:25:10.007539+00:00",
+              "observed": "Source receipt schema"
+            },
+            {
+              "at": "2026-09-20T02:25:10.007575+00:00",
+              "observed": "[Esc Back]:"
+            },
+            {
+              "at": "2026-09-20T02:25:10.007935+00:00",
+              "key": "\r",
+              "reason": "Submit displayed text default"
+            },
+            {
+              "at": "2026-09-20T02:25:10.059067+00:00",
+              "observed": "Source receipt table"
+            },
+            {
+              "at": "2026-09-20T02:25:10.059108+00:00",
+              "observed": "[Esc Back]:"
+            },
+            {
+              "at": "2026-09-20T02:25:10.059445+00:00",
+              "key": "\r",
+              "reason": "Submit displayed text default"
+            },
+            {
+              "at": "2026-09-20T02:25:10.159470+00:00",
+              "observed": "Save this exact receipt setup selection?"
+            },
+            {
+              "at": "2026-09-20T02:25:10.159513+00:00",
+              "observed": "> No"
+            },
+            {
+              "at": "2026-09-20T02:25:10.159531+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:25:10.159903+00:00",
+              "key": "\u001b",
+              "reason": "Cancel exact selection review"
+            },
+            {
+              "at": "2026-09-20T02:25:10.714417+00:00",
+              "observed": "VERIFIED ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:25:10.714663+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:25:10.714674+00:00",
+              "key": "\u001b",
+              "reason": "Back from verified Action menu"
+            },
+            {
+              "at": "2026-09-20T02:25:11.297798+00:00",
+              "observed": "ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:25:11.298026+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:25:11.298033+00:00",
+              "key": "q",
+              "reason": "Quit without any operation"
+            }
+          ],
+          "provider_calls": 0
+        }
+      ]
+    },
+    {
+      "case": "R3",
+      "assessment": {
+        "case": "R3",
+        "label": "after",
+        "pass": true,
+        "all_tables_compared": 42,
+        "changed_tables": [
+          "control_policy_active",
+          "control_policy_deployments",
+          "control_policy_events",
+          "control_policy_revisions"
+        ],
+        "all_configs_unchanged": true,
+        "source_504_rows_unchanged": true,
+        "read_action_and_execution_unchanged": true,
+        "source_db_intent_unchanged": true,
+        "selection_current": true,
+        "receipt_epoch": 17,
+        "execution_applicable_to_current_action": false,
+        "retained_obsolete_execution_record": true
+      },
+      "schedules": [
+        {
+          "status": "completed",
+          "case": "R3",
+          "restart": false,
+          "exit": 0,
+          "keys_and_observations": [
+            {
+              "at": "2026-09-20T02:25:28.291403+00:00",
+              "observed": "ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:25:28.291697+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:25:28.291714+00:00",
+              "key": "\u001b[B",
+              "reason": "Select existing verified Action"
+            },
+            {
+              "at": "2026-09-20T02:25:28.343554+00:00",
+              "observed": "> Verified Action Boundary"
+            },
+            {
+              "at": "2026-09-20T02:25:28.343575+00:00",
+              "key": "\r",
+              "reason": "Inspect existing authority"
+            },
+            {
+              "at": "2026-09-20T02:25:28.460911+00:00",
+              "observed": "VERIFIED ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:25:28.461170+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:25:28.461182+00:00",
+              "key": "\u001b[B",
+              "reason": "Select Review supervised execution"
+            },
+            {
+              "at": "2026-09-20T02:25:28.512757+00:00",
+              "observed": "> Review supervised execution for release.seal_candidate"
+            },
+            {
+              "at": "2026-09-20T02:25:28.512773+00:00",
+              "key": "\r",
+              "reason": "Receipt/setup review only"
+            },
+            {
+              "at": "2026-09-20T02:25:28.598439+00:00",
+              "observed": "Select receipt storage for this outcome"
+            },
+            {
+              "at": "2026-09-20T02:25:28.598654+00:00",
+              "observed": "> Source database"
+            },
+            {
+              "at": "2026-09-20T02:25:28.598664+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:25:28.599355+00:00",
+              "key": "\r",
+              "reason": "Retain Source database intent for review"
+            },
+            {
+              "at": "2026-09-20T02:25:28.651582+00:00",
+              "observed": "Dedicated write connection variable"
+            },
+            {
+              "at": "2026-09-20T02:25:28.651620+00:00",
+              "observed": "[Esc Back]:"
+            },
+            {
+              "at": "2026-09-20T02:25:28.651972+00:00",
+              "key": "\r",
+              "reason": "Submit displayed text default"
+            },
+            {
+              "at": "2026-09-20T02:25:28.704161+00:00",
+              "observed": "Source receipt schema"
+            },
+            {
+              "at": "2026-09-20T02:25:28.704205+00:00",
+              "observed": "[Esc Back]:"
+            },
+            {
+              "at": "2026-09-20T02:25:28.704584+00:00",
+              "key": "\r",
+              "reason": "Submit displayed text default"
+            },
+            {
+              "at": "2026-09-20T02:25:28.755676+00:00",
+              "observed": "Source receipt table"
+            },
+            {
+              "at": "2026-09-20T02:25:28.755712+00:00",
+              "observed": "[Esc Back]:"
+            },
+            {
+              "at": "2026-09-20T02:25:28.756076+00:00",
+              "key": "\r",
+              "reason": "Submit displayed text default"
+            },
+            {
+              "at": "2026-09-20T02:25:28.857199+00:00",
+              "observed": "Save this exact receipt setup selection?"
+            },
+            {
+              "at": "2026-09-20T02:25:28.857245+00:00",
+              "observed": "> No"
+            },
+            {
+              "at": "2026-09-20T02:25:28.857264+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:25:28.857668+00:00",
+              "key": "\u001b[A",
+              "reason": "Select Yes for exact receipt selection only"
+            },
+            {
+              "at": "2026-09-20T02:25:28.909186+00:00",
+              "observed": "> Yes"
+            },
+            {
+              "at": "2026-09-20T02:25:28.909227+00:00",
+              "observed": "Save this exact receipt setup selection?"
+            },
+            {
+              "at": "2026-09-20T02:25:28.909234+00:00",
+              "key": "\r",
+              "reason": "Explicitly save selected receipt intent"
+            },
+            {
+              "at": "2026-09-20T02:25:29.020198+00:00",
+              "observed": "Check your write connection"
+            },
+            {
+              "at": "2026-09-20T02:25:29.020227+00:00",
+              "observed": "> Check the configured write connection"
+            },
+            {
+              "at": "2026-09-20T02:25:29.020236+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:25:29.020238+00:00",
+              "key": "\r",
+              "reason": "Run verifier only"
+            },
+            {
+              "at": "2026-09-20T02:25:29.143745+00:00",
+              "observed": "Execution needs a deployment fix"
+            },
+            {
+              "at": "2026-09-20T02:25:29.143779+00:00",
+              "observed": "Diagnostic: SEMANTIC_ACTION_WRITER_POSTURE_INVALID"
+            },
+            {
+              "at": "2026-09-20T02:25:29.143791+00:00",
+              "observed": "> Save and pause this outcome's execution setup"
+            },
+            {
+              "at": "2026-09-20T02:25:29.143804+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:25:29.144108+00:00",
+              "key": "\r",
+              "reason": "Pause blocked setup without changing authorization"
+            },
+            {
+              "at": "2026-09-20T02:25:29.227330+00:00",
+              "observed": "ACTION BOUNDARY"
+            },
+            {
+              "at": "2026-09-20T02:25:29.227529+00:00",
+              "observed": "Up/Down Navigate   Enter Select   Esc Back"
+            },
+            {
+              "at": "2026-09-20T02:25:29.227533+00:00",
+              "key": "q",
+              "reason": "Quit"
+            }
+          ],
+          "provider_calls": 0
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+{
+  "case": "R1",
+  "exit": 1,
+  "error": "KeyError: draft",
+  "cause": "Host oracle omits undefined draft: neither before nor after has a disabled draft key. Generic preservation comparison already passed. No application command rerun.",
+  "script_before_sha256": "882a2ed173e0cce79dfb4bad8ca538d41fcd57c73f663d83c61f91a4a55a032c",
+  "correction": "Require matching key presence; compare draft only if present. Preserve absent draft as an explicit condition; active authority and all pointers still compared."
+}

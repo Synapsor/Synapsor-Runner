@@ -1,0 +1,11 @@
+{
+  "completed_at": "2026-09-20T02:27:07.246004+00:00",
+  "owned_tag": "receipt-default-feecc2b-20260919",
+  "container_id": "a70fc7c589bacb493fd40c435e5de3502f9c0de2514d6d64d558a7064b1327a8",
+  "saved_manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-default-feecc2b-20260919/saved-final/manifest.json",
+  "stop_exit": 0,
+  "remove_exit": 0,
+  "container_absent": true,
+  "source_receipts": 0,
+  "worker_started": false
+}
