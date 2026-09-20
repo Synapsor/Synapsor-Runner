@@ -65,7 +65,7 @@ const config: RuntimeConfig = {
 };
 
 describe("composed semantic Action runtime", () => {
-  it.each(["available", "ineligible", "removed"] as const)("fresh reference after closed no-effect history uses current %s authority/facts; old replay stays old (derived lifecycle fixture)", async mode => {
+  it.each(["available", "ineligible", "removed", "unclosed_legacy"] as const)("fresh reference with %s no-effect history uses current authority/facts; old replay stays old (derived lifecycle fixture)", async mode => {
     const f = await heldExecutionFixture({ sourceDb: true });
     try {
       const outcome = f.outcomes[0]!;
@@ -79,7 +79,7 @@ describe("composed semantic Action runtime", () => {
         receipt_authority: "source_db", status: "failed", affected_rows: 0, target_identity: [{ column: job.target.primary_key.column, value: job.target.primary_key.value! }],
         semantic_verification: { status: "refused", proof_digest: proof.proof_digest, action_rule_digest: proof.action_rule_digest,
           compiled_plan_digest: proof.compiled_plan_digest, proposal_dependency_set_digest: proof.dependency_set_digest, effect_digest: proof.derived_effect_digest },
-        error_code: "SEMANTIC_AUTHORITY_STALE", completed_at: new Date().toISOString() }, false), {
+        error_code: "SEMANTIC_AUTHORITY_STALE", completed_at: new Date().toISOString() }, false), mode === "unclosed_legacy" ? undefined : {
         producer: "synapsor.postgres.source_db.rollback.v1", outcome: "rollback_acknowledged", job_digest: canonicalJsonDigest(job),
         source_binding_digest: canonicalJsonDigest("derived-runtime-source"), observed_at: observed, required_roles: ["closure_operator"],
         execution_config_digest: executionBindingDigest(f.initial), writer_reference: "FIRST_WRITER", receipt_namespace: { schema: "billing", table: "synapsor_writeback_receipts" },
@@ -89,13 +89,14 @@ describe("composed semantic Action runtime", () => {
       if (mode === "removed") await f.removeAction(); // administrative close needs no active Action
       const identity = await closureFixtureIdentity(p, "worker_discard", blockedClosureDecisionReason(a.assessment_digest, reason));
       const oldApproval = f.store.approvals(p.proposal_id), oldReceipt = f.store.receipts(p.proposal_id);
-      expect(f.store.closeBlockedWorkerItem({ proposalId: p.proposal_id, assessment_digest: a.assessment_digest, reason, identity,
+      if (mode === "unclosed_legacy") expect(a).toMatchObject({ status: "unavailable", code: "BLOCKED_CLOSURE_PRODUCER_EVIDENCE_MISSING" });
+      else expect(f.store.closeBlockedWorkerItem({ proposalId: p.proposal_id, assessment_digest: a.assessment_digest, reason, identity,
         source: { assessment_digest: a.assessment_digest, source_binding_digest: a.source_binding_digest!, state: "absent" } })).toMatchObject({ status: "closed" });
       if (mode !== "removed") {
         expect(await f.request(outcome)).toMatchObject({ request_disposition: "already_recorded", proposal: { status: "failed" } });
       }
       f.changeFacts(mode !== "ineligible");
-      if (mode === "available") {
+      if (mode === "available" || mode === "unclosed_legacy") {
         expect(await f.request(outcome, true)).toMatchObject({ proposal: { status: "approved" } });
         expect(f.store.listProposals()).toHaveLength(2);
         const fresh = f.store.listProposals().find(x => x.proposal_id !== p.proposal_id)!;
@@ -107,7 +108,7 @@ describe("composed semantic Action runtime", () => {
         expect(f.store.listProposals()).toHaveLength(1);
       }
       expect(f.store.approvals(p.proposal_id)).toEqual(oldApproval); expect(f.store.receipts(p.proposal_id)).toEqual(oldReceipt);
-      expect(f.store.getWorkerQueueItem(p.proposal_id)).toMatchObject({ status: "discarded", attempts: 1 });
+      expect(f.store.getWorkerQueueItem(p.proposal_id)).toMatchObject({ status: mode === "unclosed_legacy" ? "blocked" : "discarded", attempts: 1 });
     } finally { await f.close(); }
   });
 

@@ -88,6 +88,15 @@ async function closure(store: ProposalStore, f: Awaited<ReturnType<typeof blocke
 function snapshot(store: ProposalStore) { return store.sharedLedgerEntries(); }
 
 describe("producer-attested blocked closure (derived store evidence, signed operators)", () => {
+  it("does not declare unavailable work closed, failed or unable to retry in the preview", async () => {
+    const s = new ProposalStore(); try {
+      const f = await blocked(s);
+      const lines = blockedClosureLines(s.assessBlockedWorkerClosure(f.proposal.proposal_id)).join("\n");
+      expect(lines).toContain("No closure performed. Existing proposal, receipt and worker state are unchanged.");
+      expect(lines).not.toContain("Old work will never retry.");
+      expect(lines).not.toContain("original proposal and failed receipt stay failed.");
+    } finally { s.close(); }
+  });
   it("refuses legacy W2-shaped evidence instead of interpreting zero rows/safe code as rollback proof", async () => {
     const s = new ProposalStore(); try {
       const f = await blocked(s);

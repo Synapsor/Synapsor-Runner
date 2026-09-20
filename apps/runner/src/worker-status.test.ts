@@ -88,7 +88,9 @@ describe("status scope and attempt facts", () => {
       expect(state("completed").attempt_status).toMatchObject({ attempts_completed: 1, automatic_retry_scheduled: false });
       expect(state("queued").attempt_status).toMatchObject({ attempts_completed: 0, automatic_retry_scheduled: false });
       expect(state("reconciliation_required").recovery).toContain("completion is not proven");
-      expect(state("blocked").recovery).toContain("recovery is not currently available");
+      expect(state("blocked").recovery).toContain("Preview worker close-blocked");
+      expect(state("blocked").recovery).toContain("only producer-proven no-effect work can close");
+      expect(state("blocked").recovery).toContain("Unknown outcomes require reconciliation");
       const filtered = JSON.parse(await output([...base, "--json", "--status", "blocked", "--limit", "1"]));
       expect(filtered.page.matching_total).toBe(1); expect(filtered.summary.blocked).toBe(1); expect(filtered.summary.queue_depth).toBe(0);
       const human = await output([...base, "--limit", "1"]);

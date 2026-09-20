@@ -50,11 +50,14 @@ export function blockedClosureLines(a: BlockedClosureAssessment): string[] {
     `Recorded failure: ${a.recorded_error ?? "unavailable"}`, `Closure: ${a.status} (${a.code})`,
     `Effect: ${a.status === "available" || a.status === "closed" ? "producer-proven whole-transaction rollback" : "not established for closure"}`,
     ...(a.receipt_hash ? [`Failed receipt: ${a.receipt_hash}`, `Producer event: ${a.producer_event_id}`] : []),
-    `Assessment: ${a.assessment_digest}`, "Result: worker discarded/closed; original proposal and failed receipt stay failed.",
-    "Old work will never retry. Closing does not undo a source change.",
-    "The approval remains counted until its normal window expires; no refund.",
+    `Assessment: ${a.assessment_digest}`, a.status === "available" ? "On confirmation: worker discarded/closed; proposal and receipt remain failed." :
+      a.status === "closed" ? "Already closed: worker discarded; original failed proposal and receipt retained." :
+      "No closure performed. Existing proposal, receipt and worker state are unchanged.",
+    "Closure permanently ends old work; it never undoes a source change.",
+    "Any automatic approval stays counted until its normal window expires; no refund.",
     "A fresh Explore reference and request are separate, subject to current rules and approval.",
     a.status === "available" ? "Default: cancel. Confirm only this exact assessment." :
+      a.status === "closed" ? "Next: inspect retained history, or get a fresh reference for a separate request." :
       "Next: inspect worker dead-letter show and the exact source outcome; do not retry uncertain work."];
 }
 
