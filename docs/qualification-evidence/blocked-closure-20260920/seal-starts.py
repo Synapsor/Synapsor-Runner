@@ -8,9 +8,15 @@ def sql(name,q):return subprocess.check_output(['docker','exec',cid,'psql','-U',
 manifest={'created_at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'provider_calls':0,'cases':{},'image':json.loads(subprocess.check_output(['docker','inspect',cid],text=True))[0]['Image']}
 for case in ['r0','r1','t0','t1']:
  d=r/'operational'/case;state=d/'state-pre-request';m=json.loads((state/'manifest.json').read_text());assert sum(x['rows'] for x in m['source'].values())==504
+ baseline=json.loads((d/'baseline-source.json').read_text())
+ for table,pk in [('build_candidates','candidate_id'),('build_checks','check_id'),('release_slots','slot_id')]:
+  rows=baseline[table];actual=json.loads((state/('source-'+table+'.json')).read_text());assert len(rows)==len(actual) and {x[pk]:x for x in rows}=={x[pk]:x for x in actual}, 'Preparation changed business facts: '+case+'/'+table
  for t in ['proposals','approvals','worker_queue','writeback_jobs','writeback_receipts','idempotency_receipts','writeback_intents']:
   assert m['tables'][t]['rows']==0,t
  assert all(v['rows']==0 for v in m['source_receipts'].values()) and len(m['source_receipts'])==1
+ config=json.loads((d/'project/synapsor.actions.runner.json').read_text());assert config['operator_identity']['provider']=='signed_key' and config['operator_identity']['apply_roles']==['recovery_operator']
+ assert stat.S_IMODE((d/'operator-private/recovery.pem').stat().st_mode)==0o600
+ assert not json.loads((d/'pre-request-worker-check.json').read_text())['issues']
  dest=out/case;dest.mkdir()
  subprocess.run(['tar','-czf',str(dest/'project.tgz'),'-C',str(d),'project','home'],check=True)
  subprocess.run(['tar','-czf',str(dest/'operator-private.tgz'),'-C',str(d),'operator-private'],check=True)

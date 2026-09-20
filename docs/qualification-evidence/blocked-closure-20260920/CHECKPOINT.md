@@ -39,3 +39,9 @@ Last four offline/package gates are running as attempt3 following its six passed
 ## 2026-09-20 08:27 UTC — package gates complete
 
 All ten offline checks passed (attempt3). Full suite/types/explicit PostgreSQL and SQLite contention exits remain zero. Next commit is evidence-only, then one complete immutable installation. Fresh public setup and final requests remain unexecuted.
+
+## 2026-09-20 08:35 UTC — frozen installation and four untouched starts
+
+Candidate tree fb6d6d923eb842b5bd2f17decb4b625a4b682b483d3a47aa510f96f8af6710a5, 7,569 entries, source checkpoint 5b39c6d6e83bb33d0777390379e20b0f5ea3f4b4, product/tests ae96fb0. Complete manifest SHA770a356f7af23a8a010b4129e2a75ed7a07040b637aab9ee9cc2eff4bb6bcca0. Four public model-free from-empty setup journeys completed; exact signed operator configured before authority reviews, separately activated Read/Action/execution, narrow generated writer/receipt grants, actual passed rolled-back receipt probes, local identity and own Read, worker check. Each retains all original504 rows and zero work/receipt records. Full source comparison keys rows by PK because original JSON order differs; measured order-only issue retained.
+
+Sealed manifest479a3117daf3fe0e64cc6a6b436babc7a51f14c68265842f2988a2c0da7e7744 under raw/sealed-starts,428entries. Matching dumps, roles, public setup, whole project/home and separate private synthetic key archives retained. Tester asked to validate restoration in new copies before final schedules. No request_change, finite worker, owner drift or business effect has run; zero providers. Final90-minute window not started. Next: tester prerequisite result, then exact R0/R1/R2 schedule.

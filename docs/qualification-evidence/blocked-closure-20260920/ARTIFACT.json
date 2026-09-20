@@ -1,0 +1,39 @@
+{
+  "frozen_at": "2026-09-20T08:27:25.015Z",
+  "purpose": "P1 producer-proven terminal no-effect closure; retained O2 launch preflight; fresh software R0/R1/R2",
+  "cases": [
+    "R0 missing writer then same request execution",
+    "R1 genuine stale refusal with producer evidence",
+    "R2 signed closure and separate ordinary fresh request"
+  ],
+  "product_commit": "ae96fb0b2556cb2b9465adfc796fee76389f2eb9",
+  "test_commit": "ae96fb0b2556cb2b9465adfc796fee76389f2eb9",
+  "report_commit": "recorded separately after verification",
+  "source_commit": "5b39c6d6e83bb33d0777390379e20b0f5ea3f4b4",
+  "source_status": "?? .claude/",
+  "unpackaged_unrelated_directory": ".claude/ (preserved, no contents read)",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/frozen/installed",
+  "installed_tree_sha256": "fb6d6d923eb842b5bd2f17decb4b625a4b682b483d3a47aa510f96f8af6710a5",
+  "node": {
+    "version": "v22.22.2",
+    "executable": "/usr/bin/node",
+    "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+  },
+  "runner_version": "1.8.0",
+  "spec_version": "1.11.0",
+  "package_lock_sha256": "177bf883a813fcd697c6d7cbfc4a3c78db37c5f9becbce9ed24309701cdadf50",
+  "tarballs": [
+    {
+      "name": "synapsor-runner-1.8.0.tgz",
+      "sha256": "4eb1f70771d4a2cf82eee7c93036b15d90397eb790eddcf2d1dfc5ac7431756d"
+    },
+    {
+      "name": "synapsor-spec-1.11.0.tgz",
+      "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+    }
+  ],
+  "entries": 7569,
+  "manifest_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/frozen/installed-artifact-manifest.json",
+  "manifest_sha256": "770a356f7af23a8a010b4129e2a75ed7a07040b637aab9ee9cc2eff4bb6bcca0",
+  "archive_sha256": "1d296b65f1800c4c25bbdfe7e177bdb5a1be44563cabc08194698f9687b648de"
+}
