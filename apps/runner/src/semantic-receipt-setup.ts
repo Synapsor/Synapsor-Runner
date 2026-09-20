@@ -91,6 +91,13 @@ export async function previewSemanticReceiptSelection(input: Parameters<typeof i
   const selection = selectionSchema.parse({ schema_version: "synapsor.semantic-receipt-selection.v1",
     project_id: setup.project_id, deployment_id: setup.deployment_id, outcome: setup.outcome,
     binding_digest: setup.binding_digest, write_url_env: input.writeUrlEnv, receipts: input.receipts });
+  if (setup.requirements.receipt_requirements?.includes("source_db") && selection.receipts.authority !== "source_db") {
+    fail("SEMANTIC_RECEIPT_REQUIREMENT_MISMATCH", "The current saved source requires a source-atomic receipt. Runner-ledger mode cannot satisfy it. Keep the source requirement and review Source database setup.");
+  }
+  if (setup.selection?.receipts.authority === "source_db" && selection.receipts.authority === "runner_ledger"
+    && !setup.requirements.receipt_requirements?.includes("runner_ledger")) {
+    fail("SEMANTIC_RECEIPT_GUARANTEE_REVIEW_REQUIRED", "The prior reviewed source-atomic receipt guarantee is retained. A weaker mode has no established compatible saved requirement; review that requirement separately instead of downgrading during a rule edit.");
+  }
   if (selection.receipts.authority === "source_db") {
     const relation = `${selection.receipts.schema}.${selection.receipts.table}`;
     const activeBinding = await openBoundProjectControlPolicies(setup.project_root, input.env);
@@ -144,7 +151,16 @@ export async function reviewSemanticReceiptSetup(input: {
   const setup = await inspectSemanticReceiptSetup(input);
   // Legacy file-managed execution already has an explicit configuration review.
   if (!setup || setup.epoch === undefined) return { writeUrlEnv: input.writeUrlEnv, reviewed: false };
-  const context = ["Receipt storage is a deployment requirement, not a public Read resource.",
+  const prior = setup.selection;
+  // Intent survives loss of verification freshness. Never substitute a weaker
+  // default merely because a reviewed replacement changed its binding.
+  const writerDefault = prior?.write_url_env ?? input.writeUrlEnv;
+  const sourceDefault = prior?.receipts.authority === "source_db" ? prior.receipts : undefined;
+  const context = [
+    ...(prior ? [`Prior reviewed intent: ${JSON.stringify(prior.receipts)}; writer reference: ${prior.write_url_env}.`,
+      setup.selection_current ? "Selection binding is current; this is not writer verification or execution permission."
+        : "Selection binding is stale. Review it explicitly for the current source/effect; fresh writer and receipt verification is required."] : ["No prior reviewed receipt selection exists."]),
+    "Receipt storage is a deployment requirement, not a public Read resource.",
     ...setup.requirements.passages,
     "Runner ledger records evidence outside the source transaction. Source database mode requires a precreated receipt relation in the same database transaction as the guarded effects.",
     "Selecting a mode changes no source objects, active execution configuration or business authority. Administrator setup and execution review remain separate."];
@@ -161,22 +177,22 @@ export async function reviewSemanticReceiptSetup(input: {
     { value: "runner_ledger", label: "Runner ledger", detail: "Receipt evidence in Runner; not atomic with the source transaction." },
     { value: "source_db", label: "Source database", detail: "Precreated receipt in the same source transaction; separate administrator provisioning required." },
     { value: "pause", label: "Set up later" },
-  ], { context, displayContext: true });
+  ], { initialValue: prior?.receipts.authority ?? "runner_ledger", context, displayContext: true });
   if (mode !== "runner_ledger" && mode !== "source_db") return undefined;
   const writer = await input.session.promptText("Dedicated write connection variable", {
-    context: [`Enter keeps ${input.writeUrlEnv}. Enter a variable name, never a URL. This reference is part of this exact review.`] });
+    context: [`Enter keeps ${writerDefault}. Enter a variable name, never a URL. This reference is part of this exact review.`] });
   if (writer === undefined) return undefined;
   let receipts: SemanticReceiptMode = { authority: "runner_ledger" };
   if (mode === "source_db") {
-    const schema = await input.session.promptText("Source receipt schema", { context: ["Enter keeps public. This must be in the same source database."] });
+    const schema = await input.session.promptText("Source receipt schema", { context: [`Enter keeps ${sourceDefault?.schema ?? "public"}. This must be in the same source database.`] });
     if (schema === undefined) return undefined;
-    const table = await input.session.promptText("Source receipt table", { context: ["Enter keeps synapsor_writeback_receipts. Do not select a business table."] });
+    const table = await input.session.promptText("Source receipt table", { context: [`Enter keeps ${sourceDefault?.table ?? "synapsor_writeback_receipts"}. Do not select a business table.`] });
     if (table === undefined) return undefined;
-    receipts = { authority: "source_db", provisioning: "precreated", schema: schema.trim() || "public", table: table.trim() || "synapsor_writeback_receipts" };
+    receipts = { authority: "source_db", provisioning: "precreated", schema: schema.trim() || sourceDefault?.schema || "public", table: table.trim() || sourceDefault?.table || "synapsor_writeback_receipts" };
   }
-  const proposal = { ...input, receipts, writeUrlEnv: writer.trim() || input.writeUrlEnv };
+  const proposal = { ...input, receipts, writeUrlEnv: writer.trim() || writerDefault };
   const preview = await previewSemanticReceiptSelection(proposal);
-  const confirmed = await input.session.confirm("Save this exact receipt setup selection?", { context: [
+  const confirmed = await input.session.confirm("Save this exact receipt setup selection?", { defaultValue: false, context: [
     ...context, `Outcome: ${preview.outcome}`, `Source: ${preview.source_name}`, `Selected mode: ${JSON.stringify(preview.selection.receipts)}`,
     `Writer reference: ${preview.selection.write_url_env}`, `Review: ${preview.digest}`,
     "Confirm that this mode satisfies the reviewed receipt requirement. Source-atomic requirements need Source database mode.",

@@ -1004,7 +1004,7 @@ describe("semantic Action Rule authority persistence", () => {
     await expect(fs.readFile(actionConfigPath, "utf8")).resolves.toBe(before);
   });
 
-  it("keeps proposal activation and supervised execution as two separate TUI confirmations", async () => {
+  it.each([false, true])("keeps proposal activation and supervised execution as two separate TUI confirmations (enable=%s)", async enable => {
     vi.spyOn(semanticDeployment, "verifySemanticExecutionReadPosture").mockResolvedValue(undefined);
     const root = await temporaryRoot();
     const readBoundary = activeReadBoundary();
@@ -1029,20 +1029,25 @@ describe("semantic Action Rule authority persistence", () => {
       draft,
       actor: "billing reviewer",
     })).activation;
+    const beforeExecution = await fs.readFile(path.join(root, "synapsor.actions.runner.json"), "utf8");
+    let visits = 0;
     const confirmations: string[] = [];
     const session: BoundaryReviewInteractiveSession = {
       chooseResource: async () => undefined,
       editFieldTiers: async () => "back",
       promptText: async () => "BILLING_WRITER_URL",
       confirm: async () => false,
-      confirmActivation: async (prompt) => {
+      confirmActivation: async (prompt, options) => {
+        expect(options?.context?.join("\n")).toContain("Writer verification: PASSED");
+        expect(options?.context?.join("\n")).toContain("Receipt probe: NOT RUN (Runner-ledger mode)");
+        expect(options?.context?.join("\n")).not.toContain("secret-writer-url");
         confirmations.push(prompt);
-        return true;
+        return enable;
       },
       chooseOption: async (title) => {
         if (title === "Set up database changes") return "choose";
         expect(title).toBe("VERIFIED ACTION BOUNDARY");
-        return "enable_execution:billing.pause_notifications";
+        return visits++ === 0 ? "enable_execution:billing.pause_notifications" : "back";
       },
     };
     const notice = await reviewVerifiedActionAuthority({
@@ -1056,6 +1061,11 @@ describe("semantic Action Rule authority persistence", () => {
     expect(confirmations).toEqual([
       "Enable supervised source execution for billing.pause_notifications?",
     ]);
+    if (!enable) {
+      expect(await fs.readFile(path.join(root, "synapsor.actions.runner.json"), "utf8")).toBe(beforeExecution);
+      expect((await readActionRuleAuthorityActivation(root))!.digest).toBe(active.digest);
+      return;
+    }
     expect(notice).toMatchObject({
       tone: "success",
       title: "Supervised execution enabled for this outcome.",

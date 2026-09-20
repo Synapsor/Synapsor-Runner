@@ -1,6 +1,7 @@
 import {
   ActionRuleError,
   actionRuleDiscoveryContract,
+  actionRulePublicEffects,
   actionRuleDiscoveryMetadata,
   snapshotActionRuleRegistry,
   evaluateSemanticActionEligibility,
@@ -653,7 +654,7 @@ async function semanticProposalResult(
     ...(completed ? { execution_receipt: { verified: true, status: "applied", source_database_changed: true } } : {}),
     result_summary: {
       description: humanizeOutcome(proposal.action),
-      change: `${effect.operation === "update" ? "Update" : "Insert"} one reviewed ${effect.target_resource} record using only the exact Runner-derived effect.`,
+      change: `Primary component: ${effect.operation === "update" ? "update" : "insert"} one reviewed ${effect.target_resource} record using only the exact Runner-derived effect.`,
       fields: effect.allowed_fields.map((field) => field.name),
       values_disclosed: false,
       ...(status === "completed"
@@ -679,6 +680,7 @@ async function semanticProposalResult(
     },
     execution,
     eligibility: "verified from current authoritative facts",
+    business_effects: actionRulePublicEffects(activated.compiled),
     exact_effect: "Runner-derived and sealed in the operator proposal record",
     source_database_changed: proposal.source_database_mutated,
     model_authority: {

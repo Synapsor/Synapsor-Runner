@@ -9081,7 +9081,8 @@ describe("boundary operator-plane CLI", () => {
       expect(revisionChat.streamCheckpoint).toHaveBeenCalledWith(
         "Runner-validated Action change",
         expect.arrayContaining([
-          "Editing maintenance.create_inspection_followup; INSERT public.maintenance_requests is unchanged.",
+          "Editing maintenance.create_inspection_followup; compare the complete proposed effects below.",
+          "primary: INSERT public.maintenance_requests [new record]; max_rows 1 for this component.",
           "Human-review quorum: 1 distinct maintenance_reviewer approval -> 2 distinct maintenance_reviewer approvals",
           "The prior active revision remains live until this disabled replacement is explicitly activated.",
         ]),

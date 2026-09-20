@@ -38,6 +38,9 @@ describe("guided execution recovery", () => {
     const input = { projectRoot: root, outcome: "inventory.replenish", activeReads: [], session, env: {},
       active: { authority: { rules: [], action_boundary: { digest: `sha256:${"a".repeat(64)}` } } } } as unknown as Parameters<typeof reviewSemanticSupervisedExecution>[0];
     vi.mocked(previewSemanticSupervisedExecution).mockResolvedValue({
+      source: "local_postgres", verification: { writer: { ok: true, fingerprint: `sha256:${"a".repeat(64)}`,
+        expected_fingerprint: null, reasons: [], allowed_relations: ["inventory.requests"], writable_relations: ["inventory.requests"] },
+        receipt_probe: "not_run_runner_ledger" },
       receipts: { authority: "runner_ledger" }, outcome: input.outcome, operation: "insert", target: "inventory.requests", writer_role: "bounded_writer",
       write_url_env: "SYNAPSOR_DATABASE_WRITE_URL", policy: { concurrency: 1, queue_limit: 10, max_attempts: 2,
         rate_limit: { executions: 10, window_seconds: 60 } },

@@ -1320,7 +1320,7 @@ export function createBoundaryAuthoringChat(input: {
       const answer = await read(`${label}${suffix}`, "runner");
       return answer === "" && options?.defaultValue ? options.defaultValue : answer;
     },
-    confirm: (label, defaultValue) => confirm(label, { defaultValue }),
+    confirm: (label, defaultValue, context) => confirm(label, { defaultValue, context }),
     message: async (title, lines) => {
       rememberDetails(title, lines);
       const modelRationale = lines.find((line) => /^Model rationale:/iu.test(line));

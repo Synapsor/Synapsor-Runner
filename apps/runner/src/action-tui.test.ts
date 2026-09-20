@@ -3,6 +3,7 @@ import type { ReadStream, WriteStream } from "node:tty";
 import { describe, expect, it, vi } from "vitest";
 import {
   actionAuthorityRevisionNeedsVersionAdvance,
+  boundarySessionForActionPrompter,
   actionHomeChoices,
   actionInspectionDatabaseUrlEnv,
   actionBoundaryActivationStatusLine,
@@ -2713,6 +2714,27 @@ describe("Safe Action terminal control plane", () => {
     await emitKey(terminal.input, { name: "enter", sequence: "\r" });
     await expect(selection).resolves.toBe("members");
     expect(terminal.input.isRaw).toBe(false);
+  });
+
+  it("carries actual review findings through the Action session to the first confirmation frame", async () => {
+    const terminal = fakeTerminal(100, 30);
+    const session = boundarySessionForActionPrompter(createTerminalActionPrompter(terminal.input, terminal.output));
+    const decision = session.confirmActivation!("Enable supervised source execution for release.seal_candidate?", { context: [
+      "Writer verification: PASSED — source local_postgres; reference REVIEWED_WRITER.",
+      "Receipt probe: PASSED, rolled back; no business execution or persisted receipt.",
+      "Remaining verification blockers: none in this check.",
+      "Current candidate: release.seal_candidate; exact bindings checked again on confirmation.",
+      "Worker liveness, business execution and independent readback: NOT RUN.",
+    ] });
+    await nextTurn();
+    const frame = stripAnsi(terminal.output.read()?.toString() ?? "");
+    await emitKey(terminal.input, { name: "enter", sequence: "\r" });
+    expect(await decision).toBe(false);
+    expect(frame).toContain("Writer verification: PASSED");
+    expect(frame).toContain("Receipt probe: PASSED, rolled back");
+    expect(frame).toContain("Remaining verification blockers: none");
+    expect(frame).toContain("> No");
+    expect(terminalFrameRows(frame)).toBeLessThanOrEqual(30);
   });
 
   it("highlights the declared safe default for confirmations and recommended choices", async () => {

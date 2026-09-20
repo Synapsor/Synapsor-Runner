@@ -1,3 +1,4 @@
+import { actionRuleEffectLines } from "@synapsor-runner/action-rules";
 import { actionRuleDisclosureReconciliation, actionRuleEditDifferenceLines } from "./action-rule-disclosure-review.js";
 import { readActivationImpact, readActivationImpactLines } from "./read-activation-impact.js";
 import { authoringReceiptConfiguration } from "./authoring-receipt-configuration.js";
@@ -11202,7 +11203,8 @@ function semanticActionRevisionDiffLines(
     changes.push(`Changed reviewed phase${changedPhases.length === 1 ? "" : "s"}: ${changedPhases.join(", ")}.`);
   }
   return [
-    `Editing ${previous.outcome}; ${previous.effect.operation.toUpperCase()} ${previous.effect.target_resource} is unchanged.`,
+    `Editing ${previous.outcome}; compare the complete proposed effects below.`,
+    ...actionRuleEffectLines(next),
     ...(changes.length ? changes : ["No semantic business-policy change was detected."]),
     "The prior active revision remains live until this disabled replacement is explicitly activated.",
   ];
@@ -11281,9 +11283,7 @@ function semanticActionReviewLines(compiled: CompiledActionRuleModelDraftV1): st
     `Auto-approve: ${automatic}`,
     `Approval: ${approval}`,
     `Apply: ${compiled.effect_envelope.writeback.mode === "none" ? "proposal only; no source write" : "separately supervised; never model authority"}`,
-    ...(compiled.rule.atomic_updates ? ["Atomic updates (all succeed or all roll back):",
-      ...[compiled.rule.effect, ...compiled.rule.atomic_updates].map((effect) =>
-        `${effect.target_resource} [${effect.target_binding}]: ${Object.entries(effect.set).map(([field, expression]) => `${field} = ${actionRuleScalarSummary(expression)}`).join("; ")}`)] : []),
+    ...actionRuleEffectLines(compiled),
     ...compiled.review.examples.map((example) =>
       `Example (${example.kind}): ${example.scenario} -> ${example.result}`),
   ];

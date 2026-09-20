@@ -1,3 +1,4 @@
+import { actionRulePublicEffects } from "./effect-inventory.js";
 import type { ActionRuleSpecV1 } from "@synapsor/spec";
 import type { CompiledActionRuleV1 } from "./types.js";
 import { ActionRuleError } from "./errors.js";
@@ -37,8 +38,9 @@ export function actionRuleDiscoveryContract(compiled: CompiledActionRuleV1, appr
       ...(compiled.rule.inputs?.length ? { inputs: Object.fromEntries(compiled.rule.inputs.map((definition) =>
         [definition.name, "<value matching this input's reviewed type and bounds>"])) } : {}) },
     eligibility: "not_checked; request_change validates this customer's references, inputs and current facts",
-    proposal_effect: { operation: compiled.effect_envelope.operation, resource: compiled.effect_envelope.target_resource,
+    proposal_effect: { scope: "primary_only; see business_effects for all components", operation: compiled.effect_envelope.operation, resource: compiled.effect_envelope.target_resource,
       fields: compiled.effect_envelope.allowed_fields.map((field) => field.name), max_rows: 1 },
+    business_effects: actionRulePublicEffects(compiled),
     approval: { class: compiled.approval_class, decision: approvalMode === "policy"
       ? "automatic only when the separate reviewed policy and atomic limits pass; otherwise human review" : "human review required" },
     source_write: "never during request_change",

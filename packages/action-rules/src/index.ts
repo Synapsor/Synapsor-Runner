@@ -72,3 +72,4 @@ export { actionRuleRelationshipPairs } from "./relationships.js";
 export { actionRuleEffectEnvelopes, actionRuleEffects, MAX_ATOMIC_UPDATE_TARGETS } from "./atomic-updates.js";
 export { actionRuleDiscoveryMetadata, actionRuleDiscoveryContract, assertActionDiscoveryContractFits, ACTION_DISCOVERY_CONTRACT_BYTES } from "./discovery.js";
 export { ACTION_AUTHORITY_LIMITS } from "./limits.js";
+export { actionRuleEffectInventory, actionRuleEffectLines, actionRulePublicEffects } from "./effect-inventory.js";

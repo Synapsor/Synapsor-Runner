@@ -1,3 +1,5 @@
+import { Pool } from "pg";
+import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -18,10 +20,15 @@ import { encodeOperatorAuthority, validateOperatorPolicySnapshot } from "./contr
 import { migrateProjectControlPolicies, openBoundProjectControlPolicies } from "./control-policy-store.js";
 import { activateSemanticActionRuntime, previewSemanticSupervisedExecution, prepareSemanticWriterHandoff, enableSemanticSupervisedExecution, semanticExecutionConfirmation } from "./semantic-action-deployment.js";
 import { inspectSemanticReceiptSetup, previewSemanticReceiptSelection, saveSemanticReceiptSelection, selectedSemanticReceipts, reviewSemanticReceiptSetup } from "./semantic-receipt-setup.js";
+import * as savedRequirements from "./saved-action-job-review.js";
 import { writebackSetup } from "./writeback-setup.js";
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 const roots: string[] = [];
-afterEach(async () => { vi.restoreAllMocks(); for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
+const postgresSchemas: string[] = [];
+afterEach(async () => { vi.restoreAllMocks();
+  if (postgresSchemas.length) { const pool = new Pool({ connectionString: process.env.SYNAPSOR_TEST_POSTGRES_URL });
+    try { for (const schema of postgresSchemas.splice(0)) await pool.query(`DROP SCHEMA "${schema}" CASCADE`); } finally { await pool.end(); } }
+ for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
 let generationLock = `sha256:${"a".repeat(64)}` as const;
 const stateType: ActionRuleScalarTypeSpecV1 = { kind: "string", max_length: 16, comparison: "exact", enum: ["active", "paused"] };
 async function reviewedRead(root: string) {
@@ -134,12 +141,16 @@ function authoritySource(): {
 }
 
 
-async function fixture() {
+async function fixture(backend: "sqlite" | "postgres" = "sqlite") {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-semantic-receipts-")); roots.push(root);
   const { read, build, inspection } = await reviewedRead(root);
   const config: RuntimeConfig = { version: 1, mode: "review", storage: { sqlite_path: path.join(root, ".synapsor/local.db") },
     capabilities: [], sources: { local_postgres: { engine: "postgres", read_url_env: "DATABASE_URL" } },
     trusted_context: { provider: "environment" }, action_rules: { project_root: root } };
+  if (backend === "postgres") {
+    const schema = `receipt_${randomUUID().replaceAll("-", "")}`; postgresSchemas.push(schema);
+    config.storage!.shared_postgres = { mode: "runtime_store", url_env: "SYNAPSOR_TEST_POSTGRES_URL", schema };
+  }
   const records = [encodeOperatorAuthority({ type: "read", boundary: read, generation_lock: build.lock }),
     encodeOperatorAuthority({ type: "read_selection", selected_name: read.pack.name })];
   const { binding } = await migrateProjectControlPolicies({ projectRoot: root, config, storePath: config.storage!.sqlite_path!, actor: "fixture_operator",
@@ -152,12 +163,31 @@ async function fixture() {
   const draft = await readActionRuleAuthorityDraft(root, "billing_active_rules");
   await activateSemanticActionRuntime({ projectRoot: root, draft: draft!, actor: "fixture_operator" });
   const configPath = path.join(root, "synapsor.actions.runner.json");
-  const input = { projectRoot: root, configPath, outcome: source.rule.outcome, env: {} };
+  const input = { projectRoot: root, configPath, outcome: source.rule.outcome, env: backend === "postgres" ? { SYNAPSOR_TEST_POSTGRES_URL: process.env.SYNAPSOR_TEST_POSTGRES_URL } : {} };
   const proposal = { ...input, receipts: { authority: "source_db" as const, provisioning: "precreated" as const, schema: "receipt_audit", table: "receipts" }, writeUrlEnv: "WRITER_URL" };
   return { ...input, root, source, read, config, proposal, inspection };
 }
 
 describe("reviewed semantic receipt setup", () => {
+  it.skipIf(!process.env.SYNAPSOR_TEST_POSTGRES_URL)("postgres control store retains exact intent, renews stale binding and refuses competing confirmations", async () => {
+    const f = await fixture("postgres"), original = await previewSemanticReceiptSelection(f.proposal);
+    await saveSemanticReceiptSelection({ ...f.proposal, confirmation: original.confirmation });
+    const source = structuredClone(f.source); source.verification.resources[0]!.fields[0]!.model_visible = true;
+    await writeAndActivateAuthority({ root: f.root, source, read: f.read, maximum: 1, activatedAt: new Date().toISOString() });
+    expect((await inspectSemanticReceiptSetup(f))!.selection_current).toBe(false);
+    const same = await previewSemanticReceiptSelection(f.proposal);
+    const different = { ...f.proposal, receipts: { ...f.proposal.receipts, table: "other_receipts" } };
+    const other = await previewSemanticReceiptSelection(different);
+    const results = await Promise.allSettled([saveSemanticReceiptSelection({ ...f.proposal, confirmation: same.confirmation }),
+      saveSemanticReceiptSelection({ ...different, confirmation: other.confirmation })]);
+    expect(results.filter(r => r.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter(r => r.status === "rejected")).toHaveLength(1);
+    const reopened = (await inspectSemanticReceiptSetup(f))!;
+    expect(reopened.selection_current).toBe(true);
+    expect(reopened.selection!.receipts.authority).toBe("source_db");
+    expect(reopened.selection!.write_url_env).toBe("WRITER_URL");
+  });
+
   it("requires a selection instead of reporting semantic source writes not applicable", async () => {
     const f = await fixture();
     const before = await fs.readFile(f.configPath, "utf8");
@@ -317,6 +347,75 @@ describe("reviewed semantic receipt setup", () => {
       expect(await binding!.repository.deployment(binding!.deployment_id)).toEqual(epoch);
     } finally { await binding?.close(); }
     expect(await fs.readFile(f.configPath, "utf8")).toBe(before);
+  });
+
+  it("retains stale reviewed receipt intent as the initial post-publication choice", async () => {
+    const f = await fixture();
+    const preview = await previewSemanticReceiptSelection(f.proposal);
+    await saveSemanticReceiptSelection({ ...f.proposal, confirmation: preview.confirmation });
+    const replacement = structuredClone(f.source);
+    // Same separately reviewed metadata reconciliation that accompanies the saved numeric edit.
+    replacement.verification.resources[0]!.fields.find(f => f.name === "status")!.model_visible = true;
+    await writeAndActivateAuthority({ root: f.root, source: replacement, read: f.read, maximum: 1, activatedAt: new Date().toISOString() });
+    const before = await inspectSemanticReceiptSetup(f);
+    expect(before!.selection_current).toBe(false);
+    const session = { chooseOption: vi.fn().mockResolvedValue("source_db"), promptText: vi.fn().mockResolvedValue(""),
+      confirm: vi.fn().mockResolvedValue(false) } as unknown as BoundaryReviewInteractiveSession;
+    expect(await reviewSemanticReceiptSetup({ ...f, writeUrlEnv: "NEW_DEFAULT", session })).toBeUndefined();
+    expect(session.chooseOption).toHaveBeenCalledWith("Select receipt storage for this outcome", expect.anything(),
+      expect.objectContaining({ initialValue: "source_db" }));
+    expect(session.confirm).toHaveBeenCalledWith("Save this exact receipt setup selection?", expect.objectContaining({
+      context: expect.arrayContaining([expect.stringContaining('"schema":"receipt_audit"'), "Writer reference: WRITER_URL"]),
+    }));
+    expect((await inspectSemanticReceiptSetup(f))!.selection).toEqual(before!.selection);
+  });
+
+  it("renews the exact stale selection, preserving old records and execution, then reuses it after restart", async () => {
+    const f = await fixture(), original = await previewSemanticReceiptSelection(f.proposal);
+    await saveSemanticReceiptSelection({ ...f.proposal, confirmation: original.confirmation });
+    const replacement = structuredClone(f.source);
+    replacement.verification.resources[0]!.fields.find(f => f.name === "status")!.model_visible = true;
+    await writeAndActivateAuthority({ root: f.root, source: replacement, read: f.read, maximum: 1, activatedAt: new Date().toISOString() });
+    const config = await fs.readFile(f.configPath, "utf8"), old = (await inspectSemanticReceiptSetup(f))!.revision_id;
+    const session = { chooseOption: vi.fn().mockResolvedValue("source_db"), promptText: vi.fn().mockResolvedValue(""), confirm: vi.fn().mockResolvedValue(true) } as unknown as BoundaryReviewInteractiveSession;
+    await reviewSemanticReceiptSetup({ ...f, writeUrlEnv: "NEW_DEFAULT", session });
+    const after = (await inspectSemanticReceiptSetup(f))!;
+    expect(after.selection_current).toBe(true); expect(after.revision_id).not.toBe(old);
+    expect(after.selection!.receipts).toEqual(f.proposal.receipts);
+    expect(after.selection!.write_url_env).toBe("WRITER_URL");
+    expect(await fs.readFile(f.configPath, "utf8")).toBe(config);
+    vi.mocked(session.chooseOption!).mockResolvedValue("keep"); vi.mocked(session.confirm).mockClear();
+    await reviewSemanticReceiptSetup({ ...f, writeUrlEnv: "NEW_DEFAULT", session });
+    expect(session.confirm).not.toHaveBeenCalled();
+    const binding = await openBoundProjectControlPolicies(f.root);
+    try { expect(await binding!.repository.revision(binding!.deployment_id, { scope: { level: "operator" }, kind: "management", name: `semantic_receipts_${canonicalJsonDigest({ outcome: f.outcome }).slice(7)}` }, old!)).toBeDefined(); } finally { await binding?.close(); }
+  });
+
+  it("refuses incompatible source-atomic downgrades and permits a separately reviewed compatible destination", async () => {
+    const f = await fixture(), original = await previewSemanticReceiptSelection(f.proposal);
+    await saveSemanticReceiptSelection({ ...f.proposal, confirmation: original.confirmation });
+    await expect(previewSemanticReceiptSelection({ ...f.proposal, receipts: { authority: "runner_ledger" } })).rejects.toThrow("GUARANTEE_REVIEW_REQUIRED");
+    vi.spyOn(savedRequirements, "readSavedExecutionRequirements").mockResolvedValue({ source_digest: `sha256:${"a".repeat(64)}`,
+      passages: ["Require a source-atomic receipt."], receipt_requirements: ["source_db"] });
+    await expect(previewSemanticReceiptSelection({ ...f.proposal, receipts: { authority: "runner_ledger" } })).rejects.toThrow("REQUIREMENT_MISMATCH");
+    const proposal = { ...f.proposal, receipts: { ...f.proposal.receipts, table: "new_receipts" } };
+    const preview = await previewSemanticReceiptSelection(proposal);
+    await saveSemanticReceiptSelection({ ...proposal, confirmation: preview.confirmation });
+    expect(selectedSemanticReceipts((await inspectSemanticReceiptSetup(f))!)).toEqual(proposal.receipts);
+  });
+
+  it("cancellation and interruption of stale re-review never replace its intent", async () => {
+    const f = await fixture(), original = await previewSemanticReceiptSelection(f.proposal);
+    await saveSemanticReceiptSelection({ ...f.proposal, confirmation: original.confirmation });
+    const replacement = structuredClone(f.source); replacement.verification.resources[0]!.fields[0]!.model_visible = true;
+    await writeAndActivateAuthority({ root: f.root, source: replacement, read: f.read, maximum: 1, activatedAt: new Date().toISOString() });
+    const before = await inspectSemanticReceiptSetup(f);
+    for (const chosen of [undefined, "pause", "source_db"]) {
+      const session = { chooseOption: async () => chosen, promptText: async () => undefined, confirm: vi.fn() } as unknown as BoundaryReviewInteractiveSession;
+      expect(await reviewSemanticReceiptSetup({ ...f, writeUrlEnv: "OTHER", session })).toBeUndefined();
+      expect((await inspectSemanticReceiptSetup(f))!.selection).toEqual(before!.selection);
+      expect(session.confirm).not.toHaveBeenCalled();
+    }
   });
 
   it("declining the actual setup review leaves no saved selection", async () => {

@@ -1,3 +1,4 @@
+import { receiptRequirement } from "./authoring-obligation-review.js";
 import { readBoundaryAuthoringResumeState, type BoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 
@@ -93,7 +94,9 @@ export async function readSavedExecutionRequirements(input: { projectRoot: strin
   const lines = policyTextLines(source.text);
   const passages = session.coverage?.source_digest === source.digest
     ? session.coverage.passages.filter(passage => passage.deployment_prerequisite === "runner_execution_setup") : [];
-  return { source_digest: source.digest,
+  const requirementRanges = session.coverage?.source_digest === source.digest ? session.coverage.passages : [{ start: 1, end: lines.length }];
+  const receiptRequirements = [...new Set(requirementRanges.map(p => receiptRequirement(source, p)).filter(Boolean))];
+  return { source_digest: source.digest, receipt_requirements: receiptRequirements,
     passages: passages.length ? passages.map(passage => `Source lines ${passage.start}-${passage.end}: ${lines.slice(passage.start - 1, passage.end).join("\n")}`)
       : [source.text] };
 }

@@ -527,8 +527,8 @@ export async function writebackSetup(args: string[]): Promise<number> {
     }
     if (args.includes("--apply")) throw new Error("Save the reviewed receipt selection separately before applying administrator setup.");
     const receipts: SemanticReceiptMode = requestedMode === "runner_ledger" ? { authority: "runner_ledger" }
-      : { authority: "source_db", provisioning: "precreated", schema: optionalArg(args, "--schema") ?? "public",
-        table: optionalArg(args, "--table") ?? "synapsor_writeback_receipts" };
+      : { authority: "source_db", provisioning: "precreated", schema: optionalArg(args, "--schema") ?? (semantic.selection?.receipts.authority === "source_db" ? semantic.selection.receipts.schema : "public"),
+        table: optionalArg(args, "--table") ?? (semantic.selection?.receipts.authority === "source_db" ? semantic.selection.receipts.table : "synapsor_writeback_receipts") };
     const input = { projectRoot: path.dirname(configPath), configPath, outcome: semantic.outcome, receipts,
       writeUrlEnv: optionalArg(args, "--write-url-env") ?? semantic.selection?.write_url_env ?? "SYNAPSOR_DATABASE_WRITE_URL", env: process.env };
     const preview = await previewSemanticReceiptSelection(input);

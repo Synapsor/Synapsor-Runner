@@ -78,6 +78,10 @@ export type SemanticSupervisedExecutionPreview = {
   writer_role: string;
   writer_posture_fingerprint: `sha256:${string}`;
   allowed_relations: string[];
+  verification: {
+    writer: import("./worker-policy.js").SupervisedWriterPostureAssessment;
+    receipt_probe: "passed_rolled_back" | "not_run_runner_ledger";
+  };
   receipts: SemanticReceiptMode;
   policy: RuntimeSupervisedWorkerOutcomePolicy;
   config: Record<string, unknown>;
@@ -488,6 +492,7 @@ export async function previewSemanticSupervisedExecution(input: {
     writer_role: inspection.current_user,
     writer_posture_fingerprint: fingerprint,
     allowed_relations: assessment.allowed_relations,
+    verification: { writer: assessment, receipt_probe: selectedReceipts.authority === "source_db" ? "passed_rolled_back" : "not_run_runner_ledger" },
     policy,
     config: nextConfig,
     ...(currentReview.epoch === undefined ? {} : { policy_epoch: currentReview.epoch }),

@@ -12,7 +12,7 @@ function at(draft: unknown, pointer: string): any {
 /** Only an explicit receipt-mode requirement can supply this narrow binding.
  * Missing/ambiguous prose never means the default mode or an absent duty.
  * This does not interpret arbitrary delivery, atomicity or durability claims. */
-function receiptRequirement(source: PolicyTextSnapshot, p: PolicyPassage): "runner_ledger" | "source_db" | undefined {
+export function receiptRequirement(source: PolicyTextSnapshot, p: Pick<PolicyPassage, "start" | "end">): "runner_ledger" | "source_db" | undefined {
   const text = source.text.split(/\r\n|\r|\n/u).slice(p.start - 1, p.end).join("\n");
   const mentions = [...text.matchAll(/\b(runner[-_ ]ledger|source[-_ ]db|source-atomic)\s+receipt\b/giu)];
   if (mentions.length !== 1 || /\b(?:not|never|unless|instead|either|optional)\b/iu.test(text.slice(Math.max(0, mentions[0]!.index! - 45), mentions[0]!.index))) return undefined;

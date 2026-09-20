@@ -147,7 +147,7 @@ export type ActionControlPrompter = {
     initialValue?: string,
   ): Promise<string | undefined>;
   text(label: string, options?: ActionTextPromptOptions): Promise<string | undefined>;
-  confirm(label: string, defaultValue?: boolean): Promise<boolean | undefined>;
+  confirm(label: string, defaultValue?: boolean, context?: string[]): Promise<boolean | undefined>;
   message(title: string, lines: string[], backLabel?: string): Promise<void>;
   syntax?(
     title: string,
@@ -3042,11 +3042,11 @@ export function createTerminalActionPrompter(input: ReadStream, output: WriteStr
       if (value === undefined) return undefined;
       return value || options.defaultValue;
     },
-    async confirm(label, defaultValue = false) {
+    async confirm(label, defaultValue = false, context = []) {
       const value = await this.choose("CONFIRM REVIEWED DECISION", [
         { value: "yes", label: "Yes", detail: label },
         { value: "no", label: "No", detail: "Leave this decision unchanged or return." },
-      ], [`Default: ${defaultValue ? "yes" : "no"}`], defaultValue ? "yes" : "no");
+      ], [...context, `Default: ${defaultValue ? "yes" : "no"}`], defaultValue ? "yes" : "no");
       return value === undefined ? undefined : value === "yes";
     },
     async message(title, lines, backLabel = "Back to previous screen") {
@@ -4826,7 +4826,7 @@ function verifiedActionHomeLines(status: VerifiedActionStatus): string[] {
   ];
 }
 
-function boundarySessionForActionPrompter(
+export function boundarySessionForActionPrompter(
   prompter: ActionControlPrompter,
 ): BoundaryReviewInteractiveSession {
   return {
@@ -4844,8 +4844,8 @@ function boundarySessionForActionPrompter(
     promptText: (prompt, options) => prompter.text(prompt, {
       ...(options?.context ? { context: options.context } : {}),
     }),
-    confirm: (prompt, options) => prompter.confirm(prompt, options?.defaultValue),
-    confirmActivation: (prompt) => prompter.confirm(prompt, false),
+    confirm: (prompt, options) => prompter.confirm(prompt, options?.defaultValue, options?.context),
+    confirmActivation: (prompt, options) => prompter.confirm(prompt, false, options?.context),
     rememberDetails: (title, lines) => prompter.rememberDetails?.(title, lines),
     showReviewDetails: (title, lines) => prompter.message(title, lines, "Return to pending review"),
   } as BoundaryReviewInteractiveSession;

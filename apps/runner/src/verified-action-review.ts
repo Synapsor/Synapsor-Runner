@@ -1,3 +1,4 @@
+import { actionRuleEffectLines, actionRuleEffectInventory } from "@synapsor-runner/action-rules";
 import { actionSubjectCompatibility } from "./action-subject-compatibility.js";
 import process from "node:process";
 import path from "node:path";
@@ -222,7 +223,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
     }
     const accepted = await (input.session.confirmActivation ?? input.session.confirm)(
       `Activate verified Action Boundary "${input.draft.authority.action_boundary.name}"?`,
-      { context: summary },
+      { context: [...input.draft.authority.rules.flatMap(actionRuleEffectLines), ...summary] },
     );
     if (!accepted) return reviewedNotice(input.draft, false);
     const activated = await activateSemanticActionRuntime({
@@ -471,6 +472,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
         `Activate verified Action Boundary "${input.draft.authority.action_boundary.name}"?`,
         {
           context: [
+            ...input.draft.authority.rules.flatMap(actionRuleEffectLines),
             ...summary,
             "This grants proposal authority only. It cannot approve, apply, or write source data.",
             "Use exact details to inspect the immutable digest before confirming.",
@@ -519,7 +521,9 @@ export async function reviewSemanticSupervisedExecution(input: {
         { value: "pause", label: "Save and pause this outcome's execution setup", detail: publication ? "Preserve the recovery record. Pausing does not disable existing execution."
           : revalidation ? "Keep the rules and authority records; resume the same job to review the changed database contract."
             : "Preserve the existing activation records. This check enables no execution and runs no request." },
-      ], { initialValue: result.provisioning ? "export" : "pause", displayContext: true, context: [`Outcome: ${input.outcome}`, problem.summary, `Diagnostic: ${problem.code}.`] });
+      ], { initialValue: result.provisioning ? "export" : "pause", displayContext: true, context: [`Outcome: ${input.outcome}`, problem.summary,
+        `Verification: ${/STALE|CHANGED|REVIEW_REQUIRED/u.test(problem.code) ? "STALE / requires current review" : problem.code === "SEMANTIC_ACTION_WRITER_POSTURE_INVALID" ? "FAILED" : "UNAVAILABLE / incomplete"}. Execution was not authorized by this check.`,
+        `Diagnostic: ${problem.code}.`, ...problem.details.slice(0, 4)] });
       if (recovery === "export" && canPrepareWriter) {
         try {
           const plan = result.provisioning ?? (await prepareSemanticWriterHandoff({
@@ -665,27 +669,18 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
     return { tone: "danger", title: problem.publication_state ? "Execution save needs recovery." : "Execution was not enabled.", lines: [problem.summary], problem,
       ...(error instanceof SemanticWriterPostureError && error.provisioning ? { provisioning: error.provisioning } : {}) };
   }
+  const findings = semanticExecutionVerificationLines(preview);
+  input.session.rememberDetails?.("Write connection verification", findings);
   const confirmed = await (input.session.confirmActivation ?? input.session.confirm)(
     `Enable supervised source execution for ${input.outcome}?`,
     {
       context: [
-        ...renderBoundaryMapTable(
-          ["Authority", "Reviewed value"],
-          [
-            ["Outcome", preview.outcome],
-            ["Effect", `${preview.operation.toUpperCase()} ${preview.target}`],
-            ["Writer role", preview.writer_role],
-            ["Credential reference", preview.write_url_env],
-            ["Worker identity", workerIdentity ?? "Not pinned by this policy"],
-            ["Receipts", preview.receipts.authority === "source_db" ? `Source database: ${preview.receipts.schema}.${preview.receipts.table}` : "Runner ledger"],
-            ["Concurrency", String(preview.policy.concurrency)],
-            ["Queue / retries", `${preview.policy.queue_limit} / ${preview.policy.max_attempts}`],
-            ["Rate", `${preview.policy.rate_limit.executions} per ${preview.policy.rate_limit.window_seconds}s`],
-          ],
-          { widths: twoColumnReviewWidths(reviewTableWidth(input.session.terminalColumns ?? 80)), rowSeparators: false },
-        ),
-        "This enables an operator-run worker for approved proposals only. The model still cannot approve, apply, or choose a patch.",
-        "No proposal is executed during this confirmation.",
+        ...findings,
+        `Writer role: ${preview.writer_role}; worker: ${workerIdentity ?? "not pinned"}.`,
+        `Receipts: ${preview.receipts.authority === "source_db" ? `source_db, ${preview.receipts.schema}.${preview.receipts.table}` : "runner_ledger"}.`,
+        `Worker bounds: concurrency ${preview.policy.concurrency}; queue ${preview.policy.queue_limit}; attempts ${preview.policy.max_attempts}; rate ${preview.policy.rate_limit.executions}/${preview.policy.rate_limit.window_seconds}s.`,
+        "Enables an operator-run worker for approved proposals. No proposal executes here.",
+        "Model approval, apply and patch selection remain unavailable.",
       ],
     },
   );
@@ -750,7 +745,8 @@ function verifiedActionAuthoritySummary(
 ): string[] {
   const rows = value.authority.action_boundary.rules.map((rule) => [
     rule.outcome,
-    `${rule.operation.toUpperCase()} ${rule.target_resource}`,
+    actionRuleEffectInventory(value.authority.rules.find(r => r.rule.outcome === rule.outcome)!).components
+      .map(c => `${c.operation.toUpperCase()} ${c.resource} (max ${c.max_rows})`).join("; "),
     rule.approval_mode === "policy" ? "Policy + fallback" : "Human review",
     unavailableOutcomes.has(rule.outcome)
       ? enabledExecutionOutcomes.has(rule.outcome) ? "Enabled, blocked" : "Unavailable"
@@ -837,6 +833,7 @@ export function verifiedActionAuthorityDetails(
       ] : []),
       `WHEN     ${review?.when ?? "See canonical rule below."}`,
       `THEN     ${review?.then ?? `${rule.operation.toUpperCase()} ${rule.target_resource}`}`,
+      ...actionRuleEffectLines(source!),
       `REFUSE   ${review ? joinReviewClauses(review.refused) : "Any failed or unknown eligibility check"}`,
       `REVIEW   ${humanApprovalRequirement(approval)}`,
       `APPLY    ${rule.writeback.mode === "none" ? "Proposal only; no source write" : "Separately supervised; never model authority"}`,
@@ -926,4 +923,20 @@ function localInteractiveActor(): string {
     || "local-developer";
   if (value.length <= 128 && !/[\u0000-\u001f\u007f]/u.test(value)) return value;
   return "local-developer";
+}
+
+/** Findings from this actual verifier invocation, not a saved selection or a test. */
+export function semanticExecutionVerificationLines(preview: Awaited<ReturnType<typeof previewSemanticSupervisedExecution>>): string[] {
+  const writer = preview.verification.writer;
+  return [
+    `Writer verification: ${writer.ok ? "PASSED" : "FAILED"} — source ${preview.source}.`,
+    `Checked reference: ${preview.write_url_env}.`,
+    `Permissions/scope: ${writer.ok ? "PASSED" : "unresolved"}; ${writer.required_relations?.length ?? writer.allowed_relations.length} relations for effects, locks and receipts.`,
+    ...(!writer.ok ? [`Blockers: ${writer.reasons.join(", ")}`] : ["Remaining verification blockers: none in this check."]),
+    preview.verification.receipt_probe === "passed_rolled_back" ? "Receipt probe: PASSED, rolled back; no business execution or persisted receipt."
+      : "Receipt probe: NOT RUN (Runner-ledger mode); no source-atomic receipt guarantee.",
+    `Current candidate: ${preview.outcome}.`,
+    "Exact Action/config/writer bindings checked again on confirmation.",
+    "Read posture rechecked. Worker liveness, business execution and independent readback: NOT RUN.",
+  ];
 }
