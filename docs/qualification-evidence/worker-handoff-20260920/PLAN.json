@@ -1,0 +1,20 @@
+{
+  "started_at": "2026-09-20T03:14:59.466055+00:00",
+  "baseline": "63aa6648e49c7eb7b3e5d9589835ac5d21b99346",
+  "branch": "codex/tui-safe-action-control-plane",
+  "hours": {
+    "implementation": 4,
+    "fresh_fixtures": 2,
+    "stable_and_package": 2,
+    "final_trial": 1
+  },
+  "final_business_requests_max": 4,
+  "final_finite_worker_invocations_max": 8,
+  "provider_calls_max": 0,
+  "one_successful_effect_transaction_max": 1,
+  "controlled_stale_refusals_max": 1,
+  "historical_queues": "read only, never execute",
+  "heavy_window": "reserved for this assignment; M6 reviewer completed and removed its container",
+  "independent_m6": "PASS only for 9ae3a71d4dd5aeac4121b24a6ef6f5ac7b799023cf10242aac79252530fca3ea",
+  "raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/worker-handoff-63aa664-20260920"
+}

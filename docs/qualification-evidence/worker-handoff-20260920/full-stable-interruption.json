@@ -1,0 +1,7 @@
+{
+  "at": "2026-09-20T03:52:17.035508+00:00",
+  "pid": 998461,
+  "reason": "Implementer detected receipt selection/configuration label ambiguity during code inspection. Stop before source edit; preserve partial log and actual exit. Not a completed suite result.",
+  "source": "ce091994391cc7506e8c62bee94a50025c6bc7684b72eb4c699928e52c1e228a",
+  "process": "bwrap --die-with-parent --ro-bind / / --bind /home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/worker-handoff-63aa664-20260920 /home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/worker-handoff-63aa664-20260920 --bind /home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/worker-handoff-63aa664-20260920/test-tmp /tmp --bind /home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/worker-handoff-63aa664-20260920/test-var-tmp /var/tmp --bind /home/sandesh-tiwari/Desktop/C++/synapsor-runner /home/sandesh-tiwari/Desktop/C++/synapsor-runner --proc /proc --dev /dev --chdir /home/sandesh-tiwari/Desktop/C++/synapsor-runner corepack pnpm exec vitest run --maxWorkers=4 --minWorkers=1 --testTimeout=20000 --hookTimeout=20000 "
+}

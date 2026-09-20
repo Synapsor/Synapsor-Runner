@@ -1,0 +1,15 @@
+{
+  "command": [
+    "corepack",
+    "pnpm",
+    "typecheck"
+  ],
+  "start": 1789875406.0559778,
+  "source_before": "b430ee67b45d22122bdc734033bd305089c0e3fbaef07069f37b4a5082fbeefa",
+  "credentials": "absent",
+  "umask": "0077",
+  "pid": 989383,
+  "exit": 0,
+  "seconds": 8.317758321762085,
+  "source_after": "b430ee67b45d22122bdc734033bd305089c0e3fbaef07069f37b4a5082fbeefa"
+}

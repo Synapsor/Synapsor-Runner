@@ -1,0 +1,24 @@
+{
+  "command": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/control-policy-authority-codec.test.ts",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000",
+    "-t",
+    "reads execution from the same repository, never from an edited export, and observes revocation"
+  ],
+  "start": 1789875781.6542006,
+  "source_before": "11588362a9a6815f2650513a1879b99f34e9df82bae4f0bd04c6a747e388373b",
+  "credentials": "only owned SYNAPSOR_TEST_POSTGRES_URL",
+  "umask": "0077",
+  "pid": 995541,
+  "exit": 1,
+  "seconds": 19.14729142189026,
+  "source_after": "11588362a9a6815f2650513a1879b99f34e9df82bae4f0bd04c6a747e388373b"
+}

@@ -1,0 +1,22 @@
+{
+  "command": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/semantic-writeback-authority.test.ts",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "start": 1789875136.3374448,
+  "source_before": "13784cd8b90e73f7d602df2676920a4daecf57a032b409e34bb1291b0aef81bd",
+  "credentials": "only owned SYNAPSOR_TEST_POSTGRES_URL",
+  "umask": "0077",
+  "pid": 985333,
+  "exit": 1,
+  "seconds": 58.32118248939514,
+  "source_after": "13784cd8b90e73f7d602df2676920a4daecf57a032b409e34bb1291b0aef81bd"
+}

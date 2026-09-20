@@ -1,0 +1,25 @@
+{
+  "command": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "packages/proposal-store/src/index.test.ts",
+    "apps/runner/src/worker-status.test.ts",
+    "-t",
+    "supervised.worker|policy reservation across two|durable worker status|status scope and attempt",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "start": 1789878850.1530313,
+  "source_before": "cf03caf64354739c3391f7cb927d95f3e6f237ffcd81f8676bb56b6159405c25",
+  "credentials": "absent",
+  "umask": "0077",
+  "pid": 1048575,
+  "exit": 0,
+  "seconds": 17.51542592048645,
+  "source_after": "cf03caf64354739c3391f7cb927d95f3e6f237ffcd81f8676bb56b6159405c25"
+}

@@ -1,0 +1,26 @@
+{
+  "command": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/semantic-writeback-authority.test.ts",
+    "apps/runner/src/semantic-receipt-setup.test.ts",
+    "apps/runner/src/ledger-runtime-config-postgres.test.ts",
+    "packages/proposal-store/src/worker-cancellation-role.test.ts",
+    "apps/runner/src/runtime-bridge-admission.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=30000",
+    "--hookTimeout=30000"
+  ],
+  "start": 1789878714.5162144,
+  "source_before": "cf03caf64354739c3391f7cb927d95f3e6f237ffcd81f8676bb56b6159405c25",
+  "credentials": "only owned SYNAPSOR_TEST_POSTGRES_URL",
+  "umask": "0077",
+  "pid": 1046415,
+  "exit": 0,
+  "seconds": 118.50720953941345,
+  "source_after": "cf03caf64354739c3391f7cb927d95f3e6f237ffcd81f8676bb56b6159405c25"
+}

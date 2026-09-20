@@ -1,0 +1,22 @@
+{
+  "command": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/verified-action-execution-review.test.ts",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "start": 1789875929.778608,
+  "source_before": "ce091994391cc7506e8c62bee94a50025c6bc7684b72eb4c699928e52c1e228a",
+  "credentials": "absent",
+  "umask": "0077",
+  "pid": 997773,
+  "exit": 0,
+  "seconds": 8.228870868682861,
+  "source_after": "ce091994391cc7506e8c62bee94a50025c6bc7684b72eb4c699928e52c1e228a"
+}

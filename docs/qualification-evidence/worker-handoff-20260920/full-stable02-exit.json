@@ -1,0 +1,21 @@
+{
+  "command": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "--maxWorkers=4",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "start": 1789876874.768182,
+  "source_before": "b2b667bd69f03c737a5ad34082587373f860ced0c10fe95da13fe8adf16f6556",
+  "credentials": "absent",
+  "umask": "0077",
+  "pid": 1011592,
+  "exit": 1,
+  "seconds": 1571.2829399108887,
+  "source_after": "b2b667bd69f03c737a5ad34082587373f860ced0c10fe95da13fe8adf16f6556"
+}

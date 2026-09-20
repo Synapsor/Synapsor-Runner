@@ -1,0 +1,24 @@
+{
+  "command": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/semantic-receipt-setup.test.ts",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000",
+    "-t",
+    "requires actual receipt objects and writer verification"
+  ],
+  "start": 1789876449.7822046,
+  "source_before": "0bc85a6c09e39d3429d2ea23f213bfcece6a97de3158537aaa8ef24bce451b59",
+  "credentials": "absent",
+  "umask": "0077",
+  "pid": 1006168,
+  "exit": 0,
+  "seconds": 13.633154153823853,
+  "source_after": "0bc85a6c09e39d3429d2ea23f213bfcece6a97de3158537aaa8ef24bce451b59"
+}

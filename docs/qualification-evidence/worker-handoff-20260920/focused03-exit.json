@@ -1,0 +1,24 @@
+{
+  "command": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/worker-status.test.ts",
+    "apps/runner/src/verified-action-execution-review.test.ts",
+    "apps/runner/src/semantic-receipt-setup.test.ts",
+    "--maxWorkers=2",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "start": 1789875476.5705671,
+  "source_before": "11588362a9a6815f2650513a1879b99f34e9df82bae4f0bd04c6a747e388373b",
+  "credentials": "absent",
+  "umask": "0077",
+  "pid": 990351,
+  "exit": 0,
+  "seconds": 95.51183199882507,
+  "source_after": "11588362a9a6815f2650513a1879b99f34e9df82bae4f0bd04c6a747e388373b"
+}

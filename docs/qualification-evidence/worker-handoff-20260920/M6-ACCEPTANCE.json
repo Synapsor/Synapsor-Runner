@@ -1,0 +1,21 @@
+{
+  "scope": "Independent implementation-session review; no transfer to O2/P1",
+  "verdict": "PASS",
+  "records": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/m6-independent-review-20260919/REVIEW.md",
+      "sha256": "ca04a937c724f3dddd2497d466c6a285dc0e195957104ac01899d7c70e98e2db",
+      "bytes": 8169
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/m6-independent-review-20260919/review-bundle.tar.gz",
+      "sha256": "be9859ed05441e03a3c931fc497e58ff11bbec66b420fbd24315d3a7187c77e0",
+      "bytes": 8069984
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/m6-independent-review-20260919/M6-INDEPENDENT-RESULT.json",
+      "sha256": "fa7358f3c0263ac302dd28a824a8511fb5e8ddf7fe548377aaa79b7a63389dd0",
+      "bytes": 627
+    }
+  ]
+}

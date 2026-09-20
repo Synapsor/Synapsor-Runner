@@ -1,0 +1,22 @@
+{
+  "command": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "apps/runner/src/worker-status.test.ts",
+    "--maxWorkers=1",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "start": 1789874685.8362522,
+  "source_before": "5978848cd8953030c1c51a5ea216a035714b9f9db845ebd0b2b223eaca07783b",
+  "credentials": "absent",
+  "umask": "0077",
+  "pid": 978576,
+  "exit": 1,
+  "seconds": 9.211364984512329,
+  "source_after": "5978848cd8953030c1c51a5ea216a035714b9f9db845ebd0b2b223eaca07783b"
+}
