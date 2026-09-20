@@ -8388,7 +8388,7 @@ describe("boundary operator-plane CLI", () => {
           policySourceSession: source.id, previous: deferredResume.value }));
         const recovery = posture === "active_rules_recovery";
         let phase: "blocked" | "fail" | "ready" = "blocked";
-        let calls = 0, menus = 0, pendingReviewMenus = 0;
+        let calls = 0, menus = 0, pendingReviewMenus = 0, countedInterpretations = 0;
         const details: string[][] = [], diagnostics: string[] = [];
         const confirmAction = vi.fn(async () => false);
         const policySession: BoundaryReviewInteractiveSession = { ...resumedSession,
@@ -8398,6 +8398,17 @@ describe("boundary operator-plane CLI", () => {
           },
           chooseOption: async (title, _choices, options) => {
           if (title === "CLIENT INTEGRATION RESPONSIBILITIES") return "assign";
+            if (title === "REVIEW COUNTED AUTOMATIC APPROVALS" && posture === "policy_target_mixed_read_scope") {
+              // The unrelated scoped "only" clause makes this single-line
+              // synthetic source conservative/ambiguous to the bounded resolver.
+              // Supply the existing exact operator review before testing Read
+              // routing; do not infer all-outcomes from missing lexical evidence.
+              expect(options?.initialValue).toBe("unresolved");
+              expect(options?.context?.join("\n")).toContain("The existing allowance counts automatic approvals across all outcomes.");
+              expect(_choices.some(choice => choice.value === "boundary")).toBe(true);
+              countedInterpretations++;
+              return "boundary";
+            }
             if (title === "START BOUNDARY DRAFTING") return "resume";
             if (title === "SETUP NEEDS ATTENTION" && posture === "policy_target_reconcile_concurrent") {
               expect(options?.context?.join(" ")).toContain("BOUNDARY_AUTHORING_RESUME_CHANGED");
@@ -8854,7 +8865,16 @@ describe("boundary operator-plane CLI", () => {
         }
         if (posture === "policy_target_pause" || mixedRead) {
           if (posture === "policy_target_pause") expect(calls).toBe(2);
-          expect(sharedReadRevision).toHaveBeenCalledTimes(mixedRead ? 1 : 0);
+          expect(sharedReadRevision, JSON.stringify({ calls, diagnostics, details,
+            review_details: vi.mocked(chat.rememberDetails).mock.calls.filter(([title]) => String(title).includes("UNAVAILABLE")) }))
+            .toHaveBeenCalledTimes(mixedRead ? 1 : 0);
+          if (posture === "policy_target_mixed_read_scope") {
+            expect(countedInterpretations).toBe(6);
+            const settled = await loadPolicySources(root, source.id);
+            expect(settled.counting_decisions).toHaveLength(6);
+            expect(settled.counting_decisions!.every(decision => decision.required_capability === null
+              && decision.source_digest === source.snapshots[0]!.digest)).toBe(true);
+          }
           expect(menus).toBe(0);
           expect(revise).not.toHaveBeenCalled();
           expect(confirmAction).not.toHaveBeenCalled();
