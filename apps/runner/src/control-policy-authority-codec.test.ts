@@ -3137,7 +3137,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
       });
     });
 
-    it("saves and reloads receipt readiness under the existing review lock without changing operator authority", async () => {
+    it.each(["receipts", "receipt_configuration"])("saves and reloads receipt readiness under the existing review lock without changing operator authority: %s", async (receiptReference) => {
       await useRepository(async ({ binding, projectRoot, config: storageConfig }) => {
         const { authoringReceiptConfiguration } = await import("./authoring-receipt-configuration.js");
         const { policyCoverageDraft } = await import("./authoring-policy-evidence.js");
@@ -3159,8 +3159,10 @@ for (const backend of ["sqlite", "postgres"] as const) {
           expect(configuration.status).toBe("current");
           const evidence = policyCoverageDraft({ read: f.candidate, actions: [], authority: draft, decisions: [], receiptConfiguration: configuration });
           const report = parsePolicyCoverage({ passages: [{ start: 1, end: 1, disposition: "needs_decision", responsibility: "deployment", issue_kind: "missing_configuration",
-            interpretation: "The required receipt mode still needs its separate execution setup.", draft_paths: ["/runner_evidence/runtime_contract/receipts"] }] }, source, evidence, []);
+            interpretation: "The required receipt mode still needs its separate execution setup.", draft_paths: [`/runner_evidence/runtime_contract/${receiptReference}`] }] }, source, evidence, []);
           expect(policyReviewReadiness(source, report).ready).toBe(false);
+          expect(report.passages[0]!.obligation_assessment).toMatchObject({ family: "receipt_setup", state: "pending", verified: false });
+          if (receiptReference === "receipt_configuration") expect(report.passages[0]!.obligation_assessment!.association?.kind).toBe("reviewed_receipt_configuration");
           const { reviewClientDutyOwnership } = await import("./authoring-client-duties.js");
           session.application_assignments = await reviewClientDutyOwnership({ report, sources: session,
             session: { chooseOption: async () => "assign" }, assertCurrent: async () => {} });
