@@ -1,0 +1,7 @@
+[
+  {
+    "observed": "Close only this proven-no-effect item? Default: cancel. Type yes to continue:",
+    "send": "\r",
+    "reason": "Exercise the default cancellation after viewing the exact no-effect assessment; no closure is authorized by this gesture."
+  }
+]

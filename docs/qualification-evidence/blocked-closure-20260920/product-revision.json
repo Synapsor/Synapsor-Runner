@@ -1,0 +1,6 @@
+{
+  "product_commit": "ae96fb0b2556cb2b9465adfc796fee76389f2eb9",
+  "test_commit": "ae96fb0b2556cb2b9465adfc796fee76389f2eb9",
+  "changes": "producer evidence, shared store closure, operator command, focused backend and fresh-request regressions",
+  "initial_product_commit": "4bff1ba831904f94b1b36f9f9f735aa9616b61d7"
+}

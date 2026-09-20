@@ -1,0 +1,7 @@
+{
+  "source_fixture": "apps/runner/src/semantic-action-runtime.test.ts",
+  "source_fixture_sha256": "34e8b432a779344826bead770335cd4bb36aec6cfe148dfeeff2173aab193970",
+  "derivation": "reuse existing reviewed runtime fixture; exact failed receipt through real store lifecycle, deliberately no producer event or closure; fresh normal semantic tool reference/request before closure",
+  "qualification": "composed host fixture, not installed execution or historical W2 replay",
+  "status": "Prepared only; never executed. Superseded by standard discovered unclosed_legacy case in semantic-action-runtime.test.ts before next full suite."
+}

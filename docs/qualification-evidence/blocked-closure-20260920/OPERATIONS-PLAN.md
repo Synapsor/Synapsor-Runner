@@ -1,0 +1,11 @@
+# Final installed schedule (not executed yet)
+
+Start only after the tester validates restoration prerequisites for immutable T0/T1. All commands use public-launch.py, the frozen installation, the reviewed generated MCP launcher, effective-store preflight and isolated credentials. Current counters in the raw root are authoritative. Original 90-minute ceiling and 8 request / 8 finite-worker / 2 effect / 1 owner-version limits cannot be reset.
+
+1. R0 normal reference/request; snapshot all tables/rows. Missing only selected writer reference: public worker check, finite worker run, full unchanged snapshot (queued, attempts zero). Restore writer; check leaves work untouched. Run signed finite worker separately. Compare canonical control receipt, source receipt and all 504 rows: two target/version changes only. One effect.
+2. R1 normal reference/request; snapshot. Owner increments the selected candidate version once and commits. Signed finite worker must refuse stale facts; full no-Runner-effect comparison and exact failed receipt/rollback producer event. Never retry it.
+3. R1 exact closure preview; snapshot. Public terminal decline with default empty response; compare unchanged. Exact digest/reason and signed operator deliberately confirmed. Compare closure-only table changes and original approval/receipt/job/proposal. Repeat exact close and restart/status; no duplicate event or dispatch. Old item remains one attempt.
+4. R1 fresh Explore/request from current facts gives separate automatic approval and new execution identity. Replay the originally recorded reference separately: it must still return the old failed request. Signed finite worker performs only the fresh work. Compare all rows and separate source/control receipts. Second and final effect.
+5. R0 already-applied item: public preview and confirm attempt must both refuse no-effect closure without mutation.
+
+A request/worker nonzero result is only a signal to inspect durable state. No target substitution or source rollback to create a false untouched fixture. Closure JSON and human commands share the same assessment. Expected decline is a command failure with no mutation, not a product failure. At most 13 closure/inspection commands; all repeats/refusals count.

@@ -1,0 +1,52 @@
+{
+  "started_at": "2026-09-20T06:46:09.013206+00:00",
+  "baseline": "4b22b460d80eaa246ad4fd0928dc541a49833c81",
+  "raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920",
+  "branch": "codex/tui-safe-action-control-plane",
+  "budgets_hours": {
+    "implementation": 4,
+    "fresh_fixture_preparation": 2,
+    "stable_and_package": 2,
+    "final_operational": 1.5
+  },
+  "window_rule": "Each phase starts at its first recorded relevant operation; interruptions and corrections do not replenish it. Implementation begins now. Final requests wait for tester validation of sealed untouched starts.",
+  "final_caps": {
+    "request_change": 8,
+    "finite_worker_invocations": 8,
+    "business_effect_transactions": 2,
+    "owner_version_changes": 1,
+    "provider_calls": 0
+  },
+  "closure_command_plan": {
+    "supported_preview": 2,
+    "decline": 1,
+    "confirmed_close": 1,
+    "acknowledged_repeat": 1,
+    "applied_item_refusal": 2,
+    "restart_inspections": 6,
+    "max_total": 13
+  },
+  "gates": {
+    "full_suite_workers": 4,
+    "full_suite_outer_test_hook_ms": 20000,
+    "explicit_backend_workers": 2,
+    "explicit_backend_outer_test_hook_ms": 30000,
+    "product_deadlines": "unchanged"
+  },
+  "independent_review": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/o2p1-independent-review-20260920/REVIEW.md",
+      "sha256": "133bbe8c5148093a4dbc894c5852f85c620ea42cf5b2d1019dddbd1f43969b53"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/o2p1-independent-review-20260920/RESULT.json",
+      "sha256": "cfc62cc909a03d44321519a6dedf60bd31664847cbf9064118fc75567492f552"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/o2p1-independent-review-20260920/review-bundle.tar.gz",
+      "sha256": "fca7e5e8baf63ed5b2cd2113656a28140002a2c7ef58687479bed6807741aa28"
+    }
+  ],
+  "review_scope": "artifact/preflight/status independently passed; W1/W2 inspected, not independently executed",
+  "tester_task": "01a0bcb8-0925-7380-911a-8bab207b9e0b"
+}

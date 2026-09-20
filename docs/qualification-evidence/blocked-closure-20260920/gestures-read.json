@@ -1,0 +1,22 @@
+[
+  {
+    "observed": "C Review + activate",
+    "send": "c",
+    "reason": "Review the complete prepared Read candidate before explicit activation"
+  },
+  {
+    "observed": "Activate \"reviewed_staging\" exactly as shown now?",
+    "send": "y",
+    "reason": "Confirm exact prepared scope and field operations; only Read activation"
+  },
+  {
+    "observed": "ACTIVE  3 tables  Complete",
+    "send": "q",
+    "reason": "Leave separately completed Read activation"
+  },
+  {
+    "observed": "Up/Down Select   Enter Continue   Esc Back",
+    "send": "\u001b",
+    "reason": "Exit Read-only setup handoff; Action review uses its own session"
+  }
+]

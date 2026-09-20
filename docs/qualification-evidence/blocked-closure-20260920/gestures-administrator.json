@@ -1,0 +1,57 @@
+[
+  {
+    "observed": "> Change a verified outcome with a model",
+    "send": "\u001b[B",
+    "reason": "Select saved active authority; no model route"
+  },
+  {
+    "observed": "> Verified Action Boundary [ACTIVE]",
+    "send": "\r",
+    "reason": "Continue separate execution setup"
+  },
+  {
+    "observed": "> Describe a verified outcome change with a model",
+    "send": "\u001b[B",
+    "reason": "Choose reviewed execution setup without authoring"
+  },
+  {
+    "observed": "> Review supervised execution for release.seal_candidate",
+    "send": "\r",
+    "reason": "Inspect saved receipt selection and writer prerequisites"
+  },
+  {
+    "observed": "> Keep the exact reviewed selection",
+    "send": "\r",
+    "reason": "Retain exact current source_db selection and named writer reference"
+  },
+  {
+    "observed": "> Choose a write connection",
+    "send": "\u001b[B",
+    "reason": "Choose exact administrator requirements export"
+  },
+  {
+    "observed": "> Prepare administrator instructions",
+    "send": "\r",
+    "reason": "Generate narrow grants and receipt DDL; no source provisioning by CLI"
+  },
+  {
+    "observed": "> Return to pending review",
+    "send": "\r",
+    "reason": "Preserve generated administrator plan and return; execution still off"
+  },
+  {
+    "observed": "Set up database changes",
+    "send": "\u001b",
+    "reason": "Leave setup to relaunch with new process-local writer input; no enable"
+  },
+  {
+    "observed": "VERIFIED ACTION BOUNDARY",
+    "send": "\u001b",
+    "reason": "Return to main Action menu"
+  },
+  {
+    "observed": "Esc Back   Q Quit",
+    "send": "q",
+    "reason": "Exit before relaunch with administrator-provisioned writer environment"
+  }
+]

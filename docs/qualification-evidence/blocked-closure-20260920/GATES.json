@@ -1,0 +1,816 @@
+[
+  {
+    "name": "baseline-lifecycle",
+    "exit": 1,
+    "seconds": 5.713339805603027,
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "apps/runner/src/worker-blocked-closure.test.ts",
+      "--maxWorkers=1",
+      "--minWorkers=1"
+    ],
+    "source_before": "51c4a4a23dc792b34ca7bd7c6fc95a3e388a0549ac1a44c101c4265c97846e2b",
+    "source_after": "51c4a4a23dc792b34ca7bd7c6fc95a3e388a0549ac1a44c101c4265c97846e2b",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  1 failed (1)"
+    ],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/baseline-lifecycle-exit.json",
+    "record_sha256": "1b51dcdde747899ae529a2285cd2410939ad1777f92b5956c4e0207ccad70b60",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/baseline-lifecycle.log",
+    "log_sha256": "3fc59a966b50e74f50e05d89b380ce044c4bb89914d5692febdd079937278e7a"
+  },
+  {
+    "name": "baseline-lifecycle02",
+    "exit": 1,
+    "seconds": 5.2333197593688965,
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "apps/runner/src/worker-blocked-closure.test.ts",
+      "--maxWorkers=1",
+      "--minWorkers=1"
+    ],
+    "source_before": "f302ae2afb7e80d02bcc8a3e6c94465dcc976a2aa3154fdf9f9ef27409fe1cba",
+    "source_after": "f302ae2afb7e80d02bcc8a3e6c94465dcc976a2aa3154fdf9f9ef27409fe1cba",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  1 failed (1)"
+    ],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/baseline-lifecycle02-exit.json",
+    "record_sha256": "83cc496dc3d5e37a083f5e4e3d22afcba961e5807bf86bfc42d035ba9df57c4c",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/baseline-lifecycle02.log",
+    "log_sha256": "40ae4e8acc4a99ce28a893325fc91fa08a05d6ae3e3b4b0372295bda3811bf93"
+  },
+  {
+    "name": "baseline-lifecycle03",
+    "exit": 0,
+    "seconds": 4.260794162750244,
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "apps/runner/src/worker-blocked-closure.test.ts",
+      "--maxWorkers=1",
+      "--minWorkers=1"
+    ],
+    "source_before": "591185436ffc32883db162215e026723264f93c952508e54859dde279468a747",
+    "source_after": "591185436ffc32883db162215e026723264f93c952508e54859dde279468a747",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [
+      "Test Files  1 passed (1)",
+      "Tests  1 passed (1)"
+    ],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/baseline-lifecycle03-exit.json",
+    "record_sha256": "a4fdd2c0c873611f1a7fe229f277e08e495104e383d90707acb1922c4155759f",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/baseline-lifecycle03.log",
+    "log_sha256": "75cc5f2c95975a2ac34a073df3543a46d5ab6f039295c89628ccda42dfa5017e"
+  },
+  {
+    "name": "focused-closure02",
+    "exit": 1,
+    "seconds": 12.64917254447937,
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "apps/runner/src/worker-blocked-closure.test.ts",
+      "--maxWorkers=1",
+      "--minWorkers=1"
+    ],
+    "source_before": "97a34429926691d42e245dbefb2d06ac71a53cf3d859e7ba3291f9e3bc736091",
+    "source_after": "97a34429926691d42e245dbefb2d06ac71a53cf3d859e7ba3291f9e3bc736091",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  20 failed (20)"
+    ],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-closure02-exit.json",
+    "record_sha256": "636e08835a03b28763d07a23763905058057f377a56af3b40b5867904a7b8699",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-closure02.log",
+    "log_sha256": "0d0b920f71c5c2b1e1c2f4c71fc80b9299d39753917e70dadd06c464fc4ae216"
+  },
+  {
+    "name": "focused-closure03",
+    "exit": 1,
+    "seconds": 13.096358299255371,
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "apps/runner/src/worker-blocked-closure.test.ts",
+      "packages/postgres/src/atomic-updates.test.ts",
+      "--maxWorkers=2",
+      "--minWorkers=1"
+    ],
+    "source_before": "9f92508ffc94c292ac48ef1f1dbd4caa5e2dae39ac2e256614193d5253f09ae9",
+    "source_after": "9f92508ffc94c292ac48ef1f1dbd4caa5e2dae39ac2e256614193d5253f09ae9",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [
+      "Test Files  1 failed | 1 passed (2)",
+      "Tests  19 failed | 46 passed (65)"
+    ],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-closure03-exit.json",
+    "record_sha256": "dd29eee8116ab2381542a07553f775015bb3519384f0d54540bda8430f057a5c",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-closure03.log",
+    "log_sha256": "3f5d31839f36b9e1e899345828ded7781cc199ca4a10b1598cf4d997d26bcf6b"
+  },
+  {
+    "name": "focused-closure04",
+    "exit": 0,
+    "seconds": 14.781697034835815,
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "apps/runner/src/worker-blocked-closure.test.ts",
+      "packages/postgres/src/atomic-updates.test.ts",
+      "--maxWorkers=2",
+      "--minWorkers=1"
+    ],
+    "source_before": "920dc2d21c641afd33b2ad93bbc0ccfc7bf94dc5cf0cfa3d8cba625975272404",
+    "source_after": "920dc2d21c641afd33b2ad93bbc0ccfc7bf94dc5cf0cfa3d8cba625975272404",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [
+      "Test Files  2 passed (2)",
+      "Tests  67 passed (67)"
+    ],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-closure04-exit.json",
+    "record_sha256": "d1b3f639f04ca4429d61cdf5db295d2b846f145dd23fdcd5da676db4c718acd5",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-closure04.log",
+    "log_sha256": "2fdc9896ec403fd5c27a3e9e921425dca4cd2073296bf5e543c57f0218db83fe"
+  },
+  {
+    "name": "focused-combined01",
+    "exit": 0,
+    "seconds": 130.00139379501343,
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "apps/runner/src/worker-blocked-closure.test.ts",
+      "apps/runner/src/semantic-action-runtime.test.ts",
+      "apps/runner/src/worker-runtime.test.ts",
+      "packages/postgres/src/atomic-updates.test.ts",
+      "packages/proposal-store/src/worker-cancellation-role.test.ts",
+      "--maxWorkers=2",
+      "--minWorkers=1",
+      "--testTimeout=20000",
+      "--hookTimeout=20000"
+    ],
+    "source_before": "5d3a8cd56dfd22c617ea9eb01103d383abd3d294eaef4f86e8d2606274986a54",
+    "source_after": "5d3a8cd56dfd22c617ea9eb01103d383abd3d294eaef4f86e8d2606274986a54",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [
+      "Test Files  5 passed (5)",
+      "Tests  172 passed | 5 skipped (177)"
+    ],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-combined01-exit.json",
+    "record_sha256": "cad263d346bcd6f87b0b10082c922f8bb3e5cb81a843ae341779b5dcf695af85",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-combined01.log",
+    "log_sha256": "e2a2be54b83bdebbff9cbcd026ac339f370614e6791075267262ae4420618198"
+  },
+  {
+    "name": "focused-first",
+    "exit": 0,
+    "seconds": 4.494669437408447,
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "apps/runner/src/worker-blocked-closure.test.ts",
+      "packages/postgres/src/atomic-updates.test.ts",
+      "--maxWorkers=2",
+      "--minWorkers=1"
+    ],
+    "source_before": "07340333d708a5cc1fdc105c3f9e5611fa00ab8bef7330e7c408c86619e28dcd",
+    "source_after": "07340333d708a5cc1fdc105c3f9e5611fa00ab8bef7330e7c408c86619e28dcd",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [
+      "Test Files  2 passed (2)",
+      "Tests  41 passed (41)"
+    ],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-first-exit.json",
+    "record_sha256": "87067db5ad545f9564f411aeb3ead3495d77bbdd11f03ba9a46bf7151c009df3",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-first.log",
+    "log_sha256": "0d725fd4c4b019b175e364d6ebae47abcfed55153bfbc41006f0a7220ac45d9d"
+  },
+  {
+    "name": "focused-prestable03",
+    "exit": 0,
+    "seconds": 43.88149356842041,
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "apps/runner/src/worker-blocked-closure.test.ts",
+      "apps/runner/src/worker-status.test.ts",
+      "apps/runner/src/semantic-action-runtime.test.ts",
+      "-t",
+      "no-effect history|blocked closure|blocked lifecycle|status scope|durable worker",
+      "--maxWorkers=2",
+      "--minWorkers=1",
+      "--testTimeout=20000",
+      "--hookTimeout=20000"
+    ],
+    "source_before": "40b2373d47f37dbdd403ff1c4a0b5e3930e5aadb102ec1c69dca279d17a0831c",
+    "source_after": "40b2373d47f37dbdd403ff1c4a0b5e3930e5aadb102ec1c69dca279d17a0831c",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [
+      "Test Files  3 passed (3)",
+      "Tests  28 passed | 48 skipped (76)"
+    ],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-prestable03-exit.json",
+    "record_sha256": "90f7dea5f9eb1a873a89ad3dfc79d9cb88b3a6014b4aa5384a939d122be20d19",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-prestable03.log",
+    "log_sha256": "ae4667c849b2296450267f9f5015ff90738f2254b74a3b28fbc8e665e6664aec"
+  },
+  {
+    "name": "focused-runtime01",
+    "exit": 1,
+    "seconds": 14.704508543014526,
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "apps/runner/src/semantic-action-runtime.test.ts",
+      "-t",
+      "fresh reference after closed",
+      "--maxWorkers=1",
+      "--minWorkers=1"
+    ],
+    "source_before": "a88c8ee8fcd302c81e66dc49b1df418f6082e2be6c8857f0e974c1fdf6935db1",
+    "source_after": "a88c8ee8fcd302c81e66dc49b1df418f6082e2be6c8857f0e974c1fdf6935db1",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  1 failed | 2 passed | 41 skipped (44)"
+    ],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-runtime01-exit.json",
+    "record_sha256": "4f13eeb55ec92687b3f1c1b6d75413eae75d6e4b8f3d17ab919764c522241874",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-runtime01.log",
+    "log_sha256": "7b469f22ea1c718a1e9e3ab4f5c8aa0543fa419fbe289a990e0989b80c976c04"
+  },
+  {
+    "name": "postgres-closure01",
+    "exit": 0,
+    "seconds": 15.070854902267456,
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "apps/runner/src/worker-blocked-closure.test.ts",
+      "--maxWorkers=1",
+      "--minWorkers=1",
+      "--testTimeout=30000",
+      "--hookTimeout=30000"
+    ],
+    "source_before": "ec5c2debf96621b39fd1cdc75e0f87d17a1e19732f28c8d3a799bc0ff05fb9af",
+    "source_after": "ec5c2debf96621b39fd1cdc75e0f87d17a1e19732f28c8d3a799bc0ff05fb9af",
+    "source_unchanged": true,
+    "credential_scope": "only owned SYNAPSOR_TEST_POSTGRES_URL",
+    "summary": [
+      "Test Files  1 passed (1)",
+      "Tests  24 passed (24)"
+    ],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/postgres-closure01-exit.json",
+    "record_sha256": "5bc96bbe2deca12b6aef1f6768f4c808c26c6fda76fb1d1ca2a63ee76485cd61",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/postgres-closure01.log",
+    "log_sha256": "13e38932649f7ec90c63add52e5465169490a5632b2d6d990a387669eb9569db"
+  },
+  {
+    "name": "postgres-combined02",
+    "exit": 0,
+    "seconds": 20.110121726989746,
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "apps/runner/src/worker-blocked-closure.test.ts",
+      "apps/runner/src/semantic-atomic-postgres.test.ts",
+      "packages/proposal-store/src/worker-cancellation-role.test.ts",
+      "--maxWorkers=2",
+      "--minWorkers=1",
+      "--testTimeout=30000",
+      "--hookTimeout=30000"
+    ],
+    "source_before": "fe282a09c7d6ab542d23fb27b7bb444dadfa3ce4100124088b60f6a641b94f54",
+    "source_after": "fe282a09c7d6ab542d23fb27b7bb444dadfa3ce4100124088b60f6a641b94f54",
+    "source_unchanged": true,
+    "credential_scope": "only owned SYNAPSOR_TEST_POSTGRES_URL",
+    "summary": [
+      "Test Files  3 passed (3)",
+      "Tests  44 passed (44)"
+    ],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/postgres-combined02-exit.json",
+    "record_sha256": "5f39f1897c9948ed415226a770ab0daf06859533e2a910eb70b127308b8c79e2",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/postgres-combined02.log",
+    "log_sha256": "e9eecfdb743a98e468037da7fd3e8946b93173a88f775190ef82a9f13d3aef69"
+  },
+  {
+    "name": "postgres-final",
+    "exit": 0,
+    "seconds": 27.718146800994873,
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "apps/runner/src/worker-blocked-closure.test.ts",
+      "apps/runner/src/semantic-atomic-postgres.test.ts",
+      "apps/runner/src/runtime-bridge-admission.test.ts",
+      "packages/proposal-store/src/worker-cancellation-role.test.ts",
+      "--maxWorkers=2",
+      "--minWorkers=1",
+      "--testTimeout=30000",
+      "--hookTimeout=30000"
+    ],
+    "source_before": "40b2373d47f37dbdd403ff1c4a0b5e3930e5aadb102ec1c69dca279d17a0831c",
+    "source_after": "40b2373d47f37dbdd403ff1c4a0b5e3930e5aadb102ec1c69dca279d17a0831c",
+    "source_unchanged": true,
+    "credential_scope": "only owned SYNAPSOR_TEST_POSTGRES_URL",
+    "summary": [
+      "Test Files  4 passed (4)",
+      "Tests  48 passed (48)"
+    ],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/postgres-final-exit.json",
+    "record_sha256": "8cd3c770a252a686b25edfa4f07ae7db12fda576f9efcc47c90cdf6c22901eb5",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/postgres-final.log",
+    "log_sha256": "2a337508754457fe15d9a43e416a43a598d8039d15142d4543c145a92f9f19ac"
+  },
+  {
+    "name": "postgres-producer01",
+    "exit": 1,
+    "seconds": 5.8736395835876465,
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "apps/runner/src/semantic-atomic-postgres.test.ts",
+      "--maxWorkers=1",
+      "--minWorkers=1",
+      "--testTimeout=30000",
+      "--hookTimeout=30000"
+    ],
+    "source_before": "cff5ae70ab48628a5b28c1ffc8881132a2510fd8b17af20602da7b1fea3cc5f4",
+    "source_after": "cff5ae70ab48628a5b28c1ffc8881132a2510fd8b17af20602da7b1fea3cc5f4",
+    "source_unchanged": true,
+    "credential_scope": "only owned SYNAPSOR_TEST_POSTGRES_URL",
+    "summary": [
+      "Test Files  1 failed (1)",
+      "Tests  1 failed | 10 passed (11)"
+    ],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/postgres-producer01-exit.json",
+    "record_sha256": "33d639911c4aab7f17ac042817e7cf4daf6538d1535ce23b33a5ffca89c4a859",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/postgres-producer01.log",
+    "log_sha256": "16ce2053e233721e240486b8974b21dbff47aaa69759b7bc9d90c09dc94377ad"
+  },
+  {
+    "name": "postgres-producer02",
+    "exit": 0,
+    "seconds": 6.239964485168457,
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "apps/runner/src/semantic-atomic-postgres.test.ts",
+      "--maxWorkers=1",
+      "--minWorkers=1",
+      "--testTimeout=30000",
+      "--hookTimeout=30000"
+    ],
+    "source_before": "b789262bb7ad1fbebf7fb1a8cb82400e403f88d8c856d96bd0c2797e16c8d03a",
+    "source_after": "b789262bb7ad1fbebf7fb1a8cb82400e403f88d8c856d96bd0c2797e16c8d03a",
+    "source_unchanged": true,
+    "credential_scope": "only owned SYNAPSOR_TEST_POSTGRES_URL",
+    "summary": [
+      "Test Files  1 passed (1)",
+      "Tests  11 passed (11)"
+    ],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/postgres-producer02-exit.json",
+    "record_sha256": "11a58a972e0160fd7156b966f9d3c630cdff33f96d1af53a79ad126caa8838df",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/postgres-producer02.log",
+    "log_sha256": "846a89fe79fe40d089a03ce8671f777490b11a4a8453acbcf11ff239f4c5904e"
+  },
+  {
+    "name": "preview-refusal-after",
+    "exit": 0,
+    "seconds": 0.856837272644043,
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "tsx",
+      "docs/qualification-evidence/blocked-closure-20260920/preview-refusal.mts"
+    ],
+    "source_before": "40b2373d47f37dbdd403ff1c4a0b5e3930e5aadb102ec1c69dca279d17a0831c",
+    "source_after": "40b2373d47f37dbdd403ff1c4a0b5e3930e5aadb102ec1c69dca279d17a0831c",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/preview-refusal-after-exit.json",
+    "record_sha256": "171ee4e113ddadeafbaabbbc9ade109bbf845577026730745fe06995aa3e7a72",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/preview-refusal-after.log",
+    "log_sha256": "aa72afaea6f1b92bc75f169ce38a73e1e93913956050e15c5a38747c1c7c8646"
+  },
+  {
+    "name": "preview-refusal-before",
+    "exit": 1,
+    "seconds": 0.9096317291259766,
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "tsx",
+      "docs/qualification-evidence/blocked-closure-20260920/preview-refusal.mts"
+    ],
+    "source_before": "afa040f8fcdc0e1640b58209916646bd451703ef71747ce5a9ce2baa7ad36741",
+    "source_after": "afa040f8fcdc0e1640b58209916646bd451703ef71747ce5a9ce2baa7ad36741",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/preview-refusal-before-exit.json",
+    "record_sha256": "37990295c891c6c13e363d9e5b47fee9a4493370ad06057bc3d84d36e28876a0",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/preview-refusal-before.log",
+    "log_sha256": "a8a657c2cfb2f77dd9c962d23e6fef4587bd18919b5ed7575519468657f732fd"
+  },
+  {
+    "name": "sqlite-contention-final",
+    "exit": 0,
+    "seconds": 15.084831953048706,
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "--config",
+      "docs/qualification-evidence/blocked-closure-20260920/sqlite-contention-vitest.config.mjs"
+    ],
+    "source_before": "40b2373d47f37dbdd403ff1c4a0b5e3930e5aadb102ec1c69dca279d17a0831c",
+    "source_after": "40b2373d47f37dbdd403ff1c4a0b5e3930e5aadb102ec1c69dca279d17a0831c",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [
+      "Test Files  1 passed (1)",
+      "Tests  1 passed (1)"
+    ],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/sqlite-contention-final-exit.json",
+    "record_sha256": "7d956f8a2a47f273ea01ca8202f069c0b84b226cdaf7e9628b3bf4f08fe7b941",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/sqlite-contention-final.log",
+    "log_sha256": "6ec9a3b721750d3de00f0aa5a431b5ebfc68e4aa63adccbd87993ed36917cd29"
+  },
+  {
+    "name": "stable-full01",
+    "exit": -15,
+    "seconds": 88.35355019569397,
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "--maxWorkers=4",
+      "--minWorkers=1",
+      "--testTimeout=20000",
+      "--hookTimeout=20000"
+    ],
+    "source_before": "fe282a09c7d6ab542d23fb27b7bb444dadfa3ce4100124088b60f6a641b94f54",
+    "source_after": "fe282a09c7d6ab542d23fb27b7bb444dadfa3ce4100124088b60f6a641b94f54",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/stable-full01-exit.json",
+    "record_sha256": "648ccbe4b7202e6831f6aebb9f92d197ff359d6d14e4473aac079d721fba70ca",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/stable-full01.log",
+    "log_sha256": "7f89ca2fadc36487048740adae4e9bfc48ead8364e5f13519f3113a6b76a4d52"
+  },
+  {
+    "name": "stable-full02",
+    "exit": 1,
+    "seconds": 1292.1420378684998,
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "--maxWorkers=4",
+      "--minWorkers=1",
+      "--testTimeout=20000",
+      "--hookTimeout=20000"
+    ],
+    "source_before": "afa040f8fcdc0e1640b58209916646bd451703ef71747ce5a9ce2baa7ad36741",
+    "source_after": "afa040f8fcdc0e1640b58209916646bd451703ef71747ce5a9ce2baa7ad36741",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [
+      "Test Files  1 failed | 320 passed | 21 skipped (342)",
+      "Tests  1 failed | 6650 passed | 476 skipped (7127)"
+    ],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/stable-full02-exit.json",
+    "record_sha256": "a7590e8b1d3d162dbab4a4c00b0877ce037b25f04eed0dccf3af07cb7bd0bd82",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/stable-full02.log",
+    "log_sha256": "cc98cd349b42b9f3ab74ce3c1a930df7ff3f722d660a504d3fa6da5cf7e517e1"
+  },
+  {
+    "name": "stable-full03",
+    "exit": 0,
+    "seconds": 1298.5661406517029,
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "--maxWorkers=4",
+      "--minWorkers=1",
+      "--testTimeout=20000",
+      "--hookTimeout=20000"
+    ],
+    "source_before": "40b2373d47f37dbdd403ff1c4a0b5e3930e5aadb102ec1c69dca279d17a0831c",
+    "source_after": "40b2373d47f37dbdd403ff1c4a0b5e3930e5aadb102ec1c69dca279d17a0831c",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [
+      "Test Files  321 passed | 21 skipped (342)",
+      "Tests  6653 passed | 476 skipped (7129)"
+    ],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/stable-full03-exit.json",
+    "record_sha256": "b724af5d76cc28781d5c9e9ab3ca45fb9667ad2a182ec2ab415072b4bcde8de4",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/stable-full03.log",
+    "log_sha256": "6fba655cfe0427ce1ed1edad72a827756407a904b917d6c23033a136ebc40257"
+  },
+  {
+    "name": "types-dev01",
+    "exit": 2,
+    "seconds": 48.31932544708252,
+    "command": [
+      "corepack",
+      "pnpm",
+      "typecheck"
+    ],
+    "source_before": "f7d78363ba87a2348433db06df66dfb4c41476b90a19dda56769cf1a490b7448",
+    "source_after": "f7d78363ba87a2348433db06df66dfb4c41476b90a19dda56769cf1a490b7448",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev01-exit.json",
+    "record_sha256": "530c3933ed8b5d2144ec67b38e55aede84c51c9d7c7a923d07a34ab16152985d",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev01.log",
+    "log_sha256": "f971e879989fd738f4028b970120432253893b453c2ab6cddbb472e60123d5cf"
+  },
+  {
+    "name": "types-dev02",
+    "exit": 2,
+    "seconds": 43.29046130180359,
+    "command": [
+      "corepack",
+      "pnpm",
+      "typecheck"
+    ],
+    "source_before": "28b0ad6766a3ac19887728d75a9eeedd522c782b7ed3a415d041c90e42f24141",
+    "source_after": "28b0ad6766a3ac19887728d75a9eeedd522c782b7ed3a415d041c90e42f24141",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev02-exit.json",
+    "record_sha256": "0a211010fc68bd8a26a9f8d877e07c65fe430aeb6acfb61408202ce4234b63b8",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev02.log",
+    "log_sha256": "b36e68004e9e2649b35f2d6b848d3ac4826b956497dad31507e5fd2282663fa9"
+  },
+  {
+    "name": "types-dev03",
+    "exit": 0,
+    "seconds": 41.167725801467896,
+    "command": [
+      "corepack",
+      "pnpm",
+      "typecheck"
+    ],
+    "source_before": "2f34349417d229e7233c672a2fda1639207d1a524c95f13dba15937668d26246",
+    "source_after": "9f92508ffc94c292ac48ef1f1dbd4caa5e2dae39ac2e256614193d5253f09ae9",
+    "source_unchanged": false,
+    "credential_scope": "absent",
+    "summary": [],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev03-exit.json",
+    "record_sha256": "6696988416328b1e056fc2ccce6a638686a4a6ff8ac7bf12d77d263b0df0fbd9",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev03.log",
+    "log_sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5"
+  },
+  {
+    "name": "types-dev04",
+    "exit": 0,
+    "seconds": 3.7801945209503174,
+    "command": [
+      "corepack",
+      "pnpm",
+      "typecheck"
+    ],
+    "source_before": "51380250c3b037f3077c82aa1a15f2ce875737f0afed6a65c968e2394d4e4889",
+    "source_after": "51380250c3b037f3077c82aa1a15f2ce875737f0afed6a65c968e2394d4e4889",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev04-exit.json",
+    "record_sha256": "db078df3498b3de69f75b9da4f92f13d260541ba6d1dde914eb6dc20310cfd87",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev04.log",
+    "log_sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5"
+  },
+  {
+    "name": "types-dev05",
+    "exit": 0,
+    "seconds": 8.867597579956055,
+    "command": [
+      "corepack",
+      "pnpm",
+      "typecheck"
+    ],
+    "source_before": "ed7ddd6ef247dcbaed0b9f8dceedbe2bae572e580a701c210e33d7bcfa32f8aa",
+    "source_after": "ed7ddd6ef247dcbaed0b9f8dceedbe2bae572e580a701c210e33d7bcfa32f8aa",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev05-exit.json",
+    "record_sha256": "7b8098e879e4d7f1b41ad58f294807cc31c153fa584850100fef0762e0c0957b",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev05.log",
+    "log_sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5"
+  },
+  {
+    "name": "types-dev06",
+    "exit": 0,
+    "seconds": 6.7194108963012695,
+    "command": [
+      "corepack",
+      "pnpm",
+      "typecheck"
+    ],
+    "source_before": "07e48212fb14f9164da24630eb726cb10d5567b51d68155dc7394f2e5257cbee",
+    "source_after": "07e48212fb14f9164da24630eb726cb10d5567b51d68155dc7394f2e5257cbee",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev06-exit.json",
+    "record_sha256": "bd57d68d3c8f517c998fd36bb1261c1db832243fb36f0476634d54da034e045a",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev06.log",
+    "log_sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5"
+  },
+  {
+    "name": "types-dev07",
+    "exit": 0,
+    "seconds": 6.509871482849121,
+    "command": [
+      "corepack",
+      "pnpm",
+      "typecheck"
+    ],
+    "source_before": "ec5c2debf96621b39fd1cdc75e0f87d17a1e19732f28c8d3a799bc0ff05fb9af",
+    "source_after": "ec5c2debf96621b39fd1cdc75e0f87d17a1e19732f28c8d3a799bc0ff05fb9af",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev07-exit.json",
+    "record_sha256": "1c56382d19afe0d7fc3a9ac6ca06f2266914b6d2bf1ec78ae869264c549e04a4",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev07.log",
+    "log_sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5"
+  },
+  {
+    "name": "types-dev08",
+    "exit": 0,
+    "seconds": 7.13884162902832,
+    "command": [
+      "corepack",
+      "pnpm",
+      "typecheck"
+    ],
+    "source_before": "43b8a1e0da587a2f8b2731a02c2db97f2ab1805bb4093e62b2cafa2cb914a44e",
+    "source_after": "43b8a1e0da587a2f8b2731a02c2db97f2ab1805bb4093e62b2cafa2cb914a44e",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev08-exit.json",
+    "record_sha256": "a68bc9fff2e3b7f104f913938e6757454c066aed32a5485702eca8b5e76fab5b",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev08.log",
+    "log_sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5"
+  },
+  {
+    "name": "types-final",
+    "exit": 0,
+    "seconds": 0.7978453636169434,
+    "command": [
+      "corepack",
+      "pnpm",
+      "typecheck"
+    ],
+    "source_before": "40b2373d47f37dbdd403ff1c4a0b5e3930e5aadb102ec1c69dca279d17a0831c",
+    "source_after": "40b2373d47f37dbdd403ff1c4a0b5e3930e5aadb102ec1c69dca279d17a0831c",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-final-exit.json",
+    "record_sha256": "ced72662c00cc25fd385d1a5a26f92c1f1d12c2f9c7fc76e3aa6192acf64f677",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-final.log",
+    "log_sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5"
+  },
+  {
+    "name": "types-prestable",
+    "exit": 1,
+    "seconds": 6.73485541343689,
+    "command": [
+      "corepack",
+      "pnpm",
+      "typecheck"
+    ],
+    "source_before": "fe282a09c7d6ab542d23fb27b7bb444dadfa3ce4100124088b60f6a641b94f54",
+    "source_after": "fe282a09c7d6ab542d23fb27b7bb444dadfa3ce4100124088b60f6a641b94f54",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-prestable-exit.json",
+    "record_sha256": "73540c99f457f17b3616abc22577a9d208f6e8a3b0e3118576e4c67fccb64989",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-prestable.log",
+    "log_sha256": "a86e0d4746bf8656ef70375d45fc570190515ce7e93beb9b3fc6d4d27b5508e2"
+  },
+  {
+    "name": "types-prestable02",
+    "exit": 0,
+    "seconds": 26.684468746185303,
+    "command": [
+      "corepack",
+      "pnpm",
+      "typecheck"
+    ],
+    "source_before": "afa040f8fcdc0e1640b58209916646bd451703ef71747ce5a9ce2baa7ad36741",
+    "source_after": "afa040f8fcdc0e1640b58209916646bd451703ef71747ce5a9ce2baa7ad36741",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-prestable02-exit.json",
+    "record_sha256": "c8f0c767b27b0da54bf22b78b58be13ac0f4ffb1fc5ae0979cbb7a50660e1123",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-prestable02.log",
+    "log_sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5"
+  },
+  {
+    "name": "types-prestable03",
+    "exit": 0,
+    "seconds": 4.244398593902588,
+    "command": [
+      "corepack",
+      "pnpm",
+      "typecheck"
+    ],
+    "source_before": "40b2373d47f37dbdd403ff1c4a0b5e3930e5aadb102ec1c69dca279d17a0831c",
+    "source_after": "40b2373d47f37dbdd403ff1c4a0b5e3930e5aadb102ec1c69dca279d17a0831c",
+    "source_unchanged": true,
+    "credential_scope": "absent",
+    "summary": [],
+    "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-prestable03-exit.json",
+    "record_sha256": "a0286078523b3b456019e4f57e6627f526772b6053b7d63695c481ad2c66b99d",
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-prestable03.log",
+    "log_sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5"
+  }
+]
