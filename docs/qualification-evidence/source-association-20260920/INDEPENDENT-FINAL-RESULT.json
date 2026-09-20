@@ -1,0 +1,32 @@
+{
+  "at": "2026-09-20T23:05:41.602721+00:00",
+  "report": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/source-association-completion-independent-20260920/REVIEW.md",
+  "sha256": "eb91d38ac2a1ffeeb05bf3b0f66ee8c564b6b2f19ab4f61e952c7d2b90d55bdb",
+  "role": "independent from implementation; separate existing tester task",
+  "accepted": [
+    "exact frozen artifact identity recomputed",
+    "A source association personally exercised",
+    "B first field false-negative real-module reproduction",
+    "main B supplied conformance/pending evidence inspected",
+    "guard structure inspected; stable suite inspected, not rerun"
+  ],
+  "not_established": [
+    "complete main or tester A/B BUSINESS completion",
+    "unchanged successful restart/recheck",
+    "runtime label lookup or original label-discovery impossibility",
+    "activation, execution, receipts"
+  ],
+  "tester_A_changed_candidate": "added then narrowed label operations in separate disabled Read; not unchanged-A coverage",
+  "tester_B": "BLOCKED missing untouched first-only checkpoint; no substituted later snapshot",
+  "cleanup": {
+    "preserved_root": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/source-association-completion-independent-20260920/final-preservation",
+    "sha256sums_sha256": "eaf0c37c03b2978189acdead8ee28baa13b6d26490ec7193e80eb3b1d9007668",
+    "removed_only": [
+      "synapsor-association-tester-a",
+      "synapsor-association-tester-a-valid"
+    ],
+    "candidate_reverified": true
+  },
+  "prior_report_hash": "5575e48ac383774489f12fb7056ebf5f42c11747b8cdc5f644ae01ca13cda2e9",
+  "amendment": "Explicit label verdict is authoring grant/coverage only; no runtime lookup or demonstrated original-listing impossibility. Narrow verdict unchanged."
+}

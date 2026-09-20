@@ -1,0 +1,359 @@
+{
+  "at": "2026-09-20T23:08:13.969745+00:00",
+  "budget_ceiling_usd": 5,
+  "main_with_development_share_usd": 3,
+  "tester_share_usd": 2,
+  "cases": [
+    {
+      "case": "ASSOCIATION-DEV-B",
+      "status": "STOPPED",
+      "actual_transports": 6,
+      "actual_cost_usd": 0.1017183,
+      "phase_counts": {
+        "initial": 6,
+        "restart": 0
+      },
+      "deadline": "2026-09-20T21:59:20.262572+00:00",
+      "stop_reason": "6/6 actual transports; public requested selector diff reviewed; next call blocked before transport",
+      "calls": [
+        {
+          "id": "ASSOCIATION-DEV-B-1",
+          "at": "2026-09-20T21:00:55.274Z",
+          "completed_at": "2026-09-20T21:00:56.827Z",
+          "status": "SETTLED",
+          "cost_usd": 0.007003,
+          "max_output_tokens": 800,
+          "request": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/dev-B/authoring-meter/ASSOCIATION-DEV-B-1-request.json",
+          "request_sha256": "c19b7fb94d5c02b213893682a3b6371f054ebfaac1e03e1ef9962cdddeb1429f",
+          "response": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/dev-B/authoring-meter/ASSOCIATION-DEV-B-1-response.txt",
+          "response_sha256": "187a7a88f0e5e1d9d633d8e4de1054b900240a82763d6159e0e04444d1793384"
+        },
+        {
+          "id": "ASSOCIATION-DEV-B-2",
+          "at": "2026-09-20T21:01:26.180Z",
+          "completed_at": "2026-09-20T21:01:29.734Z",
+          "status": "SETTLED",
+          "cost_usd": 0.015815,
+          "max_output_tokens": 4000,
+          "request": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/dev-B/authoring-meter/ASSOCIATION-DEV-B-2-request.json",
+          "request_sha256": "3c26f313f89be40b81ce22e9666cbf91e2c18f0abf9fb1c5430672fae9dddf3d",
+          "response": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/dev-B/authoring-meter/ASSOCIATION-DEV-B-2-response.txt",
+          "response_sha256": "36b184f8bd88a279d86b01b58358fcba453def2d5e4de755333e3102f08115fb"
+        },
+        {
+          "id": "ASSOCIATION-DEV-B-3",
+          "at": "2026-09-20T21:07:57.857Z",
+          "completed_at": "2026-09-20T21:08:02.203Z",
+          "status": "SETTLED",
+          "cost_usd": 0.0165515,
+          "max_output_tokens": 4000,
+          "request": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/dev-B/authoring-meter/ASSOCIATION-DEV-B-3-request.json",
+          "request_sha256": "0e510d56bee87e72f1865210ee495ae02be4eb4e2a8554d66dd3d4e67549e207",
+          "response": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/dev-B/authoring-meter/ASSOCIATION-DEV-B-3-response.txt",
+          "response_sha256": "0174d62826ac3b45049a00a0aa6a1cca335cbb0c001f0a96fa5e1e2b8e541d95"
+        },
+        {
+          "id": "ASSOCIATION-DEV-B-4",
+          "at": "2026-09-20T21:08:29.639Z",
+          "completed_at": "2026-09-20T21:08:34.258Z",
+          "status": "SETTLED",
+          "cost_usd": 0.0153134,
+          "max_output_tokens": 4000,
+          "request": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/dev-B/authoring-meter/ASSOCIATION-DEV-B-4-request.json",
+          "request_sha256": "ad9aff3c202ac97a23281d5afd38a289b31e756e753795a9cfd6104c1702ab5f",
+          "response": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/dev-B/authoring-meter/ASSOCIATION-DEV-B-4-response.txt",
+          "response_sha256": "f3a4914d687b195665d2ec2d483877db3998f0170246d8e3e3382c0485c40b27"
+        },
+        {
+          "id": "ASSOCIATION-DEV-B-5",
+          "at": "2026-09-20T21:21:08.079Z",
+          "completed_at": "2026-09-20T21:21:11.491Z",
+          "status": "SETTLED",
+          "cost_usd": 0.0394445,
+          "max_output_tokens": 5000,
+          "request": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/dev-B/authoring-meter/ASSOCIATION-DEV-B-5-request.json",
+          "request_sha256": "249b6405eaad87f6e45af0bb282da9e510bcda50f70ab418aa682e7243070e64",
+          "response": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/dev-B/authoring-meter/ASSOCIATION-DEV-B-5-response.txt",
+          "response_sha256": "12d7db021b792769ebdcbd7177889f6ffbc64a19c743b954ee52561bf802bb1c"
+        },
+        {
+          "id": "ASSOCIATION-DEV-B-6",
+          "at": "2026-09-20T21:21:11.589Z",
+          "completed_at": "2026-09-20T21:21:13.130Z",
+          "status": "SETTLED",
+          "cost_usd": 0.0075909,
+          "max_output_tokens": 5000,
+          "request": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/dev-B/authoring-meter/ASSOCIATION-DEV-B-6-request.json",
+          "request_sha256": "47c8a55df745e5044aa32f3abb45557e745aad46fad9728e1e94e65aff930683",
+          "response": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/dev-B/authoring-meter/ASSOCIATION-DEV-B-6-response.txt",
+          "response_sha256": "a25c86e6a23b4c10d068351f34c3b4f73ef48a2c4a654709c9f4798e7f692696"
+        }
+      ],
+      "stopped_at": null
+    },
+    {
+      "case": "ASSOCIATION-MAIN-A",
+      "status": "STOPPED",
+      "actual_transports": 3,
+      "actual_cost_usd": 0.2278326,
+      "phase_counts": {
+        "initial": 3,
+        "restart": 0
+      },
+      "deadline": "2026-09-21T00:32:47.532392+00:00",
+      "stop_reason": "Final explicit public recheck substantive refusal OBLIGATION_OBSERVATION_UNESTABLISHED, no same-state retry; 3 calls retained",
+      "calls": [
+        {
+          "id": "ASSOCIATION-MAIN-A-1",
+          "at": "2026-09-20T22:45:50.026Z",
+          "completed_at": "2026-09-20T22:46:23.754Z",
+          "status": "SETTLED",
+          "cost_usd": 0.1092798,
+          "max_output_tokens": 12000,
+          "request": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-A/authoring-meter/ASSOCIATION-MAIN-A-1-request.json",
+          "request_sha256": "62020dbb60c2afd478fe5c771eaf590d42368affe9c3c7750dea384db0c32ed5",
+          "response": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-A/authoring-meter/ASSOCIATION-MAIN-A-1-response.txt",
+          "response_sha256": "ca5490114b887a40458a683e458d40a34214e113130ba0fbdc78d3bd541e8cb4"
+        },
+        {
+          "id": "ASSOCIATION-MAIN-A-2",
+          "at": "2026-09-20T22:46:51.310Z",
+          "completed_at": "2026-09-20T22:46:52.798Z",
+          "status": "SETTLED",
+          "cost_usd": 0.0067095,
+          "max_output_tokens": 800,
+          "request": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-A/authoring-meter/ASSOCIATION-MAIN-A-2-request.json",
+          "request_sha256": "f9bb9aefd1136e0b97660bc742a3bbc10e47e9efebeccc9231fce50b5c5a8220",
+          "response": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-A/authoring-meter/ASSOCIATION-MAIN-A-2-response.txt",
+          "response_sha256": "323a31abe67545bd20fae9c714f2dbe2dd00c9f13d8199495aefe3e94b7c1d37"
+        },
+        {
+          "id": "ASSOCIATION-MAIN-A-3",
+          "at": "2026-09-20T22:49:29.743Z",
+          "completed_at": "2026-09-20T22:50:00.915Z",
+          "status": "SETTLED",
+          "cost_usd": 0.1118433,
+          "max_output_tokens": 12000,
+          "request": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-A/authoring-meter/ASSOCIATION-MAIN-A-3-request.json",
+          "request_sha256": "7530f65531e007657b1fbbb642af2019cd7818904d71a9c051864e5e32abeae6",
+          "response": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-A/authoring-meter/ASSOCIATION-MAIN-A-3-response.txt",
+          "response_sha256": "16d62afe651cc3ad96385f293253dac6f288212ad96ddbe726405a704575f1f2"
+        }
+      ],
+      "stopped_at": "2026-09-20T22:53:20.807418+00:00"
+    },
+    {
+      "case": "ASSOCIATION-MAIN-B",
+      "status": "STOPPED",
+      "actual_transports": 14,
+      "actual_cost_usd": 0.8399264,
+      "phase_counts": {
+        "initial": 14,
+        "restart": 0
+      },
+      "deadline": "2026-09-21T00:32:47.532392+00:00",
+      "stop_reason": "Final complete Review persisted valid coverage but BUSINESS remains receipt-blocked: current reviewed intent present, configuration-only passage has no receipt obligation association. No unchanged repeat.",
+      "calls": [
+        {
+          "id": "ASSOCIATION-MAIN-B-1",
+          "at": "2026-09-20T22:43:40.902Z",
+          "completed_at": "2026-09-20T22:43:42.428Z",
+          "status": "SETTLED",
+          "cost_usd": 0.0070215,
+          "max_output_tokens": 800,
+          "request": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-1-request.json",
+          "request_sha256": "9ce1c60f144611c3bc2d9dabdde878c810dd106f55bbc6a7aee94f674fc7b4d1",
+          "response": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-1-response.txt",
+          "response_sha256": "b885d92bba3d6ac8ce680f85d2ef0b1f60cc441e62146c4888d220782d9d4461"
+        },
+        {
+          "id": "ASSOCIATION-MAIN-B-2",
+          "at": "2026-09-20T22:44:18.770Z",
+          "completed_at": "2026-09-20T22:44:21.631Z",
+          "status": "SETTLED",
+          "cost_usd": 0.015168,
+          "max_output_tokens": 4000,
+          "request": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-2-request.json",
+          "request_sha256": "e643b12dda9e758e2c6a27d073b249da89ee5ee158cdc2acbb76decfc86e97c9",
+          "response": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-2-response.txt",
+          "response_sha256": "d621bce631451a62d0b3e332050c9dcf9040c0ba269a5a5b01499e1ecb04bf89"
+        },
+        {
+          "id": "ASSOCIATION-MAIN-B-3",
+          "at": "2026-09-20T22:44:49.977Z",
+          "completed_at": "2026-09-20T22:44:55.329Z",
+          "status": "SETTLED",
+          "cost_usd": 0.0161009,
+          "max_output_tokens": 4000,
+          "request": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-3-request.json",
+          "request_sha256": "afc299d84808a5b5d76321894949b820ec88fe70b577f65468bd0c616981ca9e",
+          "response": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-3-response.txt",
+          "response_sha256": "3fddd18d1efe9ff01dde76f513c4ef8e17a9cc78a6be47385794896274b3c930"
+        },
+        {
+          "id": "ASSOCIATION-MAIN-B-4",
+          "at": "2026-09-20T22:46:51.268Z",
+          "completed_at": "2026-09-20T22:46:54.956Z",
+          "status": "SETTLED",
+          "cost_usd": 0.0389775,
+          "max_output_tokens": 5000,
+          "request": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-4-request.json",
+          "request_sha256": "c568081530c30687d290dae6c5b948ffca6c60868e0a61f272e53d1bef913c39",
+          "response": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-4-response.txt",
+          "response_sha256": "a21fe17ac988584e456085459c4c2a8a70029a9e0fd314a7a8bf84fd25acac3c"
+        },
+        {
+          "id": "ASSOCIATION-MAIN-B-5",
+          "at": "2026-09-20T22:46:55.072Z",
+          "completed_at": "2026-09-20T22:46:56.891Z",
+          "status": "SETTLED",
+          "cost_usd": 0.0075674,
+          "max_output_tokens": 5000,
+          "request": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-5-request.json",
+          "request_sha256": "adb5d8a984c8f8b4f9cf0b2260bdb6fbc34b845772518e22dd09c60b4fcc5261",
+          "response": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-5-response.txt",
+          "response_sha256": "3bcc720045bbe36fa9fd1b86a42c21243b19410ba0359de1903087f8943e9ffb"
+        },
+        {
+          "id": "ASSOCIATION-MAIN-B-6",
+          "at": "2026-09-20T22:46:57.019Z",
+          "completed_at": "2026-09-20T22:46:59.649Z",
+          "status": "SETTLED",
+          "cost_usd": 0.010236,
+          "max_output_tokens": 800,
+          "request": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-6-request.json",
+          "request_sha256": "88b141f14381dc63f7db5fa15b471828f90e946542adc9086cfe2e1d05983f40",
+          "response": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-6-response.txt",
+          "response_sha256": "29620066c7173d86feed0e437ee4f43c007837fb60679284acc8d594453f55fb"
+        },
+        {
+          "id": "ASSOCIATION-MAIN-B-7",
+          "at": "2026-09-20T22:48:11.034Z",
+          "completed_at": "2026-09-20T22:48:13.986Z",
+          "status": "SETTLED",
+          "cost_usd": 0.0062612,
+          "max_output_tokens": 5000,
+          "request": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-7-request.json",
+          "request_sha256": "69a1253fb59606b6b28e5b1c220afe19cfd33fb052096c12edf566f375e469d8",
+          "response": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-7-response.txt",
+          "response_sha256": "b1379a69e24af62e1637033b417aaf362a2f8febfa177105d6f13f0e6c71a3dd"
+        },
+        {
+          "id": "ASSOCIATION-MAIN-B-8",
+          "at": "2026-09-20T22:48:13.994Z",
+          "completed_at": "2026-09-20T22:48:17.318Z",
+          "status": "SETTLED",
+          "cost_usd": 0.010735,
+          "max_output_tokens": 800,
+          "request": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-8-request.json",
+          "request_sha256": "dee087d039b6b4d1201ea95085745588078b340487e2a0359c3c926eca0c42c0",
+          "response": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-8-response.txt",
+          "response_sha256": "cbe13235157884f358f4f31ed9b3f5a3cf5056e6e6dc41a452d81435aa165828"
+        },
+        {
+          "id": "ASSOCIATION-MAIN-B-9",
+          "at": "2026-09-20T22:49:28.889Z",
+          "completed_at": "2026-09-20T22:50:10.888Z",
+          "status": "SETTLED",
+          "cost_usd": 0.168236,
+          "max_output_tokens": 12000,
+          "request": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-9-request.json",
+          "request_sha256": "bffdbce50a7ab07e42a40fd4fcabc014e57146001c351a918e84d28028a3cdaa",
+          "response": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-9-response.txt",
+          "response_sha256": "809e55c9d88ea9f6be44e6addac1c698641ee69a012d6b08934931e2b99fee86"
+        },
+        {
+          "id": "ASSOCIATION-MAIN-B-10",
+          "at": "2026-09-20T22:52:36.962Z",
+          "completed_at": "2026-09-20T22:53:12.344Z",
+          "status": "SETTLED",
+          "cost_usd": 0.1365601,
+          "max_output_tokens": 12000,
+          "request": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-10-request.json",
+          "request_sha256": "27a327632c2ab5ca1af45527a96b0103a3dedd668e24ec1ba66d0744830b07c7",
+          "response": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-10-response.txt",
+          "response_sha256": "bb6081d88d1da5e2115996e4be0931490ced23a450b07ad48a51f1026d98a4b1"
+        },
+        {
+          "id": "ASSOCIATION-MAIN-B-11",
+          "at": "2026-09-20T22:53:12.526Z",
+          "completed_at": "2026-09-20T22:53:46.485Z",
+          "status": "SETTLED",
+          "cost_usd": 0.1389666,
+          "max_output_tokens": 12000,
+          "request": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-11-request.json",
+          "request_sha256": "127e108fcf61bfd724d943a792bb7c8540004eb6d7eb1e0b2d92bd4c3208cf14",
+          "response": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-11-response.txt",
+          "response_sha256": "7795d945c020d36c402247aa20414df97e6b7a5f3fd0a4e963824edb80f211f4"
+        },
+        {
+          "id": "ASSOCIATION-MAIN-B-12",
+          "at": "2026-09-20T22:54:30.529Z",
+          "completed_at": "2026-09-20T22:54:32.034Z",
+          "status": "SETTLED",
+          "cost_usd": 0.009584,
+          "max_output_tokens": 800,
+          "request": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-12-request.json",
+          "request_sha256": "ceed965f63424dde8fec4d8b51faa76dfd796a02b04aa7d629ca2585b5296ce0",
+          "response": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-12-response.txt",
+          "response_sha256": "8af2660906c3cca7835c672628cf1688fb99c0fe0b42a9a825a2392bed76c621"
+        },
+        {
+          "id": "ASSOCIATION-MAIN-B-13",
+          "at": "2026-09-20T22:56:54.448Z",
+          "completed_at": "2026-09-20T22:57:28.769Z",
+          "status": "SETTLED",
+          "cost_usd": 0.1372946,
+          "max_output_tokens": 12000,
+          "request": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-13-request.json",
+          "request_sha256": "a1a2b717a921c266f2533553d1e06913955a1bab9fd8baa03ff094ded3cbfa6b",
+          "response": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-13-response.txt",
+          "response_sha256": "0362b02135b037f6acbd21c658b6439e37c0e0bfe1c6389915cea9ca1b51046c"
+        },
+        {
+          "id": "ASSOCIATION-MAIN-B-14",
+          "at": "2026-09-20T22:57:28.910Z",
+          "completed_at": "2026-09-20T22:58:00.301Z",
+          "status": "SETTLED",
+          "cost_usd": 0.1372176,
+          "max_output_tokens": 12000,
+          "request": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-14-request.json",
+          "request_sha256": "f33a95f8e6dc976f7f0b34bc64d92cda794d6fa7b0956c9013f4e6d6fcb394a0",
+          "response": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/main-B/authoring-meter/ASSOCIATION-MAIN-B-14-response.txt",
+          "response_sha256": "17740ad14a9b25e303614aada468fc61a3dd4de07f0b63d8b97e13a947923c55"
+        }
+      ],
+      "stopped_at": "2026-09-20T23:01:19.155167+00:00"
+    },
+    {
+      "case": "ASSOCIATION-TESTER-A",
+      "status": "STOPPED",
+      "actual_transports": 8,
+      "actual_cost_usd": 0.5972442,
+      "phase_counts": {
+        "initial": 8,
+        "restart": 0
+      },
+      "deadline": "2026-09-21T00:36:03.570999+00:00",
+      "stop_reason": "Independent A source-association/disabled-authoring review complete; 8 settled transports, $0.5972442; business readiness/receipt/execution/restart not established; owned resources cleaned.",
+      "calls": [],
+      "stopped_at": "2026-09-20T23:06:22.496550+00:00"
+    },
+    {
+      "case": "ASSOCIATION-TESTER-B",
+      "status": "STOPPED",
+      "actual_transports": 0,
+      "actual_cost_usd": 0,
+      "phase_counts": {
+        "initial": 0,
+        "restart": 0
+      },
+      "deadline": null,
+      "stop_reason": "Public tester B not started: exact untouched first-failure whole-project checkpoint was never preserved. Local exact-response reproduction completed with zero provider calls; no later snapshot substituted.",
+      "calls": [],
+      "stopped_at": "2026-09-20T23:06:22.496550+00:00"
+    }
+  ],
+  "total_actual_cost_usd": 1.7667215,
+  "raw_ledger_sha256": "2cf640a5d054f87b00a6902ba1332484184a35b316fe6098fee746763c14b082"
+}

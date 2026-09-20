@@ -7,7 +7,7 @@
     "280093e19eb09578046fd7e29ce1b9b7aec17704": true,
     "1834ace3f56756878ff76aa00b6450317035fa63": true
   },
-  "status": "Stable full/types/10offline/realPG gates passed; complete immutable freeze next; final live not started",
+  "status": "STOPPED_FOR_REVIEW",
   "implementation_deadline": "2026-09-21T00:23:37.436368+00:00",
   "windows_minutes": {
     "implementation": 240,
@@ -31,7 +31,7 @@
   "remaining_balance": 10.12453759,
   "scope": "authoring/disabled BUSINESS only; no public activation, provisioning, runtime or source effects",
   "next_step": "Collect full exit without editing source; ten offline and final immutable installation; public A/B on untouched starts",
-  "updated_at": "2026-09-20T22:30:37.762812+00:00",
+  "updated_at": "2026-09-20T23:07:30.710029+00:00",
   "development_transports": 6,
   "stable_started_at": "2026-09-20T21:33:07.413773+00:00",
   "stable_deadline": "2026-09-20T23:33:07.413773+00:00",
@@ -42,5 +42,21 @@
     "record": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/source-association-completion-independent-20260920/final-preparation/TESTER-A-PREPARATION.json",
     "sha256": "25cde65943d59d180685166541a9bbd18172f1b0467c820732c75ad70335c8e6",
     "final_live": "NOT STARTED"
-  }
+  },
+  "main_final_started_at": "2026-09-20T22:32:47.532392+00:00",
+  "main_final_deadline": "2026-09-21T00:32:47.532392+00:00",
+  "final_tree": "336e495e014aae1a9ff759bc92bf5fc4cfa12773e961f18f317fd223f2888ced",
+  "final_live": {
+    "A": "STOPPED3calls, association passed; final mixed receipt observation refusal; complete BUSINESS/restart NOT ESTABLISHED",
+    "B": "STOPPED14calls, exact conformance/intent saved; valid pending receipt coverage; complete BUSINESS/restart NOT ESTABLISHED",
+    "tester": "narrow source/field contract accepted independently; T-A completion NOT ESTABLISHED; T-B BLOCKED missing exact start",
+    "runtime": "NOT RUN / NOT AUTHORIZED",
+    "stage_b": "ATTEMPTED / NOT PASSED",
+    "main_owned_resources": "archived then stopped",
+    "window_reset": false
+  },
+  "next_decisions": [
+    "bounded receipt component/feedback repair from exact saved final captures",
+    "resolve independent tester-first-B checkpoint provenance"
+  ]
 }

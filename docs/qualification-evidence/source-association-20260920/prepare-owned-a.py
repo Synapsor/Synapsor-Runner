@@ -33,6 +33,10 @@ port=run(['docker','port',container,'5432/tcp']).decode().strip().rsplit(':',1)[
 packet=old/'source-only'
 run(['docker','exec','-i',container,'psql','-X','-v','ON_ERROR_STOP=1','-U','postgres','-d',db],(packet/'roles.sql').read_bytes())
 run(['docker','exec','-i',container,'pg_restore','--no-owner','-U','postgres','-d',db],Path('/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/case-A/stopped-checkpoint/source.dump').read_bytes())
+# Post-freeze harness correction: stopped dump omits ACLs; restore exact original reader grants.
+original_grants='\n'.join(line for line in (old/'schema.sql').read_text().splitlines() if line.startswith('GRANT ') and line.endswith('TO newsb_a_reader;'))+'\n'
+assert original_grants.count('GRANT ')==2
+run(['docker','exec','-i',container,'psql','-X','-v','ON_ERROR_STOP=1','-U','postgres','-d',db],original_grants.encode())
 run(['docker','exec','-i',container,'psql','-X','-v','ON_ERROR_STOP=1','-U','postgres','-d',db],f"ALTER ROLE newsb_a_reader PASSWORD '{reader}' VALID UNTIL 'infinity';\n".encode())
 snapshot=run(['docker','exec','-i',container,'psql','-X','-At','-v','ON_ERROR_STOP=1','-U','postgres','-d',db],(old/'FULL-SOURCE-HASH-RECIPE.sql').read_bytes())
 (private/'source-before.json').write_bytes(snapshot)

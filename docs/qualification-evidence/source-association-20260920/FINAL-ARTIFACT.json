@@ -1,0 +1,40 @@
+{
+  "frozen_at": "2026-09-20T22:31:02.469Z",
+  "purpose": "Source association, scoped field evidence and disabled setup/recovery authoring",
+  "cases": [
+    "A known-case source association",
+    "B main known-case recovery",
+    "B independent retained candidate subject to start prerequisite"
+  ],
+  "product_commit": "d1f87656560adb8df21beb5b38b7ce55b34adeda",
+  "test_commit": "b747ecbecac8fb33a763248573ef70783c70e8e5",
+  "report_commit": "recorded separately after verification",
+  "source_commit": "e4a4c61fded62bb28154b262070d0f7f71b0b735",
+  "source_status": "?? .claude/",
+  "unpackaged_unrelated_directory": ".claude/ (preserved, no contents read)",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/frozen/installed",
+  "installed_tree_sha256": "336e495e014aae1a9ff759bc92bf5fc4cfa12773e961f18f317fd223f2888ced",
+  "node": {
+    "version": "v22.22.2",
+    "executable": "/usr/bin/node",
+    "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+  },
+  "runner_version": "1.8.0",
+  "spec_version": "1.11.0",
+  "package_lock_sha256": "aef43c2131f3ff5d69b8b7d178f05285a711204b58970c41d868995d6e907816",
+  "tarballs": [
+    {
+      "name": "synapsor-runner-1.8.0.tgz",
+      "sha256": "06874484ed81d7769ff6de1be06a7c23f4fc3515b89c36c980da2c6cd2ce2b7e"
+    },
+    {
+      "name": "synapsor-spec-1.11.0.tgz",
+      "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+    }
+  ],
+  "entries": 7569,
+  "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/frozen/installed-artifact-manifest.json",
+  "manifest_sha256": "faf3caa11f4177bb97cf00a0b169dd25848478192a99f50c9ee2ffefa54f39d8",
+  "archive": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/frozen/installed-artifact.tar.gz",
+  "archive_sha256": "1748501a367eea535b5e4955c59577b4d18258cf4d45937a53051c5c14193974"
+}

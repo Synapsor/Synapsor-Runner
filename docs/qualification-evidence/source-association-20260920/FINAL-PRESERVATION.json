@@ -1,0 +1,91 @@
+{
+  "at": "2026-09-20T22:58:43.066475+00:00",
+  "artifacts": [
+    {
+      "label": "prior",
+      "tree": "b5a2db889e847b1b1b9e7f1ce1a559c87c9b5afcdc61ce23d417e2c2e58f1c1b",
+      "entries": 7569,
+      "content_modes_symlinks_membership": "exact",
+      "manifest_sha256": "552c9258eacb7869d71729bb1a015b3b10481277d3da8c35a5d5473b91e4dfcc"
+    },
+    {
+      "label": "final",
+      "tree": "336e495e014aae1a9ff759bc92bf5fc4cfa12773e961f18f317fd223f2888ced",
+      "entries": 7569,
+      "content_modes_symlinks_membership": "exact",
+      "manifest_sha256": "faf3caa11f4177bb97cf00a0b169dd25848478192a99f50c9ee2ffefa54f39d8"
+    }
+  ],
+  "starts": [
+    {
+      "case": "original-A",
+      "file": "whole-project-home.tar.gz",
+      "kind": "original",
+      "sha256": "e5850eb6fea39cc1fbff786e82768be8950522997c75e74270e19243fada4d10",
+      "mode": "0o400"
+    },
+    {
+      "case": "original-A",
+      "file": "whole-project-home.tar.gz",
+      "kind": "preserved_copy",
+      "sha256": "e5850eb6fea39cc1fbff786e82768be8950522997c75e74270e19243fada4d10",
+      "mode": "0o400"
+    },
+    {
+      "case": "original-A",
+      "file": "source.dump",
+      "kind": "original",
+      "sha256": "43f4f2c956410fd85d957e4c8db6704da1f050d33264d5b1f7b14d8af6c0bac1",
+      "mode": "0o400"
+    },
+    {
+      "case": "original-A",
+      "file": "source.dump",
+      "kind": "preserved_copy",
+      "sha256": "43f4f2c956410fd85d957e4c8db6704da1f050d33264d5b1f7b14d8af6c0bac1",
+      "mode": "0o400"
+    },
+    {
+      "case": "original-A",
+      "file": "full-source.json",
+      "kind": "original",
+      "sha256": "51687e126e9b7b2860fe38c3678e6c54a965fd1518aec33cb2ca89d1bf75f7a4",
+      "mode": "0o400"
+    },
+    {
+      "case": "original-A",
+      "file": "full-source.json",
+      "kind": "preserved_copy",
+      "sha256": "51687e126e9b7b2860fe38c3678e6c54a965fd1518aec33cb2ca89d1bf75f7a4",
+      "mode": "0o400"
+    },
+    {
+      "case": "main-B",
+      "file": "whole-project-home.tgz",
+      "kind": "original",
+      "sha256": "93b3eeb22907dab575ad9a3d9ef5b2fa65f9a09ab505994e0911aeb7a64f104c",
+      "mode": "0o600"
+    },
+    {
+      "case": "main-B",
+      "file": "whole-project-home.tgz",
+      "kind": "preserved_copy",
+      "sha256": "93b3eeb22907dab575ad9a3d9ef5b2fa65f9a09ab505994e0911aeb7a64f104c",
+      "mode": "0o400"
+    },
+    {
+      "case": "main-B",
+      "file": "source.dump",
+      "kind": "original",
+      "sha256": "d67d437bf2782c0cbff3fb803f6ec138a5e93dae2a782e6efc3462f39b13d298",
+      "mode": "0o600"
+    },
+    {
+      "case": "main-B",
+      "file": "source.dump",
+      "kind": "preserved_copy",
+      "sha256": "d67d437bf2782c0cbff3fb803f6ec138a5e93dae2a782e6efc3462f39b13d298",
+      "mode": "0o400"
+    }
+  ]
+}
