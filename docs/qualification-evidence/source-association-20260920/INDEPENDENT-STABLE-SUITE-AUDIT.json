@@ -1,0 +1,10 @@
+{
+  "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/source-association-completion-independent-20260920/final-preparation/STABLE-SUITE-ATTEMPT2-AUDIT.json",
+  "sha256": "3bc121904fd0048a8a946b990235f6398b6f2355c87154fe72e0608c81f43b0c",
+  "classification": "Independently recomputed source inventory and inspected retained whole-suite evidence; not personally rerun",
+  "source_entries": 1046,
+  "tests": {
+    "passed": 6734,
+    "skipped": 477
+  }
+}

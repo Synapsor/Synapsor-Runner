@@ -1,0 +1,29 @@
+{
+  "baseline": "97de715f335d800c9cc69c71e2a5f75576e4e8c8",
+  "changes": [
+    {
+      "file": "apps/runner/src/authoring-policy-coverage.ts",
+      "before_sha256": "c6a942550cf69e46e94213bc3269289f9c7208a82cc0e2225e124695ea385757",
+      "after_sha256": "14e0241a9064f2ca7352749df1daa21ee7d4e1c796cc1843b7af6c925a6aaa7f",
+      "exact_diff": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/baseline/prompt-context-authoring-policy-coverage.diff",
+      "added_prompt_lines": [
+        "          \"Host-built /runner_evidence/excluded_field_access/resources/<resource>/fields/<field> can establish that an inspected field is absent from this complete selected Read and unused by these Actions. This is narrower than database-wide privacy and does not establish private Action verification use. Keep unused sensitive fields separate from fields actually used for verification. An absent projection, unknown field or missing evidence section is not this proof. No field should be added to Read or Action merely to make a privacy reference available.\",",
+        "          \"runtime_contract.receipt_configuration.reviewed_intent, when current and bound to every exact selected source-writing Action and attached source, is only a separately confirmed disabled setup requirement. It is not an execution configuration, provisioned object, writer verification or receipt. Keep an agreed receipt-only setup passage needs_decision/deployment/missing_configuration with its exact evidence path and setup still pending. Do not mark configuration or receipt observations implemented from that intent. An absent, stale, ambiguous or mismatched intent cannot resolve the requirement; preserve its actual prerequisite.\","
+      ]
+    },
+    {
+      "file": "apps/runner/src/boundary-commands.ts",
+      "before_sha256": "cc8b9c2240e6017a037cb6007f1f2091c0c3883f717eba6ba133d3e0bbfade12",
+      "after_sha256": "38a4cf6f97b6c786338e50b87803874e1f58a7309ad634180bb0534f3c783692",
+      "exact_diff": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/baseline/prompt-context-boundary-commands.diff",
+      "added_prompt_lines": []
+    }
+  ],
+  "bases": [
+    "First independent B-22 exact field-evidence refusal: consented metadata had an unused excluded inspected field, but no host absence-of-grants record.",
+    "Old installed writeback setup failed before outcome lookup; no active config existed for disabled source_db requirement.",
+    "DEV planning transport2 was sent an empty Action inventory despite the retained saved revision; transports3/4 after correction saw the exact outcome with requires_revalidation."
+  ],
+  "excluded": "No case-specific examples, message-number preference, rescue sentence, source row, credential or runtime identity added to product prompts. No provider/model/settings change.",
+  "semantics": "Evidence guidance explains the implemented narrow facts; validators and explicit operator confirmations remain authoritative."
+}

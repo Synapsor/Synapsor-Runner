@@ -1,0 +1,15 @@
+{
+  "status": "STOPPED_AT_DECLARED_6_TRANSPORTS",
+  "calls": 6,
+  "cost_usd": 0.1017183,
+  "source_rows": 196,
+  "source_sha256": "3d350f3f75ea99b020e95264008f90a0a0ae286d659c36e3a46d0a59cc6fd9bc",
+  "public_metadata_selection": "saved source_db/precreated, stale after subsequent binding changes; requires renewed exact selection",
+  "public_privacy": "RUNNER ONLY removes raw and analysis access, reviewed disabled; activation declined",
+  "public_dependency_revalidation": "saved unchanged business AST with current Read, pending edit retained; zero provider",
+  "selector_change": "model-prepared and exact 4/6/86400 canonical diff explicitly confirmed; NOT yet saved when next call blocked by outer limit",
+  "complete_business_review": "NOT ESTABLISHED in development",
+  "no_source_mutation": true,
+  "original_failure": "all raw captures preserved; source-level fixes and setup errors distinguished in implementation note",
+  "final_lane": "new untouched original stops only after final gates/freeze, no preloaded corrected development state"
+}

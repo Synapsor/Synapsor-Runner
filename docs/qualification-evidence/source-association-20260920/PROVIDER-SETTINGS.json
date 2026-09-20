@@ -1,0 +1,26 @@
+{
+  "historical_plan": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/shared/PROVIDER-PLAN-v2.json",
+  "sha256": "73e2c84c379e6e4e0ebe7e69d5383d198281418c7e15e02fb7e6c7b2571f530a",
+  "current_authorized_lane": "authoring only",
+  "current_runtime": "NOT AUTHORIZED / NOT RUN",
+  "unchanged_authoring_settings": {
+    "adapter": "openrouter",
+    "model": "openai/gpt-5.6-terra",
+    "timeout_seconds": 120,
+    "operation_output_budgets": "unchanged product per operation; coverage12000/action5000",
+    "omitted": [
+      "reasoning",
+      "temperature",
+      "top_p",
+      "parallel_tool_calls"
+    ],
+    "provider": {
+      "require_parameters": true,
+      "allow_fallbacks": false,
+      "data_collection": "deny"
+    }
+  },
+  "current_allocation": "BUDGET-PLAN.json; live counters are in raw/shared/provider-budget-ledger.json",
+  "development": "STOPPED at6 actual transports, $0.1017183",
+  "recorded_at": "2026-09-20T22:03:22.696417+00:00"
+}

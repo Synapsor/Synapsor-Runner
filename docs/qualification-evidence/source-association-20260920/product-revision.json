@@ -1,0 +1,7 @@
+{
+  "counting_commit": "e93474cda3536633e4897a157692aa26690d840a",
+  "product_commit": "d1f87656560adb8df21beb5b38b7ce55b34adeda",
+  "test_commit": "b747ecbecac8fb33a763248573ef70783c70e8e5",
+  "baseline": "97de715f335d800c9cc69c71e2a5f75576e4e8c8",
+  "terminal_test_commit": "bc4f2f0073ec352afd483216a6215fb7c383c819"
+}

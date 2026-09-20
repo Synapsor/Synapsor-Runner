@@ -1,0 +1,42 @@
+{
+  "name": "stable-full-attempt1",
+  "command": [
+    "corepack",
+    "pnpm",
+    "exec",
+    "vitest",
+    "run",
+    "--maxWorkers=4",
+    "--minWorkers=1",
+    "--testTimeout=20000",
+    "--hookTimeout=20000"
+  ],
+  "started_at": "2026-09-20T21:33:07.614118+00:00",
+  "source_commit": "bc4f2f0073ec352afd483216a6215fb7c383c819",
+  "source_digest": "4e37e29e7091b84ea982f1b384a1dc74dd44428cd430d988a254e32ad7f3090c",
+  "credentials": "absent",
+  "umask": "0077",
+  "pid": 1925688,
+  "exit": 1,
+  "finished_at": "2026-09-20T21:57:55.560385+00:00",
+  "source_unchanged": true,
+  "test_files": {
+    "passed": 324,
+    "failed": 1,
+    "skipped": 21
+  },
+  "tests": {
+    "passed": 6733,
+    "failed": 1,
+    "skipped": 477
+  },
+  "failure": "boundary operator-plane CLI > compiles a rule-derived job into disabled semantic authority bound to the exact reviewed Read revision (policy_target_mixed_read_scope)",
+  "terminal": {
+    "passed": 10,
+    "source": "same full run"
+  },
+  "status": "FAIL; retained separately; final freeze blocked",
+  "diagnosed_correction": "Test-only exact counting-review prerequisite, six source-bound decisions; original Read routing assertions retained",
+  "before_rerun": "mixed-scope-routing-before (exit1, actual missing operator handler recorded)",
+  "focused_after": "mixed-scope-routing-after (exit0,13pass)"
+}

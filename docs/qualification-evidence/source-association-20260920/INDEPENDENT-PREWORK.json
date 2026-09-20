@@ -1,0 +1,15 @@
+{
+  "read_only_guard_audit": {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/source-association-completion-independent-20260920/prework/DISABLED-RECEIPT-RENEWAL-GUARD-AUDIT.md",
+    "sha256": "cf66f5c8d10698c93c9e87d8543fe2a24a21bc0f026af30a921bf666fb41c452",
+    "source": "d1f87656560adb8df21beb5b38b7ce55b34adeda",
+    "claim": "No concrete counterexample in bounded source inspection; not final acceptance",
+    "provider_calls": 0,
+    "tests_executed": 0
+  },
+  "earlier_executed_focused_review": {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/source-association-completion-independent-20260920/prework/LOCAL-NEGATIVE-REVIEW.json",
+    "claim": "97 focused tests passed on earlier unfrozen source; no transfer to final package"
+  },
+  "final_public": "NOT STARTED"
+}

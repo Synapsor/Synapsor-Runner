@@ -1,0 +1,91 @@
+{
+  "started_at": "2026-09-20T21:33:29.962913+00:00",
+  "network": "unshared network namespace; npm offline; writable disposable cache copy",
+  "home": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/offline-home",
+  "commands": [
+    {
+      "name": "trusted-core",
+      "args": [
+        "node",
+        "scripts/check-trusted-core-dependencies.mjs"
+      ],
+      "phase": "source",
+      "source_immutable_during_full_suite": true,
+      "started_at": "2026-09-20T21:33:30.043335+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-20T21:33:32.968935+00:00",
+      "source_before": "f11da2be1b7065814f2255f5e685c73682cb05de2c7d2bd3e1fd4ebf9f104109",
+      "source_after": "f11da2be1b7065814f2255f5e685c73682cb05de2c7d2bd3e1fd4ebf9f104109"
+    },
+    {
+      "name": "licenses",
+      "args": [
+        "node",
+        "scripts/check-license-content.mjs"
+      ],
+      "phase": "source",
+      "source_immutable_during_full_suite": true,
+      "started_at": "2026-09-20T21:33:33.112150+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-20T21:33:34.881097+00:00",
+      "source_before": "f11da2be1b7065814f2255f5e685c73682cb05de2c7d2bd3e1fd4ebf9f104109",
+      "source_after": "f11da2be1b7065814f2255f5e685c73682cb05de2c7d2bd3e1fd4ebf9f104109"
+    },
+    {
+      "name": "human-commands",
+      "args": [
+        "node",
+        "scripts/verify-human-command-surface.mjs"
+      ],
+      "phase": "source",
+      "source_immutable_during_full_suite": true,
+      "started_at": "2026-09-20T21:33:35.067980+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-20T21:33:36.286099+00:00",
+      "source_before": "f11da2be1b7065814f2255f5e685c73682cb05de2c7d2bd3e1fd4ebf9f104109",
+      "source_after": "f11da2be1b7065814f2255f5e685c73682cb05de2c7d2bd3e1fd4ebf9f104109"
+    },
+    {
+      "name": "dsl-sources",
+      "args": [
+        "bash",
+        "scripts/verify-dsl-source-paths.sh"
+      ],
+      "phase": "source",
+      "source_immutable_during_full_suite": true,
+      "started_at": "2026-09-20T21:33:36.422589+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-20T21:33:38.555466+00:00",
+      "source_before": "f11da2be1b7065814f2255f5e685c73682cb05de2c7d2bd3e1fd4ebf9f104109",
+      "source_after": "f11da2be1b7065814f2255f5e685c73682cb05de2c7d2bd3e1fd4ebf9f104109"
+    },
+    {
+      "name": "cursor-plugin",
+      "args": [
+        "node",
+        "scripts/verify-cursor-plugin.mjs"
+      ],
+      "phase": "source",
+      "source_immutable_during_full_suite": true,
+      "started_at": "2026-09-20T21:33:38.788507+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-20T21:33:39.004191+00:00",
+      "source_before": "f11da2be1b7065814f2255f5e685c73682cb05de2c7d2bd3e1fd4ebf9f104109",
+      "source_after": "f11da2be1b7065814f2255f5e685c73682cb05de2c7d2bd3e1fd4ebf9f104109"
+    },
+    {
+      "name": "mcp-client-configs",
+      "args": [
+        "node",
+        "scripts/verify-mcp-client-configs.mjs"
+      ],
+      "phase": "source",
+      "source_immutable_during_full_suite": true,
+      "started_at": "2026-09-20T21:33:39.148229+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-20T21:34:20.183353+00:00",
+      "source_before": "f11da2be1b7065814f2255f5e685c73682cb05de2c7d2bd3e1fd4ebf9f104109",
+      "source_after": "f11da2be1b7065814f2255f5e685c73682cb05de2c7d2bd3e1fd4ebf9f104109"
+    }
+  ]
+}

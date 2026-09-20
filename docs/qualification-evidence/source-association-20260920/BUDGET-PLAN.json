@@ -1,0 +1,111 @@
+{
+  "allocation": "SOURCE-ASSOCIATION-20260920",
+  "created_at": "2026-09-20T20:54:51.069702+00:00",
+  "old_allocations": "STOPPED, never reopened",
+  "shared_spend_ceiling_usd": 5,
+  "balance_basis": "read-only preflight confirmed $10.12453759; task cap $5; no purchase",
+  "group_allocations": [
+    {
+      "cases": [
+        "ASSOCIATION-DEV-B",
+        "ASSOCIATION-MAIN-A",
+        "ASSOCIATION-MAIN-B"
+      ],
+      "spend_ceiling_usd": 3
+    },
+    {
+      "cases": [
+        "ASSOCIATION-TESTER-A",
+        "ASSOCIATION-TESTER-B"
+      ],
+      "spend_ceiling_usd": 2
+    }
+  ],
+  "case_allocations": [
+    {
+      "case_id": "ASSOCIATION-DEV-B",
+      "status": "PREPARED",
+      "deadline": null,
+      "final_main": false,
+      "models": {
+        "authoring": "openai/gpt-5.6-terra"
+      },
+      "transport_ceiling": 6,
+      "phase_limits": {
+        "initial": 6,
+        "restart": 0
+      },
+      "spend_ceiling_usd": 2,
+      "transports": [],
+      "final_tester": false
+    },
+    {
+      "case_id": "ASSOCIATION-MAIN-A",
+      "status": "PREPARED",
+      "deadline": null,
+      "final_main": true,
+      "models": {
+        "authoring": "openai/gpt-5.6-terra"
+      },
+      "transport_ceiling": 30,
+      "phase_limits": {
+        "initial": 22,
+        "restart": 8
+      },
+      "spend_ceiling_usd": 3,
+      "transports": [],
+      "final_tester": false
+    },
+    {
+      "case_id": "ASSOCIATION-MAIN-B",
+      "status": "PREPARED",
+      "deadline": null,
+      "final_main": true,
+      "models": {
+        "authoring": "openai/gpt-5.6-terra"
+      },
+      "transport_ceiling": 30,
+      "phase_limits": {
+        "initial": 22,
+        "restart": 8
+      },
+      "spend_ceiling_usd": 3,
+      "transports": [],
+      "final_tester": false
+    },
+    {
+      "case_id": "ASSOCIATION-TESTER-A",
+      "status": "PREPARED",
+      "deadline": null,
+      "final_main": false,
+      "models": {
+        "authoring": "openai/gpt-5.6-terra"
+      },
+      "transport_ceiling": 24,
+      "phase_limits": {
+        "initial": 18,
+        "restart": 6
+      },
+      "spend_ceiling_usd": 2,
+      "transports": [],
+      "final_tester": true
+    },
+    {
+      "case_id": "ASSOCIATION-TESTER-B",
+      "status": "PREPARED",
+      "deadline": null,
+      "final_main": false,
+      "models": {
+        "authoring": "openai/gpt-5.6-terra"
+      },
+      "transport_ceiling": 24,
+      "phase_limits": {
+        "initial": 18,
+        "restart": 6
+      },
+      "spend_ceiling_usd": 2,
+      "transports": [],
+      "final_tester": true
+    }
+  ]
+}

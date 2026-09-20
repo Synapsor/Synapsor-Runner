@@ -1,0 +1,71 @@
+{
+  "prepared_at": "2026-09-20T22:06:17.881323+00:00",
+  "status": "PREPARED / NOT EXECUTED; requires green stable candidate and immutable installation",
+  "main_window_minutes": 120,
+  "main_calls_total": 30,
+  "main_restart_calls_reserved": 8,
+  "main_and_development_spend_ceiling_usd": 3,
+  "development_already_charged_usd": 0.1017183,
+  "source_A_rows": 38,
+  "source_B_rows": 196,
+  "A": [
+    "Start normal public saved job; Resume/Review attached rules",
+    "If required, confirm exact unchanged source referent for both existing counters through the existing choice/confirmation",
+    "Inspect completed coverage or preserve substantive blocker; do not broaden Read for label discovery",
+    "Exit/restart; explicit attached-policy Review; measure current validated reuse versus provider call"
+  ],
+  "B_main": [
+    "Public disabled Read access review removes the prohibited restricted-field value, retaining private dependencies; decline activation",
+    "Public ordinary-language original-policy conformance edit requests both exact outcome selectors, preserving 4/6/86400 and the business program",
+    "If required, exact default-No disabled dependency revalidation precedes the retained edit; verify unchanged AST except agreed selectors",
+    "Public metadata-only source_db/precreated disabled receipt intent preview and exact SAVE confirmation against the final Read/Action/source",
+    "Explicit current-context attached-policy review and current client-duty ownership, never inferred implementation; save if fully validated",
+    "Exit/restart and explicitly review attached policy again"
+  ],
+  "expected_A_actual_compiled_limits": [
+    {
+      "scope": "tenant",
+      "maximum": 2,
+      "window_seconds": 86400,
+      "capability": "release.clear_assessment"
+    },
+    {
+      "scope": "capability",
+      "maximum": 8,
+      "window_seconds": 86400,
+      "capability": "release.clear_assessment"
+    }
+  ],
+  "A_scope_note": "The original compiled second scope is capability, not a renamed/normalized boundary field. Preserve its exact original program.",
+  "expected_B_limits": [
+    {
+      "scope": "tenant",
+      "maximum": 4,
+      "window_seconds": 86400,
+      "capability": "energy_ops.finalize_settlement_cycle"
+    },
+    {
+      "scope": "boundary",
+      "maximum": 6,
+      "window_seconds": 86400,
+      "capability": "energy_ops.finalize_settlement_cycle"
+    }
+  ],
+  "prohibited": [
+    "public activation",
+    "writer probing or provisioning",
+    "business request",
+    "worker",
+    "source mutation",
+    "manual source/identity/AST/coverage edits",
+    "new same-state episode seeking agreement"
+  ],
+  "oracles": [
+    "all logical application tables",
+    "exact selected disabled Read grants and Action AST/effects/private collections",
+    "source/decision/ownership/current coverage and pending work",
+    "full source rows before/after",
+    "complete frozen tree before/after"
+  ],
+  "tester_B": "BLOCKED pending provenance authorization for later snapshot; no first-only archive exists"
+}

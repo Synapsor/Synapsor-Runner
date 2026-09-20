@@ -1,0 +1,46 @@
+{
+  "assignment": "accurate-source-association-and-faithful-saved-job-completion",
+  "started_at": "2026-09-20T20:23:37.436368+00:00",
+  "baseline": "97de715f335d800c9cc69c71e2a5f75576e4e8c8",
+  "ancestry": {
+    "0480a5dfc45dd965fa2db7a5348a24d6400ded7b": true,
+    "280093e19eb09578046fd7e29ce1b9b7aec17704": true,
+    "1834ace3f56756878ff76aa00b6450317035fa63": true
+  },
+  "status": "Stable full/types/10offline/realPG gates passed; complete immutable freeze next; final live not started",
+  "implementation_deadline": "2026-09-21T00:23:37.436368+00:00",
+  "windows_minutes": {
+    "implementation": 240,
+    "fixture_preparation": 60,
+    "stable_verification": 120,
+    "main_final_live": 120,
+    "tester_final_live": 120,
+    "consolidation": 45
+  },
+  "whole_suite_attempts_max": 2,
+  "second_suite_requires": "diagnosed correction, never lucky rerun",
+  "provider_caps": {
+    "development_calls": 6,
+    "main_calls": 30,
+    "main_reserved_restart": 8,
+    "tester_calls": 24,
+    "tester_reserved_restart": 6,
+    "shared_usd": 5
+  },
+  "provider_spend": 0.1017183,
+  "remaining_balance": 10.12453759,
+  "scope": "authoring/disabled BUSINESS only; no public activation, provisioning, runtime or source effects",
+  "next_step": "Collect full exit without editing source; ten offline and final immutable installation; public A/B on untouched starts",
+  "updated_at": "2026-09-20T22:30:37.762812+00:00",
+  "development_transports": 6,
+  "stable_started_at": "2026-09-20T21:33:07.413773+00:00",
+  "stable_deadline": "2026-09-20T23:33:07.413773+00:00",
+  "stable_attempts": 2,
+  "development_cost_usd": 0.1017183,
+  "source_commit": "b747ecbecac8fb33a763248573ef70783c70e8e5",
+  "tester_A_preparation": {
+    "record": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/source-association-completion-independent-20260920/final-preparation/TESTER-A-PREPARATION.json",
+    "sha256": "25cde65943d59d180685166541a9bbd18172f1b0467c820732c75ad70335c8e6",
+    "final_live": "NOT STARTED"
+  }
+}

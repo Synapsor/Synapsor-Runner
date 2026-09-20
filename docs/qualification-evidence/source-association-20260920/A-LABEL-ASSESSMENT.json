@@ -1,0 +1,19 @@
+{
+  "observed_at": "2026-09-20T22:09:43.884835+00:00",
+  "classification": "Static supported-capability and owned-baseline assessment; no public runtime query",
+  "source_clause": "The rehabilitation center wants an assistant to find release assessments by their public label, explain the non-sensitive release status, and request one of the reviewed outcomes below.",
+  "selected_root": "release_ops.release_assessments",
+  "selectable": [
+    "public_label",
+    "assessment_state"
+  ],
+  "filterable_fields": {},
+  "sortable_fields": [],
+  "max_rows": 50,
+  "baseline_assessments_total": 16,
+  "baseline_source_rows_total": 38,
+  "conclusion": "Lack of a public_label filter is not proof of total undiscoverability: the selected root permits bounded row projection of public label/status and normal opaque-reference issuance. All16 original assessments fit below the50-row configured bound even before trusted scope reduces them. This is a static known-fixture feasibility assessment, not an executed runtime journey or general unbounded search guarantee.",
+  "public_review_rule": "Keep every actual source requirement and review claim independently validated. Do not add a filter, erase a concern, insert an owner restatement or send a fixture-specific rescue sentence to obtain green coverage. A substantive final conflict remains a reported blocker.",
+  "model_input_changes": "none",
+  "implementation_reference": "apps/runner/src/scoped-explore.ts:1281 (root rows subject_projection), :2537 (compiled projection), rows plans permit selected public columns without a where clause"
+}

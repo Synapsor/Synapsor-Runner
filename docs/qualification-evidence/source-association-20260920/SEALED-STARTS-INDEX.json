@@ -1,0 +1,43 @@
+{
+  "created_at": "2026-09-20T21:36:29.589138+00:00",
+  "kind": "untouched original stopped snapshots, not completed development states",
+  "files": {
+    "original-A": {
+      "whole-project-home.tar.gz": {
+        "original": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/case-A/stopped-checkpoint/whole-project-home.tar.gz",
+        "preserved_copy": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/sealed-starts/original-A/whole-project-home.tar.gz",
+        "sha256": "e5850eb6fea39cc1fbff786e82768be8950522997c75e74270e19243fada4d10",
+        "bytes": 87886
+      },
+      "source.dump": {
+        "original": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/case-A/stopped-checkpoint/source.dump",
+        "preserved_copy": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/sealed-starts/original-A/source.dump",
+        "sha256": "43f4f2c956410fd85d957e4c8db6704da1f050d33264d5b1f7b14d8af6c0bac1",
+        "bytes": 14250
+      },
+      "full-source.json": {
+        "original": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/case-A/stopped-checkpoint/full-source.json",
+        "preserved_copy": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/sealed-starts/original-A/full-source.json",
+        "sha256": "51687e126e9b7b2860fe38c3678e6c54a965fd1518aec33cb2ca89d1bf75f7a4",
+        "bytes": 17698
+      }
+    },
+    "main-B": {
+      "whole-project-home.tgz": {
+        "original": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/owned-final-states/main-B/whole-project-home.tgz",
+        "preserved_copy": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/sealed-starts/main-B/whole-project-home.tgz",
+        "sha256": "93b3eeb22907dab575ad9a3d9ef5b2fa65f9a09ab505994e0911aeb7a64f104c",
+        "bytes": 114590
+      },
+      "source.dump": {
+        "original": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/owned-final-states/main-B/source.dump",
+        "preserved_copy": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/sealed-starts/main-B/source.dump",
+        "sha256": "d67d437bf2782c0cbff3fb803f6ec138a5e93dae2a782e6efc3462f39b13d298",
+        "bytes": 16432
+      }
+    }
+  },
+  "tester_B": "BLOCKED: exact first-only whole-project archive never captured; original first request/response/prepared context retained; later snapshot requires user decision",
+  "provider_calls": 0,
+  "model_decisions_added": 0
+}
