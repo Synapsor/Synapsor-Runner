@@ -1,0 +1,25 @@
+{
+  "started": "2026-09-19T23:53:05.313898+00:00",
+  "baseline": "f83209f8f4e89014be489670f56f831737061211",
+  "branch": "codex/tui-safe-action-control-plane",
+  "implementation_hours": 6,
+  "fixture_hours": 2,
+  "stable_hours": 3,
+  "final_minutes": 90,
+  "delivery_minutes": 45,
+  "development_calls": 4,
+  "final_sent_calls": 16,
+  "reserved_recovery_attempts": 4,
+  "read_complete_responses": 6,
+  "provider_spend_usd": 5,
+  "provider": "openrouter",
+  "model": "openai/gpt-5.6-terra",
+  "heavy_window": "owner reserved",
+  "scope": [
+    "J1-DATA",
+    "M1/X4",
+    "M6",
+    "O1"
+  ],
+  "original_stage_b": "ATTEMPTED / NOT PASSED"
+}

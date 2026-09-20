@@ -1,0 +1,8 @@
+{
+  "commit": "4b4f362aa06cfb0e42005a1f853bc2cc6e408e09",
+  "main_change_commit": "4ea8d0c15edbd577be0fd66bc5e7cab8f1e7cb71",
+  "test_revision": "4b4f362aa06cfb0e42005a1f853bc2cc6e408e09",
+  "source_digest": "3f865875d30952cd08f175acf472dcd4a241890ee2aed40d760c815260fb7652",
+  "recorded_at": "2026-09-20T00:47:29.206777+00:00",
+  "prompt_changes": "none; tool input schema change in standalone70bf9b1"
+}
