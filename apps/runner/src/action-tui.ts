@@ -3038,9 +3038,9 @@ export function createTerminalActionPrompter(input: ReadStream, output: WriteStr
             `  ${label}${suffix} ${theme.key("[Esc Back]")}: `,
           ].join("\n")
         : `  ${label}${suffix} ${theme.key("[Esc Back]")}: `;
-      const value = await readTerminalTextWithEscape(prompt, input, output);
+      const value = await readTerminalTextWithEscape(prompt, input, output, { defaultValue: options.defaultValue });
       if (value === undefined) return undefined;
-      return value || options.defaultValue;
+      return value;
     },
     async confirm(label, defaultValue = false, context = []) {
       const value = await this.choose("CONFIRM REVIEWED DECISION", [
@@ -4842,6 +4842,7 @@ export function boundarySessionForActionPrompter(
       options?.initialValue,
     ),
     promptText: (prompt, options) => prompter.text(prompt, {
+      ...(options?.defaultValue !== undefined ? { defaultValue: options.defaultValue } : {}),
       ...(options?.context ? { context: options.context } : {}),
     }),
     confirm: (prompt, options) => prompter.confirm(prompt, options?.defaultValue, options?.context),

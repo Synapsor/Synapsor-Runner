@@ -1,3 +1,6 @@
+import { PassThrough } from "node:stream";
+import type { ReadStream, WriteStream } from "node:tty";
+import { createTerminalActionPrompter, boundarySessionForActionPrompter } from "./action-tui.js";
 import { Pool } from "pg";
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
@@ -168,7 +171,89 @@ async function fixture(backend: "sqlite" | "postgres" = "sqlite") {
   return { ...input, root, source, read, config, proposal, inspection };
 }
 
+function receiptTerminal() {
+  const input = new PassThrough() as PassThrough & ReadStream;
+  Object.assign(input, { isTTY: true, isRaw: false, setRawMode(value: boolean) { this.isRaw = value; return this; } });
+  const output = new PassThrough() as PassThrough & WriteStream;
+  Object.assign(output, { isTTY: true, columns: 100, rows: 30 });
+  let text = ""; output.on("data", chunk => { text += chunk.toString().replace(/\u001b\[[0-9;?]*[ -/]*[@-~]/gu, ""); });
+  const session = boundarySessionForActionPrompter(createTerminalActionPrompter(input, output));
+  return { session, input, output,
+    async see(value: string) { await vi.waitFor(() => expect(text).toContain(value), { timeout: 1000, interval: 5 }); text = ""; },
+    key(name: string, sequence: string) { input.emit("keypress", sequence, { name, sequence }); },
+    submit(value = "") { input.write(value + "\n"); },
+  };
+}
+
 describe("reviewed semantic receipt setup", () => {
+  it.each([0, 1, 2])("native receipt default at field %s reaches the next exact review step", async blankAt => {
+    const f = await fixture(), original = await previewSemanticReceiptSelection(f.proposal);
+    await saveSemanticReceiptSelection({ ...f.proposal, confirmation: original.confirmation });
+    const source = structuredClone(f.source); source.verification.resources[0]!.fields[0]!.model_visible = true;
+    await writeAndActivateAuthority({ root: f.root, source, read: f.read, maximum: 1, activatedAt: new Date().toISOString() });
+    const before = (await inspectSemanticReceiptSetup(f))!; expect(before.selection_current).toBe(false);
+    const t = receiptTerminal(); const pending = reviewSemanticReceiptSetup({ ...f, writeUrlEnv: "OTHER", session: t.session });
+    try {
+      await t.see("Select receipt storage"); t.key("return", "\r");
+      const prompts = ["Dedicated write connection variable", "Source receipt schema", "Source receipt table", "Save this exact receipt setup selection?"];
+      const values = ["WRITER_URL", "receipt_audit", "receipts"];
+      for (let i = 0; i <= blankAt; i++) { await t.see(prompts[i]!); t.submit(i === blankAt ? "" : values[i]!); }
+      await t.see(prompts[blankAt + 1]!);
+    } finally { t.key("escape", "\u001b"); t.input.emit("end"); await pending; }
+    expect((await inspectSemanticReceiptSetup(f))!.selection).toEqual(before.selection);
+    expect((await inspectSemanticReceiptSetup(f))!.selection_current).toBe(false);
+  });
+
+  it.each(["defaults", "explicit", "escape-writer", "escape-schema", "escape-table", "escape-review", "decline", "invalid", "changed-before-review", "changed-after-review"])("native receipt orchestration preserves consent and state: %s", async mode => {
+    const f = await fixture(), original = await previewSemanticReceiptSelection(f.proposal);
+    await saveSemanticReceiptSelection({ ...f.proposal, confirmation: original.confirmation });
+    const source = structuredClone(f.source); source.verification.resources[0]!.fields[0]!.model_visible = true;
+    await writeAndActivateAuthority({ root: f.root, source, read: f.read, maximum: 1, activatedAt: new Date().toISOString() });
+    const before = (await inspectSemanticReceiptSetup(f))!, config = await fs.readFile(f.configPath, "utf8");
+    const t = receiptTerminal();
+    const pending = reviewSemanticReceiptSetup({ ...f, writeUrlEnv: "OTHER", session: t.session }).then(value => ({ value, error: undefined }), error => ({ value: undefined, error }));
+    await t.see("Select receipt storage"); t.key("return", "\r");
+    const labels = ["writer", "schema", "table"], prompts = ["Dedicated write connection variable", "Source receipt schema", "Source receipt table"];
+    const explicit = ["SECOND_WRITER", "audit_new", "receipts_new"];
+    let cancelled = false;
+    for (let i = 0; i < 3; i++) {
+      await t.see(prompts[i]!);
+      if (mode === `escape-${labels[i]}`) { t.key("escape", "\u001b"); cancelled = true; break; }
+      if (i === 2 && mode === "changed-before-review") {
+        await writeAndActivateAuthority({ root: f.root, source, read: f.read, maximum: 2, activatedAt: new Date().toISOString() });
+      }
+      t.submit(mode === "explicit" ? explicit[i] : mode === "invalid" && i === 0 ? "https://not-an-env" : "");
+    }
+    if (!cancelled && !["invalid", "changed-before-review"].includes(mode)) {
+      await t.see("Save this exact receipt setup selection?");
+      if (mode === "changed-after-review") {
+        const other = { ...f.proposal, receipts: { ...f.proposal.receipts, table: "competing_receipts" } };
+        const preview = await previewSemanticReceiptSelection(other); await saveSemanticReceiptSelection({ ...other, confirmation: preview.confirmation });
+      }
+      if (mode === "escape-review") t.key("escape", "\u001b");
+      else {
+        if (mode !== "decline") { t.key("up", "\u001b[A"); await t.see("> Yes"); }
+        t.key("return", "\r");
+      }
+    }
+    const result = await pending, after = (await inspectSemanticReceiptSetup(f))!;
+    expect(await fs.readFile(f.configPath, "utf8")).toBe(config); // Receipt review never writes execution configuration.
+    if (["defaults", "explicit"].includes(mode)) {
+      expect(result.error).toBeUndefined(); expect(result.value?.reviewed).toBe(true); expect(after.selection_current).toBe(true);
+      expect(after.selection!.write_url_env).toBe(mode === "explicit" ? explicit[0] : "WRITER_URL");
+      expect(after.selection!.receipts).toEqual(mode === "explicit" ? { authority: "source_db", provisioning: "precreated", schema: explicit[1], table: explicit[2] } : f.proposal.receipts);
+    } else if (mode === "changed-after-review") {
+      expect(result.error?.message).toContain("SEMANTIC_RECEIPT_CONFIRMATION_REQUIRED");
+      expect(after.selection!.receipts).toMatchObject({ table: "competing_receipts" });
+    } else {
+      if (mode === "invalid") expect(result.error).toBeDefined();
+      else if (mode === "changed-before-review") expect(result.error?.message).toContain("SEMANTIC_RECEIPT_CONFIRMATION_REQUIRED");
+      else { expect(result.error).toBeUndefined(); expect(result.value).toBeUndefined(); }
+      expect(after.selection).toEqual(before.selection); expect(after.selection_current).toBe(false);
+      expect(after.revision_id).toBe(before.revision_id);
+    }
+  });
+
   it.skipIf(!process.env.SYNAPSOR_TEST_POSTGRES_URL)("postgres control store retains exact intent, renews stale binding and refuses competing confirmations", async () => {
     const f = await fixture("postgres"), original = await previewSemanticReceiptSelection(f.proposal);
     await saveSemanticReceiptSelection({ ...f.proposal, confirmation: original.confirmation });

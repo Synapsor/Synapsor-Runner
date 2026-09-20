@@ -267,7 +267,7 @@ export type BoundaryReviewInteractiveSession = {
     choices: BoundaryPromptChoice[],
     options?: BoundaryChoicePromptOptions,
   ): Promise<string | undefined>;
-  promptText(prompt: string, options?: BoundaryPromptOptions): Promise<string | undefined>;
+  promptText(prompt: string, options?: BoundaryPromptOptions & { defaultValue?: string }): Promise<string | undefined>;
   confirm(
     prompt: string,
     options?: BoundaryPromptOptions & { defaultValue?: boolean },
@@ -498,12 +498,13 @@ export function createBoundaryReviewInteractiveSession(
       output,
       () => readTerminalTextWithEscape(
         terminalPromptWithContext(
-          formatTextPromptWithBack(prompt, theme),
+          formatTextPromptWithBack(options.defaultValue === undefined ? prompt : `${prompt} [${options.defaultValue}]`, theme),
           options.context,
           theme,
         ),
         input,
         output,
+        { defaultValue: options.defaultValue },
       ),
     ),
     confirm: (prompt, options = {}) => withAlternateTerminalScreen(output, () => {

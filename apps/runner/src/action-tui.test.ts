@@ -1,3 +1,4 @@
+import { createBoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 import { PassThrough } from "node:stream";
 import type { ReadStream, WriteStream } from "node:tty";
 import { describe, expect, it, vi } from "vitest";
@@ -2714,6 +2715,24 @@ describe("Safe Action terminal control plane", () => {
     await emitKey(terminal.input, { name: "enter", sequence: "\r" });
     await expect(selection).resolves.toBe("members");
     expect(terminal.input.isRaw).toBe(false);
+  });
+
+  it.each(["action", "boundary"] as const)("keeps submit/default/cancel distinct through the %s receipt text adapter", async adapter => {
+    for (const event of ["blank", "space", "explicit", "escape", "eof", "ctrl-c", "no-default", "empty-default"] as const) {
+      const terminal = fakeTerminal(100, 30);
+      const session = adapter === "action" ? boundarySessionForActionPrompter(createTerminalActionPrompter(terminal.input, terminal.output))
+        : createBoundaryReviewInteractiveSession(terminal.input, terminal.output);
+      const defaultValue = event === "no-default" ? undefined : event === "empty-default" ? "" : "WRITER_URL";
+      const pending = session.promptText("Writer reference", { defaultValue, context: ["Exact text default; not execution consent."] });
+      await nextTurn();
+      const frame = stripAnsi(terminal.output.read()?.toString() ?? "");
+      if (defaultValue) expect(frame).toContain("[WRITER_URL]");
+      if (event === "escape") await emitKey(terminal.input, { name: "escape", sequence: "\u001b" });
+      else if (event === "eof") terminal.input.emit("end");
+      else if (event === "ctrl-c") terminal.input.write("\u0003");
+      else terminal.input.write(event === "explicit" ? "  OTHER_WRITER  \n" : event === "space" ? "   \n" : "\n");
+      expect(await pending).toBe(["escape", "eof", "ctrl-c"].includes(event) ? undefined : event === "explicit" ? "OTHER_WRITER" : defaultValue ?? "");
+    }
   });
 
   it("carries actual review findings through the Action session to the first confirmation frame", async () => {

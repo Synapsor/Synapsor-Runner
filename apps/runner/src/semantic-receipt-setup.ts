@@ -180,18 +180,23 @@ export async function reviewSemanticReceiptSetup(input: {
   ], { initialValue: prior?.receipts.authority ?? "runner_ledger", context, displayContext: true });
   if (mode !== "runner_ledger" && mode !== "source_db") return undefined;
   const writer = await input.session.promptText("Dedicated write connection variable", {
+    defaultValue: writerDefault,
     context: [`Enter keeps ${writerDefault}. Enter a variable name, never a URL. This reference is part of this exact review.`] });
   if (writer === undefined) return undefined;
   let receipts: SemanticReceiptMode = { authority: "runner_ledger" };
   if (mode === "source_db") {
-    const schema = await input.session.promptText("Source receipt schema", { context: [`Enter keeps ${sourceDefault?.schema ?? "public"}. This must be in the same source database.`] });
+    const schema = await input.session.promptText("Source receipt schema", { defaultValue: sourceDefault?.schema ?? "public", context: [`Enter keeps ${sourceDefault?.schema ?? "public"}. This must be in the same source database.`] });
     if (schema === undefined) return undefined;
-    const table = await input.session.promptText("Source receipt table", { context: [`Enter keeps ${sourceDefault?.table ?? "synapsor_writeback_receipts"}. Do not select a business table.`] });
+    const table = await input.session.promptText("Source receipt table", { defaultValue: sourceDefault?.table ?? "synapsor_writeback_receipts", context: [`Enter keeps ${sourceDefault?.table ?? "synapsor_writeback_receipts"}. Do not select a business table.`] });
     if (table === undefined) return undefined;
     receipts = { authority: "source_db", provisioning: "precreated", schema: schema.trim() || sourceDefault?.schema || "public", table: table.trim() || sourceDefault?.table || "synapsor_writeback_receipts" };
   }
   const proposal = { ...input, receipts, writeUrlEnv: writer.trim() || writerDefault };
   const preview = await previewSemanticReceiptSelection(proposal);
+  if (preview.action_digest !== setup.action_digest || preview.binding_digest !== setup.binding_digest
+    || preview.epoch !== setup.epoch || preview.revision_id !== setup.revision_id) {
+    fail("SEMANTIC_RECEIPT_CONFIRMATION_REQUIRED", "The setup context changed while entering receipt values. Reopen setup and review the current exact selection.");
+  }
   const confirmed = await input.session.confirm("Save this exact receipt setup selection?", { defaultValue: false, context: [
     ...context, `Outcome: ${preview.outcome}`, `Source: ${preview.source_name}`, `Selected mode: ${JSON.stringify(preview.selection.receipts)}`,
     `Writer reference: ${preview.selection.write_url_env}`, `Review: ${preview.digest}`,

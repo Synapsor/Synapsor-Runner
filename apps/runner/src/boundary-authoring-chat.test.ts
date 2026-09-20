@@ -682,6 +682,18 @@ describe("Boundary authoring chat", () => {
     expect(transcript).toContain("model> I interpreted that as version.");
   });
 
+  it("retains structured receipt text defaults without converting conversation cancellation to consent", async () => {
+    const memory = memoryIo({ reads: ["", "OTHER_WRITER", undefined, ""] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    try {
+      expect(await chat.session.promptText("Writer reference", { defaultValue: "WRITER_URL" })).toBe("WRITER_URL");
+      expect(await chat.session.promptText("Writer reference", { defaultValue: "WRITER_URL" })).toBe("OTHER_WRITER");
+      expect(await chat.session.promptText("Writer reference", { defaultValue: "WRITER_URL" })).toBeUndefined();
+      expect(await chat.session.promptText("Required reference")).toBe("");
+      expect(memory.prompts.slice(0, 3).every(p => p.includes("WRITER_URL"))).toBe(true);
+    } finally { chat.close(); }
+  });
+
   it("keeps operator, model, and Runner roles distinct in one transcript", async () => {
     const memory = memoryIo({ reads: ["Explain ticket trends and propose follow-ups."] });
     const chat = createBoundaryAuthoringChat({
