@@ -50,7 +50,7 @@ describe("guided execution recovery", () => {
         write_url_env: "SYNAPSOR_DATABASE_WRITE_URL", outcome: input.outcome, action_boundary_digest: `sha256:${"a".repeat(64)}`,
         rate_limit: { executions: 10, window_seconds: 60 } },
     } satisfies Awaited<ReturnType<typeof previewSemanticSupervisedExecution>>);
-    vi.mocked(enableSemanticSupervisedExecution).mockResolvedValue({ outcome: input.outcome, config_path: "/owned/project/runner.json" } as Awaited<ReturnType<typeof enableSemanticSupervisedExecution>>);
+    vi.mocked(enableSemanticSupervisedExecution).mockResolvedValue({ outcome: input.outcome, config: {}, config_path: "/owned/project/runner.json" } as Awaited<ReturnType<typeof enableSemanticSupervisedExecution>>);
     return input;
   }
 
@@ -216,6 +216,12 @@ describe("guided execution recovery", () => {
     expect(previewSemanticSupervisedExecution).toHaveBeenCalledTimes(2);
     expect(input.session.confirmActivation).toHaveBeenCalledOnce();
     expect(enableSemanticSupervisedExecution).toHaveBeenCalledOnce();
+    const confirmation = vi.mocked(input.session.confirmActivation!).mock.calls[0]!;
+    expect(confirmation[1]?.context).toEqual(expect.arrayContaining([
+      expect.stringContaining("Worker config:"), expect.stringContaining("Check only: synapsor-runner worker check"),
+      expect.stringContaining("Start work separately:"), expect.stringContaining("A check grants no execution permission"),
+    ]));
+    expect(JSON.stringify(confirmation)).not.toMatch(/private-reader|private-chosen|postgres:\/\//);
     expect(input.session.chooseOption).toHaveBeenCalledWith("Execution needs a deployment fix", expect.any(Array),
       expect.objectContaining({ context: expect.arrayContaining([expect.stringContaining("EXECUTION_SETUP_CHECK_FAILED")]) }));
   });

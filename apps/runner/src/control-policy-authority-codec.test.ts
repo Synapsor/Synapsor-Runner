@@ -2609,7 +2609,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
         if (backend === "sqlite") {
           const wrongStore = path.join(projectRoot, "shadow.db");
           for (const command of [
-            ["run", "--supervised", "--once", "--batch-quiet"], ["pause"], ["resume"], ["drain"],
+            ["run", "--supervised", "--once", "--batch-quiet"], ["check", "--supervised"], ["pause"], ["resume"], ["drain"],
             ["disable", draft.authority.rules[0]!.rule.outcome, "--digest", draft.authority.action_boundary.digest],
             ["revoke", draft.authority.rules[0]!.rule.outcome, "--digest", draft.authority.action_boundary.digest],
             ["cancel", "latest"], ["dead-letter", "requeue", "missing"],
@@ -2629,6 +2629,7 @@ for (const backend of ["sqlite", "postgres"] as const) {
           const forgedStore = path.join(projectRoot, "forged-bridge.db");
           const args = ["--yes", "--config", file, "--store", forgedStore, "--runtime-store-bridge"];
           await expect(workerCommand(["pause", ...args])).rejects.toMatchObject({ code: "POLICY_RUNTIME_BRIDGE_REQUIRED" });
+          await expect(workerCommand(["check", "--supervised", ...args])).rejects.toMatchObject({ code: "POLICY_RUNTIME_BRIDGE_REQUIRED" });
           await expect(applyProposal(args, "missing")).rejects.toMatchObject({ code: "POLICY_RUNTIME_BRIDGE_REQUIRED" });
           await expect(workerCommand(["pause", "--yes", "--config", file, "--shared-ledger-schema", "other_store"]))
             .rejects.toMatchObject({ code: "POLICY_STORE_SELECTION_CHANGED" });
@@ -3492,12 +3493,25 @@ for (const backend of ["sqlite", "postgres"] as const) {
             return read(...args);
           });
           const claim = vi.spyOn(ProposalStore.prototype, "claimWorkerItem");
+          // The request above supplies env explicitly. The worker is a separate
+          // process contract: supply the same synthetic context and a local URL
+          // shape before testing revocation at its existing before-claim point.
+          // The test must still prove that it never reaches claim/source access.
+          const launchEnv = { SYNAPSOR_TENANT_ID: "tenant_one", SYNAPSOR_PRINCIPAL: "principal_one",
+            WRITER_URL: "postgresql://127.0.0.1:1/not-opened" };
+          const previousEnv = Object.fromEntries(Object.keys(launchEnv).map(key => [key, process.env[key]]));
+          Object.assign(process.env, launchEnv);
           try {
             expect(await workerCommand(["run", "--supervised", "--once", "--yes", "--batch-quiet",
               "--config", file, "--store", path.join(projectRoot, "control.db")])).toBe(0);
             expect(reads).toBe(backend === "postgres" ? 4 : 3);
             expect(claim).not.toHaveBeenCalled();
-          } finally { reader.mockRestore(); claim.mockRestore(); }
+          } finally {
+            reader.mockRestore(); claim.mockRestore();
+            for (const [key, value] of Object.entries(previousEnv)) {
+              if (value === undefined) delete process.env[key]; else process.env[key] = value;
+            }
+          }
           expect((await store.listWorkerQueue!()).every((item) => item.status === "queued" && item.attempts === 0)).toBe(true);
           expect(await binding.repository.active(binding.deployment_id, OPERATOR_EXECUTION_POLICY)).toBeUndefined();
           store.enqueueWorkerProposal = undefined;

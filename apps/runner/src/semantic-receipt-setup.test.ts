@@ -1,3 +1,4 @@
+import { assessWorkerLaunch } from "./worker-launch.js";
 import { PassThrough } from "node:stream";
 import type { ReadStream, WriteStream } from "node:tty";
 import { createTerminalActionPrompter, boundarySessionForActionPrompter } from "./action-tui.js";
@@ -395,6 +396,19 @@ describe("reviewed semantic receipt setup", () => {
     await expect(previewSemanticSupervisedExecution(input)).rejects.toThrow("RECEIPT_NOT_VERIFIED");
     const ready = await previewSemanticSupervisedExecution(input);
     expect(ready.receipts).toEqual(f.proposal.receipts);
+    const probeCalls = doctor.mock.calls.length;
+    const launch = await assessWorkerLaunch({ config: ready.config as RuntimeConfig, configPath: f.configPath, capability: f.outcome, env: input.env });
+    expect(launch.receipt).toMatchObject({ mode: "source_db", selected_mode: "source_db", selection: "current", matches_execution_configuration: true });
+    for (const changed of ["mode", "destination", "writer"] as const) {
+      const config = structuredClone(ready.config) as RuntimeConfig;
+      if (changed === "mode") config.sources!.local_postgres!.receipts = { authority: "runner_ledger" };
+      else if (changed === "destination") config.sources!.local_postgres!.receipts = { ...f.proposal.receipts, table: "other_receipts" };
+      else { config.sources!.local_postgres!.write_url_env = "OTHER_WRITER"; config.supervised_worker!.outcomes![0]!.write_url_env = "OTHER_WRITER"; }
+      const different = await assessWorkerLaunch({ config, configPath: f.configPath, capability: f.outcome, env: input.env });
+      expect(different.receipt, changed).toMatchObject({ selected_mode: "source_db", selection: "current", matches_execution_configuration: false });
+    }
+    expect(doctor).toHaveBeenCalledTimes(probeCalls); // Reporting never probes receipts.
+
     expect(doctor).toHaveBeenLastCalledWith(expect.objectContaining({ receipts: f.proposal.receipts, databaseUrl: input.env.WRITER_URL, dryRun: true }));
     const before = await fs.readFile(f.configPath, "utf8");
     const enable = { ...input, expectedActionBoundaryDigest: ready.action_boundary_digest, expectedConfigDigest: ready.current_config_digest,

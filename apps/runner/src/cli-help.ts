@@ -1524,6 +1524,7 @@ the immutable redacted event, never its proposal or database mutation.
 Reviewed Read/Action execution:
   ${cmd} worker run --supervised --yes --config ./synapsor.actions.runner.json
   ${cmd} worker run --supervised --once --yes --config ./synapsor.actions.runner.json
+  ${cmd} worker check --supervised --config ./synapsor.actions.runner.json --capability <outcome> [--json]
   ${cmd} worker status --config ./synapsor.actions.runner.json
 
 Legacy capability examples (explicit configured-runtime projects):
@@ -1532,7 +1533,7 @@ Legacy capability examples (explicit configured-runtime projects):
   ${cmd} worker run --drain --yes --capability support.propose_plan_credit --tenant acme
   ${cmd} worker run --once --yes --shared-ledger-mirror --shared-ledger-url-env SYNAPSOR_LEDGER_DATABASE_URL
   ${cmd} worker run --yes --config ./synapsor.runner.json
-  ${cmd} worker status --store ./.synapsor/local.db [--status dead_letter] [--json]
+  ${cmd} worker status --store ./.synapsor/local.db [--status dead_letter] [--limit 20] [--offset 0] [--json]
   ${cmd} worker pause --yes --config ./synapsor.runner.json
   ${cmd} worker resume --yes --config ./synapsor.runner.json
   ${cmd} worker drain --yes --config ./synapsor.runner.json
@@ -1547,7 +1548,12 @@ Legacy capability examples (explicit configured-runtime projects):
 
 Use the exact config path printed by execution setup. Guided Read/Action
 projects use the separate Action runtime config shown above, not the primary
-read-only config. Without --supervised, worker run uses the legacy queue;
+read-only config. worker check assesses effective local launch inputs without
+leasing, attempting, provisioning or executing work. A check does not verify
+live writer/receipt infrastructure or enable execution. worker run --once is
+an actual worker invocation, never a dry run. Status counts all matching items;
+the human list defaults to 20 (JSON remains complete unless paged).
+Without --supervised, worker run uses the legacy queue;
 --once limits a run but does not select supervised execution.
 The reviewed writer credentials and trusted identity must be available in the
 worker process. A saved command or enabled execution is not a running worker;

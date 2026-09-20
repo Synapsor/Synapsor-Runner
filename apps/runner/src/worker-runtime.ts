@@ -32,7 +32,8 @@ import { applyProposal } from "./guarded-apply.js";
 import { resolveOperatorIdentity, type OperatorIdentityConfig } from "./operator-identity.js";
 import { argsWithRuntimeStoreBridge, assertGovernedLocalRuntimeStore, assertNoRuntimeStoreForLocalMutation, runtimeStoreBridgeRequired, sharedPostgresLedgerMirrorRequested, withSharedPostgresLedgerMirror, withSharedPostgresRuntimeStoreBridge, withSharedPostgresRuntimeStoreReadBridge, withoutSharedPostgresLedgerMirror } from "./store-shared.js";
 import { assertSemanticSupervisedWriterPosture, assertSupervisedWriterPosture, currentSupervisedApprovalPolicy, workerControlAllowsPolicy, workerControlOperatorDecisionAction, workerPolicyError } from "./worker-policy.js";
-import { findProposalCapability, loadSemanticProposalAuthority, loadSemanticRuntimeAuthority } from "./writeback-execution.js";
+import { findProposalCapability, loadSemanticProposalAuthority, loadSemanticRuntimeAuthority, semanticActionProjectRoot } from "./writeback-execution.js";
+import { assessWorkerLaunch, workerLaunchLines } from "./worker-launch.js";
 import { executionBindingDigest } from "./control-policy-execution.js";
 import { withLocalTestRuntimeIdentity } from "./local-test-runtime-identity.js";
 import { workerCancellationRequiredRole } from "./worker-cancellation-authority.js";
@@ -40,6 +41,21 @@ import { workerCancellationRequiredRole } from "./worker-cancellation-authority.
 
 export async function workerCommand(args: string[]): Promise<number> {
   const [subcommand, ...rest] = args;
+  if (subcommand === "check") {
+    if (!rest.includes("--supervised")) throw new Error("worker check requires --supervised; it assesses local supervised-worker launch inputs only");
+    const configPath = runnerConfigPath(rest);
+    const config = await readRuntimeConfig(configPath);
+    if (runtimeStoreBridgeRequired(rest, config)) {
+      return withSharedPostgresRuntimeStoreReadBridge(rest, config, "worker check", bridgeStorePath =>
+        workerCommand(["check", ...argsWithRuntimeStoreBridge(rest, bridgeStorePath)]));
+    }
+    await assertGovernedLocalRuntimeStore({ args: rest, config, configPath,
+      storePath: resolvedRuntimeStorePath(rest, configPath, config.storage?.sqlite_path), readOnly: true });
+    resolveSupervisedWorkerIdentity(config, optionalArg(rest, "--worker-id") ?? process.env.SYNAPSOR_RUNNER_ID, optionalArg(rest, "--capability"));
+    const assessment = await assessWorkerLaunch({ config, configPath, capability: optionalArg(rest, "--capability") });
+    process.stdout.write(rest.includes("--json") ? `${JSON.stringify(assessment, null, 2)}\n` : `${workerLaunchLines(assessment).join("\n")}\n`);
+    return assessment.issues.length || assessment.coverage === "per_item_only" ? 2 : 0;
+  }
   if (subcommand === "run") return withWorkerLocalTestRuntime(rest, () => workerRun(rest));
   if (subcommand === "status" || subcommand === "list") return workerStatus(rest);
   if (subcommand === "pause" || subcommand === "resume" || subcommand === "drain") {
@@ -56,7 +72,7 @@ export async function workerCommand(args: string[]): Promise<number> {
 
 async function withWorkerLocalTestRuntime<T>(args: string[], operation: () => Promise<T>): Promise<T> {
   const config = await optionalRuntimeConfig(runnerConfigPath(args));
-  const projectRoot = config?.action_rules?.project_root;
+  const projectRoot = config && semanticActionProjectRoot(config, runnerConfigPath(args));
   return projectRoot
     ? withLocalTestRuntimeIdentity({ projectRoot }, operation)
     : operation();
@@ -76,8 +92,11 @@ async function workerStatus(args: string[]): Promise<number> {
     await assertGovernedLocalRuntimeStore({ args, config, configPath, storePath: store.path, store, readOnly: true });
     const status = optionalArg(args, "--status") as Parameters<ProposalStore["listWorkerQueue"]>[0];
     const items = store.listWorkerQueue(status);
+    const offset = positiveIntOption(args, "--offset", 0, 0, Number.MAX_SAFE_INTEGER);
+    const limit = positiveIntOption(args, "--limit", args.includes("--json") ? Math.max(1, items.length) : 20, 1, Number.MAX_SAFE_INTEGER);
+    const page = items.slice(offset, offset + limit);
     const authorityAssessments = await inspectWorkerQueueAuthorityAssessments({
-      items,
+      items: page,
       config,
       configPath,
       proposalForId: (proposalId) => store.getProposal(proposalId),
@@ -98,29 +117,35 @@ async function workerStatus(args: string[]): Promise<number> {
     };
     if (args.includes("--json")) {
       process.stdout.write(`${JSON.stringify({ worker_control: control, worker_health: "unknown", summary,
-        worker_queue: items.map((item) => ({ ...item, recovery: workerFailureRecovery(item.last_error_code, item.status),
+        observation: { observed_at: new Date(now).toISOString(), status_filter: status ?? null, atomic_snapshot: false },
+        page: { offset, limit, displayed: page.length, matching_total: items.length },
+        worker_queue: page.map((item) => ({ ...item, attempt_status: workerAttemptStatus(item), recovery: workerFailureRecovery(item.last_error_code, item.status),
           ...(authorityAssessments.get(item.proposal_id) ? { authority_assessment: authorityAssessments.get(item.proposal_id) } : {}) })) }, null, 2)}\n`);
     } else {
       process.stdout.write(`Supervised execution: ${control.mode} (control revision ${control.revision})\n`);
       process.stdout.write("Worker health: unknown. Queue state and lease counts do not prove that a worker process is running.\n");
       process.stdout.write(
-        `Queue: ${summary.queue_depth} waiting · ${summary.active_leases} leased · ${summary.retry_wait} retrying · ${summary.dead_letters} dead letter · ${summary.reconciliation_required} reconciliation\n`,
+        `Queue: ${summary.queue_depth} waiting · ${summary.active_leases} leased · ${summary.blocked} blocked · ${summary.retry_wait} retry scheduled · ${summary.dead_letters} dead letter · ${summary.reconciliation_required} reconciliation\n`,
       );
-      if (items.length === 0) process.stdout.write("Worker queue is empty.\n");
-      else for (const item of items) {
+      process.stdout.write(`Scope: ${status ?? "all states"}; ${items.length} matching, showing ${page.length} from offset ${offset}. Separate reads; not an atomic snapshot.\n`);
+      if (items.length === 0) process.stdout.write(status === "dead_letter" ? "No dead-letter items.\n" : status ? "No items match this status.\n" : "Worker queue is empty.\n");
+      else for (const item of page) {
         process.stdout.write(
           `${item.status.toUpperCase()} ${item.proposal_id} mode=${item.execution_mode}`
-          + `${item.contract_digest ? ` digest=${item.contract_digest}` : ""}`
-          + ` attempt=${item.attempts}/${item.max_attempts}`
+          + ` attempts completed=${workerAttemptStatus(item).attempts_completed}`
           + `${item.lease_owner ? ` lease=${item.lease_owner} until=${item.lease_expires_at}` : ""}`
           + `${item.last_error_code ? ` error=${item.last_error_code}` : ""}\n`,
         );
+        process.stdout.write(`  ${workerAttemptHumanLine(item)}\n`);
         const authority = authorityAssessments.get(item.proposal_id);
         if (authority) for (const line of workerQueueAuthorityHumanLines(authority, item.proposal_id, configPath)) {
           process.stdout.write(`  ${line}\n`);
         }
         const recovery = workerFailureRecovery(item.last_error_code, item.status);
         if (recovery) process.stdout.write(`  Next: ${recovery}\n`);
+        if (item.status === "blocked" || item.status === "reconciliation_required") {
+          process.stdout.write(`  Inspect: ${cliCommandName()} worker dead-letter show ${shellQuote(item.proposal_id)} --config ${shellQuote(configPath)}\n`);
+        }
       }
     }
     return 0;
@@ -390,7 +415,7 @@ async function workerDeadLetterShow(args: string[]): Promise<number> {
   const configPath = runnerConfigPath(args);
   const config = await optionalRuntimeConfig(configPath);
   if (config && runtimeStoreBridgeRequired(args, config)) {
-    return withSharedPostgresRuntimeStoreBridge(args, config, `worker dead-letter show ${proposalId}`, (bridgeStorePath) => workerDeadLetterShow(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
+    return withSharedPostgresRuntimeStoreReadBridge(args, config, `worker dead-letter show ${proposalId}`, (bridgeStorePath) => workerDeadLetterShow(argsWithRuntimeStoreBridge(args, bridgeStorePath)));
   }
   const storePath = resolvedRuntimeStorePath(args, configPath, config?.storage?.sqlite_path);
   await assertGovernedLocalRuntimeStore({ args, config, configPath, storePath, readOnly: true });
@@ -401,11 +426,12 @@ async function workerDeadLetterShow(args: string[]): Promise<number> {
     if (!item) throw new Error(`worker queue item not found for ${proposalId}`);
     const proposal = requireLocalProposal(store, proposalId);
     const recovery = workerFailureRecovery(item.last_error_code, item.status);
-    const payload = { worker_queue: item, proposal, receipts: store.receipts(proposalId), events: store.events(proposalId), recovery };
+    const payload = { worker_queue: { ...item, attempt_status: workerAttemptStatus(item) }, proposal, receipts: store.receipts(proposalId), events: store.events(proposalId), recovery };
     if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     else process.stdout.write([
       `${item.status.toUpperCase()} ${item.proposal_id}`,
-      `Attempts: ${item.attempts}/${item.max_attempts}`,
+      `Attempts completed: ${workerAttemptStatus(item).attempts_completed}; configured maximum: ${item.max_attempts}`,
+      workerAttemptHumanLine(item),
       `Last safe error: ${item.last_error_code ?? "none"}`,
       `Proposal state: ${proposal.state}`,
       `Receipts retained: ${payload.receipts.length}`,
@@ -692,6 +718,17 @@ async function workerRun(args: string[]): Promise<number> {
   const selectedWorkerId = optionalArg(args, "--worker-id") ?? process.env.SYNAPSOR_RUNNER_ID;
   const workerId = supervised ? resolveSupervisedWorkerIdentity(config, selectedWorkerId, capability)
     : selectedWorkerId ?? `worker_${process.pid}`;
+  const storePath = resolvedRuntimeStorePath(args, configPath, config.storage?.sqlite_path);
+  // Preserve destination validation before diagnosing other launch inputs. A
+  // genuine shared-store bridge validates its own destination before restore.
+  if (!runtimeStoreBridgeRequired(args, config)) {
+    await assertGovernedLocalRuntimeStore({ args, config, configPath, storePath, readOnly: true });
+  }
+  if (supervised) {
+    const launch = await assessWorkerLaunch({ config, configPath, capability });
+    if (launch.issues.length) throw workerPolicyError(launch.issues[0]!,
+      `${workerLaunchLines(launch).join("\n")}\nNo work was enqueued, leased or attempted by this invocation.`);
+  }
   // Pin the startup identity across shared-store bridge batches as well.
   const boundArgs = optionalArg(args, "--worker-id") === undefined ? [...args, "--worker-id", workerId] : args;
   if (config && runtimeStoreBridgeRequired(args, config)) {
@@ -701,7 +738,6 @@ async function workerRun(args: string[]): Promise<number> {
     return withSharedPostgresRuntimeStoreBridge(args, config, "worker run", (bridgeStorePath) => workerRun(argsWithRuntimeStoreBridge(boundArgs, bridgeStorePath)));
   }
   assertNoRuntimeStoreForLocalMutation(config, "worker run", args);
-  const storePath = resolvedRuntimeStorePath(args, configPath, config.storage?.sqlite_path);
   await assertGovernedLocalRuntimeStore({ args, config, configPath, storePath });
   if (sharedPostgresLedgerMirrorRequested(args, config)) {
     if (!args.includes("--once") && !args.includes("--drain")) {
@@ -978,10 +1014,28 @@ function finishWorkerFailure(
 }
 
 
+export function workerAttemptStatus(item: WorkerQueueItem) {
+  // attempts increments on claim, before the leased attempt finishes.
+  return { attempts_completed: Math.max(0, item.attempts - (item.status === "leased" ? 1 : 0)),
+    attempt_in_progress: item.status === "leased",
+    automatic_retry_scheduled: item.status === "retry_wait",
+    next_retry_at: item.status === "retry_wait" ? item.next_attempt_at : null };
+}
+
+function workerAttemptHumanLine(item: WorkerQueueItem): string {
+  if (item.status === "retry_wait") return `Automatic retry scheduled at ${item.next_attempt_at}; current policy, control and lease checks still apply.`;
+  if (item.status === "leased") return "An attempt is leased; completion and source outcome are not established by queue status.";
+  if (item.status === "queued") return "Waiting for an eligible worker; no attempt is in progress.";
+  return "No automatic retry scheduled.";
+}
+
 export function workerFailureRecovery(code: string | null | undefined, state?: WorkerQueueItem["status"]): string | undefined {
   if (state === "reconciliation_required" || code === "OUTCOME_UNKNOWN" || code === "RECONCILIATION_REQUIRED"
     || code === "RECEIPT_OUTCOME_UNKNOWN" || code === "DELEGATION_EFFECT_RECONCILIATION_REQUIRED") {
     return "Reconcile the exact proposal's dispatch record, durable receipt and source outcome with a verified operator. Do not retry or requeue; completion is not proven.";
+  }
+  if (state === "blocked") {
+    return "Inspect this proposal and its receipts. Blocked-work recovery is not currently available; dead-letter requeue and pending-work cancellation do not apply. A duplicate request may be refused. Prior approvals remain counted.";
   }
   // Exact public codes only. Never include the exception message, proof or identity in recovery/log fields.
   switch (code) {

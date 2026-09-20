@@ -298,3 +298,41 @@ With exact supervised execution enabled:
 The model can therefore cause a bounded request to enter a pre-authorized
 production pipeline. It still cannot choose the authority, approve the
 proposal, control the worker, or commit a mutation directly.
+
+### Check worker launch inputs without taking work
+
+After separate execution review, follow the generated Action config and outcome:
+
+```bash
+synapsor-runner worker check --supervised --config './project with spaces/synapsor.actions.runner.json' --capability '<reviewed outcome>'
+synapsor-runner worker run --supervised --config './project with spaces/synapsor.actions.runner.json' --capability '<reviewed outcome>' --yes
+```
+
+Replace the example path and outcome with the reviewed values. The check uses
+that configuration's effective trusted context, including a supported reviewed
+local development identity. It prints reference names and presence, never secret
+or identity values. Supply missing values through the existing trusted launch
+configuration; do not paste credentials into command history. Local development
+identity is not production authentication.
+
+`worker check` does not lease work, increment attempts, probe receipt writes,
+provision infrastructure or enable execution. It assesses one semantic outcome's
+local prerequisites; unsupported or unselected multi-outcome scopes return an
+incomplete result (exit 2). Live writer/receipt readiness and all current per-item
+checks remain necessary. `worker run --once` really takes eligible work; it is
+not a check-only command.
+
+`worker status` counts all items matching its status filter while displaying at
+most 20 by default; `--limit` and `--offset` page the display. JSON preserves the
+full list unless explicitly paged. Separate observations are not one atomic
+snapshot. A blocked item has completed its recorded attempt and has no automatic
+retry scheduled, even if its configured attempt maximum is larger. No dead-letter
+items does not mean the queue is empty. Use `worker dead-letter show <proposal>`
+for existing item details, including blocked states; that inspection does not
+make the item eligible for dead-letter requeue.
+
+There is currently no supported blocked-to-queued recovery. Cancellation of
+unstarted queued/retry-wait work and verified dead-letter controls have their own
+state and operator guards. A duplicate request can remain refused. Approval
+history and consumed automatic allowance remain intact when execution fails;
+uncertain outcomes require receipt/source reconciliation, never a guessed retry.

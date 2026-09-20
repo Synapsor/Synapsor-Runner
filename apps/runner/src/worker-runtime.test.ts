@@ -9,6 +9,7 @@ import { applyProposal } from "./guarded-apply.js";
 import { waitFor } from "./cli-options.js";
 import { assessUnstartedSemanticQueueAuthority, isRetryableWritebackCode, workerCommand, workerFailureRecovery, workerQueueAuthorityHumanLines } from "./worker-runtime.js";
 import { workerCancellationRequiredRole } from "./worker-cancellation-authority.js";
+import * as workerLaunch from "./worker-launch.js";
 
 vi.mock("./cli-project.js", async (original) => ({ ...await original<typeof import("./cli-project.js")>(), readRuntimeConfig: vi.fn() }));
 vi.mock("./guarded-apply.js", () => ({ applyProposal: vi.fn() }));
@@ -202,6 +203,17 @@ describe("supervised worker current execution policy", () => {
   async function fixture() {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-worker-policy-refresh-")); roots.push(root);
     const storePath = path.join(root, "control.db");
+    // This existing unit fixture substitutes readRuntimeConfig and applyProposal
+    // and has no saved semantic authority. Keep it focused on policy refresh and
+    // identity precedence. Real launch assessment and nonempty-queue refusal are
+    // covered through actual saved authority in semantic-writeback-authority.
+    vi.spyOn(workerLaunch, "assessWorkerLaunch").mockResolvedValue({
+      config_path: path.join(root, "runner.json"), scope: "inventory.replenish",
+      coverage: "selected_semantic_outcome", local_identity: "environment_or_other_trusted_provider",
+      inputs: [], issues: [], execution_enabled: true, execution_binding: "current",
+      receipt: { mode: "runner_ledger", selected_mode: null, matches_execution_configuration: null,
+        selection: "unverified", live_verification: "not_performed" },
+    });
     const config: RuntimeConfig = { version: 1, mode: "review", capabilities: [],
       trusted_context: { provider: "environment" },
       action_rules: { project_root: root }, storage: { sqlite_path: storePath },

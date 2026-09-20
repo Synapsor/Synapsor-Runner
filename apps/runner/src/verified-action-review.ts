@@ -1,6 +1,8 @@
 import { actionRuleEffectLines, actionRuleEffectInventory } from "@synapsor-runner/action-rules";
 import { actionSubjectCompatibility } from "./action-subject-compatibility.js";
 import process from "node:process";
+import { assessWorkerLaunch, workerLaunchLines } from "./worker-launch.js";
+import type { RuntimeConfig } from "@synapsor-runner/mcp-server";
 import path from "node:path";
 import { reviewSemanticReceiptSetup } from "./semantic-receipt-setup.js";
 import { inspectDatabase } from "@synapsor-runner/schema-inspector";
@@ -669,6 +671,10 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
     return { tone: "danger", title: problem.publication_state ? "Execution save needs recovery." : "Execution was not enabled.", lines: [problem.summary], problem,
       ...(error instanceof SemanticWriterPostureError && error.provisioning ? { provisioning: error.provisioning } : {}) };
   }
+  const launchPreview = await assessWorkerLaunch({ config: preview.config as RuntimeConfig,
+    configPath: path.resolve(input.projectRoot, preview.config_path), capability: input.outcome, env: input.env });
+  // This is the proposed launch configuration, still awaiting the separate enable decision.
+  launchPreview.execution_enabled = false;
   const findings = semanticExecutionVerificationLines(preview);
   input.session.rememberDetails?.("Write connection verification", findings);
   const confirmed = await (input.session.confirmActivation ?? input.session.confirm)(
@@ -676,6 +682,7 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
     {
       context: [
         ...findings,
+        ...workerLaunchLines(launchPreview),
         `Writer role: ${preview.writer_role}; worker: ${workerIdentity ?? "not pinned"}.`,
         `Receipts: ${preview.receipts.authority === "source_db" ? `source_db, ${preview.receipts.schema}.${preview.receipts.table}` : "runner_ledger"}.`,
         `Worker bounds: concurrency ${preview.policy.concurrency}; queue ${preview.policy.queue_limit}; attempts ${preview.policy.max_attempts}; rate ${preview.policy.rate_limit.executions}/${preview.policy.rate_limit.window_seconds}s.`,
@@ -702,12 +709,14 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
     await clearPausedExecutionSetup(input.projectRoot, input.active.authority.action_boundary.digest, input.outcome).catch(() => {
       input.session.rememberDetails?.("Execution setup diagnostics", ["Execution was enabled, but the previous diagnostic checkpoint could not be removed. It does not grant or revoke authority."]);
     });
+    const configPath = path.resolve(input.projectRoot, enabled.config_path);
+    const launch = await assessWorkerLaunch({ config: enabled.config as RuntimeConfig, configPath, capability: enabled.outcome, env: input.env });
     return {
       tone: "success",
       title: "Supervised execution enabled for this outcome.",
       lines: [
         `${enabled.outcome}: approved proposals may be leased by semantic_action_worker.`,
-        `Run: ${cliCommandName()} worker run --supervised --yes --config ${shellQuote(enabled.config_path)}`,
+        ...workerLaunchLines(launch),
         "Transaction-time fact reload, rule evaluation, effect comparison, scope, conflict, rate, and receipt checks remain mandatory.",
         "No proposal was executed and source data is unchanged.",
       ],

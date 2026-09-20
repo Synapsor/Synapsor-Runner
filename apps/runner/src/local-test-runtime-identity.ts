@@ -340,17 +340,24 @@ export async function retireLocalTestRuntimeProfile(projectRoot: string, referen
   }));
 }
 
+export async function resolveLocalTestRuntimeEnvironment(input: {
+  projectRoot: string;
+  runtimePath?: string;
+}, env: NodeJS.ProcessEnv = process.env) {
+  const values = await loadLocalTestRuntimeIdentity(input);
+  const conflict = Object.keys(values ?? {}).find(name => env[name] !== undefined && env[name] !== values![name]);
+  if (conflict) throw new Error(`LOCAL_TEST_RUNTIME_ENV_CONFLICT: inherited ${conflict} does not match the reviewed local test identity.`);
+  return { env: { ...env, ...values }, values,
+    reference: values ? input.runtimePath ?? DEFAULT_LOCAL_TEST_RUNTIME_IDENTITY_PATH : undefined };
+}
+
 export async function withLocalTestRuntimeIdentity<T>(input: {
   projectRoot: string;
   runtimePath?: string;
 }, operation: () => Promise<T>): Promise<T> {
-  const values = await loadLocalTestRuntimeIdentity(input);
+  const { values } = await resolveLocalTestRuntimeEnvironment(input);
   if (!values) return operation();
   const previous = new Map(Object.keys(values).map((name) => [name, process.env[name]]));
-  const conflict = [...previous].find(([name, value]) => value !== undefined && value !== values[name]);
-  if (conflict) {
-    throw new Error(`LOCAL_TEST_RUNTIME_ENV_CONFLICT: inherited ${conflict[0]} does not match the reviewed local test identity.`);
-  }
   try {
     Object.assign(process.env, values);
     return await operation();

@@ -50,6 +50,8 @@ import {
   enqueueApprovedForSupervisedWorker,
   workerCommand,
 } from "./worker-runtime.js";
+import { assessWorkerLaunch, workerLaunchLines } from "./worker-launch.js";
+import { saveLocalTestRuntimeIdentity } from "./local-test-runtime-identity.js";
 import { assessSemanticSupervisedWriterPosture } from "./worker-policy.js";
 
 const roots: string[] = [];
@@ -75,7 +77,7 @@ describe.skipIf(!process.env.SYNAPSOR_TEST_POSTGRES_URL)("connected semantic wor
     rows: () => Promise<unknown[]>;
     ledger: () => { proposal: ReturnType<ProposalStore["getProposal"]>; queue: ReturnType<ProposalStore["getWorkerQueueItem"]>;
       receipts: ReturnType<ProposalStore["receipts"]> };
-    config: RuntimeConfig; configPath: string;
+    config: RuntimeConfig; configPath: string; root: string; snapshot: () => unknown;
     changeVersion: () => Promise<void>;
   }) => Promise<void>) {
     const pool = new Pool({ connectionString: process.env.SYNAPSOR_TEST_POSTGRES_URL, max: 3, connectionTimeoutMillis: 3_000 });
@@ -111,7 +113,11 @@ describe.skipIf(!process.env.SYNAPSOR_TEST_POSTGRES_URL)("connected semantic wor
       const queueStore = new ProposalStore(f.storePath);
       try { await enqueueApprovedForSupervisedWorker(queueStore, config, f.configPath, {}); }
       finally { queueStore.close(); }
-      await run({ config, configPath: f.configPath,
+      await run({ config, configPath: f.configPath, root: f.root,
+        snapshot: () => { const store = new ProposalStore(f.storePath); try {
+          return Object.fromEntries((store.db.prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name").all() as { name: string }[])
+            .map(({ name }) => [name, store.db.prepare(`SELECT * FROM "${name.replaceAll('"', '""')}"`).all()]));
+        } finally { store.close(); } },
         runWorker: (extra = []) => workerCommand(["run", "--supervised", "--once", "--yes", "--batch-quiet",
           "--config", f.configPath, "--store", f.storePath, ...extra]),
         rows: async () => (await pool.query(`SELECT * FROM "${schema}".preferences ORDER BY preference_id`)).rows,
@@ -150,6 +156,7 @@ describe.skipIf(!process.env.SYNAPSOR_TEST_POSTGRES_URL)("connected semantic wor
 
   it.each(["TEST_WORKER_TENANT", "TEST_WORKER_PRINCIPAL"])("blocks a different trusted %s without source writes", async (name) => fixture(async (f) => {
     const before = await f.rows();
+    expect((await assessWorkerLaunch({ config: f.config, configPath: f.configPath })).issues).toEqual([]);
     vi.stubEnv(name, "foreign_identity");
     expect(await f.runWorker()).toBe(0);
     expect(await f.rows()).toEqual(before);
@@ -157,13 +164,77 @@ describe.skipIf(!process.env.SYNAPSOR_TEST_POSTGRES_URL)("connected semantic wor
     expect(f.ledger().receipts).toEqual([]);
   }), 30_000);
 
-  it("preserves the exact missing-binding code in the worker queue instead of a generic execution error", async () => fixture(async (f) => {
-    const before = await f.rows();
+  it.each(["TEST_WORKER_TENANT", "TEST_WORKER_PRINCIPAL", "SYNAPSOR_DATABASE_WRITE_URL"])(
+    "refuses missing effective %s before touching a nonempty queue, then executes the same item after restoration", async name => fixture(async f => {
+    const before = await f.rows(), snapshot = f.snapshot(), original = process.env[name];
+    vi.stubEnv(name, undefined);
+    const code = name === "SYNAPSOR_DATABASE_WRITE_URL" ? "SEMANTIC_ACTION_WRITER_URL_MISSING" : "TRUSTED_BINDING_MISSING";
+    await expect(f.runWorker()).rejects.toMatchObject({ code });
+    expect(f.snapshot()).toEqual(snapshot);
+    expect(f.ledger().queue).toMatchObject({ status: "queued", attempts: 0 });
+    expect(await f.rows()).toEqual(before);
+    vi.stubEnv(name, original);
+    const launch = await assessWorkerLaunch({ config: f.config, configPath: f.configPath });
+    expect(launch.issues).toEqual([]);
+    expect(f.snapshot()).toEqual(snapshot); // A check does not resume or take work.
+    expect(await f.runWorker()).toBe(0);
+    expect(f.ledger().queue).toMatchObject({ status: "completed", attempts: 1 });
+    expect(f.ledger().receipts).toHaveLength(1);
+    expect(f.ledger().receipts[0]!.receipt).toMatchObject({ status: "applied", rows_affected: 1 });
+    expect(await f.rows()).toEqual([before[0], { preference_id: "pref_1", account_id: "acct_1", principal_id: "customer_1", status: "paused", version: 5 }]);
+  }), 30_000);
+
+  it("uses the same safe assessment for the handoff and check command; malformed writer input never leases", async () => fixture(async f => {
+    const snapshot = f.snapshot(), rows = await f.rows();
+    const launch = await assessWorkerLaunch({ config: f.config, configPath: f.configPath });
+    expect(launch.inputs.map(x => x.reference)).toEqual(["TEST_WORKER_TENANT", "TEST_WORKER_PRINCIPAL", "SYNAPSOR_DATABASE_WRITE_URL"]);
+    expect(launch.receipt).toMatchObject({ mode: "runner_ledger", selection: "unverified", live_verification: "not_performed" });
+    const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+    try {
+      expect(await workerCommand(["check", "--supervised", "--config", f.configPath, "--json"])).toBe(0);
+      expect(JSON.parse(spy.mock.calls.map(([x]) => String(x)).join(""))).toEqual(launch);
+    } finally { spy.mockRestore(); }
+    const text = workerLaunchLines(launch).join("\n");
+    expect(text).toContain("worker check --supervised");
+    expect(text).toContain("--capability 'billing.pause_notifications'");
+    expect(text).not.toMatch(/acct_1|customer_1|postgres:\/\//);
+    vi.stubEnv("SYNAPSOR_DATABASE_WRITE_URL", "private-malformed-credential");
+    await expect(f.runWorker()).rejects.toMatchObject({ code: "SEMANTIC_ACTION_WRITER_URL_INVALID" });
+    expect(f.snapshot()).toEqual(snapshot); expect(await f.rows()).toEqual(rows);
+  }), 30_000);
+
+  it("derives renamed references from configuration and does not union an unselected outcome's writer", async () => fixture(async f => {
+    const config = structuredClone(f.config);
+    config.trusted_context!.values = { tenant_id_env: "RENAMED_ORGANIZATION", principal_env: "RENAMED_OPERATOR" };
+    const original = config.supervised_worker!.outcomes![0]!;
+    config.supervised_worker!.outcomes!.push({ ...original, outcome: "unselected.other", write_url_env: "UNSELECTED_WRITER" });
+    const snapshot = f.snapshot();
+    const selected = await assessWorkerLaunch({ config, configPath: f.configPath, capability: original.outcome,
+      env: { ...process.env, RENAMED_ORGANIZATION: "private-org", RENAMED_OPERATOR: "private-person" } });
+    expect(selected.issues).toEqual([]);
+    expect(selected.inputs.map(x => x.reference)).toEqual(["RENAMED_ORGANIZATION", "RENAMED_OPERATOR", "SYNAPSOR_DATABASE_WRITE_URL"]);
+    expect(JSON.stringify(selected)).not.toMatch(/private-org|private-person|UNSELECTED_WRITER/);
+    expect((await assessWorkerLaunch({ config, configPath: f.configPath })).coverage).toBe("per_item_only");
+    expect(f.snapshot()).toEqual(snapshot);
+    // Configuration-only resolver control, not a claimed execution under this changed config.
+  }), 30_000);
+
+  it("loads a reviewed local identity from the config project, retains conflict refusal and never guesses from the queue", async () => fixture(async f => {
+    await saveLocalTestRuntimeIdentity({ projectRoot: f.root,
+      bindings: [{ role: "tenant", environment: "TEST_WORKER_TENANT" }, { role: "principal", environment: "TEST_WORKER_PRINCIPAL" }],
+      values: { TEST_WORKER_TENANT: "acct_1", TEST_WORKER_PRINCIPAL: "customer_1" } });
+    vi.stubEnv("TEST_WORKER_TENANT", undefined); vi.stubEnv("TEST_WORKER_PRINCIPAL", undefined);
+    const before = f.snapshot();
+    const launch = await assessWorkerLaunch({ config: f.config, configPath: f.configPath });
+    expect(launch.issues).toEqual([]); expect(launch.local_identity).toBe("reviewed_local_development");
+    expect(launch.inputs.filter(x => x.purpose === "context").every(x => x.present && x.source === "reviewed_local_identity")).toBe(true);
+    vi.stubEnv("TEST_WORKER_PRINCIPAL", "foreign");
+    await expect(f.runWorker()).rejects.toThrow("LOCAL_TEST_RUNTIME_ENV_CONFLICT");
+    expect(f.snapshot()).toEqual(before);
     vi.stubEnv("TEST_WORKER_PRINCIPAL", undefined);
     expect(await f.runWorker()).toBe(0);
-    expect(f.ledger().queue).toMatchObject({ status: "blocked", attempts: 1, last_error_code: "TRUSTED_BINDING_MISSING" });
-    expect(f.ledger().receipts).toEqual([]);
-    expect(await f.rows()).toEqual(before);
+    expect(f.ledger().queue).toMatchObject({ status: "completed", attempts: 1 });
+    expect(process.env.TEST_WORKER_PRINCIPAL).toBeUndefined();
   }), 30_000);
 
   it("refuses a conflicting named session context before claiming, without top-level fallback", async () => fixture(async (f) => {
@@ -179,6 +250,7 @@ describe.skipIf(!process.env.SYNAPSOR_TEST_POSTGRES_URL)("connected semantic wor
   }), 30_000);
 
   it("refuses stale approved facts without an additional source change", async () => fixture(async (f) => {
+    expect((await assessWorkerLaunch({ config: f.config, configPath: f.configPath })).issues).toEqual([]);
     await f.changeVersion();
     const before = await f.rows();
     expect(await f.runWorker()).toBe(0);

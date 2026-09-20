@@ -1070,7 +1070,8 @@ describe("semantic Action Rule authority persistence", () => {
       tone: "success",
       title: "Supervised execution enabled for this outcome.",
       lines: expect.arrayContaining([
-        expect.stringContaining("worker run --supervised --yes --config"),
+        expect.stringContaining("Check only: synapsor-runner worker check --supervised --config"),
+        expect.stringMatching(/Start work separately: synapsor-runner worker run --supervised --config .* --capability 'billing.pause_notifications' --yes/),
         "No proposal was executed and source data is unchanged.",
       ]),
     });
