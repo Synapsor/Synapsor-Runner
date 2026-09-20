@@ -1,3 +1,4 @@
+import { bindBlockedClosureBridge } from "@synapsor-runner/proposal-store";
 import { type RuntimeConfig } from "@synapsor-runner/mcp-server";
 import { createPostgresPool } from "@synapsor-runner/postgres";
 import {
@@ -482,8 +483,9 @@ async function withGovernedBridge<T>(binding: BoundProjectPolicyStore | undefine
   const key = path.resolve(storePath);
   if (binding) governedBridges.set(key, { repository_id: binding.repository_id,
     deployment_id: binding.deployment_id, project_id: binding.project_id, writable });
+  const unbind = binding ? bindBlockedClosureBridge(storePath, binding) : undefined;
   try { return await callback(storePath); }
-  finally { governedBridges.delete(key); }
+  finally { unbind?.(); governedBridges.delete(key); }
 }
 
 

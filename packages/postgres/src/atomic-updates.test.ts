@@ -1,5 +1,5 @@
-import { describe, expect, it } from "vitest";
-import { eligibilityProofDigest, exactDerivedEffectDigest, parseWritebackJob, parseWritebackResult } from "@synapsor-runner/protocol";
+import { describe, expect, it, vi } from "vitest";
+import { canonicalJsonDigest, eligibilityProofDigest, exactDerivedEffectDigest, parseWritebackJob, parseWritebackResult } from "@synapsor-runner/protocol";
 import type { RunnerConfig, WritebackIntentStore } from "@synapsor-runner/worker-core";
 import { atomicFixture, atomicJob, atomicMemoryLoader, atomicSource, AtomicState, type AtomicFailure } from "../../action-rules/src/testing/atomic-fixture.js";
 import { compileActionRule } from "../../action-rules/src/compile.js";
@@ -23,7 +23,7 @@ class StatefulPostgres implements PostgresApplyClient {
   log: string[] = [];
   constructor(failure?: AtomicFailure, failAt = 2) { this.state = new AtomicState(failure, failAt); }
   async query(sql: string, values: unknown[] = []): Promise<{ rows: Record<string, unknown>[]; rowCount: number | null }> {
-    sql = sql.trim();
+    sql = sql.trim().replaceAll('"rollback_evidence"."synapsor_writeback_receipts"', "synapsor_writeback_receipts");
     this.log.push(sql);
     if (sql === "BEGIN") this.state.begin();
     else if (sql === "COMMIT") this.state.commit();
@@ -252,3 +252,32 @@ describe("independent atomic compiler and protocol bounds", () => {
     expect(f.client.state.updates).toBe(0);
   });
 });
+
+
+describe("authoritative source rollback evidence", () => {
+  it.each([1, 2])("attests whole rollback after member %s refuses, never synthetic zero-member values alone", async failAt => {
+    const f = await setup("source_db", "zero", failAt);
+    f.config.databaseUrl = "postgres://synthetic:never-used@127.0.0.1:5432/owned";
+    f.config.receipts!.schema = "rollback_evidence";
+    const observations: unknown[] = [];
+    f.config.onSourceRollback = e => { expect(f.client.state.transaction).toBeUndefined(); expect(f.client.state.rollbacks).toBe(1); observations.push(e); };
+    await expect(f.apply()).rejects.toThrow("SEMANTIC_AUTHORITY_STALE");
+    expect(observations).toEqual([expect.objectContaining({ producer: "synapsor.postgres.source_db.rollback.v1", outcome: "rollback_acknowledged", job_digest: canonicalJsonDigest(f.job) })]);
+    expect(f.client.state.rows).toEqual(atomicSourceRows()); expect(f.client.state.receipts).toEqual({});
+  });
+  it.each(["commit_unknown", "rollback_unknown"] as const)("%s cannot attest finality", async failure => {
+    const f = await setup("source_db", failure);
+    f.config.databaseUrl = "postgres://synthetic:never-used@127.0.0.1:5432/owned"; f.config.receipts!.schema = "rollback_evidence";
+    f.config.onSourceRollback = vi.fn();
+    expect(await f.apply()).toMatchObject({ status: "reconciliation_required" });
+    expect(f.config.onSourceRollback).not.toHaveBeenCalled();
+  });
+  it("applied work and unqualified legacy receipt namespaces acquire no closure proof", async () => {
+    for (const failure of [undefined, "zero"] as const) {
+      const f = await setup("source_db", failure); f.config.onSourceRollback = vi.fn();
+      if (failure) await expect(f.apply()).rejects.toThrow(); else expect(await f.apply()).toMatchObject({ status: "applied" });
+      expect(f.config.onSourceRollback).not.toHaveBeenCalled();
+    }
+  });
+});
+function atomicSourceRows() { return new AtomicState().rows; }

@@ -1,3 +1,4 @@
+import { sourceRollbackBinding } from "@synapsor-runner/worker-core";
 import crypto from "node:crypto";
 import { isCompleteCollectionScopeExpression } from "./complete-collection-scope.js";
 export { isCompleteCollectionScopeExpression } from "./complete-collection-scope.js";
@@ -12,6 +13,7 @@ import type {
   CompiledRuleBindingV1,
 } from "@synapsor-runner/action-rules";
 import {
+  canonicalJsonDigest,
   parseSemanticVerificationResult,
   type InverseDescriptorV1,
   type NormalizedWritebackJobV5,
@@ -1146,6 +1148,15 @@ async function sourceTransaction<T>(
       } catch (rollbackError) {
         throw new SourceOutcomeUnknownError({ error, rollbackError });
       }
+    }
+    // Only this point has observed a successful whole-transaction ROLLBACK.
+    // Failed/unknown COMMIT or ROLLBACK must never produce no-effect evidence.
+    if (!(error instanceof SourceOutcomeUnknownError) && job.protocol_version === "5.0"
+      && safeErrorCode(error, operationOf(job)) === "SEMANTIC_AUTHORITY_STALE") {
+      const binding = sourceRollbackBinding({ ...config, sourceId: job.source_id });
+      if (binding) config.onSourceRollback?.({ producer: "synapsor.postgres.source_db.rollback.v1",
+        outcome: "rollback_acknowledged", job_digest: canonicalJsonDigest(job), source_binding_digest: binding,
+        observed_at: new Date().toISOString() });
     }
     throw error;
   }

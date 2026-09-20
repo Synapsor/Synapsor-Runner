@@ -1,3 +1,5 @@
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { assessBlockedClosure, blockedClosureDecisionReason } from "./blocked-closure.js";
 import {
   parseChangeSet,
   type ChangeSet,
@@ -790,6 +792,47 @@ export const proposalStoreWorkersMethods: ProposalStoreWorkerMethods & ProposalS
       return this.requireWorkerQueueItem(options.proposalId);
     },
   
+  assessBlockedWorkerClosure(proposalId, source) { return assessBlockedClosure(this, proposalId, source); },
+
+  closeBlockedWorkerItem(input) {
+    return this.transaction(() => {
+      const proposal = this.requireProposal(input.proposalId);
+      assertOperatorDecision(proposal, "worker_discard", input.identity.subject, input.identity, true);
+      const assessment = assessBlockedClosure(this, input.proposalId, input.source);
+      if (!assessment.required_roles.length || !assessment.required_roles.some(role => input.identity.roles.includes(role))
+        || (assessment.control_role && !input.identity.roles.includes(assessment.control_role))) {
+        throw new ProposalStoreError("BLOCKED_CLOSURE_CONTROL_ROLE_REQUIRED", "A verified operator with the recorded control/apply role is required");
+      }
+      if (assessment.status === "closed") {
+        const prior = this.events(input.proposalId).find(e => e.event_id === assessment.closure_event_id)!;
+        if (input.assessment_digest !== assessment.assessment_digest || prior.payload.reason !== input.reason
+          || canonicalJsonDigest(prior.payload.source) !== canonicalJsonDigest(input.source)
+          || input.identity.decision.reason !== blockedClosureDecisionReason(assessment.assessment_digest, input.reason)) {
+          throw new ProposalStoreError("BLOCKED_CLOSURE_CONFIRMATION_MISMATCH", "Repeat acknowledgement must bind the exact originally accepted assessment, source observation and reason");
+        }
+        return assessment;
+      }
+      if (assessment.status !== "available" || assessment.assessment_digest !== input.assessment_digest) {
+        throw new ProposalStoreError(assessment.status !== "available" ? assessment.code : "BLOCKED_CLOSURE_PREVIEW_CHANGED", "Closure evidence changed or is unavailable; inspect a new preview");
+      }
+      if (!input.reason.trim() || input.reason.length > 240
+        || input.identity.decision.reason !== blockedClosureDecisionReason(input.assessment_digest, input.reason)) {
+        throw new ProposalStoreError("BLOCKED_CLOSURE_CONFIRMATION_MISMATCH", "The signed decision must bind this exact closure assessment and reason");
+      }
+      const now = new Date().toISOString();
+      const changed = this.db.prepare("UPDATE worker_queue SET status = 'discarded', terminal_outcome = 'discarded', updated_at = ? WHERE proposal_id = ? AND status = 'blocked'")
+        .run(now, input.proposalId);
+      if (Number(changed.changes) !== 1) throw new ProposalStoreError("BLOCKED_CLOSURE_PREVIEW_CHANGED", "The terminal item changed before closure; no closure was recorded");
+      this.appendEvent(input.proposalId, "writeback_blocked_closed", input.identity.subject, {
+        disposition: "closed_no_effect", assessment_digest: assessment.assessment_digest, source: input.source,
+        producer_event_id: assessment.producer_event_id, receipt_hash: assessment.receipt_hash,
+        required_roles: assessment.required_roles, reason: input.reason, approval_refunded: false,
+        identity: input.identity,
+      });
+      return assessBlockedClosure(this, input.proposalId);
+    });
+  },
+
   discardDeadLetter(options: {
       proposalId: string;
       identity: OperatorIdentityProof;

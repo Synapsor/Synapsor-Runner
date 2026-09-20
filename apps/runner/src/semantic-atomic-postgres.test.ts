@@ -108,6 +108,17 @@ async function createConnectedFixture(pool: Pool, schema: string, role: string, 
 }
 
 describe.skipIf(!process.env.SYNAPSOR_TEST_POSTGRES_URL)("connected atomic PostgreSQL completion (owned disposable database only)", () => {
+  it("emits attempt-bound no-effect proof only after a live source_db stale-fact rollback", async () => connected(async f => {
+    const job = await f.propose("wrp_connected_rollback_evidence");
+    await f.pool.query(`UPDATE "${f.schema}".subscriptions SET version=version+1 WHERE subscription_id='sub_1'`);
+    const afterOwner = await f.rows();
+    const evidence: unknown[] = [];
+    f.config.onSourceRollback = e => { evidence.push(e); };
+    await expect(f.apply(job)).rejects.toThrow();
+    expect(evidence).toEqual([expect.objectContaining({ producer: "synapsor.postgres.source_db.rollback.v1", outcome: "rollback_acknowledged", job_digest: canonicalJsonDigest(job) })]);
+    expect(await f.rows()).toEqual(afterOwner); expect(await f.receipts()).toEqual([]);
+  }));
+
   it("proposal and approval are read-only; one durable receipt binds two targets; replay does not repeat either write", async () => connected(async f => {
     const before = await f.rows();
     const job = await f.propose("wrp_connected_atomic_success");

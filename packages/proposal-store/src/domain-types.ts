@@ -1316,6 +1316,8 @@ export type ProposalRuntimeStore = {
     environment?: string;
     now?: string;
   }): MaybePromise<WorkerControlState>;
+  assessBlockedWorkerClosure?(proposalId: string, source?: BlockedClosureSourceObservation): MaybePromise<BlockedClosureAssessment>;
+  closeBlockedWorkerItem?(input: CloseBlockedWorkerInput): MaybePromise<BlockedClosureAssessment>;
   cancelWorkerItem?(input: {
     proposalId: string;
     actor: string;
@@ -1451,4 +1453,45 @@ export type RecordHandlerWritebackJobInput = {
   runner_id: string;
   executor: string;
   request: Record<string, unknown>;
+};
+
+export type BlockedRollbackEvidence = {
+  producer: "synapsor.postgres.source_db.rollback.v1";
+  outcome: "rollback_acknowledged";
+  job_digest: `sha256:${string}`;
+  source_binding_digest: `sha256:${string}`;
+  observed_at: string;
+  /** Existing reviewed operator apply roles, snapshotted by the trusted host. */
+  required_roles: string[];
+  execution_config_digest: string;
+  writer_reference: string;
+  receipt_namespace: { schema: string; table: string };
+};
+export type BlockedClosureSourceObservation = {
+  assessment_digest: string;
+  source_binding_digest: string;
+  state: "absent" | "present" | "unavailable";
+};
+export type BlockedClosureAssessment = {
+  schema_version: "synapsor.blocked-closure.v1";
+  proposal_id: string;
+  status: "unavailable" | "source_check_required" | "available" | "closed";
+  code: string;
+  assessment_digest: `sha256:${string}`;
+  required_roles: string[];
+  control_role?: string;
+  source_binding_digest?: string;
+  job_id?: string;
+  receipt_hash?: string;
+  producer_event_id?: number;
+  recorded_error?: string;
+  closure_event_id?: number;
+  approval_refunded: false;
+};
+export type CloseBlockedWorkerInput = {
+  proposalId: string;
+  assessment_digest: string;
+  source: BlockedClosureSourceObservation;
+  identity: OperatorIdentityProof;
+  reason: string;
 };

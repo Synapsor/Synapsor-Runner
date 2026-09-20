@@ -1,3 +1,4 @@
+import { workerCloseBlocked } from "./worker-blocked-closure.js";
 import { resolveActivatedActionRule } from "@synapsor-runner/action-rules";
 import { validateRunnerCapabilityConfig } from "@synapsor-runner/config";
 import {
@@ -64,6 +65,7 @@ export async function workerCommand(args: string[]): Promise<number> {
   if (subcommand === "enable" || subcommand === "disable" || subcommand === "revoke") {
     return workerCapabilityControlMutate(subcommand, rest);
   }
+  if (subcommand === "close-blocked") return workerCloseBlocked(rest);
   if (subcommand === "cancel") return workerCancel(rest);
   if (subcommand === "dead-letter") return workerDeadLetter(rest);
   usage(["worker"]);
@@ -426,7 +428,8 @@ async function workerDeadLetterShow(args: string[]): Promise<number> {
     if (!item) throw new Error(`worker queue item not found for ${proposalId}`);
     const proposal = requireLocalProposal(store, proposalId);
     const recovery = workerFailureRecovery(item.last_error_code, item.status);
-    const payload = { worker_queue: { ...item, attempt_status: workerAttemptStatus(item) }, proposal, receipts: store.receipts(proposalId), events: store.events(proposalId), recovery };
+    const closure = item.status === "blocked" || item.status === "discarded" ? store.assessBlockedWorkerClosure(proposalId) : undefined;
+    const payload = { ...(closure ? { closure } : {}), worker_queue: { ...item, attempt_status: workerAttemptStatus(item) }, proposal, receipts: store.receipts(proposalId), events: store.events(proposalId), recovery };
     if (args.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
     else process.stdout.write([
       `${item.status.toUpperCase()} ${item.proposal_id}`,
@@ -436,6 +439,7 @@ async function workerDeadLetterShow(args: string[]): Promise<number> {
       `Proposal state: ${proposal.state}`,
       `Receipts retained: ${payload.receipts.length}`,
       `Events retained: ${payload.events.length}`,
+      ...(closure ? [`Closure assessment: ${closure.status} (${closure.code})`, `Preview: ${cliCommandName()} worker close-blocked ${shellQuote(proposalId)} --config ${shellQuote(configPath)}`] : []),
       ...(recovery ? [`Next: ${recovery}`] : []),
       "",
     ].join("\n"));
@@ -1034,8 +1038,9 @@ export function workerFailureRecovery(code: string | null | undefined, state?: W
     || code === "RECEIPT_OUTCOME_UNKNOWN" || code === "DELEGATION_EFFECT_RECONCILIATION_REQUIRED") {
     return "Reconcile the exact proposal's dispatch record, durable receipt and source outcome with a verified operator. Do not retry or requeue; completion is not proven.";
   }
+  if (state === "discarded") return "Closed/discarded work will not retry. Its original failed outcome and approval remain recorded; any fresh request needs current authority and its own approval.";
   if (state === "blocked") {
-    return "Inspect this proposal and its receipts. Blocked-work recovery is not currently available; dead-letter requeue and pending-work cancellation do not apply. A duplicate request may be refused. Prior approvals remain counted.";
+    return "Inspect this proposal and its receipts. Preview worker close-blocked: only producer-proven no-effect work can close. Unknown outcomes require reconciliation. Prior approvals remain counted.";
   }
   // Exact public codes only. Never include the exception message, proof or identity in recovery/log fields.
   switch (code) {

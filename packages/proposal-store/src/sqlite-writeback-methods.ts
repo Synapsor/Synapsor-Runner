@@ -1,3 +1,5 @@
+import { blockedClosureStoreBinding, type BlockedRollbackEvidence } from "./blocked-closure.js";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   type SQLInputValue,
 } from "node:sqlite";
@@ -82,12 +84,25 @@ function proposalHashFromWritebackJob(job: WritebackJob): string {
 }
 
 export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & ProposalStoreWritebackInternalMethods & ThisType<ProposalStoreMethodContext> = {
-  recordExecutionReceipt(input: unknown): StoredProposal {
+  recordExecutionReceipt(input: unknown, rollback?: BlockedRollbackEvidence): StoredProposal {
       const receipt = parseExecutionReceipt(input);
       const proposal = this.requireProposal(receipt.proposal_id);
       assertWritebackAllowed(proposal, "recorded with an execution receipt");
       this.transaction(() => {
         this.recordExecutionReceiptRows(receipt, proposal);
+        if (rollback) {
+          const item = this.workerQueueItem(proposal.proposal_id);
+          const job = this.getWritebackJob(receipt.writeback_job_id)?.normalized_job;
+          if (!item || item.status !== "leased" || !item.lease_id || !job
+            || rollback.job_digest !== canonicalJsonDigest(job) || receipt.status !== "failed"
+            || receipt.schema_version !== "synapsor.execution-receipt.v5" || receipt.safe_error_code !== "SEMANTIC_AUTHORITY_STALE") {
+            throw new ProposalStoreError("SOURCE_ROLLBACK_EVIDENCE_MISMATCH", "Producer rollback evidence does not match the leased attempt and failed receipt");
+          }
+          this.appendEvent(proposal.proposal_id, "writeback_source_rollback", receipt.runner_id, {
+            ...rollback, receipt_hash: receipt.receipt_hash, job_id: job.job_id, attempt: item.attempts,
+            lease_id: item.lease_id, store_binding: blockedClosureStoreBinding(this),
+          });
+        }
       });
       return this.requireProposal(receipt.proposal_id);
     },

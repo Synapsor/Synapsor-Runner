@@ -1,3 +1,4 @@
+import type { BlockedRollbackEvidence, BlockedClosureAssessment, BlockedClosureSourceObservation, CloseBlockedWorkerInput } from "./domain-types.js";
 import {
   type DatabaseSync,
   type SQLInputValue,
@@ -175,7 +176,7 @@ export interface ProposalStoreProposalMethods {
 }
 
 export interface ProposalStoreWritebackMethods {
-  recordExecutionReceipt(input: unknown): StoredProposal;
+  recordExecutionReceipt(input: unknown, rollback?: BlockedRollbackEvidence): StoredProposal;
   recordWritebackJob(input: unknown): WritebackJob;
   getWritebackJob(writebackJobId: string): StoredWritebackJob | undefined;
   listWritebackJobs(options?: { proposal_id?: string; limit?: number }): StoredWritebackJob[];
@@ -217,6 +218,8 @@ export interface ProposalStoreWritebackInternalMethods {
 }
 
 export interface ProposalStoreWorkerMethods {
+  assessBlockedWorkerClosure(proposalId: string, source?: BlockedClosureSourceObservation): BlockedClosureAssessment;
+  closeBlockedWorkerItem(input: CloseBlockedWorkerInput): BlockedClosureAssessment;
   enqueueWorkerProposal(options: {
       proposal_id: string;
       execution_mode?: WorkerExecutionMode;

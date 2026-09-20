@@ -1,3 +1,4 @@
+import { bindBlockedClosureBridge } from "./blocked-closure.js";
 import { resolve } from "node:path";
 import { postgresControlPolicyRepository, type ControlPolicyRepository } from "./control-policy-repository.js";
 import { automaticApprovalActionRevision, assertAutomaticApprovalActionRevision } from "./automatic-approval-authority.js";
@@ -891,6 +892,29 @@ VALUES ($1, $2, $3::jsonb, $4::timestamptz)`,
     input: Parameters<NonNullable<ProposalRuntimeStore["updateWorkerControl"]>>[0],
   ): Promise<WorkerControlState> {
     return await this.withWrite("updateWorkerControl", (store) => store.updateWorkerControl(input));
+  }
+
+  private async closureBinding(client: Pick<PostgresRuntimePool, "query">, proposalId: string) {
+    const dispatched = await client.query(`SELECT request_id FROM "${this.schema}".control_policy_effect_admissions WHERE request_id=$1 LIMIT 1`, [proposalId]);
+    if (dispatched.rows.length) throw new ProposalStoreError("BLOCKED_CLOSURE_ATTEMPTS_UNRESOLVED", "Delegated dispatch is outside the supported closure class");
+    const repository = await client.query(`SELECT repository_id FROM "${this.schema}".control_policy_identity`);
+    const deployments = await client.query(`SELECT deployment_id, project_id FROM "${this.schema}".control_policy_deployments`);
+    if (repository.rows.length !== 1 || deployments.rows.length !== 1) throw new ProposalStoreError("BLOCKED_CLOSURE_STORE_BINDING_UNAVAILABLE", "Exact control-store deployment required");
+    return { repository_id: String(repository.rows[0]!.repository_id), deployment_id: String(deployments.rows[0]!.deployment_id), project_id: String(deployments.rows[0]!.project_id) };
+  }
+  async assessBlockedWorkerClosure(...args: Parameters<ProposalStore["assessBlockedWorkerClosure"]>) {
+    const binding = await this.closureBinding(this.pool, args[0]);
+    return this.withRead(store => {
+      const unbind = bindBlockedClosureBridge(store.path, binding);
+      try { return store.assessBlockedWorkerClosure(...args); } finally { unbind(); }
+    });
+  }
+  async closeBlockedWorkerItem(input: Parameters<ProposalStore["closeBlockedWorkerItem"]>[0]) {
+    let binding: Awaited<ReturnType<PostgresProposalRuntimeStore["closureBinding"]>>;
+    return this.withWrite("closeBlockedWorkerItem", store => {
+      const unbind = bindBlockedClosureBridge(store.path, binding);
+      try { return store.closeBlockedWorkerItem(input); } finally { unbind(); }
+    }, async client => { binding = await this.closureBinding(client, input.proposalId); });
   }
 
   async cancelWorkerItem(

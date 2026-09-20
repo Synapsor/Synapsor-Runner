@@ -1526,6 +1526,8 @@ Reviewed Read/Action execution:
   ${cmd} worker run --supervised --once --yes --config ./synapsor.actions.runner.json
   ${cmd} worker check --supervised --config ./synapsor.actions.runner.json --capability <outcome> [--json]
   ${cmd} worker status --config ./synapsor.actions.runner.json
+  ${cmd} worker close-blocked <proposal_id> --config ./synapsor.actions.runner.json [--json]
+  ${cmd} worker close-blocked <proposal_id> --confirm --assessment sha256:<exact-preview> --reason "resolve failed work" --config ./synapsor.actions.runner.json --identity alice --identity-key /secure/operator.pem
 
 Legacy capability examples (explicit configured-runtime projects):
   ${cmd} worker run --yes --config ./synapsor.runner.json --store ./.synapsor/local.db
@@ -1545,6 +1547,12 @@ Legacy capability examples (explicit configured-runtime projects):
   ${cmd} worker dead-letter show wrp_... --config ./synapsor.runner.json
   ${cmd} worker dead-letter requeue wrp_... --retry-budget 3 --yes --config ./synapsor.runner.json --identity alice --identity-key ./alice.pem
   ${cmd} worker dead-letter discard wrp_... --reason "closed by operator" --yes --config ./synapsor.runner.json --identity alice --identity-key ./alice.pem
+
+close-blocked previews by default. Confirmation defaults to cancel and requires
+a verified operator with the producer-recorded apply/control role. It closes only
+a fully evidenced source_db rollback, never unknown or applied work. Legacy
+items without producer proof remain unavailable. Closure retains the failed
+receipt and approval allowance; a fresh request is a separate operation.
 
 Use the exact config path printed by execution setup. Guided Read/Action
 projects use the separate Action runtime config shown above, not the primary

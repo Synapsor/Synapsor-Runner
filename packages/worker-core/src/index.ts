@@ -1,3 +1,5 @@
+import type { SourceRollbackEvidence } from "./source-rollback.js";
+export { sourceRollbackBinding, type SourceRollbackEvidence } from "./source-rollback.js";
 import crypto from "node:crypto";
 import type { ActionRuleFactLoaderAdapterV1 } from "@synapsor-runner/action-rules";
 import { ControlPlaneClient, type ClaimedWritebackJob } from "@synapsor-runner/control-plane-client";
@@ -48,6 +50,8 @@ export type RunnerConfig = {
    * through the supplied engine adapter.
    */
   semanticActionVerifier?: SemanticActionVerifier;
+  /** Internal producer observation after acknowledged whole-source rollback. No public config surface. */
+  onSourceRollback?: (evidence: SourceRollbackEvidence) => void;
   /** Test-only crash injection. Production config loaders must never expose this. */
   testFailpoint?: (name: WritebackFailpoint) => void | Promise<void>;
 };

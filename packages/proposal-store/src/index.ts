@@ -142,3 +142,5 @@ export { semanticApprovalSetDigest } from "./proposal-integrity.js";
 export type { HardBudgetAccount, HardBudgetLimit, HardBudgetReservation, HardBudgetState, HardBudgetReceipt } from "./control-hard-budgets.js";
 export type { EffectAdmissionTarget, EffectAdmissionState, PreparedEffectAdmission } from "./control-effect-admissions.js";
 export type { ControlRuntimeProof } from "./control-runtime-proofs.js";
+
+export { bindBlockedClosureBridge, blockedClosureDecisionReason, type BlockedClosureAssessment, type BlockedClosureSourceObservation, type CloseBlockedWorkerInput, type BlockedRollbackEvidence } from "./blocked-closure.js";

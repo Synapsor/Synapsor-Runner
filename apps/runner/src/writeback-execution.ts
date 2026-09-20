@@ -24,6 +24,7 @@ import {
 import { canonicalJsonStringify, parseFreshnessAuthority, parseFreshnessProof, parseWritebackJob, protocolVersions, type ExecutionReceiptV1, type NormalizedWritebackJobV5, type WritebackJob, type WritebackResult } from "@synapsor-runner/protocol";
 import {
   type RunnerConfig,
+  type SourceRollbackEvidence,
   type WritebackIntentStore
 } from "@synapsor-runner/worker-core";
 import { spawn } from "node:child_process";
@@ -42,6 +43,7 @@ import { trustedCliContext } from "./operator-authority.js";
 import { verifyJwtOperatorProof, verifySignedOperatorProof } from "./operator-identity.js";
 import { loadActiveActionRuleAuthority } from "./action-rule-authority.js";
 import { semanticContextCapability } from "./semantic-action-runtime.js";
+import { executionBindingDigest } from "./control-policy-execution.js";
 import { hashReceipt, runnerReceiptConfig, toExecutionReceipt, writebackDatabaseScope, writebackTimeoutMs } from "./writeback-domain.js";
 import { applyRuntimeDatabaseJob } from "./delegated-writeback.js";
 
@@ -62,6 +64,7 @@ async function applyAdmittedSqlJob(job: unknown, configPath: string, storePath: 
   await verifyLocalWritebackAuthority(parsedJob, configPath, storePath, { config: runtimeConfig });
   const databaseUrl = await resolveSqlWriteDatabaseUrl(parsedJob, configPath, env, runtimeConfig);
   const store = storePath ? new ProposalStore(storePath) : undefined;
+  let rollback: SourceRollbackEvidence | undefined;
   const config: RunnerConfig = {
     controlPlaneUrl: env.SYNAPSOR_CONTROL_PLANE_URL || "http://localhost:8000",
     runnerToken: env.SYNAPSOR_RUNNER_TOKEN || "local-dry-run-token",
@@ -75,6 +78,7 @@ async function applyAdmittedSqlJob(job: unknown, configPath: string, storePath: 
     dryRun,
     stateDir: env.SYNAPSOR_STATE_DIR || "./state",
     receipts: runnerReceiptConfig(runtimeConfig.sources?.[parsedJob.source_id]),
+    onSourceRollback: evidence => { rollback = evidence; },
     databaseScope: writebackDatabaseScope(
       runtimeConfig.sources?.[parsedJob.source_id],
       store?.getProposal(parsedJob.proposal_id),
@@ -89,7 +93,15 @@ async function applyAdmittedSqlJob(job: unknown, configPath: string, storePath: 
   try {
     const result = await applyRuntimeDatabaseJob({ job: parsedJob, runnerConfig: config, runtimeConfig, configPath,
       adapter: adapters[parsedJob.engine], env });
-    store?.recordExecutionReceipt(toExecutionReceipt(parsedJob, result, config.dryRun));
+    const policy = parsedJob.protocol_version === "5.0" ? runtimeConfig.supervised_worker?.outcomes?.find(p =>
+      p.outcome === parsedJob.semantic_authority.proof.outcome && p.action_boundary_digest === parsedJob.semantic_authority.proof.action_boundary_digest) : undefined;
+    const writer = policy ? resolveSemanticSupervisedWriterSource(runtimeConfig, parsedJob.source_id, policy) : runtimeConfig.sources?.[parsedJob.source_id];
+    const queue = store?.getWorkerQueueItem(parsedJob.proposal_id);
+    const receipt = toExecutionReceipt(parsedJob, result, config.dryRun);
+    store?.recordExecutionReceipt(receipt, rollback && queue?.status === "leased" && writer?.write_url_env && config.receipts?.schema ? {
+      ...rollback, required_roles: runtimeConfig.operator_identity?.apply_roles ?? [], execution_config_digest: executionBindingDigest(runtimeConfig),
+      writer_reference: writer.write_url_env, receipt_namespace: { schema: config.receipts.schema, table: config.receipts.table ?? "synapsor_writeback_receipts" },
+    } : undefined);
     return result;
   } finally {
     await intentAuthority.close();
