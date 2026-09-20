@@ -1,0 +1,41 @@
+{
+  "frozen_at": "2026-09-20T19:36:12.829Z",
+  "purpose": "Faithful current-evidence and canonical-expression authoring; A source-association remains blocked",
+  "cases": [
+    "B main known-case recovery",
+    "B independent known-case fresh authoring",
+    "A blocked source-association"
+  ],
+  "product_commit": "280093e19eb09578046fd7e29ce1b9b7aec17704",
+  "test_commit": "280093e19eb09578046fd7e29ce1b9b7aec17704",
+  "report_commit": "recorded separately after verification",
+  "source_commit": "1834ace3f56756878ff76aa00b6450317035fa63",
+  "source_status": "?? .claude/",
+  "unpackaged_unrelated_directory": ".claude/ (preserved, no contents read)",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/frozen/installed",
+  "installed_tree_sha256": "b5a2db889e847b1b1b9e7f1ce1a559c87c9b5afcdc61ce23d417e2c2e58f1c1b",
+  "node": {
+    "version": "v22.22.2",
+    "executable": "/usr/bin/node",
+    "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+  },
+  "runner_version": "1.8.0",
+  "spec_version": "1.11.0",
+  "package_lock_sha256": "aaa9d198343ae58c5ac2b697c74af079817d0d427863e498955d08c171c1efc5",
+  "tarballs": [
+    {
+      "name": "synapsor-runner-1.8.0.tgz",
+      "sha256": "73686e504210d666fe11103728160d87f0bb458d6fb06c1bd5ef704a4162ad2c"
+    },
+    {
+      "name": "synapsor-spec-1.11.0.tgz",
+      "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+    }
+  ],
+  "entries": 7569,
+  "manifest_sha256": "552c9258eacb7869d71729bb1a015b3b10481277d3da8c35a5d5473b91e4dfcc",
+  "source_archive": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/frozen/source-1834ace3f56756878ff76aa00b6450317035fa63.tar.gz",
+  "source_archive_sha256": "039f9d3e08ab0d21bc5aa5cb4899d6a2c274f530b1d0d2c6e8a464a0c6fa2ef8",
+  "archive_sha256": "3e637b318b8926866ca054906bbd3e7c49ed14643d98eadebee01486fe966b28",
+  "stable_full_suite": "FAIL: one separately recorded terminal layout assertion"
+}

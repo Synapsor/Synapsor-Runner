@@ -1,0 +1,42 @@
+{
+  "at": "2026-09-20T19:51:42.589582+00:00",
+  "sealed_and_original_inputs": [
+    {
+      "name": "A-stopped.tgz",
+      "sha256": "e5850eb6fea39cc1fbff786e82768be8950522997c75e74270e19243fada4d10",
+      "original_unchanged": true,
+      "sealed_copy_unchanged": true
+    },
+    {
+      "name": "A-source.dump",
+      "sha256": "43f4f2c956410fd85d957e4c8db6704da1f050d33264d5b1f7b14d8af6c0bac1",
+      "original_unchanged": true,
+      "sealed_copy_unchanged": true
+    },
+    {
+      "name": "A-source-only.tgz",
+      "sha256": "fbd945187b170e9e53f352def02b072f16592ad460bb80a5227e11039e57ed2a",
+      "original_unchanged": true,
+      "sealed_copy_unchanged": true
+    },
+    {
+      "name": "B-stopped.tgz",
+      "sha256": "b8aea1123cc0b4bd905eae2a4ebd72c80ed89fd0f1d650869902c72ae8ce2ecc",
+      "original_unchanged": true,
+      "sealed_copy_unchanged": true
+    },
+    {
+      "name": "B-source-only.tgz",
+      "sha256": "6508a3a46257dd8e78f4d8bf5526135f604d5c8c12ff4d61ec1cf90b3205f60f",
+      "original_unchanged": true,
+      "sealed_copy_unchanged": true
+    },
+    {
+      "name": "B-source.dump",
+      "sha256": "ab2140bd2bff9eadaa17c02f92e8ee1c01ad4329945e0fdf82b704bd2d7f6177",
+      "original_unchanged": true,
+      "sealed_copy_unchanged": true
+    }
+  ],
+  "closed_baseline_development_files_verified": 25
+}

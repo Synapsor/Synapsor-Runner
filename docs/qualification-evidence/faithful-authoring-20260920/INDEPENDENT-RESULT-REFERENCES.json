@@ -1,0 +1,26 @@
+{
+  "independent_expression": "PASS on final artifact",
+  "overall_positive_path": "NOT ESTABLISHED",
+  "records": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/faithful-authoring-independent-20260920/REVIEW.md",
+      "sha256": "1d056bc8c3e9b55e65bd9b588332f963f70f9950ac8f6642f4323b48a6c55d77"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/faithful-authoring-independent-20260920/FINAL-READBACK.json",
+      "sha256": "55fb19c9baaacc9554ca083f5d98860eaa38591f01db8133081e4dee05580fae"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/faithful-authoring-independent-20260920/PROVENANCE-ADDENDUM.md",
+      "sha256": "40d661525c26e9708ea65231d37af179d683a9bdde882eb99cdb43fc24f2a41f"
+    }
+  ],
+  "provenance": {
+    "second_coverage_episode": "Test-plan deviation: substantive no-progress retry after structural:false; first refusal is primary; second adds no coverage; both counted",
+    "A_final_typed_wire_negative_matrix": "Inspected implementer evidence only, NOT independently executed",
+    "A_source_association": "Independently executed current-byte probe; confirms separate blocker",
+    "independent_explicit_business_recheck": "NOT RUN; manual Boundary editor restart inspection only",
+    "inactive_read": "ACTION_SUBJECT_READ_MISSING is expected disabled-Read runtime prerequisite, not a new authoring defect"
+  },
+  "verified_at": "2026-09-20T20:04:16.493494+00:00"
+}

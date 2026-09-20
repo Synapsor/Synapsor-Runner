@@ -33,9 +33,9 @@
     "shared_usd": 5
   },
   "balance_basis": "User last reported10 USD; previous task reported0.5763875 total; no purchase. Current allocation caps5. Exact account billing not independently reconciled.",
-  "status": "gates complete; full suite failure preserved; freezing one B authoring candidate",
+  "status": "STOPPED: named product repairs delivered for review; both complete BUSINESS targets unestablished; final evidence consolidation only",
   "scope": "A typed observation feedback; B canonical expression path after capability proof; disabled BUSINESS review only",
-  "checkpoint_at": "2026-09-20T19:35:48.710006+00:00",
+  "checkpoint_at": "2026-09-20T20:04:16.493494+00:00",
   "focused": {
     "command": "vitest run faithful-current-description, faithful-expression, authoring-coverage-correction, action-rule-model, collection-expressions, action-rules; 2 workers",
     "exit": 0,
@@ -44,8 +44,8 @@
     "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/logs/focused-regressions-attempt1.log"
   },
   "A_public": "BLOCKED; no provider allocation; separate source-association decision required",
-  "provider_transports": 5,
-  "next_step": "Collect complete full-suite exit; run explicit PostgreSQL review/freshness and ten offline gates; freeze once; final B recovery and tester fresh B",
+  "provider_transports": 35,
+  "next_step": "Commit final evidence and push only verified private backup, then STOP. Separate decisions: A source association; B faithful saved-job review gaps. No new provider/test run.",
   "preparation_window": {
     "start": "2026-09-20T18:57:58.581976+00:00",
     "deadline": "2026-09-20T19:57:58.581976+00:00"
@@ -55,7 +55,7 @@
     "deadline": "2026-09-20T20:36:27.021364+00:00",
     "full_suite": "one full four-worker 20-second-test/20-second-hook run, as previously recorded; outer 3600 seconds"
   },
-  "reported_spend_usd": 0.1023691,
+  "reported_spend_usd": 0.9918028,
   "development": "STOPPED after successful arithmetic compilation; coverage reservation refused before send",
   "stable_full": {
     "exit": 1,
@@ -83,5 +83,24 @@
     "checks": 10,
     "exit": 0,
     "source_unchanged": true
-  }
+  },
+  "candidate_tree": "b5a2db889e847b1b1b9e7f1ce1a559c87c9b5afcdc61ce23d417e2c2e58f1c1b",
+  "frozen_source": "1834ace3f56756878ff76aa00b6450317035fa63",
+  "consolidation_window": {
+    "started_at": "2026-09-20T19:44:50.253408+00:00",
+    "deadline": "2026-09-20T20:29:50.253408+00:00"
+  },
+  "main_final": {
+    "calls": 7,
+    "reported_usd": 0.3797064,
+    "result": "BLOCKED; persisted valid pending review, explicit restart validated_reuse, no extra call"
+  },
+  "independent_final": {
+    "calls": 23,
+    "reported_usd": 0.5097273,
+    "result": "Narrow B expression PASS; full positive NOT ESTABLISHED",
+    "provenance_addendum_sha256": "40d661525c26e9708ea65231d37af179d683a9bdde882eb99cdb43fc24f2a41f"
+  },
+  "allocations": "all STOPPED",
+  "cleanup": "owned state saved; main/dev and tester separately stopped only their labelled containers; originals/candidate verified unchanged"
 }

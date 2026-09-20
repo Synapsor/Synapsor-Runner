@@ -1,0 +1,75 @@
+[
+  {
+    "case": "FAITHFUL-DEV-B",
+    "container": "synapsor-faithful-faithful-dev-b",
+    "container_id": "0c24ff884b93772bdfa02bf8b6cabddce38494e5c398e2a76083e5c15bb489eb",
+    "labels": {
+      "synapsor.role": "FAITHFUL-DEV-B",
+      "synapsor.task": "faithful-authoring-20260920"
+    },
+    "saved_at": "2026-09-20T19:52:37.475103+00:00",
+    "files": [
+      {
+        "name": "gate-database.dump",
+        "sha256": "e63486770d233d3c740c44713253015bc70f1e86e484ed980e3259c7d81cb641",
+        "bytes": 126424
+      },
+      {
+        "name": "postgres.log",
+        "sha256": "74eb895b1a66a499fe68bed33cf03443dedacd1966328a97722505022691b8e8",
+        "bytes": 9712
+      },
+      {
+        "name": "source-schema.sql",
+        "sha256": "c62ebd5993c1cd6711f5c217d9931f33e96090800c507d82d9d3cd669b0f721a",
+        "bytes": 9569
+      },
+      {
+        "name": "source.dump",
+        "sha256": "d67d437bf2782c0cbff3fb803f6ec138a5e93dae2a782e6efc3462f39b13d298",
+        "bytes": 16432
+      },
+      {
+        "name": "whole-project-home.tgz",
+        "sha256": "a503799ec6f559d81f2d9cf928c4c45d62cc0cc0fe287abed9954f7f23a6a9c6",
+        "bytes": 110929
+      }
+    ],
+    "fresh_credentials": "prepare-owned-b.py and original source-only role/posture recipe; private operator/admin material retained outside the credential-free archive",
+    "not_an_untouched_start": true
+  },
+  {
+    "case": "FAITHFUL-MAIN-B",
+    "container": "synapsor-faithful-faithful-main-b",
+    "container_id": "06b41018400bb8a81e41d340b4737af4a09115b224196a62125f39b916eeeafc",
+    "labels": {
+      "synapsor.role": "FAITHFUL-MAIN-B",
+      "synapsor.task": "faithful-authoring-20260920"
+    },
+    "saved_at": "2026-09-20T19:52:37.822266+00:00",
+    "files": [
+      {
+        "name": "postgres.log",
+        "sha256": "bfec317004db495f335470148fa1ccfcb0574713dd8b54d937bf3b683ab9a96a",
+        "bytes": 3550
+      },
+      {
+        "name": "source-schema.sql",
+        "sha256": "1408fe51fe42fd1ce0d27ff960855aed1a22fc0ceeb008f6fb3a7d47b86aea46",
+        "bytes": 9569
+      },
+      {
+        "name": "source.dump",
+        "sha256": "d67d437bf2782c0cbff3fb803f6ec138a5e93dae2a782e6efc3462f39b13d298",
+        "bytes": 16432
+      },
+      {
+        "name": "whole-project-home.tgz",
+        "sha256": "93b3eeb22907dab575ad9a3d9ef5b2fa65f9a09ab505994e0911aeb7a64f104c",
+        "bytes": 114590
+      }
+    ],
+    "fresh_credentials": "prepare-owned-b.py and original source-only role/posture recipe; private operator/admin material retained outside the credential-free archive",
+    "not_an_untouched_start": true
+  }
+]

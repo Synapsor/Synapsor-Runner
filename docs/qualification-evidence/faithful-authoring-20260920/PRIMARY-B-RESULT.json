@@ -1,0 +1,232 @@
+{
+  "classification": "final installed known-case stopped-state B recovery; NOT a new unseen trial",
+  "candidate": "b5a2db889e847b1b1b9e7f1ce1a559c87c9b5afcdc61ce23d417e2c2e58f1c1b",
+  "result": "BUSINESS BLOCKED / positive completion NOT ESTABLISHED",
+  "action": "compiled disabled; canonical math and complete atomic effect retained",
+  "source_digest": "sha256:809b76df7917a192accc5061b20e4cb0a363508b5cd7fe877727518f2147a55c",
+  "review_draft_digest": "sha256:5f5767fb7549a984e5f950be663cfc714e9d18d21382f7e17d19df9f59cd6520",
+  "coverage_submissions": [
+    {
+      "id": "738b20d6-5140-42eb-8e42-f01a73c029b1",
+      "context": "sha256:beec4be918a8a4908ff3156968ffaa773f05845bd0ca5884010b645b1f14d589",
+      "started_at": "2026-09-20T19:39:24.564Z",
+      "submissions": [
+        {
+          "number": 1,
+          "reserved_at": "2026-09-20T19:39:24.657Z",
+          "completed_at": "2026-09-20T19:40:04.909Z",
+          "validated": false,
+          "diagnostic": "{\"context\":\"sha256:393b09c3e5a33bf4c79811974fc04db2003999e1d8c7356b766d0b5bc1f78acf\",\"findings\":[{\"code\":\"COVERAGE_DEPLOYMENT_COMPONENT_MIXED\",\"component\":\"/passages/25\",\"component_identity\":\"sha256:a72d6c4f33772fc9cd0e91de801cf072670ef15f2c3a7612fbd3c09c37e89e5f\",\"identity\":\"sha256:a365c36eaddb648b706e33cdf019162d435099018cabc8e00665975c97e12a68\",\"reason\":\"The deployment component contains references outside its exact prerequisite or has no supported classification.\",\"repair\":\"Use only the exact deployment_prerequisites entry for that supported setup duty. Split receipt-mode/setup, Read/privacy and business claims into their own independently checked passages. Selection is not setup, a receipt or independent readback; keep all outstanding duties pending. Do not change the draft.\",\"structural\":true,\"passage_identity\":\"sha256:46b9bb8f84f868e775cac89a28b126bf61d844a69ae759665d56d9543a7808da\"}],\"limited\":false,\"unevaluated\":[\"/passages/25\",\"whole-report acceptance, retained obligations and persistence\"],\"complete_validation\":false}"
+        },
+        {
+          "number": 2,
+          "reserved_at": "2026-09-20T19:40:04.955Z",
+          "completed_at": "2026-09-20T19:40:49.866Z",
+          "validated": true
+        }
+      ]
+    }
+  ],
+  "application_assignments": [
+    {
+      "source_digest": "sha256:809b76df7917a192accc5061b20e4cb0a363508b5cd7fe877727518f2147a55c",
+      "draft_digest": "sha256:5f5767fb7549a984e5f950be663cfc714e9d18d21382f7e17d19df9f59cd6520",
+      "origin": "PRODUCT-CLIENT-CONTRACT",
+      "contract_digest": "sha256:16eb5f11f11e93ceeca533dfe87aa7d40a36a54fbc829f160c17c5aac3e8bbe3",
+      "obligations": [
+        "customer_selection",
+        "status_presentation"
+      ],
+      "assigned_at": "2026-09-20T19:41:20.735Z",
+      "owner": "client_application",
+      "verified": false
+    }
+  ],
+  "blocking_topics": [
+    "Restricted-cycle privacy",
+    "Cooperative automatic-approval cap",
+    "Deployment automatic-approval cap",
+    "Source-database receipt"
+  ],
+  "public_restart_recheck": "validated_reuse; same pending concerns; zero provider calls; no logical-table changes",
+  "new_review_episode": "offered after ownership, explicitly declined; no budget replenishment",
+  "provider_transports": 7,
+  "provider_reported_cost_usd": 0.3797064,
+  "provider_settings": "OpenRouter/openai/gpt-5.6-terra; original 120s timeout/token bounds; no fallback, data_collection deny; temperature/reasoning omitted",
+  "transport_attempts": [
+    {
+      "id": "FAITHFUL-MAIN-B-1",
+      "role": "authoring",
+      "phase": "initial",
+      "at": "2026-09-20T19:37:31.873Z",
+      "reservation_usd": 0.437956,
+      "input_bytes": 86989,
+      "maximum_output_tokens": 5000,
+      "status": "SETTLED",
+      "cost_usd": 0.045261,
+      "completed_at": "2026-09-20T19:37:40.917Z",
+      "http_status": 200,
+      "capture_complete": true,
+      "response_sha256": "6a7de920cc53d81f4f4accc914795d223c43a28cec657834ccf1c3957379c6ff"
+    },
+    {
+      "id": "FAITHFUL-MAIN-B-2",
+      "role": "authoring",
+      "phase": "initial",
+      "at": "2026-09-20T19:37:41.002Z",
+      "reservation_usd": 0.498996,
+      "input_bytes": 102249,
+      "maximum_output_tokens": 5000,
+      "status": "SETTLED",
+      "cost_usd": 0.0092513,
+      "completed_at": "2026-09-20T19:37:42.732Z",
+      "http_status": 200,
+      "capture_complete": true,
+      "response_sha256": "fde7fdffea9ad3de04158fc131235a0a7c35aa9490f5fd4ad5819830c24270e3"
+    },
+    {
+      "id": "FAITHFUL-MAIN-B-3",
+      "role": "authoring",
+      "phase": "initial",
+      "at": "2026-09-20T19:37:42.809Z",
+      "reservation_usd": 0.532544,
+      "input_bytes": 110636,
+      "maximum_output_tokens": 5000,
+      "status": "SETTLED",
+      "cost_usd": 0.0193005,
+      "completed_at": "2026-09-20T19:37:51.344Z",
+      "http_status": 200,
+      "capture_complete": true,
+      "response_sha256": "b1b0697a3f29aa36d546742b8c64f255a8331b2662f5dc9cd4eef68bfa583a2c"
+    },
+    {
+      "id": "FAITHFUL-MAIN-B-4",
+      "role": "authoring",
+      "phase": "initial",
+      "at": "2026-09-20T19:37:51.416Z",
+      "reservation_usd": 0.592136,
+      "input_bytes": 125534,
+      "maximum_output_tokens": 5000,
+      "status": "SETTLED",
+      "cost_usd": 0.0100123,
+      "completed_at": "2026-09-20T19:37:52.847Z",
+      "http_status": 200,
+      "capture_complete": true,
+      "response_sha256": "25df2b47ffd0bb5b6c3bdaafc556223771cf5b6216d8a706ff66cc4f7777e47e"
+    },
+    {
+      "id": "FAITHFUL-MAIN-B-5",
+      "role": "authoring",
+      "phase": "initial",
+      "at": "2026-09-20T19:37:52.912Z",
+      "reservation_usd": 0.6029359999999999,
+      "input_bytes": 128234,
+      "maximum_output_tokens": 5000,
+      "status": "SETTLED",
+      "cost_usd": 0.0070105,
+      "completed_at": "2026-09-20T19:37:55.869Z",
+      "http_status": 200,
+      "capture_complete": true,
+      "response_sha256": "dc4c68b4a70c24046ae54656ca5636d873500c198eba22a59a74a92a49f9bd92"
+    },
+    {
+      "id": "FAITHFUL-MAIN-B-6",
+      "role": "authoring",
+      "phase": "initial",
+      "at": "2026-09-20T19:39:24.691Z",
+      "reservation_usd": 1.029396,
+      "input_bytes": 203349,
+      "maximum_output_tokens": 12000,
+      "status": "SETTLED",
+      "cost_usd": 0.156091,
+      "completed_at": "2026-09-20T19:40:04.832Z",
+      "http_status": 200,
+      "capture_complete": true,
+      "response_sha256": "e243815943210288f1e2361c2d561843c0edbb062cf7eedbe3f92b616831319b"
+    },
+    {
+      "id": "FAITHFUL-MAIN-B-7",
+      "role": "authoring",
+      "phase": "initial",
+      "at": "2026-09-20T19:40:04.979Z",
+      "reservation_usd": 1.03506,
+      "input_bytes": 204765,
+      "maximum_output_tokens": 12000,
+      "status": "SETTLED",
+      "cost_usd": 0.1327798,
+      "completed_at": "2026-09-20T19:40:49.768Z",
+      "http_status": 200,
+      "capture_complete": true,
+      "response_sha256": "e303826d253a93e6116f99824db58f360e58e13113e90683af12d441fe9e0f12"
+    }
+  ],
+  "owner_controls": {
+    "maintained_counter_confirmations": 2,
+    "source_counting_choices": 2,
+    "exact_counting_confirmations": 2,
+    "client_duty_ownership": 1,
+    "syntax_coaching": 0,
+    "manual_payload_replacements": 0
+  },
+  "state_comparison": {
+    "at": "2026-09-20T19:47:25.381866+00:00",
+    "before_to_saved": {
+      "control_policy_active": {
+        "before": 2,
+        "after": 2
+      },
+      "control_policy_deployments": {
+        "before": 1,
+        "after": 1
+      },
+      "control_policy_drafts": {
+        "before": 1,
+        "after": 2
+      },
+      "control_policy_events": {
+        "before": 2,
+        "after": 7
+      },
+      "control_policy_revisions": {
+        "before": 5,
+        "after": 11
+      }
+    },
+    "saved_to_recheck_changed_tables": [],
+    "source_hashes": {
+      "before": "3d350f3f75ea99b020e95264008f90a0a0ae286d659c36e3a46d0a59cc6fd9bc",
+      "saved": "3d350f3f75ea99b020e95264008f90a0a0ae286d659c36e3a46d0a59cc6fd9bc",
+      "recheck": "3d350f3f75ea99b020e95264008f90a0a0ae286d659c36e3a46d0a59cc6fd9bc"
+    },
+    "business_tables_unchanged": true,
+    "epochs": [
+      2,
+      7,
+      7
+    ],
+    "proposal_approval_queue_receipt_counts": {
+      "proposals": 0,
+      "approvals": 0,
+      "worker_queue": 0,
+      "writeback_receipts": 0
+    }
+  },
+  "operator_exit_codes": [
+    0,
+    0
+  ],
+  "limitations": [
+    "No activation, provisioning, runtime requests, workers or source effects",
+    "A compiled expression is not a complete faithful policy",
+    "Counter-selector absence remains unresolved; no conditional equivalence proof was accepted and no live miscount is claimed",
+    "Source_db is required by the original policy, not selected/provisioned/verified in this saved setup",
+    "Host saved-rule evaluator uses synthetic facts and is not installed source execution",
+    "Readback helper attempt1 failed to parse because of an extra parenthesis; original helper/stderr preserved; corrected attempt2 exit0; no product or candidate change"
+  ],
+  "artifacts": {
+    "correction-trace.json": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/main-B/correction-trace.json",
+    "state-comparison.json": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/main-B/state-comparison.json",
+    "saved-evaluator-attempt1.stderr": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/main-B/saved-evaluator-attempt1.stderr",
+    "saved-evaluator-attempt2.json": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/main-B/saved-evaluator-attempt2.json"
+  }
+}
