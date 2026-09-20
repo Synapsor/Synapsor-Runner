@@ -13,6 +13,7 @@ export {
   ActionRuleError,
   type ActionRuleErrorCode,
 } from "./errors.js";
+export { ACTION_RULE_MATH_OPERATIONS, ACTION_RULE_MATH_MIN_INPUTS, ACTION_RULE_MATH_MAX_INPUTS, ACTION_RULE_MATH_GUIDANCE } from "./expression-contract.js";
 export {
   compileActionRule,
   compileActionRuleBooleanPredicate,

@@ -599,7 +599,7 @@ export function actionRuleDraftDiagnostics(error: unknown, context?: ActionRuleR
       ...(error.path ? { path: error.path } : {}),
       message: error.message,
       repair: actionRuleDiagnosticNeedsOperator(error.code, error.message) ? "operator" : "model",
-      ...(context ? actionRuleDiagnosticRepair(error, context) : {}),
+      ...actionRuleDiagnosticRepair(error, context),
     }];
   }
   const message = error instanceof Error ? error.message : String(error);

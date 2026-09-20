@@ -1,4 +1,5 @@
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { ACTION_RULE_MATH_GUIDANCE } from "@synapsor-runner/action-rules";
 import type { RuleVerificationBoundarySpecV1 } from "@synapsor/spec";
 import type { BuiltActionRuleAuthoringCatalogV1 } from "./action-rule-authoring.js";
 
@@ -31,6 +32,9 @@ export function actionRuleDiagnosticRepair(
   diagnostic: { code: string; path?: string; message: string },
   context?: ActionRuleRepairContext,
 ): ActionRuleDiagnosticRepair {
+  if (diagnostic.code === "ACTION_RULE_EXPRESSION_KIND_INVALID") {
+    return { category: "draft_structure", next_action: ACTION_RULE_MATH_GUIDANCE };
+  }
   const orderPath = /^verification_boundary\.resources\.([a-zA-Z_][a-zA-Z0-9_]*)\.deterministic_order$/u.exec(diagnostic.path ?? "");
   if (diagnostic.code === "ACTION_RULE_UNBOUNDED" && orderPath && context) {
     const binding = orderPath[1]!;

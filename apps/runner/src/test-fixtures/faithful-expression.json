@@ -1,0 +1,3096 @@
+{
+  "classification": "handwritten diagnostic only; never install or give to provider",
+  "draft": {
+    "schema_version": "synapsor.action-rule-model-draft.v1",
+    "name": "energy_ops.finalize_settlement_cycle",
+    "outcome": "energy_ops.finalize_settlement_cycle",
+    "inputs": [
+      {
+        "name": "credits_to_post",
+        "description": "Exact settlement credits to post for the selected cycle.",
+        "type": {
+          "kind": "integer"
+        },
+        "minimum": 1,
+        "maximum": 100
+      }
+    ],
+    "discovery": {
+      "title": "Finalize settlement cycle",
+      "summary": "Request finalization of an assigned settlement cycle into its related settlement register.",
+      "aliases": [
+        "finalize cycle",
+        "post settlement credits",
+        "settle cycle"
+      ]
+    },
+    "require": {
+      "kind": "all",
+      "expressions": [
+        {
+          "kind": "compare",
+          "operator": "eq",
+          "left": {
+            "kind": "field",
+            "binding": "cycle",
+            "field": "state"
+          },
+          "right": {
+            "kind": "literal",
+            "value": "draft",
+            "value_type": {
+              "kind": "string",
+              "max_length": 9,
+              "enum": [
+                "draft",
+                "finalized"
+              ],
+              "comparison": "exact"
+            }
+          }
+        },
+        {
+          "kind": "compare",
+          "operator": "eq",
+          "left": {
+            "kind": "field",
+            "binding": "cycle",
+            "field": "restricted"
+          },
+          "right": {
+            "kind": "literal",
+            "value": false,
+            "value_type": {
+              "kind": "boolean"
+            }
+          }
+        },
+        {
+          "kind": "compare",
+          "operator": "eq",
+          "left": {
+            "kind": "field",
+            "binding": "register",
+            "field": "status"
+          },
+          "right": {
+            "kind": "literal",
+            "value": "open",
+            "value_type": {
+              "kind": "string",
+              "max_length": 6,
+              "enum": [
+                "frozen",
+                "open"
+              ],
+              "comparison": "exact"
+            }
+          }
+        },
+        {
+          "kind": "compare",
+          "operator": "eq",
+          "left": {
+            "kind": "input",
+            "name": "credits_to_post"
+          },
+          "right": {
+            "kind": "aggregate",
+            "operation": "sum",
+            "binding": "samples",
+            "field": "credits",
+            "where": {
+              "kind": "compare",
+              "operator": "eq",
+              "left": {
+                "kind": "field",
+                "binding": "samples",
+                "field": "quality"
+              },
+              "right": {
+                "kind": "literal",
+                "value": "validated",
+                "value_type": {
+                  "kind": "string",
+                  "max_length": 9,
+                  "enum": [
+                    "ignored",
+                    "validated"
+                  ],
+                  "comparison": "exact"
+                }
+              }
+            }
+          }
+        },
+        {
+          "kind": "not",
+          "expression": {
+            "kind": "exists",
+            "binding": "notes",
+            "where": {
+              "kind": "all",
+              "expressions": [
+                {
+                  "kind": "compare",
+                  "operator": "eq",
+                  "left": {
+                    "kind": "field",
+                    "binding": "notes",
+                    "field": "open"
+                  },
+                  "right": {
+                    "kind": "literal",
+                    "value": true,
+                    "value_type": {
+                      "kind": "boolean"
+                    }
+                  }
+                },
+                {
+                  "kind": "compare",
+                  "operator": "eq",
+                  "left": {
+                    "kind": "field",
+                    "binding": "notes",
+                    "field": "severity"
+                  },
+                  "right": {
+                    "kind": "literal",
+                    "value": "blocking",
+                    "value_type": {
+                      "kind": "string",
+                      "max_length": 8,
+                      "enum": [
+                        "advisory",
+                        "blocking"
+                      ],
+                      "comparison": "exact"
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "derive": {
+      "new_credited_total": {
+        "kind": "math",
+        "operation": "add",
+        "inputs": [
+          {
+            "kind": "field",
+            "binding": "register",
+            "field": "credited_total"
+          },
+          {
+            "kind": "input",
+            "name": "credits_to_post"
+          }
+        ]
+      }
+    },
+    "ttl_seconds": 300,
+    "review": {
+      "when": "The selected assigned cycle is draft and unrestricted, its related register is open, complete private sample and exception-note sets are within 16 rows each, validated sample credits equal the requested 1\u2013100 credits, and there is no open blocking exception note.",
+      "then": "Propose finalizing that cycle, posting the requested verified credits, and adding those credits to its related register in one guarded transaction. Completion can occur only after separate execution enablement and a worker are running.",
+      "refused": [
+        "Refuse when any required fact is missing, unknown, changed, or does not meet the settlement policy.",
+        "Refuse when either private collection exceeds 16 rows; do not disclose the private cause."
+      ],
+      "human_review": "Valid requests of 31\u2013100 credits, or otherwise eligible requests that exceed an automatic-approval cap, require one authorized human approval. Invalid requests remain refused.",
+      "examples": [
+        {
+          "kind": "eligible",
+          "scenario": "A draft unrestricted cycle has an open related register, validated samples total 30 credits, no open blocking note, and the automatic caps remain available.",
+          "result": "The valid request may be automatically approved and proposed for guarded completion."
+        },
+        {
+          "kind": "human_review",
+          "scenario": "All validity checks pass and validated samples total 31 credits.",
+          "result": "The request is valid but requires one authorized human approval."
+        },
+        {
+          "kind": "ineligible",
+          "scenario": "A cycle has an open blocking exception note or validated samples do not equal the requested credits.",
+          "result": "The request is refused without exposing private verification details."
+        }
+      ]
+    },
+    "verification": {
+      "name": "energy_ops.finalize_settlement_cycle.verification",
+      "resources": [
+        {
+          "binding": "cycle",
+          "resource": "energy_ops.metering_cycles",
+          "source": {
+            "kind": "subject_ref"
+          },
+          "fields": [
+            "cycle_id",
+            "follow_up",
+            "posted_credits",
+            "register_id",
+            "restricted",
+            "state",
+            "version"
+          ]
+        },
+        {
+          "binding": "register",
+          "resource": "energy_ops.settlement_registers",
+          "source": {
+            "kind": "relationship",
+            "from_binding": "cycle",
+            "relationship": "metering_cycles_tenant_id_principal_id_register_id_fkey",
+            "direction": "forward"
+          },
+          "fields": [
+            "credited_total",
+            "register_id",
+            "status",
+            "version"
+          ]
+        },
+        {
+          "binding": "samples",
+          "resource": "energy_ops.meter_samples",
+          "source": {
+            "kind": "relationship",
+            "from_binding": "cycle",
+            "relationship": "meter_samples_tenant_id_principal_id_cycle_id_fkey",
+            "direction": "inverse"
+          },
+          "fields": [
+            "credits",
+            "quality",
+            "sample_id",
+            "version"
+          ],
+          "max_rows": 16,
+          "overflow": "ineligible",
+          "collection_consistency": "complete_locked"
+        },
+        {
+          "binding": "notes",
+          "resource": "energy_ops.exception_notes",
+          "source": {
+            "kind": "relationship",
+            "from_binding": "cycle",
+            "relationship": "exception_notes_tenant_id_principal_id_cycle_id_fkey",
+            "direction": "inverse"
+          },
+          "fields": [
+            "exception_id",
+            "open",
+            "severity",
+            "version"
+          ],
+          "max_rows": 16,
+          "overflow": "ineligible",
+          "collection_consistency": "complete_locked"
+        }
+      ]
+    },
+    "effect": {
+      "name": "energy_ops.finalize_settlement_cycle.effect",
+      "operation": "update",
+      "target_resource": "energy_ops.metering_cycles",
+      "target_binding": "cycle",
+      "allowed_fields": [
+        {
+          "name": "state",
+          "values": [
+            "finalized"
+          ]
+        },
+        {
+          "name": "posted_credits",
+          "minimum": 1,
+          "maximum": 100
+        }
+      ],
+      "set": {
+        "state": {
+          "kind": "literal",
+          "value": "finalized",
+          "value_type": {
+            "kind": "string",
+            "max_length": 9,
+            "enum": [
+              "draft",
+              "finalized"
+            ],
+            "comparison": "exact"
+          }
+        },
+        "posted_credits": {
+          "kind": "input",
+          "name": "credits_to_post"
+        }
+      },
+      "writeback": "supervised",
+      "atomic_updates": [
+        {
+          "operation": "update",
+          "target_resource": "energy_ops.settlement_registers",
+          "target_binding": "register",
+          "allowed_fields": [
+            {
+              "name": "credited_total",
+              "minimum": 0
+            }
+          ],
+          "set": {
+            "credited_total": {
+              "kind": "derived",
+              "name": "new_credited_total"
+            }
+          }
+        }
+      ]
+    },
+    "approval": {
+      "class_name": "energy_ops.finalize_settlement_cycle.approval",
+      "mode": "policy",
+      "auto_approve_when": {
+        "kind": "compare",
+        "operator": "lte",
+        "left": {
+          "kind": "input",
+          "name": "credits_to_post"
+        },
+        "right": {
+          "kind": "literal",
+          "value": 30,
+          "value_type": {
+            "kind": "integer"
+          }
+        }
+      },
+      "required_role": "authorized_human_reviewer",
+      "required_approvals": 1,
+      "shared_limits": [
+        {
+          "id": "automatic_finalizations_deployment_86400s",
+          "kind": "count",
+          "scope": "boundary",
+          "maximum": 6,
+          "window_seconds": 86400,
+          "capability": "energy_ops.finalize_settlement_cycle"
+        },
+        {
+          "id": "automatic_finalizations_cooperative_86400s",
+          "kind": "count",
+          "scope": "tenant",
+          "maximum": 4,
+          "window_seconds": 86400,
+          "capability": "energy_ops.finalize_settlement_cycle"
+        }
+      ]
+    }
+  },
+  "options": {
+    "builtCatalog": {
+      "authoring": {
+        "schema_version": "synapsor.action-rule-authoring-catalog.v1",
+        "source": "local_postgres",
+        "engine": "postgres",
+        "read_boundary_name": "reviewed_staging",
+        "generation_lock_fingerprint": "sha256:ac7d3b8e509b8176ebc732d3843495b22f2fec79511b5e3bb15f07f4801497b3",
+        "resources": [
+          {
+            "subject_reference": {
+              "obtainable": true
+            },
+            "name": "energy_ops.exception_notes",
+            "primary_key": "exception_id",
+            "tenant_scope": "direct",
+            "tenant_key": "tenant_id",
+            "principal_scope": "direct",
+            "principal_key": "principal_id",
+            "principal_rls_setting": "app.principal_id",
+            "version_candidates": [
+              "version"
+            ],
+            "version_field_options": [
+              "version"
+            ],
+            "selected_version_field": "version",
+            "operations": {
+              "update": true,
+              "insert": true
+            },
+            "fields": [
+              {
+                "name": "exception_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              },
+              {
+                "name": "tenant_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              },
+              {
+                "name": "principal_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              },
+              {
+                "name": "cycle_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "runner_only",
+                "writable": true
+              },
+              {
+                "name": "severity",
+                "type": {
+                  "kind": "string",
+                  "max_length": 8,
+                  "enum": [
+                    "advisory",
+                    "blocking"
+                  ],
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "runner_only",
+                "writable": true,
+                "enum_source": "schema"
+              },
+              {
+                "name": "open",
+                "type": {
+                  "kind": "boolean"
+                },
+                "nullable": false,
+                "role": "runner_only",
+                "writable": true
+              },
+              {
+                "name": "detail",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "runner_only",
+                "writable": true
+              },
+              {
+                "name": "version",
+                "type": {
+                  "kind": "integer"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              }
+            ],
+            "source_constraints": {
+              "resource": "energy_ops.exception_notes",
+              "columns": {
+                "exception_id": {
+                  "nullable": false
+                },
+                "tenant_id": {
+                  "nullable": false
+                },
+                "principal_id": {
+                  "nullable": false
+                },
+                "cycle_id": {
+                  "nullable": false
+                },
+                "severity": {
+                  "nullable": false
+                },
+                "open": {
+                  "nullable": false
+                },
+                "detail": {
+                  "nullable": false
+                },
+                "version": {
+                  "nullable": false
+                }
+              },
+              "primary_key": {
+                "columns": [
+                  "exception_id"
+                ],
+                "column_count": 1,
+                "non_null_columns": [
+                  "exception_id"
+                ],
+                "all_columns_non_null": true,
+                "unconditional": true
+              },
+              "unique_constraints": {},
+              "check_constraints": {
+                "exception_notes_severity_check": {
+                  "definition": "CHECK (severity = ANY (ARRAY['blocking'::text, 'advisory'::text]))",
+                  "enforced": true
+                },
+                "exception_notes_version_check": {
+                  "definition": "CHECK (version > 0)",
+                  "enforced": true
+                }
+              }
+            }
+          },
+          {
+            "subject_reference": {
+              "obtainable": true
+            },
+            "name": "energy_ops.meter_samples",
+            "primary_key": "sample_id",
+            "tenant_scope": "direct",
+            "tenant_key": "tenant_id",
+            "principal_scope": "direct",
+            "principal_key": "principal_id",
+            "principal_rls_setting": "app.principal_id",
+            "version_candidates": [
+              "version"
+            ],
+            "version_field_options": [
+              "credits",
+              "version"
+            ],
+            "selected_version_field": "version",
+            "operations": {
+              "update": true,
+              "insert": true
+            },
+            "fields": [
+              {
+                "name": "sample_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              },
+              {
+                "name": "tenant_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              },
+              {
+                "name": "principal_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              },
+              {
+                "name": "cycle_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "runner_only",
+                "writable": true
+              },
+              {
+                "name": "quality",
+                "type": {
+                  "kind": "string",
+                  "max_length": 9,
+                  "enum": [
+                    "ignored",
+                    "validated"
+                  ],
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "runner_only",
+                "writable": true,
+                "enum_source": "schema"
+              },
+              {
+                "name": "credits",
+                "type": {
+                  "kind": "integer"
+                },
+                "nullable": false,
+                "role": "runner_only",
+                "writable": true
+              },
+              {
+                "name": "version",
+                "type": {
+                  "kind": "integer"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              }
+            ],
+            "source_constraints": {
+              "resource": "energy_ops.meter_samples",
+              "columns": {
+                "sample_id": {
+                  "nullable": false
+                },
+                "tenant_id": {
+                  "nullable": false
+                },
+                "principal_id": {
+                  "nullable": false
+                },
+                "cycle_id": {
+                  "nullable": false
+                },
+                "quality": {
+                  "nullable": false
+                },
+                "credits": {
+                  "nullable": false
+                },
+                "version": {
+                  "nullable": false
+                }
+              },
+              "primary_key": {
+                "columns": [
+                  "sample_id"
+                ],
+                "column_count": 1,
+                "non_null_columns": [
+                  "sample_id"
+                ],
+                "all_columns_non_null": true,
+                "unconditional": true
+              },
+              "unique_constraints": {},
+              "check_constraints": {
+                "meter_samples_credits_check": {
+                  "definition": "CHECK (credits >= 0 AND credits <= 100)",
+                  "enforced": true
+                },
+                "meter_samples_quality_check": {
+                  "definition": "CHECK (quality = ANY (ARRAY['validated'::text, 'ignored'::text]))",
+                  "enforced": true
+                },
+                "meter_samples_version_check": {
+                  "definition": "CHECK (version > 0)",
+                  "enforced": true
+                }
+              }
+            }
+          },
+          {
+            "subject_reference": {
+              "obtainable": true
+            },
+            "name": "energy_ops.metering_cycles",
+            "primary_key": "cycle_id",
+            "tenant_scope": "direct",
+            "tenant_key": "tenant_id",
+            "principal_scope": "direct",
+            "principal_key": "principal_id",
+            "principal_rls_setting": "app.principal_id",
+            "version_candidates": [
+              "version"
+            ],
+            "version_field_options": [
+              "posted_credits",
+              "version"
+            ],
+            "selected_version_field": "version",
+            "operations": {
+              "update": true,
+              "insert": true
+            },
+            "fields": [
+              {
+                "name": "cycle_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              },
+              {
+                "name": "tenant_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              },
+              {
+                "name": "principal_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              },
+              {
+                "name": "register_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "model_visible",
+                "writable": true
+              },
+              {
+                "name": "cycle_label",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "model_visible",
+                "writable": true
+              },
+              {
+                "name": "state",
+                "type": {
+                  "kind": "string",
+                  "max_length": 9,
+                  "enum": [
+                    "draft",
+                    "finalized"
+                  ],
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "model_visible",
+                "writable": true,
+                "enum_source": "schema"
+              },
+              {
+                "name": "posted_credits",
+                "type": {
+                  "kind": "integer"
+                },
+                "nullable": false,
+                "role": "model_visible",
+                "writable": true
+              },
+              {
+                "name": "follow_up",
+                "type": {
+                  "kind": "boolean"
+                },
+                "nullable": false,
+                "role": "model_visible",
+                "writable": true
+              },
+              {
+                "name": "restricted",
+                "type": {
+                  "kind": "boolean"
+                },
+                "nullable": false,
+                "role": "model_visible",
+                "writable": true
+              },
+              {
+                "name": "version",
+                "type": {
+                  "kind": "integer"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              }
+            ],
+            "source_constraints": {
+              "resource": "energy_ops.metering_cycles",
+              "columns": {
+                "cycle_id": {
+                  "nullable": false
+                },
+                "tenant_id": {
+                  "nullable": false
+                },
+                "principal_id": {
+                  "nullable": false
+                },
+                "register_id": {
+                  "nullable": false
+                },
+                "cycle_label": {
+                  "nullable": false
+                },
+                "state": {
+                  "nullable": false
+                },
+                "posted_credits": {
+                  "nullable": false
+                },
+                "follow_up": {
+                  "nullable": false
+                },
+                "restricted": {
+                  "nullable": false
+                },
+                "version": {
+                  "nullable": false
+                }
+              },
+              "primary_key": {
+                "columns": [
+                  "cycle_id"
+                ],
+                "column_count": 1,
+                "non_null_columns": [
+                  "cycle_id"
+                ],
+                "all_columns_non_null": true,
+                "unconditional": true
+              },
+              "unique_constraints": {
+                "metering_cycles_tenant_id_principal_id_cycle_id_key": {
+                  "columns": [
+                    "tenant_id",
+                    "principal_id",
+                    "cycle_id"
+                  ],
+                  "column_count": 3,
+                  "non_null_columns": [
+                    "tenant_id",
+                    "principal_id",
+                    "cycle_id"
+                  ],
+                  "all_columns_non_null": true,
+                  "unconditional": true
+                },
+                "metering_cycles_tenant_id_principal_id_cycle_label_key": {
+                  "columns": [
+                    "tenant_id",
+                    "principal_id",
+                    "cycle_label"
+                  ],
+                  "column_count": 3,
+                  "non_null_columns": [
+                    "tenant_id",
+                    "principal_id",
+                    "cycle_label"
+                  ],
+                  "all_columns_non_null": true,
+                  "unconditional": true
+                }
+              },
+              "check_constraints": {
+                "metering_cycles_posted_credits_check": {
+                  "definition": "CHECK (posted_credits >= 0)",
+                  "enforced": true
+                },
+                "metering_cycles_state_check": {
+                  "definition": "CHECK (state = ANY (ARRAY['draft'::text, 'finalized'::text]))",
+                  "enforced": true
+                },
+                "metering_cycles_version_check": {
+                  "definition": "CHECK (version > 0)",
+                  "enforced": true
+                }
+              }
+            }
+          },
+          {
+            "subject_reference": {
+              "obtainable": true
+            },
+            "name": "energy_ops.settlement_registers",
+            "primary_key": "register_id",
+            "tenant_scope": "direct",
+            "tenant_key": "tenant_id",
+            "principal_scope": "direct",
+            "principal_key": "principal_id",
+            "principal_rls_setting": "app.principal_id",
+            "version_candidates": [
+              "version"
+            ],
+            "version_field_options": [
+              "credited_total",
+              "version"
+            ],
+            "selected_version_field": "version",
+            "operations": {
+              "update": true,
+              "insert": true
+            },
+            "fields": [
+              {
+                "name": "register_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              },
+              {
+                "name": "tenant_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              },
+              {
+                "name": "principal_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              },
+              {
+                "name": "public_name",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "model_visible",
+                "writable": true
+              },
+              {
+                "name": "status",
+                "type": {
+                  "kind": "string",
+                  "max_length": 6,
+                  "enum": [
+                    "frozen",
+                    "open"
+                  ],
+                  "comparison": "exact"
+                },
+                "nullable": false,
+                "role": "model_visible",
+                "writable": true,
+                "enum_source": "schema"
+              },
+              {
+                "name": "credited_total",
+                "type": {
+                  "kind": "integer"
+                },
+                "nullable": false,
+                "role": "model_visible",
+                "writable": true
+              },
+              {
+                "name": "version",
+                "type": {
+                  "kind": "integer"
+                },
+                "nullable": false,
+                "role": "guard",
+                "writable": false
+              }
+            ],
+            "source_constraints": {
+              "resource": "energy_ops.settlement_registers",
+              "columns": {
+                "register_id": {
+                  "nullable": false
+                },
+                "tenant_id": {
+                  "nullable": false
+                },
+                "principal_id": {
+                  "nullable": false
+                },
+                "public_name": {
+                  "nullable": false
+                },
+                "status": {
+                  "nullable": false
+                },
+                "credited_total": {
+                  "nullable": false
+                },
+                "version": {
+                  "nullable": false
+                }
+              },
+              "primary_key": {
+                "columns": [
+                  "register_id"
+                ],
+                "column_count": 1,
+                "non_null_columns": [
+                  "register_id"
+                ],
+                "all_columns_non_null": true,
+                "unconditional": true
+              },
+              "unique_constraints": {
+                "settlement_registers_tenant_id_principal_id_register_id_key": {
+                  "columns": [
+                    "tenant_id",
+                    "principal_id",
+                    "register_id"
+                  ],
+                  "column_count": 3,
+                  "non_null_columns": [
+                    "tenant_id",
+                    "principal_id",
+                    "register_id"
+                  ],
+                  "all_columns_non_null": true,
+                  "unconditional": true
+                }
+              },
+              "check_constraints": {
+                "settlement_registers_credited_total_check": {
+                  "definition": "CHECK (credited_total >= 0)",
+                  "enforced": true
+                },
+                "settlement_registers_status_check": {
+                  "definition": "CHECK (status = ANY (ARRAY['open'::text, 'frozen'::text]))",
+                  "enforced": true
+                },
+                "settlement_registers_version_check": {
+                  "definition": "CHECK (version > 0)",
+                  "enforced": true
+                }
+              }
+            }
+          }
+        ],
+        "relationships": [
+          {
+            "name": "exception_notes_tenant_id_principal_id_cycle_id_fkey",
+            "from_resource": "energy_ops.exception_notes",
+            "to_resource": "energy_ops.metering_cycles",
+            "field_pairs": [
+              {
+                "local_field": "tenant_id",
+                "target_field": "tenant_id"
+              },
+              {
+                "local_field": "principal_id",
+                "target_field": "principal_id"
+              },
+              {
+                "local_field": "cycle_id",
+                "target_field": "cycle_id"
+              }
+            ],
+            "cardinality": "many_to_one",
+            "nullable": false,
+            "target_unique": true
+          },
+          {
+            "name": "meter_samples_tenant_id_principal_id_cycle_id_fkey",
+            "from_resource": "energy_ops.meter_samples",
+            "to_resource": "energy_ops.metering_cycles",
+            "field_pairs": [
+              {
+                "local_field": "tenant_id",
+                "target_field": "tenant_id"
+              },
+              {
+                "local_field": "principal_id",
+                "target_field": "principal_id"
+              },
+              {
+                "local_field": "cycle_id",
+                "target_field": "cycle_id"
+              }
+            ],
+            "cardinality": "many_to_one",
+            "nullable": false,
+            "target_unique": true
+          },
+          {
+            "name": "metering_cycles_tenant_id_principal_id_register_id_fkey",
+            "from_resource": "energy_ops.metering_cycles",
+            "to_resource": "energy_ops.settlement_registers",
+            "field_pairs": [
+              {
+                "local_field": "tenant_id",
+                "target_field": "tenant_id"
+              },
+              {
+                "local_field": "principal_id",
+                "target_field": "principal_id"
+              },
+              {
+                "local_field": "register_id",
+                "target_field": "register_id"
+              }
+            ],
+            "cardinality": "many_to_one",
+            "nullable": false,
+            "target_unique": true
+          }
+        ],
+        "supported_language": {
+          "comparisons": [
+            "eq",
+            "neq",
+            "lt",
+            "lte",
+            "gt",
+            "gte"
+          ],
+          "predicates": [
+            "all",
+            "any",
+            "not",
+            "null_check",
+            "in",
+            "exists"
+          ],
+          "aggregates": [
+            "count",
+            "sum",
+            "min",
+            "max"
+          ],
+          "arithmetic": [
+            "add",
+            "subtract",
+            "min",
+            "max",
+            "multiply",
+            "divide",
+            "clamp",
+            "add_duration",
+            "date_of"
+          ],
+          "effects": [
+            "single_row_update",
+            "single_row_insert"
+          ],
+          "atomic_updates": {
+            "maximum_records": 4,
+            "same_source": true,
+            "versioned_updates_only": true,
+            "all_or_nothing": true
+          },
+          "complete_collections": {
+            "strategy": "complete_locked",
+            "shape": "inverse_foreign_key_from_one_scoped_parent",
+            "visibility_and_phantoms_reverified": true
+          }
+        },
+        "diagnostics": []
+      },
+      "catalog": {
+        "schema_version": "synapsor.action-rule-catalog.v1",
+        "generation_lock_fingerprint": "sha256:ac7d3b8e509b8176ebc732d3843495b22f2fec79511b5e3bb15f07f4801497b3",
+        "resources": [
+          {
+            "name": "energy_ops.exception_notes",
+            "source": "local_postgres",
+            "engine": "postgres",
+            "schema": "energy_ops",
+            "table": "exception_notes",
+            "primary_key": "exception_id",
+            "tenant_key": "tenant_id",
+            "principal_scope_key": "principal_id",
+            "version_field": "version",
+            "fields": [
+              {
+                "name": "exception_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false
+              },
+              {
+                "name": "tenant_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false
+              },
+              {
+                "name": "principal_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false
+              },
+              {
+                "name": "cycle_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false
+              },
+              {
+                "name": "severity",
+                "type": {
+                  "kind": "string",
+                  "max_length": 8,
+                  "enum": [
+                    "advisory",
+                    "blocking"
+                  ],
+                  "comparison": "exact"
+                },
+                "nullable": false
+              },
+              {
+                "name": "open",
+                "type": {
+                  "kind": "boolean"
+                },
+                "nullable": false
+              },
+              {
+                "name": "detail",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false
+              },
+              {
+                "name": "version",
+                "type": {
+                  "kind": "integer"
+                },
+                "nullable": false
+              }
+            ]
+          },
+          {
+            "name": "energy_ops.meter_samples",
+            "source": "local_postgres",
+            "engine": "postgres",
+            "schema": "energy_ops",
+            "table": "meter_samples",
+            "primary_key": "sample_id",
+            "tenant_key": "tenant_id",
+            "principal_scope_key": "principal_id",
+            "version_field": "version",
+            "fields": [
+              {
+                "name": "sample_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false
+              },
+              {
+                "name": "tenant_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false
+              },
+              {
+                "name": "principal_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false
+              },
+              {
+                "name": "cycle_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false
+              },
+              {
+                "name": "quality",
+                "type": {
+                  "kind": "string",
+                  "max_length": 9,
+                  "enum": [
+                    "ignored",
+                    "validated"
+                  ],
+                  "comparison": "exact"
+                },
+                "nullable": false
+              },
+              {
+                "name": "credits",
+                "type": {
+                  "kind": "integer"
+                },
+                "nullable": false
+              },
+              {
+                "name": "version",
+                "type": {
+                  "kind": "integer"
+                },
+                "nullable": false
+              }
+            ]
+          },
+          {
+            "name": "energy_ops.metering_cycles",
+            "source": "local_postgres",
+            "engine": "postgres",
+            "schema": "energy_ops",
+            "table": "metering_cycles",
+            "primary_key": "cycle_id",
+            "tenant_key": "tenant_id",
+            "principal_scope_key": "principal_id",
+            "version_field": "version",
+            "fields": [
+              {
+                "name": "cycle_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false
+              },
+              {
+                "name": "tenant_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false
+              },
+              {
+                "name": "principal_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false
+              },
+              {
+                "name": "register_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false
+              },
+              {
+                "name": "cycle_label",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false
+              },
+              {
+                "name": "state",
+                "type": {
+                  "kind": "string",
+                  "max_length": 9,
+                  "enum": [
+                    "draft",
+                    "finalized"
+                  ],
+                  "comparison": "exact"
+                },
+                "nullable": false
+              },
+              {
+                "name": "posted_credits",
+                "type": {
+                  "kind": "integer"
+                },
+                "nullable": false
+              },
+              {
+                "name": "follow_up",
+                "type": {
+                  "kind": "boolean"
+                },
+                "nullable": false
+              },
+              {
+                "name": "restricted",
+                "type": {
+                  "kind": "boolean"
+                },
+                "nullable": false
+              },
+              {
+                "name": "version",
+                "type": {
+                  "kind": "integer"
+                },
+                "nullable": false
+              }
+            ]
+          },
+          {
+            "name": "energy_ops.settlement_registers",
+            "source": "local_postgres",
+            "engine": "postgres",
+            "schema": "energy_ops",
+            "table": "settlement_registers",
+            "primary_key": "register_id",
+            "tenant_key": "tenant_id",
+            "principal_scope_key": "principal_id",
+            "version_field": "version",
+            "fields": [
+              {
+                "name": "register_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false
+              },
+              {
+                "name": "tenant_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false
+              },
+              {
+                "name": "principal_id",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false
+              },
+              {
+                "name": "public_name",
+                "type": {
+                  "kind": "string",
+                  "max_length": 4096,
+                  "comparison": "exact"
+                },
+                "nullable": false
+              },
+              {
+                "name": "status",
+                "type": {
+                  "kind": "string",
+                  "max_length": 6,
+                  "enum": [
+                    "frozen",
+                    "open"
+                  ],
+                  "comparison": "exact"
+                },
+                "nullable": false
+              },
+              {
+                "name": "credited_total",
+                "type": {
+                  "kind": "integer"
+                },
+                "nullable": false
+              },
+              {
+                "name": "version",
+                "type": {
+                  "kind": "integer"
+                },
+                "nullable": false
+              }
+            ]
+          }
+        ],
+        "relationships": [
+          {
+            "name": "exception_notes_tenant_id_principal_id_cycle_id_fkey",
+            "from_resource": "energy_ops.exception_notes",
+            "to_resource": "energy_ops.metering_cycles",
+            "field_pairs": [
+              {
+                "local_field": "tenant_id",
+                "target_field": "tenant_id"
+              },
+              {
+                "local_field": "principal_id",
+                "target_field": "principal_id"
+              },
+              {
+                "local_field": "cycle_id",
+                "target_field": "cycle_id"
+              }
+            ],
+            "cardinality": "many_to_one",
+            "nullable": false,
+            "target_unique": true
+          },
+          {
+            "name": "meter_samples_tenant_id_principal_id_cycle_id_fkey",
+            "from_resource": "energy_ops.meter_samples",
+            "to_resource": "energy_ops.metering_cycles",
+            "field_pairs": [
+              {
+                "local_field": "tenant_id",
+                "target_field": "tenant_id"
+              },
+              {
+                "local_field": "principal_id",
+                "target_field": "principal_id"
+              },
+              {
+                "local_field": "cycle_id",
+                "target_field": "cycle_id"
+              }
+            ],
+            "cardinality": "many_to_one",
+            "nullable": false,
+            "target_unique": true
+          },
+          {
+            "name": "metering_cycles_tenant_id_principal_id_register_id_fkey",
+            "from_resource": "energy_ops.metering_cycles",
+            "to_resource": "energy_ops.settlement_registers",
+            "field_pairs": [
+              {
+                "local_field": "tenant_id",
+                "target_field": "tenant_id"
+              },
+              {
+                "local_field": "principal_id",
+                "target_field": "principal_id"
+              },
+              {
+                "local_field": "register_id",
+                "target_field": "register_id"
+              }
+            ],
+            "cardinality": "many_to_one",
+            "nullable": false,
+            "target_unique": true
+          }
+        ]
+      }
+    },
+    "readBoundary": {
+      "activation": "disabled_unreviewed",
+      "budgets": {
+        "max_analysis_relationship_hops": 2,
+        "max_complexity": 24,
+        "max_derived_scope_hops": 2,
+        "max_differencing_queries": 16,
+        "max_dimensions": 3,
+        "max_extracted_cells_per_session": 4000,
+        "max_groups": 50,
+        "max_measures": 3,
+        "max_queries_per_session": 1000,
+        "max_ranked_groups": 500,
+        "max_relationship_hops": 2,
+        "max_response_bytes": 65536,
+        "max_response_cells": 500,
+        "max_rows": 50,
+        "max_time_ranges": 2,
+        "max_top_n": 25,
+        "rate_limit_per_minute": 120,
+        "statement_timeout_ms": 3000
+      },
+      "compiler_version": "1.7.0",
+      "database_server_authority": {
+        "engine": "postgres",
+        "features": {
+          "automatic_numeric_bands": true,
+          "schema_check_constraints": true
+        },
+        "schema_version": "synapsor.database-server-authority.v1",
+        "version_line": "17"
+      },
+      "database_server_tier": "full",
+      "database_server_version": "PostgreSQL 17.10 (Debian 17.10-1.pgdg13+1) on x86_64-pc-linux-gnu, compiled by gcc (Debian 14.2.0-19) 14.2.0, 64-bit",
+      "deployment_profile": "staging",
+      "generation_lock_fingerprint": "sha256:ac7d3b8e509b8176ebc732d3843495b22f2fec79511b5e3bb15f07f4801497b3",
+      "pack": {
+        "name": "reviewed_staging",
+        "resources": [
+          {
+            "aggregate_measure_functions": {},
+            "aggregate_measures": [],
+            "count_distinct_fields": [
+              "exception_id",
+              "cycle_id"
+            ],
+            "field_enums": {
+              "severity": [
+                "blocking",
+                "advisory"
+              ]
+            },
+            "field_types": {
+              "cycle_id": "text",
+              "detail": "text",
+              "exception_id": "text",
+              "open": "boolean",
+              "principal_id": "text",
+              "severity": "text",
+              "tenant_id": "text",
+              "version": "integer"
+            },
+            "filterable_fields": {
+              "cycle_id": [
+                "eq",
+                "neq",
+                "in"
+              ],
+              "detail": [
+                "eq",
+                "neq",
+                "in"
+              ],
+              "exception_id": [
+                "eq",
+                "neq",
+                "in"
+              ],
+              "open": [
+                "eq",
+                "neq",
+                "in"
+              ],
+              "severity": [
+                "eq",
+                "neq",
+                "in"
+              ],
+              "version": [
+                "eq",
+                "neq",
+                "lt",
+                "lte",
+                "gt",
+                "gte",
+                "in"
+              ]
+            },
+            "groupable_fields": [
+              "severity",
+              "open",
+              "detail"
+            ],
+            "id": "energy_ops.exception_notes",
+            "kept_out_fields": [
+              "tenant_id",
+              "principal_id"
+            ],
+            "minimum_cohort_size": 5,
+            "presence_measure_fields": [
+              "exception_id",
+              "cycle_id",
+              "severity",
+              "open",
+              "detail",
+              "version"
+            ],
+            "primary_key": "exception_id",
+            "principal_key": "principal_id",
+            "relationships": [
+              {
+                "cardinality": "many_to_one",
+                "counted_entity": "exception_id",
+                "id": "exception_notes_tenant_id_principal_id_cycle_id_fkey",
+                "local_columns": [
+                  "tenant_id",
+                  "principal_id",
+                  "cycle_id"
+                ],
+                "max_fan_out": 1,
+                "nullable": false,
+                "path_depth": 1,
+                "proof": {
+                  "digest": "sha256:5d2ac5286fe12f9d6d70a85fdf1c74fcda89e7c068baaeb6dafef8e7f66e7e4f",
+                  "links": [
+                    {
+                      "cardinality": "many_to_one",
+                      "constraint_name": "exception_notes_tenant_id_principal_id_cycle_id_fkey",
+                      "max_fan_out": 1,
+                      "nullable": false,
+                      "source_columns": [
+                        "tenant_id",
+                        "principal_id",
+                        "cycle_id"
+                      ],
+                      "source_resource": "energy_ops.exception_notes",
+                      "target_columns": [
+                        "tenant_id",
+                        "principal_id",
+                        "cycle_id"
+                      ],
+                      "target_resource": "energy_ops.metering_cycles",
+                      "target_uniqueness": {
+                        "columns": [
+                          "tenant_id",
+                          "principal_id",
+                          "cycle_id"
+                        ],
+                        "kind": "unique_constraint",
+                        "name": "metering_cycles_tenant_id_principal_id_cycle_id_key"
+                      }
+                    }
+                  ],
+                  "source": "database_catalog"
+                },
+                "target_columns": [
+                  "tenant_id",
+                  "principal_id",
+                  "cycle_id"
+                ],
+                "target_resource": "energy_ops.metering_cycles",
+                "unmatched_rows": "exclude"
+              },
+              {
+                "cardinality": "many_to_one",
+                "counted_entity": "exception_id",
+                "id": "exception_notes_tenant_id_principal_id_cycle_id_fkey__metering_cycles_tenant_id_principal_id_register_id_fkey",
+                "local_columns": [
+                  "tenant_id",
+                  "principal_id",
+                  "cycle_id"
+                ],
+                "max_fan_out": 1,
+                "nullable": false,
+                "path_depth": 2,
+                "proof": {
+                  "digest": "sha256:29b485bbc53bbc4e3b466d597765671906bc0082bf058f6ef4e309c693185a06",
+                  "links": [
+                    {
+                      "cardinality": "many_to_one",
+                      "constraint_name": "exception_notes_tenant_id_principal_id_cycle_id_fkey",
+                      "max_fan_out": 1,
+                      "nullable": false,
+                      "source_columns": [
+                        "tenant_id",
+                        "principal_id",
+                        "cycle_id"
+                      ],
+                      "source_resource": "energy_ops.exception_notes",
+                      "target_columns": [
+                        "tenant_id",
+                        "principal_id",
+                        "cycle_id"
+                      ],
+                      "target_resource": "energy_ops.metering_cycles",
+                      "target_uniqueness": {
+                        "columns": [
+                          "tenant_id",
+                          "principal_id",
+                          "cycle_id"
+                        ],
+                        "kind": "unique_constraint",
+                        "name": "metering_cycles_tenant_id_principal_id_cycle_id_key"
+                      }
+                    },
+                    {
+                      "cardinality": "many_to_one",
+                      "constraint_name": "metering_cycles_tenant_id_principal_id_register_id_fkey",
+                      "max_fan_out": 1,
+                      "nullable": false,
+                      "source_columns": [
+                        "tenant_id",
+                        "principal_id",
+                        "register_id"
+                      ],
+                      "source_resource": "energy_ops.metering_cycles",
+                      "target_columns": [
+                        "tenant_id",
+                        "principal_id",
+                        "register_id"
+                      ],
+                      "target_resource": "energy_ops.settlement_registers",
+                      "target_uniqueness": {
+                        "columns": [
+                          "tenant_id",
+                          "principal_id",
+                          "register_id"
+                        ],
+                        "kind": "unique_constraint",
+                        "name": "settlement_registers_tenant_id_principal_id_register_id_key"
+                      }
+                    }
+                  ],
+                  "source": "database_catalog"
+                },
+                "target_columns": [
+                  "tenant_id",
+                  "principal_id",
+                  "register_id"
+                ],
+                "target_resource": "energy_ops.settlement_registers",
+                "unmatched_rows": "exclude"
+              }
+            ],
+            "rls_session": {
+              "principal_setting": "app.principal_id",
+              "tenant_setting": "app.tenant_id"
+            },
+            "schema": "energy_ops",
+            "selectable_fields": [
+              "exception_id",
+              "cycle_id",
+              "severity",
+              "open",
+              "detail",
+              "version"
+            ],
+            "sortable_fields": [
+              "exception_id",
+              "cycle_id",
+              "severity",
+              "open",
+              "detail",
+              "version"
+            ],
+            "suppression_aware_totals": true,
+            "table": "exception_notes",
+            "tenant_key": "tenant_id",
+            "time_bucket_fields": {}
+          },
+          {
+            "aggregate_measure_functions": {
+              "credits": [
+                "sum",
+                "avg",
+                "stddev_samp",
+                "stddev_pop",
+                "var_samp",
+                "var_pop"
+              ]
+            },
+            "aggregate_measures": [
+              "credits"
+            ],
+            "count_distinct_fields": [
+              "sample_id",
+              "cycle_id"
+            ],
+            "field_enums": {
+              "quality": [
+                "validated",
+                "ignored"
+              ]
+            },
+            "field_types": {
+              "credits": "integer",
+              "cycle_id": "text",
+              "principal_id": "text",
+              "quality": "text",
+              "sample_id": "text",
+              "tenant_id": "text",
+              "version": "integer"
+            },
+            "filterable_fields": {
+              "credits": [
+                "eq",
+                "neq",
+                "lt",
+                "lte",
+                "gt",
+                "gte",
+                "in"
+              ],
+              "cycle_id": [
+                "eq",
+                "neq",
+                "in"
+              ],
+              "quality": [
+                "eq",
+                "neq",
+                "in"
+              ],
+              "sample_id": [
+                "eq",
+                "neq",
+                "in"
+              ],
+              "version": [
+                "eq",
+                "neq",
+                "lt",
+                "lte",
+                "gt",
+                "gte",
+                "in"
+              ]
+            },
+            "groupable_fields": [
+              "quality"
+            ],
+            "id": "energy_ops.meter_samples",
+            "kept_out_fields": [
+              "tenant_id",
+              "principal_id"
+            ],
+            "minimum_cohort_size": 5,
+            "presence_measure_fields": [
+              "sample_id",
+              "cycle_id",
+              "quality",
+              "credits",
+              "version"
+            ],
+            "primary_key": "sample_id",
+            "principal_key": "principal_id",
+            "relationships": [
+              {
+                "cardinality": "many_to_one",
+                "counted_entity": "sample_id",
+                "id": "meter_samples_tenant_id_principal_id_cycle_id_fkey",
+                "local_columns": [
+                  "tenant_id",
+                  "principal_id",
+                  "cycle_id"
+                ],
+                "max_fan_out": 1,
+                "nullable": false,
+                "path_depth": 1,
+                "proof": {
+                  "digest": "sha256:fe373c56c259c7fb85ff58755ccb83ed88bf13d1248d1b87badf7fbd3a180199",
+                  "links": [
+                    {
+                      "cardinality": "many_to_one",
+                      "constraint_name": "meter_samples_tenant_id_principal_id_cycle_id_fkey",
+                      "max_fan_out": 1,
+                      "nullable": false,
+                      "source_columns": [
+                        "tenant_id",
+                        "principal_id",
+                        "cycle_id"
+                      ],
+                      "source_resource": "energy_ops.meter_samples",
+                      "target_columns": [
+                        "tenant_id",
+                        "principal_id",
+                        "cycle_id"
+                      ],
+                      "target_resource": "energy_ops.metering_cycles",
+                      "target_uniqueness": {
+                        "columns": [
+                          "tenant_id",
+                          "principal_id",
+                          "cycle_id"
+                        ],
+                        "kind": "unique_constraint",
+                        "name": "metering_cycles_tenant_id_principal_id_cycle_id_key"
+                      }
+                    }
+                  ],
+                  "source": "database_catalog"
+                },
+                "target_columns": [
+                  "tenant_id",
+                  "principal_id",
+                  "cycle_id"
+                ],
+                "target_resource": "energy_ops.metering_cycles",
+                "unmatched_rows": "exclude"
+              },
+              {
+                "cardinality": "many_to_one",
+                "counted_entity": "sample_id",
+                "id": "meter_samples_tenant_id_principal_id_cycle_id_fkey__metering_cycles_tenant_id_principal_id_register_id_fkey",
+                "local_columns": [
+                  "tenant_id",
+                  "principal_id",
+                  "cycle_id"
+                ],
+                "max_fan_out": 1,
+                "nullable": false,
+                "path_depth": 2,
+                "proof": {
+                  "digest": "sha256:160353854f39183ed252b1fce92b9540c2260533c2ec2f5c9c5f8e4122d301ff",
+                  "links": [
+                    {
+                      "cardinality": "many_to_one",
+                      "constraint_name": "meter_samples_tenant_id_principal_id_cycle_id_fkey",
+                      "max_fan_out": 1,
+                      "nullable": false,
+                      "source_columns": [
+                        "tenant_id",
+                        "principal_id",
+                        "cycle_id"
+                      ],
+                      "source_resource": "energy_ops.meter_samples",
+                      "target_columns": [
+                        "tenant_id",
+                        "principal_id",
+                        "cycle_id"
+                      ],
+                      "target_resource": "energy_ops.metering_cycles",
+                      "target_uniqueness": {
+                        "columns": [
+                          "tenant_id",
+                          "principal_id",
+                          "cycle_id"
+                        ],
+                        "kind": "unique_constraint",
+                        "name": "metering_cycles_tenant_id_principal_id_cycle_id_key"
+                      }
+                    },
+                    {
+                      "cardinality": "many_to_one",
+                      "constraint_name": "metering_cycles_tenant_id_principal_id_register_id_fkey",
+                      "max_fan_out": 1,
+                      "nullable": false,
+                      "source_columns": [
+                        "tenant_id",
+                        "principal_id",
+                        "register_id"
+                      ],
+                      "source_resource": "energy_ops.metering_cycles",
+                      "target_columns": [
+                        "tenant_id",
+                        "principal_id",
+                        "register_id"
+                      ],
+                      "target_resource": "energy_ops.settlement_registers",
+                      "target_uniqueness": {
+                        "columns": [
+                          "tenant_id",
+                          "principal_id",
+                          "register_id"
+                        ],
+                        "kind": "unique_constraint",
+                        "name": "settlement_registers_tenant_id_principal_id_register_id_key"
+                      }
+                    }
+                  ],
+                  "source": "database_catalog"
+                },
+                "target_columns": [
+                  "tenant_id",
+                  "principal_id",
+                  "register_id"
+                ],
+                "target_resource": "energy_ops.settlement_registers",
+                "unmatched_rows": "exclude"
+              }
+            ],
+            "rls_session": {
+              "principal_setting": "app.principal_id",
+              "tenant_setting": "app.tenant_id"
+            },
+            "schema": "energy_ops",
+            "selectable_fields": [
+              "sample_id",
+              "cycle_id",
+              "quality",
+              "credits",
+              "version"
+            ],
+            "sortable_fields": [
+              "sample_id",
+              "cycle_id",
+              "quality",
+              "credits",
+              "version"
+            ],
+            "suppression_aware_totals": true,
+            "table": "meter_samples",
+            "tenant_key": "tenant_id",
+            "time_bucket_fields": {}
+          },
+          {
+            "aggregate_measure_functions": {
+              "posted_credits": [
+                "sum",
+                "avg",
+                "stddev_samp",
+                "stddev_pop",
+                "var_samp",
+                "var_pop"
+              ]
+            },
+            "aggregate_measures": [
+              "posted_credits"
+            ],
+            "count_distinct_fields": [
+              "cycle_id",
+              "register_id"
+            ],
+            "field_enums": {
+              "state": [
+                "draft",
+                "finalized"
+              ]
+            },
+            "field_types": {
+              "cycle_id": "text",
+              "cycle_label": "text",
+              "follow_up": "boolean",
+              "posted_credits": "integer",
+              "principal_id": "text",
+              "register_id": "text",
+              "restricted": "boolean",
+              "state": "text",
+              "tenant_id": "text",
+              "version": "integer"
+            },
+            "filterable_fields": {
+              "cycle_id": [
+                "eq",
+                "neq",
+                "in"
+              ],
+              "cycle_label": [
+                "eq",
+                "neq",
+                "in"
+              ],
+              "follow_up": [
+                "eq",
+                "neq",
+                "in"
+              ],
+              "posted_credits": [
+                "eq",
+                "neq",
+                "lt",
+                "lte",
+                "gt",
+                "gte",
+                "in"
+              ],
+              "register_id": [
+                "eq",
+                "neq",
+                "in"
+              ],
+              "restricted": [
+                "eq",
+                "neq",
+                "in"
+              ],
+              "state": [
+                "eq",
+                "neq",
+                "in"
+              ],
+              "version": [
+                "eq",
+                "neq",
+                "lt",
+                "lte",
+                "gt",
+                "gte",
+                "in"
+              ]
+            },
+            "groupable_fields": [
+              "cycle_label",
+              "state",
+              "follow_up",
+              "restricted"
+            ],
+            "id": "energy_ops.metering_cycles",
+            "kept_out_fields": [
+              "tenant_id",
+              "principal_id"
+            ],
+            "minimum_cohort_size": 5,
+            "presence_measure_fields": [
+              "cycle_id",
+              "register_id",
+              "cycle_label",
+              "state",
+              "posted_credits",
+              "follow_up",
+              "restricted",
+              "version"
+            ],
+            "primary_key": "cycle_id",
+            "principal_key": "principal_id",
+            "relationships": [
+              {
+                "cardinality": "many_to_one",
+                "counted_entity": "cycle_id",
+                "id": "metering_cycles_tenant_id_principal_id_register_id_fkey",
+                "local_columns": [
+                  "tenant_id",
+                  "principal_id",
+                  "register_id"
+                ],
+                "max_fan_out": 1,
+                "nullable": false,
+                "path_depth": 1,
+                "proof": {
+                  "digest": "sha256:b20b6c45caaa23aea4dd547c0304c37fd95fef248470dd17b43adffd83d08750",
+                  "links": [
+                    {
+                      "cardinality": "many_to_one",
+                      "constraint_name": "metering_cycles_tenant_id_principal_id_register_id_fkey",
+                      "max_fan_out": 1,
+                      "nullable": false,
+                      "source_columns": [
+                        "tenant_id",
+                        "principal_id",
+                        "register_id"
+                      ],
+                      "source_resource": "energy_ops.metering_cycles",
+                      "target_columns": [
+                        "tenant_id",
+                        "principal_id",
+                        "register_id"
+                      ],
+                      "target_resource": "energy_ops.settlement_registers",
+                      "target_uniqueness": {
+                        "columns": [
+                          "tenant_id",
+                          "principal_id",
+                          "register_id"
+                        ],
+                        "kind": "unique_constraint",
+                        "name": "settlement_registers_tenant_id_principal_id_register_id_key"
+                      }
+                    }
+                  ],
+                  "source": "database_catalog"
+                },
+                "target_columns": [
+                  "tenant_id",
+                  "principal_id",
+                  "register_id"
+                ],
+                "target_resource": "energy_ops.settlement_registers",
+                "unmatched_rows": "exclude"
+              }
+            ],
+            "rls_session": {
+              "principal_setting": "app.principal_id",
+              "tenant_setting": "app.tenant_id"
+            },
+            "schema": "energy_ops",
+            "selectable_fields": [
+              "cycle_id",
+              "register_id",
+              "cycle_label",
+              "state",
+              "posted_credits",
+              "follow_up",
+              "restricted",
+              "version"
+            ],
+            "sortable_fields": [
+              "cycle_id",
+              "register_id",
+              "cycle_label",
+              "state",
+              "posted_credits",
+              "follow_up",
+              "restricted",
+              "version"
+            ],
+            "suppression_aware_totals": true,
+            "table": "metering_cycles",
+            "tenant_key": "tenant_id",
+            "time_bucket_fields": {}
+          },
+          {
+            "aggregate_measure_functions": {
+              "credited_total": [
+                "sum",
+                "avg",
+                "stddev_samp",
+                "stddev_pop",
+                "var_samp",
+                "var_pop"
+              ]
+            },
+            "aggregate_measures": [
+              "credited_total"
+            ],
+            "count_distinct_fields": [
+              "register_id"
+            ],
+            "field_enums": {
+              "status": [
+                "open",
+                "frozen"
+              ]
+            },
+            "field_types": {
+              "credited_total": "integer",
+              "principal_id": "text",
+              "public_name": "text",
+              "register_id": "text",
+              "status": "text",
+              "tenant_id": "text",
+              "version": "integer"
+            },
+            "filterable_fields": {
+              "credited_total": [
+                "eq",
+                "neq",
+                "lt",
+                "lte",
+                "gt",
+                "gte",
+                "in"
+              ],
+              "public_name": [
+                "eq",
+                "neq",
+                "in"
+              ],
+              "register_id": [
+                "eq",
+                "neq",
+                "in"
+              ],
+              "status": [
+                "eq",
+                "neq",
+                "in"
+              ],
+              "version": [
+                "eq",
+                "neq",
+                "lt",
+                "lte",
+                "gt",
+                "gte",
+                "in"
+              ]
+            },
+            "groupable_fields": [
+              "public_name",
+              "status"
+            ],
+            "id": "energy_ops.settlement_registers",
+            "kept_out_fields": [
+              "tenant_id",
+              "principal_id"
+            ],
+            "minimum_cohort_size": 5,
+            "presence_measure_fields": [
+              "register_id",
+              "public_name",
+              "status",
+              "credited_total",
+              "version"
+            ],
+            "primary_key": "register_id",
+            "principal_key": "principal_id",
+            "relationships": [],
+            "rls_session": {
+              "principal_setting": "app.principal_id",
+              "tenant_setting": "app.tenant_id"
+            },
+            "schema": "energy_ops",
+            "selectable_fields": [
+              "register_id",
+              "public_name",
+              "status",
+              "credited_total",
+              "version"
+            ],
+            "sortable_fields": [
+              "register_id",
+              "public_name",
+              "status",
+              "credited_total",
+              "version"
+            ],
+            "suppression_aware_totals": true,
+            "table": "settlement_registers",
+            "tenant_key": "tenant_id",
+            "time_bucket_fields": {}
+          }
+        ]
+      },
+      "reporting_timezone": "UTC",
+      "role_posture_fingerprint": "sha256:235c60ec7efae2a5cee6ba20bddd7f15a227071f4469fa3259144aee19a2b789",
+      "schema_version": "synapsor.exploration-boundary.v1",
+      "source": "local_postgres",
+      "spec_version": "1.9.0",
+      "trusted_context": {
+        "database_role_tenant": {
+          "engine": "postgres",
+          "setting": "app.tenant_id"
+        },
+        "principal_env": "SYNAPSOR_PRINCIPAL",
+        "provider": "environment",
+        "tenant_env": "SYNAPSOR_TENANT_ID"
+      },
+      "unresolved_decisions": [
+        "deployment profile: confirm development or staging authoring-only use",
+        "energy_ops.exception_notes: confirm filter/sort/group/aggregate-only field permissions",
+        "energy_ops.exception_notes: confirm minimum cohort and extraction/differencing budgets",
+        "energy_ops.exception_notes: confirm principal scope principal_id",
+        "energy_ops.exception_notes: confirm tenant key tenant_id",
+        "energy_ops.exception_notes: confirm visible and kept-out fields",
+        "energy_ops.exception_notes: review relationship exception_notes_tenant_id_principal_id_cycle_id_fkey cardinality and scope on energy_ops.metering_cycles",
+        "energy_ops.exception_notes: review relationship exception_notes_tenant_id_principal_id_cycle_id_fkey__metering_cycles_tenant_id_principal_id_register_id_fkey cardinality and scope on energy_ops.settlement_registers",
+        "energy_ops.meter_samples: confirm filter/sort/group/aggregate-only field permissions",
+        "energy_ops.meter_samples: confirm minimum cohort and extraction/differencing budgets",
+        "energy_ops.meter_samples: confirm principal scope principal_id",
+        "energy_ops.meter_samples: confirm tenant key tenant_id",
+        "energy_ops.meter_samples: confirm visible and kept-out fields",
+        "energy_ops.meter_samples: review relationship meter_samples_tenant_id_principal_id_cycle_id_fkey cardinality and scope on energy_ops.metering_cycles",
+        "energy_ops.meter_samples: review relationship meter_samples_tenant_id_principal_id_cycle_id_fkey__metering_cycles_tenant_id_principal_id_register_id_fkey cardinality and scope on energy_ops.settlement_registers",
+        "energy_ops.metering_cycles: confirm filter/sort/group/aggregate-only field permissions",
+        "energy_ops.metering_cycles: confirm minimum cohort and extraction/differencing budgets",
+        "energy_ops.metering_cycles: confirm principal scope principal_id",
+        "energy_ops.metering_cycles: confirm tenant key tenant_id",
+        "energy_ops.metering_cycles: confirm visible and kept-out fields",
+        "energy_ops.metering_cycles: review relationship metering_cycles_tenant_id_principal_id_register_id_fkey cardinality and scope on energy_ops.settlement_registers",
+        "energy_ops.settlement_registers: confirm filter/sort/group/aggregate-only field permissions",
+        "energy_ops.settlement_registers: confirm minimum cohort and extraction/differencing budgets",
+        "energy_ops.settlement_registers: confirm principal scope principal_id",
+        "energy_ops.settlement_registers: confirm tenant key tenant_id",
+        "energy_ops.settlement_registers: confirm visible and kept-out fields",
+        "trusted context: confirm tenant scope comes from the verified PostgreSQL credential setting app.tenant_id and principal scope remains outside model arguments"
+      ]
+    },
+    "readBoundaryDigest": "sha256:e30226ebfa5edacacace57a3722c0e6614180fe129139828c9f9e0d9afd6d1ab"
+  },
+  "positive": {
+    "result": "eligible",
+    "derived": {
+      "new_credited_total": 23
+    },
+    "effect": {
+      "operation": "single_row_update",
+      "source": "local_postgres",
+      "resource": "energy_ops.metering_cycles",
+      "schema": "energy_ops",
+      "table": "metering_cycles",
+      "primary_key": {
+        "column": "cycle_id",
+        "value": "c"
+      },
+      "tenant_guard": {
+        "column": "tenant_id",
+        "value": "synthetic-tenant"
+      },
+      "principal_scope": {
+        "column": "principal_id",
+        "value": "synthetic-person"
+      },
+      "expected_version": {
+        "column": "version",
+        "value": 1
+      },
+      "version_advance": {
+        "column": "version",
+        "strategy": "integer_increment"
+      },
+      "allowed_columns": [
+        "posted_credits",
+        "state"
+      ],
+      "set": {
+        "posted_credits": 12,
+        "state": "finalized"
+      },
+      "atomic_updates": [
+        {
+          "operation": "single_row_update",
+          "source": "local_postgres",
+          "resource": "energy_ops.settlement_registers",
+          "schema": "energy_ops",
+          "table": "settlement_registers",
+          "primary_key": {
+            "column": "register_id",
+            "value": "r"
+          },
+          "tenant_guard": {
+            "column": "tenant_id",
+            "value": "synthetic-tenant"
+          },
+          "principal_scope": {
+            "column": "principal_id",
+            "value": "synthetic-person"
+          },
+          "expected_version": {
+            "column": "version",
+            "value": 1
+          },
+          "version_advance": {
+            "column": "version",
+            "strategy": "integer_increment"
+          },
+          "allowed_columns": [
+            "credited_total"
+          ],
+          "set": {
+            "credited_total": 23
+          },
+          "effect_digest": "sha256:b53e6b58242a322bed2579b84391803498c8de78ab5e9f215778671dfe99f888"
+        }
+      ],
+      "effect_digest": "sha256:acf46d95a7184e3012a33634ca98085b643cb18f2aa9da44b5e511566c40734a"
+    },
+    "dependencies": [
+      {
+        "binding": "cycle",
+        "resource": "energy_ops.metering_cycles",
+        "primary_key": {
+          "column": "cycle_id",
+          "value": "c"
+        },
+        "version": {
+          "column": "version",
+          "value": 1
+        },
+        "row_digest": "sha256:95378effbc5b467b60c9958d131259ef67c3682551603d99db2e362c739b1bd7"
+      },
+      {
+        "binding": "notes",
+        "resource": "energy_ops.exception_notes",
+        "primary_key": {
+          "column": "exception_id",
+          "value": "n1"
+        },
+        "version": {
+          "column": "version",
+          "value": 1
+        },
+        "row_digest": "sha256:6c9e50681b25cf229d44acae670cb690cd801be5fca9f5e30e37e1ace9b8abd9"
+      },
+      {
+        "binding": "notes",
+        "resource": "energy_ops.exception_notes",
+        "primary_key": {
+          "column": "exception_id",
+          "value": "n2"
+        },
+        "version": {
+          "column": "version",
+          "value": 1
+        },
+        "row_digest": "sha256:fd5c260241b635e150058f6e9dd429a8ec67c3103ae48bf0475bc78fcfff374d"
+      },
+      {
+        "binding": "register",
+        "resource": "energy_ops.settlement_registers",
+        "primary_key": {
+          "column": "register_id",
+          "value": "r"
+        },
+        "version": {
+          "column": "version",
+          "value": 1
+        },
+        "row_digest": "sha256:64f45bac9691f5a54021bdd72ae90cd8b936a1321bc865d0c17ab3b06f211190"
+      },
+      {
+        "binding": "samples",
+        "resource": "energy_ops.meter_samples",
+        "primary_key": {
+          "column": "sample_id",
+          "value": "s1"
+        },
+        "version": {
+          "column": "version",
+          "value": 1
+        },
+        "row_digest": "sha256:23f7284301583dc51ccedd063fc60478cd1948b68681964e34433ffa9eb82c52"
+      },
+      {
+        "binding": "samples",
+        "resource": "energy_ops.meter_samples",
+        "primary_key": {
+          "column": "sample_id",
+          "value": "s2"
+        },
+        "version": {
+          "column": "version",
+          "value": 1
+        },
+        "row_digest": "sha256:76b67d27f5005fa6a1db3e652792a7e5480463380a7e843ed67d5ea07972fced"
+      },
+      {
+        "binding": "samples",
+        "resource": "energy_ops.meter_samples",
+        "primary_key": {
+          "column": "sample_id",
+          "value": "s3"
+        },
+        "version": {
+          "column": "version",
+          "value": 1
+        },
+        "row_digest": "sha256:f87e5a5aff3c40b3c3669ed689ff8d7ef8fff972a9cce32ff66d7d1232b31377"
+      }
+    ],
+    "verified_facts_digest": "sha256:407ee882ee30d452c875599155d5e9d53be476e338dde8f8cb955da33b78d3ec",
+    "dependency_set_digest": "sha256:ba5380886c2b6ff4037fc5080421fdf12f1b41b4fc5631f091c3e86e1874b50d"
+  },
+  "captured_components": {
+    "verification": {
+      "name": "energy_ops.finalize_settlement_cycle.verification",
+      "resources": [
+        {
+          "binding": "cycle",
+          "resource": "energy_ops.metering_cycles",
+          "source": {
+            "kind": "subject_ref"
+          },
+          "fields": [
+            "cycle_id",
+            "follow_up",
+            "posted_credits",
+            "register_id",
+            "restricted",
+            "state",
+            "version"
+          ]
+        },
+        {
+          "binding": "register",
+          "resource": "energy_ops.settlement_registers",
+          "source": {
+            "kind": "relationship",
+            "from_binding": "cycle",
+            "relationship": "metering_cycles_tenant_id_principal_id_register_id_fkey",
+            "direction": "forward"
+          },
+          "fields": [
+            "credited_total",
+            "register_id",
+            "status",
+            "version"
+          ]
+        },
+        {
+          "binding": "samples",
+          "resource": "energy_ops.meter_samples",
+          "source": {
+            "kind": "relationship",
+            "from_binding": "cycle",
+            "relationship": "meter_samples_tenant_id_principal_id_cycle_id_fkey",
+            "direction": "inverse"
+          },
+          "fields": [
+            "credits",
+            "quality",
+            "sample_id",
+            "version"
+          ],
+          "max_rows": 16,
+          "overflow": "ineligible",
+          "collection_consistency": "complete_locked"
+        },
+        {
+          "binding": "notes",
+          "resource": "energy_ops.exception_notes",
+          "source": {
+            "kind": "relationship",
+            "from_binding": "cycle",
+            "relationship": "exception_notes_tenant_id_principal_id_cycle_id_fkey",
+            "direction": "inverse"
+          },
+          "fields": [
+            "exception_id",
+            "open",
+            "severity",
+            "version"
+          ],
+          "max_rows": 16,
+          "overflow": "ineligible",
+          "collection_consistency": "complete_locked"
+        }
+      ]
+    },
+    "effect": {
+      "name": "energy_ops.finalize_settlement_cycle.effect",
+      "operation": "update",
+      "target_resource": "energy_ops.metering_cycles",
+      "target_binding": "cycle",
+      "allowed_fields": [
+        {
+          "name": "state",
+          "values": [
+            "finalized"
+          ]
+        },
+        {
+          "name": "posted_credits",
+          "minimum": 1,
+          "maximum": 100
+        }
+      ],
+      "set": {
+        "state": {
+          "kind": "literal",
+          "value": "finalized",
+          "value_type": {
+            "kind": "string",
+            "max_length": 9,
+            "enum": [
+              "draft",
+              "finalized"
+            ],
+            "comparison": "exact"
+          }
+        },
+        "posted_credits": {
+          "kind": "input",
+          "name": "credits_to_post"
+        }
+      },
+      "writeback": "supervised",
+      "atomic_updates": [
+        {
+          "operation": "update",
+          "target_resource": "energy_ops.settlement_registers",
+          "target_binding": "register",
+          "allowed_fields": [
+            {
+              "name": "credited_total",
+              "minimum": 0
+            }
+          ],
+          "set": {
+            "credited_total": {
+              "kind": "derived",
+              "name": "new_credited_total"
+            }
+          }
+        }
+      ]
+    },
+    "rule": {
+      "name": "energy_ops.finalize_settlement_cycle",
+      "outcome": "energy_ops.finalize_settlement_cycle",
+      "inputs": [
+        {
+          "name": "credits_to_post",
+          "description": "Exact settlement credits to post for the selected cycle.",
+          "type": {
+            "kind": "integer",
+            "unit": "credits"
+          },
+          "minimum": 1,
+          "maximum": 100
+        }
+      ],
+      "discovery": {
+        "title": "Finalize settlement cycle",
+        "summary": "Request finalization of an assigned settlement cycle into its related settlement register.",
+        "aliases": [
+          "finalize cycle",
+          "post settlement credits",
+          "settle cycle"
+        ]
+      },
+      "require": {
+        "kind": "all",
+        "expressions": [
+          {
+            "kind": "compare",
+            "operator": "eq",
+            "left": {
+              "kind": "field",
+              "binding": "cycle",
+              "field": "state"
+            },
+            "right": {
+              "kind": "literal",
+              "value": "draft",
+              "value_type": {
+                "kind": "string",
+                "max_length": 9,
+                "enum": [
+                  "draft",
+                  "finalized"
+                ],
+                "comparison": "exact"
+              }
+            }
+          },
+          {
+            "kind": "compare",
+            "operator": "eq",
+            "left": {
+              "kind": "field",
+              "binding": "cycle",
+              "field": "restricted"
+            },
+            "right": {
+              "kind": "literal",
+              "value": false,
+              "value_type": {
+                "kind": "boolean"
+              }
+            }
+          },
+          {
+            "kind": "compare",
+            "operator": "eq",
+            "left": {
+              "kind": "field",
+              "binding": "register",
+              "field": "status"
+            },
+            "right": {
+              "kind": "literal",
+              "value": "open",
+              "value_type": {
+                "kind": "string",
+                "max_length": 6,
+                "enum": [
+                  "frozen",
+                  "open"
+                ],
+                "comparison": "exact"
+              }
+            }
+          },
+          {
+            "kind": "compare",
+            "operator": "eq",
+            "left": {
+              "kind": "input",
+              "name": "credits_to_post"
+            },
+            "right": {
+              "kind": "aggregate",
+              "operation": "sum",
+              "binding": "samples",
+              "field": "credits",
+              "where": {
+                "kind": "compare",
+                "operator": "eq",
+                "left": {
+                  "kind": "field",
+                  "binding": "samples",
+                  "field": "quality"
+                },
+                "right": {
+                  "kind": "literal",
+                  "value": "validated",
+                  "value_type": {
+                    "kind": "string",
+                    "max_length": 9,
+                    "enum": [
+                      "ignored",
+                      "validated"
+                    ],
+                    "comparison": "exact"
+                  }
+                }
+              }
+            }
+          },
+          {
+            "kind": "not",
+            "expression": {
+              "kind": "exists",
+              "binding": "notes",
+              "where": {
+                "kind": "all",
+                "expressions": [
+                  {
+                    "kind": "compare",
+                    "operator": "eq",
+                    "left": {
+                      "kind": "field",
+                      "binding": "notes",
+                      "field": "open"
+                    },
+                    "right": {
+                      "kind": "literal",
+                      "value": true,
+                      "value_type": {
+                        "kind": "boolean"
+                      }
+                    }
+                  },
+                  {
+                    "kind": "compare",
+                    "operator": "eq",
+                    "left": {
+                      "kind": "field",
+                      "binding": "notes",
+                      "field": "severity"
+                    },
+                    "right": {
+                      "kind": "literal",
+                      "value": "blocking",
+                      "value_type": {
+                        "kind": "string",
+                        "max_length": 8,
+                        "enum": [
+                          "advisory",
+                          "blocking"
+                        ],
+                        "comparison": "exact"
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      },
+      "derive": {
+        "new_credited_total": {
+          "kind": "arithmetic",
+          "operation": "add",
+          "left": {
+            "kind": "field",
+            "binding": "register",
+            "field": "credited_total"
+          },
+          "right": {
+            "kind": "input",
+            "name": "credits_to_post"
+          }
+        }
+      },
+      "ttl_seconds": 300,
+      "review": {
+        "when": "The selected assigned cycle is draft and unrestricted, its related register is open, complete private sample and exception-note sets are within 16 rows each, validated sample credits equal the requested 1\u2013100 credits, and there is no open blocking exception note.",
+        "then": "Propose finalizing that cycle, posting the requested verified credits, and adding those credits to its related register in one guarded transaction. Completion can occur only after separate execution enablement and a worker are running.",
+        "refused": [
+          "Refuse when any required fact is missing, unknown, changed, or does not meet the settlement policy.",
+          "Refuse when either private collection exceeds 16 rows; do not disclose the private cause."
+        ],
+        "human_review": "Valid requests of 31\u2013100 credits, or otherwise eligible requests that exceed an automatic-approval cap, require one authorized human approval. Invalid requests remain refused.",
+        "examples": [
+          {
+            "kind": "eligible",
+            "scenario": "A draft unrestricted cycle has an open related register, validated samples total 30 credits, no open blocking note, and the automatic caps remain available.",
+            "result": "The valid request may be automatically approved and proposed for guarded completion."
+          },
+          {
+            "kind": "human_review",
+            "scenario": "All validity checks pass and validated samples total 31 credits.",
+            "result": "The request is valid but requires one authorized human approval."
+          },
+          {
+            "kind": "ineligible",
+            "scenario": "A cycle has an open blocking exception note or validated samples do not equal the requested credits.",
+            "result": "The request is refused without exposing private verification details."
+          }
+        ]
+      }
+    },
+    "approval": {
+      "class_name": "energy_ops.finalize_settlement_cycle.approval",
+      "mode": "policy",
+      "auto_approve_when": {
+        "kind": "compare",
+        "operator": "lte",
+        "left": {
+          "kind": "input",
+          "name": "credits_to_post"
+        },
+        "right": {
+          "kind": "literal",
+          "value": 30,
+          "value_type": {
+            "kind": "integer"
+          }
+        }
+      },
+      "required_role": "authorized_human_reviewer",
+      "required_approvals": 1,
+      "shared_limits": [
+        {
+          "id": "automatic_finalizations_deployment_86400s",
+          "kind": "count",
+          "scope": "boundary",
+          "maximum": 6,
+          "window_seconds": 86400
+        },
+        {
+          "id": "automatic_finalizations_cooperative_86400s",
+          "kind": "count",
+          "scope": "tenant",
+          "maximum": 4,
+          "window_seconds": 86400
+        }
+      ]
+    }
+  }
+}

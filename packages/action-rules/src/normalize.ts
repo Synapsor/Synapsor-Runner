@@ -14,6 +14,7 @@ import type {
   CompiledActionRuleV1,
 } from "./types.js";
 import { ActionRuleError } from "./errors.js";
+import { ACTION_RULE_MATH_OPERATIONS, ACTION_RULE_MATH_MIN_INPUTS, ACTION_RULE_MATH_MAX_INPUTS } from "./expression-contract.js";
 import { validateActionRuleInputDefinitions } from "./inputs.js";
 import { actionRuleRelationshipPairs } from "./relationships.js";
 
@@ -175,8 +176,8 @@ function normalizeScalarExpression(
       return normalized;
     case "math":
       onlyKeys(raw, SCALAR_EXPRESSION_KEYS.math, path);
-      oneOf(normalized.operation, ["add", "subtract", "min", "max"] as const, `${path}.operation`);
-      normalized.inputs = array(normalized.inputs, `${path}.inputs`, 2, 16)
+      oneOf(normalized.operation, ACTION_RULE_MATH_OPERATIONS, `${path}.operation`);
+      normalized.inputs = array(normalized.inputs, `${path}.inputs`, ACTION_RULE_MATH_MIN_INPUTS, ACTION_RULE_MATH_MAX_INPUTS)
         .map((input, index) => normalizeScalarExpression(
           input as ActionRuleScalarExpressionV1,
           `${path}.inputs[${index}]`,
@@ -216,7 +217,9 @@ function normalizeScalarExpression(
       normalized.timestamp = normalizeScalarExpression(normalized.timestamp, `${path}.timestamp`, depth + 1);
       return normalized;
     default:
-      invalid(`${path}.kind`, `Action Rule scalar expression kind ${String(raw.kind)} is unsupported.`);
+      // Do not echo an arbitrary submitted discriminator (it may contain private
+      // input), convert aliases, or infer the intended operation or operands.
+      throw new ActionRuleError("ACTION_RULE_EXPRESSION_KIND_INVALID", "The generated scalar expression has an invalid node kind. Use an advertised scalar expression; arithmetic operations belong inside kind=math, not in kind itself.", `${path}.kind`);
   }
 }
 
