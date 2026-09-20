@@ -1,0 +1,201 @@
+{
+  "at": "2026-09-20T05:28:06.403402+00:00",
+  "cases": {
+    "w1": {
+      "all_504_baseline_rows_preserved_during_setup": true,
+      "runtime_configs_unchanged_during_trials": true,
+      "changed_control_tables": {
+        "approvals": {
+          "before_rows": 0,
+          "after_rows": 1
+        },
+        "attention_events": {
+          "before_rows": 0,
+          "after_rows": 7
+        },
+        "evidence_bundles": {
+          "before_rows": 1,
+          "after_rows": 3
+        },
+        "evidence_items": {
+          "before_rows": 0,
+          "after_rows": 1
+        },
+        "explore_budget_reservations": {
+          "before_rows": 1,
+          "after_rows": 2
+        },
+        "idempotency_receipts": {
+          "before_rows": 0,
+          "after_rows": 1
+        },
+        "observed_subject_references": {
+          "before_rows": 29,
+          "after_rows": 58
+        },
+        "proposal_events": {
+          "before_rows": 0,
+          "after_rows": 10
+        },
+        "proposals": {
+          "before_rows": 0,
+          "after_rows": 1
+        },
+        "query_audit": {
+          "before_rows": 1,
+          "after_rows": 3
+        },
+        "runner_state": {
+          "before_rows": 0,
+          "after_rows": 3
+        },
+        "sqlite_sequence": {
+          "before_rows": 1,
+          "after_rows": 5
+        },
+        "worker_queue": {
+          "before_rows": 0,
+          "after_rows": 1
+        },
+        "writeback_jobs": {
+          "before_rows": 0,
+          "after_rows": 1
+        },
+        "writeback_receipts": {
+          "before_rows": 0,
+          "after_rows": 1
+        }
+      },
+      "final_counts": {
+        "proposals": 1,
+        "approvals": 1,
+        "worker_queue": 1,
+        "writeback_jobs": 1,
+        "writeback_receipts": 1
+      },
+      "status_inspections": {
+        "tables": 42,
+        "all_work_tables_unchanged": true,
+        "source_rows": 504,
+        "source_and_receipts_unchanged": true,
+        "fresh_process_per_inspection": true
+      },
+      "own_read_positive": {
+        "status": "completed",
+        "provider_calls": 0,
+        "calls": 3
+      },
+      "worker_outcome": {
+        "at": "2026-09-20T05:23:20.843051+00:00",
+        "case": "w1",
+        "result": "passed",
+        "kind": "one exact two-target source effect, both version advances, source_db idempotency/semantic record and separate canonical control receipt",
+        "source_rows_compared": 504,
+        "queue_status": "completed",
+        "attempts": 1,
+        "last_error_code": null,
+        "stored_receipt_bytes_sha256": "8a3c43520bd70a440892c7e4c346fcfe83b5e8e8f921edc9888066fad334aadc",
+        "approval_retained": true,
+        "atomicity_limit": "Success/readback only; no new crash or commit-uncertainty qualification."
+      }
+    },
+    "w2": {
+      "all_504_baseline_rows_preserved_during_setup": true,
+      "runtime_configs_unchanged_during_trials": true,
+      "changed_control_tables": {
+        "approvals": {
+          "before_rows": 0,
+          "after_rows": 1
+        },
+        "attention_events": {
+          "before_rows": 0,
+          "after_rows": 6
+        },
+        "evidence_bundles": {
+          "before_rows": 1,
+          "after_rows": 3
+        },
+        "evidence_items": {
+          "before_rows": 0,
+          "after_rows": 1
+        },
+        "explore_budget_reservations": {
+          "before_rows": 1,
+          "after_rows": 2
+        },
+        "idempotency_receipts": {
+          "before_rows": 0,
+          "after_rows": 1
+        },
+        "observed_subject_references": {
+          "before_rows": 29,
+          "after_rows": 58
+        },
+        "proposal_events": {
+          "before_rows": 0,
+          "after_rows": 10
+        },
+        "proposals": {
+          "before_rows": 0,
+          "after_rows": 1
+        },
+        "query_audit": {
+          "before_rows": 1,
+          "after_rows": 3
+        },
+        "runner_state": {
+          "before_rows": 0,
+          "after_rows": 3
+        },
+        "sqlite_sequence": {
+          "before_rows": 1,
+          "after_rows": 5
+        },
+        "worker_queue": {
+          "before_rows": 0,
+          "after_rows": 1
+        },
+        "writeback_jobs": {
+          "before_rows": 0,
+          "after_rows": 1
+        },
+        "writeback_receipts": {
+          "before_rows": 0,
+          "after_rows": 1
+        }
+      },
+      "final_counts": {
+        "proposals": 1,
+        "approvals": 1,
+        "worker_queue": 1,
+        "writeback_jobs": 1,
+        "writeback_receipts": 1
+      },
+      "status_inspections": {
+        "tables": 42,
+        "all_work_tables_unchanged": true,
+        "source_rows": 504,
+        "source_and_receipts_unchanged": true,
+        "fresh_process_per_inspection": true
+      },
+      "own_read_positive": {
+        "status": "completed",
+        "provider_calls": 0,
+        "calls": 3
+      },
+      "worker_outcome": {
+        "at": "2026-09-20T05:24:15.298803+00:00",
+        "case": "w2",
+        "result": "passed",
+        "kind": "stale refusal after separately recorded owner version drift; no Runner business effect",
+        "source_rows_compared": 504,
+        "queue_status": "blocked",
+        "attempts": 1,
+        "last_error_code": "SEMANTIC_AUTHORITY_STALE",
+        "stored_receipt_bytes_sha256": "b4028beefe98cea3c14993568528604547e2da46b267b0abef48835c308d94b3",
+        "approval_retained": true,
+        "atomicity_limit": "Success/readback only; no new crash or commit-uncertainty qualification."
+      }
+    }
+  }
+}

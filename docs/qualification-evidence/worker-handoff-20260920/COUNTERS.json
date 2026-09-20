@@ -1,0 +1,9 @@
+{
+  "provider_calls": 0,
+  "final_business_requests": 2,
+  "final_worker_invocations": 3,
+  "effect_transactions": 1,
+  "stale_refusals": 1,
+  "final_started_at": "2026-09-20T05:21:55.996Z",
+  "final_deadline": "2026-09-20T06:21:55.996Z"
+}

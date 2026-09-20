@@ -1,0 +1,38 @@
+{
+  "frozen_at": "2026-09-20T05:08:43.744Z",
+  "purpose": "O2 shared worker handoff and local preflight; P1 truthful blocked-work reporting; bounded fresh known software W1/W2/W3",
+  "cases": [
+    "W1 missing launch input preserves eligible queue, then same-request execution",
+    "W2 independent stale-fact refusal and status restart",
+    "W3 synthetic reporting and missing-prerequisite controls"
+  ],
+  "product_commit": "3a20a24f992e9f0828d2b457ae55daabbb3d512c",
+  "test_commit": "3a20a24f992e9f0828d2b457ae55daabbb3d512c",
+  "report_commit": "recorded separately after verification",
+  "source_commit": "904b1e5782828f0448026e78099ef7fb27c989b0",
+  "source_status": "?? .claude/",
+  "unpackaged_unrelated_directory": ".claude/ (preserved, no contents read)",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/worker-handoff-63aa664-20260920/frozen/installed",
+  "installed_tree_sha256": "33bf5f661c93cbd5a93677ff59b66dd558053a7ed62b054b9544769d84706c5b",
+  "node": {
+    "version": "v22.22.2",
+    "executable": "/usr/bin/node",
+    "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+  },
+  "runner_version": "1.8.0",
+  "spec_version": "1.11.0",
+  "package_lock_sha256": "c0d60fef0b25446f4c049296358dbeb5985b9c1f835d2b8e8ec5ada44fad48de",
+  "tarballs": [
+    {
+      "name": "synapsor-runner-1.8.0.tgz",
+      "sha256": "e75829d4a8803ef43adf571c2595aa04b5ed063d4710af0891a73e822e65c5e2"
+    },
+    {
+      "name": "synapsor-spec-1.11.0.tgz",
+      "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+    }
+  ],
+  "entries": 7569,
+  "manifest_sha256": "7eabf4a1202aff9d03c84d18e77427ff86352684b195618895820a6d08c97e00",
+  "archive_sha256": "fa75c93ab61df2a4ed3e163a955f6b91db1978c970092c1eaf9adc21a30df3a1"
+}

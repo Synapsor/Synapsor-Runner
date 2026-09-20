@@ -1,0 +1,10 @@
+{
+  "at": "2026-09-20T05:30:06.986166+00:00",
+  "container_id": "8e19127bd5e8c82629a1078192d5bb20c35c0c894e71323d28dad88c9a2883ef",
+  "exact_label_verified": true,
+  "saved_before_removal": "owned-final-state/manifest.json",
+  "container_removed": true,
+  "test_and_public_processes": "none remained at observed process inventory",
+  "projects_sealed_read_only": true,
+  "historical_queues_untouched": true
+}

@@ -28,7 +28,7 @@ for t,pk in [('release_slots','slot_id'),('build_candidates','candidate_id'),('b
 receipt_tables=sql("select schemaname||'.'||tablename from pg_tables where tablename='synapsor_writeback_receipts' order by 1").splitlines()
 manifest['source_receipts']={}
 for table in receipt_tables:
- assert re.fullmatch('[a-z_]+\\.[a-z_]+',table)
+ assert re.fullmatch(r'[a-z_]+\.[a-z_]+',table)
  rows=json.loads(sql("select coalesce(json_agg(t),'[]') from (select * from "+table+') t'))
  rows.sort(key=lambda v:json.dumps(v,sort_keys=True));manifest['source_receipts'][table]={'rows':len(rows),'sha256':save('source-receipts.json',rows)}
 save('manifest.json',manifest);print(json.dumps({'case':case,'label':label,'tables':len(manifest['tables']),'business_rows':sum(v['rows'] for v in manifest['source'].values()),'source_receipt_rows':sum(v['rows'] for v in manifest['source_receipts'].values())}))

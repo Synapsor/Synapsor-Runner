@@ -1,0 +1,29 @@
+{
+  "artifact": "33bf5f661c93cbd5a93677ff59b66dd558053a7ed62b054b9544769d84706c5b",
+  "independent_acceptance": "PENDING for this candidate",
+  "O2": "IMPLEMENTER_PASS",
+  "selected_semantic_local_preflight": "IMPLEMENTER_PASS",
+  "P1_reporting": "IMPLEMENTER_PASS",
+  "P1_terminal_blocked_recovery": "NOT_IMPLEMENTED",
+  "W1": "PASS",
+  "W2": "PASS",
+  "W3": "PASS_SYNTHETIC_STATUS_PLUS_INSTALLED_W2_INSPECTION",
+  "full_stable03": {
+    "exit": 0,
+    "passed": 6621,
+    "skipped": 470
+  },
+  "types": {
+    "exit": 0
+  },
+  "offline_checks": {
+    "passed": 10,
+    "failed": 0
+  },
+  "explicit_real_postgres_control": "PASS_SEPARATE_HOST_GATES",
+  "installed_topology": "one local host; PostgreSQL business source; SQLite control; sequential finite workers",
+  "M4_independent_E2_E3": "NOT_ESTABLISHED",
+  "original_Stage_B": "ATTEMPTED_NOT_PASSED",
+  "next_decision": "RECOVERY-DECISION.md",
+  "provider_calls": 0
+}

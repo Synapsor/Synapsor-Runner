@@ -1,0 +1,44 @@
+{
+  "at": "2026-09-20T05:29:35.624795+00:00",
+  "originals_and_candidates": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/software-model-free-20260915/artifacts/authored.json",
+      "sha256": "e86cc42d45be92c5dda681d14a51d7534434b6a542b6ea241ba26d816792a924",
+      "unchanged": true
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/software-model-free-20260915/artifacts/project2-after-runneronly-fix.tgz",
+      "sha256": "1726d9938ecab6ce4c91368a82476a56e967d0665e19d3731a8ec19ea9585d2c",
+      "unchanged": true
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/m6-independent-review-20260919/REVIEW.md",
+      "sha256": "ca04a937c724f3dddd2497d466c6a285dc0e195957104ac01899d7c70e98e2db",
+      "unchanged": true
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/m6-independent-review-20260919/review-bundle.tar.gz",
+      "sha256": "be9859ed05441e03a3c931fc497e58ff11bbec66b420fbd24315d3a7187c77e0",
+      "unchanged": true
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-default-feecc2b-20260919/frozen/installed-artifact-manifest.json",
+      "sha256": "a152df823ee0c2823f832e3278abcc81843ec0ae064de99019dc46108692b634",
+      "unchanged": true
+    },
+    {
+      "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/worker-handoff-63aa664-20260920/frozen/installed-artifact-manifest.json",
+      "tree_sha256": "33bf5f661c93cbd5a93677ff59b66dd558053a7ed62b054b9544769d84706c5b",
+      "entries": 7569,
+      "files_modes_symlinks_both_directions_unchanged": true
+    },
+    {
+      "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-default-feecc2b-20260919/frozen/installed-artifact-manifest.json",
+      "tree_sha256": "9ae3a71d4dd5aeac4121b24a6ef6f5ac7b799023cf10242aac79252530fca3ea",
+      "entries": 7569,
+      "files_modes_symlinks_both_directions_unchanged": true
+    }
+  ],
+  "historical_queues_executed": false,
+  "original_stores_opened_writable": false
+}

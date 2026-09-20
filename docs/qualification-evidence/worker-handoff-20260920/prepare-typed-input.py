@@ -26,7 +26,7 @@ d['read']['resources']=[
   'keep_out_fields':['tenant_id','principal_id'],
   'filterable_fields':['slot_ref','slot_state'],'sortable_fields':['slot_ref','slot_state'],
   'groupable_fields':['slot_state'],'aggregate_measures':[],'count_distinct_fields':[]},
- {'resource_id':'release_ops.build_checks','include':True,'relationship_only':True,
+ {'resource_id':'release_ops.build_checks','include':True,
   'withhold_from_model_fields':['check_id','candidate_id','check_kind','check_state','elapsed_seconds','version'],
   'private_model_fields':['check_id','candidate_id','check_kind','check_state','elapsed_seconds','version'],
   'keep_out_fields':['tenant_id','principal_id','private_check_note'],

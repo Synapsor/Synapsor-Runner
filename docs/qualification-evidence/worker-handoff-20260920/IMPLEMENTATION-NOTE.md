@@ -82,3 +82,5 @@ them afterwards. Its original before-claim revocation schedule and no-claim/no-
 effect assertions remain strict. No product guard was changed for these failures.
 These are demonstrated fixture/output-contract corrections, not a green full
 suite. Focused corrected cases and a new complete stable run are still required.
+
+Closure: the corrected focused files passed, then full-stable03 completed exit 0 with 6621 passed / 470 skipped on the unchanged final source digest. Explicit SQLite and real PostgreSQL control gates, types and all ten offline checks passed separately. Installed W1/W2 then exercised the same frozen bytes; see FINAL-REPORT.md for exact outcomes and limitations.

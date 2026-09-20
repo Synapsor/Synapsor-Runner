@@ -5,7 +5,7 @@ const E=path.dirname(fileURLToPath(import.meta.url)),R='/home/sandesh-tiwari/Des
 const [name,label,file]=process.argv.slice(2);assert(['w1','w2'].includes(name)&&/^[a-z0-9-]+$/.test(label));
 const D=path.join(R,'operational',name,'mcp-'+label);fs.mkdirSync(D);const project=path.join(R,'operational',name,'project');
 const entry=JSON.parse(fs.readFileSync(path.join(project,'.mcp.json'))).mcpServers.synapsor;
-assert.equal(entry.args[0],path.join(R,'frozen/installed/node_modules/@synapsor/runner/dist/runner.mjs'));assert(entry.args.includes('--local-test-runtime'));assert(entry.args.includes(project));
+assert.equal(entry.args[0],path.join(R,'frozen/installed/node_modules/@synapsor/runner/dist/runner.mjs'));assert(entry.args.includes('--local-test-runtime'));assert.equal(path.resolve(project,entry.args[entry.args.indexOf('--project-root')+1]),project);
 const log=(type,data)=>fs.appendFileSync(path.join(D,'protocol.jsonl'),JSON.stringify({at:new Date().toISOString(),type,...data})+'\n');
 const child=spawn('python3',[path.join(E,'public-launch.py'),name,...entry.args.slice(1)],{stdio:['pipe','pipe','pipe'],env:{PATH:process.env.PATH}});let seq=0,buffer='',waiters=new Map();
 child.stderr.on('data',x=>fs.appendFileSync(path.join(D,'stderr.log'),x));child.stdout.on('data',x=>{buffer+=x;let i;while((i=buffer.indexOf('\n'))>=0){const s=buffer.slice(0,i);buffer=buffer.slice(i+1);let m;try{m=JSON.parse(s);}catch{log('nonprotocol',{text:s});continue;}log('receive',{message:m});const w=waiters.get(m.id);if(w){clearTimeout(w.timer);waiters.delete(m.id);m.error?w.reject(Error(JSON.stringify(m.error))):w.resolve(m.result);}}});
