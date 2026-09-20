@@ -1,0 +1,7 @@
+[
+  {
+    "observed": "Close only this proven-no-effect item? Default: cancel. Type yes to continue:",
+    "send": "\u0004",
+    "reason": "Verify eof at exact confirmation makes no closure; original failure, queue and source remain unchanged."
+  }
+]

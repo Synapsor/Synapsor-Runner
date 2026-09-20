@@ -1,0 +1,83 @@
+{
+  "artifact_tree": "fb6d6d923eb842b5bd2f17decb4b625a4b682b483d3a47aa510f96f8af6710a5",
+  "topology": "owned local PostgreSQL business source / SQLite control; sequential finite worker processes; generated reviewed local MCP client",
+  "R0": {
+    "verdict": "passed",
+    "missing_writer_check_exit": 2,
+    "missing_writer_run_exit": 1,
+    "all_42_tables_and_504_rows_unchanged": true,
+    "same_request_later_applied": true,
+    "attempts": 1,
+    "two_target_effect_and_version_advances": true,
+    "source_and_canonical_control_receipts_verified": true,
+    "applied_close_preview_and_confirm_exit": 2,
+    "applied_close_no_change": true
+  },
+  "R1": {
+    "verdict": "passed",
+    "owner_change": "one selected candidate version only",
+    "worker_exit": 0,
+    "durable_result": "failed proposal and canonical receipt; blocked queue, attempt1; SEMANTIC_AUTHORITY_STALE",
+    "source_effect": false,
+    "source_receipts": 0,
+    "producer": "synapsor.postgres.source_db.rollback.v1",
+    "operator_apply_roles_recorded": true
+  },
+  "R2": {
+    "lifecycle_verdict": "passed",
+    "preview": "available with exact evidence digest and recovery_operator role",
+    "cancellation_controls": [
+      "default empty confirmation",
+      "EOF",
+      "Ctrl-C"
+    ],
+    "cancellations_all_state_unchanged": true,
+    "signed_closure": "one closed_no_effect event; worker discarded, proposal remains failed",
+    "closure_changed_tables": [
+      "proposal_events",
+      "sqlite_sequence",
+      "worker_queue"
+    ],
+    "repeat_and_restart": "same event, receipt and approval; no retry scheduled",
+    "fresh_request": "own new reference, proposal, approval, job and idempotency identity",
+    "current_expected_version": 2,
+    "failed_expected_version": 1,
+    "old_reference_replay": "already_recorded/failed; no new or changed work/approval/reference records",
+    "replay_presentation": "separate excluded M3 wording defect: failed replay incorrectly mentions pending human review; exact capture retained",
+    "new_worker_effect": "two exact business updates and version advances; one source receipt plus separate applied control receipt",
+    "old_attempts_after_new_worker": 1,
+    "old_approval_retained": true,
+    "automatic_approvals_before_close_after_close_after_fresh": [
+      1,
+      1,
+      2
+    ],
+    "original_failed_receipt_and_new_applied_receipt": [
+      {
+        "proposal_id": "wrp_rule_f55f43b904213e34ea620db4fdd6da29",
+        "status": "failed",
+        "canonical_bytes_sha256": "a41d58e41f3f1cab8c62a21feb6ddb91e83035922089aa6c07c8219be21b01ae"
+      },
+      {
+        "proposal_id": "wrp_rule_14732c7b0d34e6c6b5f591d36c7a297e",
+        "status": "applied",
+        "canonical_bytes_sha256": "531bfc632b5652783e6592c1074c8685449c74cf708a355c98566ec0acda3d13"
+      }
+    ]
+  },
+  "counters": {
+    "provider_calls": 0,
+    "request_change": 4,
+    "finite_workers": 4,
+    "business_effect_transactions": 2,
+    "owner_version_changes": 1,
+    "closure_commands": 10,
+    "final_started_at": "2026-09-20T08:44:25.827240+00:00",
+    "final_deadline": "2026-09-20T10:14:25.827240+00:00",
+    "stale_refusals": 1,
+    "final_completed_at": "2026-09-20T08:53:04.954821+00:00",
+    "elapsed_seconds": 519.127581
+  },
+  "independent_scope": "Restoration prerequisite PASS; independent operational acceptance pending",
+  "stage_b": "ATTEMPTED / NOT PASSED"
+}

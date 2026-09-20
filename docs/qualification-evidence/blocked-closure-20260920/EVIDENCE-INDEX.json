@@ -1,0 +1,431 @@
+{
+  "created_at": "2026-09-20T08:58:26.819158+00:00",
+  "raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920",
+  "report_root": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/blocked-closure-20260920",
+  "private_archive": "Contains synthetic rows, reviewed local identity and test signing-key material; local verifier only, not Git. Database/provider credentials not included.",
+  "files": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/frozen/installed-artifact-manifest.json",
+      "bytes": 1622781,
+      "sha256": "770a356f7af23a8a010b4129e2a75ed7a07040b637aab9ee9cc2eff4bb6bcca0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/frozen/installed-artifact.tar.gz",
+      "bytes": 17871867,
+      "sha256": "1d296b65f1800c4c25bbdfe7e177bdb5a1be44563cabc08194698f9687b648de"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/frozen/installed-dependency-tree.json",
+      "bytes": 42988,
+      "sha256": "c9e4a0fbf56805b7fe00287c9c6d86307039731fb832c908a6790996f3669cb1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/frozen/product-revision.json",
+      "bytes": 320,
+      "sha256": "63b4cc6784016b6cf3d278a5f34fc96e1daa91d8b9063678daa2193a98cedda4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/sealed-starts/manifest.json",
+      "bytes": 98371,
+      "sha256": "479a3117daf3fe0e64cc6a6b436babc7a51f14c68265842f2988a2c0da7e7744"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/owned-final-state/manifest.json",
+      "bytes": 2566,
+      "sha256": "94371aa21b60116471054a51afa56f16fb6f73d7d0ad1e8052b694a4050543fc"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/preservation-final.json",
+      "bytes": 2223,
+      "sha256": "2f4d845e84bc077e4c5382f63f490d5d663c3898ef55d2d353809e9b6f6e8fd8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/cleanup.json",
+      "bytes": 691,
+      "sha256": "e1a2754efb6ca48493416d649587c2497e059283ffc1eb91f4a3e0b3f4718f4e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/restoration-prerequisite.json",
+      "bytes": 607,
+      "sha256": "9362f073e44a02b14238a34a1886d294301d23ffa73f781b493543caf005978a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/operational-result.json",
+      "bytes": 3395,
+      "sha256": "b4060243684e52eed4d1d4f67078698b6f1087488e8d4b71620a5b6fe1e4940a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/counters.json",
+      "bytes": 394,
+      "sha256": "951188bd6edade54498c9a87f029b79eed927f9b514984a6fa3f37f6cac4bed0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/private-evidence-bundle.tar.gz",
+      "bytes": 5312998,
+      "sha256": "e31300653f447d6d25fc4933157786920faacacc977ad37fc2847be7af9d5e33"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/baseline-lifecycle-exit.json",
+      "bytes": 497,
+      "sha256": "1b51dcdde747899ae529a2285cd2410939ad1777f92b5956c4e0207ccad70b60"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/baseline-lifecycle02-exit.json",
+      "bytes": 498,
+      "sha256": "83cc496dc3d5e37a083f5e4e3d22afcba961e5807bf86bfc42d035ba9df57c4c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/baseline-lifecycle03-exit.json",
+      "bytes": 497,
+      "sha256": "a4fdd2c0c873611f1a7fe229f277e08e495104e383d90707acb1922c4155759f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-closure02-exit.json",
+      "bytes": 497,
+      "sha256": "636e08835a03b28763d07a23763905058057f377a56af3b40b5867904a7b8699"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-closure03-exit.json",
+      "bytes": 550,
+      "sha256": "dd29eee8116ab2381542a07553f775015bb3519384f0d54540bda8430f057a5c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-closure04-exit.json",
+      "bytes": 550,
+      "sha256": "d1b3f639f04ca4429d61cdf5db295d2b846f145dd23fdcd5da676db4c718acd5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-combined01-exit.json",
+      "bytes": 773,
+      "sha256": "cad263d346bcd6f87b0b10082c922f8bb3e5cb81a843ae341779b5dcf695af85"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-first-exit.json",
+      "bytes": 549,
+      "sha256": "87067db5ad545f9564f411aeb3ead3495d77bbdd11f03ba9a46bf7151c009df3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-prestable03-exit.json",
+      "bytes": 748,
+      "sha256": "90f7dea5f9eb1a873a89ad3dfc79d9cb88b3a6014b4aa5384a939d122be20d19"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-runtime01-exit.json",
+      "bytes": 545,
+      "sha256": "4f13eeb55ec92687b3f1c1b6d75413eae75d6e4b8f3d17ab919764c522241874"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/postgres-closure01-exit.json",
+      "bytes": 582,
+      "sha256": "5bc96bbe2deca12b6aef1f6768f4c808c26c6fda76fb1d1ca2a63ee76485cd61"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/postgres-combined02-exit.json",
+      "bytes": 706,
+      "sha256": "5f39f1897c9948ed415226a770ab0daf06859533e2a910eb70b127308b8c79e2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/postgres-final-exit.json",
+      "bytes": 763,
+      "sha256": "8cd3c770a252a686b25edfa4f07ae7db12fda576f9efcc47c90cdf6c22901eb5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/postgres-producer01-exit.json",
+      "bytes": 585,
+      "sha256": "33d639911c4aab7f17ac042817e7cf4daf6538d1535ce23b33a5ffca89c4a859"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/postgres-producer02-exit.json",
+      "bytes": 584,
+      "sha256": "11a58a972e0160fd7156b966f9d3c630cdff33f96d1af53a79ad126caa8838df"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/preview-refusal-after-exit.json",
+      "bytes": 465,
+      "sha256": "171ee4e113ddadeafbaabbbc9ade109bbf845577026730745fe06995aa3e7a72"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/preview-refusal-before-exit.json",
+      "bytes": 466,
+      "sha256": "37990295c891c6c13e363d9e5b47fee9a4493370ad06057bc3d84d36e28876a0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/sqlite-contention-final-exit.json",
+      "bytes": 512,
+      "sha256": "7d956f8a2a47f273ea01ca8202f069c0b84b226cdaf7e9628b3bf4f08fe7b941"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/stable-full01-exit.json",
+      "bytes": 499,
+      "sha256": "648ccbe4b7202e6831f6aebb9f92d197ff359d6d14e4473aac079d721fba70ca"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/stable-full02-exit.json",
+      "bytes": 498,
+      "sha256": "a7590e8b1d3d162dbab4a4c00b0877ce037b25f04eed0dccf3af07cb7bd0bd82"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/stable-full03-exit.json",
+      "bytes": 498,
+      "sha256": "b724af5d76cc28781d5c9e9ab3ca45fb9667ad2a182ec2ab415072b4bcde8de4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev01-exit.json",
+      "bytes": 378,
+      "sha256": "530c3933ed8b5d2144ec67b38e55aede84c51c9d7c7a923d07a34ab16152985d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev02-exit.json",
+      "bytes": 379,
+      "sha256": "0a211010fc68bd8a26a9f8d877e07c65fe430aeb6acfb61408202ce4234b63b8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev03-exit.json",
+      "bytes": 380,
+      "sha256": "6696988416328b1e056fc2ccce6a638686a4a6ff8ac7bf12d77d263b0df0fbd9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev04-exit.json",
+      "bytes": 379,
+      "sha256": "db078df3498b3de69f75b9da4f92f13d260541ba6d1dde914eb6dc20310cfd87"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev05-exit.json",
+      "bytes": 379,
+      "sha256": "7b8098e879e4d7f1b41ad58f294807cc31c153fa584850100fef0762e0c0957b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev06-exit.json",
+      "bytes": 380,
+      "sha256": "bd57d68d3c8f517c998fd36bb1261c1db832243fb36f0476634d54da034e045a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev07-exit.json",
+      "bytes": 379,
+      "sha256": "1c56382d19afe0d7fc3a9ac6ca06f2266914b6d2bf1ec78ae869264c549e04a4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev08-exit.json",
+      "bytes": 378,
+      "sha256": "a68bc9fff2e3b7f104f913938e6757454c066aed32a5485702eca8b5e76fab5b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-final-exit.json",
+      "bytes": 380,
+      "sha256": "ced72662c00cc25fd385d1a5a26f92c1f1d12c2f9c7fc76e3aa6192acf64f677"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-prestable-exit.json",
+      "bytes": 378,
+      "sha256": "73540c99f457f17b3616abc22577a9d208f6e8a3b0e3118576e4c67fccb64989"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-prestable02-exit.json",
+      "bytes": 380,
+      "sha256": "c8f0c767b27b0da54bf22b78b58be13ac0f4ffb1fc5ae0979cbb7a50660e1123"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-prestable03-exit.json",
+      "bytes": 379,
+      "sha256": "a0286078523b3b456019e4f57e6627f526772b6053b7d63695c481ad2c66b99d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/baseline-lifecycle.log",
+      "bytes": 1552,
+      "sha256": "3fc59a966b50e74f50e05d89b380ce044c4bb89914d5692febdd079937278e7a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/baseline-lifecycle02.log",
+      "bytes": 1513,
+      "sha256": "40ae4e8acc4a99ce28a893325fc91fa08a05d6ae3e3b4b0372295bda3811bf93"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/baseline-lifecycle03.log",
+      "bytes": 315,
+      "sha256": "75cc5f2c95975a2ac34a073df3543a46d5ab6f039295c89628ccda42dfa5017e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-closure02.log",
+      "bytes": 12414,
+      "sha256": "0d0b920f71c5c2b1e1c2f4c71fc80b9299d39753917e70dadd06c464fc4ae216"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-closure03.log",
+      "bytes": 13727,
+      "sha256": "3f5d31839f36b9e1e899345828ded7781cc199ca4a10b1598cf4d997d26bcf6b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-closure04.log",
+      "bytes": 1080,
+      "sha256": "2fdc9896ec403fd5c27a3e9e921425dca4cd2073296bf5e543c57f0218db83fe"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-combined01.log",
+      "bytes": 9431,
+      "sha256": "e2a2be54b83bdebbff9cbcd026ac339f370614e6791075267262ae4420618198"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-first.log",
+      "bytes": 384,
+      "sha256": "0d725fd4c4b019b175e364d6ebae47abcfed55153bfbc41006f0a7220ac45d9d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-prestable03.log",
+      "bytes": 2024,
+      "sha256": "ae4667c849b2296450267f9f5015ff90738f2254b74a3b28fbc8e665e6664aec"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/focused-runtime01.log",
+      "bytes": 6996,
+      "sha256": "7b469f22ea1c718a1e9e3ab4f5c8aa0543fa419fbe289a990e0989b80c976c04"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/postgres-closure01.log",
+      "bytes": 1340,
+      "sha256": "13e38932649f7ec90c63add52e5465169490a5632b2d6d990a387669eb9569db"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/postgres-combined02.log",
+      "bytes": 2273,
+      "sha256": "e9eecfdb743a98e468037da7fd3e8946b93173a88f775190ef82a9f13d3aef69"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/postgres-final.log",
+      "bytes": 4985,
+      "sha256": "2a337508754457fe15d9a43e416a43a598d8039d15142d4543c145a92f9f19ac"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/postgres-producer01.log",
+      "bytes": 3849,
+      "sha256": "16ce2053e233721e240486b8974b21dbff47aaa69759b7bc9d90c09dc94377ad"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/postgres-producer02.log",
+      "bytes": 321,
+      "sha256": "846a89fe79fe40d089a03ce8671f777490b11a4a8453acbcf11ff239f4c5904e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/preview-refusal-after.log",
+      "bytes": 779,
+      "sha256": "aa72afaea6f1b92bc75f169ce38a73e1e93913956050e15c5a38747c1c7c8646"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/preview-refusal-before.log",
+      "bytes": 1489,
+      "sha256": "a8a657c2cfb2f77dd9c962d23e6fef4587bd18919b5ed7575519468657f732fd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/sqlite-contention-final.log",
+      "bytes": 1336,
+      "sha256": "6ec9a3b721750d3de00f0aa5a431b5ebfc68e4aa63adccbd87993ed36917cd29"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/stable-full01.log",
+      "bytes": 8605,
+      "sha256": "7f89ca2fadc36487048740adae4e9bfc48ead8364e5f13519f3113a6b76a4d52"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/stable-full02.log",
+      "bytes": 476924,
+      "sha256": "cc98cd349b42b9f3ab74ce3c1a930df7ff3f722d660a504d3fa6da5cf7e517e1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/stable-full03.log",
+      "bytes": 475339,
+      "sha256": "6fba655cfe0427ce1ed1edad72a827756407a904b917d6c23033a136ebc40257"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev01.log",
+      "bytes": 1770,
+      "sha256": "f971e879989fd738f4028b970120432253893b453c2ab6cddbb472e60123d5cf"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev02.log",
+      "bytes": 1909,
+      "sha256": "b36e68004e9e2649b35f2d6b848d3ac4826b956497dad31507e5fd2282663fa9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev03.log",
+      "bytes": 118,
+      "sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev04.log",
+      "bytes": 118,
+      "sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev05.log",
+      "bytes": 118,
+      "sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev06.log",
+      "bytes": 118,
+      "sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev07.log",
+      "bytes": 118,
+      "sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-dev08.log",
+      "bytes": 118,
+      "sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-final.log",
+      "bytes": 118,
+      "sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-prestable.log",
+      "bytes": 935,
+      "sha256": "a86e0d4746bf8656ef70375d45fc570190515ce7e93beb9b3fc6d4d27b5508e2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-prestable02.log",
+      "bytes": 118,
+      "sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/types-prestable03.log",
+      "bytes": 118,
+      "sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/operational/r1/old-reference-replay-result.json",
+      "bytes": 869,
+      "sha256": "1f656fd813a235eec8832ac7adfa50b52b5d0f15e1e9b0ccd7157b421ffd2845"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/operational/r1/mcp-old-reference-replay/results.json",
+      "bytes": 6561,
+      "sha256": "991944f298ef745e9724e790e53144d62a3b556ee9bce77bc7f835566b7c48a2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/operational/r1/closure-preview-visibility.json",
+      "bytes": 225,
+      "sha256": "a84f27af245e0382265a144e0e7f0768d4cee4bb4d86ef327bffa9603dda65c0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/operational/r0/worker-comparison.json",
+      "bytes": 5693,
+      "sha256": "7d0b1c0fb4afc754fdd3a846c2ced9d013fe4f2123efb2569cf0c83b81241d54"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/operational/r1/worker-comparison.json",
+      "bytes": 3745,
+      "sha256": "24fdd397ea13c21b7aac60ac2d028759abe4ece6d0354eaeb5a9b4aa6eb055bb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/blocked-closure-4b22b46-20260920/capture-credential-scan.json",
+      "bytes": 319,
+      "sha256": "81567df360df54e916b8a9b7bc79121b31645f59bc4a057e68b673e7dba56193"
+    }
+  ],
+  "operational_snapshots": "operational/{r0,r1}/state-* preserve all42 control tables, source rows/receipts; actual invocations and PTY/protocol traces alongside. Their complete copies are in the private bundle.",
+  "preserved_attempts": "GATES.json plus each raw log/exit; offline logs in offline-logs with own hash index.",
+  "stage_b": "ATTEMPTED / NOT PASSED"
+}

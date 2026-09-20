@@ -1,0 +1,11 @@
+{
+  "at": "2026-09-20T08:44:25.826878+00:00",
+  "reviewer_task": "Reviewer Session Worker",
+  "root": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/recovery-independent-final-review-20260920",
+  "files": {
+    "RESTORATION-REVIEW.md": "477bd3fc6c65f5642f3da899389e86666e94ebf23d8317144a7702851b11f5bc",
+    "RESTORATION-RESULT.json": "3d8d41dc6830dad1f30a9a5bb105a536241aed6fefbccfc50448dd8cf2650524",
+    "restoration-review-bundle.tar.gz": "5671bab709aa9f5a88f402062ca4cb534c090b7b058a1da149a3fe8f25e45d01"
+  },
+  "verdict": "restoration prerequisites PASS; operational acceptance pending"
+}
