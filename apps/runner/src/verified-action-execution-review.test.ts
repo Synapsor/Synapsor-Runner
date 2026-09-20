@@ -46,8 +46,10 @@ describe("guided execution recovery", () => {
         receipt_probe: "not_run_runner_ledger" },
       receipts: { authority: "runner_ledger" }, outcome: input.outcome, operation: "insert", target: "inventory.requests", writer_role: "bounded_writer",
       write_url_env: "SYNAPSOR_DATABASE_WRITE_URL", policy: { concurrency: 1, queue_limit: 10, max_attempts: 2,
+        mode: "supervised_worker", lease_seconds: 60, proposal_ttl_seconds: 600,
+        write_url_env: "SYNAPSOR_DATABASE_WRITE_URL", outcome: input.outcome, action_boundary_digest: `sha256:${"a".repeat(64)}`,
         rate_limit: { executions: 10, window_seconds: 60 } },
-    } as Awaited<ReturnType<typeof previewSemanticSupervisedExecution>>);
+    } satisfies Awaited<ReturnType<typeof previewSemanticSupervisedExecution>>);
     vi.mocked(enableSemanticSupervisedExecution).mockResolvedValue({ outcome: input.outcome, config_path: "/owned/project/runner.json" } as Awaited<ReturnType<typeof enableSemanticSupervisedExecution>>);
     return input;
   }
