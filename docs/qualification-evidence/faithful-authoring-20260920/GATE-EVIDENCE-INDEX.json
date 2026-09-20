@@ -1,0 +1,95 @@
+{
+  "at": "2026-09-20T19:31:55.127411+00:00",
+  "files": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/gates/postgres-assignment-exit.json",
+      "bytes": 885,
+      "sha256": "8405e2a5f93f7913f3532faf16e7b0271930d7804bdfe21aa23b4edea76245fb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/gates/postgres-assignment-source.json",
+      "bytes": 122586,
+      "sha256": "c3099a29d9d7be569d3a63cfe745d9b3160bbb99db4fcac1bc605ea80ae9726f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/gates/postgres-assignment.log",
+      "bytes": 1460,
+      "sha256": "11c145bc6ea6344311dd33c10fa35af429e3baae362dd7908465b4293188d7f2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/gates/postgres-atomic-preservation-exit.json",
+      "bytes": 667,
+      "sha256": "2ac363cee1ba3c81977684b3c8633f2e570126c041fa6dd5b742512d8e03d360"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/gates/postgres-atomic-preservation-source.json",
+      "bytes": 122586,
+      "sha256": "c3099a29d9d7be569d3a63cfe745d9b3160bbb99db4fcac1bc605ea80ae9726f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/gates/postgres-atomic-preservation.log",
+      "bytes": 492,
+      "sha256": "02b7d73c1012eaa49da43c2a000eff7a2357b77c608680d3529dc6a9426305c1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/gates/postgres-domain-exit.json",
+      "bytes": 715,
+      "sha256": "0550d1bdfeaee6b11692ab65a9383d8d6121d49e0899c5f05cfb20f0bfdda72b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/gates/postgres-domain-source.json",
+      "bytes": 122586,
+      "sha256": "c3099a29d9d7be569d3a63cfe745d9b3160bbb99db4fcac1bc605ea80ae9726f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/gates/postgres-domain.log",
+      "bytes": 1386,
+      "sha256": "2bdbeaf4354db9313cccf4c27c021a036a71726de0c2e1259ed44106b5788bc1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/gates/stable-full-exit.json",
+      "bytes": 570,
+      "sha256": "170b5b502ce75b64051915781c1348758a9757b72ac6f0e44037638821373266"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/gates/stable-full-source.json",
+      "bytes": 122586,
+      "sha256": "c3099a29d9d7be569d3a63cfe745d9b3160bbb99db4fcac1bc605ea80ae9726f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/gates/stable-full.log",
+      "bytes": 522496,
+      "sha256": "2903523dfe4efd0c57746599c6afb42913b60e8fce0f66b146f2e1d0db008289"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/gates/stable-types-exit.json",
+      "bytes": 453,
+      "sha256": "a6bc045d8d51f9e4c628ea55ad0943d976fd02358bfaf93d52ae87f24c3aa058"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/gates/stable-types-source.json",
+      "bytes": 122586,
+      "sha256": "c3099a29d9d7be569d3a63cfe745d9b3160bbb99db4fcac1bc605ea80ae9726f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/gates/stable-types.log",
+      "bytes": 118,
+      "sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/gates/terminal-isolated-exit.json",
+      "bytes": 634,
+      "sha256": "8a1f83ff5eccd839f04816d6a3b2ba813d3c0d45724963b41f591e345085b963"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/gates/terminal-isolated-source.json",
+      "bytes": 122586,
+      "sha256": "c3099a29d9d7be569d3a63cfe745d9b3160bbb99db4fcac1bc605ea80ae9726f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/gates/terminal-isolated.log",
+      "bytes": 1012,
+      "sha256": "bb59e699c94c951d0da805a8dcbc3744c95b1cfd8c62285cc248e37a4575269e"
+    }
+  ]
+}

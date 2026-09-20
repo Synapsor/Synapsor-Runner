@@ -1,0 +1,87 @@
+{
+  "assignment": "faithful-authoring-known-case-repair",
+  "started_at": "2026-09-20T18:37:17.367587+00:00",
+  "head": "f3890bbbbde26a3127995e14325abc96100674ba",
+  "ancestry": {
+    "d3dbf16fed394082ef2e6e4b7d0bc63ad6929cba": true,
+    "36a5e0e3034127f842a2053048a13ca9e05639a1": true,
+    "5bb7e6bd82386a53f49a6525a004fca9d5cdd06d": true
+  },
+  "implementation_deadline": "2026-09-20T21:37:17.367587+00:00",
+  "phase_windows_minutes": {
+    "implementation": 180,
+    "preparation": 60,
+    "stable_gates": 90,
+    "main_final_live": 120,
+    "consolidation": 45
+  },
+  "provider_caps": {
+    "development": {
+      "calls": 6,
+      "usd": 1
+    },
+    "main_final": {
+      "calls": 40,
+      "reserved_restart": 8,
+      "usd": 2
+    },
+    "tester_final": {
+      "calls": 50,
+      "reserved_restart": 8,
+      "usd": 2
+    },
+    "shared_usd": 5
+  },
+  "balance_basis": "User last reported10 USD; previous task reported0.5763875 total; no purchase. Current allocation caps5. Exact account billing not independently reconciled.",
+  "status": "gates complete; full suite failure preserved; freezing one B authoring candidate",
+  "scope": "A typed observation feedback; B canonical expression path after capability proof; disabled BUSINESS review only",
+  "checkpoint_at": "2026-09-20T19:35:48.710006+00:00",
+  "focused": {
+    "command": "vitest run faithful-current-description, faithful-expression, authoring-coverage-correction, action-rule-model, collection-expressions, action-rules; 2 workers",
+    "exit": 0,
+    "passed": 266,
+    "skipped": 1,
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/faithful-authoring-f3890bb-20260920/logs/focused-regressions-attempt1.log"
+  },
+  "A_public": "BLOCKED; no provider allocation; separate source-association decision required",
+  "provider_transports": 5,
+  "next_step": "Collect complete full-suite exit; run explicit PostgreSQL review/freshness and ten offline gates; freeze once; final B recovery and tester fresh B",
+  "preparation_window": {
+    "start": "2026-09-20T18:57:58.581976+00:00",
+    "deadline": "2026-09-20T19:57:58.581976+00:00"
+  },
+  "stable_window": {
+    "started_at": "2026-09-20T19:06:27.021364+00:00",
+    "deadline": "2026-09-20T20:36:27.021364+00:00",
+    "full_suite": "one full four-worker 20-second-test/20-second-hook run, as previously recorded; outer 3600 seconds"
+  },
+  "reported_spend_usd": 0.1023691,
+  "development": "STOPPED after successful arithmetic compilation; coverage reservation refused before send",
+  "stable_full": {
+    "exit": 1,
+    "passed": 6699,
+    "skipped": 476,
+    "failed": 1,
+    "source_unchanged": true
+  },
+  "backend": {
+    "domain": {
+      "exit": 0,
+      "passed": 5
+    },
+    "assignment": {
+      "exit": 0,
+      "passed": 6,
+      "unselected": 416
+    },
+    "atomic_source_postgres": {
+      "exit": 0,
+      "passed": 11
+    }
+  },
+  "offline": {
+    "checks": 10,
+    "exit": 0,
+    "source_unchanged": true
+  }
+}

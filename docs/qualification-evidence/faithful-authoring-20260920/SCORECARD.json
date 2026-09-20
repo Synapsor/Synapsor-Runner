@@ -1,0 +1,25 @@
+{
+  "at": "2026-09-20T19:15:32.084777+00:00",
+  "candidate": "NOT YET FROZEN",
+  "historical_stage_b": "ATTEMPTED / NOT PASSED",
+  "A": {
+    "typed_observation_feedback": "PASS deterministic local transports",
+    "exact_corrected_full_review": "BLOCKED: distinct source-requirement association rejects exact outcome-specific clause",
+    "public_recovery": "NOT RUN: substantive blocker reproduced without provider",
+    "business_review": "NOT ESTABLISHED",
+    "label_filter_concern": "unresolved; absence of filter alone is not total undiscoverability"
+  },
+  "B": {
+    "canonical_capability": "PASS separately labelled hand-built compiler/evaluator diagnostic",
+    "wrong_kind_feedback": "PASS local Responses/OpenRouter transports",
+    "development": "5 calls; canonical math compiled; BUSINESS not transmitted because reserve exceeded development cap",
+    "final_recovery": "NOT RUN",
+    "independent_fresh": "NOT RUN"
+  },
+  "gates": {
+    "full": "FAIL exit 1: unrelated 48-column terminal assertion; 6699 passed/476 skipped",
+    "types": "PASS exit 0",
+    "offline": "PASS: ten checks exit 0, source unchanged",
+    "live_postgres": "PASS: domain/freshness 5; saved-review 6 (416 unselected); source atomic preservation 11"
+  }
+}

@@ -1,0 +1,82 @@
+{
+  "classification": "development actual provider evidence, not frozen public completion",
+  "responses": [
+    {
+      "response": "FAITHFUL-DEV-B-1-response.txt",
+      "sha256": "b8a1c8f3dc6a028b6d59e50861a856cf6e564120bb894c7507c01c38e8e9827b",
+      "submitted_calls": [
+        {
+          "tool": "runner__submit_effect_envelope_draft",
+          "argument_sha256": "b20efdae5e312bcebb9644de34885ead1e51c5a33de4c54f9efe74f79cb01e31",
+          "math_nodes": 0,
+          "illegal_add_nodes": 0,
+          "illegal_arithmetic_nodes": 0,
+          "status": "draft"
+        },
+        {
+          "tool": "runner__submit_action_rule_draft",
+          "argument_sha256": "6be58b5fba3b2c727ae2d8c68a804a573635727d726c68c0d3d9c9d41801a7ac",
+          "math_nodes": 1,
+          "illegal_add_nodes": 0,
+          "illegal_arithmetic_nodes": 0,
+          "status": "draft"
+        }
+      ]
+    },
+    {
+      "response": "FAITHFUL-DEV-B-2-response.txt",
+      "sha256": "ef2a3543a951935c8dbd0a233a63031500a6f58a3788775ef364efc3df416c9a",
+      "submitted_calls": [
+        {
+          "tool": "runner__validate_action_draft",
+          "argument_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "math_nodes": 0,
+          "illegal_add_nodes": 0,
+          "illegal_arithmetic_nodes": 0,
+          "status": null
+        }
+      ]
+    },
+    {
+      "response": "FAITHFUL-DEV-B-3-response.txt",
+      "sha256": "ded18786aaca92db39cb6368746008061e59fdd4ec95f099cbe1777b4ea53dfd",
+      "submitted_calls": [
+        {
+          "tool": "runner__submit_action_rule_draft",
+          "argument_sha256": "b10ebf1d066caaf58372dfe22c238fcba911663d479bddd537f60408cfd5bee8",
+          "math_nodes": 1,
+          "illegal_add_nodes": 0,
+          "illegal_arithmetic_nodes": 0,
+          "status": "draft"
+        }
+      ]
+    },
+    {
+      "response": "FAITHFUL-DEV-B-4-response.txt",
+      "sha256": "59aad2c63e99827c1baddb519118674e36ebf3867eba5697ec96b0b3602ad576",
+      "submitted_calls": [
+        {
+          "tool": "runner__validate_action_draft",
+          "argument_sha256": "44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
+          "math_nodes": 0,
+          "illegal_add_nodes": 0,
+          "illegal_arithmetic_nodes": 0,
+          "status": null
+        }
+      ]
+    },
+    {
+      "response": "FAITHFUL-DEV-B-5-response.txt",
+      "sha256": "7fcc2f3a75dc7e003d9606cb5981d0e84f3b029b76a046976442588f2edb5f35",
+      "submitted_calls": []
+    }
+  ],
+  "transports": 5,
+  "cost_usd_reported": 0.1023691,
+  "coverage": "NOT SENT: conservative monetary reservation refused",
+  "source_rows_unchanged": 196,
+  "authority": "Read and Action disabled; no business proposal/approval/queue/receipt",
+  "owner_controls": "two maintained counters plus two explicit exact-outcome counting choices",
+  "model_syntax_coaching": false,
+  "provider_response_replacement": false
+}

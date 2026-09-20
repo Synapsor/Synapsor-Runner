@@ -1,0 +1,11 @@
+# Prompt/schema change basis
+
+Before: the exact B tool schema already contained the math discriminant and 2–16 scalar inputs. The language catalog listed arithmetic operation names. The three actual old submissions used illegal node kinds, and the diagnostic said only that the kind was unsupported. No valid math form reached validation. This is not evidence of a missing grammar.
+
+After: `ACTION_RULE_MATH_GUIDANCE` supplies the canonical outer form and both supported placements, operand-order/type/unit preservation, complete resubmission and execution limitations. It is shared by the conversational and focused instructions, the existing math schema variant, and the typed wrong-kind diagnostic. Operations and input limits are shared with normalization, with their previous values unchanged. There is no alias conversion or new grammar. Official pending status labels model narration separately when the generated expression is still invalid.
+
+The exact before/after text is preserved in `development/prompt-contract-before-after.diff` in the raw root. Its cause is the actual B transports 10/12/14 and validation 11/13/15, corroborated by the independent distinct-call index. The new unit-preservation instruction also reflects the captured invented `credits` unit and the canonical-form diagnostic exposing its incompatibility with the original dimensionless contract. No fixture names, outcome names, field names, owner rescue sentence or model-specific exception was added to product prompts.
+
+A's exact current-context mismatch is emitted as typed data at the authoritative comparison. Its actual values come from the already consented configuration, never guessed from requirements. Unknown submitted strings are withheld. Both counter findings enter the existing outbound structural correction, while subsequent requirement checking remains strict. The separate source-association blocker is not fixed by prompts or a rewritten policy.
+
+Development B used five actual calls and ordinary existing reviews, no operator syntax coaching. Its first generated rule used math; the subsequent type/unit diagnostic was sent in the actual next request and corrected. BUSINESS coverage was not transmitted because the unchanged conservative $1 reservation refused it. This is a correction milestone, not a complete job or public pass.

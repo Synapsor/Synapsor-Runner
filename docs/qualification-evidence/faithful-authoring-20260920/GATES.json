@@ -1,0 +1,141 @@
+[
+  {
+    "name": "postgres-assignment",
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "apps/runner/src/control-policy-authority-codec.test.ts",
+      "--testNamePattern",
+      "saves and reloads receipt readiness under the existing review lock|postgres validated operator policy transactions.*keeps Action recovery review available with unavailable Read authority:",
+      "--maxWorkers=1",
+      "--minWorkers=1",
+      "--testTimeout=30000",
+      "--hookTimeout=120000"
+    ],
+    "started_at": "2026-09-20T19:30:28.084721+00:00",
+    "source_commit": "280093e19eb09578046fd7e29ce1b9b7aec17704",
+    "source_digest": "7051bb39076a16e6c698a3c5b61023473afd1d80a61aa00e732807ccc5ea0099",
+    "credentials": "owned PostgreSQL gate URL only",
+    "umask": "0077",
+    "pid": 1807474,
+    "exit": 0,
+    "finished_at": "2026-09-20T19:30:41.708868+00:00",
+    "source_unchanged": true
+  },
+  {
+    "name": "postgres-atomic-preservation",
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "apps/runner/src/semantic-atomic-postgres.test.ts",
+      "--maxWorkers=1",
+      "--minWorkers=1",
+      "--testTimeout=20000",
+      "--hookTimeout=20000"
+    ],
+    "started_at": "2026-09-20T19:30:51.564595+00:00",
+    "source_commit": "280093e19eb09578046fd7e29ce1b9b7aec17704",
+    "source_digest": "7051bb39076a16e6c698a3c5b61023473afd1d80a61aa00e732807ccc5ea0099",
+    "credentials": "owned PostgreSQL gate URL only",
+    "umask": "0077",
+    "pid": 1807988,
+    "exit": 0,
+    "finished_at": "2026-09-20T19:30:56.437431+00:00",
+    "source_unchanged": true
+  },
+  {
+    "name": "postgres-domain",
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "apps/runner/src/authoring-counting-domain.test.ts",
+      "apps/runner/src/authoring-counting-freshness.test.ts",
+      "--maxWorkers=1",
+      "--minWorkers=1",
+      "--testTimeout=20000",
+      "--hookTimeout=20000"
+    ],
+    "started_at": "2026-09-20T19:30:06.539649+00:00",
+    "source_commit": "280093e19eb09578046fd7e29ce1b9b7aec17704",
+    "source_digest": "7051bb39076a16e6c698a3c5b61023473afd1d80a61aa00e732807ccc5ea0099",
+    "credentials": "owned PostgreSQL gate URL only",
+    "umask": "0077",
+    "pid": 1807037,
+    "exit": 0,
+    "finished_at": "2026-09-20T19:30:18.972616+00:00",
+    "source_unchanged": true
+  },
+  {
+    "name": "stable-full",
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "--maxWorkers=4",
+      "--minWorkers=1",
+      "--testTimeout=20000",
+      "--hookTimeout=20000"
+    ],
+    "started_at": "2026-09-20T19:06:35.998670+00:00",
+    "source_commit": "280093e19eb09578046fd7e29ce1b9b7aec17704",
+    "source_digest": "7051bb39076a16e6c698a3c5b61023473afd1d80a61aa00e732807ccc5ea0099",
+    "credentials": "absent",
+    "umask": "0077",
+    "pid": 1777107,
+    "exit": 1,
+    "finished_at": "2026-09-20T19:28:30.542825+00:00",
+    "source_unchanged": true
+  },
+  {
+    "name": "stable-types",
+    "command": [
+      "corepack",
+      "pnpm",
+      "typecheck"
+    ],
+    "started_at": "2026-09-20T19:06:25.711743+00:00",
+    "source_commit": "280093e19eb09578046fd7e29ce1b9b7aec17704",
+    "source_digest": "7051bb39076a16e6c698a3c5b61023473afd1d80a61aa00e732807ccc5ea0099",
+    "credentials": "absent",
+    "umask": "0077",
+    "pid": 1776816,
+    "exit": 0,
+    "finished_at": "2026-09-20T19:06:32.633069+00:00",
+    "source_unchanged": true
+  },
+  {
+    "name": "terminal-isolated",
+    "command": [
+      "corepack",
+      "pnpm",
+      "exec",
+      "vitest",
+      "run",
+      "apps/runner/src/manual-activation-terminal.test.ts",
+      "--maxWorkers=1",
+      "--minWorkers=1",
+      "--testTimeout=20000",
+      "--hookTimeout=20000"
+    ],
+    "started_at": "2026-09-20T19:29:43.655971+00:00",
+    "source_commit": "280093e19eb09578046fd7e29ce1b9b7aec17704",
+    "source_digest": "7051bb39076a16e6c698a3c5b61023473afd1d80a61aa00e732807ccc5ea0099",
+    "credentials": "absent",
+    "umask": "0077",
+    "pid": 1806348,
+    "exit": 0,
+    "finished_at": "2026-09-20T19:29:56.106074+00:00",
+    "source_unchanged": true
+  }
+]

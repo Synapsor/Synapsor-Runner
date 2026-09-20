@@ -1,0 +1,52 @@
+[
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/faithful-authoring-20260920/bundle-freshness-attempt1.log",
+    "sha256": "4534215e15034b5b5391ab51d71121ebc119c68a2226f6194462a8558e9489b7",
+    "bytes": 182
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/faithful-authoring-20260920/cursor-plugin-attempt1.log",
+    "sha256": "cc12e22d29ebd660345c60ee249826505ffccb62bb45e1b39590202b7ee7135f",
+    "bytes": 391
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/faithful-authoring-20260920/dsl-sources-attempt1.log",
+    "sha256": "3bd663b10b211bb9dbfa01117dd164a3a851d9936e4be1568a6bd5f9ccf7d50a",
+    "bytes": 89
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/faithful-authoring-20260920/human-commands-attempt1.log",
+    "sha256": "4ca02cff1d23604455f2707b16fc58bea2d0beb7f6adff085887cbdae1379222",
+    "bytes": 43
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/faithful-authoring-20260920/licenses-attempt1.log",
+    "sha256": "81c81f063c5391a1e9f237b114a7ba197da9b6cece450fa3fd851f6fcac80bac",
+    "bytes": 30
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/faithful-authoring-20260920/local-package-attempt1.log",
+    "sha256": "1beec180c4d80edca03ced6021c8288af87dfd845cf66b28bf1f4da94de5fff0",
+    "bytes": 293
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/faithful-authoring-20260920/mcp-client-configs-attempt1.log",
+    "sha256": "a61f33a0918009a044aaaede959658bba3184fb54d00088b5a29142595b0f3cd",
+    "bytes": 1601
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/faithful-authoring-20260920/packed-offline-attempt1.log",
+    "sha256": "872e756ecd9fa52cf3ed50d5e19e14680c847b38fc3090a48a0ee6f8f3cfb3e9",
+    "bytes": 2193
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/faithful-authoring-20260920/public-commands-attempt1.log",
+    "sha256": "2121e7f079daf2f2826853340dcdbf7349aeb7e7ed01ffc464e8202cec41e559",
+    "bytes": 803
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/faithful-authoring-20260920/trusted-core-attempt1.log",
+    "sha256": "0c20cf6d1c887a589bca88dbdb5e778e53ccb2b68f0aa971a5c3a430c250b8d1",
+    "bytes": 73
+  }
+]
