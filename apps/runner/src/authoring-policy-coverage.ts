@@ -1,3 +1,4 @@
+import { receiptConfigurationComponentOnly } from "./authoring-policy-source.js";
 import { CoverageComponentError, CoverageComponentsError, CoverageCurrentDescriptionError, recordCoverageFindingSubject, recordCheckedCoveragePassage, coverageFinding, MAX_COVERAGE_FINDINGS, MAX_COVERAGE_FEEDBACK_BYTES, MAX_COVERAGE_SUBMISSIONS, permitsSecondCoverageCorrection, type CoverageFeedback } from "./authoring-coverage-feedback.js";
 import { clientDutyInventory } from "./authoring-client-duties.js";
 import { assessReviewObligation, deferredReviewObligation, receiptSelectionComponent } from "./authoring-obligation-review.js";
@@ -770,16 +771,16 @@ export async function reviewPolicyCoverage(input: {
         if (input.previousReport?.source_digest === input.source.digest) {
           // A new response cannot complete a previously pending duty by omission.
           // Reparse retained components against current evidence before saving.
-          const prior = input.previousReport.passages.filter(p => deferredReviewObligation(p) || isDeferredSourceReadback(p) || isDeferredSourceCounterMaintenance(p))
+          const prior = input.previousReport.passages.filter(p => deferredReviewObligation(p) || receiptConfigurationComponentOnly(p) || isDeferredSourceReadback(p) || isDeferredSourceCounterMaintenance(p))
             .filter(p => !report!.passages.some(next => {
-              const family = p.obligation_assessment?.family ?? (isDeferredSourceReadback(p) ? "independent_source_readback" : "source_counter_maintenance");
-              const path = p.obligation_assessment?.path ?? p.source_counter_obligation?.path ?? p.draft_paths[0];
+              const family = p.obligation_assessment?.family ?? (receiptConfigurationComponentOnly(p) ? "receipt_setup" : isDeferredSourceReadback(p) ? "independent_source_readback" : "source_counter_maintenance");
+              const path = p.obligation_assessment?.path ?? (receiptConfigurationComponentOnly(p) ? "/runner_evidence/runtime_contract/receipts" : p.source_counter_obligation?.path ?? p.draft_paths[0]);
               return next.obligation_assessment?.family === family && next.obligation_assessment.path === path;
             }));
           const validatedPrior = prior.length ? parsePolicyCoverage({ passages: [...report.passages, ...prior] }, input.source, input.draft, operatorMessages).passages.slice(report.passages.length) : [];
-          const retained = validatedPrior.filter(p => deferredReviewObligation(p)
-            && !report!.passages.some(next => next.obligation_assessment?.family === p.obligation_assessment!.family
-              && next.obligation_assessment.path === p.obligation_assessment!.path));
+          const retained = validatedPrior.filter(p => (deferredReviewObligation(p) || receiptConfigurationComponentOnly(p))
+            && !report!.passages.some(next => next.obligation_assessment?.family === (p.obligation_assessment?.family ?? "receipt_setup")
+              && next.obligation_assessment.path === (p.obligation_assessment?.path ?? "/runner_evidence/runtime_contract/receipts")));
           if (retained.length) report = parsePolicyCoverage({ passages: [...report.passages, ...retained] }, input.source, input.draft, operatorMessages);
         }
         return { ok: true, value: { recorded: true, semantic_completeness_proven: false, authority_granted: false } };

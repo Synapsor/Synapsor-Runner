@@ -142,16 +142,27 @@ export type ReviewObligationAssessment = {
   phase: "after_authority_review" | "ongoing_source_operation" | "after_execution";
   state: "pending" | "owner_attested_external_assurance_unverified";
   configuration_digest?: string | null;
+  /** Host-derived link; provider references and disposition remain unchanged. */
+  association?: { kind: "reviewed_receipt_configuration"; submitted_path: string; evidence_digest: string };
   verified: false;
 };
 const RECEIPT_PATH = "/runner_evidence/runtime_contract/receipts";
 const READBACK_PATH = "/runner_evidence/runtime_contract/application_obligations/independent_source_readback";
-export function receiptSetupComponentOnly(p: PolicyPassage) {
+function pendingReceiptComponentShape(p: PolicyPassage) {
   return p.disposition === "needs_decision" && p.responsibility === "deployment" && p.issue_kind === "missing_configuration"
-    && p.draft_paths.length === 1 && p.draft_paths[0] === RECEIPT_PATH
+    && p.draft_paths.length === 1
     && !p.field_checks?.length && !p.counter_requirements?.length && !p.evidence_checks?.length
     && !p.application_obligations?.length && !p.deployment_prerequisite && !p.source_counter_obligation
     && !p.operator_override && !p.counting_components?.length && !p.counting_resolution;
+}
+export function receiptSetupComponentOnly(p: PolicyPassage) {
+  return pendingReceiptComponentShape(p) && p.draft_paths[0] === RECEIPT_PATH;
+}
+
+/** Same total confinement as the duty component, without declaring the two
+ * references equivalent. Only a separately validated host link can defer it. */
+export function receiptConfigurationComponentOnly(p: PolicyPassage) {
+  return pendingReceiptComponentShape(p) && p.draft_paths[0] === "/runner_evidence/runtime_contract/receipt_configuration";
 }
 
 /** Total confinement is checked again at consumption, including host binding. */
@@ -160,7 +171,11 @@ export function deferredReviewObligation(p: PolicyPassage): ReviewObligationAsse
   if (!a || a.origin !== "HOST-RESOLVED" || a.verified !== false || !/^sha256:[a-f0-9]{64}$/u.test(a.dependencies_digest)
     || !/^sha256:[a-f0-9]{64}$/u.test(a.source_digest)) return undefined;
   if (a.family === "receipt_setup" && a.path === RECEIPT_PATH && a.phase === "after_authority_review" && a.state === "pending"
-    && ["runner_ledger", "source_db"].includes(a.requirement) && receiptSetupComponentOnly(p)) return a;
+    && ["runner_ledger", "source_db"].includes(a.requirement)
+    && (receiptSetupComponentOnly(p) || receiptConfigurationComponentOnly(p)
+      && a.association?.kind === "reviewed_receipt_configuration"
+      && a.association.submitted_path === p.draft_paths[0]
+      && /^sha256:[a-f0-9]{64}$/u.test(a.association.evidence_digest))) return a;
   if (a.family === "source_counter_maintenance" && a.path === p.source_counter_obligation?.path && a.phase === "ongoing_source_operation"
     && a.requirement === "owner_maintenance" && a.state === "owner_attested_external_assurance_unverified" && isDeferredSourceCounterMaintenance(p)) return a;
   if (a.family === "independent_source_readback" && a.path === READBACK_PATH && a.phase === "after_execution" && a.state === "pending"

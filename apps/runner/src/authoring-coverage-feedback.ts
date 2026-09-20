@@ -17,6 +17,14 @@ export class CoverageCurrentDescriptionError extends Error {
     super('COUNTING_CURRENT_DESCRIPTION_MISMATCH: The submitted current selector does not describe the prepared configuration.');
   }
 }
+/** Eligibility is established by the obligation validator's typed current
+ * evidence, never inferred here from exception prose or a model heading. */
+export class CoverageReceiptObservationError extends Error {
+  readonly code = 'OBLIGATION_OBSERVATION_UNESTABLISHED';
+  constructor(readonly structural: boolean) {
+    super('OBLIGATION_OBSERVATION_UNESTABLISHED: Receipt capability or selected configuration is not an observed receipt or independent source readback. Keep the applicable exact setup/after-execution duty pending; no observation evidence is supplied by this review.');
+  }
+}
 export type CoverageFinding = {
   code: string; component: string; identity: string; component_identity: string; passage_identity?: string; reason: string; repair: string; structural: boolean;
   current_evidence?: CoverageCurrentDescriptionError['evidence'];
@@ -44,6 +52,14 @@ export const MAX_COVERAGE_SUBMISSIONS = 3;
 export function coverageFinding(error: unknown, component: string, identityBasis: unknown): CoverageFinding {
   if (error instanceof CoverageComponentError) component = error.component;
   const cause = error instanceof CoverageComponentError ? error.cause : error;
+  if (cause instanceof CoverageReceiptObservationError) return {
+    code: cause.code, component, component_identity: canonicalJsonDigest(identityBasis),
+    identity: canonicalJsonDigest({component: identityBasis, code: cause.code}), structural: cause.structural,
+    reason: 'A supported execution capability or reviewed receipt selection does not establish provisioned execution, an observed receipt or independent readback.',
+    repair: cause.structural
+      ? 'Separate the compiled capability claim from receipt setup and observation duties. The current /runner_evidence/runtime_contract/receipt_configuration links reviewed intent only; /runner_evidence/runtime_contract/receipts describes the distinct receipt guarantee; /runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup keeps setup pending. Resubmit a complete review with the isolated receipt setup duty needs_decision/deployment/missing_configuration and unperformed work unverified. Keep independent readback separately pending where required. Do not change source policy, program, receipt mode or any other requirement. No observation claim was accepted.'
+      : 'Keep the observation unestablished and the review unresolved. Required meaning, applicable configuration, deployment permission and performed receipts/readback need their own evidence; another opinion cannot supply it. Do not change the receipt guarantee or mark unperformed work verified.',
+  };
   if (cause instanceof CoverageCurrentDescriptionError) return {
     code: cause.code, component, component_identity: canonicalJsonDigest(identityBasis),
     identity: canonicalJsonDigest({component: identityBasis, code: cause.code}), structural: true,

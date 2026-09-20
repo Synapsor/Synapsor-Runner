@@ -98,8 +98,10 @@ export function policyReviewReadiness(source: PolicyTextSnapshot, report?: Polic
       ? ["Independent source readback remains unverified for each applicable execution. Perform and retain that separate observation after the change; a receipt or completed business review does not prove it."] : []),
     ...(assigned.some(item => item.passages.some(isDeferredSourceCounterMaintenance))
       ? ["Source-counter maintenance relies on the exact current source-owner operating contract. Independent external-writer and production assurance remain unverified; the owner must keep all writers within that contract. This review grants no execution permission."] : []),
-    ...(assigned.some(item => item.passages.some(p => deferredReviewObligation(p)?.family === "receipt_setup"))
-      ? ["Receipt/execution setup pending: review the required mode through execution setup. No receipt, provisioning or independent observation is established by BUSINESS review."] : []),
+    ...[...new Set(assigned.flatMap(item => item.passages.flatMap(p => {
+      const obligation = deferredReviewObligation(p);
+      return obligation?.family === "receipt_setup" ? [obligation.requirement] : [];
+    })))].map(mode => `Receipt requirement: ${mode}. Receipt/execution setup pending: review this exact mode through execution setup. No receipt, provisioning or independent observation is established by BUSINESS review.`),
     ...(assigned.some((item) => item.passages.some((passage) => passage.deployment_prerequisite === "runner_execution_setup"))
       ? ["Execution setup pending: dedicated writer review, separate execution permission and worker startup. Continue to these checks after authority review; automatic completion is not yet enabled."] : []),
   ] };
