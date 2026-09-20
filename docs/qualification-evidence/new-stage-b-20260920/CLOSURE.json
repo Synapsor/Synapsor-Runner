@@ -1,0 +1,25 @@
+{
+  "status": "STOPPED_FOR_REVIEW",
+  "new_attempt": "ATTEMPTED / NOT PASSED",
+  "NEW-SB-A": "FAIL",
+  "NEW-SB-B": "FAIL",
+  "original_stage_b": "ATTEMPTED / NOT PASSED",
+  "consolidation_started_at": "2026-09-20T17:55:00Z",
+  "consolidation_deadline": "2026-09-20T18:40:00Z",
+  "recorded_at": "2026-09-20T18:06:09.982588+00:00",
+  "product_changes": false,
+  "artifact_tree": "9392b9364af45f2b15e8599b5382179e36a57404660b5de32fd58df0a6fa4bf7",
+  "calls": {
+    "neutral": 4,
+    "A_authoring": 15,
+    "B_authoring": 16,
+    "runtime": 0,
+    "MCP": 0,
+    "workers": 0,
+    "effects": 0
+  },
+  "reported_usd": 0.5763875,
+  "resources_removed": true,
+  "credentials_scan": "PASS for intended Git delivery and stopped A project/home archive",
+  "next_operation": "Independent evidence review only; no repair or new trial in this assignment"
+}

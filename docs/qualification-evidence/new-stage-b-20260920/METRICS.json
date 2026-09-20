@@ -1,0 +1,48 @@
+[
+  {
+    "case": "NEW-SB-A",
+    "allocation_at": "2026-09-20T17:40:35.275314+00:00",
+    "original_deadline": "2026-09-20T20:40:35.275314+00:00",
+    "initial_deadline": "2026-09-20T18:55:35.275314+00:00",
+    "transports": 15,
+    "authoring_phases": {
+      "initial": 15,
+      "evolution": 0,
+      "restart": 0
+    },
+    "reported_cost_usd": 0.2882805,
+    "sum_provider_transport_seconds": 98.192,
+    "status": "STOPPED",
+    "operator_hands_on_seconds": null,
+    "deployment_admin_steps": 0,
+    "first_business_ready": null,
+    "first_runtime_read": null,
+    "first_receipt": null,
+    "edit": null,
+    "addition_removal": null,
+    "final_recheck": null
+  },
+  {
+    "case": "NEW-SB-B",
+    "allocation_at": "2026-09-20T17:44:25.854139+00:00",
+    "original_deadline": "2026-09-20T20:44:25.854139+00:00",
+    "initial_deadline": "2026-09-20T18:59:25.854139+00:00",
+    "transports": 16,
+    "authoring_phases": {
+      "initial": 16,
+      "evolution": 0,
+      "restart": 0
+    },
+    "reported_cost_usd": 0.22120499999999998,
+    "sum_provider_transport_seconds": 82.464,
+    "status": "STOPPED",
+    "operator_hands_on_seconds": null,
+    "deployment_admin_steps": 0,
+    "first_business_ready": null,
+    "first_runtime_read": null,
+    "first_receipt": null,
+    "edit": null,
+    "addition_removal": null,
+    "final_recheck": null
+  }
+]

@@ -1,0 +1,86 @@
+{
+  "version": 2,
+  "candidate_tree": "9392b9364af45f2b15e8599b5382179e36a57404660b5de32fd58df0a6fa4bf7",
+  "authoring": {
+    "adapter": "openrouter",
+    "model": "openai/gpt-5.6-terra",
+    "catalog_slug": "openai/gpt-5.6-terra-20260709",
+    "endpoint": "https://openrouter.ai/api/v1/chat/completions",
+    "timeout_seconds": 120,
+    "caps": {
+      "action_rule_draft_revision": 5000,
+      "policy_coverage_and_correction": 12000,
+      "boundary_job_plan": 4000,
+      "read_workload": 4000,
+      "read_boundary_revision": 2000,
+      "principal_scope_review": 800,
+      "read_prerequisite_review": 2000,
+      "action_interview": 1600,
+      "action_suggestion_initial": 2400,
+      "action_suggestion_followup": 4800,
+      "owner_policy_parent": 6000,
+      "authoring_narration": 800
+    },
+    "reasoning": "OMITTED/provider default",
+    "temperature": "OMITTED/provider default",
+    "top_p": "OMITTED/provider default",
+    "parallel_tool_calls": "OMITTED/provider default",
+    "routing": {
+      "require_parameters": true,
+      "allow_fallbacks": false,
+      "data_collection": "deny"
+    },
+    "max_tokens": "numeric per operation above",
+    "tool_choice": "exact forced function for structured operation; auto for bounded conversational turns",
+    "stream": "product presenter-dependent; preserve actual envelope",
+    "neutral_exact_result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/prerequisites/neutral-authoring2/result.json"
+  },
+  "runtime": {
+    "client": "Claude Code",
+    "version": "2.1.278",
+    "model": "claude-opus-5",
+    "adapter": "Anthropic firstParty /v1/messages",
+    "max_tokens": 4096,
+    "output_config": {
+      "effort": "high"
+    },
+    "thinking": {
+      "type": "adaptive",
+      "display": "omitted"
+    },
+    "context_management": {
+      "edits": [
+        {
+          "type": "clear_thinking_20251015",
+          "keep": "all"
+        }
+      ]
+    },
+    "stream": true,
+    "temperature": "OMITTED/provider default",
+    "top_p": "OMITTED/provider default",
+    "timeout_seconds": 120,
+    "tool_surface": [
+      "app.describe_data",
+      "app.explore_data",
+      "app.describe_actions",
+      "app.request_change"
+    ],
+    "built_in_tools": [],
+    "permission_mode": "dontAsk",
+    "strict_mcp_config": true,
+    "settings_sources": [],
+    "slash_commands": false,
+    "chrome": false,
+    "model_fallback": "none configured; passive meter refuses any other model",
+    "neutral_exact_result": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/prerequisites/neutral-runtime2/result.json",
+    "cost_basis": "client modelUsage.costUSD list estimate; authoring provider usage.cost actual reported; conservative combined ceiling"
+  },
+  "neutral_total_calls": 4,
+  "neutral_total_reported_cost_usd": 0.066902,
+  "case_call_counts": {
+    "NEW-SB-A": 0,
+    "NEW-SB-B": 0
+  },
+  "consent": "User explicitly authorized neutral prerequisites with no selected-case data. Exact product metadata/policy consent still required per case."
+}

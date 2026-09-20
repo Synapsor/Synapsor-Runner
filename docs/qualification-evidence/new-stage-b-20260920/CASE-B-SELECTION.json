@@ -1,0 +1,22 @@
+{
+  "case_id": "NEW-SB-B",
+  "author": "main",
+  "operator": "independent tester",
+  "sealed_at": "2026-09-20T17:34:36.262959+00:00",
+  "source_rows": 196,
+  "counts": {
+    "registers": 2,
+    "cycles": 32,
+    "samples": 96,
+    "notes": 66
+  },
+  "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/case-B/sealed-input-manifest.json",
+  "manifest_sha256": "502a9670c5a6f8c002a3aef8fef21767e70e4e703c15d86ebcba1cd23853ecdd",
+  "operator_source_packet": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/case-B/operator-source-packet.tar.gz",
+  "operator_source_packet_sha256": "6508a3a46257dd8e78f4d8bf5526135f604d5c8c12ff4d61ec1cf90b3205f60f",
+  "oracle": "main retained separately, not included in operator packet",
+  "provider_calls": 0,
+  "live_status": "NOT STARTED",
+  "selected_case": "cooperative microgrid cycle settlement",
+  "preloaded_Runner_authority": false
+}

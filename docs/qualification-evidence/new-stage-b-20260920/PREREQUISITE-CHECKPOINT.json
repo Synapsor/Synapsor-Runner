@@ -1,0 +1,25 @@
+{
+  "at": "2026-09-20T17:22:34.465187+00:00",
+  "status": "PREREQUISITES_LOCALLY_COMPLETE_AWAITING_TESTER_FINAL_CHECK",
+  "candidate": "PASS exact9392b936 full7569entries plusarchive/source/lock/deps/Node",
+  "neutral_calls": 4,
+  "neutral_cost_usd": 0.066902,
+  "case_provider_calls": 0,
+  "case_selection": "NOT STARTED",
+  "full_suite": "6671/476 exit0 INSPECTED, not rerun",
+  "types": "exit0 INSPECTED",
+  "postgres": "48 exit0 INSPECTED",
+  "offline": "10 exits0 inventory INSPECTED",
+  "meter_local_results": [
+    "capture-selftest",
+    "budget-selftest",
+    "transport-selftest",
+    "runtime-selftest"
+  ],
+  "isolation": "PASS whole-directory /var/tmp logical fresh root; initial home-ancestor resolution refusal preserved",
+  "PTY": [
+    100,
+    30
+  ],
+  "next_step": "Tester validates runtimecontroller and signoff; then start two90min case preparation clocks and seal separate operator/oracle packets before live clocks/calls."
+}

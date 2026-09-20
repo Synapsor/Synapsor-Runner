@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "started_at": "2026-09-20T17:03:36.678165+00:00",
+  "status": "prerequisite_checkpoint_in_progress",
+  "case_selection": "NOT STARTED",
+  "case_provider_calls": 0,
+  "neutral_provider_calls": 0,
+  "neutral_provider_ceiling": 4,
+  "available_balance_usd": 10,
+  "proposed_allocation": {
+    "neutral_preflight_usd": 0.2,
+    "NEW-SB-A_usd": 4.9,
+    "NEW-SB-B_usd": 4.9
+  },
+  "product": "36a5e0e3034127f842a2053048a13ca9e05639a1",
+  "baseline": "d3dbf16fed394082ef2e6e4b7d0bc63ad6929cba",
+  "installed_tree": "9392b9364af45f2b15e8599b5382179e36a57404660b5de32fd58df0a6fa4bf7",
+  "owned_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920",
+  "main_thread": "01a09652-c99d-7f33-badb-6af6f7c1c2c6",
+  "tester_thread": "01a0bcb8-0925-7380-911a-8bab207b9e0b",
+  "no_product_changes": true,
+  "historical_stage_b": "ATTEMPTED / NOT PASSED",
+  "new_case_A": "NOT RUN",
+  "new_case_B": "NOT RUN",
+  "next_step": "Verify accepted installation and dependencies, safe provider availability and measurement; agree shared envelope before selecting either case."
+}

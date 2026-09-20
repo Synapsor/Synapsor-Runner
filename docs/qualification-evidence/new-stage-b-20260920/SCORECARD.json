@@ -1,0 +1,167 @@
+{
+  "schema": "new-two-case-stage-b-20260920.v1",
+  "artifact_tree": "9392b9364af45f2b15e8599b5382179e36a57404660b5de32fd58df0a6fa4bf7",
+  "historical_original_stage_b": "ATTEMPTED / NOT PASSED",
+  "new_attempt": "ATTEMPTED / NOT PASSED",
+  "cases": {
+    "NEW-SB-A": {
+      "verdict": "FAIL",
+      "operator": "main",
+      "author": "independent tester",
+      "independent_scope": "post-stop inspection only",
+      "first_failure": "complete coverage response contradicts current selector evidence; refusal becomes generic nonstructural finding",
+      "source_rows": 38
+    },
+    "NEW-SB-B": {
+      "verdict": "FAIL",
+      "operator": "independent tester",
+      "author": "main",
+      "independent_scope": "personally executed public authoring; main inspected captures only",
+      "first_failure": "authoring model fails to submit advertised supported arithmetic form",
+      "source_rows": 196
+    }
+  },
+  "rows": [
+    {
+      "id": "identity_and_sealed_fixture",
+      "A": "PASS",
+      "B": "PASS"
+    },
+    {
+      "id": "public_consent_and_onboarding",
+      "A": "PASS",
+      "B": "PASS"
+    },
+    {
+      "id": "complete_disabled_job_and_business_review",
+      "A": "FAIL",
+      "B": "FAIL"
+    },
+    {
+      "id": "saved_core_action_comparison",
+      "A": "PASS",
+      "B": "NOT ESTABLISHED"
+    },
+    {
+      "id": "saved_checkpoint_reopen",
+      "A": "NOT RUN",
+      "B": "NOT RUN"
+    },
+    {
+      "id": "separate_read_action_receipt_execution_reviews",
+      "A": "NOT RUN",
+      "B": "NOT RUN"
+    },
+    {
+      "id": "generated_narrow_dba_handoff",
+      "A": "NOT RUN",
+      "B": "NOT RUN"
+    },
+    {
+      "id": "reviewed_runtime_contexts_and_diagnostics",
+      "A": "NOT RUN",
+      "B": "NOT RUN"
+    },
+    {
+      "id": "model_read_and_request",
+      "A": "NOT RUN",
+      "B": "NOT RUN"
+    },
+    {
+      "id": "no_premature_source_effect_for_business_request",
+      "A": "NOT RUN",
+      "B": "NOT RUN"
+    },
+    {
+      "id": "effect_versions_receipts_full_row_readback",
+      "A": "NOT RUN",
+      "B": "NOT RUN"
+    },
+    {
+      "id": "human_review_and_execution",
+      "A": "NOT RUN",
+      "B": "NOT RUN"
+    },
+    {
+      "id": "invalid_eligibility_and_typed_inputs",
+      "A": "NOT RUN",
+      "B": "NOT RUN"
+    },
+    {
+      "id": "privacy_and_context_controls",
+      "A": "NOT RUN",
+      "B": "NOT RUN"
+    },
+    {
+      "id": "replay_nonmutation_and_status",
+      "A": "NOT RUN",
+      "B": "NOT RUN"
+    },
+    {
+      "id": "actual_shared_allowance_or_duplicate_contention",
+      "A": "NOT RUN",
+      "B": "NOT RUN"
+    },
+    {
+      "id": "numeric_edit_saved_delta_publication",
+      "A": "NOT RUN",
+      "B": "NOT RUN"
+    },
+    {
+      "id": "same_client_changed_behavior_retained_history",
+      "A": "NOT RUN",
+      "B": "NOT RUN"
+    },
+    {
+      "id": "old_unstarted_work",
+      "A": "NOT RUN",
+      "B": "NOT RUN"
+    },
+    {
+      "id": "edit_interruption_resume_B",
+      "A": "NOT RUN",
+      "B": "NOT RUN"
+    },
+    {
+      "id": "added_outcome_reference_effect_receipt",
+      "A": "NOT RUN",
+      "B": "NOT RUN"
+    },
+    {
+      "id": "removed_outcome_discovery_refusal_history",
+      "A": "NOT RUN",
+      "B": "NOT RUN"
+    },
+    {
+      "id": "final_authoring_recheck",
+      "A": "NOT RUN",
+      "B": "NOT RUN"
+    },
+    {
+      "id": "separate_runtime_restart",
+      "A": "NOT RUN",
+      "B": "NOT RUN"
+    },
+    {
+      "id": "stopped_path_preservation",
+      "A": "PASS",
+      "B": "PASS"
+    }
+  ],
+  "no_rescue_completion": true,
+  "runtime_model_calls": 0,
+  "mcp_calls": 0,
+  "workers": 0,
+  "business_effect_transactions": 0,
+  "source_mutations": 0,
+  "product_changed": false,
+  "prompts_changed": false,
+  "candidate_changed": false,
+  "case_transport_total": 31,
+  "case_reported_cost_usd": 0.5094855,
+  "neutral_transports": 4,
+  "neutral_reported_cost_usd": 0.066902,
+  "reported_total_usd": 0.5763875,
+  "budget_usd": 10,
+  "runtime_cost_note": "No case runtime calls; neutral native-client costs are reported estimates, not reconciled account billing."
+}

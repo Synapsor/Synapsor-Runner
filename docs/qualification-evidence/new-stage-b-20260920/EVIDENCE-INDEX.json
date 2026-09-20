@@ -1,0 +1,106 @@
+{
+  "raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920",
+  "records": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/shared/SHARED-PLAN-v1.md",
+      "sha256": "cca72fc9ca5da9826e474ef8fc55ab59841f32f31a35f9535350b989fa92c5f2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/shared/SHARED-PLAN-v2.md",
+      "sha256": "d165573a636d256f983fe99d1aa51a9112b380ae99055a36825e22112294b215"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/shared/PROVIDER-PLAN-v2.json",
+      "sha256": "73e2c84c379e6e4e0ebe7e69d5383d198281418c7e15e02fb7e6c7b2571f530a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/shared/provider-budget-ledger.json",
+      "sha256": "71118055f6771bcaf1df7b9bab2ea64ebdce9c0d516c3cc5e4d22d6839534eb3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/prerequisites/checkpoint.json",
+      "sha256": "9cbd6b2e07137153b8e66167553dc35e7087576cae32790b6efc8378782cacc0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/prerequisites/gates-inspected.json",
+      "sha256": "9ee722cb72ff0008ac27f47d2e16ca864410bc91b2073324930f5f3385d31f24"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/case-A/received-input/CASE-SEAL.json",
+      "sha256": "9044537c94166cc4f76fc22fd8fcde13c8d84d03b93f1bf3ab45bccf7d3bfece"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/case-A/source-preflight.json",
+      "sha256": "df646d4b4e74a5c9b4a3a03ec7a2a0a8bf7d636ee44804f3c678012ce460fe22"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/case-A/effective-store-preflight.json",
+      "sha256": "9483da4b264201a2e3affc20f75efac2bcbb55a15dc0b12082e79b0fdaa41059"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/case-A/live/operator-captures/terminal-001.log",
+      "sha256": "d10dcdd2d54d738100c3004c113f91a9215cc6c7091aa2e62cac6c1608d4ed64"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/case-A/live/operator-captures/exit-001.json",
+      "sha256": "0e3f342e556003453563c2690ae53f00f84097fb4789ed4439db2caea1a18777"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/case-A/live/authoring-meter/NEW-SB-A-15-request.json",
+      "sha256": "92501a085eb0a659a3c370c4164abba3bb8d46d430f551d15897f1878def8abb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/case-A/live/authoring-meter/NEW-SB-A-15-response.txt",
+      "sha256": "e7926d822aa89fb32f9b20ab3d6d6d404462425c7dbcf0fb1c3e7b8be0b48502"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/case-A/stopped-checkpoint/manifest.json",
+      "sha256": "e4d5f408cbdd570eb78e2868bd38eb97cddede41ecd9d5ddb89fa0c1ce88a380"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/case-A/exact-coverage-replay.json",
+      "sha256": "82f5bcf5675b72ff239f24666bcf1c7147ea31db34e32db6f9fd2452b718fad5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/case-B/sealed-input-manifest.json",
+      "sha256": "502a9670c5a6f8c002a3aef8fef21767e70e4e703c15d86ebcba1cd23853ecdd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/case-B/packet-metadata-seal.json",
+      "sha256": "367356aca8ee1a5aa7a523c040a9c8de4c2e200ef384d0c920e696e5c2be12ce"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/case-B/operator-source-packet.tar.gz",
+      "sha256": "6508a3a46257dd8e78f4d8bf5526135f604d5c8c12ff4d61ec1cf90b3205f60f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/closure/originals-reverification.json",
+      "sha256": "60f45db6db2f404b13eb5e8b3e2e02aacd2d25072d036ab84c4066b37f816e38"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/closure/candidate-final-reverification.json",
+      "sha256": "af0d050bd1e5f8fafc46d1841ba2d138e5b8a6c36093ade9a63f8591c7f82b1c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/closure/tester-references.json",
+      "sha256": "6459a75fb02a03c39263f528a9c67b04b7b9d37c527cecbd400668ebb94f667c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/closure/tester-addendum-reference.json",
+      "sha256": "3827170f652bcdeabbbb66e3a287c18d5b2468b768c3f6230e58fb5eeae494c2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/closure/cleanup.json",
+      "sha256": "0646750334d50d08448d5f5424a516d9d0b327243cf4bf64755f7b5acca5a2ae"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/closure/main-A-bundle.json",
+      "sha256": "e181d79b35056d4d50f43dcfd6bd37580d160d1d57d5c4376448a46c1aa1bc88"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/new-stage-b-d3dbf16-20260920/closure/credential-scan.json",
+      "sha256": "61f75006aacb559b129d541c9e2832108158424f2535e8926710f537d56ec83b"
+    }
+  ],
+  "private_evidence_notice": "These records may contain synthetic private facts or exact disabled authority; paths/hashes only are committed. Raw files stay outside Git."
+}
