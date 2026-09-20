@@ -51,10 +51,13 @@ function isolatableReceiptCapability(p: PolicyPassage, source: PolicyTextSnapsho
   const configured = at(draft, CONFIGURATION_PATH);
   if (configured?.status === "unavailable" || configured?.modes?.some((e: any) => e.authority !== mode)) return false;
   const roots = (at(draft, "/actions") ?? []).flatMap((action: any, index: number) => {
-    const pointer = `/runner_evidence/actions/${action.outcome.replace(/~/gu,"~0").replace(/\//gu,"~1")}/execution`;
+    const base = `/runner_evidence/actions/${action.outcome.replace(/~/gu,"~0").replace(/\//gu,"~1")}`;
+    const pointer = `${base}/execution`;
     const execution = at(draft, pointer);
+    const effect = at(draft, `${base}/effect`);
     return action.effect?.writeback === "supervised" && execution?.configured_mode === "direct_sql"
-      && execution.activation === "separate_operator_review" ? [`/actions/${index}/effect`, pointer] : [];
+      && execution.activation === "separate_operator_review" ? [`/actions/${index}/effect`, pointer,
+        ...(effect?.target_resource === action.effect.target_resource && effect?.operation === action.effect.operation ? [`${base}/effect`] : [])] : [];
   });
   return p.draft_paths.includes(RECEIPT_PATH) && p.draft_paths.some(path => roots.includes(path))
     && p.draft_paths.every(path => path === RECEIPT_PATH || path === CONFIGURATION_PATH || roots.includes(path));

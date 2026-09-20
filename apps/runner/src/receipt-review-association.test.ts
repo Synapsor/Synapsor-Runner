@@ -38,6 +38,13 @@ describe('receipt review association through exact final complete captures',()=>
   expect(policyReviewReadiness(b.source,report,b.sources).summary.join(' ')).toContain('Receipt requirement: source_db.');
   expect(policyReviewReadiness(b.source,report,b.sources).items?.filter(i=>i.blocksReview).map(i=>i.title)).toEqual([]);
  });
+ it.each(['draft','compiled','reordered'] as const)('keeps equivalent %s capability roots in the same strict correction class',root=>{
+  const f=fixture('A');
+  if(root!=='draft')f.arguments.passages[14].draft_paths[0]='/runner_evidence/actions/release.clear_assessment/effect';
+  if(root==='reordered')f.arguments.passages[14].draft_paths.reverse();
+  expect(()=>parse(f)).toThrow('OBLIGATION_OBSERVATION_UNESTABLISHED');
+  expect(collectCoverageFeedback(f.arguments,f.source,f.draft,f.sources.operator_messages).findings).toEqual([expect.objectContaining({code:'OBLIGATION_OBSERVATION_UNESTABLISHED',structural:true})]);
+ });
  it.each(['A','B'] as const)('save/reload and exact recheck retain %s pending setup; competing save installs no partial review',async c=>{
   const f=fixture(c),root=await fs.mkdtemp(path.join(os.tmpdir(),'receipt-association-'));
   try {
