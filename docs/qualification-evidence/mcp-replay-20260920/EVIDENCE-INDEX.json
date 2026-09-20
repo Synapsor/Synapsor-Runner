@@ -97,8 +97,8 @@
     },
     {
       "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/CHECKPOINT.md",
-      "sha256": "86f4e98aeab94879915621714f4fbcb352f09fab013585b46af3ade9a65d00cc",
-      "bytes": 2261
+      "sha256": "8086e2ab7e4975de83311898172f2b96e7d6a3bcb6f288abb24a318f71e45fc6",
+      "bytes": 2785
     },
     {
       "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/DEVELOPMENT-GATES.json",
@@ -107,8 +107,8 @@
     },
     {
       "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/FINAL-REPORT.md",
-      "sha256": "83f49c3df5a3578ec01da1e12b896cfa6f750c7235dedf63d36d3f987be761cd",
-      "bytes": 14836
+      "sha256": "1f8ec29b4ee3a2d1a776d98e3909b39861d405fe619e0ba6f45bc15f91a5288b",
+      "bytes": 16126
     },
     {
       "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/HARNESS-NOTES.md",
@@ -119,6 +119,11 @@
       "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/IMPLEMENTATION-NOTE.md",
       "sha256": "41b41cfddf0444dc00e229abe554cd6631409b42978ce30982ba45a6119fbd28",
       "bytes": 8032
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/INDEPENDENT-ACCEPTANCE.json",
+      "sha256": "5c87438994fa805669f27d90815d3e44fe656bb551e0e4f64aca6530e0785d71",
+      "bytes": 3079
     },
     {
       "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/MCP-REPLAY-TRACE.json",
@@ -132,13 +137,13 @@
     },
     {
       "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/NEXT-QUALIFICATION-DECISION.md",
-      "sha256": "b2bc8ba801bcc034337074d39dd8024c0a69f3e82a4ca37c56b8d4491eaed5a0",
-      "bytes": 3343
+      "sha256": "5be1e06e64ad86b2c9c149a20b60406b031fd52fc42f712a6c2d157c3ef70b1c",
+      "bytes": 3436
     },
     {
       "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/OPERATIONAL-RESULT.json",
-      "sha256": "0a067368a88382907209e8ae2f017577e23b23c7b9510187e5b78058b4dffd13",
-      "bytes": 5032
+      "sha256": "55423ede37f8bb756dd870226e7cff593b6f1385601ceef08ab4dc1802e8180f",
+      "bytes": 5650
     },
     {
       "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/PLAN.json",
@@ -152,8 +157,8 @@
     },
     {
       "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/REVIEWER-HANDOFF.md",
-      "sha256": "8ec296edb66ac8c95d8b9b5f677beb132e8d5925b189a0e2c9610b03ed4da3b7",
-      "bytes": 6432
+      "sha256": "fc177c6d4296915684b3112ed38bd03c46c765d352415e4557f732043954a3c2",
+      "bytes": 7014
     },
     {
       "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/SEALED-STARTS.json",
@@ -866,6 +871,83 @@
       "frozen/preflight"
     ]
   },
-  "independent_status": "restoration PASS; final replay acceptance PENDING; independent task owns its report",
-  "stage_b": "ATTEMPTED / NOT PASSED"
+  "independent_status": {
+    "recorded_at": "2026-09-20T10:49:26.740558+00:00",
+    "verdict": "PASS",
+    "scope": "independent M3 MCP replay-status acceptance for queued, failed-blocked, failed-closed and applied historical requests",
+    "artifact": {
+      "product_tests": "36a5e0e3034127f842a2053048a13ca9e05639a1",
+      "frozen_source": "5bb7e6bd82386a53f49a6525a004fca9d5cdd06d",
+      "installed_tree_sha256": "9392b9364af45f2b15e8599b5382179e36a57404660b5de32fd58df0a6fa4bf7",
+      "entries": 7569,
+      "manifest_sha256": "a1f335cc0be0838327d935c2c5399a86217593330361f22bd327f864acfd92a2",
+      "archive_sha256": "4417f2a41304947d373da4f648f0d31b34b5823f6ac69736482025f006fdb847",
+      "source_archive_sha256": "133ccedaf689d812b8f7a400ce790459288da70d2afc9df611d5b608714577fe"
+    },
+    "independence": {
+      "implemented_product": false,
+      "ran_implementer_r1": false,
+      "prior_participation": "previous independent recovery acceptance and discovery of the historical replay wording defect",
+      "external_human_or_model_diversity_audit": false
+    },
+    "report": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/mcp-replay-status-final-review-20260920/REVIEW.md",
+      "sha256": "0195e3832295852f34688ca4051c5c555efe07c5d1ad2f5a6249a65ced507f28"
+    },
+    "result": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/mcp-replay-status-final-review-20260920/RESULT.json",
+      "sha256": "ec8efd09b806a763d43d579ad82c047cd87511bed87e5453079777d40dbe39e0"
+    },
+    "bundle": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/mcp-replay-status-final-review-20260920/review-bundle.tar.gz",
+      "sha256": "a2ef77410eab57fb0557957363ad223765a688373c0301c21241e58df1b27b2a"
+    },
+    "personally_executed": {
+      "artifact_identity": "PASS",
+      "untouched_t1_restore": "PASS",
+      "actual_four_tool_transport": "PASS",
+      "queued_failed_closed_applied_replays": "PASS",
+      "text_structured_agreement": "PASS",
+      "signed_closure_cancel_repeat_restart": "PASS",
+      "old_request_no_resurrection": "PASS",
+      "fresh_request_and_exact_effect": "PASS",
+      "receipt_hashes_and_source_readback": "PASS",
+      "nine_case_component_probe": "PASS"
+    },
+    "budget": {
+      "request_change_calls": 7,
+      "finite_workers": 4,
+      "business_effect_transactions": 1,
+      "owner_version_increments": 1,
+      "closure_commands": 4,
+      "provider_calls": 0
+    },
+    "inspected_not_rerun": {
+      "full_suite": {
+        "passed": 6671,
+        "skipped": 476,
+        "exit": 0
+      },
+      "typecheck_exit": 0,
+      "explicit_postgresql": {
+        "passed": 48,
+        "files": 4,
+        "exit": 0
+      },
+      "offline_checks": 10
+    },
+    "not_established": [
+      "production or multi-host behavior",
+      "live uncertain-COMMIT qualification",
+      "clock-skew guarantees",
+      "provider/model runtime comparison",
+      "unrelated M3 private-reason disclosure",
+      "unrelated M4 gaps",
+      "universal recovery or exactly-once behavior"
+    ],
+    "stage_b": "ATTEMPTED / NOT PASSED",
+    "recording_change": "report-only acceptance; no product, package, source, fixture or test change"
+  },
+  "stage_b": "ATTEMPTED / NOT PASSED",
+  "acceptance_recorded_at": "2026-09-20T10:49:26.740558+00:00"
 }

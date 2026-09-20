@@ -1,0 +1,77 @@
+{
+  "recorded_at": "2026-09-20T10:49:26.740558+00:00",
+  "verdict": "PASS",
+  "scope": "independent M3 MCP replay-status acceptance for queued, failed-blocked, failed-closed and applied historical requests",
+  "artifact": {
+    "product_tests": "36a5e0e3034127f842a2053048a13ca9e05639a1",
+    "frozen_source": "5bb7e6bd82386a53f49a6525a004fca9d5cdd06d",
+    "installed_tree_sha256": "9392b9364af45f2b15e8599b5382179e36a57404660b5de32fd58df0a6fa4bf7",
+    "entries": 7569,
+    "manifest_sha256": "a1f335cc0be0838327d935c2c5399a86217593330361f22bd327f864acfd92a2",
+    "archive_sha256": "4417f2a41304947d373da4f648f0d31b34b5823f6ac69736482025f006fdb847",
+    "source_archive_sha256": "133ccedaf689d812b8f7a400ce790459288da70d2afc9df611d5b608714577fe"
+  },
+  "independence": {
+    "implemented_product": false,
+    "ran_implementer_r1": false,
+    "prior_participation": "previous independent recovery acceptance and discovery of the historical replay wording defect",
+    "external_human_or_model_diversity_audit": false
+  },
+  "report": {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/mcp-replay-status-final-review-20260920/REVIEW.md",
+    "sha256": "0195e3832295852f34688ca4051c5c555efe07c5d1ad2f5a6249a65ced507f28"
+  },
+  "result": {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/mcp-replay-status-final-review-20260920/RESULT.json",
+    "sha256": "ec8efd09b806a763d43d579ad82c047cd87511bed87e5453079777d40dbe39e0"
+  },
+  "bundle": {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/mcp-replay-status-final-review-20260920/review-bundle.tar.gz",
+    "sha256": "a2ef77410eab57fb0557957363ad223765a688373c0301c21241e58df1b27b2a"
+  },
+  "personally_executed": {
+    "artifact_identity": "PASS",
+    "untouched_t1_restore": "PASS",
+    "actual_four_tool_transport": "PASS",
+    "queued_failed_closed_applied_replays": "PASS",
+    "text_structured_agreement": "PASS",
+    "signed_closure_cancel_repeat_restart": "PASS",
+    "old_request_no_resurrection": "PASS",
+    "fresh_request_and_exact_effect": "PASS",
+    "receipt_hashes_and_source_readback": "PASS",
+    "nine_case_component_probe": "PASS"
+  },
+  "budget": {
+    "request_change_calls": 7,
+    "finite_workers": 4,
+    "business_effect_transactions": 1,
+    "owner_version_increments": 1,
+    "closure_commands": 4,
+    "provider_calls": 0
+  },
+  "inspected_not_rerun": {
+    "full_suite": {
+      "passed": 6671,
+      "skipped": 476,
+      "exit": 0
+    },
+    "typecheck_exit": 0,
+    "explicit_postgresql": {
+      "passed": 48,
+      "files": 4,
+      "exit": 0
+    },
+    "offline_checks": 10
+  },
+  "not_established": [
+    "production or multi-host behavior",
+    "live uncertain-COMMIT qualification",
+    "clock-skew guarantees",
+    "provider/model runtime comparison",
+    "unrelated M3 private-reason disclosure",
+    "unrelated M4 gaps",
+    "universal recovery or exactly-once behavior"
+  ],
+  "stage_b": "ATTEMPTED / NOT PASSED",
+  "recording_change": "report-only acceptance; no product, package, source, fixture or test change"
+}

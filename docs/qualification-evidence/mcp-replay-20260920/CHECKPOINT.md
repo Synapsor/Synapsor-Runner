@@ -1,3 +1,7 @@
+# Independent acceptance recorded — 2026-09-20T10:49:26.740558+00:00
+
+PASS for exact tree9392b9364af45f2b15e8599b5382179e36a57404660b5de32fd58df0a6fa4bf7. ReportSHA0195e3832295852f34688ca4051c5c555efe07c5d1ad2f5a6249a65ced507f28; see INDEPENDENT-ACCEPTANCE.json. Report-only follow-up after247d267; no source/package/test/runtime changes. Prior pending status below is the preserved earlier checkpoint, now superseded by this acceptance. Stage B remains ATTEMPTED / NOT PASSED. STOP after private-backup report delivery.
+
 # M3/replay closure — 2026-09-20T10:43:09.976851+00:00
 
 Implementer PASS for the bounded replay child finding on product/tests36a5e0e3034127f842a2053048a13ca9e05639a1, frozen source5bb7e6bd82386a53f49a6525a004fca9d5cdd06d, tree9392b9364af45f2b15e8599b5382179e36a57404660b5de32fd58df0a6fa4bf7. Full suite6671passed/476skipped exit0;types0;explicitPG48passed0;tenoffline0. Finalsourceb5195c24b9ff7574d155cf3b1692124d0b29c9ea6b6ce9228c1de0e3061fa09c unchanged through public runs.

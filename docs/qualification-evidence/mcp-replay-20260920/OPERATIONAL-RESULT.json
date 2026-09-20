@@ -68,7 +68,18 @@
     "received_at": "2026-09-20T10:34:50.830210+00:00",
     "scope": "Independent untouched T1 restore prerequisite only, not final replay acceptance"
   },
-  "independent_replay_acceptance": "PENDING",
+  "independent_replay_acceptance": {
+    "verdict": "PASS",
+    "report": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/mcp-replay-status-final-review-20260920/REVIEW.md",
+      "sha256": "0195e3832295852f34688ca4051c5c555efe07c5d1ad2f5a6249a65ced507f28"
+    },
+    "result": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/mcp-replay-status-final-review-20260920/RESULT.json",
+      "sha256": "ec8efd09b806a763d43d579ad82c047cd87511bed87e5453079777d40dbe39e0"
+    },
+    "scope": "independent M3 MCP replay-status acceptance for queued, failed-blocked, failed-closed and applied historical requests"
+  },
   "final_state_manifest_sha256": "c6472a8d69ba7133753b7459343ffb3540c32c7cbc02c9c9318cf075d35b1991",
   "cleanup": {
     "at": "2026-09-20T10:39:09.135284+00:00",
