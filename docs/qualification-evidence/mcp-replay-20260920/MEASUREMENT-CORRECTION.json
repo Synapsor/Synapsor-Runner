@@ -1,0 +1,17 @@
+{
+  "at": "2026-09-20T10:37:30.268375+00:00",
+  "result": "PASS",
+  "classification": "harness measurement error, not replay/product failure",
+  "failed_record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/final-episode.json",
+  "failed_step": 17,
+  "config_delta": [
+    ".synapsor/protect-state.json"
+  ],
+  "before_sha256": "d23261db75707e247625c0eee07a47d3f5a33e0e12bf57a3e3a1aa17249ae3c1",
+  "after_sha256": "d0f2a222cadd90ba8429a9edb36e199d6832563094b429130df8d56ef122f2e4",
+  "proof": "Exact previous serialized file reconstructed by removing only the newly appended protected Explore plan and decrementing next_reference once; hash equals prior snapshot. All other JSON hashes and authority tables unchanged. New Explore was expressly required for the distinct request; all replay comparisons remain strict.",
+  "product_source_unchanged": true,
+  "installation_unchanged": true,
+  "request_changes_repeated": 0,
+  "same_counters_and_deadline": true
+}

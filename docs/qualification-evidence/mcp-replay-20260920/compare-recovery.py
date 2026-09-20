@@ -5,7 +5,16 @@ r=Path('/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911
 mode,before,after=sys.argv[1:];assert mode in ['no-change','closure','fresh','effect']
 b=d/('state-'+before);a=d/('state-'+after);read=lambda p:json.loads(p.read_text())
 bm=read(b/'manifest.json');am=read(a/'manifest.json')
-assert bm['config_files']==am['config_files']
+config_changes=[k for k in bm['config_files'].keys()|am['config_files'].keys() if bm['config_files'].get(k)!=am['config_files'].get(k)]
+if mode=='fresh' and config_changes:
+ # The explicitly requested NEW Explore adds one encrypted plan. It is observed
+ # bookkeeping, not policy/config mutation; replay checks still require equality.
+ assert config_changes==['.synapsor/protect-state.json']
+ p=d/'project'/config_changes[0];current=json.loads(p.read_text())
+ assert hashlib.sha256(p.read_bytes()).hexdigest()==am['config_files'][config_changes[0]]
+ prior={**current,'next_reference':current['next_reference']-1,'items':current['items'][:-1]}
+ assert hashlib.sha256((json.dumps(prior,indent=2,ensure_ascii=False)+'\n').encode()).hexdigest()==bm['config_files'][config_changes[0]]
+else:assert not config_changes
 for table,value in bm['tables'].items():
  if table in {'control_policy_identity','control_policy_deployments','control_policy_revisions','control_policy_active','control_policy_drafts','control_policy_reviews','control_policy_events'}:assert value==am['tables'][table], 'Authority changed: '+table
 changes=[t for t,v in bm['tables'].items() if v!=am['tables'].get(t)]

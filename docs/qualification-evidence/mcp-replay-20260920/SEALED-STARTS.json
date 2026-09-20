@@ -1,0 +1,61 @@
+{
+  "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/sealed-starts/manifest.json",
+  "sha256": "0d86d0a468c3100d379383bdf5a8e8daf8f79b4bbe0e31b33068b0ebbeda0836",
+  "entries": 216,
+  "cases": {
+    "r1": {
+      "logical_project": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/project",
+      "database": "r1",
+      "source_rows": 504,
+      "empty_work": true,
+      "control_backend": "SQLite",
+      "business_backend": "PostgreSQL",
+      "state_manifest_sha256": "4bf583dd69a737938aecb77bec86c2cca02a01931474ffe00bc273e6916633e1",
+      "writer_role": "runner_writer_52095a9e3cdd",
+      "operator_key": "private local synthetic key separately archived; public fresh-key bootstrap required for rotation",
+      "public_invocations": [
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/invocation-001.json",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/invocation-002.json",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/invocation-003.json",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/invocation-004.json",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/invocation-005.json",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/invocation-006.json",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/invocation-007.json",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/invocation-008.json",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/invocation-009.json",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/invocation-010.json",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/invocation-011.json",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/invocation-012.json",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/invocation-013.json"
+      ],
+      "owner": "implementer"
+    },
+    "t1": {
+      "logical_project": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/t1/project",
+      "database": "t1",
+      "source_rows": 504,
+      "empty_work": true,
+      "control_backend": "SQLite",
+      "business_backend": "PostgreSQL",
+      "state_manifest_sha256": "96d4b3634298374694e28f428120aeb86a78e57c39538f02fd43919d8262654c",
+      "writer_role": "runner_writer_2910ca8cafa9",
+      "operator_key": "private local synthetic key separately archived; public fresh-key bootstrap required for rotation",
+      "public_invocations": [
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/t1/invocation-001.json",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/t1/invocation-002.json",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/t1/invocation-003.json",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/t1/invocation-004.json",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/t1/invocation-005.json",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/t1/invocation-006.json",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/t1/invocation-007.json",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/t1/invocation-008.json",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/t1/invocation-009.json",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/t1/invocation-010.json",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/t1/invocation-011.json",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/t1/invocation-012.json",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/t1/invocation-013.json"
+      ],
+      "owner": "independent_tester"
+    }
+  }
+}

@@ -1,0 +1,349 @@
+{
+  "artifact_tree": "9392b9364af45f2b15e8599b5382179e36a57404660b5de32fd58df0a6fa4bf7",
+  "client_calls": [
+    {
+      "label": "first-and-queued",
+      "record_index": 3,
+      "raw_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/mcp-first-and-queued/results.json",
+      "raw_sha256": "f30183aeed8dcacfe46bd94390243542814c2f5646d86b257d5471a736eaa8f0",
+      "request_sha256": "e7cfb622e7bef1f69cabaa61f5c6f7113a6912456c3c035b9f6bb1cbed432874",
+      "isError": false,
+      "text_equals_structured": true,
+      "ok": true,
+      "status": "approved_pending_execution",
+      "request_disposition": "created",
+      "authorization": {
+        "eligibility": "verified",
+        "eligibility_basis": "current_request",
+        "approval": "automatic",
+        "execution": "queued"
+      },
+      "execution": "queued",
+      "lifecycle": {
+        "execution": "queued",
+        "disposition": "open",
+        "automatic_retry_scheduled": false,
+        "next_retry_at": null
+      },
+      "invocation": {
+        "operation": "created_request",
+        "source_database_changed": false
+      },
+      "source_database_changed": false,
+      "execution_receipt": null,
+      "next": null
+    },
+    {
+      "label": "first-and-queued",
+      "record_index": 4,
+      "raw_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/mcp-first-and-queued/results.json",
+      "raw_sha256": "f30183aeed8dcacfe46bd94390243542814c2f5646d86b257d5471a736eaa8f0",
+      "request_sha256": "e7cfb622e7bef1f69cabaa61f5c6f7113a6912456c3c035b9f6bb1cbed432874",
+      "isError": false,
+      "text_equals_structured": true,
+      "ok": true,
+      "status": "approved_pending_execution",
+      "request_disposition": "already_recorded",
+      "authorization": {
+        "eligibility": "verified",
+        "eligibility_basis": "original_request",
+        "approval": "automatic",
+        "execution": "queued"
+      },
+      "execution": "queued",
+      "lifecycle": {
+        "execution": "queued",
+        "disposition": "open",
+        "automatic_retry_scheduled": false,
+        "next_retry_at": null
+      },
+      "invocation": {
+        "operation": "returned_existing_request",
+        "source_database_changed": false
+      },
+      "source_database_changed": false,
+      "execution_receipt": null,
+      "next": null
+    },
+    {
+      "label": "before-closure",
+      "record_index": 0,
+      "raw_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/mcp-before-closure/results.json",
+      "raw_sha256": "39b2c7f7affec2f6b6b2819af65acd6f266729657216965e5c49ad337a6bd5c0",
+      "request_sha256": "e7cfb622e7bef1f69cabaa61f5c6f7113a6912456c3c035b9f6bb1cbed432874",
+      "isError": false,
+      "text_equals_structured": true,
+      "ok": true,
+      "status": "attention_required",
+      "request_disposition": "already_recorded",
+      "authorization": {
+        "eligibility": "verified",
+        "eligibility_basis": "original_request",
+        "approval": "automatic",
+        "execution": "held"
+      },
+      "execution": "held",
+      "lifecycle": {
+        "execution": "failed",
+        "disposition": "blocked",
+        "automatic_retry_scheduled": false,
+        "next_retry_at": null
+      },
+      "invocation": {
+        "operation": "returned_existing_request",
+        "source_database_changed": false
+      },
+      "source_database_changed": false,
+      "execution_receipt": {
+        "verified": true,
+        "status": "failed",
+        "source_database_changed": false
+      },
+      "next": null
+    },
+    {
+      "label": "after-closure",
+      "record_index": 0,
+      "raw_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/mcp-after-closure/results.json",
+      "raw_sha256": "b0645f929eead139bbfd3276c78349ce991b41d422f5b898da6a778bfe99b5f3",
+      "request_sha256": "e7cfb622e7bef1f69cabaa61f5c6f7113a6912456c3c035b9f6bb1cbed432874",
+      "isError": false,
+      "text_equals_structured": true,
+      "ok": true,
+      "status": "closed",
+      "request_disposition": "already_recorded",
+      "authorization": {
+        "eligibility": "verified",
+        "eligibility_basis": "original_request",
+        "approval": "automatic",
+        "execution": "held"
+      },
+      "execution": "held",
+      "lifecycle": {
+        "execution": "failed",
+        "disposition": "closed",
+        "automatic_retry_scheduled": false,
+        "next_retry_at": null
+      },
+      "invocation": {
+        "operation": "returned_existing_request",
+        "source_database_changed": false
+      },
+      "source_database_changed": false,
+      "execution_receipt": {
+        "verified": true,
+        "status": "failed",
+        "source_database_changed": false
+      },
+      "next": null
+    },
+    {
+      "label": "fresh",
+      "record_index": 3,
+      "raw_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/mcp-fresh/results.json",
+      "raw_sha256": "6b4db6ca4c5674d0f8b3110fbfc935ed8362f144586a7eb19fe9856227d02cf0",
+      "request_sha256": "280c1a4ad06beedeecc033bb8673c169136bcaa779f50378cae4d001fd30f979",
+      "isError": false,
+      "text_equals_structured": true,
+      "ok": true,
+      "status": "approved_pending_execution",
+      "request_disposition": "created",
+      "authorization": {
+        "eligibility": "verified",
+        "eligibility_basis": "current_request",
+        "approval": "automatic",
+        "execution": "queued"
+      },
+      "execution": "queued",
+      "lifecycle": {
+        "execution": "queued",
+        "disposition": "open",
+        "automatic_retry_scheduled": false,
+        "next_retry_at": null
+      },
+      "invocation": {
+        "operation": "created_request",
+        "source_database_changed": false
+      },
+      "source_database_changed": false,
+      "execution_receipt": null,
+      "next": null
+    },
+    {
+      "label": "applied-and-old",
+      "record_index": 0,
+      "raw_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/mcp-applied-and-old/results.json",
+      "raw_sha256": "d80771b83ab3fc6fcc04d53db20c43a10fcfb06ba1e9a4c02c115b26df066094",
+      "request_sha256": "280c1a4ad06beedeecc033bb8673c169136bcaa779f50378cae4d001fd30f979",
+      "isError": false,
+      "text_equals_structured": true,
+      "ok": true,
+      "status": "completed",
+      "request_disposition": "already_recorded",
+      "authorization": {
+        "eligibility": "verified",
+        "eligibility_basis": "original_request",
+        "approval": "automatic",
+        "execution": "completed"
+      },
+      "execution": "completed",
+      "lifecycle": {
+        "execution": "applied",
+        "disposition": "open",
+        "automatic_retry_scheduled": false,
+        "next_retry_at": null
+      },
+      "invocation": {
+        "operation": "returned_existing_request",
+        "source_database_changed": false
+      },
+      "source_database_changed": true,
+      "execution_receipt": {
+        "verified": true,
+        "status": "applied",
+        "source_database_changed": true
+      },
+      "next": null
+    },
+    {
+      "label": "applied-and-old",
+      "record_index": 1,
+      "raw_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/mcp-applied-and-old/results.json",
+      "raw_sha256": "d80771b83ab3fc6fcc04d53db20c43a10fcfb06ba1e9a4c02c115b26df066094",
+      "request_sha256": "e7cfb622e7bef1f69cabaa61f5c6f7113a6912456c3c035b9f6bb1cbed432874",
+      "isError": false,
+      "text_equals_structured": true,
+      "ok": true,
+      "status": "closed",
+      "request_disposition": "already_recorded",
+      "authorization": {
+        "eligibility": "verified",
+        "eligibility_basis": "original_request",
+        "approval": "automatic",
+        "execution": "held"
+      },
+      "execution": "held",
+      "lifecycle": {
+        "execution": "failed",
+        "disposition": "closed",
+        "automatic_retry_scheduled": false,
+        "next_retry_at": null
+      },
+      "invocation": {
+        "operation": "returned_existing_request",
+        "source_database_changed": false
+      },
+      "source_database_changed": false,
+      "execution_receipt": {
+        "verified": true,
+        "status": "failed",
+        "source_database_changed": false
+      },
+      "next": null
+    },
+    {
+      "label": "restart-old",
+      "record_index": 0,
+      "raw_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/mcp-restart-old/results.json",
+      "raw_sha256": "b0645f929eead139bbfd3276c78349ce991b41d422f5b898da6a778bfe99b5f3",
+      "request_sha256": "e7cfb622e7bef1f69cabaa61f5c6f7113a6912456c3c035b9f6bb1cbed432874",
+      "isError": false,
+      "text_equals_structured": true,
+      "ok": true,
+      "status": "closed",
+      "request_disposition": "already_recorded",
+      "authorization": {
+        "eligibility": "verified",
+        "eligibility_basis": "original_request",
+        "approval": "automatic",
+        "execution": "held"
+      },
+      "execution": "held",
+      "lifecycle": {
+        "execution": "failed",
+        "disposition": "closed",
+        "automatic_retry_scheduled": false,
+        "next_retry_at": null
+      },
+      "invocation": {
+        "operation": "returned_existing_request",
+        "source_database_changed": false
+      },
+      "source_database_changed": false,
+      "execution_receipt": {
+        "verified": true,
+        "status": "failed",
+        "source_database_changed": false
+      },
+      "next": null
+    }
+  ],
+  "replay_readbacks": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/readonly-replay-after-closure-0-before-replay-after-closure-0-after.json",
+      "sha256": "edea2878b21005fe5cfe233cf5aab4a9707d3085a29bbe429cefc6020f1a3c2d",
+      "before": "replay-after-closure-0-before",
+      "after": "replay-after-closure-0-after",
+      "all_control_tables": 42,
+      "all_source_rows": 504,
+      "configuration_files": 19,
+      "sqlite_bytes_changed": false,
+      "result": "unchanged"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/readonly-replay-applied-and-old-0-before-replay-applied-and-old-0-after.json",
+      "sha256": "93355c66d3cfda26b7abd700dad86a2b74f956b0409a87d6b3f837f2e1c3b394",
+      "before": "replay-applied-and-old-0-before",
+      "after": "replay-applied-and-old-0-after",
+      "all_control_tables": 42,
+      "all_source_rows": 504,
+      "configuration_files": 19,
+      "sqlite_bytes_changed": false,
+      "result": "unchanged"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/readonly-replay-applied-and-old-1-before-replay-applied-and-old-1-after.json",
+      "sha256": "21f6caac955a0f92cb207e42dcbc4603f038ad79fe1397e89678b06f36039141",
+      "before": "replay-applied-and-old-1-before",
+      "after": "replay-applied-and-old-1-after",
+      "all_control_tables": 42,
+      "all_source_rows": 504,
+      "configuration_files": 19,
+      "sqlite_bytes_changed": false,
+      "result": "unchanged"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/readonly-replay-before-closure-0-before-replay-before-closure-0-after.json",
+      "sha256": "1b3b67f25e26e0f0a4340f90bd999e838ca527b2264366e522315aeb45314b93",
+      "before": "replay-before-closure-0-before",
+      "after": "replay-before-closure-0-after",
+      "all_control_tables": 42,
+      "all_source_rows": 504,
+      "configuration_files": 19,
+      "sqlite_bytes_changed": false,
+      "result": "unchanged"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/readonly-replay-first-and-queued-4-before-replay-first-and-queued-4-after.json",
+      "sha256": "80bb0453df5b82a3054f8a89200b8243e2fe921f7b4a951b171609c368f03e2c",
+      "before": "replay-first-and-queued-4-before",
+      "after": "replay-first-and-queued-4-after",
+      "all_control_tables": 42,
+      "all_source_rows": 504,
+      "configuration_files": 19,
+      "sqlite_bytes_changed": false,
+      "result": "unchanged"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/readonly-replay-restart-old-0-before-replay-restart-old-0-after.json",
+      "sha256": "530b621974504913ea36d6aeb08f2a692bd0f88aae67b77ec166ff779c984fdc",
+      "before": "replay-restart-old-0-before",
+      "after": "replay-restart-old-0-after",
+      "all_control_tables": 42,
+      "all_source_rows": 504,
+      "configuration_files": 19,
+      "sqlite_bytes_changed": false,
+      "result": "unchanged"
+    }
+  ]
+}

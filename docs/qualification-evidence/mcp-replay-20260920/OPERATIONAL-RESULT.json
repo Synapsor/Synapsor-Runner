@@ -1,0 +1,87 @@
+{
+  "verdict": "PASS (implementer-owned)",
+  "final_episode_seconds": 183.794536,
+  "same_episode_measurement_pause": {
+    "at": "2026-09-20T10:37:30.268375+00:00",
+    "result": "PASS",
+    "classification": "harness measurement error, not replay/product failure",
+    "failed_record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/final-episode.json",
+    "failed_step": 17,
+    "config_delta": [
+      ".synapsor/protect-state.json"
+    ],
+    "before_sha256": "d23261db75707e247625c0eee07a47d3f5a33e0e12bf57a3e3a1aa17249ae3c1",
+    "after_sha256": "d0f2a222cadd90ba8429a9edb36e199d6832563094b429130df8d56ef122f2e4",
+    "proof": "Exact previous serialized file reconstructed by removing only the newly appended protected Explore plan and decrementing next_reference once; hash equals prior snapshot. All other JSON hashes and authority tables unchanged. New Explore was expressly required for the distinct request; all replay comparisons remain strict.",
+    "product_source_unchanged": true,
+    "installation_unchanged": true,
+    "request_changes_repeated": 0,
+    "same_counters_and_deadline": true
+  },
+  "counters": {
+    "final_started_at": "2026-09-20T10:34:57.629878+00:00",
+    "final_deadline": "2026-09-20T12:04:57.629878+00:00",
+    "request_change": 8,
+    "finite_workers": 2,
+    "business_effect_transactions": 1,
+    "owner_version_changes": 1,
+    "closure_commands": 4,
+    "provider_calls": 0,
+    "stale_refusals": 1
+  },
+  "topology": "single host, PostgreSQL source / SQLite control; six sequential generated stdio MCP processes, queued replay shares initial process, applied+old share one process then explicit restart",
+  "replay_count": 6,
+  "all_replay_logical_state_unchanged": true,
+  "replay_sqlite_byte_changes": 0,
+  "source_rows_compared_each_replay": 504,
+  "control_tables_compared_each_replay": 42,
+  "business_effect": "one exact candidate sealed and related slot consumed; each version advances once; all other source rows unchanged, excluding separately recorded owner candidate-version increment",
+  "approval_history": "two separately admitted automatic approvals retained; failed original has one attempt and failed receipt, administratively discarded; distinct fresh request has its own one attempt and applied source/control receipts",
+  "receipt_hash_verification": [
+    {
+      "status": "failed",
+      "control_receipt_hash": "sha256:e8ba877e8d0985bce9792804ae5aef4d832447e875689ec778ab1afac0ce06a1",
+      "control_hash_verified": true,
+      "stored_bytes_sha256": "d4c5c907509535dc1993c2d87eef04778215395d6663a083581efea950b81de4"
+    },
+    {
+      "status": "applied",
+      "control_receipt_hash": "sha256:cb2a745259a5a251e42fcddb5718c969c9392daa52c29f1e016a3b6cf3e4b41f",
+      "control_hash_verified": true,
+      "stored_bytes_sha256": "ac9aee525398a8c957dc54e035506b694a6f790bcf90d2705f091f0391880566",
+      "source_result_hash": "sha256:abd3cb4cb6cfb62e52af37b7c4f0bdae47e82778c41dcc452d00facaaf7c72bd",
+      "source_hash_verified": true
+    }
+  ],
+  "original_record": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/final-episode.json",
+    "sha256": "b26332c818fb415aea3fd8cd552e87680be25ae56c540b161348d66cc36ffd91"
+  },
+  "continued_record": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/final-episode-continuation.json",
+    "sha256": "ab896bc69147f7dfa3a7af49d2ba7ed056ae2d4d1913a3098e1da22d61ff5e7a"
+  },
+  "independent_restoration": {
+    "result": "PASS",
+    "evidence_path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/mcp-replay-status-final-review-20260920/RESTORE-VALIDATION.json",
+    "evidence_sha256": "1cedea57194185dc139fe3bc93052cb5b33f7fc23ac10f0adbc34e0cc4cabc35",
+    "received_at": "2026-09-20T10:34:50.830210+00:00",
+    "scope": "Independent untouched T1 restore prerequisite only, not final replay acceptance"
+  },
+  "independent_replay_acceptance": "PENDING",
+  "final_state_manifest_sha256": "c6472a8d69ba7133753b7459343ffb3540c32c7cbc02c9c9318cf075d35b1991",
+  "cleanup": {
+    "at": "2026-09-20T10:39:09.135284+00:00",
+    "owned_container": "0591a32a8617605bc79b4290639eaa121f505d5cb591aaa2d84bd01219d9069c",
+    "verified_label": "mcp-replay-7be8d2a-20260920",
+    "stopped_removed": true,
+    "remaining_owned_containers": [],
+    "state_saved_before_cleanup": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/owned-final-state/manifest.json",
+    "state_manifest_sha256": "c6472a8d69ba7133753b7459343ffb3540c32c7cbc02c9c9318cf075d35b1991",
+    "tester_restore_verified_before_cleanup": true,
+    "other_containers_or_processes_stopped": false,
+    "public_invocations": "all completed per save-final-state assertion; finite workers and generated client processes exited; no global process kill",
+    "provider_calls": 0
+  },
+  "stage_b": "ATTEMPTED / NOT PASSED"
+}

@@ -1,0 +1,871 @@
+{
+  "created_at": "2026-09-20T10:43:47.104407+00:00",
+  "raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920",
+  "classification": "public/sanitized reports and hashes only in Git; raw captures and identities remain private",
+  "artifact": {
+    "frozen_at": "2026-09-20T10:27:41.429Z",
+    "purpose": "M3 truthful MCP replay projection; unchanged accepted recovery",
+    "cases": [
+      "R1 main replay lifecycle",
+      "T1 independent replay lifecycle"
+    ],
+    "product_commit": "36a5e0e3034127f842a2053048a13ca9e05639a1",
+    "test_commit": "36a5e0e3034127f842a2053048a13ca9e05639a1",
+    "report_commit": "recorded separately after verification",
+    "source_commit": "5bb7e6bd82386a53f49a6525a004fca9d5cdd06d",
+    "source_status": "?? .claude/",
+    "unpackaged_unrelated_directory": ".claude/ (preserved, no contents read)",
+    "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/frozen/installed",
+    "installed_tree_sha256": "9392b9364af45f2b15e8599b5382179e36a57404660b5de32fd58df0a6fa4bf7",
+    "node": {
+      "version": "v22.22.2",
+      "executable": "/usr/bin/node",
+      "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+    },
+    "runner_version": "1.8.0",
+    "spec_version": "1.11.0",
+    "package_lock_sha256": "2cc29c8bfb487a405b9127caf4bf3e57120b2955627bceddd2edf37347474b8f",
+    "tarballs": [
+      {
+        "name": "synapsor-runner-1.8.0.tgz",
+        "sha256": "e70a2fecda5fc419dbe2175170141f1ced98f6e8f6649acd2418d0b64049bd01"
+      },
+      {
+        "name": "synapsor-spec-1.11.0.tgz",
+        "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+      }
+    ],
+    "entries": 7569,
+    "manifest_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/frozen/installed-artifact-manifest.json",
+    "manifest_sha256": "a1f335cc0be0838327d935c2c5399a86217593330361f22bd327f864acfd92a2",
+    "archive_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/frozen/installed-artifact.tar.gz",
+    "archive_sha256": "4417f2a41304947d373da4f648f0d31b34b5823f6ac69736482025f006fdb847",
+    "preflight_manifest_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/frozen/preflight/manifest.json",
+    "preflight_manifest_sha256": "1f1792d0f70536f78af52c584e610bee7e8ee6e4460bdd380f1683174e01c7df",
+    "source_archive": {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/frozen/source-checkpoint.tar.gz",
+      "sha256": "133ccedaf689d812b8f7a400ce790459288da70d2afc9df611d5b608714577fe"
+    },
+    "external_frozen_files": [
+      {
+        "path": "installed-artifact-manifest.json",
+        "mode": 256,
+        "sha256": "a1f335cc0be0838327d935c2c5399a86217593330361f22bd327f864acfd92a2"
+      },
+      {
+        "path": "installed-artifact.tar.gz",
+        "mode": 256,
+        "sha256": "4417f2a41304947d373da4f648f0d31b34b5823f6ac69736482025f006fdb847"
+      },
+      {
+        "path": "installed-dependency-tree.json",
+        "mode": 256,
+        "sha256": "1222ade936611dd20890b66fbc2d453ba19a9d02928c1d19654bba80bc4f4ab7"
+      },
+      {
+        "path": "source-checkpoint.tar.gz",
+        "mode": 256,
+        "sha256": "133ccedaf689d812b8f7a400ce790459288da70d2afc9df611d5b608714577fe"
+      },
+      {
+        "path": "synapsor-runner-1.8.0.tgz",
+        "mode": 256,
+        "sha256": "e70a2fecda5fc419dbe2175170141f1ced98f6e8f6649acd2418d0b64049bd01"
+      },
+      {
+        "path": "synapsor-spec-1.11.0.tgz",
+        "mode": 256,
+        "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+      }
+    ]
+  },
+  "reports_and_harness": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/ARTIFACT.json",
+      "sha256": "2b08fd69b06ae997772a80e42514ad1783bc70efd979c79474f8f286b61912fa",
+      "bytes": 3441
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/BEFORE-AFTER.json",
+      "sha256": "d6677d3797d00471bda2889917b11577551a303aba38e01c659c703e5ca6a25c",
+      "bytes": 1823
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/BOOTSTRAP.md",
+      "sha256": "1e657a039f9bcefff44078a12d6632bec8e872041338bacd82722aa77f8ba91f",
+      "bytes": 8294
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/CHECKPOINT.md",
+      "sha256": "86f4e98aeab94879915621714f4fbcb352f09fab013585b46af3ade9a65d00cc",
+      "bytes": 2261
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/DEVELOPMENT-GATES.json",
+      "sha256": "4e88e62a8e6172616b56017a7778938f47838137b2dec44e0b9083320dcb603a",
+      "bytes": 19062
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/FINAL-REPORT.md",
+      "sha256": "83f49c3df5a3578ec01da1e12b896cfa6f750c7235dedf63d36d3f987be761cd",
+      "bytes": 14836
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/HARNESS-NOTES.md",
+      "sha256": "9a66909866c9fb02bcfb6f1496f888cab6d8c3bcdb0bbf662086851cf5421dfc",
+      "bytes": 1676
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/IMPLEMENTATION-NOTE.md",
+      "sha256": "41b41cfddf0444dc00e229abe554cd6631409b42978ce30982ba45a6119fbd28",
+      "bytes": 8032
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/MCP-REPLAY-TRACE.json",
+      "sha256": "246ced00539e6ab8740c13f18390f93b390c63a3423081a93ebfd95d90757757",
+      "bytes": 13360
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/MEASUREMENT-CORRECTION.json",
+      "sha256": "40354a1c4f520f379407dc4c421f255e2dc4c031cdd9c11e7d61bd3c352eec02",
+      "bytes": 1018
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/NEXT-QUALIFICATION-DECISION.md",
+      "sha256": "b2bc8ba801bcc034337074d39dd8024c0a69f3e82a4ca37c56b8d4491eaed5a0",
+      "bytes": 3343
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/OPERATIONAL-RESULT.json",
+      "sha256": "0a067368a88382907209e8ae2f017577e23b23c7b9510187e5b78058b4dffd13",
+      "bytes": 5032
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/PLAN.json",
+      "sha256": "31ef75e9ff8817581a8d4d3c5a624ac8f0d23c6cd44c4e786287dd7a510fa572",
+      "bytes": 908
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/PRIVATE-BUNDLE.json",
+      "sha256": "c555ab3c872d3311af5e9ede3bb29d6798e7679283ea4b01163e14c3b4187e15",
+      "bytes": 4311
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/REVIEWER-HANDOFF.md",
+      "sha256": "8ec296edb66ac8c95d8b9b5f677beb132e8d5925b189a0e2c9610b03ed4da3b7",
+      "bytes": 6432
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/SEALED-STARTS.json",
+      "sha256": "505b7c1abd0d49566e2f4819ffac4a4ac7165152277924819dfacd4ee68b33d3",
+      "bytes": 5413
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/STABLE-GATES.json",
+      "sha256": "516eab9b741ce96d4fbdc9958668e35b8ecbdc030cc17a45fab96533bfa100fe",
+      "bytes": 11451
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/apply-reviewed-writer.py",
+      "sha256": "06c37bccf269474df3dff649aa770d008fd4a67b0f395f7bf4de09551541f841",
+      "bytes": 4250
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/bundle-freshness-attempt2.log",
+      "sha256": "4534215e15034b5b5391ab51d71121ebc119c68a2226f6194462a8558e9489b7",
+      "bytes": 182
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/captured-result.qualification.ts",
+      "sha256": "70e7bdfe937d84a577425ee0fd6561bb45b6388a5a2b9b7ce83d0f4b986441b8",
+      "bytes": 4312
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/captured-vitest.config.mjs",
+      "sha256": "e78277ed0011ee918794f53e51aab1e6f52e218f65131157279c265a6fafef97",
+      "bytes": 403
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/close-public.py",
+      "sha256": "3ecbdb7f7d273d8a7c9170aab1ac8dd09b332a2311192a1b60032e120ff979a0",
+      "bytes": 2374
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/compare-readonly.py",
+      "sha256": "c3dd2d7d6f815f4707326011626aa00b5e0fb2b74726924d9f3c3ce58abe7702",
+      "bytes": 1193
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/compare-recovery.py",
+      "sha256": "6d0444372ef71a82eacf90118286d6746dd615c30f180242894e9de7252a2cf7",
+      "bytes": 5756
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/compare-worker.py",
+      "sha256": "399d704777c7a70833296b0ca114d863a5bb1bf62b4b1f5039ff08c16bbf5128",
+      "bytes": 4291
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/cursor-plugin-attempt1.log",
+      "sha256": "cc12e22d29ebd660345c60ee249826505ffccb62bb45e1b39590202b7ee7135f",
+      "bytes": 391
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/cursor-plugin-attempt2.log",
+      "sha256": "cc12e22d29ebd660345c60ee249826505ffccb62bb45e1b39590202b7ee7135f",
+      "bytes": 391
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/dsl-sources-attempt1.log",
+      "sha256": "3bd663b10b211bb9dbfa01117dd164a3a851d9936e4be1568a6bd5f9ccf7d50a",
+      "bytes": 89
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/dsl-sources-attempt2.log",
+      "sha256": "3bd663b10b211bb9dbfa01117dd164a3a851d9936e4be1568a6bd5f9ccf7d50a",
+      "bytes": 89
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/finite-worker.py",
+      "sha256": "abc3e38c1942c699cbe00e309deb046bb7fe3418d48ce316fcc78c88bec5b61c",
+      "bytes": 709
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/freeze-repair.mjs",
+      "sha256": "52a58579896467aadab5c38258f0d082472b0eafc150e9f9e64c619f925ca7d2",
+      "bytes": 6580
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/gestures-activate.json",
+      "sha256": "ea262d9659d8daa9d0a514dc64fb71313900794a235beca785f8c013af98bcbc",
+      "bytes": 957
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/gestures-administrator.json",
+      "sha256": "ea267f8856e3becd2b5c242eb8656ba44cea4dd5c70b9ce34b87b9ad94545263",
+      "bytes": 1700
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/gestures-execution.json",
+      "sha256": "c7caec82ea8e76b4590878e6dd3c16a34d01f0ac700cef8a56f346be343035a2",
+      "bytes": 4653
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/gestures-read.json",
+      "sha256": "7b4e30fe458118b0411d50aff5bb3d4268a53d141980a3c3d4bb78038101924b",
+      "bytes": 645
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/human-commands-attempt1.log",
+      "sha256": "4ca02cff1d23604455f2707b16fc58bea2d0beb7f6adff085887cbdae1379222",
+      "bytes": 43
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/human-commands-attempt2.log",
+      "sha256": "4ca02cff1d23604455f2707b16fc58bea2d0beb7f6adff085887cbdae1379222",
+      "bytes": 43
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/licenses-attempt1.log",
+      "sha256": "81c81f063c5391a1e9f237b114a7ba197da9b6cece450fa3fd851f6fcac80bac",
+      "bytes": 30
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/licenses-attempt2.log",
+      "sha256": "81c81f063c5391a1e9f237b114a7ba197da9b6cece450fa3fd851f6fcac80bac",
+      "bytes": 30
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/local-package-attempt2.log",
+      "sha256": "424b48f200bd774e8c4dcabbc6401b5845a059d473ff970cda3023ab10cc1d7a",
+      "bytes": 293
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/mcp-client-configs-attempt1.log",
+      "sha256": "a61f33a0918009a044aaaede959658bba3184fb54d00088b5a29142595b0f3cd",
+      "bytes": 1601
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/mcp-client-configs-attempt2.log",
+      "sha256": "a61f33a0918009a044aaaede959658bba3184fb54d00088b5a29142595b0f3cd",
+      "bytes": 1601
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/offline-package-plan-attempt1.json",
+      "sha256": "5be6b8e517047154be1d8514e056fe5acaf3208960b88a6e0388bd85f0ff0cec",
+      "bytes": 2343
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/offline-package-plan-attempt2.json",
+      "sha256": "3215f01e9fa924f58769dd988510574f6e162ec19e6fefa5823b214e6111457e",
+      "bytes": 5505
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/owner-drift.py",
+      "sha256": "17d23a2afb43bf33888eafad56d49a3139159ad9a45c2c7c96ebb86278ab0462",
+      "bytes": 2134
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/packed-offline-attempt2.log",
+      "sha256": "c78c4b074908bc2fb787159fd4829411a9d0db717ef14ebace846f4cb10358a9",
+      "bytes": 2193
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/prepare-operational.py",
+      "sha256": "55924afd46af41b1f184e1a048330c6c55fce105f6d8887a9f89a2c210d3a963",
+      "bytes": 3442
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/prepare-operator.py",
+      "sha256": "0e266b9e1260c9ce35145a381673f0a92e319f0a58d9a4171c434e7cb4651dda",
+      "bytes": 2482
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/prepare-owned-db.py",
+      "sha256": "8416f152e2038caeff48cd421b4e93c4e075e9c03adec8471e43323cc8fa6b4c",
+      "bytes": 1599
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/prepare-preflight.py",
+      "sha256": "bc5ffec7c9c9487e1dc695c899f1cbbdcf7040d43678708b18d7d0ca2ecbdd2d",
+      "bytes": 1697
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/prepare-typed-input.py",
+      "sha256": "e642862b7b8ea0e028d2bff3d6d13288c2ad584b75ea3f86c4d5d14d11cc8d17",
+      "bytes": 3004
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/product-revision.json",
+      "sha256": "4d2023113f241203aa31b837062e15cbb2f6bbc0b786b55c067bfae3077ab9e2",
+      "bytes": 186
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/public-commands-attempt2.log",
+      "sha256": "2121e7f079daf2f2826853340dcdbf7349aeb7e7ed01ffc464e8202cec41e559",
+      "bytes": 803
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/public-launch.py",
+      "sha256": "abd7afce0ad1b7ac2bd51a76c93a36e45f2fe18b34d49cb7e40545c92dc07bd6",
+      "bytes": 3945
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/public-mcp.mjs",
+      "sha256": "f95e2af87833aac83b8aa3bdf60e38d856de799b5ae19bae3a61f799e84d27f6",
+      "bytes": 6055
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/public-preflight.mts",
+      "sha256": "34afdb0e1caacced0afd7361a58847957cbfa6f1b1f347f1672e3ee9c272efc8",
+      "bytes": 956
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/public-read-plan.json",
+      "sha256": "a186b37ad6251f732d8b10310aa380d3b84f3623e9781fad352f5362a9235a93",
+      "bytes": 397
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/public-request-plan.json",
+      "sha256": "e3b4776a4e4572ed779ad9b269cc128da45efa26ed654312152cce945f1a2b4e",
+      "bytes": 634
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/run-freeze.py",
+      "sha256": "c55b961e970abf4f78b196b4c90cf982b2d99158f3293d7a31aa957dce7bf440",
+      "bytes": 1445
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/run-offline-checks.py",
+      "sha256": "9e0eb8c337c4039baa374ecd6d66b5921cf60a7886bc64895ec31c9b81cdb505",
+      "bytes": 4057
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/run-public.py",
+      "sha256": "1b4408ec7e2b01318238f47099e68d20088cee087e5f8189f76a93e164252ff8",
+      "bytes": 869
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/run-replay-continue.py",
+      "sha256": "c133b131cc6d701ff033d195f9e7bbca136b46dec10670e083b157532d95df8a",
+      "bytes": 6631
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/run-replay-episode.py",
+      "sha256": "0a0ea27a742f32b917dc37a5ed40d70b113e3fe7f61a5c5c44473d0fea2e18b4",
+      "bytes": 8265
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/save-final-state.py",
+      "sha256": "e6ba0fef6d088dfc46e9dcbdf14fce615de460b843620a0498d780322ac0cab1",
+      "bytes": 1894
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/seal-starts.py",
+      "sha256": "c27acdd701d9420749c7e37c1d86ed22f6c9f3d7aadca9b4221f9e435330fe51",
+      "bytes": 5667
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/seed-gestures.py",
+      "sha256": "2922392edbd94970f4e24a2a38990b3bedd3ed2769cba8ac9dbcde7182e46c02",
+      "bytes": 637
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/setup-case.py",
+      "sha256": "4d7b863d1a3f7f37b55e93d914866adb05372f7402a97f2ff4636a43ae042120",
+      "bytes": 5337
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/snapshot-operational.py",
+      "sha256": "9d56011277cf7b7b924a124d6051c58117654603290a219de985ee7cca26aee8",
+      "bytes": 3144
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/terminal-session.py",
+      "sha256": "c172bf9a8820c9c6b6f80a039024cd240bea36f7cea8af619c62651b9fa466b0",
+      "bytes": 2578
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/trusted-core-attempt1.log",
+      "sha256": "a5d547e1ec7ad5c1686a042dd171e76694b4c04cb82f624b810bc09882324c43",
+      "bytes": 73
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/trusted-core-attempt2.log",
+      "sha256": "a5d547e1ec7ad5c1686a042dd171e76694b4c04cb82f624b810bc09882324c43",
+      "bytes": 73
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/verify-preservation.py",
+      "sha256": "e1333234f8c2bbad10884a3fcfc9a951426d37752a4ec4a99dbc6f2f94cec210",
+      "bytes": 2722
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/verify-seals.py",
+      "sha256": "0be47424a87b8d990afeab16b8ce7ebb63a3cc24c67abcf3fedd24b241b5c13e",
+      "bytes": 1354
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/mcp-replay-20260920/verify.py",
+      "sha256": "b622765bcc6e75d82622e6aa259735b9ff24293de719162c05ab32ec8d473aa2",
+      "bytes": 2841
+    }
+  ],
+  "raw_records_and_manifests": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/preservation-before.json",
+      "sha256": "cd7ff2fcbe5b6f7f4b78298606079e8a4a7f97c0697e7cb2efdec37ff7549494",
+      "bytes": 593
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/preservation-final.json",
+      "sha256": "c96143c9ee6a3fbeb8ef445031710181c9677203ad9af7290e6963d1a1e0b226",
+      "bytes": 2299
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/source-invariance-final.json",
+      "sha256": "6ff899c778e7e18cf13cef59b334cffd7dc5b1b79cdcc42d84d089b64557de36",
+      "bytes": 164
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/old-installation-verification-before.json",
+      "sha256": "0d491803279c0a72572e44fc4b491dbb87956efa3ba8cdd8dfd33ee790680c82",
+      "bytes": 149
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/seals-full-before-operations.json",
+      "sha256": "3a082b18f3fd8296d19695c4671abf7d1c5c8eb34bce6408bb5dfaf6658eb0ea",
+      "bytes": 245
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/seals-full-final.json",
+      "sha256": "ba85e12fab7b4699564e847ba78ef836687b5d000bf5d38bd8639a9595b6be70",
+      "bytes": 245
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/tester-restoration.json",
+      "sha256": "e5b4b668a78abbeb9f23284b1f2227b2ae62c46f0be256d84045a8ecaf1ef652",
+      "bytes": 403
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/cleanup.json",
+      "sha256": "22a2e03d41cc9feee3a70b43eeb5d7478ccdecee4a4bd2617c7c858f1ac77b07",
+      "bytes": 785
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/measurement-correction.json",
+      "sha256": "e41d79e3a8821b8191d6687ee483d261f775baed458e4f4a1d348037d4b52446",
+      "bytes": 1017
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/final-episode.json",
+      "sha256": "b26332c818fb415aea3fd8cd552e87680be25ae56c540b161348d66cc36ffd91",
+      "bytes": 8216
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/final-episode-continuation.json",
+      "sha256": "ab896bc69147f7dfa3a7af49d2ba7ed056ae2d4d1913a3098e1da22d61ff5e7a",
+      "bytes": 13662
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/counters.json",
+      "sha256": "7c27b98197fb8210cb70eab138849803c9a5c17da47b4b734b75143f8a43e567",
+      "bytes": 300
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/owned-final-state/manifest.json",
+      "sha256": "c6472a8d69ba7133753b7459343ffb3540c32c7cbc02c9c9318cf075d35b1991",
+      "bytes": 1770
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/sealed-starts/manifest.json",
+      "sha256": "0d86d0a468c3100d379383bdf5a8e8daf8f79b4bbe0e31b33068b0ebbeda0836",
+      "bytes": 49554
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/frozen/installed-artifact-manifest.json",
+      "sha256": "a1f335cc0be0838327d935c2c5399a86217593330361f22bd327f864acfd92a2",
+      "bytes": 1622640
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/frozen/preflight/manifest.json",
+      "sha256": "1f1792d0f70536f78af52c584e610bee7e8ee6e4460bdd380f1683174e01c7df",
+      "bytes": 986
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/captured-after-1-exit.json",
+      "sha256": "04617c8227dec0397210e5b591a1ccd26e331712d8b0f5b446df6f32997cbeb7",
+      "bytes": 498
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/captured-after-2-exit.json",
+      "sha256": "5836889aacd33fde34911fd3493e99dccc7abef11d94cd98fb56cee8c9056064",
+      "bytes": 498
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/captured-after-3-exit.json",
+      "sha256": "5207028bd62b9350c71546fd145d06ce33d1fe9a1adf30b2f7eb47299f898c7c",
+      "bytes": 497
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/captured-before-2-exit.json",
+      "sha256": "79bd628fd9001a8c70b26d6c014dd5f69bacc25f698fce9ed1500afca6db0a06",
+      "bytes": 496
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/captured-before-3-exit.json",
+      "sha256": "987f3db04acdfb23bb8594fadb4cc323d73cbfd7c2e569c131867c9b8fe7e487",
+      "bytes": 498
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/captured-before-exit.json",
+      "sha256": "6b68c34244b9ae3067e5495c27d4358238fe2fe93416a874d3152255d4198ff4",
+      "bytes": 498
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/captured-final-exit.json",
+      "sha256": "1a89408622a570b63b7349efe212769ecbb4dfd7f6553627ccb89fcaf5cab2ab",
+      "bytes": 497
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/development-types-2-exit.json",
+      "sha256": "3b32c03e3d16690450db682c5050170a80478303e16ea81a5a38c955e1721151",
+      "bytes": 379
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/development-types-3-exit.json",
+      "sha256": "f4e4bf40f20d661102aa4beb0cbc2104e7d1a37689b07837257cdc3dbfca81bb",
+      "bytes": 379
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/development-types-exit.json",
+      "sha256": "074f1c383e93f1c4686b345ca9027e79de287861867e758075327a5841378e91",
+      "bytes": 378
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/final-types-exit.json",
+      "sha256": "7ea9b9bf5934674def6beebf1f6d07607b60ff34426666bd45d28d5bfada0bad",
+      "bytes": 379
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/focused-1-exit.json",
+      "sha256": "a7e1396ad9dcc98a9837d31465d597c066226bfe4ec6de323bd625bb3c743d00",
+      "bytes": 608
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/focused-2-exit.json",
+      "sha256": "f28b976666ccb8f67c9edf95411b1f2582b886477bd041821dee8a2b09b2af40",
+      "bytes": 607
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/focused-combined-exit.json",
+      "sha256": "d18be6d021f71173524685644e3fb893fde5a164bf6cea05c8dc3fc601077e88",
+      "bytes": 752
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/focused-final-replay-exit.json",
+      "sha256": "f3f343ddbd064113688fbcee58d8317006928578ee6763eecc51aaee07e716c9",
+      "bytes": 719
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/focused-new-controls-exit.json",
+      "sha256": "237dc4ca564cc546f71ed5e6451c8358f137ecb71f8e344c58cf1a8068cb7dad",
+      "bytes": 698
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/postgres-final-exit.json",
+      "sha256": "9dffd4f5c6711a08686e8605caa0598e4254a95b77a9d4ce898ac59c89368801",
+      "bytes": 763
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/postgres-focused-exit.json",
+      "sha256": "d61460082f8ea4d88ae1176d6ae91bf63cfbc6809d37d351a632751b77bdf9f3",
+      "bytes": 763
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/stable-full-exit.json",
+      "sha256": "399703df5edaf25aa6534d6f9bebaf6af5e7313f81d339f8d191acd3a5cc4157",
+      "bytes": 498
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/state-closed/manifest.json",
+      "sha256": "c1a2fb422fe18727a27e80812f95d05f910f62882fa8029985d332b2edda606c",
+      "bytes": 7161
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/state-episode-start/manifest.json",
+      "sha256": "4bf583dd69a737938aecb77bec86c2cca02a01931474ffe00bc273e6916633e1",
+      "bytes": 7160
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/state-final/manifest.json",
+      "sha256": "d31851b0133be587726a00b19d907b607bdafec46f4509a59888a8d65a9c64b8",
+      "bytes": 7162
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/state-fresh/manifest.json",
+      "sha256": "a5f0915216e44260a1692a8237f2bf2eeaaa17308cd615ba16ae48b3357ceb2e",
+      "bytes": 7161
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/state-fresh-applied/manifest.json",
+      "sha256": "d31851b0133be587726a00b19d907b607bdafec46f4509a59888a8d65a9c64b8",
+      "bytes": 7162
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/state-owner-drift/manifest.json",
+      "sha256": "961829768332c66433588c5fd58b6cd755f465b4b64a5efd2c94179976de9620",
+      "bytes": 7160
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/state-pre-request/manifest.json",
+      "sha256": "4bf583dd69a737938aecb77bec86c2cca02a01931474ffe00bc273e6916633e1",
+      "bytes": 7160
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/state-queued/manifest.json",
+      "sha256": "b5457ccc9b23698ede76655c37bafc6a9f1f8185616074d676882841b34b319e",
+      "bytes": 7160
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/state-refused/manifest.json",
+      "sha256": "4dd6e4d2494f2b0b3acdb7c34f1c654498a0f1dbea2a5b028e88a22d768388f1",
+      "bytes": 7161
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/state-replay-after-closure-0-after/manifest.json",
+      "sha256": "c1a2fb422fe18727a27e80812f95d05f910f62882fa8029985d332b2edda606c",
+      "bytes": 7161
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/state-replay-after-closure-0-before/manifest.json",
+      "sha256": "c1a2fb422fe18727a27e80812f95d05f910f62882fa8029985d332b2edda606c",
+      "bytes": 7161
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/state-replay-applied-and-old-0-after/manifest.json",
+      "sha256": "d31851b0133be587726a00b19d907b607bdafec46f4509a59888a8d65a9c64b8",
+      "bytes": 7162
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/state-replay-applied-and-old-0-before/manifest.json",
+      "sha256": "d31851b0133be587726a00b19d907b607bdafec46f4509a59888a8d65a9c64b8",
+      "bytes": 7162
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/state-replay-applied-and-old-1-after/manifest.json",
+      "sha256": "d31851b0133be587726a00b19d907b607bdafec46f4509a59888a8d65a9c64b8",
+      "bytes": 7162
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/state-replay-applied-and-old-1-before/manifest.json",
+      "sha256": "d31851b0133be587726a00b19d907b607bdafec46f4509a59888a8d65a9c64b8",
+      "bytes": 7162
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/state-replay-before-closure-0-after/manifest.json",
+      "sha256": "4dd6e4d2494f2b0b3acdb7c34f1c654498a0f1dbea2a5b028e88a22d768388f1",
+      "bytes": 7161
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/state-replay-before-closure-0-before/manifest.json",
+      "sha256": "4dd6e4d2494f2b0b3acdb7c34f1c654498a0f1dbea2a5b028e88a22d768388f1",
+      "bytes": 7161
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/state-replay-first-and-queued-4-after/manifest.json",
+      "sha256": "b5457ccc9b23698ede76655c37bafc6a9f1f8185616074d676882841b34b319e",
+      "bytes": 7160
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/state-replay-first-and-queued-4-before/manifest.json",
+      "sha256": "b5457ccc9b23698ede76655c37bafc6a9f1f8185616074d676882841b34b319e",
+      "bytes": 7160
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/state-replay-restart-old-0-after/manifest.json",
+      "sha256": "d31851b0133be587726a00b19d907b607bdafec46f4509a59888a8d65a9c64b8",
+      "bytes": 7162
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/operational/r1/state-replay-restart-old-0-before/manifest.json",
+      "sha256": "d31851b0133be587726a00b19d907b607bdafec46f4509a59888a8d65a9c64b8",
+      "bytes": 7162
+    }
+  ],
+  "original_evidence": "BEFORE-AFTER.json and preservation-final.json link exact immutable original independent capture and reports",
+  "private_bundle": {
+    "created_at": "2026-09-20T10:41:43.759623+00:00",
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/mcp-replay-7be8d2a-20260920/replay-evidence-private.tar.gz",
+    "sha256": "72f20862284439a6da152c15700d762bc4c4919d2ceaa5b6e3279c2c10e96058",
+    "bytes": 113674511,
+    "mode": "0400",
+    "classification": "private synthetic fixture/identity/signing-key and raw capture evidence; do not add to Git",
+    "database_password_records_included": false,
+    "installed_and_source_archives_included": true,
+    "raw_members": [
+      "backup-destination-verified.json",
+      "baseline.json",
+      "captured-after-1-exit.json",
+      "captured-after-1-running.json",
+      "captured-after-1.log",
+      "captured-after-2-exit.json",
+      "captured-after-2-running.json",
+      "captured-after-2.log",
+      "captured-after-3-exit.json",
+      "captured-after-3-running.json",
+      "captured-after-3.log",
+      "captured-before-2-exit.json",
+      "captured-before-2-running.json",
+      "captured-before-2.log",
+      "captured-before-3-exit.json",
+      "captured-before-3-running.json",
+      "captured-before-3.log",
+      "captured-before-exit.json",
+      "captured-before-running.json",
+      "captured-before.log",
+      "captured-captured-after-1.json",
+      "captured-captured-after-2.json",
+      "captured-captured-after-3.json",
+      "captured-captured-before-3.json",
+      "captured-captured-final.json",
+      "captured-final-exit.json",
+      "captured-final-running.json",
+      "captured-final.log",
+      "captured-paths.json",
+      "cleanup.json",
+      "compare-recovery-original.py",
+      "counters.json",
+      "development-types-2-exit.json",
+      "development-types-2-running.json",
+      "development-types-2.log",
+      "development-types-3-exit.json",
+      "development-types-3-running.json",
+      "development-types-3.log",
+      "development-types-exit.json",
+      "development-types-running.json",
+      "development-types.log",
+      "episode-step-01.log",
+      "episode-step-02.log",
+      "episode-step-03.log",
+      "episode-step-04.log",
+      "episode-step-05.log",
+      "episode-step-06.log",
+      "episode-step-07.log",
+      "episode-step-08.log",
+      "episode-step-09.log",
+      "episode-step-10.log",
+      "episode-step-11.log",
+      "episode-step-12.log",
+      "episode-step-13.log",
+      "episode-step-14.log",
+      "episode-step-15.log",
+      "episode-step-16.log",
+      "episode-step-17.log",
+      "episode-step-18.log",
+      "episode-step-19.log",
+      "episode-step-20.log",
+      "episode-step-21.log",
+      "episode-step-22.log",
+      "episode-step-23.log",
+      "episode-step-24.log",
+      "episode-step-25.log",
+      "episode-step-26.log",
+      "final-episode-continuation.json",
+      "final-episode.json",
+      "final-types-exit.json",
+      "final-types-running.json",
+      "final-types.log",
+      "fixture-window.json",
+      "focused-1-exit.json",
+      "focused-1-running.json",
+      "focused-1.log",
+      "focused-2-exit.json",
+      "focused-2-running.json",
+      "focused-2.log",
+      "focused-combined-exit.json",
+      "focused-combined-running.json",
+      "focused-combined.log",
+      "focused-final-replay-exit.json",
+      "focused-final-replay-running.json",
+      "focused-final-replay.log",
+      "focused-new-controls-exit.json",
+      "focused-new-controls-running.json",
+      "focused-new-controls.log",
+      "measurement-correction.json",
+      "old-installation-verification-before.json",
+      "operational-preparation.json",
+      "owned-postgres-final.log",
+      "plan.json",
+      "postgres-final-exit.json",
+      "postgres-final-running.json",
+      "postgres-final.log",
+      "postgres-focused-exit.json",
+      "postgres-focused-running.json",
+      "postgres-focused.log",
+      "precommit-credential-scan.json",
+      "preservation-before.json",
+      "preservation-final.json",
+      "seal-verification-invocation-error.json",
+      "seals-full-before-operations.json",
+      "seals-full-final.json",
+      "stable-full-exit.json",
+      "stable-full-running.json",
+      "stable-full.log",
+      "stable-window.json",
+      "tester-restoration.json",
+      "operational",
+      "sealed-starts",
+      "owned-final-state",
+      "bootstrap-inputs",
+      "frozen/installed-artifact-manifest.json",
+      "frozen/installed-artifact.tar.gz",
+      "frozen/source-checkpoint.tar.gz",
+      "frozen/installed-dependency-tree.json",
+      "frozen/product-revision.json",
+      "frozen/preflight"
+    ]
+  },
+  "independent_status": "restoration PASS; final replay acceptance PENDING; independent task owns its report",
+  "stage_b": "ATTEMPTED / NOT PASSED"
+}
