@@ -1,0 +1,18 @@
+{
+  "recorded_at": "2026-09-20T01:36:47.277444+00:00",
+  "branch": "codex/tui-safe-action-control-plane",
+  "remote": "backup",
+  "verified_private_destination": "https://github.com/Synapsor/Synapsor-Runner-Backup.git",
+  "public_push": false,
+  "baseline": "f83209f8f4e89014be489670f56f831737061211",
+  "product_tests": "4b4f362aa06cfb0e42005a1f853bc2cc6e408e09",
+  "frozen_source": "b563c88efa34c52e98b3aec74a6e078cfe7d608b",
+  "report_commit": "485723d9f59490fd08a498cd4ac6bb01a4b8ebf1",
+  "installed_tree_sha256": "7b99cc6fdc37db2ee6d357932d1f04fe714be323893a21c4fe768df6e3f96244",
+  "raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/effect-continuation-f83209f-20260919",
+  "report": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/effect-continuation-20260919/FINAL-REPORT.md",
+  "handoff": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/effect-continuation-20260919/REVIEWER-HANDOFF.md",
+  "next_repair_decision": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/effect-continuation-20260919/RECEIPT-DEFAULT-FOLLOWUP.md",
+  "verdict": "PARTIAL; blank-default continuation failed, explicit-value controls passed",
+  "push_result": "Record actual remote head/exit in raw delivery-final.json after pushing the commit containing this descriptor; no self-referential commit hash."
+}
