@@ -501,6 +501,8 @@ type WritebackSetupPlan = {
 export async function writebackSetup(args: string[]): Promise<number> {
   assertKnownOptions(args, new Set([
     "--config",
+    "--disabled",
+    "--project-root",
     "--source",
     "--profile",
     "--writer-role",
@@ -515,11 +517,17 @@ export async function writebackSetup(args: string[]): Promise<number> {
     "--confirm",
     "--json",
   ]), "writeback setup");
-  const configPath = runnerConfigPath(args, defaultConfigPath);
+  const disabled = args.includes("--disabled");
+  if (disabled && (args.includes("--config") || args.includes("--apply") || !optionalArg(args, "--receipt-mode"))) {
+    throw new Error("Disabled receipt review requires --receipt-mode and --project-root, without --config or --apply. It only saves metadata intent.");
+  }
+  if (!disabled && args.includes("--project-root")) throw new Error("Use --project-root only with --disabled; active setup uses --config.");
+  const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
+  const configPath = disabled ? path.join(projectRoot, "synapsor.runner.json") : runnerConfigPath(args, defaultConfigPath);
   const config = await readRuntimeConfig(configPath);
   const profile = await writebackSetupProfile(args, configPath);
   const semantic = await inspectSemanticReceiptSetup({ projectRoot: path.dirname(configPath), configPath,
-    outcome: optionalArg(args, "--outcome"), env: process.env });
+    outcome: optionalArg(args, "--outcome"), disabled, env: process.env });
   const requestedMode = optionalArg(args, "--receipt-mode");
   if (requestedMode || args.includes("--save-selection")) {
     if (!semantic || !["runner_ledger", "source_db"].includes(requestedMode ?? "")) {
@@ -529,14 +537,15 @@ export async function writebackSetup(args: string[]): Promise<number> {
     const receipts: SemanticReceiptMode = requestedMode === "runner_ledger" ? { authority: "runner_ledger" }
       : { authority: "source_db", provisioning: "precreated", schema: optionalArg(args, "--schema") ?? (semantic.selection?.receipts.authority === "source_db" ? semantic.selection.receipts.schema : "public"),
         table: optionalArg(args, "--table") ?? (semantic.selection?.receipts.authority === "source_db" ? semantic.selection.receipts.table : "synapsor_writeback_receipts") };
-    const input = { projectRoot: path.dirname(configPath), configPath, outcome: semantic.outcome, receipts,
+    const input = { projectRoot: path.dirname(configPath), configPath, outcome: semantic.outcome, disabled, receipts,
       writeUrlEnv: optionalArg(args, "--write-url-env") ?? semantic.selection?.write_url_env ?? "SYNAPSOR_DATABASE_WRITE_URL", env: process.env };
     const preview = await previewSemanticReceiptSelection(input);
     const saved = args.includes("--save-selection")
       ? await saveSemanticReceiptSelection({ ...input, confirmation: optionalArg(args, "--confirm") ?? "" }) : undefined;
-    const result = { ok: true, saved: Boolean(saved), selection: preview.selection, digest: preview.digest,
+    const result = { ok: true, phase: semantic.phase, saved: Boolean(saved), selection: preview.selection, digest: preview.digest,
       requirements: preview.requirements, confirmation: preview.confirmation, source_database_changed: false, execution_enabled: false,
-      next_action: saved ? "Export writeback setup for this outcome; provision only after administrator approval, re-inspect and separately review execution."
+      next_action: saved && disabled ? "Recheck the attached policy against this disabled intent. Provisioning, writer verification and execution remain pending; renew deployment selection after separate publication."
+        : saved ? "Export writeback setup for this outcome; provision only after administrator approval, re-inspect and separately review execution."
         : "Review these saved deployment requirements and the exact receipt mode. Use --save-selection --confirm with this exact confirmation. No receipt objects, grants or execution have been verified." };
     process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
     return 0;

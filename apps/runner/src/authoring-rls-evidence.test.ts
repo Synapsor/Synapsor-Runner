@@ -104,6 +104,34 @@ function privateFixture(origin: "private_review" | "retained_catalog" = "private
 }
 
 describe("digest-bound inspected RLS policy evidence", () => {
+  it("proves an inspected unused field is excluded from the complete disabled bundle without adding private access", () => {
+    const current = input(privateFixture()), before = structuredClone(current), draft = policyCoverageDraft(current);
+    const excluded = draft.runner_evidence.excluded_field_access!;
+    expect(excluded.resources["opaque.r9"]!.fields.label).toMatchObject({ actual_values_returned: false,
+      model_analysis: [], read_access_present: false, private_action_verification: false });
+    expect(draft.runner_evidence.actions[outcome]!.scoped_bindings.private_rows!.fields.label).toBeUndefined();
+    expect(draft.runner_evidence.read_access["opaque.r9"]).toBeUndefined();
+    const source = policyTextSnapshot(Buffer.from("The related label must remain private."), "privacy.txt");
+    const passage = { start: 1, end: 1, disposition: "implemented", interpretation: "The inspected field is not available through the selected bundle.",
+      draft_paths: ["/runner_evidence/excluded_field_access/resources/opaque.r9/fields/label"],
+      field_checks: [{ resource: "opaque.r9", field: "label", expectation: "private" }] };
+    expect(parsePolicyCoverage({ passages: [passage] }, source, draft, []).passages[0]!.disposition).toBe("implemented");
+    expect(current).toEqual(before);
+    const exposed = structuredClone(draft);
+    exposed.runner_evidence.excluded_field_access!.resources["opaque.r9"]!.fields.label!.actual_values_returned = true;
+    expect(() => parsePolicyCoverage({ passages: [passage] }, source, exposed, [])).toThrow("Field coverage mismatch");
+    const wrong = { ...passage, field_checks: [{ resource: "opaque.r9", field: "uninspected", expectation: "private" }] };
+    expect(() => parsePolicyCoverage({ passages: [wrong] }, source, draft, [])).toThrow("Field privacy evidence is not present");
+    const changed = structuredClone(draft); changed.read.pack.resources[0]!.selectable_fields.push("counter");
+    expect(() => parsePolicyCoverage({ passages: [passage] }, source, changed, [])).toThrow("Incomplete field privacy evidence");
+  });
+  it.each(["uninspected", "wrong_source", "old_read"])("does not create excluded-field proof from %s context", mode => {
+    const current = input(privateFixture());
+    if (mode === "uninspected") delete (current as any).source;
+    if (mode === "wrong_source") current.actions[0]!.loaded.authority.catalog.resources.find(r => r.name === "opaque.r9")!.source = "unrelated";
+    if (mode === "old_read") current.actions[0]!.loaded.authority.rules[0]!.read_boundary_digest = `sha256:${"a".repeat(64)}`;
+    expect(policyCoverageDraft(current).runner_evidence.excluded_field_access).toBeUndefined();
+  });
   it("carries current RLS evidence for privately used resources retained from the initial catalog", () => {
     const current = input(privateFixture("retained_catalog")), before = structuredClone(current);
     const draft = policyCoverageDraft(current);

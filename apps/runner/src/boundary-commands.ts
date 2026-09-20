@@ -3083,7 +3083,7 @@ function modelSafeBoundaryJobStateFacts(state: BoundaryJobCurrentState): string[
     const target = action.operation && action.resource
       ? `; ${action.operation.toUpperCase()} ${action.resource}`
       : "";
-    facts.push(`Current Action ${identity}: ${action.authority}${target}.`);
+    facts.push(`Current Action ${identity}: ${action.authority}${target}.${action.read_dependency === "requires_revalidation" ? " Saved identity retained; its old Read dependency requires recompilation and review, not reuse as current authority." : ""}`);
   }
   if (state.actions.length > 6) {
     facts.push(`${state.actions.length - 6} additional reviewed Action outcome${state.actions.length - 6 === 1 ? " is" : "s are"} available in exact details.`);
@@ -4385,6 +4385,10 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   // Read edits and metadata recovery recompile saved outcomes, not an unfinished agenda.
   let retainedReadEdit: { action?: BoundaryAuthoringResumeAction; addition?: BoundaryAuthoringActionAddition } | undefined = pendingReadRevision
     ? { action: structuredClone(resumeAction), addition: structuredClone(pendingActionAddition) } : undefined;
+  // A prepared business edit may outlive a separate disabled Read review.
+  // Keep its acknowledged request while the existing unchanged-AST path
+  // revalidates dependencies; this is not permission to apply that edit.
+  let dependencyRecoveryEdit: { revision: NonNullable<typeof pendingActionRevision>; action: typeof resumeAction } | undefined;
   let deferUnfinishedActions = false;
   const retainedActionIsUnfinished = () => boundaryAuthoringActionIsUnfinished(retainedReadEdit?.action);
   let selectedResumeModel: ActionModelSuggestionSession | undefined;
@@ -4445,7 +4449,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         ...(pendingReadRevision ? { pendingReadRevision } : {}),
         ...(privateReadMetadataDigest ? { privateReadMetadataDigest } : {}),
         ...(pendingActionRemoval ? { pendingActionRemoval } : {}),
-        ...(pendingActionRevision ? { pendingActionRevision } : {}),
+        ...((dependencyRecoveryEdit?.revision ?? pendingActionRevision) ? { pendingActionRevision: dependencyRecoveryEdit?.revision ?? pendingActionRevision } : {}),
         reconciledActionRevisions,
         reviewedVersionFields,
         reviewedActionDisclosures,
@@ -4535,6 +4539,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     },
   ];
   let selectedPolicyReview = input.initialPolicyReview === true;
+  let selectCurrentReviewContext = input.initialPolicyReview === true;
   let sourceReviewOutcome: BoundaryAssistOutcome | undefined;
   const runSavedPolicyReview = async (request = "Review attached rules and unresolved decisions", confirmedReviewRequest?: string) => {
     if (!activeResume || !authoringConversation?.policySources || !selectedResumeModel || revalidateSavedJob) {
@@ -4544,7 +4549,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     const notice = await reviewSavedBoundaryPolicy({ projectRoot: input.projectRoot, session: input.session,
       resume: activeResume, sources: authoringConversation.policySources,
       modelSession: boundaryAuthoringModelSession({ ...selectedResumeModel, conversation: authoringConversation }, input.authoringChat),
-      request, confirmedReviewRequest, actionProjectInspector: input.actionProjectInspector, progress: runWithProgress, assertRunning });
+      request, confirmedReviewRequest, selectCurrentContext: selectCurrentReviewContext, actionProjectInspector: input.actionProjectInspector, progress: runWithProgress, assertRunning });
     await input.authoringChat?.streamCheckpoint(notice.title, notice.lines, notice.tone === "warning" ? "warning" : "normal");
     return { ...boundaryAssistResult(notice, false, false, true), navigation: "pause" as const };
   };
@@ -4710,7 +4715,12 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         ...(availableResume.pending_job_revision ? [`Pending request: ${availableResume.pending_job_revision}`] : [])] }) : "model";
       if (selected !== "review_rules" && selected !== "resume" && selected !== "model") return boundaryAssistResult(boundaryAssistBackNotice());
     }
-    selectedPolicyReview ||= selected === "review_rules" || selected === "resume" && Boolean(availableResume?.pending_policy_review);
+    // Resume completes an actual edit/revalidation before attempting an older
+    // pinned review. Explicit Review retains its own current-candidate checks.
+    selectCurrentReviewContext ||= selected === "review_rules";
+    selectedPolicyReview ||= selected === "review_rules" || selected === "resume" && !revalidateSavedJob
+      && !availableResume?.pending_job_revision && !availableResume?.pending_read_revision && !availableResume?.pending_action_revision
+      && Boolean(availableResume?.pending_policy_review);
     resumeSelected = selected === "resume" || selected === "review_rules";
     editingSavedJob = Boolean(availableResume
       && (selected === "model" || selected === "choose_model"));
@@ -4847,7 +4857,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           }
           policySourceControls = installPolicySourceCommands({ root: input.projectRoot, chat: input.authoringChat, conversation: authoringConversation,
             hasDraft: () => Boolean(resumeRead),
-            reviewCurrent: async () => { sourceReviewOutcome = await runSavedPolicyReview(); },
+            reviewCurrent: async () => { selectCurrentReviewContext = true; sourceReviewOutcome = await runSavedPolicyReview(); },
             destination: () => selectedResumeModel ?? preselectedMappingSession!,
             onChange: () => persistAuthoringResume(activeResume?.stage ?? "planning") });
           if (!await policySourceControls.reviewTransfer(preselectedMappingSession)) {
@@ -5244,16 +5254,31 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   let resumingDisabledRead = false;
   let revalidatedActionOutcomes: string[] | undefined;
   let mappedReadIntent = resumeReadIntent ?? jobIntent.trim();
-  const resumePastPlanning = resumedCompletedRemoval || resumeSelected
+  const pendingDependencyRecovery = resumeSelected && pendingActionRevision
+    && reusableState?.stale_action_outcomes.includes(pendingActionRevision.outcome)
+    && !pendingReadRevision && !pendingActionAddition && !pendingActionRemoval;
+  if (pendingDependencyRecovery && pendingActionRevision) {
+    const accepted = await input.session.confirm("Revalidate the saved Action dependencies before continuing this edit?", {
+      defaultValue: false, context: [
+        `Outcome: ${pendingActionRevision.outcome}; selected Read: ${explorationBoundaryCandidateDigest(context.candidate)}`,
+        "The separately reviewed Read changed. Its exact grants and current inspected private dependencies must be checked before the business edit.",
+        "Runner will recompile the unchanged saved business program and save only a disabled replacement. Review its current privacy evidence separately; no activation or execution is authorized.",
+        `The requested edit remains pending: ${pendingActionRevision.instruction}`] });
+    if (!accepted) return boundaryAssistResult(boundaryAssistBackNotice("Dependency revalidation declined. The exact edit and saved authority remain unchanged."));
+    dependencyRecoveryEdit = { revision: structuredClone(pendingActionRevision), action: structuredClone(resumeAction) };
+    retainedReadEdit = { action: structuredClone(resumeAction), addition: structuredClone(pendingActionAddition) };
+    pendingActionRevision = undefined;
+  }
+  const resumePastPlanning = !dependencyRecoveryEdit && (resumedCompletedRemoval || resumeSelected
     && availableResume !== undefined
     && availableResume.stage !== "planning"
     && (availableResume.stage !== "read_mapping"
       || Boolean(resumeReadIntent)
-      || Boolean(resumeRead));
+      || Boolean(resumeRead)));
   // A rescan invalidates the old Read analysis and any partial model checkpoint,
   // but a completed semantic outcome remains an exact local identity to
   // recompile. Do not send that completed work back through the planner.
-  const revalidatedCompletedOutcomes = revalidateSavedJob && resumeSelected
+  const revalidatedCompletedOutcomes = dependencyRecoveryEdit ? [...reusableState!.action_read_digest_by_outcome.keys()] : revalidateSavedJob && resumeSelected
     && availableResume?.action?.strategy === "rule_derived"
     && availableResume.action.completed_outcomes?.length
     ? [...availableResume.action.completed_outcomes]
@@ -5355,7 +5380,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       }
       // Completed drafting has an exact local contract. A schema/role repair
       // requires revalidation of that contract, not another interpretation.
-      if (recoveringSeparatelySavedActions || (revalidateSavedJob && resumeSelected && loadedResume.status === "stale"
+      if (dependencyRecoveryEdit || recoveringSeparatelySavedActions || (revalidateSavedJob && resumeSelected && loadedResume.status === "stale"
         && (resumesCompletedActionsAfterRevalidation
           || ["authority_review", "client_setup"].includes(loadedResume.value.stage)))) {
         jobPlan = {
@@ -5575,7 +5600,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
               action_intents: draftingIntents, action_outcome: revalidatedActionOutcomes[0] } : {}) };
         } else jobPlan = { ...jobPlan, read_mode: "reuse" };
       }
-      if ((revalidateSavedJob || recoveringSeparatelySavedActions) && resumeSelected
+      if ((dependencyRecoveryEdit || revalidateSavedJob || recoveringSeparatelySavedActions) && resumeSelected
         && (jobPlan.read_mode === "none" || jobPlan.read_mode === "reuse")
         && (jobPlan.action_mode === "none" || jobPlan.action_mode === "reuse")) {
         // Rebuild from the reconciled candidate, not the old serving revision.
@@ -5623,7 +5648,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           }
           savedRevalidationIntents.push(baseline.draft.review.then);
         }
-        const resumedActionIntents = recoveringSeparatelySavedActions ? savedRevalidationIntents : resumesCompletedActionsAfterRevalidation
+        const resumedActionIntents = dependencyRecoveryEdit || recoveringSeparatelySavedActions ? savedRevalidationIntents : resumesCompletedActionsAfterRevalidation
           ? availableResume?.action?.intents ?? [availableResume!.action!.intent]
           : revalidatedActionOutcomes.map(() => jobIntent!.trim());
         jobPlan = { ...jobPlan, read_mode: "reuse", action_mode: revalidatedActionOutcomes.length ? "revise" : "none",
@@ -5932,7 +5957,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   let semanticActionRevisionCatalog: ActionRuleCatalogV1 | undefined;
   let semanticActionAuthorityDraft: ActionRuleAuthorityDraftV1 | undefined;
   let semanticActionPublicationBaseline: ActionRuleAuthorityRevisionBaseline | undefined;
-  const plannedEditReadDigest = pendingActionRevision?.preparation?.read_digest ?? availableResume?.pending_action_revision?.preparation?.read_digest;
+  const plannedEditReadDigest = dependencyRecoveryEdit ? explorationBoundaryCandidateDigest(mappingBoundary)
+    : pendingActionRevision?.preparation?.read_digest ?? availableResume?.pending_action_revision?.preparation?.read_digest;
   const saveSemanticActionDraft = async (draft: ActionRuleAuthorityDraftV1): Promise<void> => {
     if (!semanticActionPublicationBaseline) throw new Error("ACTION_RULE_REVISION_BASELINE_MISSING: reload the saved job before saving Action rules.");
     semanticActionPublicationBaseline = await withProjectAuthorityMutation(input.projectRoot, async permit => {
@@ -7769,6 +7795,26 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       ? mappingBoundary
       : (await loadBoundaryReviewContext(input.projectRoot)).candidate;
     const compiled = await bindSemanticActionToRead(reviewedRead);
+    if (dependencyRecoveryEdit) {
+      const retained = dependencyRecoveryEdit;
+      const baseline = await loadActionRuleRevisionBaseline({ projectRoot: input.projectRoot,
+        boundaryName: reviewedRead.pack.name, outcome: retained.revision.outcome, preserveVerificationFields: true,
+        expectedReadDigest: explorationBoundaryCandidateDigest(reviewedRead) });
+      if (!baseline || canonicalJsonDigest(baseline.draft) !== retained.revision.baseline_digest) {
+        throw new Error("ACTION_RULE_REVISION_STALE: Dependency review did not preserve the exact business edit baseline. The requested edit remains saved; reopen its exact review.");
+      }
+      pendingActionRevision = { ...retained.revision, preparation: {
+        read_digest: baseline.sourceRule.read_boundary_digest, authority_digest: baseline.authorityDigest } };
+      resumeAction = retained.action;
+      dependencyRecoveryEdit = undefined;
+      await persistAuthoringResume("action_drafting");
+      if (resumePersistenceBlocked) throw checkpointSaveFailure("The retained business edit after dependency revalidation");
+      return boundaryAssistResult({ tone: "success", title: "Saved Action dependencies revalidated; business edit still pending.",
+        lines: ["The unchanged business program was recompiled against the selected reviewed Read and inspected private dependencies.",
+          "Only a disabled replacement was saved. Existing activation, execution and source data are unchanged.",
+          `Pending edit: ${pendingActionRevision.instruction}`],
+        footer: "Resume this saved edit to prepare its business changes, then review the complete disabled result." });
+    }
     const details = [
       ...(semanticActionRevisionBaseline
         ? [
@@ -10367,8 +10413,7 @@ async function inspectBoundaryJobAuthoringState(input: {
     for (const rule of draft.authority.action_boundary.rules) {
       const source = draft.authority.rules.find((candidate) => candidate.rule.outcome === rule.outcome);
       if (!source
-        || source.read_boundary_name !== input.context.candidate.pack.name
-        || !linkedReadDigests.has(source.read_boundary_digest)) continue;
+        || source.read_boundary_name !== input.context.candidate.pack.name) continue;
       if (!actionReadDigestByOutcome.has(rule.outcome)) actionReadDigestByOutcome.set(rule.outcome, source.read_boundary_digest);
       actions.set(`rule:${rule.outcome}:disabled:${draft.digest}`, {
         capability: "app.request_change",
@@ -10378,6 +10423,8 @@ async function inspectBoundaryJobAuthoringState(input: {
         operation: rule.operation,
         resource: rule.target_resource,
         authority: "disabled",
+        read_dependency: source.read_boundary_digest === candidateDigest && draft.authority.catalog.generation_lock_fingerprint === input.context.candidate.generation_lock_fingerprint
+          ? "current" : "requires_revalidation",
       });
     }
   }
@@ -10385,8 +10432,7 @@ async function inspectBoundaryJobAuthoringState(input: {
     for (const rule of semanticActivation.authority.action_boundary.rules) {
       const source = semanticActivation.authority.rules.find((candidate) => candidate.rule.outcome === rule.outcome);
       if (!source
-        || source.read_boundary_name !== input.context.candidate.pack.name
-        || !linkedReadDigests.has(source.read_boundary_digest)) continue;
+        || source.read_boundary_name !== input.context.candidate.pack.name) continue;
       if (!actionReadDigestByOutcome.has(rule.outcome)) actionReadDigestByOutcome.set(rule.outcome, source.read_boundary_digest);
       actions.set(`rule:${rule.outcome}:active:${semanticActivation.digest}`, {
         capability: "app.request_change",
@@ -10396,6 +10442,8 @@ async function inspectBoundaryJobAuthoringState(input: {
         operation: rule.operation,
         resource: rule.target_resource,
         authority: "active",
+        read_dependency: source.read_boundary_digest === candidateDigest && semanticActivation.authority.catalog.generation_lock_fingerprint === input.context.candidate.generation_lock_fingerprint
+          ? "current" : "requires_revalidation",
       });
     }
   }
@@ -10562,6 +10610,8 @@ export async function reviewSavedBoundaryPolicy(input: {
   request: string;
   /** Exact request confirmed by the host operation-selection menu, never model output. */
   confirmedReviewRequest?: string;
+  /** Explicit public Review selection; automatic Resume cannot retarget a pending review. */
+  selectCurrentContext?: boolean;
   actionProjectInspector?: typeof inspectActionProject;
   progress?: <T>(label: string, operation: () => Promise<T>) => Promise<T>;
   assertRunning?: () => void;
@@ -10576,7 +10626,7 @@ export async function reviewSavedBoundaryPolicy(input: {
   let authority: ActionRuleAuthorityDraftV1 | undefined;
   if (resume.pending_policy_review?.action_name) {
     authority = drafts.find(draft => draft.authority.name === resume.pending_policy_review!.action_name);
-    if (!authority || authority.digest !== resume.pending_policy_review.action_digest) throw new Error("POLICY_REVIEW_CANDIDATE_CHANGED: The selected review candidate changed. Select its current revision explicitly; the unfinished review is retained.");
+    if (!authority || authority.digest !== resume.pending_policy_review.action_digest && !input.selectCurrentContext) throw new Error("POLICY_REVIEW_CANDIDATE_CHANGED: The selected review candidate changed. Select its current revision explicitly; the unfinished review is retained.");
   } else if (drafts.length === 1) authority = drafts[0];
   else if (drafts.length > 1) {
     const chosen = await input.session.chooseOption?.("SELECT SAVED ACTION CANDIDATE TO REVIEW", drafts.map((draft, index) => ({
@@ -10586,7 +10636,9 @@ export async function reviewSavedBoundaryPolicy(input: {
     authority = drafts[Number(chosen)];
   } else if (resume.action) throw new Error("POLICY_REVIEW_CANDIDATE_UNAVAILABLE: This job has no saved Action candidate matching the selected Read revision. Revalidate its existing draft before review; no replacement was inferred.");
   const prior = resume.pending_policy_review;
-  if (prior && (prior.source_session !== input.sources.id || prior.source_digest !== source.digest || prior.read_digest !== readDigest)) {
+  const changedContext = prior && (prior.source_session !== input.sources.id || prior.source_digest !== source.digest
+    || prior.read_digest !== readDigest || prior.action_digest !== authority?.digest);
+  if (changedContext && !input.selectCurrentContext) {
     throw new Error("POLICY_REVIEW_CONTEXT_CHANGED: The selected source or Read candidate changed. The prior review remains pending; explicitly select the new context before continuing.");
   }
   const display = [`Saved job: ${resume.job_intent}`, `Read candidate: ${context.candidate.pack.name} · ${readDigest}`,
@@ -10594,6 +10646,14 @@ export async function reviewSavedBoundaryPolicy(input: {
     `Attached source: ${source.name} v${source.version} · ${source.digest} · ${source.bytes} bytes / ${source.lines} lines (complete)`,
     "Operation: review this saved candidate. Rules, active authority, execution and application history stay unchanged."];
   input.session.rememberDetails?.("REVIEW ATTACHED RULES AND UNRESOLVED DECISIONS", display);
+  if (changedContext) {
+    if ((prior!.prior_contexts?.length ?? 0) >= 16) throw new Error("POLICY_REVIEW_CONTEXT_HISTORY_FULL: Prior failed contexts are preserved. No new review was started.");
+    const accepted = await input.session.confirm("Review this current disabled context instead of the prior pending revision?", { defaultValue: false,
+      context: [...display, `Prior source: ${prior!.source_digest}; Read: ${prior!.read_digest}; Action: ${prior!.action_digest ?? "none"}.`,
+        "The prior pending context will remain recorded as history, not completed or reusable coverage. No policy meaning or business edit is inferred.",
+        "The complete current candidate still needs normal validation; existing independent unfinished edits and deployment duties remain pending."] });
+    if (!accepted) return boundaryAssistBackNotice("Current-context review declined. The prior review and unfinished work remain saved.");
+  }
   if (input.confirmedReviewRequest !== undefined && input.confirmedReviewRequest !== resume.pending_job_revision) {
     throw new Error("BOUNDARY_AUTHORING_RESUME_CHANGED: The confirmed review request no longer matches the saved item.");
   }
@@ -10607,16 +10667,19 @@ export async function reviewSavedBoundaryPolicy(input: {
     if (!choice || choice === "pause") return boundaryAssistBackNotice("Review paused. The unfinished request remains saved.");
     if (choice === "review") supersedes = resume.pending_job_revision;
   }
-  const request: BoundaryPolicyReviewRequest = prior ?? { operation: "review_rules", request: input.request,
+  const request: BoundaryPolicyReviewRequest = prior && !changedContext ? prior : { operation: "review_rules", request: input.request,
     source_session: input.sources.id, source_digest: source.digest as `sha256:${string}`, read_digest: readDigest,
     ...(authority ? { action_name: authority.authority.name, action_digest: authority.digest } : {}),
-    ...(supersedes ? { supersedes_pending_job_revision: supersedes } : {}) };
+    ...(supersedes ? { supersedes_pending_job_revision: supersedes } : {}),
+    ...(changedContext ? { prior_contexts: [...(prior!.prior_contexts ?? []), { source_session: prior!.source_session,
+      source_digest: prior!.source_digest, read_digest: prior!.read_digest,
+      ...(prior!.action_name ? { action_name: prior!.action_name, action_digest: prior!.action_digest } : {}) }] } : {}) };
   const assertCurrent = async (permit?: ProjectAuthorityMutationPermit) => {
     input.assertRunning?.();
     await assertBoundaryAuthoringResumeCurrent(input.projectRoot, resume, undefined, { permit });
     await reloadReadReviewForModelRevision(input.projectRoot, context, authority);
   };
-  if (!prior) {
+  if (!prior || changedContext) {
     await withProjectAuthorityMutation(input.projectRoot, async permit => {
       await assertCurrent(permit);
       const next = updateBoundaryPolicyReview(resume, { pending: request });

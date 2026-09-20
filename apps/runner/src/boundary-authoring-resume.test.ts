@@ -23,6 +23,26 @@ const binding: BoundaryAuthoringResumeBinding = {
 };
 
 describe("Boundary authoring resume state", () => {
+  it("retains prior pending review contexts as bounded history, never completions", async () => {
+    const context = { source_session: "c9cfd018-ec47-4418-b06f-c21b2e6cba90", source_digest: canonicalJsonDigest("prior source"),
+      read_digest: canonicalJsonDigest("prior Read"), action_name: "saved_rules", action_digest: canonicalJsonDigest("prior Action") };
+    const request = { operation: "review_rules" as const, request: "Recheck the current disabled candidate.", ...context,
+      read_digest: canonicalJsonDigest("current Read"), prior_contexts: [context] };
+    const input = { binding, stage: "authority_review" as const, jobIntent: "Retain the saved job.", provider: "openai" as const, model: "test" };
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "prior-review-context-"));
+    try {
+      const state = buildBoundaryAuthoringResumeState({ ...input, pendingPolicyReview: request });
+      await writeBoundaryAuthoringResumeState(root, state);
+      expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: state });
+      expect(state.completed_policy_reviews).toBeUndefined();
+      const rechecked = buildBoundaryAuthoringResumeState({ ...input, previous: state });
+      expect(rechecked.pending_policy_review!.prior_contexts).toEqual([context]);
+      for (const prior_contexts of [[], Array(17).fill(context), [{...context, success: true}], [{...context, action_digest: "bad"}]]) {
+        expect(() => buildBoundaryAuthoringResumeState({ ...input, pendingPolicyReview: { ...request, prior_contexts } as any })).toThrow(/BOUNDARY_AUTHORING_RESUME_INVALID|digest/);
+      }
+    } finally { await fs.rm(root, {recursive: true, force: true}); }
+  });
+
   it("persists one unfinished Read relationship across recheck and clears it only explicitly or for another job", async () => {
     const root=await fs.mkdtemp(path.join(os.tmpdir(),'read-relationship-resume-'));
     const input={binding,stage:'read_mapping' as const,jobIntent:'Read the related reference.',provider:'openai' as const,model:'test'};

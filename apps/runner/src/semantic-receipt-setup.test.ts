@@ -1,3 +1,9 @@
+import { readAuthoringCatalog } from "./control-policy-read-authoring.js";
+import { createBoundaryReviewProgress } from "./boundary-review-domain.js";
+import { authoringReceiptConfiguration } from "./authoring-receipt-configuration.js";
+import { policyCoverageDraft } from "./authoring-policy-evidence.js";
+import { assessReviewObligation, RECEIPT_PATH } from "./authoring-obligation-review.js";
+import { policyTextSnapshot } from "./authoring-policy-source.js";
 import { assessWorkerLaunch } from "./worker-launch.js";
 import { PassThrough } from "node:stream";
 import type { ReadStream, WriteStream } from "node:tty";
@@ -145,7 +151,7 @@ function authoritySource(): {
 }
 
 
-async function fixture(backend: "sqlite" | "postgres" = "sqlite") {
+async function fixture(backend: "sqlite" | "postgres" = "sqlite", disabled = false) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-semantic-receipts-")); roots.push(root);
   const { read, build, inspection } = await reviewedRead(root);
   const config: RuntimeConfig = { version: 1, mode: "review", storage: { sqlite_path: path.join(root, ".synapsor/local.db") },
@@ -157,19 +163,27 @@ async function fixture(backend: "sqlite" | "postgres" = "sqlite") {
   }
   const records = [encodeOperatorAuthority({ type: "read", boundary: read, generation_lock: build.lock }),
     encodeOperatorAuthority({ type: "read_selection", selected_name: read.pack.name })];
+  const preparedRecords: ReturnType<typeof encodeOperatorAuthority>[] = [];
+  if (disabled) {
+    const candidate = recommendedBoundaryReviewCandidate(build.exploration_boundary);
+    const progress = createBoundaryReviewProgress({ draft: candidate, candidate, confirmedDecisions: candidate.unresolved_decisions, actor: "fixture_operator", revision: 1 });
+    preparedRecords.push(encodeOperatorAuthority({ type: "read", boundary: candidate, generation_lock: build.lock }));
+    records.push(encodeOperatorAuthority({ type: "read_authoring", selected_boundary_id: progress.boundary_id,
+      entries: [{ draft: candidate, draft_lock: build.lock, candidate_lock: build.lock, progress, catalog: readAuthoringCatalog(build) }] }));
+  }
   const { binding } = await migrateProjectControlPolicies({ projectRoot: root, config, storePath: config.storage!.sqlite_path!, actor: "fixture_operator",
-    readLegacySnapshot: async () => ({ revisions: records, active: records.map(r => ({ scope: r.scope, kind: r.kind, name: r.name, revision_id: r.revision_id })), drafts: [], provenance: [] }),
+    readLegacySnapshot: async () => ({ revisions: [...records, ...preparedRecords], active: records.map(r => ({ scope: r.scope, kind: r.kind, name: r.name, revision_id: r.revision_id })), drafts: preparedRecords.map(r => ({ scope: r.scope, kind: r.kind, name: r.name, revision_id: r.revision_id })), provenance: [] }),
     validateSnapshot: async snapshot => validateOperatorPolicySnapshot(snapshot, { runtimeConfig: config }) });
   await binding.close();
   await fs.writeFile(path.join(root, "synapsor.runner.json"), JSON.stringify(config));
   const source = authoritySource();
   await writeAndActivateAuthority({ root, source, read, activatedAt: new Date().toISOString(), maximum: 3, draftOnly: true });
   const draft = await readActionRuleAuthorityDraft(root, "billing_active_rules");
-  await activateSemanticActionRuntime({ projectRoot: root, draft: draft!, actor: "fixture_operator" });
-  const configPath = path.join(root, "synapsor.actions.runner.json");
-  const input = { projectRoot: root, configPath, outcome: source.rule.outcome, env: backend === "postgres" ? { SYNAPSOR_TEST_POSTGRES_URL: process.env.SYNAPSOR_TEST_POSTGRES_URL } : {} };
+  if (!disabled) await activateSemanticActionRuntime({ projectRoot: root, draft: draft!, actor: "fixture_operator" });
+  const configPath = path.join(root, disabled ? "synapsor.runner.json" : "synapsor.actions.runner.json");
+  const input = { projectRoot: root, configPath, outcome: source.rule.outcome, disabled, env: backend === "postgres" ? { SYNAPSOR_TEST_POSTGRES_URL: process.env.SYNAPSOR_TEST_POSTGRES_URL } : {} };
   const proposal = { ...input, receipts: { authority: "source_db" as const, provisioning: "precreated" as const, schema: "receipt_audit", table: "receipts" }, writeUrlEnv: "WRITER_URL" };
-  return { ...input, root, source, read, config, proposal, inspection };
+  return { ...input, root, source, read, config, proposal, inspection, build };
 }
 
 function receiptTerminal() {
@@ -523,5 +537,75 @@ describe("reviewed semantic receipt setup", () => {
     expect(await reviewSemanticReceiptSetup({ ...f, writeUrlEnv: "WRITER_URL", session })).toBeUndefined();
     expect((await inspectSemanticReceiptSetup(f))!.selection).toBeUndefined();
     expect(session.confirm).toHaveBeenCalledWith("Save this exact receipt setup selection?", expect.anything());
+  });
+});
+
+describe("disabled semantic receipt intent uses the existing reviewed management selection", () => {
+  const policy = "The guarded changes and required receipt must commit together using the existing source_db receipt mode with precreated storage. A Runner-ledger-only receipt does not satisfy this requirement.";
+  function requirement() {
+    const source = policyTextSnapshot(Buffer.from(policy), "receipt-policy.txt");
+    const value = { source_digest: source.digest, receipt_requirements: ["source_db" as const], passages: [source.text] };
+    vi.spyOn(savedRequirements, "readSavedExecutionRequirements").mockImplementation(async () => value);
+    return { source, value };
+  }
+  for (const backend of ["sqlite", "postgres"] as const) it.skipIf(backend === "postgres" && !process.env.SYNAPSOR_TEST_POSTGRES_URL)(`${backend}: previews, explicitly saves, reloads and exposes disabled intent`, async () => {
+    const { source } = requirement(), f = await fixture(backend, true);
+    const before = await fs.readFile(f.configPath, "utf8"), preview = await previewSemanticReceiptSelection(f.proposal);
+    expect(preview.phase).toBe("disabled_authoring");
+    expect((await inspectSemanticReceiptSetup(f))!.selection).toBeUndefined();
+    await expect(saveSemanticReceiptSelection({ ...f.proposal, confirmation: "" })).rejects.toThrow("CONFIRMATION_REQUIRED");
+    expect((await inspectSemanticReceiptSetup(f))!.selection).toBeUndefined();
+    await saveSemanticReceiptSelection({ ...f.proposal, confirmation: preview.confirmation });
+    expect((await inspectSemanticReceiptSetup(f))!.selection_current).toBe(true);
+    const config = await authoringReceiptConfiguration(f.root, ["local_postgres"], f.env);
+    expect(config).toMatchObject({ status: "absent", modes: [], reviewed_intent: { status: "current", phase: "disabled_authoring", verified: false } });
+    const authority = await readActionRuleAuthorityDraft(f.root, "billing_active_rules");
+    const draft = policyCoverageDraft({ read: recommendedBoundaryReviewCandidate(f.build.exploration_boundary), decisions: [], actions: [], authority, receiptConfiguration: config });
+    const p = { start: 1, end: 1, disposition: "needs_decision" as const, responsibility: "deployment" as const,
+      issue_kind: "missing_configuration" as const, draft_paths: [RECEIPT_PATH], interpretation: "Receipt provisioning and execution remain pending." };
+    expect(assessReviewObligation(p, source, draft)).toMatchObject({ family: "receipt_setup", requirement: "source_db", state: "pending", verified: false });
+    for (const mode of ["extra_path", "field", "counter", "implemented", "runner", "missing", "stale", "wrong_mode", "wrong_source", "wrong_read", "wrong_action"]) {
+      const item: any = structuredClone(p), changed: any = structuredClone(draft);
+      if (mode === "extra_path") item.draft_paths.push("/actions/0/approval");
+      if (mode === "field") item.field_checks = [{ resource: "billing.preferences", field: "status", expectation: "private" }];
+      if (mode === "counter") item.counter_requirements = [{ path: "/actions/0/approval", current_capability: null, required_capability: null }];
+      if (mode === "implemented") item.disposition = "implemented";
+      if (mode === "runner") item.responsibility = "runner";
+      const intent = changed.runner_evidence.runtime_contract.receipt_configuration.reviewed_intent;
+      if (mode === "missing") delete changed.runner_evidence.runtime_contract.receipt_configuration.reviewed_intent;
+      if (mode === "stale") intent.status = "stale";
+      if (mode === "wrong_mode") intent.outcomes[0].mode = "runner_ledger";
+      if (mode === "wrong_source") intent.outcomes[0].source_digest = canonicalJsonDigest("other");
+      if (mode === "wrong_read") changed.read.pack.description = "changed";
+      if (mode === "wrong_action") changed.actions[0].approval.required_approvals = 2;
+      if (mode === "implemented") expect(() => assessReviewObligation(item, source, changed)).toThrow("OBLIGATION_OBSERVATION_UNESTABLISHED");
+      else expect(assessReviewObligation(item, source, changed), mode).toBeUndefined();
+    }
+    expect(await fs.readFile(f.configPath, "utf8")).toBe(before);
+    await expect(fs.stat(path.join(f.root, "synapsor.actions.runner.json"))).rejects.toThrow();
+  });
+  it("retains wrong-mode/relation/reader-ref refusals and invalidates source or competing saves", async () => {
+    const { value } = requirement(), f = await fixture("sqlite", true);
+    await expect(previewSemanticReceiptSelection({ ...f.proposal, receipts: { authority: "runner_ledger" } })).rejects.toThrow("REQUIREMENT_MISMATCH");
+    await expect(previewSemanticReceiptSelection({ ...f.proposal, receipts: { authority: "source_db", provisioning: "precreated", schema: "billing", table: "preferences" } })).rejects.toThrow("RELATION_CONFLICT");
+    await expect(previewSemanticReceiptSelection({ ...f.proposal, writeUrlEnv: "DATABASE_URL" })).rejects.toThrow("WRITER_REQUIRED");
+    const preview = await previewSemanticReceiptSelection(f.proposal);
+    const results = await Promise.allSettled([1,2].map(() => saveSemanticReceiptSelection({ ...f.proposal, confirmation: preview.confirmation })));
+    expect(results.filter(r => r.status === "fulfilled")).toHaveLength(1);
+    expect(results.filter(r => r.status === "rejected")).toHaveLength(1);
+    value.source_digest = canonicalJsonDigest("changed source");
+    expect((await inspectSemanticReceiptSetup(f))!.selection_current).toBe(false);
+    expect(await authoringReceiptConfiguration(f.root, ["local_postgres"], f.env)).toMatchObject({ reviewed_intent: { status: "stale" } });
+  });
+  it("public command rejects apply, requires exact confirmation, and saves only disabled intent", async () => {
+    requirement(); const f = await fixture("sqlite", true), output: string[] = [];
+    vi.spyOn(process.stdout, "write").mockImplementation((s: any) => { output.push(String(s)); return true; });
+    const args = ["--disabled", "--project-root", f.root, "--outcome", f.outcome, "--receipt-mode", "source_db", "--write-url-env", "WRITER_URL", "--json"];
+    await expect(writebackSetup([...args, "--apply"])).rejects.toThrow("only saves metadata");
+    expect(await writebackSetup(args)).toBe(0);
+    const preview = JSON.parse(output.join("")); output.length = 0;
+    expect(preview).toMatchObject({ saved: false, phase: "disabled_authoring", execution_enabled: false });
+    expect(await writebackSetup([...args, "--save-selection", "--confirm", preview.confirmation])).toBe(0);
+    expect(JSON.parse(output.join(""))).toMatchObject({ saved: true, source_database_changed: false, execution_enabled: false });
   });
 });

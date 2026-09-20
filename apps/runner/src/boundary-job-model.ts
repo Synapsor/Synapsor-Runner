@@ -54,6 +54,8 @@ export type BoundaryJobActionState = {
   operation?: "insert" | "update" | "delete";
   resource?: string;
   authority: "active" | "disabled";
+  /** Saved identity only; a stale dependency is not current execution permission. */
+  read_dependency?: "current" | "requires_revalidation";
 };
 
 export type BoundaryJobCurrentState = {

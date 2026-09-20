@@ -5,7 +5,7 @@ import { readSemanticSupervisedExecutionState, SEMANTIC_ACTION_RUNTIME_CONFIG } 
 
 /** Authoring evidence only: no credential values or permission to execute.
  * The existing governed execution reader validates the config binding. */
-export async function authoringReceiptConfiguration(projectRoot: string, sources: readonly string[], env?: NodeJS.ProcessEnv) {
+async function executionReceiptConfiguration(projectRoot: string, sources: readonly string[], env?: NodeJS.ProcessEnv) {
   const file = path.join(projectRoot, SEMANTIC_ACTION_RUNTIME_CONFIG);
   let text: string;
   try { text = await fs.readFile(file, "utf8"); }
@@ -27,4 +27,14 @@ export async function authoringReceiptConfiguration(projectRoot: string, sources
     });
     return { status: "current" as const, digest, modes };
   } catch { return { status: "unavailable" as const, digest, modes: [] }; }
+}
+
+
+export async function authoringReceiptConfiguration(projectRoot: string, sources: readonly string[], env?: NodeJS.ProcessEnv) {
+  const configuration = await executionReceiptConfiguration(projectRoot, sources, env);
+  const { authoringSemanticReceiptIntent } = await import("./semantic-receipt-setup.js");
+  let intent;
+  try { intent = await authoringSemanticReceiptIntent(projectRoot, sources, env); }
+  catch { intent = { phase: "disabled_authoring" as const, status: "unavailable" as const, verified: false as const, outcomes: [] }; }
+  return intent ? { ...configuration, digest: canonicalJsonDigest({ configuration: configuration.digest, intent }), reviewed_intent: intent } : configuration;
 }

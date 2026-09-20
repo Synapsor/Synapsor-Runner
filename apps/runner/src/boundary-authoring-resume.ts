@@ -111,6 +111,10 @@ export type BoundaryAuthoringResumeAction = {
 };
 
 /** Review operation identity, separate from the job's business edit agenda. */
+export type BoundaryPolicyReviewContext = {
+  source_session: string; source_digest: `sha256:${string}`; read_digest: `sha256:${string}`;
+  action_name?: string; action_digest?: `sha256:${string}`;
+};
 export type BoundaryPolicyReviewRequest = {
   operation: "review_rules";
   request: string;
@@ -119,6 +123,9 @@ export type BoundaryPolicyReviewRequest = {
   read_digest: `sha256:${string}`;
   action_name?: string;
   action_digest?: `sha256:${string}`;
+  /** Prior pending contexts retained after an explicit current-context review.
+   * These are not successful reviews or reusable coverage. */
+  prior_contexts?: BoundaryPolicyReviewContext[];
   /** Exact legacy request explicitly identified by the operator as review-only. */
   supersedes_pending_job_revision?: string;
 };
@@ -885,12 +892,26 @@ function normalizePolicyReview(value: unknown): BoundaryPolicyReviewRequest {
     read_digest: normalizePrivateReadMetadataDigest(value.read_digest),
     ...(value.action_name !== undefined ? { action_name: reviewedName(reviewString(value.action_name), "Review Action", 200),
       action_digest: normalizePrivateReadMetadataDigest(value.action_digest) } : {}),
+    ...(value.prior_contexts !== undefined ? { prior_contexts: normalizePriorReviewContexts(value.prior_contexts) } : {}),
     ...(value.supersedes_pending_job_revision !== undefined ? { supersedes_pending_job_revision:
       reviewedText(reviewString(value.supersedes_pending_job_revision), "Original review request", MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS) } : {}),
   };
   if (canonicalJsonDigest(review) !== canonicalJsonDigest(value)) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Unexpected review operation fields.");
   return review;
 }
+function normalizePriorReviewContexts(value: unknown): BoundaryPolicyReviewContext[] {
+  if (!Array.isArray(value) || !value.length || value.length > 16) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Invalid prior review contexts.");
+  return value.map(context => {
+    if (!isRecord(context)) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Invalid prior review context.");
+    const checked: BoundaryPolicyReviewContext = { source_session: normalizeSourceSession(context.source_session),
+      source_digest: normalizePrivateReadMetadataDigest(context.source_digest), read_digest: normalizePrivateReadMetadataDigest(context.read_digest),
+      ...(context.action_name !== undefined ? { action_name: reviewedName(reviewString(context.action_name), "Review Action", 200),
+        action_digest: normalizePrivateReadMetadataDigest(context.action_digest) } : {}) };
+    if (canonicalJsonDigest(checked) !== canonicalJsonDigest(context)) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Unexpected prior review context fields.");
+    return checked;
+  });
+}
+
 function normalizePolicyReviewCompletions(value: unknown): BoundaryPolicyReviewCompletion[] {
   if (!Array.isArray(value) || value.length > 32) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Invalid review history.");
   return value.map(entry => {

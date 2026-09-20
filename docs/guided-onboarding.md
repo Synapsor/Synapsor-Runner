@@ -978,8 +978,26 @@ synapsor-runner writeback setup \
 
 This previews a selection and prints `SAVE RECEIPT SETUP sha256:...`. Review the
 saved requirements and exact selection, then repeat with `--save-selection
---confirm 'SAVE RECEIPT SETUP sha256:<exact-preview-digest>'`. Use
-`--receipt-mode runner_ledger` for a project whose reviewed requirement permits
+--confirm 'SAVE RECEIPT SETUP sha256:<exact-preview-digest>'`.
+
+For an already agreed receipt requirement on a **disabled** Action, record its
+setup intent before activation with the same exact review:
+
+```bash
+synapsor-runner writeback setup --disabled --project-root . \
+  --outcome '<exact-outcome>' --receipt-mode source_db \
+  --write-url-env SYNAPSOR_DATABASE_WRITE_URL --json
+```
+
+Inspect the selected Read, Action, source and policy binding. Repeat with
+`--save-selection --confirm "<exact confirmation from preview>"` to save only
+the reviewed setup record. This route does not create runtime configuration,
+open the writer, provision receipt objects, or activate anything. BUSINESS
+review can retain the agreed setup duty as pending; a changed binding requires
+renewed selection. After separate activation, renew the normal deployment
+selection and perform its provisioning, verification and execution reviews.
+
+Use `--receipt-mode runner_ledger` for a project whose reviewed requirement permits
 Runner-ledger receipts. Source database mode never silently falls back to that
 mode if prerequisites are missing.
 

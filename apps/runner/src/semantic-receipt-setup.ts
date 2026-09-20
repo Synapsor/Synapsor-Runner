@@ -5,10 +5,13 @@ import { z } from "zod";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { resolveRuntimeConfig, type RuntimeConfig } from "@synapsor-runner/mcp-server";
 import type { ControlPolicyKey } from "@synapsor-runner/proposal-store";
-import { createActiveActionRuleAuthorityLoader } from "./action-rule-authority.js";
+import { createActiveActionRuleAuthorityLoader, listActionRuleAuthorityDrafts } from "./action-rule-authority.js";
 import { openBoundProjectControlPolicies, commitImmutableControlPolicies } from "./control-policy-store.js";
 import { assertOperatorPolicyRecord, storedOperatorPolicyRecord } from "./control-policy-record.js";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
+import { actionRuleModelDraftFromAuthority } from "./action-rule-draft.js";
+import { explorationBoundaryCandidateDigest } from "./auto-boundary.js";
+import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 import { readSavedExecutionRequirements } from "./saved-action-job-review.js";
 
 const identifier = z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_]{0,62}$/u);
@@ -31,9 +34,11 @@ function fail(code: string, message: string): never { throw Object.assign(new Er
 /** Operator setup only. This record is never consulted for business admission,
  * runtime identity, or execution permission. Live mode remains in the separately
  * reviewed execution configuration and its exact governed binding. */
-export async function inspectSemanticReceiptSetup(input: {
-  projectRoot: string; configPath: string; outcome?: string; env?: NodeJS.ProcessEnv;
-}) {
+export type SemanticReceiptSetupInput = {
+  projectRoot: string; configPath: string; outcome?: string; disabled?: boolean; env?: NodeJS.ProcessEnv;
+};
+export async function inspectSemanticReceiptSetup(input: SemanticReceiptSetupInput) {
+  if (input.disabled) return inspectDisabledSemanticReceiptSetup(input);
   const root = await fs.realpath(input.projectRoot);
   const configPath = await fs.realpath(input.configPath);
   if (path.dirname(configPath) !== root) fail("SEMANTIC_RECEIPT_CONFIG_UNRELATED", "Select this project's Action runtime configuration.");
@@ -75,7 +80,8 @@ export async function inspectSemanticReceiptSetup(input: {
       selectionCurrent = selection.project_id === binding!.project_id && selection.deployment_id === binding!.deployment_id
         && selection.outcome === rule.compiled.outcome && selection.binding_digest === bindingDigest;
     }
-    return { project_root: root, config_path: configPath, config, source_name: rule.compiled.source, source,
+    return { phase: "active" as const, business_resources: active.authority.catalog.resources.map(r => `${r.schema}.${r.table}`),
+      project_root: root, config_path: configPath, config, source_name: rule.compiled.source, source,
       outcome: rule.compiled.outcome, action_digest: active.authority.action_boundary.digest,
       binding_digest: bindingDigest, requirements, selection, selection_current: selectionCurrent,
       revision_id: revision?.revision_id ?? null, epoch: snapshot?.epoch,
@@ -100,13 +106,9 @@ export async function previewSemanticReceiptSelection(input: Parameters<typeof i
   }
   if (selection.receipts.authority === "source_db") {
     const relation = `${selection.receipts.schema}.${selection.receipts.table}`;
-    const activeBinding = await openBoundProjectControlPolicies(setup.project_root, input.env);
-    try {
-      const active = await createActiveActionRuleAuthorityLoader(setup.project_root, activeBinding)({ dependency_check: "report" });
-      if (active.authority.catalog.resources.some(resource => `${resource.schema}.${resource.table}` === relation)) {
-        fail("SEMANTIC_RECEIPT_RELATION_CONFLICT", "Use a dedicated receipt relation, not a reviewed business resource.");
-      }
-    } finally { await activeBinding?.close(); }
+    if (setup.business_resources.includes(relation)) {
+      fail("SEMANTIC_RECEIPT_RELATION_CONFLICT", "Use a dedicated receipt relation, not a reviewed business resource.");
+    }
   }
   if (selection.write_url_env === setup.source.read_url_env) fail("SEMANTIC_RECEIPT_WRITER_REQUIRED", "Select a dedicated write environment reference, keeping the reader unchanged.");
   const digest = canonicalJsonDigest({ selection, config_path: setup.config_path, epoch: setup.epoch,
@@ -118,7 +120,7 @@ export async function saveSemanticReceiptSelection(input: Parameters<typeof prev
   // Freeze the exact reviewed data before waiting for the authority gate. UI
   // sessions and inspection callbacks are not selection data or persisted state.
   const frozen = structuredClone({ projectRoot: input.projectRoot, configPath: input.configPath,
-    outcome: input.outcome, env: input.env, receipts: input.receipts,
+    outcome: input.outcome, disabled: input.disabled, env: input.env, receipts: input.receipts,
     writeUrlEnv: input.writeUrlEnv, confirmation: input.confirmation });
   return withProjectAuthorityMutation(input.projectRoot, async held => {
     const preview = await previewSemanticReceiptSelection({ ...frozen, projectRoot: held.projectRoot });
@@ -206,4 +208,86 @@ export async function reviewSemanticReceiptSetup(input: {
   if (!confirmed) return undefined;
   await saveSemanticReceiptSelection({ ...proposal, confirmation: preview.confirmation });
   return { writeUrlEnv: preview.selection.write_url_env, reviewed: true };
+}
+
+/** The same metadata selection, explicitly bound to disabled authoring. It is
+ * deliberately not promoted to active deployment currency after publication. */
+async function inspectDisabledSemanticReceiptSetup(input: SemanticReceiptSetupInput) {
+  const root = await fs.realpath(input.projectRoot), configPath = await fs.realpath(input.configPath);
+  if (configPath !== path.join(root, "synapsor.runner.json")) fail("SEMANTIC_RECEIPT_CONFIG_UNRELATED", "Disabled receipt review uses this project's saved Read source configuration.");
+  const configText = await fs.readFile(configPath, "utf8");
+  const config = resolveRuntimeConfig(JSON.parse(configText) as RuntimeConfig, root);
+  const read = await readProjectReadAuthoring(root, input.env);
+  if (!read?.selected) fail("SEMANTIC_RECEIPT_REVIEW_UNAVAILABLE", "Select the governed disabled Read and Action before reviewing receipt intent.");
+  const candidate = read.selected.progress.candidate, readDigest = explorationBoundaryCandidateDigest(candidate);
+  const drafts = await listActionRuleAuthorityDrafts(root);
+  const matches = drafts.flatMap(authority => authority.authority.rules.filter(entry =>
+    entry.effect_envelope.writeback.mode === "direct_sql" && entry.effect_envelope.writeback.supervised_worker === "allowed"
+    && (!input.outcome || entry.rule.outcome === input.outcome)).map(entry => ({ authority, entry })));
+  if (matches.length !== 1) fail("SEMANTIC_RECEIPT_OUTCOME_REQUIRED", "Select one exact disabled source-writing outcome with --outcome <name>.");
+  const { authority, entry } = matches[0]!;
+  if (entry.read_boundary_name !== candidate.pack.name || entry.read_boundary_digest !== readDigest
+    || authority.authority.catalog.generation_lock_fingerprint !== candidate.generation_lock_fingerprint
+    || entry.verification_boundary.generation_lock_fingerprint !== candidate.generation_lock_fingerprint
+    || entry.rule.source !== candidate.source || entry.effect_envelope.source !== candidate.source) {
+    fail("SEMANTIC_RECEIPT_DRAFT_STALE", "Revalidate this disabled Action against the exact selected Read before reviewing receipt intent.");
+  }
+  const source = config.sources?.[candidate.source];
+  if (!source || source.engine !== read.selected.draft_lock.engine || source.read_url_env !== read.selected.draft_lock.source_env) {
+    fail("SEMANTIC_RECEIPT_SOURCE_MISSING", "Restore the selected Read's exact source binding before receipt review.");
+  }
+  const requirements = await readSavedExecutionRequirements({ projectRoot: root, boundaryName: candidate.pack.name, env: input.env });
+  if (!requirements.source_digest) fail("SEMANTIC_RECEIPT_REVIEW_UNAVAILABLE", "Attach and review the current source requirement before selecting disabled receipt intent.");
+  const { read_only: _readOnly, write_url_env: _writer, receipts: _receipts, ...readSource } = source;
+  const bindingDigest = canonicalJsonDigest({ phase: "disabled_authoring", source: candidate.source, source_binding: readSource,
+    action_digest: authority.digest, read_digest: readDigest, policy_source_digest: requirements.source_digest });
+  const binding = await openBoundProjectControlPolicies(root, input.env);
+  if (!binding) fail("SEMANTIC_RECEIPT_REVIEW_UNAVAILABLE", "The governed policy store is unavailable.");
+  try {
+    const snapshot = await binding.repository.scopeSnapshot({ deployment_id: binding.deployment_id, scope: { level: "operator" }, kinds: ["management"] });
+    if (snapshot.epoch !== read.bindings.epoch || await fs.readFile(configPath, "utf8") !== configText) {
+      fail("SEMANTIC_RECEIPT_DRAFT_STALE", "The selected authoring context changed during receipt inspection. Reopen its exact review.");
+    }
+    const key = keyFor(entry.rule.outcome), revision = snapshot.active.find(record => record.name === key.name);
+    const selection = revision ? selectionSchema.parse(revision.content) : undefined;
+    if (revision) assertOperatorPolicyRecord(revision, key, canonicalJsonDigest(selection));
+    const selectionCurrent = selection?.project_id === binding.project_id && selection.deployment_id === binding.deployment_id
+      && selection.outcome === entry.rule.outcome && selection.binding_digest === bindingDigest;
+    return { phase: "disabled_authoring" as const, business_resources: authority.authority.catalog.resources.map(r => `${r.schema}.${r.table}`),
+      project_root: root, config_path: configPath, config, source_name: candidate.source, source,
+      read_draft_digest: canonicalJsonDigest(candidate), action_draft_digest: canonicalJsonDigest(actionRuleModelDraftFromAuthority({
+        authority: authority.authority, outcome: entry.rule.outcome, review: authority.reviews.find(r => r.outcome === entry.rule.outcome)!, preserveVerificationFields: true })),
+      outcome: entry.rule.outcome, action_digest: authority.digest, binding_digest: bindingDigest,
+      requirements, selection, selection_current: selectionCurrent, revision_id: revision?.revision_id ?? null,
+      epoch: snapshot.epoch, project_id: binding.project_id, deployment_id: binding.deployment_id };
+  } finally { await binding.close(); }
+}
+
+/** Host-only reader; no selection is inferred from a drafted mode or prose.
+ * Missing/stale selections cannot satisfy source-atomic setup prerequisites. */
+export async function authoringSemanticReceiptIntent(projectRoot: string, sources: readonly string[], env?: NodeJS.ProcessEnv) {
+  const binding = await openBoundProjectControlPolicies(projectRoot, env);
+  if (!binding) return undefined;
+  let names: string[];
+  try {
+    const snapshot = await binding.repository.scopeSnapshot({ deployment_id: binding.deployment_id, scope: { level: "operator" }, kinds: ["management"] });
+    names = snapshot.active.map(r => r.name);
+  } finally { await binding.close(); }
+  if (!names.some(name => name.startsWith("semantic_receipts_"))) return undefined;
+  const drafts = await listActionRuleAuthorityDrafts(projectRoot);
+  const outcomes = drafts.flatMap(draft => draft.authority.rules.filter(r => sources.includes(r.rule.source)
+    && r.effect_envelope.writeback.mode === "direct_sql" && r.effect_envelope.writeback.supervised_worker === "allowed").map(r => r.rule.outcome));
+  if (!outcomes.length || new Set(outcomes).size !== outcomes.length) return undefined;
+  if (!outcomes.some(outcome => names.includes(keyFor(outcome).name))) return undefined;
+  const setups = await Promise.all(outcomes.sort().map(outcome => inspectSemanticReceiptSetup({ projectRoot,
+    configPath: path.join(projectRoot, "synapsor.runner.json"), outcome, disabled: true, env })));
+  if (!setups.some(s => s?.selection)) return undefined;
+  return { phase: "disabled_authoring" as const, verified: false as const,
+    status: setups.every(s => s?.selection_current) ? "current" as const : "stale" as const,
+    outcomes: setups.map(s => ({ outcome: s!.outcome, source: s!.source_name,
+      mode: s!.selection?.receipts.authority ?? null, read_digest: "read_draft_digest" in s! ? s!.read_draft_digest : null,
+      action_digest: "action_draft_digest" in s! ? s!.action_draft_digest : null, binding_digest: s!.binding_digest,
+      revision_id: s!.revision_id, source_digest: s!.requirements.source_digest,
+      selection_current: s!.selection_current })),
+    meaning: "Operator-reviewed disabled source/effect-bound intent only. No current execution configuration, provisioning, writer verification, receipt or independent readback. Renew normal deployment selection after publication." };
 }

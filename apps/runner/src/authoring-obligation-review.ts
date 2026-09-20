@@ -17,7 +17,10 @@ export function receiptRequirement(source: PolicyTextSnapshot, p: Pick<PolicyPas
   const mentions = [...text.matchAll(/\b(runner[-_ ]ledger|source[-_ ]db|source-atomic)\s+receipt\b/giu)];
   if (mentions.length !== 1 || /\b(?:not|never|unless|instead|either|optional)\b/iu.test(text.slice(Math.max(0, mentions[0]!.index! - 45), mentions[0]!.index))) return undefined;
   const prefix = text.slice(0, mentions[0]!.index);
-  if (!/\b(?:request|require|requires|required)(?:\s+a)?(?:\s+stored)?\s+$/iu.test(prefix)) return undefined;
+  const direct = /\b(?:request|require|requires|required)(?:\s+a)?(?:\s+stored)?\s+$/iu.test(prefix);
+  const selected = /\b(?:use|using)(?:\s+the)?(?:\s+(?:existing|local))?\s+$/iu.test(prefix);
+  if (!direct && !selected) return undefined;
+  if (selected && /["“”]|\b(?:not|never|unless|instead|either|optional)\b/iu.test(prefix.split(/[.;\n]/u).at(-1) ?? "")) return undefined;
   return /^runner/iu.test(mentions[0]![1]!) ? "runner_ledger" : "source_db";
 }
 
@@ -77,7 +80,17 @@ export function assessReviewObligation(p: PolicyPassage, source: PolicyTextSnaps
     }
     // Source-atomic configuration requires exact current evidence. Generic
     // support or a missing store/configuration is never a source receipt proof.
-    if (mode === "source_db" && (!configured?.modes?.length || configured.status !== "current")) return undefined;
+    if (mode === "source_db" && (!configured?.modes?.length || configured.status !== "current")) {
+      const intent = configured?.reviewed_intent;
+      const actions = at(draft, "/actions")?.filter((action: any) => action.effect?.writeback === "supervised");
+      if (intent?.phase !== "disabled_authoring" || intent.status !== "current" || intent.verified !== false
+        || !Array.isArray(actions) || !actions.length || intent.outcomes?.length !== actions.length
+        || new Set(intent.outcomes.map((entry: any) => entry.outcome)).size !== actions.length
+        || !actions.every((action: any) => intent.outcomes.some((entry: any) => entry.selection_current === true
+          && entry.mode === mode && entry.outcome === action.outcome && entry.source_digest === source.digest
+          && entry.read_digest === canonicalJsonDigest(at(draft, "/read"))
+          && entry.action_digest === canonicalJsonDigest(action)))) return undefined;
+    }
     family = "receipt_setup"; phase = "after_authority_review"; requirement = mode; pointer = RECEIPT_PATH;
     evidence = { setup, configuration: configured ?? null, actions: at(draft, "/runner_evidence/actions") };
   } else return undefined;

@@ -250,13 +250,44 @@ export function policyCoverageDraft(input: {
       || ![proof.tenant.field, proof.principal.field].every(field => resource.fields.some(entry => entry.name === field))) return null;
     return proof;
   };
+  const sourceConstraints = input.source ? policySourceConstraintEvidence({ source: input.source, read: input.read,
+    resources: [...input.read.pack.resources.map(resource => resource.id),
+      ...actions.flatMap(action => action.verification_boundary.resources.map(resource => resource.resource))] }) : undefined;
+  // Only a complete, matching selected authoring bundle can establish absence
+  // of public grants. This does not infer privacy from a row projection or an
+  // inactive deployment. Existing Read/Action fields keep their usual evidence.
+  const completeSelectedActions = actions.every(action => action.read_dependency?.name === input.read.pack.name
+    && action.read_dependency.digest === readDigest
+    && action.source_catalog?.generation_lock_fingerprint === input.read.generation_lock_fingerprint
+    && action.verification_boundary.generation_lock_fingerprint === input.read.generation_lock_fingerprint
+    && action.rule.source === input.read.source && action.verification_boundary.source === input.read.source
+    && action.verification_boundary.resources.every(binding => {
+      const targets = action.source_catalog!.resources.filter(resource => resource.name === binding.resource);
+      return targets.length === 1 && targets[0]!.source === input.read.source
+        && `${targets[0]!.schema}.${targets[0]!.table}` === binding.resource;
+    }));
+  const excludedFields = sourceConstraints && completeSelectedActions ? Object.fromEntries(
+    Object.entries(sourceConstraints.resources).flatMap(([resource, inspected]) => {
+      // A resource present under another display/id spelling must not acquire a
+      // negative proof. All its actual return/analysis grants need normal review.
+      if (input.read.pack.resources.some(r => `${r.schema}.${r.table}` === resource)) return [];
+      const used = new Set(actions.flatMap(action => action.verification_boundary.resources
+        .filter(binding => binding.resource === resource).flatMap(binding => binding.fields.map(field => field.name))));
+      const fields = Object.fromEntries(Object.keys(inspected.columns).filter(field => !used.has(field)).map(field => [field, {
+        actual_values_returned: false, model_analysis: [], read_access_present: false, private_action_verification: false,
+        meaning: "Inspected field excluded from this complete selected Read and unused by these Actions. This is not Action verification access, database-wide privacy, activation or another interface's permissions.",
+      }]));
+      return Object.keys(fields).length ? [[resource, { resource, fields }]] : [];
+    })) : undefined;
   return {
     read: input.read,
     actions: actions.map((action) => action.draft),
     runner_evidence: {
-      ...(input.source ? { source_constraints: policySourceConstraintEvidence({ source: input.source, read: input.read,
-        resources: [...input.read.pack.resources.map(resource => resource.id),
-          ...actions.flatMap(action => action.verification_boundary.resources.map(resource => resource.resource))] }) } : {}),
+      ...(sourceConstraints ? { source_constraints: sourceConstraints } : {}),
+      ...(excludedFields && Object.keys(excludedFields).length ? { excluded_field_access: {
+        selected_read_digest: canonicalJsonDigest(input.read), selected_actions_digest: canonicalJsonDigest(actions.map(action => action.draft)),
+        source_constraints_digest: canonicalJsonDigest(sourceConstraints), resources: excludedFields,
+      } } : {}),
       read_review: {
         meaning: "read.unresolved_decisions lists candidate review requirements, NOT current outstanding decisions. The following current digest-bound review status is authoritative for their confirmation, not activation.",
         confirmed: input.decisions.filter((decision) => decision.confirmed).map((decision) => decision.decision),
