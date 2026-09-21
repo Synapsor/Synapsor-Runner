@@ -1,0 +1,45 @@
+{
+  "classification": "actual installed old-candidate public path, new owned post-effect copy",
+  "tree": "7b15c368564c356bd9437646901c8fed79d806f253a4c7f1874adc5f20a7a45d",
+  "argv": [
+    "start",
+    "--project-root",
+    ".",
+    "--cli"
+  ],
+  "selection": "Review attached rules and unresolved decisions",
+  "error": "POLICY_REVIEW_CANDIDATE_UNAVAILABLE",
+  "provider_calls": 0,
+  "terminal": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-reproduction/operator-captures/terminal-001.log",
+  "terminal_sha256": "2b0c0f80af3cc5bf60beaea33a2d9166af8d25c65f971d331712d9062e6e88c3",
+  "exit": {
+    "start": "2026-09-21T18:23:06.153073+00:00",
+    "end": "2026-09-21T18:23:43.723333+00:00",
+    "exit": 0,
+    "args": [
+      "start",
+      "--project-root",
+      ".",
+      "--cli"
+    ],
+    "environment_names": [
+      "PATH",
+      "HOME",
+      "TMPDIR",
+      "NO_COLOR",
+      "TERM",
+      "NODE_NO_WARNINGS",
+      "DATABASE_URL",
+      "SYNAPSOR_DATABASE_WRITE_URL",
+      "OPENROUTER_API_KEY",
+      "QUALIFICATION_PROVIDER_METER",
+      "NODE_OPTIONS"
+    ],
+    "PTY": [
+      100,
+      30
+    ],
+    "artifact": "development checkout; zero-provider restoration only; final installed candidate pending"
+  },
+  "old_originals_untouched": true
+}

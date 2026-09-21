@@ -350,6 +350,48 @@ const configuredReadCapability: NonNullable<RuntimeConfig["capabilities"]>[numbe
 };
 
 describe("fixed semantic Action MCP", () => {
+  it.each([false, true])("reports listing approval limits and exact disclosable mode through real MCP serialization (automatic=%s)", async automaticApproval => {
+    const fixture = createFixtureRuntime({automaticApproval});
+    const runtime = createMcpRuntime(serverConfig, {store: fixture.store, semanticActions: fixture.semanticActions});
+    const server = createSynapsorMcpServer(runtime), client = new Client({name: "approval-disclosure-test", version: "1"});
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    try {
+      await server.connect(serverTransport); await client.connect(clientTransport);
+      const tools = await client.listTools();
+      expect(tools.tools.find(tool => tool.name === DESCRIBE_ACTIONS_TOOL)?.description).toContain("do not mean automatic approval is absent");
+      const listing = await client.callTool({name: DESCRIBE_ACTIONS_TOOL, arguments: {outcome: null, query: null, limit: null, cursor: null}});
+      expect(listing.structuredContent).toMatchObject({approval_information: {disclosure: "partial"},
+        actions: [{approval: {disclosure: "not_reported"}}]});
+      expect(JSON.parse((listing.content as Array<{text: string}>)[0]!.text)).toEqual(listing.structuredContent);
+      expect(JSON.stringify(listing)).toContain("Proposal-only separates requesting from execution; it does not mean manual-only");
+      const detail = await client.callTool({name: DESCRIBE_ACTIONS_TOOL, arguments: {outcome: fixture.activated.compiled.outcome}});
+      expect(detail.structuredContent).toMatchObject({actions: [{approval: {disclosure: automaticApproval ? "mode_only" : "manual_only"}}],
+        execution_status: {enablement: "not_reported_by_discovery", worker_liveness: "unknown"}});
+      expect(JSON.parse((detail.content as Array<{text: string}>)[0]!.text)).toEqual(detail.structuredContent);
+      if(automaticApproval) expect(JSON.stringify(detail)).toContain("no automatic threshold is established");
+      expect(JSON.stringify([listing, detail])).not.toMatch(/auto_approve_when|account_id|principal_id|raw-preference-42/);
+      expect(fixture.store.listProposals()).toHaveLength(0); expect(fixture.queries).toHaveLength(0);
+    } finally { await client.close(); await server.close(); fixture.store.close(); }
+  });
+  it("keeps undisclosed policy operands private and never describes paused authority as manual-only", async () => {
+    const responses: unknown[] = [];
+    for(const maximum of [17, 29]) {
+      const f = createFixtureRuntime({automaticApproval: true, sharedLimits: [
+        {id: "private_cap", kind: "count", scope: "tenant", maximum, window_seconds: 86400},
+        {id: "private_boundary_cap", kind: "count", scope: "boundary", maximum: 32, window_seconds: 86400}]});
+      try { responses.push(await f.semanticActions.callTool(DESCRIBE_ACTIONS_TOOL, {outcome: f.activated.compiled.outcome})); }
+      finally { f.store.close(); }
+    }
+    expect(responses[0]).toEqual(responses[1]);
+    expect(JSON.stringify(responses)).not.toMatch(/private_cap|86400|auto_approve_when/);
+    const f = createFixtureRuntime({unavailableOutcomes: () => ["billing.pause_notifications"]});
+    try {
+      expect(await f.semanticActions.callTool(DESCRIBE_ACTIONS_TOOL, {query: "pause"})).toMatchObject({actions: [{approval: {disclosure: "unavailable"}}]});
+      const detail = await f.semanticActions.callTool(DESCRIBE_ACTIONS_TOOL, {outcome: "billing.pause_notifications"});
+      expect(detail).toMatchObject({actions: [{availability: "operator_review_required", approval: {disclosure: "unavailable"}}]});
+      expect((detail.actions as any[])[0].approval.decision).not.toBe("human review required");
+    } finally { f.store.close(); }
+  });
   it("requires configured delegation before claiming references or reading source facts", async () => {
     const f = createFixtureRuntime({ delegationRequired: true });
     try {

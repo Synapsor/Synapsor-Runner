@@ -1,0 +1,56 @@
+{
+  "original_index": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/ORIGINAL-B-NATIVE-REPRODUCTION.json",
+  "index_sha256": "510a64c4266d143a231cf0f9fea709104060682a5580e769853ebb5ba4643cc7",
+  "prompt": "Use app.describe_actions exactly once to inspect the currently active action catalog. Do not explore source rows and do not request any change. Then state the current automatic-approval threshold, the human-review fallback, and whether execution is authorized. Finish after that concise status.",
+  "arguments": {
+    "outcome": null,
+    "query": null,
+    "limit": null,
+    "cursor": null
+  },
+  "transfer": {
+    "mcp_text_sha256": "e04628ac46a3f2b4ffacefc76e1b2e6d187944397b665d98f18e9d1be8d3630f",
+    "provider_visible_text_sha256": "e04628ac46a3f2b4ffacefc76e1b2e6d187944397b665d98f18e9d1be8d3630f",
+    "text_exact_equal": true,
+    "mcp_structured_content_present": true,
+    "provider_visible_content_kind": "str",
+    "truncation_marker_found": false,
+    "mcp_response_json_bytes": 2938,
+    "provider_visible_content_bytes": 1391
+  },
+  "configured_vs_disclosed": {
+    "active_automatic_threshold": 30,
+    "saved_draft_automatic_threshold": 15,
+    "correct_disclosure_conclusion": "Threshold is not reported or established by this discovery result."
+  },
+  "exact_false_answer": "## Status\n\n**Catalog inspected** (one call, `catalog_version: synapsor.scoped-catalog.v2`). One action is listed: `energy_ops.finalize_settlement_cycle`, availability `available`, eligibility `not_checked`.\n\n**Automatic-approval threshold:** none. The catalog reports no auto-approval threshold of any kind \u2014 no monetary limit, no confidence cutoff, no scope under which anything approves itself. The authority block states `proposal_only: true` and `approval_and_apply_are_separate: true`, so approval is never automatic and never implied by a request.\n\n**Human-review fallback:** approval is not a fallback here, it's the only path. Since every request is proposal-only and the model cannot supply a patch (`model_can_supply_patch: false`) or a trusted scope (`model_can_supply_trusted_scope: false`), any change must be approved and applied outside this interface by a human-controlled step. There is no documented escalation tier below that to fall back *from*.\n\n**Execution authorized:** no. `enablement: not_reported_by_discovery` and `worker_liveness: unknown` \u2014 discovery does not establish that an execution worker exists or is running. Per the catalog's own guidance, `request_change` never writes source data, approval is not completion, and only a verified execution receipt would establish completion. Nothing here grants authority to execute.\n\nTwo caveats worth carrying forward: listed availability is explicitly *not* customer eligibility (this action's eligibility was never checked), and discovery itself grants no authority. I did not explore source rows and did not request any change.",
+  "request_and_response_identities": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-B-final-live/runtime-capture/live-3/KC-B-3-request.json",
+      "sha256": "c8b70334f418fb8ab7afa16a456c9518f95fb27e6105d46b1fa93e1ba21e61aa",
+      "bytes": 29430
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-B-final-live/runtime-capture/live-3/KC-B-3-response.txt",
+      "sha256": "7b3768637a54daf5cd5c9fd9d13ac6444b4933d21719c1b1ef874b0d1931d7e1",
+      "bytes": 3911
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-B-final-live/runtime-capture/live-3/KC-B-4-request.json",
+      "sha256": "1188696943613e889453fb60b9b9184055688df779ee1cc4b42ff72c4de9023a",
+      "bytes": 31534
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-B-final-live/runtime-capture/live-3/KC-B-4-response.txt",
+      "sha256": "491355ff600bf4d1c1b265271ae8b868875b6796155922b3d9331f17d51a4b5a",
+      "bytes": 16731
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-B-final-live/runtime-capture/live-3/client-output.jsonl",
+      "sha256": "5cca03fef0903ea9f729ea130663cdc7c13c53292e3d832d3c1fb70004bfddbe",
+      "bytes": 15319
+    }
+  ],
+  "classification": "Summary listing; no detail call requested; provider-visible text exactly equals server text. No truncation observed. Missing conditional route in listing is not absence; proposal_only was misinterpreted as manual-only. This fixes shared disclosure information, not private policy visibility.",
+  "repair": "Typed partial/not_reported/mode_only/manual_only/unavailable indicators plus generic tool/result guidance; no threshold/AST publication. Manual-only only for currently available human-mode exact detail; paused remains unavailable."
+}

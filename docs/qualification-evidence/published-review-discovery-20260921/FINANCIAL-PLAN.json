@@ -1,0 +1,41 @@
+{
+  "started_at": "2026-09-21T18:56:06.024565+00:00",
+  "status": "HELD",
+  "spend_ceiling_usd": 3.76430509,
+  "prior_ledger": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/shared/provider-budget-ledger.json",
+  "prior_ledger_sha256": "c3a2a2455ce6d1b1c2a339013bda7c8ac225264edd30984f0d6eb87ce66856ce",
+  "prior_net_cap_after_all_recorded_costs_and_unknown_liabilities_usd": 3.76430509,
+  "carried_tls_liability_usd": 0.985804,
+  "carried_native_unknown_upper_usd": 0.88932,
+  "prior_liabilities_already_deducted": true,
+  "unknown_cost_refunds": false,
+  "authoring_price_bound": {
+    "model": "openai/gpt-5.6-terra",
+    "input_or_cache_write_per_token": 2.5e-06,
+    "output_per_token": 1.2e-05,
+    "long_context_threshold": 272000,
+    "maximum_envelope_bytes": 250000,
+    "framing_token_allowance": 16000,
+    "basis": "Current configured-provider catalog: prompt $2/M, cache-write $2.5/M, output $12/M below 272k input tokens. UTF8 complete-envelope bytes are a conservative input-token bound; retain 16k extra framing allowance. Unknown/oversize/long-context envelope refuses before body send; no fallback. No web/search tools. Recheck current rate before each final launch."
+  },
+  "case_allocations": [],
+  "planned_sequential_allocations": [
+    {
+      "case_id": "MAIN-A-REVIEW",
+      "whole_episode_ceiling_usd": 3.236,
+      "max_authoring": 4,
+      "initial_max": 3,
+      "reserved_restart": 1,
+      "runtime": 0,
+      "business_authorized": false
+    },
+    {
+      "case_id": "TESTER-A-REVIEW",
+      "whole_episode_ceiling_usd": 1.618,
+      "max_authoring": 2,
+      "reserved_restart": 1,
+      "requires_main_settlement_first": true
+    }
+  ],
+  "native_status": "FINANCIALLY_BLOCKED: safe whole-eight-send bound15.88272 plus restart exceeds shared3.76430509; no cap reduction/model change/topup authorized"
+}

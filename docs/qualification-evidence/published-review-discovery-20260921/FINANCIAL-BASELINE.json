@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-21T18:25:51.292200+00:00",
+  "method": "read-only configured OpenRouter credits endpoint; zero inference calls",
+  "observed_credit_remaining_usd": 5.82203659,
+  "historical_net_ceiling_before_new_assignment": 3.76430509,
+  "conservative_new_cap_usd": 3.76430509,
+  "carried_tls_liability_usd": 0.985804,
+  "carried_native_upper_usd": 0.88932,
+  "prior_liabilities_already_deducted_in_net_ceiling": true,
+  "no_new_refund_or_double_deduction": true,
+  "incomplete_native_actual_costs": "not established; retained upper bound",
+  "new_calls": 0,
+  "paid_operations": "HELD until complete episode/native turn+restart reservation"
+}

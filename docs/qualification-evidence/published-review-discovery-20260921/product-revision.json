@@ -1,0 +1,6 @@
+{
+  "product_revision": "08b9e48d68ffe693a8875e68790024b9214171ee",
+  "baseline": "ed32e38820dcb1e86e59fefa775267917253b7a8",
+  "at": "2026-09-21T18:56:47.371055+00:00",
+  "scope": "Exact publication-aware review selection and partial approval discovery only; tests/evidence committed separately."
+}

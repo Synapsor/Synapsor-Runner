@@ -1,0 +1,16 @@
+{
+  "head": "ed32e38820dcb1e86e59fefa775267917253b7a8",
+  "branch": "codex/tui-safe-action-control-plane",
+  "ancestry": true,
+  "old_manifest_sha256": "d4abfe94e62361856ac666ace5fc2ef586483043e214504527771b1a464d0433",
+  "old_archive_sha256": "d712b3bcbb2d41397a7cfce712bd5154c5b7d41e6c0c4180c12dd6454bc86de9",
+  "old_tree_verified": {
+    "verified_at": "2026-09-21T18:21:45.908Z",
+    "installed_tree_sha256": "7b15c368564c356bd9437646901c8fed79d806f253a4c7f1874adc5f20a7a45d",
+    "entries": 7569
+  },
+  "independent_B_report_sha256": "ca9d67952238ec288ab43b4456183ae6f455cd61cba465de906f79d7ddb43117",
+  "old_ledger": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/shared/provider-budget-ledger.json",
+  "old_ledger_sha256": "c3a2a2455ce6d1b1c2a339013bda7c8ac225264edd30984f0d6eb87ce66856ce",
+  "raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921"
+}
