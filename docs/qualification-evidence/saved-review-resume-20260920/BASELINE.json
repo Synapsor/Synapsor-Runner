@@ -1,0 +1,49 @@
+{
+  "head": "9685c5011f4eae512e344edabd1997b57eed9b63",
+  "branch": "codex/tui-safe-action-control-plane",
+  "clean_initial_tree": true,
+  "checks": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/frozen/installed-artifact-manifest.json",
+      "sha256": "b03ba9b9fde1d06b339ec4fd34f3d92aed9e6bd6d3d86d25436403221ad00f6d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/frozen/installed-artifact.tar.gz",
+      "sha256": "0b4b680535e0955b8cb0efc9d65ec65da95ac373de0727b06f0792fbbbb9f243"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/owned-final-states/main-A/cleanup.json",
+      "sha256": "c9cb99f099204388958749fd407c9c3320e74e1003f4aa5b82f13ed614b8c838"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/owned-final-states/main-A/database.log",
+      "sha256": "a58f4991be97281152fc71d1748f405bc6bc9fa26a841e95b3fafc675e4caa1b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/owned-final-states/main-A/evidence.tgz",
+      "sha256": "e1e1b137315256d93c991575631d98acd4a04ab6f1b6176a91477881c66fe8b0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/owned-final-states/main-A/manifest.json",
+      "sha256": "c60a1bfda56b17b825a867faad95835bcda1b1427c71be7d4438cced668d11c0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/owned-final-states/main-A/roles-without-passwords.sql",
+      "sha256": "60c9aebd5659779912777893dfe787b9da4dff6ec4e8d694f241267611824a0e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/owned-final-states/main-A/runtime-and-result-supplement.tgz",
+      "sha256": "757fc44bc852cff9a65cde0c8e30e4d8c33a375538dc4375d3ba78edb96ed6d5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/owned-final-states/main-A/source.dump",
+      "sha256": "8f31e135ad75725a152a1b813b51bd38b8935c9b8a65ac1de28a726da8831362"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/owned-final-states/main-A/whole-project-home.tgz",
+      "sha256": "44ebe978ead06f9cbc4bad6a2234152501f0cc7903a25eed19c1d9de318a8eb2"
+    }
+  ],
+  "A_start": "actual post-two-effect saved5daydraft final state; NOT original untouched start",
+  "raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920"
+}

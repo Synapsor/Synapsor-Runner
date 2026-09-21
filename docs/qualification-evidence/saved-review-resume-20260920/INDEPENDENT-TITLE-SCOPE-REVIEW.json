@@ -1,0 +1,6 @@
+{
+  "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/A3250FE-READONLY-SCOPE-REVIEW.md",
+  "sha256": "74201c512479fb611ccb2df11442d3c2e41cf99dcf5844aa67ec6aadb6b158b7",
+  "verdict": "No material scope concern found in bounded read-only pre-freeze review",
+  "limits": "Not final candidate acceptance; no reviewer tests, edits or provider calls. Precommit focused exit records are linked to committed a3250fe content through exact file hashes."
+}

@@ -1,0 +1,18 @@
+{
+  "at": "2026-09-21T05:34:47.724506+00:00",
+  "old_nonadditive_cap": 2,
+  "new_nonadditive_cap": 3,
+  "shared_cap_unchanged": 7.867855690000001,
+  "calls_before_amendment": 0,
+  "reason": "Preserve the normal up-to-three-response coverage contract. Advance predeclaration only; no episode reset, provider payload change, rate reduction or historical transfer.",
+  "tester_plan": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/a-probe-launch/A-PROBE-LAUNCH-PLAN.json",
+  "tester_plan_sha256": "1b79aa98d45206339e99545bcc13977bef20cc3c6ae6e84015b5293cf66b8130",
+  "schedule": {
+    "maximum_transports": 3,
+    "maximum_prepared_request_bytes": 196000,
+    "maximum_output_tokens": 12000,
+    "per_transport_worst_case_reservation_usd": 1,
+    "whole_schedule_reservation_usd": 3,
+    "third_response": "Only the existing product-authorized distinct structural correction after prior findings resolve; no repeat/no-progress or alternate route."
+  }
+}

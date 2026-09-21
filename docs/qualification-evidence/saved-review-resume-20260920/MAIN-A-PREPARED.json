@@ -1,0 +1,18 @@
+{
+  "status": "PREPARED_NOT_EXECUTED",
+  "at": "2026-09-21T05:26:26.218158+00:00",
+  "owned_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A",
+  "restoration": {
+    "all42tables_equal": true,
+    "full38source_rows_equal": true,
+    "post_effect_start": true,
+    "no_authority_binding_rewrite": true
+  },
+  "source_sha256": "b3c6b48ed5936be078a7e2adb749e9ecf3303a06c158ca9582ff232bf143bb62",
+  "provider_calls": 0,
+  "application_calls": 0,
+  "business_authorized": false,
+  "candidate": "pending stable suite and immutable freeze",
+  "baseline_manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/all-table-before.json",
+  "baseline_sha256": "bf869fc48fd895b52153f9e0758523a54f898e421614974c1832528d921c9ab3"
+}

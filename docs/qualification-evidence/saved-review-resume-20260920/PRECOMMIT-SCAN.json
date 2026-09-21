@@ -1,0 +1,8 @@
+{
+  "at": "2026-09-21T05:30:26.575662+00:00",
+  "result": "PASS",
+  "credential_literal_matches": 0,
+  "explicit_reviewed_false_positives": "Two Python credential URL construction templates with generated reader/writer variables; no saved literal credentials",
+  "template_matches": 2,
+  "scope": "Intended new repository evidence/harness files; raw/private fixtures are excluded from Git"
+}

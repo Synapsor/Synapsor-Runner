@@ -1,0 +1,39 @@
+{
+  "at": "2026-09-21T05:45:19.691371+00:00",
+  "baseline": "9685c5011f4eae512e344edabd1997b57eed9b63",
+  "current": "a3250feb1c930549743dadf17b4f0536f35af254",
+  "files": [
+    {
+      "path": "apps/runner/src/authoring-policy-evidence.ts",
+      "kind": "product",
+      "baseline_sha256": "b80bcc36624b2f15b5d8981d7534db482c2db12d1b594c9dc61ce0409035fa6f",
+      "current_sha256": "6b6df5c94352306cef5e7214087ab52f435dc71ac0c4f59620a1c6715b42bf98"
+    },
+    {
+      "path": "apps/runner/src/authoring-rls-evidence.test.ts",
+      "kind": "test",
+      "baseline_sha256": "b56a5813368405c231758affbcf87071eb37319dae867abc5a6f149eb51efc50",
+      "current_sha256": "4418f998b92354523596c8216fc6758a8535200636ca97deb083212df255394b"
+    },
+    {
+      "path": "apps/runner/src/boundary-cli.test.ts",
+      "kind": "test",
+      "baseline_sha256": "4a968ddc1dfa5e2c7f157e7dfe7d5f3313236cb864dfa7ee8fd4412b8190520f",
+      "current_sha256": "a93e66f86e421fe0e4c58d38bafc6c46f192c502ad800ffcb1f5ef6bfe830e59"
+    },
+    {
+      "path": "apps/runner/src/boundary-commands.ts",
+      "kind": "product",
+      "baseline_sha256": "38a4cf6f97b6c786338e50b87803874e1f58a7309ad634180bb0534f3c783692",
+      "current_sha256": "42a830b4b37f49ddb8790b5834164eeb353f7ecb68e064576ca9d07ab174d064"
+    },
+    {
+      "path": "apps/runner/src/source-counter-host.test.ts",
+      "kind": "test",
+      "baseline_sha256": "e76c46e59399b0d17832f67a71b5005158628ed8f06f67073bd6ecce08bb6d61",
+      "current_sha256": "df01242867d62eb88709c4bde3d544e7810c7a57dcf2e9d13c956ea1d63f523f"
+    }
+  ],
+  "preserved": "No runtime tool, accounting, publication, worker, receipt engine, source effect, approval, selector, policy-proof validator or stored-record schema changes. Existing reader evidence validation and source counter save/reuse predicates remain strict.",
+  "followup": "a3250fe only preserves stage-specific counter heading and adds visible-reason assertions after first full failure."
+}

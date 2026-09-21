@@ -1,0 +1,99 @@
+{
+  "active_revision": "policy:a8e217a549235a1eb6501182850920613c2784524a46b62dc89704329b9cad38",
+  "saved_disabled_revision": "policy:6136e62ff8d68da57c915fca78668a22e10fee3a501ff2e60e9316e0eda5309d",
+  "numeric_7_to_5_count": 3,
+  "differences": [
+    {
+      "path": "/authority/activated_at",
+      "before": "2026-09-21T01:15:01.687Z",
+      "after_absent": true
+    },
+    {
+      "path": "/authority/actor",
+      "before": "local-developer",
+      "after_absent": true
+    },
+    {
+      "path": "/authority/authority/action_boundary/digest",
+      "before": "sha256:60400e62b373343df3d94a939c7a16497b59d233cbcfdaf8fa05790bacf3faf1",
+      "after": "sha256:9501511df09109e8fd6acaf1756f85d4b355128bc77dd46dd1537544058969ad"
+    },
+    {
+      "path": "/authority/authority/action_boundary/rules/0/action_rule_digest",
+      "before": "sha256:b9eb1bf44e755f4c10e4fa4fdee3811ac7410723d829a6581bb4b5a77c517c36",
+      "after": "sha256:8deb60d473a3e22fee295af4da00439964a49d8c5b9072137f611e3819cdb594"
+    },
+    {
+      "path": "/authority/authority/action_boundary/rules/0/approval_policy_digest",
+      "before": "sha256:8c16d1ef491d07e540e2cf7446a6024644324b440d0160182326a2d59e9816ee",
+      "after": "sha256:8651cd29ed302930193deda6cd517c9bacf73c736c12cf2aa80320e7c049532c"
+    },
+    {
+      "path": "/authority/authority/action_boundary/rules/0/compiled_plan_digest",
+      "before": "sha256:c35892b512b7a52c6b5a679d67fcf11536a12b76b63bf92572d39dcebced0756",
+      "after": "sha256:46de2c841e8345987dcc08b1f72767420fa40da56b5cbddabfe2898d77282e57"
+    },
+    {
+      "path": "/authority/authority/action_boundary/rules/0/effect_envelope_digest",
+      "before": "sha256:76f14d73ab667b64f310674a5d6c70b2b5f7c799619ece400e606f914ed97270",
+      "after": "sha256:bfefc9e58e9cbf5ac1625d8940ca40af5c457c3ee4adb16b35656bd1c13915b3"
+    },
+    {
+      "path": "/authority/authority/digest",
+      "before": "sha256:66466d3ab46df930b123a0b5ecb481ca3290a8e3bf34fc8290e46db129940f70",
+      "after": "sha256:a26bae477f409339e9c284d7e2d6d51f102f20e9e3bf95ae5e26dcb8165accc8"
+    },
+    {
+      "path": "/authority/authority/rules/0/activated_at",
+      "before": "2026-09-20T17:46:45.715Z",
+      "after": "2026-09-21T03:40:09.422Z"
+    },
+    {
+      "path": "/authority/authority/rules/0/effect_envelope/allowed_fields/1/maximum",
+      "before": 7,
+      "after": 5
+    },
+    {
+      "path": "/authority/authority/rules/0/rule/inputs/0/maximum",
+      "before": 7,
+      "after": 5
+    },
+    {
+      "path": "/authority/authority/rules/0/rule/require/expressions/7/right/value",
+      "before": 7,
+      "after": 5
+    },
+    {
+      "path": "/authority/authority/rules/0/rule/x-runner-discovery/summary",
+      "before": "Request clearance for a selected release assessment and a release window of one to seven days.",
+      "after": "Request clearance for a selected release assessment and a release window of one to five days."
+    },
+    {
+      "path": "/authority/created_at",
+      "before_absent": true,
+      "after": "2026-09-21T03:40:09.422Z"
+    },
+    {
+      "path": "/authority/digest",
+      "before": "sha256:66466d3ab46df930b123a0b5ecb481ca3290a8e3bf34fc8290e46db129940f70",
+      "after": "sha256:a26bae477f409339e9c284d7e2d6d51f102f20e9e3bf95ae5e26dcb8165accc8"
+    },
+    {
+      "path": "/authority/reviews/0/when",
+      "before": "The selected assessment is ready, its related animal is medically cleared and has completed quarantine, handling risk is no more than 40, the related habitat is open and accepting releases, and the requested window is 1\u20137 days.",
+      "after": "The selected assessment is ready, its related animal is medically cleared and has completed quarantine, handling risk is no more than 40, the related habitat is open and accepting releases, and the requested window is 1\u20135 days."
+    },
+    {
+      "path": "/authority/schema_version",
+      "before": "synapsor.action-rule-authority-activation.v1",
+      "after": "synapsor.action-rule-authority-draft.v1"
+    },
+    {
+      "path": "/authority/state",
+      "before": "active",
+      "after": "disabled"
+    }
+  ],
+  "baseline": "Exact restored original saved edit, not another authored revision. Other serialized program properties compare equal.",
+  "comparison": "Complete recursive values and key membership; absent and null remain distinct."
+}

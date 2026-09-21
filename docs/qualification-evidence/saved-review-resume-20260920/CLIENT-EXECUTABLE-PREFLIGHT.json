@@ -1,0 +1,24 @@
+{
+  "at": "2026-09-21T06:03:28.892496+00:00",
+  "executables": [
+    {
+      "path": "/usr/bin/node",
+      "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90",
+      "identity": "Node 22.22.2",
+      "bytes": 124679552,
+      "mode": "0o755",
+      "basis": "Recomputed complete file; equals prior tested executable identity. No execution or provider call."
+    },
+    {
+      "path": "/home/sandesh-tiwari/.npm-global/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe",
+      "sha256": "5c4735937844e84f8a93306e841a5b0e12252909b07870f789b190468da147ab",
+      "identity": "Claude Code 2.1.278",
+      "bytes": 234119480,
+      "mode": "0o755",
+      "basis": "Recomputed complete file; equals prior tested executable identity. No execution or provider call."
+    }
+  ],
+  "runtime": "claude-opus-5; high effort; 4096 output; existing native four-tool configuration only",
+  "authoring": "openrouter / openai/gpt-5.6-terra; existing settings; no fallback",
+  "protocol": "Measure actual final native/SDK negotiation; do not transfer a historical protocol label."
+}

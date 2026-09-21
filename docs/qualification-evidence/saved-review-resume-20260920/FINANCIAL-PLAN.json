@@ -1,0 +1,49 @@
+{
+  "ceiling": 7.867855690000001,
+  "initial_balance": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/balance-initial.json",
+  "semantics": "Purpose ceilings are non-additive admission caps under one shared hard total. Paid/native turns are scheduled sequentially. No lane is guaranteed unused capacity; every send must fit the shared remaining balance. No earlier ledger transfer. Whole native turn feasibility rechecked before launching each paid turn, including final narration.",
+  "purpose_caps": [
+    {
+      "case_id": "DEV-A",
+      "phase_kind": "development",
+      "spend_ceiling_usd": 0.9,
+      "transport_limits": {
+        "authoring": 6,
+        "runtime": 0
+      }
+    },
+    {
+      "case_id": "PROBE-A",
+      "phase_kind": "review_probe",
+      "spend_ceiling_usd": 0.9,
+      "transport_limits": {
+        "authoring": 6,
+        "runtime": 0
+      }
+    },
+    {
+      "case_id": "KC-A",
+      "phase_kind": "final",
+      "spend_ceiling_usd": 3.3,
+      "transport_limits": {
+        "authoring": 18,
+        "runtime": 12
+      }
+    },
+    {
+      "case_id": "KC-B",
+      "phase_kind": "final",
+      "spend_ceiling_usd": 5.0,
+      "transport_limits": {
+        "authoring": 30,
+        "runtime": 24
+      }
+    }
+  ],
+  "historical_whole_turn_peaks": {
+    "A": 2.582,
+    "B_conservative_five_transport": 4.48374
+  },
+  "new_candidate_feasibility": "must remeasure actual envelope before each launch; historical size not a guarantee",
+  "provider_calls_before_plan": 0
+}

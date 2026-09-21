@@ -1,0 +1,574 @@
+{
+  "recorded_at": "2026-09-21T06:13:17.834372+00:00",
+  "runs": [
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/combined-review-exit.json",
+      "result": {
+        "name": "combined-review",
+        "command": [
+          "corepack",
+          "pnpm",
+          "exec",
+          "vitest",
+          "run",
+          "apps/runner/src/boundary-cli.test.ts",
+          "apps/runner/src/authoring-rls-evidence.test.ts",
+          "apps/runner/src/action-rule-version-review.test.ts",
+          "apps/runner/src/authoring-review-continuation.test.ts",
+          "apps/runner/src/authoring-coverage-correction.test.ts",
+          "apps/runner/src/boundary-authoring-resume.test.ts",
+          "apps/runner/src/native-discovery-conformance.test.ts",
+          "--maxWorkers=4",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000"
+        ],
+        "started_at": "2026-09-21T04:59:11.302001+00:00",
+        "source_commit": "9685c5011f4eae512e344edabd1997b57eed9b63",
+        "source_digest": "59f5e52572282a3df1419a5ee05ebfe9c63e880f2af43ae18efe609536db5e48",
+        "credentials": "absent",
+        "umask": "0077",
+        "pid": 2375956,
+        "exit": 0,
+        "finished_at": "2026-09-21T05:02:15.540596+00:00",
+        "source_unchanged": true
+      }
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/development-build-2-exit.json",
+      "result": {
+        "name": "development-build-2",
+        "command": [
+          "corepack",
+          "pnpm",
+          "build:runner-package"
+        ],
+        "started_at": "2026-09-21T04:59:12.474756+00:00",
+        "source_commit": "9685c5011f4eae512e344edabd1997b57eed9b63",
+        "source_digest": "59f5e52572282a3df1419a5ee05ebfe9c63e880f2af43ae18efe609536db5e48",
+        "credentials": "absent",
+        "umask": "0077",
+        "pid": 2376111,
+        "exit": 0,
+        "finished_at": "2026-09-21T04:59:45.033748+00:00",
+        "source_unchanged": true
+      }
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/development-build-exit.json",
+      "result": {
+        "name": "development-build",
+        "command": [
+          "corepack",
+          "pnpm",
+          "build:runner-package"
+        ],
+        "started_at": "2026-09-21T04:57:03.056037+00:00",
+        "source_commit": "9685c5011f4eae512e344edabd1997b57eed9b63",
+        "source_digest": "95aa04803b690d1f1273b6a377fd601d6a7c9051bfa2299d0c70078e8211f72f",
+        "credentials": "absent",
+        "umask": "0077",
+        "pid": 2373158,
+        "exit": 0,
+        "finished_at": "2026-09-21T04:57:38.233187+00:00",
+        "source_unchanged": true
+      }
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/failing-before-postsave-exit.json",
+      "result": {
+        "name": "failing-before-postsave",
+        "command": [
+          "corepack",
+          "pnpm",
+          "exec",
+          "vitest",
+          "run",
+          "apps/runner/src/boundary-cli.test.ts",
+          "-t",
+          "saved post-edit review uses reader evidence",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000"
+        ],
+        "started_at": "2026-09-21T04:58:31.545872+00:00",
+        "source_commit": "9685c5011f4eae512e344edabd1997b57eed9b63",
+        "source_digest": "59f5e52572282a3df1419a5ee05ebfe9c63e880f2af43ae18efe609536db5e48",
+        "credentials": "absent",
+        "umask": "0077",
+        "product_source_overlay": "unchanged HEAD files saved in before-sources; new regression tests retained",
+        "pid": 2374804,
+        "exit": 1,
+        "finished_at": "2026-09-21T04:58:40.635911+00:00",
+        "source_unchanged": true
+      }
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/focused-counter-title-exit.json",
+      "result": {
+        "name": "focused-counter-title",
+        "command": [
+          "corepack",
+          "pnpm",
+          "exec",
+          "vitest",
+          "run",
+          "apps/runner/src/source-counter-host.test.ts",
+          "apps/runner/src/boundary-cli.test.ts",
+          "-t",
+          "retains exact authority and durable confirmation semantics|post-save reader",
+          "--maxWorkers=2",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000"
+        ],
+        "started_at": "2026-09-21T05:38:11.149940+00:00",
+        "source_commit": "5cc6c5d3999f906a995d7028a6ec8e086bfba3ce",
+        "source_digest": "bde0189a0c9cbe0de412731d6e17e55562cad5346e09eafb62047f1b8a3036a6",
+        "credentials": "absent",
+        "umask": "0077",
+        "pid": 2428287,
+        "exit": 0,
+        "finished_at": "2026-09-21T05:38:28.759049+00:00",
+        "source_unchanged": true
+      }
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/focused-postsave-2-exit.json",
+      "result": {
+        "name": "focused-postsave-2",
+        "command": [
+          "corepack",
+          "pnpm",
+          "exec",
+          "vitest",
+          "run",
+          "apps/runner/src/boundary-cli.test.ts",
+          "-t",
+          "saved post-edit review uses reader evidence",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000"
+        ],
+        "started_at": "2026-09-21T04:56:54.514936+00:00",
+        "source_commit": "9685c5011f4eae512e344edabd1997b57eed9b63",
+        "source_digest": "95aa04803b690d1f1273b6a377fd601d6a7c9051bfa2299d0c70078e8211f72f",
+        "credentials": "absent",
+        "umask": "0077",
+        "pid": 2372899,
+        "exit": 1,
+        "finished_at": "2026-09-21T04:57:04.139751+00:00",
+        "source_unchanged": true
+      }
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/focused-postsave-3-exit.json",
+      "result": {
+        "name": "focused-postsave-3",
+        "command": [
+          "corepack",
+          "pnpm",
+          "exec",
+          "vitest",
+          "run",
+          "apps/runner/src/boundary-cli.test.ts",
+          "-t",
+          "saved post-edit review uses reader evidence",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000"
+        ],
+        "started_at": "2026-09-21T04:57:52.715159+00:00",
+        "source_commit": "9685c5011f4eae512e344edabd1997b57eed9b63",
+        "source_digest": "59f5e52572282a3df1419a5ee05ebfe9c63e880f2af43ae18efe609536db5e48",
+        "credentials": "absent",
+        "umask": "0077",
+        "pid": 2374191,
+        "exit": 0,
+        "finished_at": "2026-09-21T04:58:02.152213+00:00",
+        "source_unchanged": true
+      }
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/focused-postsave-exit.json",
+      "result": {
+        "name": "focused-postsave",
+        "command": [
+          "corepack",
+          "pnpm",
+          "exec",
+          "vitest",
+          "run",
+          "apps/runner/src/boundary-cli.test.ts",
+          "-t",
+          "saved post-edit review uses reader evidence",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000"
+        ],
+        "started_at": "2026-09-21T04:56:00.480713+00:00",
+        "source_commit": "9685c5011f4eae512e344edabd1997b57eed9b63",
+        "source_digest": "ec1e2a0ae125c21b7d9e7ba989b3a7c67a12a21fa10371f021ac0ee6ef3dce55",
+        "credentials": "absent",
+        "umask": "0077",
+        "pid": 2371913,
+        "exit": 1,
+        "finished_at": "2026-09-21T04:56:09.467043+00:00",
+        "source_unchanged": true
+      }
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/focused-postsave-final-exit.json",
+      "result": {
+        "name": "focused-postsave-final",
+        "command": [
+          "corepack",
+          "pnpm",
+          "exec",
+          "vitest",
+          "run",
+          "apps/runner/src/boundary-cli.test.ts",
+          "-t",
+          "saved post-edit review uses reader evidence",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000"
+        ],
+        "started_at": "2026-09-21T05:38:32.443797+00:00",
+        "source_commit": "5cc6c5d3999f906a995d7028a6ec8e086bfba3ce",
+        "source_digest": "bde0189a0c9cbe0de412731d6e17e55562cad5346e09eafb62047f1b8a3036a6",
+        "credentials": "absent",
+        "umask": "0077",
+        "pid": 2428926,
+        "exit": 0,
+        "finished_at": "2026-09-21T05:38:51.056479+00:00",
+        "source_unchanged": true
+      }
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/focused-reader-exit.json",
+      "result": {
+        "name": "focused-reader",
+        "command": [
+          "corepack",
+          "pnpm",
+          "exec",
+          "vitest",
+          "run",
+          "apps/runner/src/authoring-rls-evidence.test.ts",
+          "apps/runner/src/boundary-cli.test.ts",
+          "-t",
+          "reader evidence after writer setup|saved review operation dispatch and persistence",
+          "--maxWorkers=2",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000"
+        ],
+        "started_at": "2026-09-21T04:53:58.096331+00:00",
+        "source_commit": "9685c5011f4eae512e344edabd1997b57eed9b63",
+        "source_digest": "06d66332d64f985955f6bd25a3dba839ef70d302311d88e7addda67d977d97c0",
+        "credentials": "absent",
+        "umask": "0077",
+        "pid": 2370011,
+        "exit": 0,
+        "finished_at": "2026-09-21T04:54:09.639368+00:00",
+        "source_unchanged": true
+      }
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/native-discovery-preservation-exit.json",
+      "result": {
+        "name": "native-discovery-preservation",
+        "command": [
+          "corepack",
+          "pnpm",
+          "exec",
+          "vitest",
+          "run",
+          "apps/runner/src/scoped-read-discovery.test.ts",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000"
+        ],
+        "started_at": "2026-09-21T05:08:00.996018+00:00",
+        "source_commit": "9685c5011f4eae512e344edabd1997b57eed9b63",
+        "source_digest": "59f5e52572282a3df1419a5ee05ebfe9c63e880f2af43ae18efe609536db5e48",
+        "credentials": "absent",
+        "umask": "0077",
+        "pid": 2386021,
+        "exit": 0,
+        "finished_at": "2026-09-21T05:08:07.810743+00:00",
+        "source_unchanged": true
+      }
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/postgres-persistence-exit.json",
+      "result": {
+        "name": "postgres-persistence",
+        "command": [
+          "corepack",
+          "pnpm",
+          "exec",
+          "vitest",
+          "run",
+          "apps/runner/src/control-policy-authority-codec.test.ts",
+          "-t",
+          "saves and reloads receipt readiness under the existing review lock",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000"
+        ],
+        "started_at": "2026-09-21T05:05:39.271582+00:00",
+        "source_commit": "9685c5011f4eae512e344edabd1997b57eed9b63",
+        "source_digest": "59f5e52572282a3df1419a5ee05ebfe9c63e880f2af43ae18efe609536db5e48",
+        "credentials": "owned PostgreSQL gate URL only",
+        "umask": "0077",
+        "pid": 2383049,
+        "exit": 0,
+        "finished_at": "2026-09-21T05:05:55.311387+00:00",
+        "source_unchanged": true
+      }
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/postgres-persistence-final-exit.json",
+      "result": {
+        "name": "postgres-persistence-final",
+        "command": [
+          "corepack",
+          "pnpm",
+          "exec",
+          "vitest",
+          "run",
+          "apps/runner/src/control-policy-authority-codec.test.ts",
+          "-t",
+          "saves and reloads receipt readiness under the existing review lock",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000"
+        ],
+        "started_at": "2026-09-21T05:41:57.088733+00:00",
+        "source_commit": "a3250feb1c930549743dadf17b4f0536f35af254",
+        "source_digest": "bde0189a0c9cbe0de412731d6e17e55562cad5346e09eafb62047f1b8a3036a6",
+        "credentials": "owned PostgreSQL gate URL only",
+        "umask": "0077",
+        "database_destination": {
+          "host": "127.0.0.1",
+          "port": 32810,
+          "database": "review_gate",
+          "container_id": "93353c61cb4e6698ad156e5a468667526a2059b6e86527e375f187c53dc13cea"
+        },
+        "pid": 2434466,
+        "exit": 0,
+        "finished_at": "2026-09-21T05:42:17.747645+00:00",
+        "source_unchanged": true
+      }
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/postgres-review-exit.json",
+      "result": {
+        "name": "postgres-review",
+        "command": [
+          "corepack",
+          "pnpm",
+          "exec",
+          "vitest",
+          "run",
+          "apps/runner/src/authoring-counting-domain.test.ts",
+          "apps/runner/src/authoring-counting-freshness.test.ts",
+          "apps/runner/src/semantic-receipt-setup.test.ts",
+          "-t",
+          "postgres",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000"
+        ],
+        "started_at": "2026-09-21T05:04:39.866729+00:00",
+        "source_commit": "9685c5011f4eae512e344edabd1997b57eed9b63",
+        "source_digest": "59f5e52572282a3df1419a5ee05ebfe9c63e880f2af43ae18efe609536db5e48",
+        "credentials": "owned PostgreSQL gate URL only",
+        "umask": "0077",
+        "pid": 2381927,
+        "exit": 0,
+        "finished_at": "2026-09-21T05:04:49.774495+00:00",
+        "source_unchanged": true
+      }
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/postgres-review-final-2-exit.json",
+      "result": {
+        "name": "postgres-review-final-2",
+        "command": [
+          "corepack",
+          "pnpm",
+          "exec",
+          "vitest",
+          "run",
+          "apps/runner/src/authoring-counting-domain.test.ts",
+          "apps/runner/src/authoring-counting-freshness.test.ts",
+          "apps/runner/src/semantic-receipt-setup.test.ts",
+          "-t",
+          "postgres",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000"
+        ],
+        "started_at": "2026-09-21T05:41:36.416316+00:00",
+        "source_commit": "a3250feb1c930549743dadf17b4f0536f35af254",
+        "source_digest": "bde0189a0c9cbe0de412731d6e17e55562cad5346e09eafb62047f1b8a3036a6",
+        "credentials": "owned PostgreSQL gate URL only",
+        "umask": "0077",
+        "database_destination": {
+          "host": "127.0.0.1",
+          "port": 32810,
+          "database": "review_gate",
+          "container_id": "93353c61cb4e6698ad156e5a468667526a2059b6e86527e375f187c53dc13cea"
+        },
+        "pid": 2433606,
+        "exit": 0,
+        "finished_at": "2026-09-21T05:41:56.915715+00:00",
+        "source_unchanged": true
+      }
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/postgres-review-final-exit.json",
+      "result": {
+        "name": "postgres-review-final",
+        "command": [
+          "corepack",
+          "pnpm",
+          "exec",
+          "vitest",
+          "run",
+          "apps/runner/src/authoring-counting-domain.test.ts",
+          "apps/runner/src/authoring-counting-freshness.test.ts",
+          "apps/runner/src/semantic-receipt-setup.test.ts",
+          "-t",
+          "postgres",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000"
+        ],
+        "started_at": "2026-09-21T05:40:07.731187+00:00",
+        "source_commit": "a3250feb1c930549743dadf17b4f0536f35af254",
+        "source_digest": "bde0189a0c9cbe0de412731d6e17e55562cad5346e09eafb62047f1b8a3036a6",
+        "credentials": "owned PostgreSQL gate URL only",
+        "umask": "0077",
+        "pid": 2431387,
+        "exit": 1,
+        "finished_at": "2026-09-21T05:40:23.826666+00:00",
+        "source_unchanged": true
+      }
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/stable-full-2-exit.json",
+      "result": {
+        "name": "stable-full-2",
+        "command": [
+          "corepack",
+          "pnpm",
+          "exec",
+          "vitest",
+          "run",
+          "--maxWorkers=4",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000"
+        ],
+        "started_at": "2026-09-21T05:46:34.421054+00:00",
+        "source_commit": "a3250feb1c930549743dadf17b4f0536f35af254",
+        "source_digest": "bde0189a0c9cbe0de412731d6e17e55562cad5346e09eafb62047f1b8a3036a6",
+        "credentials": "absent",
+        "umask": "0077",
+        "pid": 2441827,
+        "exit": 0,
+        "finished_at": "2026-09-21T06:10:49.909152+00:00",
+        "source_unchanged": true
+      }
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/stable-full-exit.json",
+      "result": {
+        "name": "stable-full",
+        "command": [
+          "corepack",
+          "pnpm",
+          "exec",
+          "vitest",
+          "run",
+          "--maxWorkers=4",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000"
+        ],
+        "started_at": "2026-09-21T05:10:54.293557+00:00",
+        "source_commit": "5cc6c5d3999f906a995d7028a6ec8e086bfba3ce",
+        "source_digest": "59f5e52572282a3df1419a5ee05ebfe9c63e880f2af43ae18efe609536db5e48",
+        "credentials": "absent",
+        "umask": "0077",
+        "pid": 2389592,
+        "exit": 1,
+        "finished_at": "2026-09-21T05:36:29.808284+00:00",
+        "source_unchanged": true
+      }
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/types-exit.json",
+      "result": {
+        "name": "types",
+        "command": [
+          "corepack",
+          "pnpm",
+          "typecheck"
+        ],
+        "started_at": "2026-09-21T05:07:34.382818+00:00",
+        "source_commit": "9685c5011f4eae512e344edabd1997b57eed9b63",
+        "source_digest": "59f5e52572282a3df1419a5ee05ebfe9c63e880f2af43ae18efe609536db5e48",
+        "credentials": "absent",
+        "umask": "0077",
+        "pid": 2385063,
+        "exit": 0,
+        "finished_at": "2026-09-21T05:07:35.093218+00:00",
+        "source_unchanged": true
+      }
+    },
+    {
+      "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/types-final-exit.json",
+      "result": {
+        "name": "types-final",
+        "command": [
+          "corepack",
+          "pnpm",
+          "typecheck"
+        ],
+        "started_at": "2026-09-21T05:38:33.578510+00:00",
+        "source_commit": "5cc6c5d3999f906a995d7028a6ec8e086bfba3ce",
+        "source_digest": "bde0189a0c9cbe0de412731d6e17e55562cad5346e09eafb62047f1b8a3036a6",
+        "credentials": "absent",
+        "umask": "0077",
+        "pid": 2429010,
+        "exit": 0,
+        "finished_at": "2026-09-21T05:38:45.448686+00:00",
+        "source_unchanged": true
+      }
+    }
+  ],
+  "interpretation": {
+    "stable_source": "Product and test files unchanged during gates; source/content hashes identify precommit targeted runs as the same later committed source. Product/test revisions are recorded separately.",
+    "postgres_review": "Explicit owned PostgreSQL CONTROL-store domain/freshness/review tests, not inferred from the PostgreSQL business-source runtime.",
+    "postgres_persistence": "4 selected cases passed across SQLite and PostgreSQL; 420 unmatched cases skipped by explicit name filter.",
+    "offline_overlap": "Package gates rebuilt generated bundles from unchanged source during this task\u2019s full suite. No tester heavy run overlapped. The older boolean field source_immutable_during_full_suite identifies source-versus-package script phase; actual before/after source digests are equal for every gate.",
+    "native": "Nine preserved native-discovery tests passed on changed source; installed negotiated protocol still requires fresh observation.",
+    "full_suite": "First full remains failed. Separate stable-full-2 completed 6790 pass/478 skip, exit0 on a3250fe with unchanged source; no source/build overlap."
+  }
+}

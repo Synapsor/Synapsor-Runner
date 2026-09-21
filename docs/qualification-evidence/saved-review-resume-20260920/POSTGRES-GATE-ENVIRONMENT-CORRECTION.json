@@ -1,0 +1,13 @@
+{
+  "at": "2026-09-21T05:41:36.163200+00:00",
+  "classification": "HARNESS_ENVIRONMENT_FAILURE",
+  "failed_run": "postgres-review-final",
+  "exit": 1,
+  "tests": "4 connection failures, 34 unmatched skips; no passing product assertion",
+  "cause": "Docker reassigned the task-owned ephemeral published port on restart. Gate harness retained old connection port.",
+  "old_port": 32808,
+  "verified_current_port": 32810,
+  "container_id": "93353c61cb4e6698ad156e5a468667526a2059b6e86527e375f187c53dc13cea",
+  "correction": "Only intended local test connection configuration refreshed. Gate harness now verifies its URL against the current owned published port before opening. No reviewed application locator/binding, product behavior or stored authority changed.",
+  "retry": "postgres-review-final-2, then postgres-persistence-final; prior log and exit remain intact."
+}

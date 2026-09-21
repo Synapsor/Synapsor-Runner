@@ -1,0 +1,18 @@
+{
+  "at": "2026-09-21T05:07:19.611542+00:00",
+  "kind": "development measurement correction 1",
+  "finding": "The actual new saved-review envelope exceeded the .90 internal purpose cap before transport. No financial charge or provider transport. The earlier .736 historical fresh-onboarding peak was not this current saved-review envelope.",
+  "before_ledger_sha256": "c138583e182236be4a685710b4424686a2182a85b1fa0e4dcacf60b93c031d34",
+  "changes": {
+    "DEV-A": {
+      "before": 0.9,
+      "after": 2.0
+    },
+    "PROBE-A": {
+      "before": 0.9,
+      "after": 2.0
+    }
+  },
+  "unchanged_shared_total": 7.867855690000001,
+  "method": "Record actual safe prepared envelope and exact conservative reservation before reserve/send. Non-additive admission ceilings; no allocation from old ledger, topup, rate reduction or refund. Sequential calls remain checked against entire shared total. Prior product episode remains recorded; operator must explicitly confirm a new bounded episode."
+}

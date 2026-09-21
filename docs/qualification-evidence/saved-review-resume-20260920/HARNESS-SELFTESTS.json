@@ -1,0 +1,14 @@
+[
+  {
+    "name": "mcp-observer-selftest",
+    "exit": 0,
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/mcp-observer-selftest.log",
+    "recorded_at": "2026-09-21T05:24:07.451146+00:00"
+  },
+  {
+    "name": "runtime-selftest",
+    "exit": 0,
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/runtime-selftest.log",
+    "recorded_at": "2026-09-21T05:24:07.968570+00:00"
+  }
+]

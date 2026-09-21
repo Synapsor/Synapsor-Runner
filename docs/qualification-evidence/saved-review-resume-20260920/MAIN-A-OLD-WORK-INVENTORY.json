@@ -1,0 +1,49 @@
+{
+  "observed_at": "2026-09-21T05:28:37.372112+00:00",
+  "source": "exact owned restored 42-table baseline; read only",
+  "requests": [
+    {
+      "request_identity_sha256": "f9100bb9050d7919aa21ccf50acd86fcfc2cf586e418e695673e0f4147b6d220",
+      "proposal_state": "approved",
+      "approval_records": 1,
+      "recorded_approval_path": "automatic_eligible",
+      "window_days": 6,
+      "queue_status": "queued",
+      "attempts": 0,
+      "execution_terminal_outcome": null,
+      "verified_at": "2026-09-21T03:29:25.306Z",
+      "valid_until": "2026-09-21T03:34:25.306Z",
+      "expired_at_preparation": true,
+      "receipt_records": 0
+    },
+    {
+      "request_identity_sha256": "8a94900474adc1fe147355a76376a997c4ae4f855049c560b85d5ba02d1a8de1",
+      "proposal_state": "applied",
+      "approval_records": 1,
+      "recorded_approval_path": "automatic_eligible",
+      "window_days": 3,
+      "queue_status": "completed",
+      "attempts": 1,
+      "execution_terminal_outcome": "applied",
+      "verified_at": "2026-09-21T03:24:33.587Z",
+      "valid_until": "2026-09-21T03:29:33.587Z",
+      "expired_at_preparation": true,
+      "receipt_records": 1
+    },
+    {
+      "request_identity_sha256": "31fab77188842fc8af146b98668db0c7a3738b4b0c63b433991ca73dcff104f9",
+      "proposal_state": "applied",
+      "approval_records": 1,
+      "recorded_approval_path": "human_review",
+      "window_days": 4,
+      "queue_status": "completed",
+      "attempts": 1,
+      "execution_terminal_outcome": "applied",
+      "verified_at": "2026-09-21T03:27:41.490Z",
+      "valid_until": "2026-09-21T03:32:41.490Z",
+      "expired_at_preparation": true,
+      "receipt_records": 1
+    }
+  ],
+  "limitation": "The approved unstarted six-day proof has expired before new publication. Its later nonexecution alone cannot demonstrate replacement invalidation. No clock, deadline or approval was changed."
+}

@@ -1,0 +1,115 @@
+{
+  "status": "STOPPED_COVERAGE_REFUSAL",
+  "original_resume_fix": "reached current counting decisions and real coverage producer through recommended Resume",
+  "exact_saved_five_day_candidate": "retained; program payload comparison in handoff",
+  "provider_calls": 2,
+  "actual_cost_usd": 0.2668628,
+  "episodes": "prior local accounting refusal retained; separately confirmed new bounded episode with two complete responses; no further retry",
+  "diagnostic": "OBLIGATION_OBSERVATION_UNESTABLISHED repeated after precise first correction",
+  "source_rows": 38,
+  "full_source_unchanged": true,
+  "business_tables_unchanged": [
+    "proposals",
+    "approvals",
+    "worker_queue",
+    "writeback_receipts",
+    "idempotency_receipts",
+    "writeback_intents",
+    "writeback_jobs",
+    "proposal_events"
+  ],
+  "changed_control_tables": {
+    "control_policy_deployments": {
+      "before": 1,
+      "after": 1
+    },
+    "control_policy_events": {
+      "before": 20,
+      "after": 22
+    }
+  },
+  "raw": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/dev-review-A/authoring-meter/DEV-A-1-request.json",
+      "sha256": "b5616dc127aed8fb1b163865a19e2d4485ef716de252af60bee0deb5f937a3d3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/dev-review-A/authoring-meter/DEV-A-1-response-tool-arguments.reconstructed.json",
+      "sha256": "7694fb33a9bba1c8e6a1d71643927d5cc311da11d8c75ac0b912460961bc16ea"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/dev-review-A/authoring-meter/DEV-A-1-response.txt",
+      "sha256": "da6ed0441951770a407e13a3836f199a9e2a669a0db1128ea989ed3347da3def"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/dev-review-A/authoring-meter/DEV-A-2-request.json",
+      "sha256": "bef4b995f65488d70bebfd96ffebb4aef4ff053c13a81fad983a710a28f5b1a4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/dev-review-A/authoring-meter/DEV-A-2-response-tool-arguments.reconstructed.json",
+      "sha256": "877877d7565602a2c4836b31f428fec1431b3eecb0eaa16ca01356a221c80584"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/dev-review-A/authoring-meter/DEV-A-2-response.txt",
+      "sha256": "a42c330636aab654656872cbca0870f839a89d295fc1a55469bab3395505011a"
+    }
+  ],
+  "business_review_completed": false,
+  "publication": false,
+  "worker": false,
+  "effect": false,
+  "remaining": "independent exact-response assessment; stable gates/freeze only, no dependent live source effects before review checkpoint",
+  "unchanged_logical_tables": [
+    "approvals",
+    "attention_events",
+    "attention_items",
+    "cloud_governance_events",
+    "cloud_outbox",
+    "control_policy_active",
+    "control_policy_budget_accounts",
+    "control_policy_budget_entries",
+    "control_policy_budget_receipts",
+    "control_policy_budget_requests",
+    "control_policy_drafts",
+    "control_policy_effect_admissions",
+    "control_policy_effect_receipts",
+    "control_policy_identity",
+    "control_policy_reviews",
+    "control_policy_revisions",
+    "control_policy_runtime_proofs",
+    "evidence_bundles",
+    "evidence_items",
+    "explore_budget_reservations",
+    "explore_privacy_releases",
+    "idempotency_receipts",
+    "notification_deliveries",
+    "observed_subject_references",
+    "policy_recommendations",
+    "proposal_events",
+    "proposal_store_schema",
+    "proposals",
+    "query_audit",
+    "replay_records",
+    "runner_state",
+    "shadow_human_actions",
+    "shadow_outcomes",
+    "shadow_studies",
+    "shadow_study_cases",
+    "sqlite_sequence",
+    "worker_queue",
+    "writeback_intents",
+    "writeback_jobs",
+    "writeback_receipts"
+  ],
+  "unchanged_table_counts": {
+    "proposals": 3,
+    "approvals": 3,
+    "worker_queue": 3,
+    "writeback_receipts": 2,
+    "idempotency_receipts": 2,
+    "writeback_intents": 2,
+    "writeback_jobs": 2,
+    "proposal_events": 31
+  },
+  "measurement_note": "Initial local draft named execution_queue, which is absent; corrected to actual worker_queue using complete42table inventory before report. No absent-field equality supports this result."
+}

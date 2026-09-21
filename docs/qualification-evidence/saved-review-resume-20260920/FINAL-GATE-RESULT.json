@@ -1,0 +1,49 @@
+{
+  "at": "2026-09-21T06:13:17.834372+00:00",
+  "source_commit": "a3250feb1c930549743dadf17b4f0536f35af254",
+  "source_digest": "bde0189a0c9cbe0de412731d6e17e55562cad5346e09eafb62047f1b8a3036a6",
+  "full": {
+    "run": "stable-full-2",
+    "exit": 0,
+    "test_files_passed": 327,
+    "test_files_skipped": 21,
+    "tests_passed": 6790,
+    "tests_skipped": 478,
+    "duration_seconds": 1454.43,
+    "source_unchanged": true,
+    "source_build_overlap": false
+  },
+  "types": {
+    "run": "types-final",
+    "exit": 0
+  },
+  "focused": {
+    "counter_host": 7,
+    "saved_review": 4,
+    "exit": 0
+  },
+  "backend": {
+    "postgres_review_domain_freshness": {
+      "run": "postgres-review-final-2",
+      "passed": 4,
+      "skipped": 34,
+      "exit": 0
+    },
+    "sqlite_postgres_persistence": {
+      "run": "postgres-persistence-final",
+      "passed": 4,
+      "skipped": 420,
+      "exit": 0
+    }
+  },
+  "offline": {
+    "run": "attempt2",
+    "passed": 10,
+    "exit": 0
+  },
+  "preserved_failures": [
+    "stable-full: 3 source-counter diagnostic heading assertions; corrected without removing assertions",
+    "postgres-review-final: 4 ECONNREFUSED setup failures; owned port refreshed and checked"
+  ],
+  "scope": "Current build verification, not completed installed BUSINESS review or A/B live edits. Ordinary opt-in skips remain skips."
+}

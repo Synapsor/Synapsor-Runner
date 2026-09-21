@@ -1,0 +1,468 @@
+{
+  "recorded_at": "2026-09-21T06:13:17.834372+00:00",
+  "note": "All indexed gate records complete. Private raw captures referenced, not committed. New installation manifest follows this source checkpoint.",
+  "files": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/old-artifact-before.json",
+      "sha256": "8ed70faae5f4bfee80eeef7eb32bb601908d61426c4ec9a4cdad16be62bd7e01",
+      "bytes": 149,
+      "access": "local evidence"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/owned-final-states/dev-A/manifest.json",
+      "sha256": "77ba59f63ac4eb675a810249c3ee4891ea744e49970ec92eb62f18852bd101a6",
+      "bytes": 953,
+      "access": "local evidence"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/owned-final-states/dev-review-A/manifest.json",
+      "sha256": "ad535e9223d027fc20bc1e9c47db22cd878558f189edc4e9fc7ef2dd85d03070",
+      "bytes": 953,
+      "access": "local evidence"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/owned-final-states/diag-A/manifest.json",
+      "sha256": "81f700f328de9936d256488c1c134a8601b14dfc1e5a073b06cc85129fa66810",
+      "bytes": 953,
+      "access": "local evidence"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/owned-final-states/dev-A/cleanup.json",
+      "sha256": "d970c0469c669050a97167b0b08024a9750e534793f93cfb23eb3e3568b6b93b",
+      "bytes": 241,
+      "access": "local evidence"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/owned-final-states/dev-review-A/cleanup.json",
+      "sha256": "e325c695b4ff29eefa0796f209f79c5d6a15562eec9bd6acac7cdebd230f924e",
+      "bytes": 248,
+      "access": "local evidence"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/owned-final-states/diag-A/cleanup.json",
+      "sha256": "67bca1afe66b12a0d8b4c5aa7f95b232b067e6524aa5bb1c0a8022fac8f89f1f",
+      "bytes": 242,
+      "access": "local evidence"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/dev-A/PRESERVATION.json",
+      "sha256": "1155b38d4499b11f6100c5700e4a8416a5a239891956ffeb2c5cd784c56266e9",
+      "bytes": 451,
+      "access": "local evidence"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/dev-review-A/PRESERVATION.json",
+      "sha256": "1155b38d4499b11f6100c5700e4a8416a5a239891956ffeb2c5cd784c56266e9",
+      "bytes": 451,
+      "access": "local evidence"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/diag-A/PRESERVATION.json",
+      "sha256": "1155b38d4499b11f6100c5700e4a8416a5a239891956ffeb2c5cd784c56266e9",
+      "bytes": 451,
+      "access": "local evidence"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/dev-review-A/authoring-meter/DEV-A-1-request.json",
+      "sha256": "b5616dc127aed8fb1b163865a19e2d4485ef716de252af60bee0deb5f937a3d3",
+      "bytes": 190620,
+      "access": "private raw capture; no credentials or readable continuation authorized"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/dev-review-A/authoring-meter/DEV-A-2-request.json",
+      "sha256": "bef4b995f65488d70bebfd96ffebb4aef4ff053c13a81fad983a710a28f5b1a4",
+      "bytes": 192451,
+      "access": "private raw capture; no credentials or readable continuation authorized"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/dev-review-A/authoring-meter/DEV-A-1-response.txt",
+      "sha256": "da6ed0441951770a407e13a3836f199a9e2a669a0db1128ea989ed3347da3def",
+      "bytes": 1192857,
+      "access": "private raw capture; no credentials or readable continuation authorized"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/dev-review-A/authoring-meter/DEV-A-2-response.txt",
+      "sha256": "a42c330636aab654656872cbca0870f839a89d295fc1a55469bab3395505011a",
+      "bytes": 1164543,
+      "access": "private raw capture; no credentials or readable continuation authorized"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/combined-review-exit.json",
+      "sha256": "8c0f56681a6bbbc6ea81d6915eeae5cf2292ade640d4697a562eea0a62a9bf25",
+      "bytes": 969,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/combined-review-source.json",
+      "sha256": "a61df612f81facf73b84a2dab038c25d438ae34e3e0edc109abd348474ef38f9",
+      "bytes": 123360,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/combined-review.log",
+      "sha256": "46555e2c32b118563fbe63d51834eeca8e3dfcfc9ae9556ce5579222b4ec4552",
+      "bytes": 259327,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/development-build-2-exit.json",
+      "sha256": "8d767e663f4c90cfeda350039dfdc238ffc022a40a57c94826ff97540be82d96",
+      "bytes": 471,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/development-build-2-source.json",
+      "sha256": "a61df612f81facf73b84a2dab038c25d438ae34e3e0edc109abd348474ef38f9",
+      "bytes": 123360,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/development-build-2.log",
+      "sha256": "d52597e585521db403271767b46d703cadc3554cfe0f905da02a6f0d58fc6b7d",
+      "bytes": 443,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/development-build-exit.json",
+      "sha256": "81059d865e98f7fb4f6f840f7ffcff9010413d53084c6e519fff77332d5ea421",
+      "bytes": 469,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/development-build-source.json",
+      "sha256": "7368f038174bbdbdb1b74549cb05f281a7478f11d31489aa25104534f4c9daef",
+      "bytes": 123360,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/development-build.log",
+      "sha256": "97b4fe7dc4996b063c0c2f9706a49b7d99c437e06b9529c4eaaa6a46b7cf2061",
+      "bytes": 443,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/failing-before-postsave-exit.json",
+      "sha256": "063f02a8a27e1f0aa878faed92538efdf0375e5bac85f60811fca6037797e041",
+      "bytes": 794,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/failing-before-postsave-source.json",
+      "sha256": "a61df612f81facf73b84a2dab038c25d438ae34e3e0edc109abd348474ef38f9",
+      "bytes": 123360,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/failing-before-postsave.log",
+      "sha256": "6fe5e3e6932fc762ef710b3fda9b78f192dc14e6081a03823ff06e3f1494aaca",
+      "bytes": 47067,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/focused-counter-title-exit.json",
+      "sha256": "9eba35f7f6e369401f21acea6538bce755caf545dce4c54cab8e822815bbc8f7",
+      "bytes": 768,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/focused-counter-title-source.json",
+      "sha256": "215cd32b554e8c1f9c44ac2302c1847d46ff747afd6fd5524ae651a5e9eb0959",
+      "bytes": 123360,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/focused-counter-title.log",
+      "sha256": "8177ea82ecef20edd42d4b1e0a1886992b16b0dbdf98ae9b3364f871a8482b2d",
+      "bytes": 1812,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/focused-postsave-2-exit.json",
+      "sha256": "c8b9eae9fad8f1b32669374dd19d36f3a2e865f22a1be8c7d57c3278b777ccd4",
+      "bytes": 682,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/focused-postsave-2-source.json",
+      "sha256": "7368f038174bbdbdb1b74549cb05f281a7478f11d31489aa25104534f4c9daef",
+      "bytes": 123360,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/focused-postsave-2.log",
+      "sha256": "615b6bac9d052fb5b70f024679088cdead590c479c70b63dcbe8e59ec230fcd2",
+      "bytes": 135356,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/focused-postsave-3-exit.json",
+      "sha256": "2dde700fac352a383d8ce574214a4afb1d32bdc5943a106133e7816db846cec5",
+      "bytes": 682,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/focused-postsave-3-source.json",
+      "sha256": "a61df612f81facf73b84a2dab038c25d438ae34e3e0edc109abd348474ef38f9",
+      "bytes": 123360,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/focused-postsave-3.log",
+      "sha256": "56d25531898abb3ddde734c1a8e031dfca1235e6c4d6610a2825e01d71cc13ac",
+      "bytes": 653,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/focused-postsave-exit.json",
+      "sha256": "dd144cc559bd05290e5381d4ddad9cd5de625ad88a556ffce1e99eef108059c4",
+      "bytes": 680,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/focused-postsave-final-exit.json",
+      "sha256": "3b763c39739c7ed5e2bd6ad23e4632f0e8878d7f184dd8a9f2a347f98b363dde",
+      "bytes": 686,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/focused-postsave-final-source.json",
+      "sha256": "215cd32b554e8c1f9c44ac2302c1847d46ff747afd6fd5524ae651a5e9eb0959",
+      "bytes": 123360,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/focused-postsave-final.log",
+      "sha256": "9213cf56f2f62674df5616e0fc94bb1aab1ae07cb70c589e9b7d98c106a084c5",
+      "bytes": 1108,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/focused-postsave-source.json",
+      "sha256": "a23e05108750d6c90ad77a3322273bf0b3fb3b9af631c38b0bb70325519bd866",
+      "bytes": 123360,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/focused-postsave.log",
+      "sha256": "4c746a9495b88a1ca181de00587bb01f083f1322af22a8db8ff63f3aefe3d662",
+      "bytes": 48697,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/focused-reader-exit.json",
+      "sha256": "55a1f1bbc6e97b51362b291d3598344437a265919e12338edac1c17a97e0e33b",
+      "bytes": 771,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/focused-reader-source.json",
+      "sha256": "6722e749c51647b42c32911ef5ec9c0b57a96fa6c7edb9c0679763d2deb8718b",
+      "bytes": 123360,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/focused-reader.log",
+      "sha256": "8cec8874b583ce38262165b2ce03ce4acafa54a8ff45074832b454de3ea349d4",
+      "bytes": 1816,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/mcp-observer-selftest.log",
+      "sha256": "3c9e5d9306b78a0414ba8522bdf969ffc2296cfc4a7e0cb8e669a3722c77e02c",
+      "bytes": 259,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/native-discovery-preservation-exit.json",
+      "sha256": "dea9c73669a84b9ea680816816f0d60210dfd992210365eaf7066e87e609d530",
+      "bytes": 641,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/native-discovery-preservation-source.json",
+      "sha256": "a61df612f81facf73b84a2dab038c25d438ae34e3e0edc109abd348474ef38f9",
+      "bytes": 123360,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/native-discovery-preservation.log",
+      "sha256": "de17147ca3c7ac1c68e060616b458e51a4730196a15fb4ef88244f2909f11fe5",
+      "bytes": 782,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/postgres-gate-restart.json",
+      "sha256": "673f5a7906504f7fc39ca83a0445479829549e2348dec26ce007debe54d3d6b2",
+      "bytes": 255,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/postgres-persistence-exit.json",
+      "sha256": "7f6367ea9abd3a3f9a8337b0feec4f88450f4072118472af680acc42f96b4749",
+      "bytes": 749,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/postgres-persistence-final-exit.json",
+      "sha256": "71cca31ce8a939e41b517a5bec91cc9fda8578ffaa7844d7028788aa345226d2",
+      "bytes": 950,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/postgres-persistence-final-source.json",
+      "sha256": "215cd32b554e8c1f9c44ac2302c1847d46ff747afd6fd5524ae651a5e9eb0959",
+      "bytes": 123360,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/postgres-persistence-final.log",
+      "sha256": "eb19d830a7a116e24cbd38a1572954c2fa9e764d37bdcdfbeeb234c81953a4a7",
+      "bytes": 1262,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/postgres-persistence-source.json",
+      "sha256": "a61df612f81facf73b84a2dab038c25d438ae34e3e0edc109abd348474ef38f9",
+      "bytes": 123360,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/postgres-persistence.log",
+      "sha256": "506b8ebfe57b688f1dc519b8aa44ba9e36e8a3435672b03f29fe4b9e923c516e",
+      "bytes": 1070,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/postgres-review-exit.json",
+      "sha256": "94c1629d54d74824c2ee4991e1c9e55275dd984de6a6e08fe82bfd4f494a04b6",
+      "bytes": 795,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/postgres-review-final-2-exit.json",
+      "sha256": "c92fbfa5d1fef2cddfd469447a9a897b38d0cd378889340d89c81f52a224535b",
+      "bytes": 998,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/postgres-review-final-2-source.json",
+      "sha256": "215cd32b554e8c1f9c44ac2302c1847d46ff747afd6fd5524ae651a5e9eb0959",
+      "bytes": 123360,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/postgres-review-final-2.log",
+      "sha256": "427be3174fedb45cbbee145dd950eba667e9c4b94d89fdda3e7e493c5fa74c10",
+      "bytes": 1677,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/postgres-review-final-exit.json",
+      "sha256": "d243a3e2556414d1a6af6e71c50debf9e5b336f712571d61aba5c37a77baeff4",
+      "bytes": 801,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/postgres-review-final-source.json",
+      "sha256": "215cd32b554e8c1f9c44ac2302c1847d46ff747afd6fd5524ae651a5e9eb0959",
+      "bytes": 123360,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/postgres-review-final.log",
+      "sha256": "d19a134c21027b066b153f7d634db93f1bd9023b7ba804684b3ae8d99599dbd9",
+      "bytes": 12911,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/postgres-review-source.json",
+      "sha256": "a61df612f81facf73b84a2dab038c25d438ae34e3e0edc109abd348474ef38f9",
+      "bytes": 123360,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/postgres-review.log",
+      "sha256": "7c2155da1e662ce9df61846b96d39398f8ffb8eb1c0a2562d8763b241f63e2f4",
+      "bytes": 1673,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/runtime-selftest.log",
+      "sha256": "e049dfa95fdcb6b657cf0e4202631426150b53cd4caf35500990346b2ce48a27",
+      "bytes": 329,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/stable-full-2-exit.json",
+      "sha256": "058c8900cb3ee58adc7b8d6043551e7054430f8b6e41218e2bbba4faf38aac0b",
+      "bytes": 572,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/stable-full-2-source.json",
+      "sha256": "215cd32b554e8c1f9c44ac2302c1847d46ff747afd6fd5524ae651a5e9eb0959",
+      "bytes": 123360,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/stable-full-2.log",
+      "sha256": "40b4050cc347712db072655b242409718ea43a54da2c7d8019bb85efc0cee67e",
+      "bytes": 520205,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/stable-full-exit.json",
+      "sha256": "ffa91df6d23a82fdc0d88ebbc6b25cc103e827e7891ba70b0ebbb77193c555ce",
+      "bytes": 570,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/stable-full-source.json",
+      "sha256": "a61df612f81facf73b84a2dab038c25d438ae34e3e0edc109abd348474ef38f9",
+      "bytes": 123360,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/stable-full.log",
+      "sha256": "faf8e82a24b5635543f95eee1856362bf9620f7610599ec0416db79e10adfd9a",
+      "bytes": 530920,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/types-exit.json",
+      "sha256": "36c79095572cdd5daf576691f92a90f683204a9adecfdc3f4a24659c2de02523",
+      "bytes": 446,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/types-final-exit.json",
+      "sha256": "3993c62ac8403f55c52817736669e3f13fa585b5a1bcb4286fcaa57e939c6685",
+      "bytes": 452,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/types-final-source.json",
+      "sha256": "215cd32b554e8c1f9c44ac2302c1847d46ff747afd6fd5524ae651a5e9eb0959",
+      "bytes": 123360,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/types-final.log",
+      "sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5",
+      "bytes": 118,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/types-source.json",
+      "sha256": "a61df612f81facf73b84a2dab038c25d438ae34e3e0edc109abd348474ef38f9",
+      "bytes": 123360,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/types.log",
+      "sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5",
+      "bytes": 118,
+      "access": "local evidence; raw logs may contain synthetic test records"
+    }
+  ]
+}
