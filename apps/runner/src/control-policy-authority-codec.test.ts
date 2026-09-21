@@ -3137,6 +3137,32 @@ for (const backend of ["sqlite", "postgres"] as const) {
       });
     });
 
+    it("saves source-required pending meaning and rejects stale decisions under the existing review lock", async()=>{
+      await useRepository(async({binding,projectRoot})=>{
+        const {localScopedDisclosureReview}=await import('./authoring-scoped-disclosure-operation.js');
+        const {newPolicySourceSession,policyTextSnapshot,savePolicySources,loadPolicySources}=await import('./authoring-policy-source.js');
+        const {parsePolicyCoverage}=await import('./authoring-policy-coverage.js');
+        const {policyReviewReadiness}=await import('./authoring-review-readiness.js');
+        const source=policyTextSnapshot(Buffer.from('Returned descriptions require explicit non-sensitive classification for scoped discovery.'),'synthetic-owner-rule.txt');
+        const sources=newPolicySourceSession();sources.snapshots=[source];sources.active=source.version;
+        const read=fixture().candidate;
+        const currentDraft=()=>({read,actions:[],runner_evidence:{runtime_contract:{client_contract:{mode:'interactive_four_tool',client:'synthetic'}},
+          scoped_disclosure:{source_session:sources.id,read_digest:explorationBoundaryCandidateDigest(read),metadata_digest:canonicalJsonDigest('owned inspected fixture'),
+            store_digest:canonicalJsonDigest({deployment:binding.deployment_id}),reviews:sources.scoped_disclosure_reviews??[]}}});
+        sources.coverage=parsePolicyCoverage({passages:[{start:1,end:1,disposition:'implemented',interpretation:'The reviewed Read returns the exact descriptions; the host separately checks classification.',draft_paths:['/read/pack/resources']}]},source,currentDraft(),[]);
+        await savePolicySources(projectRoot,sources);
+        const before=await binding.repository.scopeSnapshot({deployment_id:binding.deployment_id,scope:{level:'operator'},kinds:['read','action','execution']});
+        const input={projectRoot,sources,register:true,location:'draft' as const,currentDraft,authorityDigest:canonicalJsonDigest(read),clarifications:[],actor:'synthetic source owner',
+          assertCurrent:async()=>{},coordinated:async(op:any)=>{await withProjectAuthorityMutation(projectRoot,op);},
+          session:{promptText:async()=> '1',confirm:async()=>true,chooseOption:async(title:string,options:any[])=>title==='SOURCE-REQUIRED DISCLOSURE MEANING'?options[1].value:'deferred'} as any};
+        expect((await localScopedDisclosureReview(input)).ready).toBe(false);
+        const restored=await loadPolicySources(projectRoot,sources.id);expect(restored.scoped_disclosure_reviews).toHaveLength(2);
+        expect(policyReviewReadiness(source,restored.coverage,restored).ready).toBe(false);
+        await expect(savePolicySources(projectRoot,restored,{expectedDigest:canonicalJsonDigest('stale')})).rejects.toThrow('POLICY_SOURCE_CHANGED');
+        expect(await binding.repository.scopeSnapshot({deployment_id:binding.deployment_id,scope:{level:'operator'},kinds:['read','action','execution']})).toEqual(before);
+      });
+    });
+
     it.each(["receipts", "receipt_configuration"])("saves and reloads receipt readiness under the existing review lock without changing operator authority: %s", async (receiptReference) => {
       await useRepository(async ({ binding, projectRoot, config: storageConfig }) => {
         const { authoringReceiptConfiguration } = await import("./authoring-receipt-configuration.js");

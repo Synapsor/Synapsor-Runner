@@ -24,12 +24,12 @@ afterEach(async () => {
 });
 
 describe("public structured Boundary authoring integration", () => {
-  it.each(["complete", "competing_save", "declined_ownership"] as const)("reviews a saved Action through publication without manufacturing a draft (%s)", async mode => {
+  it.each(["complete", "competing_save", "declined_ownership", "local_pending", "local_confirmed"] as const)("reviews a saved Action through publication without manufacturing a draft (%s)", async mode => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-published-review-")); roots.push(root);
     vi.stubEnv("TEST_READ_URL", "postgresql://fixture.invalid/not-used");
     vi.stubEnv("OPENAI_API_KEY", "local-transport-fixture");
     vi.spyOn(process.stdout, "write").mockImplementation(() => true);
-    const inspect = vi.fn(async (_input: InspectOptions) => inspection());
+    const inspect = vi.fn(async (_input: InspectOptions) => ({...inspection(),inspected_at:new Date().toISOString()}));
     expect(await onboard(["db", "--project-root", root, "--from-env", "TEST_READ_URL", "--schema", "warehouse", "--json"],
       {interactive: false, schemaInspector: inspect})).toBe(0);
     const run = (args: string[]) => structuredBoundaryAuthoringCommand(["--project-root", root, ...args], inspect);
@@ -44,7 +44,7 @@ describe("public structured Boundary authoring integration", () => {
     expect(await run(["--draft", "draft.json"])).toBe(0);
     const context = await loadBoundaryReviewContext(root);
     const authority = (await readActionRuleAuthorityDraft(root, `${context.candidate.pack.name}_rules`))!;
-    const sources = newPolicySourceSession(), snapshot = policyTextSnapshot(Buffer.from("Set an available item's quantity to the requested units, with human approval."), "rules.txt");
+    const sources = newPolicySourceSession(), snapshot = policyTextSnapshot(Buffer.from("Set an available item's quantity to the requested units, with human approval." + (mode.startsWith("local_") ? " Returned descriptions require explicit non-sensitive classification for this scoped assistant use." : "")), "rules.txt");
     sources.snapshots = [snapshot]; sources.active = snapshot.version;
     sources.approvals = [{digest: snapshot.digest, destination: authoringDestination({provider: "openai", model: "fixture"})}];
     await savePolicySources(root, sources);
@@ -75,7 +75,7 @@ describe("public structured Boundary authoring integration", () => {
         }}}});
     };
     const first = await review();
-    if(mode !== "complete") {
+    if(mode === "competing_save" || mode === "declined_ownership") {
       expect(first).toMatchObject({tone: "warning"});
       const state = await readBoundaryAuthoringResumeState(root, binding);
       expect(state.status === "ready" && state.value.pending_policy_review).toBeTruthy();
@@ -102,6 +102,31 @@ describe("public structured Boundary authoring integration", () => {
     expect(await readActionRuleAuthorityActivation(root)).toEqual(active);
     const state = await readBoundaryAuthoringResumeState(root, binding);
     expect(state.status === "ready" && state.value.completed_policy_reviews?.at(-1)?.request.action_subject?.location).toBe("active");
+    if(mode.startsWith("local_")) {
+      // Real authored/published fixture; source association is a new explicit
+      // synthetic operator mapping, not an imported pending flag or provider edit.
+      const beforeAuthority=await readActionRuleAuthorityActivation(root);
+      const local=async(register:boolean)=>{
+        const current=await loadPolicySources(root,sources.id),loaded=await readBoundaryAuthoringResumeState(root,binding);
+        if(loaded.status!=='ready')throw new Error('fixture resume unavailable');
+        return reviewSavedBoundaryPolicy({projectRoot:root,resume:loaded.value,sources:current,request:'Review attached rules',
+          selectCurrentContext:true,localDisclosure:register?'register_or_status':'status',schemaInspector:inspect,
+          session:{confirm:async()=>true,chooseResource:async()=>undefined,editFieldTiers:async()=>undefined,
+            promptText:async()=> '1',chooseOption:async(title,options)=>title==='SOURCE-REQUIRED DISCLOSURE MEANING'
+              ? register?options[1]!.value:'keep':mode==='local_confirmed'?'confirmed_non_sensitive':'deferred'}});
+      };
+      const firstLocal=await local(true);expect(firstLocal.lines.join('\n'),JSON.stringify(firstLocal)).toContain('Provider calls: 0');
+      expect(firstLocal.lines.join('\n')).toContain('Action subject (active published)');
+      expect(firstLocal.lines.join('\n')).not.toMatch(/Before activation|this saved draft/);
+      const savedMeaning=await loadPolicySources(root,sources.id);
+      expect(savedMeaning.scoped_disclosure_reviews).toHaveLength(2);
+      expect(savedMeaning.scoped_disclosure_reviews?.at(-1)?.fields[0]?.decision).toBe(mode==='local_confirmed'?'confirmed_non_sensitive':'deferred');
+      const restarted=await local(false);expect(restarted.lines.join('\n')).toContain('Provider calls: 0');
+      expect((await loadPolicySources(root,sources.id)).scoped_disclosure_reviews).toEqual(savedMeaning.scoped_disclosure_reviews);
+      expect(await readActionRuleAuthorityActivation(root)).toEqual(beforeAuthority);
+      expect(await readActionRuleAuthorityDraft(root,authority.authority.name)).toBeUndefined();
+      expect(calls).toBe(count);
+    }
     expect(inspect.mock.calls.every(([input]) => input.databaseUrlEnv === "TEST_READ_URL")).toBe(true);
   }, 30_000);
   it("prepares private coded fields and two joint-limited actions through the real disabled-authority path", async () => {
