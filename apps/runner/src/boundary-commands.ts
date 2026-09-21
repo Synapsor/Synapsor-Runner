@@ -1,3 +1,4 @@
+import { scopedDisclosureStoreDigest } from "./authoring-scoped-disclosure.js";
 import { localScopedDisclosureReview } from "./authoring-scoped-disclosure-operation.js";
 import { resolveAuthoringReviewSubject } from "./authoring-review-subject.js";
 import { actionRuleEffectLines } from "@synapsor-runner/action-rules";
@@ -8599,6 +8600,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   let countingDomain: CountingOutcomeDomain | undefined;
   let policySourceInspection: Awaited<ReturnType<typeof inspectPolicyReviewSource>> | undefined;
   const currentPolicyCoverageDraft = () => policyCoverageDraft({ client: intendedClient, read: context.candidate, decisions: context.bundle.decisions,
+    ...(authoringConversation?.policySources?.scoped_disclosure_reviews?.length
+      ? {reviewStoreDigest:scopedDisclosureStoreDigest(countingDomain,context.bundle.mutation_bindings.authoring)} : {}),
     reviewedVersionFields, policySources: authoringConversation?.policySources, executionReview: executionReviewEvidence, receiptConfiguration: receiptConfigurationEvidence, countingDomain,
     operatorClarifications: authoringConversation?.turns.filter(turn => turn.kind === "clarification"
       && authoringConversation?.policySources?.operator_messages?.includes(turn.answer)).map(turn => ({ question: turn.question, answer: turn.answer })) ?? [],
@@ -10731,9 +10734,7 @@ export async function reviewSavedBoundaryPolicy(input: {
           enabled_outcomes: execution.enabled ? matching.map(policy => policy.outcome).sort() : [] };
       } catch { /* Deployment evidence unavailable, not verified. */ }
     }
-    const selectedStore = selected.subject?.identity.store ?? (context.bundle.mutation_bindings.authoring
-      ? canonicalJsonDigest({repository_id:context.bundle.mutation_bindings.authoring.repository_id,
-        deployment_id:context.bundle.mutation_bindings.authoring.deployment_id,project_id:context.bundle.mutation_bindings.authoring.project_id}) : undefined);
+    const selectedStore = scopedDisclosureStoreDigest(domain,context.bundle.mutation_bindings.authoring);
     const currentDraft = () => policyCoverageDraft({ client: resume.intended_client, read: context.candidate, decisions: context.bundle.decisions,
       actions: [], authority, source: sourceInspection, reviewedVersionFields: boundaryAuthoringVersionReviews(resume),
       policySources: input.sources, countingDomain: domain, executionReview, receiptConfiguration,

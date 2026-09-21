@@ -1,4 +1,4 @@
-import { assertScopedDisclosureReviews, type ScopedDisclosureReview, type ScopedDisclosureInventory } from "./authoring-scoped-disclosure.js";
+import { assertScopedDisclosureReviews, type ScopedDisclosureReview, type ScopedDisclosureInventory } from "./authoring-scoped-disclosure-records.js";
 import fs from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";

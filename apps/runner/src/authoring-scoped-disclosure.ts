@@ -1,28 +1,19 @@
+import { scopedDisclosureIdentity, validScopedDisclosureReview, assertScopedDisclosureReviews, type ScopedDisclosureReview, type ScopedDisclosureInventory } from "./authoring-scoped-disclosure-records.js";
+export { validScopedDisclosureReview, assertScopedDisclosureReviews, type ScopedDisclosureReview, type ScopedDisclosureInventory } from "./authoring-scoped-disclosure-records.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { PolicySourceSession, PolicyTextSnapshot } from "./authoring-policy-source.js";
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 
-/** An operator-registered source condition, not automatic privacy classification. */
-export type ScopedDisclosureReview = {
-  origin: "OPERATOR-SOURCE-DISCLOSURE-REVIEW"; id: string; source_digest: string; source_session: string;
-  start: number; end: number; source_excerpt: string;
-  audience: "scoped_assistant"; purpose: "reviewed_read_discovery";
-  read_digest: string; store_digest: string; metadata_digest: string;
-  fields: Array<{ resource: string; field: string; binding_digest: string;
-    decision: "unanswered" | "deferred" | "confirmed_non_sensitive" | "not_confirmed" }>;
-  actor: string; reviewed_at: string; verified: false;
-  previous: string | null; digest: string;
-};
-export type ScopedDisclosureInventory = {
-  version: 1; reviews_digest: string;
-  items: Array<{ id: string; resource: string; field: string;
-    state: "unanswered" | "deferred" | "confirmed_non_sensitive" | "not_confirmed" | "stale";
-    assurance: "operator_assertion_only"; verified: false }>;
-};
 type Context = { source_session: string; read_digest: string; store_digest: string | null; metadata_digest: string | null; reviews: ScopedDisclosureReview[] };
 const object = (v: unknown): Record<string, any> => v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, any> : {};
 const sha = (v: unknown): v is string => typeof v === "string" && /^sha256:[a-f0-9]{64}$/u.test(v);
 export const scopedDisclosureReviewsDigest = (session?: PolicySourceSession) => canonicalJsonDigest(session?.scoped_disclosure_reviews ?? []);
+/** The existing effective-store proof is shared by guided and explicit review.
+ * A Read-only job uses its current repository/deployment/project binding. */
+export function scopedDisclosureStoreDigest(domain?: {store_binding_digest:string}, binding?: {repository_id:string;deployment_id:string;project_id:string}) {
+  return domain?.store_binding_digest ?? (binding ? canonicalJsonDigest({repository_id:binding.repository_id,
+    deployment_id:binding.deployment_id,project_id:binding.project_id}) : undefined);
+}
 export function disclosureFields(draft: unknown) {
   const read = object(object(draft).read);
   return (read.pack?.resources ?? []).flatMap((r: any) => (r.selectable_fields ?? []).filter((f: string) => !(r.model_withheld_fields ?? []).includes(f)).map((field: string) => ({
@@ -38,27 +29,6 @@ function fieldDetails(draft: unknown, selected: {resource:string;field:string}) 
   const entries=resources.flatMap((r:any)=>(r.relationships??[]).filter((p:any)=>p.target_resource===selected.resource)
     .map((p:any)=>`${r.id} via ${p.id} (${p.cardinality})`));
   return `${selected.resource}.${selected.field}: ${read.source} / ${resource?.schema}.${resource?.table}; raw Read selection permitted; ${resource?.relationship_only ? 'relationship-only' : 'query root'}${entries.length?`; reviewed entries: ${entries.join('; ')}`:''}.`;
-}
-function identity(r: Pick<ScopedDisclosureReview, "source_digest" | "source_session" | "start" | "end" | "audience" | "purpose" | "fields">) {
-  return canonicalJsonDigest({ source: r.source_digest, session:r.source_session, start: r.start, end: r.end, audience: r.audience,
-    purpose: r.purpose, fields: r.fields.map(f => ({resource: f.resource, field: f.field})) });
-}
-export function validScopedDisclosureReview(value: ScopedDisclosureReview): boolean {
-  if (!value || typeof value !== "object" || Array.isArray(value)) return false;
-  const {digest, ...body} = value;
-  return value.origin === "OPERATOR-SOURCE-DISCLOSURE-REVIEW" && sha(value.source_digest)
-    && typeof value.source_session === "string" && /^[a-f0-9-]{36}$/u.test(value.source_session)
-    && sha(value.read_digest) && sha(value.store_digest) && sha(value.metadata_digest) && (value.previous === null || sha(value.previous))
-    && Number.isInteger(value.start) && value.start >= 1 && Number.isInteger(value.end) && value.end >= value.start
-    && typeof value.source_excerpt === "string" && value.source_excerpt.length > 0 && value.source_excerpt.length <= 16_000
-    && value.audience === "scoped_assistant" && value.purpose === "reviewed_read_discovery" && value.verified === false
-    && typeof value.actor === "string" && value.actor.length > 0 && value.actor.length <= 128
-    && typeof value.reviewed_at === "string" && Number.isFinite(Date.parse(value.reviewed_at)) && Array.isArray(value.fields) && value.fields.length > 0 && value.fields.length <= 128
-    && value.fields.every(f => f && typeof f.resource === "string" && f.resource.length > 0 && f.resource.length <= 256
-      && typeof f.field === "string" && f.field.length > 0 && f.field.length <= 256 && sha(f.binding_digest)
-      && ["unanswered", "deferred", "confirmed_non_sensitive", "not_confirmed"].includes(f.decision))
-    && new Set(value.fields.map(f => `${f.resource}\0${f.field}`)).size === value.fields.length
-    && value.id === identity(value) && digest === canonicalJsonDigest(body);
 }
 export function scopedDisclosureInventory(source: PolicyTextSnapshot, draft: unknown): ScopedDisclosureInventory {
   const context = object(object(draft).runner_evidence).scoped_disclosure as Context | undefined;
@@ -110,7 +80,7 @@ export async function reviewScopedDisclosure(input: { source: PolicyTextSnapshot
     throw new Error("SCOPED_DISCLOSURE_FIELDS_INVALID: Choose distinct current returned fields; no source requirement saved.");
   const fields = indices.map(n => ({...available[n]!, decision: "unanswered" as ScopedDisclosureReview["fields"][number]["decision"]}))
     .sort((a,b) => `${a.resource}.${a.field}`.localeCompare(`${b.resource}.${b.field}`));
-  const registeredId=identity({source_digest:input.source.digest,source_session:context.source_session,start,end,
+  const registeredId=scopedDisclosureIdentity({source_digest:input.source.digest,source_session:context.source_session,start,end,
     audience:'scoped_assistant',purpose:'reviewed_read_discovery',fields});
   const existing=context.reviews.filter(r=>r.id===registeredId).at(-1);
   if(existing && scopedDisclosureInventory(input.source,input.draft).items.filter(i=>i.id===registeredId).every(i=>i.state!=='stale')) {
@@ -127,25 +97,12 @@ export async function reviewScopedDisclosure(input: { source: PolicyTextSnapshot
   const base = {origin:"OPERATOR-SOURCE-DISCLOSURE-REVIEW" as const, source_digest:input.source.digest, source_session:context.source_session, start,end,source_excerpt:excerpt,
     audience:"scoped_assistant" as const,purpose:"reviewed_read_discovery" as const,read_digest:context.read_digest,store_digest:context.store_digest,metadata_digest:context.metadata_digest,
     fields,actor:input.actor,reviewed_at:new Date().toISOString(),verified:false as const};
-  const id=identity(base), previous=context.reviews.filter(r=>r.id===id).at(-1)?.digest??null;
+  const id=scopedDisclosureIdentity(base), previous=context.reviews.filter(r=>r.id===id).at(-1)?.digest??null;
   const body={...base,id,previous}, result={...body,digest:canonicalJsonDigest(body)};
   if (!validScopedDisclosureReview(result)) throw new Error("SCOPED_DISCLOSURE_REVIEW_INVALID: No requirement saved.");
   return result;
 }
 
-/** The ledger here is the existing PolicySourceSession; validate rather than
- * dropping malformed requirement records and accidentally making review ready. */
-export function assertScopedDisclosureReviews(reviews: unknown): asserts reviews is ScopedDisclosureReview[] {
-  if (reviews === undefined) return;
-  if (!Array.isArray(reviews) || reviews.length > 64)
-    throw new Error("SCOPED_DISCLOSURE_EVIDENCE_INVALID: Source requirements remain pending; restore the saved review records.");
-  const latest = new Map<string, string>();
-  for (const review of reviews) {
-    if (!validScopedDisclosureReview(review) || review.previous !== (latest.get(review.id) ?? null))
-      throw new Error("SCOPED_DISCLOSURE_EVIDENCE_INVALID: Source requirements remain pending; their saved lineage is invalid.");
-    latest.set(review.id, review.digest);
-  }
-}
 export function disclosureStatusLines(inventory: ScopedDisclosureInventory): string[] {
   return inventory.items.map(f => `${f.resource}.${f.field}: ${f.state === "deferred" ? "deliberately pending; classification not established" : f.state}.`);
 }
