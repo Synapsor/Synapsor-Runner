@@ -1,0 +1,55 @@
+{
+  "at": "2026-09-21T21:29:31.278Z",
+  "status": "KNOWN OMISSION DISCREPANCY REPRODUCED, NOT REPAIRED",
+  "results": [
+    {
+      "lane": "main",
+      "request": {
+        "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-final/authoring-meter/MAIN-A-REVIEW-1-request.json",
+        "sha256": "2ef967551319dc1c0e0ce43f7eca5baa587db71d2c492a60e6b24d0e7858fa3d"
+      },
+      "response": {
+        "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-final/authoring-meter/MAIN-A-REVIEW-1-response.txt",
+        "sha256": "1edb4235ea0de41692cec0872509a03a03d871fc35f54a30618006229ee635f0"
+      },
+      "source_record": {
+        "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-final/project/.synapsor/boundary-authoring/policy-sources/e631e9a6-e7d6-4428-a423-be36465405f7.json",
+        "sha256": "e50d26fe5bc920a44703c698a3a15748eea606151551439a241b5c9c7b92d3c1"
+      },
+      "raw_response_unchanged": true,
+      "provider_calls": 0,
+      "readiness_before_save": true,
+      "readiness_after_reload": true,
+      "blockers": [],
+      "historical_input_unchanged": true,
+      "scope": "Exact complete captured arguments through current parser, canonical coverage bind/save/load and readiness; synthetic disposable review-record storage only. Not a new installed/operator/model episode; no live source/store/authority path."
+    },
+    {
+      "lane": "tester",
+      "request": {
+        "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/authoring-meter/TESTER-A-REVIEW-1-request.json",
+        "sha256": "2ef967551319dc1c0e0ce43f7eca5baa587db71d2c492a60e6b24d0e7858fa3d"
+      },
+      "response": {
+        "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/authoring-meter/TESTER-A-REVIEW-1-response.txt",
+        "sha256": "f9df1c847c42fcdc3b0ff63df5996587c0536aaba608b2c51a060fa2a86f3496"
+      },
+      "source_record": {
+        "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/project/.synapsor/boundary-authoring/policy-sources/e631e9a6-e7d6-4428-a423-be36465405f7.json",
+        "sha256": "801aae423b1717043741290a007118487ec0babf36a5b38f87e7cf761976ff2e"
+      },
+      "raw_response_unchanged": true,
+      "provider_calls": 0,
+      "readiness_before_save": false,
+      "readiness_after_reload": false,
+      "blockers": [
+        {
+          "title": "Related public descriptions",
+          "next_step": "Are animal public name, species group, and habitat public site name the explicitly reviewed non-sensitive related descriptions the assistant may receive?"
+        }
+      ],
+      "historical_input_unchanged": true,
+      "scope": "Exact complete captured arguments through current parser, canonical coverage bind/save/load and readiness; synthetic disposable review-record storage only. Not a new installed/operator/model episode; no live source/store/authority path."
+    }
+  ]
+}

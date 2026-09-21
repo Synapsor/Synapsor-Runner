@@ -1,0 +1,499 @@
+{
+  "at": "2026-09-21T21:39:37.033010+00:00",
+  "status": "OWNER KEEPS CLASSIFICATION PENDING; no product repair or BUSINESS completion",
+  "records": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/BASELINE-AND-DESTINATION-002.json",
+      "sha256": "df4980b0df8de222b4afc989760b792f2f4ee7be622348993be5cb42f5603bd4",
+      "bytes": 643
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/BASELINE.json",
+      "sha256": "290f4a2bf73360acc3a41069d65b1e7ba92c74d850c60c067afa7b0846f2cd6e",
+      "bytes": 440
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/FINANCIAL-001.json",
+      "sha256": "d69e5b3a327ce7d791f4ad706dc98013737a15a5e8f74e84dd37dfdd8af69e19",
+      "bytes": 1020
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/FUNDING-AUTHORIZATION-002.json",
+      "sha256": "33990edba9a3e5582b554abce02cb2522458d93664ceaaf72d5e2a8d8a5cb9ef",
+      "bytes": 578
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/FUNDING-SCOPE-003.json",
+      "sha256": "b3cbfefcd87fb8035628ea2b924136b7b3fcd403c00e4be8635f2d7e6e636b61",
+      "bytes": 225
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/INDEPENDENT-AUDIT-001.json",
+      "sha256": "3e47231acc0b1e5e899fd2b5a7e901b990436327e3d0f19cb89b3cacf367b553",
+      "bytes": 1305
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/INDEPENDENT-PRESERVATION-002.json",
+      "sha256": "c3a14253263434cbd4e9fba32fd7cc83b1ded373af5fd49f6b35bf8a739ade76",
+      "bytes": 3181
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/OWNER-ANSWER-001.json",
+      "sha256": "b6bdf722fe6395fe4491707c7d32e4f2d8123fec784f18ace812165b0050ae82",
+      "bytes": 671
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/PREPARED-GRANT-AUDIT.json",
+      "sha256": "afbefe1d3ae38e25ee0b6eabf19dc8d7bd7a92cf4d099e1b41022eebd60541ca",
+      "bytes": 5636
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/SEMANTIC-BASIS-DECISION.md",
+      "sha256": "c581f72872946d533155c73e7a98e957f7cafa668be0a885d5e18bdaa92279cb",
+      "bytes": 5585
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/candidate-verify-001.json",
+      "sha256": "e529df869022960ab0a25bdbab311fddfec5d1675dc9d2390a3e200a5e3271de",
+      "bytes": 312
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/captured-replay-001/RESULT.json",
+      "sha256": "7681ad27187b98c58daf509d66dccc3bb28d0a696407f6f8b9a99abf07a83847",
+      "bytes": 3293
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/captured-replay-001/main/.synapsor/authority-write-lock.sqlite",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/captured-replay-001/main/.synapsor/boundary-authoring/policy-sources/e631e9a6-e7d6-4428-a423-be36465405f7.json",
+      "sha256": "e50d26fe5bc920a44703c698a3a15748eea606151551439a241b5c9c7b92d3c1",
+      "bytes": 42437
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/captured-replay-001/tester/.synapsor/authority-write-lock.sqlite",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/captured-replay-001/tester/.synapsor/boundary-authoring/policy-sources/e631e9a6-e7d6-4428-a423-be36465405f7.json",
+      "sha256": "801aae423b1717043741290a007118487ec0babf36a5b38f87e7cf761976ff2e",
+      "bytes": 41649
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/captured-replay-001-exit.json",
+      "sha256": "604cd4cfb2b3ab224e60dbd6ab70450053bfe9a384096fb4bd269a757d6f3570",
+      "bytes": 724
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/captured-replay-001.log",
+      "sha256": "89def52519b50fefd60412803e6d509d36ad182a1e0783ebf551e1d0a093c3e5",
+      "bytes": 502
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/captured-replay-002/RESULT.json",
+      "sha256": "c2ebdc135ed733e85b9f6b44c6cc30542fcfa7cc551066d73303575613ef6972",
+      "bytes": 3293
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/captured-replay-002/main/.synapsor/authority-write-lock.sqlite",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/captured-replay-002/main/.synapsor/boundary-authoring/policy-sources/e631e9a6-e7d6-4428-a423-be36465405f7.json",
+      "sha256": "e50d26fe5bc920a44703c698a3a15748eea606151551439a241b5c9c7b92d3c1",
+      "bytes": 42437
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/captured-replay-002/tester/.synapsor/authority-write-lock.sqlite",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/captured-replay-002/tester/.synapsor/boundary-authoring/policy-sources/e631e9a6-e7d6-4428-a423-be36465405f7.json",
+      "sha256": "801aae423b1717043741290a007118487ec0babf36a5b38f87e7cf761976ff2e",
+      "bytes": 41649
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/captured-replay-002-exit.json",
+      "sha256": "f2ad867854ac9e42ea40435de612fb2fe754bdb0bc26f5dca7cdce117c50b943",
+      "bytes": 945
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/captured-replay-002.log",
+      "sha256": "352e6bc9c679734207205755ba8db03b2068e3ede9e5f8813adda1b8da47ab25",
+      "bytes": 502
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/exclusive-output-refusal-001.json",
+      "sha256": "cdc98894f40dbf186651fc55ddf783f9f814fb6d865e61fabe35d055f0d6e7fe",
+      "bytes": 146
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/exclusive-output-refusal-001.log",
+      "sha256": "8cb0c3e6c637d790bab52d9b92ed5c5040cc4209ffde4b711dbbf169ab5df7dd",
+      "bytes": 850
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/exclusive-output-refusal-scope-001.json",
+      "sha256": "491bbf8a87e08fa0b14516088b6ab5dddf7cac104a010e5c05d3bbdbd0da01e4",
+      "bytes": 327
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/prior-evidence-verify-001.json",
+      "sha256": "b90b5ff550942769ab6e7e46559a60a6649423a4e7d36fddd30c9f4ce75a0f0d",
+      "bytes": 799
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-1154e3ec2cae4e4b644cab3052ed46f142a61067",
+      "sha256": "45df58b0d9916c942b4bfb6df6c9aa555efd80080cd317b807bcc01e3036cab9",
+      "bytes": 73904
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-1675500ba0e3999799e9250f6f7b527de586eca8",
+      "sha256": "013fc59040878c6f54a03c7a91e59737473c7158a8894647366aa911144eb891",
+      "bytes": 5234
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-173a8a1fc305922b3dc759d4599dc3f0c7117c5b",
+      "sha256": "73f04ddd9d0511e04a431fed7c5829ff4b8dc64c01b9bb0d276bc5b2e0d6e1f9",
+      "bytes": 7009
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-23cced0be4f405e84d572b860a480395ea4636a8",
+      "sha256": "21bf40c5cf9c287c95f05491151dae4ed8b1470e48c2e8160909b34367c6dca1",
+      "bytes": 10642
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-277cb8ce8ece944b2dccf687e8c9ea867f2b34cb",
+      "sha256": "910cff90fd8a22f311cc252e45e00b3595084b13179c0ffd77a0b55d5193adf1",
+      "bytes": 12452
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-2e722ddaf9a985c807026b5a476e2b48d95c9aa7",
+      "sha256": "29d7ab1431bee3f83ed70afa5c9880ef5c0c688f1c5c9eb11c41b3e7b4dd72c5",
+      "bytes": 138799
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-30dc056bd52f6314094360566971578cad97c91d",
+      "sha256": "da6eff826679641da0bd34f839ae2774a8a122a64f2f8c24c6ec8580619cfea8",
+      "bytes": 5504
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-313d066fa0958d38ac680f7aacbe4629b7f1be18",
+      "sha256": "1b23df3e83dfb9a60fae229c992808bea6cfa889d50117f8d6c75e1e77e15fc9",
+      "bytes": 5435
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-32443fef9854de6ace4c9f4a091d9661aefbfbb1",
+      "sha256": "0894b379e02056f98e85dc8bcc8a3e061ef7975d53219015d79943fac1c77f95",
+      "bytes": 388147
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-36bc874110d773116895441b48dabbb3ba939310",
+      "sha256": "72c184c8ce435a8451764af696982775129579a93def38d84b164b163a43c462",
+      "bytes": 16984
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-3b3d1e62904d7a516f14a275d54707b3709743f2",
+      "sha256": "f9da4114c559ef15d19563f3af3e9d44cad54d9ea3dbedffa46bc75825dc1715",
+      "bytes": 1862
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-3dd4a736c7882a1172069f58520508a5ffc2b3ca",
+      "sha256": "1ed88240be23bec5602e924a4a4b423ada494aad45434ffb4b4d36d7948f39c2",
+      "bytes": 7292
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-511b95e76d372d0ecdd2479c775eedd59baa510f",
+      "sha256": "ae364dc7da8d83f296a874d81714ed6cfb31148cbb96e7ea24244c99f4d8e9a0",
+      "bytes": 7331
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-523d1c2894aeb11f5c8cf0e12fb32c3638a81f24",
+      "sha256": "c1dc1b5cc915746a21313cf06d1ee25ab717e9306f33d76014f8823e5e9e3810",
+      "bytes": 9759
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-59690497941772048d455edc88637b61cf601113",
+      "sha256": "462ff1c0bfea327806b48c72ffc2a2273964a5f5f7f3c4a7c8094eb7c772f532",
+      "bytes": 20547
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-639fbe75d0a1c33fe743840c6c7d0771a0e3502d",
+      "sha256": "e883190c201f00314dc5189d8e574d9325841d987269a22256f9074dcf41cf73",
+      "bytes": 10998
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-66b4f462505094e032e3dcc3865f9c936549fec5",
+      "sha256": "88f2ea080b9f6e37e97b421165da85b695cb8bbb4592c10730540264702af47a",
+      "bytes": 27401
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-6a0686605c017df335c596184ab279c621319cda",
+      "sha256": "c4c85844459425456e170b86bf02f036e8a9e6379831469b7b01937b0db5e65f",
+      "bytes": 380921
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-6bd119af67ce05da93e88bbfe7dd5b2b4a17be9f",
+      "sha256": "209b1ea8efde562361f14c811f62265e82f57734567fad2c7e90de678098c846",
+      "bytes": 19719
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-6f807ba8fde26e0070db2a3b9f1121f3f6005069",
+      "sha256": "2dee1b6bc27a87958ec9ca9dbd65d88f335780f6395181ef85395f6c735ec0b8",
+      "bytes": 5680
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-7cbb0578b560511c4c684572ddbdcf4c6e4ec2bc",
+      "sha256": "17ec3735a98c71abb33090be4ec1467666e59a6b20a2bbcc9161c0a1f36920c5",
+      "bytes": 44851
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-7f20dd75583bd2a7dcce639b401956e993e5f6fe",
+      "sha256": "369f00d9d78fe905eb2dd9f9a7bbadbfe4347b719c12d2f43e3c4a73cb362ccd",
+      "bytes": 3024
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-7f8c61d57081c1339ff6799f0a2854eb6136b85e",
+      "sha256": "6658d6461dc9b6af23c53618ac7855ed1b6729753c8c0c9281cb1714df7bdd45",
+      "bytes": 14639
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-80295870a59cc2d98c6001f83e5617a0c4ce1876",
+      "sha256": "2031a37aa1888dd6bec9fbcdc5fe44ca4769e726cef810c9ff5d18cda8cd1327",
+      "bytes": 4012
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-8477c905038578d72c947966b4dc07887358e1a3",
+      "sha256": "b4fdb1d63e5f5c40031b60e694e62aac41b6e020dd46b366e94a19c1a9a1b472",
+      "bytes": 23222
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-8990dce0c40a3638d439c72c476374c7c5f57890",
+      "sha256": "948cb41b59cc8457f74f76ecc6c39d0bb48985582d413cb2b64c3c3ab7ffa277",
+      "bytes": 1117
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-8d0662ac87a4b80042b71377752290e12b23c335",
+      "sha256": "6751e34d8a2172f7af88797a7c8dd7bab81e33fcb766775e3d76762a942942e4",
+      "bytes": 2917
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-8e7439a94bcbf1f82d0d12c5d8875f7e8bb89ce4",
+      "sha256": "13b63c18447b9f46a2392ec9214d40ceb0db53ea37170760626d70b33765fb9e",
+      "bytes": 9049
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-8f2253e900abf68db9315e97d7435eacc9999bee",
+      "sha256": "7d631d78d0f61b5a84642b641a962fc2f955094c5b3f056132919462e9cdd9a2",
+      "bytes": 460
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-91810edc7d18863024774402f369c4dca2d5ace7",
+      "sha256": "fd465cf96307daf85f28131368e5ada28ab703127b97595a64b6194818b3fddf",
+      "bytes": 2247
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-9a2d56646935c7089da4cdd7a450b2623efcffd9",
+      "sha256": "cdd2e7fb2def1fa7ca43ad8ec17e5d5836d5cdc2f0d5757aefa2a8512461a0a9",
+      "bytes": 13993
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-9b0f0bda49ac3e073f6c81d04cefc38a525ff0b4",
+      "sha256": "809729f839664818f3836e2cb45e591ffd3eb840ffb3af796d4b83c1d9d5db98",
+      "bytes": 3686
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-b252e538b066ac0f265987902739624e71a03c0b",
+      "sha256": "82e63015122495586daebcd05cad910b19b9d8cedf1565e397d05678b1b40f2f",
+      "bytes": 6998
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-b4e27ec62f2cfe8164c291b545eb5c9833ba9457",
+      "sha256": "1f555bb4f25fad7052d03582858e36e4c1531d77df01b23f8fae5b894b46f43f",
+      "bytes": 2892
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-bb668f5ba111f68b7f94072c3266a0a6c097288b",
+      "sha256": "fd2047c4fec9b1694f6a34cacb066cf91182c8c236eb1518e16d2aaaf00fcf36",
+      "bytes": 29876
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-c73ac01ceac959a20c7cd9ad1f8efcf1d4682364",
+      "sha256": "e11bec932c49a8f3d9c78e46f7ff23ab9bcd3272289e12c73f08e788a66b083f",
+      "bytes": 3810
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-c772707977940ad1cbb94ee76fdf853c77b51af6",
+      "sha256": "c7654b4b4fc5f89944b1f8e4072e017fc10304d96d1812c5269ba99ccf36e266",
+      "bytes": 3122
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-c93c927225b6e8a26f394f9218fe8939620d4d5e",
+      "sha256": "dbf894f5b032a823ff6976d9e63fa9b823828fda66280b4d12af8ce734aaa2df",
+      "bytes": 7958
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-ce26805bc15541dab7825ef44c31d963682dc4bd",
+      "sha256": "1fe77a90e8d23de0d19d56f6b03acc89fda3a9011067584b197a9187711b412c",
+      "bytes": 7919
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-da91b4cfe2358a2060ef6c67b473bb33a644925c",
+      "sha256": "ec17bead6405b715b93675b092c1537d8d83783730bb627cbb6399dfaedff117",
+      "bytes": 39991
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-e428b6a0a7c129b60bc3f70905ab67a7f64f1bef",
+      "sha256": "d0c2bc5f8e810e0c836c3cc3aded489157c6264ed7c9a21d017019a2efd99392",
+      "bytes": 9389
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-eca4d89d913c40bad8f1a71665cea503ae5d15b5",
+      "sha256": "6e385347cad962bdf3d0bc898bedde01a8e2f21dadfb522168e4411b281b42e3",
+      "bytes": 6799
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-ee3ba48e18755fb2c402ab367bfca6236094e788",
+      "sha256": "608c2fa3e2a0fdbda26551d5bf679220a6956ffea41a012ede60e7b2ee6d7045",
+      "bytes": 16382
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-f63f74dfd7d4a42b86b59003fc377225b127bd8e",
+      "sha256": "84243c4743b1936a74d76c80fae4c08c352dd75454251b88dacd47d09ff1f194",
+      "bytes": 33824
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-f7ff61bf1646a6aae0fa478ef86af325c0ca5095",
+      "sha256": "c491a4d15a715a9b2e290b93c4032ba580d80338b329234fa57a0b87fbb3cbd8",
+      "bytes": 5128
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-fd89e078bbb3c7a34cb53a2166b48ac28339724f",
+      "sha256": "269863b2afd34baaaeeaa683967007d2aa140125aaff38f8560736c8459b4c14",
+      "bytes": 62890
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-fee2496ff0226db32b66c3a6cc3d92b31bf85349",
+      "sha256": "a87a03dcfe74c7f5f11ef923be828824e67879d39786027811d99211b18b2c8b",
+      "bytes": 783
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/test-tmp/tsx-1000/17900-ffb765c9aad48603fd022578ca5c3a393e6d5bf7",
+      "sha256": "e1a0c08465ee7fb1ec248f221a21fd05f5bff5c07b40b46746b3a431f3490614",
+      "bytes": 1796
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/EVIDENCE-INDEX.json",
+      "sha256": "689d6d645b1f7eee493c9cbbbf1d4d5ff8f44d9ef7d6eef031f5e140e8cd4a84",
+      "bytes": 58005
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-20260921/CANDIDATE.json",
+      "sha256": "d800c76f38e74c2c455fb3439dfe7cd218062ae2e5c8f2f0cf4befc1921fd614",
+      "bytes": 1412
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-20260921/FINAL-REPORT.md",
+      "sha256": "1662de1b4500d9bb8e19f31b2f4b6fcb227089cefecb6b83be67481c3fda4657",
+      "bytes": 8335
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-20260921/INDEPENDENT-AUDIT.json",
+      "sha256": "3e47231acc0b1e5e899fd2b5a7e901b990436327e3d0f19cb89b3cacf367b553",
+      "bytes": 1305
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-20260921/MAIN-REPLAY-RESULT.json",
+      "sha256": "c2ebdc135ed733e85b9f6b44c6cc30542fcfa7cc551066d73303575613ef6972",
+      "bytes": 3293
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-20260921/NEXT-DECISION.md",
+      "sha256": "9caf6409f6153f9ddae769b4ce8304abe2aa718e3fe614cf77a513f1a240a183",
+      "bytes": 1216
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-20260921/RESUME-HANDOFF.md",
+      "sha256": "9168bf35768e09f4b6c7ca8741898830048788d62d083d186a5ef5c2e85c0759",
+      "bytes": 6951
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-20260921/SEMANTIC-BASIS-DECISION.md",
+      "sha256": "c581f72872946d533155c73e7a98e957f7cafa668be0a885d5e18bdaa92279cb",
+      "bytes": 5585
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-20260921/replay-captures.mts",
+      "sha256": "bcb49ec67bb3686134c93f4863f934d83ad8405254af65f27709e1cc7e39f682",
+      "bytes": 4568
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/RESUME-SCOPED-DISCLOSURE-20260921.md",
+      "sha256": "9168bf35768e09f4b6c7ca8741898830048788d62d083d186a5ef5c2e85c0759",
+      "bytes": 6951
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/EVIDENCE-INDEX-02.json",
+      "sha256": "ea071ba69a90c668c0625d7eec0d6aec502190ae1746b527378c6c298b0949d5",
+      "bytes": 3239
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/REVIEW.md",
+      "sha256": "3e351a2ba4ee1805fa2efcc36b27414d5f41e0f089b0532199096dd7954f29d3",
+      "bytes": 3429
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/SOURCE-PRESERVATION-ADDENDUM.md",
+      "sha256": "da7b0860749d93a210371754fa3bf0904eae745a7ee0c73ed96b313b6c02f406",
+      "bytes": 973
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/captures/pending-review-001.log",
+      "sha256": "0eb6b028c682ac4f033b5202d3a8cc36bac34fdbe3c035484df6867e421de89c",
+      "bytes": 4865
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/records/CONTRACT-MATRIX.json",
+      "sha256": "941ff331d41a3f7b578c5f27d7f8dffd96e4d8ba940a0095f6f5590955dcd833",
+      "bytes": 2381
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/records/PENDING-PUBLIC-PAUSE-PRESERVATION.json",
+      "sha256": "f29ce1ef2aaa9e5f645f876a6dbf5ff5b011e8c7631f64b92e39d919ed559116",
+      "bytes": 2936
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/records/RESTORE-PREFLIGHT-CORRECTED.json",
+      "sha256": "464311d24b545292555e396fad4fbfa30621e4488194ae313bf175ada03a25a4",
+      "bytes": 2082
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/records/SEMANTIC-AUDIT-EVIDENCE.json",
+      "sha256": "5b4c59bf11de8f5d689c510b8b3c109f9b8a1f71b5115ebf4973e658ae3a750e",
+      "bytes": 5933
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/records/SOURCE-FULL-COMPARISON.json",
+      "sha256": "138bb4721b563c32d2a22091a7e6956c69801f636c27c35f1385b199ca385e5f",
+      "bytes": 731
+    }
+  ],
+  "prior_available_records_verified": 199,
+  "historical_unavailable_reference": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/archive-independent-v2/IDENTITY-CHECK.json",
+      "sha256": "aa1b9e45bd265c1a176b4199c87f2554ac1d3bde0adae6f481fc9198fcba6d63",
+      "status": "Original verification JSON overwritten by tester final re-enumeration; original bytes not recovered. Previously rehashed successfully by main; original reports remain unchanged.",
+      "replacement_is_not_original": true
+    }
+  ],
+  "provider_calls": 0,
+  "openrouter_new_spend_usd": 0,
+  "openrouter_cap_usd": 5,
+  "self_hash": "Recorded in delivery.json to avoid a circular hash."
+}

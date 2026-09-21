@@ -1,0 +1,22 @@
+{
+  "at": "2026-09-21T21:35:16.890161+00:00",
+  "records": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/REVIEW.md",
+      "sha256": "3e351a2ba4ee1805fa2efcc36b27414d5f41e0f089b0532199096dd7954f29d3",
+      "bytes": 3429
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/EVIDENCE-INDEX.json",
+      "sha256": "809e5dc140324796739e2dec856b012214444b65785391e6f3bdc0d457fe32f0",
+      "bytes": 2399
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/records/PENDING-PUBLIC-PAUSE-PRESERVATION.json",
+      "sha256": "f29ce1ef2aaa9e5f645f876a6dbf5ff5b011e8c7631f64b92e39d919ed559116",
+      "bytes": 2936
+    }
+  ],
+  "verdict": "Missing decision; ownerKeepPending; no code change; omission consistency unrepaired; exact public question/reuse not reached due model configuration. No provider call.",
+  "measurement_followup": "Source counts alone do not prove full-row equality; final restore/cleanup/full-source verification requested as separately versioned evidence."
+}
