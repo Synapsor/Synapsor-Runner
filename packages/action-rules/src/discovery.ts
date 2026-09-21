@@ -44,7 +44,7 @@ export function actionRuleDiscoveryContract(compiled: CompiledActionRuleV1, appr
     approval: { class: compiled.approval_class,
       disclosure: availability !== "available" ? "unavailable" : approvalMode === "policy" ? "mode_only" : "manual_only",
       decision: availability !== "available" ? "current approval route unavailable until operator review; no approval or execution readiness established"
-        : approvalMode === "policy" ? "automatic only when current eligibility, the separate reviewed policy and available atomic allowance pass; otherwise human review"
+        : approvalMode === "policy" ? "automatic only when current eligibility, the separate reviewed policy and available atomic allowance pass; otherwise eligible requests require human review"
           : "human review required",
       ...(approvalMode === "policy" && availability === "available" ? { conditions: "not_disclosed; no automatic threshold is established by this description" } : {}),
     },
