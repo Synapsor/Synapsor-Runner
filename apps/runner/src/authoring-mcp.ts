@@ -9,6 +9,7 @@ import {
   semanticActionCatalogJsonSchema,
   publishToolInputContracts,
   mcpToolInputJsonSchema,
+  portableDiscoveryInputJsonSchema,
   McpRuntimeError,
   type SemanticActionRuntime,
   projectAuthorityMetadataForModel,
@@ -74,8 +75,8 @@ const optionalBoundarySelector = optionalModelArgument(z.string()
 const optionalResourceSelector = optionalModelArgument(z.string().max(256)
   .describe("Exact resource id; empty means omitted."));
 // Detail/listing are existing operations, not arbitrary combinations of optional
-// fields. Keep the dispatch envelope for its safe diagnostics; publish both exact
-// branches using the same schema conversion as the Action catalog.
+// fields. Keep canonical branch meanings; publish a portable field projection.
+// The host still refuses meaningful mixtures after neutral-value normalization.
 const readCatalogInput = z.union([
   z.object({ boundary: optionalBoundarySelector, resource: z.string().min(1).max(256),
     query: z.null().optional(), cursor: z.union([z.literal(0), z.null()]).optional(),
@@ -253,7 +254,7 @@ export function createScopedExploreMcpServer(
   publishToolInputContracts(server, name => name === "app.describe_actions"
     ? semanticActionCatalogJsonSchema(policyManagement ? policyManagementToolInputSchema(name) : undefined)
     : name === SCOPED_EXPLORE_DESCRIBE_TOOL
-      ? mcpToolInputJsonSchema(policyManagement ? z.union([readCatalogInput, policyManagementToolInputSchema(name)]) : readCatalogInput)
+      ? portableDiscoveryInputJsonSchema(policyManagement ? z.union([readCatalogInput, policyManagementToolInputSchema(name)]) : readCatalogInput)
     : name === SCOPED_EXPLORE_QUERY_TOOL
       ? mcpToolInputJsonSchema(policyManagement ? z.union([exploreInput, policyManagementToolInputSchema(name)]) : exploreInput)
       : undefined);
@@ -290,7 +291,7 @@ export function createScopedExploreMcpServer(
   }).strict();
   server.registerTool(SCOPED_EXPLORE_DESCRIBE_TOOL, {
     title: "Describe reviewed data",
-    description: "Metadata only; no source rows. Search reviewed resources with query, limit and the opaque returned cursor. Limit is a maximum; byte-bounded pages may contain fewer entries. Follow next_cursor until null. Empty input returns a bounded shortlist. Use resource with optional boundary, without search/pagination arguments, for a complete focused contract. Copy exact ids into app.explore_data for values. Search matches are not row eligibility." + settingsHint,
+    description: 'Metadata only; no source rows. Choose listing {} or {"query":"text","limit":5}, OR detail {"resource":"<exact id>"}. Host rejects a resource with meaningful query/limit/cursor. For detail, omit/null query; omit/null/0 limit and cursor. For listing, omit/null/empty resource. Optional boundary applies to BOTH operations. Never invent listing defaults for detail. Limit is a maximum; byte-bounded pages may contain fewer entries. Follow next_cursor until null. Keep the same query/boundary/context. Copy exact ids into app.explore_data for values. Search matches are not row eligibility.' + settingsHint,
     inputSchema: policyManagement ? withPolicyManagementInput(describeInput, SCOPED_EXPLORE_DESCRIBE_TOOL) : describeInput,
     outputSchema: scopedExploreDescribeToolOutputSchema,
     annotations: {

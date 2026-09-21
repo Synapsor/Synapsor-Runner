@@ -300,6 +300,25 @@ keeps credentials and trusted scope out of the client file. Claude Desktop is
 global application configuration and remains a checked template rather than a
 managed project install.
 
+`--check-launch` verifies the configured server's initialize/`tools/list`
+handshake. It does not launch the native client or prove that the client retains
+those tools, that its provider accepts them, or that a business operation works.
+Check the client's retained inventory separately: the reviewed interface has
+exactly `app.describe_data`, `app.explore_data`, `app.describe_actions` and
+`app.request_change`.
+
+Both discovery tools publish typed, closed object-root declarations for native
+compatibility. The server still enforces detail versus listing combinations:
+use `{"resource":"<exact id>"}` for data detail or
+`{"outcome":"<exact id>"}` for Action detail; use `{}` or
+`{"query":"text","limit":5}` for listing. Do not populate listing defaults
+in a detail call. Optional null means omitted; data discovery also retains its
+neutral zero limit/cursor and empty resource conventions. An optional data
+boundary selector applies to either operation. Meaningful mixed arguments,
+unknown fields and invalid or stale cursors remain refused by the host. The
+portable declaration is a structural superset, not permission to combine every
+field or access an unavailable resource.
+
 Each example uses the same stdio command/args/env structure. Replace the placeholder environment variables in your client settings or shell environment.
 
 These checked-in desktop examples use stdio, which is the recommended local

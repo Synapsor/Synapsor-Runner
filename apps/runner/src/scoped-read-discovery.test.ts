@@ -32,6 +32,27 @@ function fixture(count = 40, longSummaries = false) {
 }
 
 describe("scoped Read discovery", () => {
+  it("retains four typed object-root declarations for native consumers without root combinators", async () => {
+    const f = fixture(6);
+    const server = createScopedExploreMcpServer(f.runtime, { semanticActions: createInactiveSemanticActionRuntime() });
+    const client = new Client({ name: "native-portable-discovery", version: "1" });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    try {
+      await server.connect(b); await client.connect(a);
+      const tools = (await client.listTools()).tools;
+      expect(tools.map(t => t.name).sort()).toEqual([
+        "app.describe_actions", "app.describe_data", "app.explore_data", "app.request_change",
+      ]);
+      for (const tool of tools) {
+        expect(tool.inputSchema.type).toBe("object");
+        for (const rootKeyword of ["anyOf", "oneOf", "allOf", "$ref"]) {
+          expect(tool.inputSchema, `${tool.name}: ${rootKeyword}`).not.toHaveProperty(rootKeyword);
+        }
+        expect(tool.inputSchema.properties).toBeDefined();
+        expect(tool.inputSchema.additionalProperties).toBe(false);
+      }
+    } finally { await client.close(); await server.close(); }
+  });
   it("browses bounded authorized summaries without materializing fields or requesting source coverage", async () => {
     const f = fixture(1_000);
     const first = await f.discover({ limit: 3 });

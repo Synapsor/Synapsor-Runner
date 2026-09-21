@@ -326,7 +326,7 @@ function semanticActionToolMetadata(): LocalToolMetadata[] {
     {
       name: DESCRIBE_ACTIONS_TOOL,
       title: "Describe reviewed actions",
-      description: "Search reviewed actions with query/limit/cursor, or use outcome alone for the complete request contract. Limit is a maximum; byte-bounded pages may contain fewer entries. Follow next_cursor until null. Search returns bounded summaries; an empty call retains a bounded compatibility page of full contracts. Browse or search a shortlist, inspect the chosen outcome, then request it. Availability is not eligibility. No source rows are read and no authority is granted.",
+      description: 'Choose listing {} or {"query":"text","limit":5}, OR exact detail {"outcome":"<exact id>"}. Host rejects outcome combined with non-null query/limit/cursor. Optional null means omitted: full-property detail uses query:null, limit:null, cursor:null; listing uses outcome:null. Never invent listing defaults for detail. Limit is a maximum; byte-bounded pages may contain fewer entries. Follow next_cursor until null. Keep the same query/context. Search returns bounded summaries; empty input retains a bounded compatibility page of full contracts. Inspect the chosen outcome before requesting it. Availability is not eligibility. No source rows are read and no authority is granted.',
       kind: "action_catalog",
       input_schema: { query: { type: "string", required: false }, limit: { type: "number", required: false },
         cursor: { type: "string", required: false }, outcome: { type: "string", required: false } },

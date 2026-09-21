@@ -1,12 +1,12 @@
 import { z } from "zod";
-import { zodToJsonSchema } from "zod-to-json-schema";
+import { portableDiscoveryInputJsonSchema } from "./tool-schema-publication.js";
 import type { Tool } from "@modelcontextprotocol/sdk/types.js";
 
 const catalogFields = {
-  outcome: z.string().regex(/^[A-Za-z_][A-Za-z0-9_.:-]{0,255}$/u),
-  query: z.string().max(256),
-  limit: z.number().int().min(1).max(20),
-  cursor: z.string().regex(/^cur_[A-Za-z0-9_-]{43}$/u),
+  outcome: z.string().regex(/^[A-Za-z_][A-Za-z0-9_.:-]{0,255}$/u).describe("Exact detail id; omit/null query, limit and cursor."),
+  query: z.string().max(256).describe("Listing only; omit/null when outcome is supplied."),
+  limit: z.number().int().min(1).max(20).describe("Listing maximum; omit/null for exact detail. No detail default."),
+  cursor: z.string().regex(/^cur_[A-Za-z0-9_-]{43}$/u).describe("Listing only: use returned next_cursor with the same query/context; omit/null for detail."),
 };
 const absent = z.null().optional();
 // Null is omission for optional catalog fields. Empty/invalid cursors and
@@ -19,7 +19,7 @@ export const semanticActionCatalogSchema = z.union([
 
 export function semanticActionCatalogJsonSchema(alternate?: z.ZodTypeAny): Tool["inputSchema"] {
   const schema = alternate ? z.union([semanticActionCatalogSchema, alternate]) : semanticActionCatalogSchema;
-  return { ...zodToJsonSchema(schema, { $refStrategy: "none" }), type: "object" } as Tool["inputSchema"];
+  return portableDiscoveryInputJsonSchema(schema);
 }
 
 export function semanticActionInputSchema(name: string) {

@@ -355,7 +355,7 @@ export async function managedMcpProjectStatusReport(input: {
   let launch: { checked: boolean; ok: boolean; message: string } = {
     checked: false,
     ok: status.state === "installed",
-    message: "Launch probe not requested; pass --check-launch to execute the configured stdio tools/list handshake.",
+    message: "Launch probe not requested; pass --check-launch to execute the configured stdio tools/list handshake. Server advertisement alone does not verify native client ingestion or provider acceptance.",
   };
   if (status.state === "installed") {
     let staticBoundaryOk = true;
@@ -381,7 +381,7 @@ export async function managedMcpProjectStatusReport(input: {
       launch = {
         checked: true,
         ok: matches,
-        message: matches ? `${definition.displayName} command started and exposed exactly ${liveNames.length} reviewed tool(s).` : `Started command exposed ${liveNames.join(", ") || "no tools"}; expected ${tools.join(", ") || "no tools"}.`,
+        message: matches ? `Configured server advertised exactly ${liveNames.length} reviewed tool(s). This handshake does not verify ${definition.displayName} native ingestion or provider acceptance; check the client's retained tools separately.` : `Started command exposed ${liveNames.join(", ") || "no tools"}; expected ${tools.join(", ") || "no tools"}.`,
       };
     }
   }

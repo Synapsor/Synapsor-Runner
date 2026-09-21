@@ -217,4 +217,4 @@ export {
   type SubjectReferenceService,
 } from "./subject-references.js";
 
-export { publishToolInputContracts, mcpToolInputJsonSchema } from "./tool-schema-publication.js";
+export { publishToolInputContracts, mcpToolInputJsonSchema, portableDiscoveryInputJsonSchema } from "./tool-schema-publication.js";

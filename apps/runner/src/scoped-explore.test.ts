@@ -516,7 +516,8 @@ describe("Scoped Explore", () => {
         expect(tool.description).toContain("Follow next_cursor until null.");
       }
       const actionSchema = (await client.listTools()).tools.find((tool) => tool.name === "app.describe_actions")!.inputSchema;
-      expect(actionSchema.anyOf).toHaveLength(2);
+      expect(actionSchema).not.toHaveProperty("anyOf");
+      expect(actionSchema.additionalProperties).toBe(false);
       expect(JSON.stringify(actionSchema)).toContain('"query"');
       expect(JSON.stringify(actionSchema)).toContain('"cursor"');
       expect(JSON.stringify(actionSchema)).toContain('"limit"');
@@ -531,7 +532,7 @@ describe("Scoped Explore", () => {
     } finally { await client.close(); await server.close(); await runtime.close(); }
   });
 
-  it("publishes exclusive Action operations and complete existing Explore grammar on the wire", async () => {
+  it("publishes portable discovery fields, preserves host exclusivity and complete Explore grammar", async () => {
     const fixture = await activatedFixture();
     const runtime = await createScopedExploreRuntime({ projectRoot: fixture.root, transport: "stdio", env: fixture.env,
       inspectDatabaseFn: async () => fixture.inspection, executor: fixedExecutor([]) });
@@ -543,7 +544,12 @@ describe("Scoped Explore", () => {
       const tools = (await client.listTools()).tools;
       const ajv = new Ajv({ strict: false, validateFormats: false });
       const actions = ajv.compile(tools.find(t => t.name === "app.describe_actions")!.inputSchema);
-      expect(actions({ outcome: "some.action", query: "mixed", limit: 3 })).toBe(false);
+      // The portable declaration intentionally admits cross-field mixtures;
+      // canonical dispatch still rejects them. No argument is silently dropped.
+      expect(actions({ outcome: "some.action", query: "mixed", limit: 3 })).toBe(true);
+      expect((await client.callTool({ name: "app.describe_actions", arguments: {
+        outcome: "some.action", query: "mixed", limit: 3,
+      } })).isError).toBe(true);
       for (const args of [{}, { outcome: "some.action" }, { query: "some", limit: 2 },
         { outcome: "some.action", query: null, limit: null, cursor: null },
         { outcome: null, query: "some", limit: 2, cursor: null }]) expect(actions(args)).toBe(true);
@@ -553,9 +559,9 @@ describe("Scoped Explore", () => {
       for (const args of [{ resource: "public.subscriptions", limit: 20 },
         { resource: "public.subscriptions", query: "subscriptions" },
         { resource: "public.subscriptions", cursor: `cur_${"a".repeat(43)}` }]) {
-        // Both declarations and the actual handler must refuse meaningful mixtures.
+        // Explicit declaration superset; the original refusal remains at the host.
         expect((await client.callTool({ name: "app.describe_data", arguments: args })).isError).toBe(true);
-        expect(data(args), JSON.stringify(args)).toBe(false);
+        expect(data(args), JSON.stringify(args)).toBe(true);
       }
       for (const args of [{}, { resource: "public.subscriptions" },
         { boundary: null, resource: "public.subscriptions", query: null, cursor: null, limit: null },

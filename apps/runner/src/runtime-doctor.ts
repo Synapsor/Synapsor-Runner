@@ -534,7 +534,7 @@ async function managedMcpProjectDoctorChecks(configPath: string, expectedTools: 
         ok: matches,
         level: matches ? "pass" : "fail",
         message: matches
-          ? `Configured ${definition.displayName} command started and exposed exactly ${liveTools.length} reviewed tool(s).`
+          ? `Configured server advertised exactly ${liveTools.length} reviewed tool(s). This handshake does not verify ${definition.displayName} native ingestion or provider acceptance; check the client's retained tools separately.`
           : `Configured command exposed ${liveTools.join(", ") || "no tools"}; expected ${reviewedTools.join(", ") || "no tools"}.`,
       });
     } catch (error) {
