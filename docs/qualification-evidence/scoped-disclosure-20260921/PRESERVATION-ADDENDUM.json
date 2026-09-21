@@ -1,0 +1,78 @@
+{
+  "at": "2026-09-21T21:41:28.695382+00:00",
+  "status": "Additive preservation evidence; semantic/BUSINESS verdict unchanged",
+  "supplements": "delivery.json, FINAL-REPORT.md and EVIDENCE-INDEX.json remain immutable earlier records",
+  "independent_index": {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/EVIDENCE-INDEX-03.json",
+    "sha256": "bc999f9d4dfa4f8c75d49d55f4aa2e52c1fb1b7208c135c9a30911793052435f"
+  },
+  "verified_items": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/REVIEW.md",
+      "sha256": "3e351a2ba4ee1805fa2efcc36b27414d5f41e0f089b0532199096dd7954f29d3",
+      "bytes": 3429
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/SOURCE-PRESERVATION-ADDENDUM.md",
+      "sha256": "da7b0860749d93a210371754fa3bf0904eae745a7ee0c73ed96b313b6c02f406",
+      "bytes": 973
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/records/SEMANTIC-AUDIT-EVIDENCE.json",
+      "sha256": "5b4c59bf11de8f5d689c510b8b3c109f9b8a1f71b5115ebf4973e658ae3a750e",
+      "bytes": 5933
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/records/CONTRACT-MATRIX.json",
+      "sha256": "941ff331d41a3f7b578c5f27d7f8dffd96e4d8ba940a0095f6f5590955dcd833",
+      "bytes": 2381
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/records/RESTORE-PREFLIGHT-CORRECTED.json",
+      "sha256": "464311d24b545292555e396fad4fbfa30621e4488194ae313bf175ada03a25a4",
+      "bytes": 2082
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/records/PENDING-PUBLIC-PAUSE-PRESERVATION.json",
+      "sha256": "f29ce1ef2aaa9e5f645f876a6dbf5ff5b011e8c7631f64b92e39d919ed559116",
+      "bytes": 2936
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/records/SOURCE-FULL-COMPARISON.json",
+      "sha256": "138bb4721b563c32d2a22091a7e6956c69801f636c27c35f1385b199ca385e5f",
+      "bytes": 731
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/records/EFFECTIVE-STORE-PREFLIGHT-02.json",
+      "sha256": "a5009b70fb3a4f0b584b333df6b6d9f6e7d77801905126bd9b1f729c77fed021",
+      "bytes": 2436
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/restore-bundle-02/MANIFEST.json",
+      "sha256": "b3c376ae73fb19a34ddaa1c70cc80a32d0932831f5e8396ed9492d6233ae915d",
+      "bytes": 2402
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/records/RESTORE-BUNDLE-VERIFICATION-03.json",
+      "sha256": "5126017830ea21d77a37007d7d8e4af6f38b3a5dcdbd9ebc2f259bd5d193cb3f",
+      "bytes": 2640
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/records/CLEANUP-PRESERVATION-03.json",
+      "sha256": "7dbc84373717d1d3d535ded054b17dc38e5a3e293d5872b4c689c219ed9a9820",
+      "bytes": 1628
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/identity-03/IDENTITY-REENUMERATION-03.json",
+      "sha256": "945ca2ee19cafb5ddd8e72b6adeab69986d04f259fc608c7bb4842df3616e21b",
+      "bytes": 1101
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-audit-20260921-attempt1/captures/pending-review-001.log",
+      "sha256": "0eb6b028c682ac4f033b5202d3a8cc36bac34fdbe3c035484df6867e421de89c",
+      "bytes": 4865
+    }
+  ],
+  "claims": "Fresh final project/HOME/source/ACL bundle restored; 98 entries match; both owned containers absent; independent 7569-entry installed/archive re-enumeration matches. No extra provider/public operation.",
+  "resume_instruction": "Use this additive index03 for newest restore material, alongside RESUME-HANDOFF.md and unchanged ownerKeepPending decision."
+}
