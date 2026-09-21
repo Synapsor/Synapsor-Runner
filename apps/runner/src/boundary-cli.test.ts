@@ -16217,9 +16217,14 @@ function actionTargetInspection(): SchemaInspection {
   return inspection;
 }
 
-async function staleSemanticRevalidationFixture(options: { writeback?: "proposal_only" | "supervised"; outcomes?: string[]; unusedVerificationField?: boolean; privateVerificationResource?: boolean; atomicUpdates?: boolean; currentStateRead?: boolean } = {}) {
+async function staleSemanticRevalidationFixture(options: { readerRls?: boolean; writeback?: "proposal_only" | "supervised"; outcomes?: string[]; unusedVerificationField?: boolean; privateVerificationResource?: boolean; atomicUpdates?: boolean; currentStateRead?: boolean } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-revalidate-semantic-actions-"));
-  const inspection = options.currentStateRead ? principalScopeInspection() : actionTargetInspection();
+  const inspection = options.currentStateRead || options.readerRls ? principalScopeInspection() : actionTargetInspection();
+  if (options.readerRls) for (const table of inspection.tables) {
+    table.row_level_security_policies = [{ name: "review_reader_scope", command: "SELECT", permissive: true, roles: [inspection.current_user],
+      using_expression: "tenant_id = NULLIF(current_setting('app.tenant_id', true), '')::uuid AND principal_id = NULLIF(current_setting('app.principal_id', true), '')::uuid" }];
+    table.role_posture!.row_security_applicable_policies = ["review_reader_scope"];
+  }
   if (options.currentStateRead) {
     const parent = inspection.tables[0]!;
     parent.unique_constraints.push({ name: "current_organization_person", columns: ["tenant_id", "principal_id"] });
@@ -17097,4 +17102,103 @@ describe("prepared edit dependency recovery stays disabled", () => {
       await expect(loadActivatedExplorationBoundaries(fixture.root)).rejects.toMatchObject({ code: "ENOENT" });
     } finally { await fixture.dispose(); }
   }, 30_000);
+});
+
+
+describe("saved post-edit review uses reader evidence after writer setup", () => {
+  it.each(["resume", "review", "reader-unavailable", "reader-changed"])("completes exact saved review or exposes its prerequisite: %s", async mode => {
+    const fixture = await staleSemanticRevalidationFixture({ outcomes: ["maintenance.complete_visit"], readerRls: true, atomicUpdates: true });
+    const { root, inspection } = fixture;
+    try {
+      const initial = await loadBoundaryReviewContext(root);
+      await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({ draft: initial.draft, candidate: initial.candidate,
+        confirmedDecisions: initial.candidate.unresolved_decisions, actor: "test-reviewer", reason: "Saved Read review", revision: 1 }));
+      const context = await loadBoundaryReviewContext(root);
+      const cards = buildReadWorkloadPlanCards(context.candidate);
+      const workload = readWorkloadFromPlanCards({ cards, selectedIds: cards.map(card => card.id) });
+      const storedWorkload = await storeReadWorkloadAnalysis({ projectRoot: root, generatedBoundary: context.candidate,
+        source: workload.source, analysis: analyzeReadWorkloadSet({ workload, generatedBoundary: context.candidate }) });
+      await recordReadWorkloadReview({ projectRoot: root, workload: storedWorkload, candidateDigest: context.bundle.candidate_digest, reviewRevision: 1 });
+      const authority = (await readActionRuleAuthorityDraft(root, "reviewed_staging_rules"))!;
+      const binding = { boundary_name: context.candidate.pack.name, generation_lock_fingerprint: context.candidate.generation_lock_fingerprint,
+        schema_fingerprint: context.lock.schema_fingerprint, role_posture_fingerprint: context.lock.role_posture_fingerprint };
+      await activateExplorationBoundary({ projectRoot: root, candidate: context.candidate, expectedDigest: context.bundle.candidate_digest,
+        actor: "test-reviewer", confirmation: `ACTIVATE ${context.bundle.candidate_digest}`,
+        confirmedDecisions: context.candidate.unresolved_decisions, currentInspection: inspection });
+      const activeRead = await loadActivatedExplorationBoundaries(root);
+      const source = newPolicySourceSession();
+      source.snapshots = [policyTextSnapshot(Buffer.from("Keep the exact saved atomic visit job with its human approval and guarded updates."), "saved-policy.txt")]; source.active = 1;
+      source.approvals = [{ digest: source.snapshots[0]!.digest, destination: authoringDestination({ provider: "openai", model: "gpt-test" }) }];
+      await savePolicySources(root, source);
+      const reviews = [];
+      for (const resource of ["public.service_visits", "public.maintenance_requests"]) {
+        const proof = await reviewActionVersionField({ context: { readBoundary: context.candidate, readBoundaryDigest: context.bundle.candidate_digest,
+          builtCatalog: buildActionRuleAuthoringCatalog({ boundary: context.candidate, inspection, retainedCatalog: authority.authority.catalog }) },
+          resource, field: "c09", inspection, generationLock: context.lock, session: { ...fixture.session,
+            chooseOption: async title => { expect(title).toBe("REVIEW CHANGED-RECORD PROTECTION"); return "confirm"; } }, assertCurrent: async () => {} });
+        reviews.push(proof!.review);
+      }
+      await writeBoundaryAuthoringResumeState(root, buildBoundaryAuthoringResumeState({ binding, stage: "authority_review",
+        jobIntent: "Keep the saved visit job.", provider: "openai", model: "gpt-test", policySourceSession: source.id, reviewedVersionFields: reviews, intendedClient: "claude-code",
+        read: { analysis_id: storedWorkload.analysis_id, analysis_digest: storedWorkload.analysis_digest },
+        action: { intent: "Keep the saved visit job.", intents: ["Keep the saved visit job."], strategy: "rule_derived", completed_outcomes: ["maintenance.complete_visit"] } }), { expectedRevisionDigest: null });
+      const writer = structuredClone(inspection); writer.current_user = "narrow_writer"; writer.role_posture!.read_only = false;
+      writer.role_posture!.writable_relations = ["public.service_visits", "public.maintenance_requests"];
+      for (const table of writer.tables) table.role_posture!.privileges.update = true;
+      const mixed = (await import("./action-tui.js")).mergeActionProjectInspections(inspection, writer);
+      let calls = 0, restarted = false;
+      const notices: string[] = [];
+      const session: BoundaryReviewInteractiveSession = { ...fixture.session,
+        rememberDetails: (title, lines) => { notices.push(title, ...lines); },
+        chooseOption: async (title, choices, opts) => {
+          if (title === "START BOUNDARY DRAFTING") return mode === "review" || restarted ? "review_rules" : "resume";
+          // Saved counter review must be reused; no second maintenance question.
+          if (title === "REVIEW CHANGED-RECORD PROTECTION") throw new Error("Repeated existing source counter review");
+          return fixture.session.chooseOption!(title, choices, opts);
+        } };
+      const noEdit = vi.fn(async () => { throw new Error("Review cannot enter an editor or planner"); });
+      const inspect = vi.fn(async (args: { databaseUrlEnv: string }) => {
+        expect(args.databaseUrlEnv).toBe(context.lock.source_env);
+        if (mode === "reader-unavailable") throw new Error("READER_CONNECTION_UNAVAILABLE: restore the reviewed reader connection.");
+        if (mode === "reader-changed") return { ...inspection, current_user: "changed_reader" };
+        return inspection;
+      });
+      const run = () => boundaryReviewCommandInternal(["--project-root", root, "--access", "--job-first"], inspect, session, undefined, {
+        startWithAgentJob: true, exitAfterAgentJob: true, actionProjectInspector: async () => mixed,
+        modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "local-transport-only", dependencies: { requestJson: async request => {
+          calls++;
+          const text: string[] = [];
+          const strings = (value: unknown): void => { if (typeof value === "string") text.push(value);
+            else if (value && typeof value === "object") Object.values(value).forEach(strings); };
+          strings(request.body);
+          expect(text.join("\n")).toMatch(/"read_only"\s*:\s*true/);
+          return { status: 200, body: { output: [{ type: "function_call", call_id: "local-coverage", name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: [{
+            start: 1, end: 1, disposition: "implemented", responsibility: "runner", interpretation: "The saved human-reviewed atomic visit job retains its exact behavior.", draft_paths: ["/actions/0"],
+          }] }) }] } };
+        } } }, modelBoundaryJobPlanner: noEdit, modelActionRuleGenerator: noEdit, modelReadBoundaryRevisionGenerator: noEdit,
+        modelReadWorkloadGenerator: noEdit, modelAuthoringNarrator: noEdit, boundaryAuthoringChatFactory: () => ({ ...testBoundaryAuthoringChat(session),
+          checkpoint: (title, lines) => { notices.push(title, ...(lines ?? [])); }, streamCheckpoint: async (title, lines) => { notices.push(title, ...(lines ?? [])); } }),
+      });
+      expect(await run()).toBe(0);
+      expect(inspect).toHaveBeenCalled();
+      expect(noEdit).not.toHaveBeenCalled();
+      expect((await readActionRuleAuthorityDraft(root, authority.authority.name))!.digest).toBe(authority.digest);
+      expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(context.bundle.candidate_digest);
+      expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+      expect(await loadActivatedExplorationBoundaries(root)).toEqual(activeRead);
+      const saved = await loadPolicySources(root, source.id);
+      if (mode.startsWith("reader-")) {
+        expect(calls).toBe(0); expect(saved.coverage).toBeUndefined(); expect(saved.application_assignments).toBeUndefined();
+        expect(notices.join("\n")).toContain(mode === "reader-changed" ? "POLICY_RLS_EVIDENCE_STALE" : "READER_CONNECTION_UNAVAILABLE");
+        expect(notices.join("\n")).toContain("Attached rules review could not complete.");
+      } else {
+        expect(calls).toBe(1);
+        expect(policyReviewReadiness(activePolicySource(saved)!, saved.coverage, saved).ready, JSON.stringify({ notices, saved })).toBe(true);
+        restarted = true;
+        expect(await run()).toBe(0); expect(calls).toBe(1);
+        const after = await readBoundaryAuthoringResumeState(root, binding); expect(after.status).toBe("ready");
+        if (after.status === "ready") expect(after.value.completed_policy_reviews?.at(-1)?.activity).toBe("validated_reuse");
+      }
+    } finally { await fixture.dispose(); }
+  });
 });

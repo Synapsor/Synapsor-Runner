@@ -1,11 +1,12 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { SchemaInspection, TableInfo } from "@synapsor-runner/schema-inspector";
 import { buildAutoBoundary, explorationBoundaryCandidateDigest } from "./auto-boundary.js";
 import { buildActionRuleAuthoringCatalog } from "./action-rule-authoring.js";
 import { compileActionRuleModelDraft, type ActionRuleModelDraftV1 } from "./action-rule-draft.js";
 import { buildActionRuleAuthorityDraft } from "./action-rule-authority.js";
-import { policyCoverageDraft } from "./authoring-policy-evidence.js";
+import { inspectPolicyReviewSource, policyCoverageDraft } from "./authoring-policy-evidence.js";
+import { mergeActionProjectInspections } from "./action-tui.js";
 import { parsePolicyCoverage } from "./authoring-policy-coverage.js";
 import { policyTextSnapshot } from "./authoring-policy-source.js";
 import { preparePrivateActionSource } from "./action-rule-resource-review.js";
@@ -66,6 +67,40 @@ function refresh(f: ReturnType<typeof fixture>) {
   f.read.generation_lock_fingerprint = canonicalJsonDigest(f.lock);
   f.read.role_posture_fingerprint = generated.exploration_boundary.role_posture_fingerprint;
 }
+
+describe("reader evidence after writer setup", () => {
+  it("keeps writer compilation metadata separate from current lock-bound policy evidence", async () => {
+    const f = fixture(), writer = structuredClone(f.inspection);
+    writer.current_user = "narrow_writer";
+    writer.role_posture!.read_only = false;
+    writer.role_posture!.writable_relations = [resource];
+    writer.tables[0]!.role_posture!.privileges.update = true;
+    const merged = mergeActionProjectInspections(f.inspection, writer);
+    // Exact failing-before input: schema stays identical but reader posture is replaced.
+    expect(() => policyCoverageDraft({ ...input(f), source: { inspection: merged, generationLock: f.lock } }))
+      .toThrow("POLICY_RLS_EVIDENCE_STALE");
+    const inspect = vi.fn(async () => f.inspection);
+    const env = { DATABASE_URL: "owned-reader", WRITER_DATABASE_URL: "owned-writer" };
+    const source = await inspectPolicyReviewSource(f.lock, inspect, env);
+    expect(inspect).toHaveBeenCalledExactlyOnceWith({ engine: "postgres", databaseUrlEnv: "DATABASE_URL", schema: "opaque", env });
+    expect(policyCoverageDraft({ ...input(f), source })).toEqual(policyCoverageDraft(input(f)));
+    expect(merged.current_user).toBe("narrow_writer");
+    expect(merged.tables[0]!.role_posture!.privileges.update).toBe(true);
+  });
+
+  it.each(["role", "schema", "inspection-failure"])("does not use writer or cached evidence when the reader is unavailable or changed: %s", async mode => {
+    const f = fixture(), changed = structuredClone(f.inspection);
+    if (mode === "role") changed.current_user = "another_reader";
+    if (mode === "schema") changed.tables[0]!.columns[0]!.nullable = true;
+    const inspect = vi.fn(async () => { if (mode === "inspection-failure") throw new Error("SOURCE_UNAVAILABLE"); return changed; });
+    if (mode === "inspection-failure") await expect(inspectPolicyReviewSource(f.lock, inspect)).rejects.toThrow("SOURCE_UNAVAILABLE");
+    else {
+      const source = await inspectPolicyReviewSource(f.lock, inspect);
+      expect(() => policyCoverageDraft({ ...input(f), source })).toThrow("POLICY_RLS_EVIDENCE_STALE");
+    }
+    expect(inspect).toHaveBeenCalledTimes(1);
+  });
+});
 
 function privateFixture(origin: "private_review" | "retained_catalog" = "private_review") {
   const f = fixture(), parent = f.inspection.tables[0]!, child = structuredClone(parent);
