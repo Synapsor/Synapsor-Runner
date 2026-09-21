@@ -1,0 +1,23 @@
+{
+  "at": "2026-09-21T22:41:36.469816+00:00",
+  "historical_product": "7d881de8942b4089d225cd0a9e6196e6917ec075",
+  "head": "66591e369169501d04f2d28d48726fd1aba59263",
+  "changed_source_test_files": [
+    "apps/runner/src/authoring-policy-coverage.ts",
+    "apps/runner/src/authoring-policy-evidence.ts",
+    "apps/runner/src/authoring-policy-source.ts",
+    "apps/runner/src/authoring-prepared-policy-review.ts",
+    "apps/runner/src/authoring-review-readiness.ts",
+    "apps/runner/src/authoring-scoped-disclosure-operation.ts",
+    "apps/runner/src/authoring-scoped-disclosure-records.ts",
+    "apps/runner/src/authoring-scoped-disclosure.test.ts",
+    "apps/runner/src/authoring-scoped-disclosure.ts",
+    "apps/runner/src/boundary-commands.ts",
+    "apps/runner/src/boundary-structured-authoring.integration.test.ts",
+    "apps/runner/src/control-policy-authority-codec.test.ts",
+    "apps/runner/src/test-fixtures/scoped-disclosure-captures.json",
+    "packages/mcp-server/src/semantic-actions.test.ts"
+  ],
+  "runtime_change_authorized": false,
+  "provider_calls": 0
+}

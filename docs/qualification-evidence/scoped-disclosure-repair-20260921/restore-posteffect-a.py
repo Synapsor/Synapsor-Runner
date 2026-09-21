@@ -62,6 +62,10 @@ sandbox=['--ro-bind','/','/','--dev-bind','/dev','/dev','--proc','/proc','--tmpf
 for name in ['project','home','authoring-meter']:sandbox+=['--dir',logical+'/'+name,'--bind',str(root/name),logical+'/'+name]
 sandbox+=['--ro-bind',str(shared),str(shared),'--chdir',logical+'/project','--']
 plan={'case_id':case,'owned_root':str(root),'logical_project':logical+'/project','home':logical+'/home','installed_entrypoint':str(entry),'preflight':str(harness/'public-preflight.mjs'),'private_operator_environment':str(private/'operator-environment.json'),'authoring_meter_root':logical+'/authoring-meter','provider_meter':str(e/'diagnostic-no-send.mjs'),'artifact_tree':'development checkout; zero-provider restoration only; final installed candidate pending','sandbox_args':sandbox}
+manifest=entry.parents[5]/'installed-artifact-manifest.json' if entry.name=='cli.js' else None
+if manifest is not None:
+ assert manifest.is_file(),'Final installation manifest required'
+ plan['artifact_tree']=json.loads(manifest.read_text())['installed_tree_sha256']
 (root/'LAUNCH-PLAN.json').write_text(json.dumps(plan,indent=2)+'\n')
 pre=run(['bwrap']+sandbox+['/usr/bin/node',str(harness/'public-preflight.mjs'),logical+'/project'])
 (root/'preflight-before-open.json').write_bytes(pre)
