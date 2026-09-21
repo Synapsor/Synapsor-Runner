@@ -1,0 +1,94 @@
+{
+  "at": "2026-09-21T17:42:38.739725+00:00",
+  "candidate": "7b15c368564c356bd9437646901c8fed79d806f253a4c7f1874adc5f20a7a45d",
+  "business_review_before_publication": "PASS including restarted explicit Review; one actual authoring call",
+  "independent_checkpoint_before_publication": "PASS",
+  "publication": {
+    "saved_program_exact": true,
+    "numeric_diff": [
+      {
+        "path": "/rules/0/effect_envelope/allowed_fields/1/maximum",
+        "before": 7,
+        "after": 5
+      },
+      {
+        "path": "/rules/0/rule/inputs/0/maximum",
+        "before": 7,
+        "after": 5
+      },
+      {
+        "path": "/rules/0/rule/require/expressions/7/right/value",
+        "before": 7,
+        "after": 5
+      }
+    ],
+    "old_revision": "policy:a8e217a549235a1eb6501182850920613c2784524a46b62dc89704329b9cad38",
+    "new_revision": "policy:38224d09795925014a8efb375cfe93baef232bbf8d09fa40bc3f6f83d934e11e",
+    "receipt_mode": "runner_ledger",
+    "writer_verification": "PASS public current check after restoring reviewed worker context",
+    "execution_consent": "Separate explicit Yes after default-No preview"
+  },
+  "changed_behavior": {
+    "six_days": "REFUSED ARGUMENT_INVALID, maximum 5",
+    "five_days": "Automatic approval, one finite worker applied, exact receipt/readback",
+    "native_session": "Same corrected native process across publication; detail and business request reached real tools",
+    "native_turn_completion": "NOT ESTABLISHED: third narration send exceeded predeclared two-send turn ceiling; stopped",
+    "operator_help": "Public opaque reference from deterministic Explore supplied to native client; not unaided subject discovery"
+  },
+  "effect": {
+    "at": "2026-09-21T17:34:53.400965+00:00",
+    "one_new_business_effect": true,
+    "worker_invocations": 1,
+    "source_rows": 38,
+    "full_source_diff": [
+      {
+        "table": "release_assessments",
+        "changes": {
+          "row_version": [
+            1,
+            2
+          ],
+          "planned_release_days": [
+            null,
+            5
+          ],
+          "assessment_state": [
+            "ready",
+            "cleared"
+          ]
+        }
+      }
+    ],
+    "other37rows_unchanged": true,
+    "historical_proposals_approvals_queues_receipts_exact": true,
+    "new_approval_kind": "automatic",
+    "new_approval_count": 1,
+    "new_queue_attempts": 1,
+    "new_receipt_authority": "runner_ledger",
+    "source_atomic_receipt_claim": false,
+    "new_canonical_receipt_hash": "sha256:1a8b554854ce369c13879701edeb458e931649e2f579b31d10e019fdd3ec0bc5",
+    "canonical_receipt_core_recomputed_sha256": "sha256:1a8b554854ce369c13879701edeb458e931649e2f579b31d10e019fdd3ec0bc5",
+    "stored_receipt_bytes_sha256": "ca5e65171184dbcece0b5da9f020c7c9138a3aace24c41ddf5fca0666bd67561",
+    "idempotency_receipt_bytes_match": true,
+    "worker_diagnostic_hash": "sha256:678b551b6fa52a59d52c63fc0c6e0ba853e351e3de46db2d96827d8f2c6f30ea",
+    "hash_contracts_distinct": true,
+    "MCP_replay": "completed; verified execution_receipt; invocation returned_existing_request/source_changed:false",
+    "MCP_restart_replay": "completed before original reference expiry; not native/model restart"
+  },
+  "controls": {
+    "relationship_only_root": "EXPLORE_RESOURCE_FORBIDDEN",
+    "private_related_field": "EXPLORE_FIELD_FORBIDDEN",
+    "MCP_restart": "PASS completed before ordinary reference expiry; deterministic client only",
+    "native_restart": "NOT RUN; not funded as a complete turn and native episode stopped",
+    "postpublication_authoring_restart_review": "BLOCKED POLICY_REVIEW_CANDIDATE_UNAVAILABLE before provider; saved and stopped; CLI0 does not mean review PASS",
+    "old_unstarted_work": "Historical six-day alpha item remains expired and unchanged; no publication invalidation claim"
+  },
+  "historical_receipts_and_approvals": "Exact preserved matching records; one additional automatic approval/receipt",
+  "readback_artifacts": [
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/main-A-final/PUBLICATION-FINAL-READBACK.json",
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/main-A-final/EFFECT-RECEIPT-READBACK.json",
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/main-A-final/operator-captures/terminal-009.log"
+  ],
+  "overall_live_edit": "NOT COMPLETE",
+  "stage_b": "ATTEMPTED / NOT PASSED"
+}

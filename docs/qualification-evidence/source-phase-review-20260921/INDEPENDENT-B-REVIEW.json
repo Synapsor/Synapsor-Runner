@@ -1,0 +1,16 @@
+{
+  "at": "2026-09-21T17:13:02.645167+00:00",
+  "independent_verdict": "PASS actual BUSINESS save and restarted explicit Review",
+  "result_path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-B-final-live/records/FINAL-B-REVIEW-RESULT.json",
+  "sha256": "a39e04db6f0a377d0b861bb3182494ebf1d422d48a08e8a41e82cdf8b7347827",
+  "calls": 2,
+  "cost_usd": 0.3012458,
+  "source_business_rows": 196,
+  "historical_source_receipts": 1,
+  "epoch_events": "25->26; exactly one same-revision save_disabled_action event, before==after/source_database_changed=false; other40tables exact",
+  "prepublication_seal": {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/sealed-checkpoints/tester-B-final/review-complete-before-publication/manifest.json",
+    "sha256": "98841e6e40b99bfa0e79940e13658e4855dc7fd6338cbb50360f3ee487d69e17"
+  },
+  "classification": "Independent personally executed; main inspected immutable readbacks, no duplicated B run"
+}

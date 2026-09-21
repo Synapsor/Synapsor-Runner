@@ -1,0 +1,22 @@
+{
+  "at": "2026-09-21T17:03:08.325434+00:00",
+  "verdict": "PASS scoped source/phase/correction contract",
+  "independent_executed": [
+    "51 exact-candidate tests",
+    "18 independent probes",
+    "authentic A1/A2/B10 refusal captures",
+    "bidirectional full installed tree verification"
+  ],
+  "inspected_not_rerun": "stable full suite, types, offline and selected backend gates",
+  "evidence": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/exact-candidate-checkpoint-v1/CONTRACT-CHECKPOINT.md",
+      "sha256": "b9f3f3d228551b339ef28abcd21921ced6be8f01b0917f12a2d79ee680d7f0f6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/exact-candidate-checkpoint-v1/records/RESULT.json",
+      "sha256": "a9645333f1e0b5693e2a88f8d031aaff735cbf873a18c5699a9aaffeb427d54f"
+    }
+  ],
+  "publication_permission": "Not alone; B actual review/recheck/seal and deployment/native funding still required"
+}

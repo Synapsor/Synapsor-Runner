@@ -1,18 +1,18 @@
 {
-  "at": "2026-09-21T16:42:32.285475+00:00",
-  "phase": "All stable gates passed; freezing one installation",
-  "product_commit": "915aca1",
-  "test_commit": "ddd4ee4",
-  "development": {
-    "A": "PASS one actual response, strict stored reload",
-    "B": "PASS initial plus one batched structural correction, strict stored reload",
-    "actual_calls": 3,
-    "actual_cost_usd": 0.4548983,
-    "historical_tls_liability_usd": 0.985804
-  },
-  "gates": "6841pass478skip full, types, selected livePG and SQLite gates exit0; first6offline exit0",
-  "final_A": "UNRUN untouched sealed restoration",
-  "final_B": "UNRUN tester-held",
-  "publication": "HELD",
-  "stage_b": "ATTEMPTED / NOT PASSED"
+  "at": "2026-09-21T17:48:09.399744+00:00",
+  "phase": "STOPPED for review; product/frozen candidate unchanged; closure/private delivery",
+  "product_commit": "915aca1418adc3cb89d68bf3e4addea70ce9f28a",
+  "tests_commit": "ddd4ee4f0424a4e8078cbddba4b2d72c225ea065",
+  "frozen_source": "ef685f20b830f0c9a611cf11ad8441b153b29a61",
+  "artifact": "7b15c368564c356bd9437646901c8fed79d806f253a4c7f1874adc5f20a7a45d",
+  "independent_contract": "PASS",
+  "A_business_review_restart": "PASS",
+  "B_business_review_restart": "independent PASS",
+  "A_live": "exact5day published;1effect/receipt verified; native turn incomplete; postpublicationReviewBLOCKED",
+  "B_live": "independent FAIL prepublication nativefalse threshold; downstreamNOTRUN",
+  "remaining_issue": "POSTPUBLICATION-RECHECK-BLOCKER.md and independentBfinalREVIEW.md",
+  "gates": "full6841pass478skip/types/tenoffline/explicitPG+SQLite exit0 unchangedsource",
+  "resources": "ownedstate saved; main4containers stopped; tester2removed",
+  "stage_b": "ATTEMPTED / NOT PASSED",
+  "next_step": "Record final delivery and STOP; no new trials/repair authorized in this episode"
 }

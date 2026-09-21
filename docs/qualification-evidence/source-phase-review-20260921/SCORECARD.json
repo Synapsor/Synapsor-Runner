@@ -1,0 +1,159 @@
+{
+  "at": "2026-09-21T17:48:09.399744+00:00",
+  "artifact_tree": "7b15c368564c356bd9437646901c8fed79d806f253a4c7f1874adc5f20a7a45d",
+  "status": "STOPPED: review contract and both BUSINESS/restart PASS; live edit milestone incomplete",
+  "rows": [
+    {
+      "id": "reader_association_retained",
+      "verdict": "PASS",
+      "basis": "combined regressions and exact candidate independent tests"
+    },
+    {
+      "id": "complete_source_correction",
+      "verdict": "PASS",
+      "basis": "exact original refusals; complete replacement; missing normative heading/definition/privacy negatives"
+    },
+    {
+      "id": "receipt_phase_contract",
+      "verdict": "PASS",
+      "basis": "exact-candidate independent contract; isolated current graph proof; observations pending"
+    },
+    {
+      "id": "stable_full_suite",
+      "verdict": "PASS",
+      "basis": "6841passed/478skipped; exit0; source invariant"
+    },
+    {
+      "id": "types_and_ten_offline",
+      "verdict": "PASS",
+      "basis": "all exit0"
+    },
+    {
+      "id": "sqlite_postgres_review_freshness",
+      "verdict": "PASS",
+      "basis": "explicit selected gates; filtered/skipped cases separate"
+    },
+    {
+      "id": "A_actual_business_review",
+      "verdict": "PASS",
+      "basis": "one real response, actual save; planned unverified ownership"
+    },
+    {
+      "id": "A_restart_explicit_review",
+      "verdict": "PASS",
+      "basis": "validated reuse; no new provider"
+    },
+    {
+      "id": "A_prepublication_seal",
+      "verdict": "PASS",
+      "basis": "04382126f01d3017daa62e9910d89cc2388b16559ad4fe1fc5e9b47666fbb90b"
+    },
+    {
+      "id": "B_actual_business_review",
+      "verdict": "PASS",
+      "basis": "independent public route; two captured calls including one correction; explicit unverified ownership"
+    },
+    {
+      "id": "B_restart_explicit_review",
+      "verdict": "PASS",
+      "basis": "independent actual restart validated_reuse; no provider"
+    },
+    {
+      "id": "B_prepublication_seal",
+      "verdict": "PASS",
+      "basis": "98841e6e40b99bfa0e79940e13658e4855dc7fd6338cbb50360f3ee487d69e17"
+    },
+    {
+      "id": "independent_exact_candidate_contract",
+      "verdict": "PASS",
+      "basis": "reportb9f3f3d228551b339ef28abcd21921ced6be8f01b0917f12a2d79ee680d7f0f6"
+    },
+    {
+      "id": "A_native_prepublication_session",
+      "verdict": "PASS",
+      "basis": "corrected native process completed catalog turn; first measurement failure preserved"
+    },
+    {
+      "id": "A_numeric_publication",
+      "verdict": "PASS",
+      "basis": "full saved program equals published, three7\u21925bounds; all other business rules retained"
+    },
+    {
+      "id": "A_receipt_execution_renewal",
+      "verdict": "PASS",
+      "basis": "public exact Runner-ledger intent renewal, current writer inspection, separate default-No\u2192Yesexecution"
+    },
+    {
+      "id": "A_changed_native_behavior",
+      "verdict": "NOT_ESTABLISHED",
+      "basis": "same connected native process fetched5day detail and created5dayrequest, but third narration send exceeded2send ceiling"
+    },
+    {
+      "id": "A_finite_worker_receipt_readback",
+      "verdict": "PASS",
+      "basis": "one finite worker/effect; canonical receipt+idempotency bytes+independent all38source comparison"
+    },
+    {
+      "id": "A_native_and_authoring_postpublication_restart",
+      "verdict": "BLOCKED",
+      "basis": "native restart NOT RUN; authoring explicit Review refused POLICY_REVIEW_CANDIDATE_UNAVAILABLE before provider"
+    },
+    {
+      "id": "B_native_prepublication_session",
+      "verdict": "FAIL",
+      "basis": "independent two-send native turn falsely inferred no automatic threshold from absent catalog detail"
+    },
+    {
+      "id": "B_numeric_publication",
+      "verdict": "NOT_RUN",
+      "basis": "stopped at native prerequisite counterexample"
+    },
+    {
+      "id": "B_receipt_execution_renewal",
+      "verdict": "NOT_RUN",
+      "basis": "stopped at native prerequisite counterexample"
+    },
+    {
+      "id": "B_changed_native_behavior",
+      "verdict": "NOT_RUN",
+      "basis": "stopped before publication"
+    },
+    {
+      "id": "B_finite_worker_receipt_readback",
+      "verdict": "NOT_RUN",
+      "basis": "no Brequest/worker/effect"
+    },
+    {
+      "id": "B_native_and_authoring_postpublication_restart",
+      "verdict": "NOT_RUN",
+      "basis": "no Bpublication or post-effect path"
+    },
+    {
+      "id": "A_old_work_revision_invalidation",
+      "verdict": "NOT_ESTABLISHED",
+      "basis": "historical six-day item is expired; nonexecution is insufficient evidence"
+    },
+    {
+      "id": "A_deterministic_6day_refusal_5day_application",
+      "verdict": "PASS",
+      "basis": "real publicMCP/current5dayrule; separate from unfinished native narration"
+    },
+    {
+      "id": "A_deterministic_MCP_restart_replay",
+      "verdict": "PASS",
+      "basis": "completed before originalTTL; not native/model restart"
+    },
+    {
+      "id": "A_private_field_and_relationship_root_negatives",
+      "verdict": "PASS",
+      "basis": "EXPLORE_FIELD_FORBIDDEN / EXPLORE_RESOURCE_FORBIDDEN; actual respective rejection layers"
+    },
+    {
+      "id": "add_remove_remaining_concurrency",
+      "verdict": "NOT_RUN",
+      "basis": "not expanded into this ticket or silently waived"
+    }
+  ],
+  "original_stage_b": "ATTEMPTED / NOT PASSED",
+  "known_case_only": true
+}

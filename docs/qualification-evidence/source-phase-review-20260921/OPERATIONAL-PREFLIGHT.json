@@ -1,0 +1,20 @@
+{
+  "at": "2026-09-21T17:17:44.775522+00:00",
+  "candidate": "7b15c368564c356bd9437646901c8fed79d806f253a4c7f1874adc5f20a7a45d",
+  "A_business_review_restart": "PASS",
+  "B_business_review_restart": "INDEPENDENT PASS",
+  "independent_contract": "PASS",
+  "both_review_seals_verified": true,
+  "A_native_actual_initial_envelope_bytes": 29222,
+  "initial_preflight_upstream_calls": 0,
+  "runtime_ceiling_per_send": 78787,
+  "ceiling_basis": "Retained previously measured complete-envelope ceiling; current actual initial envelope verified. Enforced on every later full request; it is a protective cap, not a forecast that all future turns fit. Oversize or a thirdsend stops honestly. No context stripped.",
+  "whole_turn_reserve_usd": 3.97068,
+  "remaining_shared_new_usd": 4.83623259,
+  "case_ceiling_nonadditive": 4.98971059,
+  "old_TLS_liability_retained": true,
+  "ops_deadline": "2026-09-21T19:17:44.775522+00:00",
+  "deployment_prerequisites": "Existing reviewed beta identity/Read and same durable deployment resolve via public installer; matched source/ACL/narrow writer restored. Actual new-revision execution verification remains required after publication; no grants or receipt mode change authorized here.",
+  "next": "One actual native read-only action-catalog turn, no business operation",
+  "B_paid_lane": "HELD for sequential funding"
+}

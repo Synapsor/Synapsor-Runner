@@ -1,0 +1,33 @@
+{
+  "source_commit": "ef685f20b830f0c9a611cf11ad8441b153b29a61",
+  "product_commit": "915aca1418adc3cb89d68bf3e4addea70ce9f28a",
+  "test_commit": "ddd4ee4f0424a4e8078cbddba4b2d72c225ea065",
+  "installed_tree_sha256": "7b15c368564c356bd9437646901c8fed79d806f253a4c7f1874adc5f20a7a45d",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/frozen/installed",
+  "node": {
+    "version": "v22.22.2",
+    "executable": "/usr/bin/node",
+    "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+  },
+  "package_lock_sha256": "5639230875a655b9a9c142be741a8f6bc6bc14741445ac43bde6796a12234702",
+  "tarballs": [
+    {
+      "name": "synapsor-runner-1.8.0.tgz",
+      "sha256": "8c6c7f2ea087bba3a845f1ce2171ae3d56267080d648d424a6eda29482db083f"
+    },
+    {
+      "name": "synapsor-spec-1.11.0.tgz",
+      "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+    }
+  ],
+  "entries": 7569,
+  "manifest_sha256": "d4abfe94e62361856ac666ace5fc2ef586483043e214504527771b1a464d0433",
+  "archive_sha256": "d712b3bcbb2d41397a7cfce712bd5154c5b7d41e6c0c4180c12dd6454bc86de9",
+  "source_archive": {
+    "commit": "ef685f20b830f0c9a611cf11ad8441b153b29a61",
+    "sha256": "f76082239146a86ef4fce2111547877a40579ca931fae3edf50e943e26da2f04",
+    "file": "source.tar.gz",
+    "at": "2026-09-21T16:42:59.698062+00:00",
+    "working_tree_clean": true
+  }
+}

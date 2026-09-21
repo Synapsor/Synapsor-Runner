@@ -1,0 +1,76 @@
+{
+  "at": "2026-09-21T17:43:57.615593+00:00",
+  "shared_new_cap_usd": 5.74585469,
+  "prior_unresolved_tls_liability_usd": 0.985804,
+  "prior_liability_deducted_once_before_new_cap": true,
+  "lanes": [
+    {
+      "case": "DEV-A",
+      "status": "CLOSED",
+      "authoring_sends": 1,
+      "runtime_sends": 0,
+      "observed_settled_cost_usd": 0.14803,
+      "retained_conservative_upper_usd": 0,
+      "mcp_calls": 0,
+      "deterministic_mcp_calls": 0,
+      "request_change_calls": 0
+    },
+    {
+      "case": "KC-A",
+      "status": "STOPPED_PARTIAL",
+      "authoring_sends": 1,
+      "runtime_sends": 5,
+      "observed_settled_cost_usd": 0.185332,
+      "retained_conservative_upper_usd": 0.88932,
+      "mcp_calls": 15,
+      "deterministic_mcp_calls": 11,
+      "request_change_calls": 5
+    },
+    {
+      "case": "KC-B",
+      "status": "BLOCKED_CLIENT_COUNTEREXAMPLE",
+      "authoring_sends": 2,
+      "runtime_sends": 2,
+      "observed_settled_cost_usd": 0.4519993,
+      "retained_conservative_upper_usd": 0,
+      "mcp_calls": 1,
+      "deterministic_mcp_calls": 0,
+      "request_change_calls": 0
+    },
+    {
+      "case": "DEV-B",
+      "status": "CLOSED",
+      "authoring_sends": 2,
+      "runtime_sends": 0,
+      "observed_settled_cost_usd": 0.3068683,
+      "retained_conservative_upper_usd": 0,
+      "mcp_calls": 0,
+      "deterministic_mcp_calls": 0,
+      "request_change_calls": 0
+    }
+  ],
+  "new_actual_plus_retained_upper_usd": 1.9815496,
+  "remaining_bounded_new_funds_usd": 3.76430509,
+  "new_funds_not_rechecked_account_balance": true,
+  "minimum_declared_complete_native_turn_usd": 3.97068,
+  "native_turn_funded_at_close": false,
+  "no_topup_no_refund": true,
+  "final_operation_counts": {
+    "A": {
+      "workers": 1,
+      "effects": 1,
+      "fixture_owner_mutations": 0
+    },
+    "B": {
+      "workers": 0,
+      "effects": 0,
+      "fixture_owner_mutations": 0
+    }
+  },
+  "harness_corrections": {
+    "A": 2,
+    "B": 2
+  },
+  "ledger": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/shared/provider-budget-ledger.json",
+  "ledger_sha256": "c3a2a2455ce6d1b1c2a339013bda7c8ac225264edd30984f0d6eb87ce66856ce"
+}

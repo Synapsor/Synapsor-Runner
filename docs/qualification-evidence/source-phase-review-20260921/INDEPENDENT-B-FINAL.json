@@ -1,0 +1,35 @@
+{
+  "at": "2026-09-21T17:42:38.739725+00:00",
+  "contract": "PASS independent exact candidate",
+  "business_review_restart": "PASS actual tester public operation",
+  "native_prepublication": "FAIL false automatic-threshold absence claim",
+  "downstream": "NOT RUN: stopped before publication/request/worker/effect",
+  "candidate": "7b15c368564c356bd9437646901c8fed79d806f253a4c7f1874adc5f20a7a45d",
+  "evidence": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-B-final-live/REVIEW.md",
+      "sha256": "ca9d67952238ec288ab43b4456183ae6f455cd61cba465de906f79d7ddb43117",
+      "main_rehashed": true
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-B-final-live/RESULT.json",
+      "sha256": "85a81ff0a46d012a8e6b99a386fc232a525e773b9f6d5d0c1a240ee8409f307c",
+      "main_rehashed": true
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-B-final-live/PROBE-MANIFEST.json",
+      "sha256": "23d44079b611ceae488450a5f3ab213ef599bf10de0e104b5780ea7c85f54e65",
+      "main_rehashed": true
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/sealed-checkpoints/tester-B-final/native-counterexample-final/manifest.json",
+      "sha256": "5829f6b7593266eab67c1b259150068f70e1b67b0ec9195d77f1f79e25db0467",
+      "main_rehashed": true
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-B-final-live/runtime-capture/live-3/client-output.jsonl",
+      "sha256": "5cca03fef0903ea9f729ea130663cdc7c13c53292e3d832d3c1fb70004bfddbe",
+      "main_rehashed": true
+    }
+  ]
+}

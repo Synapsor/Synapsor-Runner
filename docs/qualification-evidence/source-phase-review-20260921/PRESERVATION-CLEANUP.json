@@ -1,0 +1,100 @@
+{
+  "at": "2026-09-21T17:44:54.740928+00:00",
+  "checks": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/frozen/installed-artifact-manifest.json",
+      "sha256": "3239c2697717eeb1456ce33eac2d15e5a3eb8e92755b6e7958ab58c07b7efddd",
+      "unchanged": true
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/frozen/installed-artifact.tar.gz",
+      "sha256": "70df20f24c4ab24eec70a9643dfac0b747dbb2e5962ece992434cf902e0ea752",
+      "unchanged": true
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/REVIEW.md",
+      "sha256": "0226d7a3dba1d6e1a0dcbfdd5cc6573e4429792fa1ba17e597b844e1da2651f2",
+      "unchanged": true
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/B-FINAL-EVIDENCE-INDEX.json",
+      "sha256": "07328776d032f126d72e2237d346dd8bf5139919e36eb9ddff87609651564722",
+      "unchanged": true
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/sealed-checkpoints/main-A-final/untouched/manifest.json",
+      "sha256": "793e2c311216cfb395ac1a0a2d9962f3c760f6bddec964bade0c4774f62acdbb",
+      "all_recorded_member_hashes_verified": 8
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/sealed-checkpoints/main-A-final/review-complete-before-publication/manifest.json",
+      "sha256": "04382126f01d3017daa62e9910d89cc2388b16559ad4fe1fc5e9b47666fbb90b",
+      "all_recorded_member_hashes_verified": 8
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/sealed-checkpoints/tester-B-final/review-complete-before-publication/manifest.json",
+      "sha256": "98841e6e40b99bfa0e79940e13658e4855dc7fd6338cbb50360f3ee487d69e17",
+      "all_recorded_member_hashes_verified": 15
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/sealed-checkpoints/tester-B-final/native-counterexample-final/manifest.json",
+      "sha256": "5829f6b7593266eab67c1b259150068f70e1b67b0ec9195d77f1f79e25db0467",
+      "all_recorded_member_hashes_verified": 12
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/owned-final-states/main-A-final/manifest.json",
+      "sha256": "a66e37b94b6744d9e207f19d6420198084ec87673a49c6bfd94032bcbb5c01c0",
+      "all_recorded_member_hashes_verified": 5
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/final-operational-seals/main-A/manifest.json",
+      "sha256": "21ae28c9b4a24859fb0900f638eff52f0f3bc903feb20771d479aae50885221f",
+      "all_recorded_member_hashes_verified": 2
+    }
+  ],
+  "installed_trees": [
+    {
+      "label": "current",
+      "exit": 0,
+      "verified_at": "2026-09-21T17:44:57.729Z",
+      "installed_tree_sha256": "7b15c368564c356bd9437646901c8fed79d806f253a4c7f1874adc5f20a7a45d",
+      "entries": 7569
+    },
+    {
+      "label": "previous",
+      "exit": 0,
+      "verified_at": "2026-09-21T17:45:03.921Z",
+      "installed_tree_sha256": "5f375284d7c5d35746437a148bfa7fe4415a47fa7b45eadb1a2b4bc1e4d5483c",
+      "entries": 7569
+    }
+  ],
+  "main_owned_containers": [
+    {
+      "id": "72b35e89b6faa8547af88e531ea356b716cba36b020b4506672a7163c785999f",
+      "name": "synapsor-source-phase-review-gate",
+      "running": false,
+      "status": "exited"
+    },
+    {
+      "id": "18f6e7a8d803bc48868438d55736b24d0dbc15390c0d285219a6a36605951ba0",
+      "name": "synapsor-phase-main-B-development",
+      "running": false,
+      "status": "exited"
+    },
+    {
+      "id": "539647f8d902c3e9db70de54e5115ba728a5eacbbf26589af26ac06e6e5b142a",
+      "name": "synapsor-phase-main-A-final",
+      "running": false,
+      "status": "exited"
+    },
+    {
+      "id": "6a44f5867a07eedf8101044903aa9a01fe9f4a6e49cf193ed73fc8f4ba3fdd15",
+      "name": "synapsor-phase-main-A-development",
+      "running": false,
+      "status": "exited"
+    }
+  ],
+  "tester_cleanup": "Independent final report: both owned containers removed after seals",
+  "credentials": "Private complete-owned-state archive protected0400; no raw credentials in Git",
+  "original_evidence_verification_scope": "Full current/previous installation trees; original supplied manifest/archive and B report/index; all listed seal members. Not a byte walk of every historical evidence directory."
+}

@@ -1,0 +1,57 @@
+{
+  "at": "2026-09-21T16:56:39.030320+00:00",
+  "classification": "FINAL installed public Resume and explicit restart Review",
+  "artifact_tree": "7b15c368564c356bd9437646901c8fed79d806f253a4c7f1874adc5f20a7a45d",
+  "result": "BUSINESS_REVIEW_PASS; independent contract checkpoint pending",
+  "provider_calls": 1,
+  "correction_responses": 0,
+  "cost_usd": 0.153478,
+  "owner_business_answers": 0,
+  "owner_actions": [
+    "recommended Resume",
+    "explicit client_application planned ownership, verified:false",
+    "restart -> explicit Review"
+  ],
+  "exits": [
+    0,
+    0
+  ],
+  "recheck": "validated_reuse; no provider call",
+  "source_rows": 38,
+  "source_unchanged": true,
+  "logical_tables": 42,
+  "changed_tables": [],
+  "changed_config_files": [
+    ".synapsor/boundary-authoring/policy-sources/e631e9a6-e7d6-4428-a423-be36465405f7.json",
+    ".synapsor/boundary-authoring/resume.json"
+  ],
+  "active_days": 7,
+  "draft_days": 5,
+  "historical_counts": {
+    "approvals": 3,
+    "control_policy_budget_receipts": 0,
+    "control_policy_effect_receipts": 0,
+    "idempotency_receipts": 2,
+    "proposal_events": 31,
+    "proposal_store_schema": 1,
+    "proposals": 3,
+    "worker_queue": 3,
+    "writeback_receipts": 2
+  },
+  "coverage_passages": 25,
+  "readiness": true,
+  "privacy_observation": false,
+  "pending": [
+    "exact candidate receipt/execution renewal",
+    "client implementation and selection/status assurance",
+    "maintenance external assurance",
+    "independent execution readback"
+  ],
+  "strict_reload": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/replays/final-A-reload-result.json",
+  "review_seal_manifest_sha256": "04382126f01d3017daa62e9910d89cc2388b16559ad4fe1fc5e9b47666fbb90b",
+  "publication": false,
+  "requests": 0,
+  "workers": 0,
+  "effects": 0,
+  "harness_note": "After clean CLI exit, an external phase-file read used the logical namespace outside bwrap and failed; corrected owned-file mapping before selecting explicit Review. No product failure, provider call or public payload modification."
+}
