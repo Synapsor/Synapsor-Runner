@@ -69,7 +69,7 @@ if (process.argv.includes('--verify')) {
   const runner = JSON.parse(await readFile(join(root, 'node_modules/@synapsor/runner/package.json'), 'utf8'));
   const spec = JSON.parse(await readFile(join(root, 'node_modules/@synapsor/spec/package.json'), 'utf8'));
   assert.equal(runner.version, '1.8.0'); assert.equal(spec.version, '1.11.0');
-  const manifest = { frozen_at: new Date().toISOString(), purpose: 'Complete source coverage and phase-correct saved review; known-case numeric live-edit continuation',
+  const manifest = { frozen_at: new Date().toISOString(), purpose: 'Publication-aware exact review subjects and honest partial approval discovery; bounded known-case continuation',
     cases: ['Main A deployed continuation', 'Independent tester B deployed continuation'], product_commit: JSON.parse(await readFile(join(evidence,'product-revision.json'),'utf8')).product_commit, test_commit: JSON.parse(await readFile(join(evidence,'product-revision.json'),'utf8')).test_commit, report_commit: 'recorded separately after verification',
     source_commit: run('git', ['rev-parse', 'HEAD']).trim(), source_status: sourceStatus(), unpackaged_unrelated_directory: '.claude/ (preserved, no contents read)',
     installed_root: root, installed_tree_sha256: treeHash, node: { version: process.version, executable: process.execPath, sha256: await fileHash(process.execPath) },

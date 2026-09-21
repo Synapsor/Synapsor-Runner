@@ -40,5 +40,55 @@
       "actual": "Third full contract is on a subsequent bounded page",
       "correction": "Follow cursor and assert exact3-outcome inventory before unchanged queue/execution/trust assertions."
     }
-  ]
+  ],
+  "correction_result": {
+    "test_commit": "88153dc385d019bafe794b57ddcfa9faf1aa9d6f",
+    "product_unchanged": true,
+    "focused_passed": 35,
+    "excluded": 409,
+    "exit": 0,
+    "types_exit": 0,
+    "second_full_suite": "RUNNING"
+  },
+  "measurement_attempts": [
+    {
+      "name": "store-save-stable-final",
+      "exit": 0,
+      "selected_tests": 0,
+      "skipped": 424,
+      "verdict": "NOT RUN: incorrect name filter; not a backend pass",
+      "next": "store-save-stable-exact uses recorded exact test name"
+    }
+  ],
+  "second_full_suite": {
+    "exit": -15,
+    "classification": "INTERRUPTED before a narrow product wording correction",
+    "source_unchanged": true,
+    "started_at": "2026-09-21T19:23:57.444273+00:00",
+    "finished_at": "2026-09-21T19:33:38.328535+00:00",
+    "pass_claimed": false
+  },
+  "wording_correction": {
+    "before": "otherwise human review",
+    "after": "otherwise eligible requests require human review",
+    "reason": "Do not imply failed eligibility can proceed via human approval. Disclosure-only clarification; no runtime decision change.",
+    "failing_before": "eligible-wording-before:1failed/1passed/61filtered,exit1",
+    "passing_after": "eligible-wording-after:2passed/61filtered,exit0",
+    "all_semantic_tests": "discovery-final:63passed,exit0",
+    "type_attempt": "types-disclosure-final exit2: test-only missing root cast; types-candidate exit0 after explicit result type",
+    "last_stable_run": "stable-full-03 RUNNING; existing gate budget not reset"
+  },
+  "final_stable_suite": {
+    "name": "stable-full-03",
+    "exit": 0,
+    "passed": 6859,
+    "skipped": 489,
+    "failed": 0,
+    "files_passed": 329,
+    "files_skipped": 21,
+    "duration_seconds": 1449.79,
+    "source_unchanged": true,
+    "source_commit": "2fc4cdee51f37cd886e6980bf9740c59ec956c12",
+    "source_digest": "aed4a9a5dc47a574bc6dd944181db9d9987cdb6a912177752fa70e23963a1792"
+  }
 }

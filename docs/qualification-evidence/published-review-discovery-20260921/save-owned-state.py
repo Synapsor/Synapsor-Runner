@@ -15,7 +15,9 @@ subprocess.run(['tar','-czf',str(out/'whole-project-home.tgz'),'-C',str(root),'p
 subprocess.run(['tar','-czf',str(out/'evidence.tgz'),'-C',str(root),'operator-captures','state-readbacks','authoring-meter','harness','fixture.json','LAUNCH-PLAN.json','preflight-before-open.json'],check=True)
 files=[{'file':p.name,'sha256':hashlib.sha256(p.read_bytes()).hexdigest(),'bytes':p.stat().st_size} for p in sorted(out.iterdir()) if p.is_file()]
 (out/'manifest.json').write_text(json.dumps({'at':datetime.datetime.now(datetime.timezone.utc).isoformat(),'container_id':info['Id'],'final_state_not_clean_start':True,'files':files},indent=2)+'\n')
-assert '--stop' in sys.argv, 'Explicit owned-resource stop required after saved-state verification'
+assert '--stop' in sys.argv or '--save-only' in sys.argv, 'Declare save-only or owned-resource stop'
+if '--save-only' in sys.argv:
+ print(json.dumps({'root':str(out),'files':len(files),'stopped':False,'next':'verify archive restoration before owned stop'}));sys.exit(0)
 subprocess.run(['docker','stop',name],capture_output=True,check=True)
 assert not json.loads(subprocess.check_output(['docker','inspect',name]))[0]['State']['Running']
 (out/'cleanup.json').write_text(json.dumps({'stopped_container':owned,'saved_before_stop':True,'removed':False},indent=2)+'\n')

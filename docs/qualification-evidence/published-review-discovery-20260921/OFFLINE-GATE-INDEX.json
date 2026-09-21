@@ -1,0 +1,372 @@
+[
+  {
+    "plan": "offline-package-plan-attempt1.json",
+    "sha256": "b8fe04588c108ddf49d3ff8d3cd96d193eb8acdd91a3b2cfe5831390a01b6e2e",
+    "commands": [
+      {
+        "name": "trusted-core",
+        "args": [
+          "node",
+          "scripts/check-trusted-core-dependencies.mjs"
+        ],
+        "phase": "source",
+        "source_immutable_during_full_suite": true,
+        "started_at": "2026-09-21T18:57:02.378584+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-21T18:57:04.653956+00:00",
+        "source_before": "c823f6c420cde2dbaad6e86d4c9467d77fcae552246b8be02777156858d9533a",
+        "source_after": "c823f6c420cde2dbaad6e86d4c9467d77fcae552246b8be02777156858d9533a",
+        "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/trusted-core-attempt1.log",
+        "log_sha256": "39e1d5fcff03cc3d3cfc39b6c42b27e0d971b88aba5abcbcb3277dfaff4b471a"
+      },
+      {
+        "name": "licenses",
+        "args": [
+          "node",
+          "scripts/check-license-content.mjs"
+        ],
+        "phase": "source",
+        "source_immutable_during_full_suite": true,
+        "started_at": "2026-09-21T18:57:04.809628+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-21T18:57:06.177258+00:00",
+        "source_before": "c823f6c420cde2dbaad6e86d4c9467d77fcae552246b8be02777156858d9533a",
+        "source_after": "c823f6c420cde2dbaad6e86d4c9467d77fcae552246b8be02777156858d9533a",
+        "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/licenses-attempt1.log",
+        "log_sha256": "81c81f063c5391a1e9f237b114a7ba197da9b6cece450fa3fd851f6fcac80bac"
+      },
+      {
+        "name": "human-commands",
+        "args": [
+          "node",
+          "scripts/verify-human-command-surface.mjs"
+        ],
+        "phase": "source",
+        "source_immutable_during_full_suite": true,
+        "started_at": "2026-09-21T18:57:06.290561+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-21T18:57:07.457683+00:00",
+        "source_before": "c823f6c420cde2dbaad6e86d4c9467d77fcae552246b8be02777156858d9533a",
+        "source_after": "c823f6c420cde2dbaad6e86d4c9467d77fcae552246b8be02777156858d9533a",
+        "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/human-commands-attempt1.log",
+        "log_sha256": "4ca02cff1d23604455f2707b16fc58bea2d0beb7f6adff085887cbdae1379222"
+      },
+      {
+        "name": "dsl-sources",
+        "args": [
+          "bash",
+          "scripts/verify-dsl-source-paths.sh"
+        ],
+        "phase": "source",
+        "source_immutable_during_full_suite": true,
+        "started_at": "2026-09-21T18:57:07.612496+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-21T18:57:09.190503+00:00",
+        "source_before": "c823f6c420cde2dbaad6e86d4c9467d77fcae552246b8be02777156858d9533a",
+        "source_after": "c823f6c420cde2dbaad6e86d4c9467d77fcae552246b8be02777156858d9533a",
+        "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/dsl-sources-attempt1.log",
+        "log_sha256": "3bd663b10b211bb9dbfa01117dd164a3a851d9936e4be1568a6bd5f9ccf7d50a"
+      },
+      {
+        "name": "cursor-plugin",
+        "args": [
+          "node",
+          "scripts/verify-cursor-plugin.mjs"
+        ],
+        "phase": "source",
+        "source_immutable_during_full_suite": true,
+        "started_at": "2026-09-21T18:57:09.309353+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-21T18:57:09.423857+00:00",
+        "source_before": "c823f6c420cde2dbaad6e86d4c9467d77fcae552246b8be02777156858d9533a",
+        "source_after": "c823f6c420cde2dbaad6e86d4c9467d77fcae552246b8be02777156858d9533a",
+        "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/cursor-plugin-attempt1.log",
+        "log_sha256": "cc12e22d29ebd660345c60ee249826505ffccb62bb45e1b39590202b7ee7135f"
+      },
+      {
+        "name": "mcp-client-configs",
+        "args": [
+          "node",
+          "scripts/verify-mcp-client-configs.mjs"
+        ],
+        "phase": "source",
+        "source_immutable_during_full_suite": true,
+        "started_at": "2026-09-21T18:57:09.525569+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-21T18:57:43.827602+00:00",
+        "source_before": "c823f6c420cde2dbaad6e86d4c9467d77fcae552246b8be02777156858d9533a",
+        "source_after": "c823f6c420cde2dbaad6e86d4c9467d77fcae552246b8be02777156858d9533a",
+        "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/mcp-client-configs-attempt1.log",
+        "log_sha256": "a61f33a0918009a044aaaede959658bba3184fb54d00088b5a29142595b0f3cd"
+      }
+    ]
+  },
+  {
+    "plan": "offline-package-plan-attempt2.json",
+    "sha256": "01e0d562ee7faa14ed504f8d410f5df5c00cf7bed9604d47ff617caf586f38af",
+    "commands": [
+      {
+        "name": "trusted-core",
+        "args": [
+          "node",
+          "scripts/check-trusted-core-dependencies.mjs"
+        ],
+        "phase": "source",
+        "source_immutable_during_full_suite": true,
+        "started_at": "2026-09-21T19:23:59.756610+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-21T19:24:02.027256+00:00",
+        "source_before": "6d0dffa48570e3636619e07b59e98dd02557df9f3157530075b0d77e759a9b79",
+        "source_after": "6d0dffa48570e3636619e07b59e98dd02557df9f3157530075b0d77e759a9b79",
+        "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/trusted-core-attempt2.log",
+        "log_sha256": "39e1d5fcff03cc3d3cfc39b6c42b27e0d971b88aba5abcbcb3277dfaff4b471a"
+      },
+      {
+        "name": "licenses",
+        "args": [
+          "node",
+          "scripts/check-license-content.mjs"
+        ],
+        "phase": "source",
+        "source_immutable_during_full_suite": true,
+        "started_at": "2026-09-21T19:24:02.202636+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-21T19:24:03.371332+00:00",
+        "source_before": "6d0dffa48570e3636619e07b59e98dd02557df9f3157530075b0d77e759a9b79",
+        "source_after": "6d0dffa48570e3636619e07b59e98dd02557df9f3157530075b0d77e759a9b79",
+        "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/licenses-attempt2.log",
+        "log_sha256": "81c81f063c5391a1e9f237b114a7ba197da9b6cece450fa3fd851f6fcac80bac"
+      },
+      {
+        "name": "human-commands",
+        "args": [
+          "node",
+          "scripts/verify-human-command-surface.mjs"
+        ],
+        "phase": "source",
+        "source_immutable_during_full_suite": true,
+        "started_at": "2026-09-21T19:24:03.496660+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-21T19:24:04.513072+00:00",
+        "source_before": "6d0dffa48570e3636619e07b59e98dd02557df9f3157530075b0d77e759a9b79",
+        "source_after": "6d0dffa48570e3636619e07b59e98dd02557df9f3157530075b0d77e759a9b79",
+        "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/human-commands-attempt2.log",
+        "log_sha256": "4ca02cff1d23604455f2707b16fc58bea2d0beb7f6adff085887cbdae1379222"
+      },
+      {
+        "name": "dsl-sources",
+        "args": [
+          "bash",
+          "scripts/verify-dsl-source-paths.sh"
+        ],
+        "phase": "source",
+        "source_immutable_during_full_suite": true,
+        "started_at": "2026-09-21T19:24:04.667040+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-21T19:24:06.090636+00:00",
+        "source_before": "6d0dffa48570e3636619e07b59e98dd02557df9f3157530075b0d77e759a9b79",
+        "source_after": "6d0dffa48570e3636619e07b59e98dd02557df9f3157530075b0d77e759a9b79",
+        "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/dsl-sources-attempt2.log",
+        "log_sha256": "3bd663b10b211bb9dbfa01117dd164a3a851d9936e4be1568a6bd5f9ccf7d50a"
+      },
+      {
+        "name": "cursor-plugin",
+        "args": [
+          "node",
+          "scripts/verify-cursor-plugin.mjs"
+        ],
+        "phase": "source",
+        "source_immutable_during_full_suite": true,
+        "started_at": "2026-09-21T19:24:06.184185+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-21T19:24:06.298789+00:00",
+        "source_before": "6d0dffa48570e3636619e07b59e98dd02557df9f3157530075b0d77e759a9b79",
+        "source_after": "6d0dffa48570e3636619e07b59e98dd02557df9f3157530075b0d77e759a9b79",
+        "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/cursor-plugin-attempt2.log",
+        "log_sha256": "cc12e22d29ebd660345c60ee249826505ffccb62bb45e1b39590202b7ee7135f"
+      },
+      {
+        "name": "mcp-client-configs",
+        "args": [
+          "node",
+          "scripts/verify-mcp-client-configs.mjs"
+        ],
+        "phase": "source",
+        "source_immutable_during_full_suite": true,
+        "started_at": "2026-09-21T19:24:06.383966+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-21T19:24:38.972626+00:00",
+        "source_before": "6d0dffa48570e3636619e07b59e98dd02557df9f3157530075b0d77e759a9b79",
+        "source_after": "6d0dffa48570e3636619e07b59e98dd02557df9f3157530075b0d77e759a9b79",
+        "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/mcp-client-configs-attempt2.log",
+        "log_sha256": "a61f33a0918009a044aaaede959658bba3184fb54d00088b5a29142595b0f3cd"
+      }
+    ]
+  },
+  {
+    "plan": "offline-package-plan-attempt3.json",
+    "sha256": "93456bfa21159e6e24dc0cd78ee1fd5c67dce0e8b2475c7340d4f9876ddbb188",
+    "commands": [
+      {
+        "name": "trusted-core",
+        "args": [
+          "node",
+          "scripts/check-trusted-core-dependencies.mjs"
+        ],
+        "phase": "source",
+        "source_immutable_during_full_suite": true,
+        "started_at": "2026-09-21T19:36:16.064476+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-21T19:36:18.685916+00:00",
+        "source_before": "f0d30f45dc5722ef28fad96f29cf103eee2c5b439e9badf3a0283f7fb0174014",
+        "source_after": "f0d30f45dc5722ef28fad96f29cf103eee2c5b439e9badf3a0283f7fb0174014",
+        "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/trusted-core-attempt3.log",
+        "log_sha256": "39e1d5fcff03cc3d3cfc39b6c42b27e0d971b88aba5abcbcb3277dfaff4b471a"
+      },
+      {
+        "name": "licenses",
+        "args": [
+          "node",
+          "scripts/check-license-content.mjs"
+        ],
+        "phase": "source",
+        "source_immutable_during_full_suite": true,
+        "started_at": "2026-09-21T19:36:18.869296+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-21T19:36:19.936187+00:00",
+        "source_before": "f0d30f45dc5722ef28fad96f29cf103eee2c5b439e9badf3a0283f7fb0174014",
+        "source_after": "f0d30f45dc5722ef28fad96f29cf103eee2c5b439e9badf3a0283f7fb0174014",
+        "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/licenses-attempt3.log",
+        "log_sha256": "81c81f063c5391a1e9f237b114a7ba197da9b6cece450fa3fd851f6fcac80bac"
+      },
+      {
+        "name": "human-commands",
+        "args": [
+          "node",
+          "scripts/verify-human-command-surface.mjs"
+        ],
+        "phase": "source",
+        "source_immutable_during_full_suite": true,
+        "started_at": "2026-09-21T19:36:20.072889+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-21T19:36:20.989302+00:00",
+        "source_before": "f0d30f45dc5722ef28fad96f29cf103eee2c5b439e9badf3a0283f7fb0174014",
+        "source_after": "f0d30f45dc5722ef28fad96f29cf103eee2c5b439e9badf3a0283f7fb0174014",
+        "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/human-commands-attempt3.log",
+        "log_sha256": "4ca02cff1d23604455f2707b16fc58bea2d0beb7f6adff085887cbdae1379222"
+      },
+      {
+        "name": "dsl-sources",
+        "args": [
+          "bash",
+          "scripts/verify-dsl-source-paths.sh"
+        ],
+        "phase": "source",
+        "source_immutable_during_full_suite": true,
+        "started_at": "2026-09-21T19:36:21.084964+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-21T19:36:22.508839+00:00",
+        "source_before": "f0d30f45dc5722ef28fad96f29cf103eee2c5b439e9badf3a0283f7fb0174014",
+        "source_after": "f0d30f45dc5722ef28fad96f29cf103eee2c5b439e9badf3a0283f7fb0174014",
+        "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/dsl-sources-attempt3.log",
+        "log_sha256": "3bd663b10b211bb9dbfa01117dd164a3a851d9936e4be1568a6bd5f9ccf7d50a"
+      },
+      {
+        "name": "cursor-plugin",
+        "args": [
+          "node",
+          "scripts/verify-cursor-plugin.mjs"
+        ],
+        "phase": "source",
+        "source_immutable_during_full_suite": true,
+        "started_at": "2026-09-21T19:36:22.635561+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-21T19:36:22.750064+00:00",
+        "source_before": "f0d30f45dc5722ef28fad96f29cf103eee2c5b439e9badf3a0283f7fb0174014",
+        "source_after": "f0d30f45dc5722ef28fad96f29cf103eee2c5b439e9badf3a0283f7fb0174014",
+        "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/cursor-plugin-attempt3.log",
+        "log_sha256": "cc12e22d29ebd660345c60ee249826505ffccb62bb45e1b39590202b7ee7135f"
+      },
+      {
+        "name": "mcp-client-configs",
+        "args": [
+          "node",
+          "scripts/verify-mcp-client-configs.mjs"
+        ],
+        "phase": "source",
+        "source_immutable_during_full_suite": true,
+        "started_at": "2026-09-21T19:36:22.833891+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-21T19:36:55.479457+00:00",
+        "source_before": "f0d30f45dc5722ef28fad96f29cf103eee2c5b439e9badf3a0283f7fb0174014",
+        "source_after": "f0d30f45dc5722ef28fad96f29cf103eee2c5b439e9badf3a0283f7fb0174014",
+        "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/mcp-client-configs-attempt3.log",
+        "log_sha256": "a61f33a0918009a044aaaede959658bba3184fb54d00088b5a29142595b0f3cd"
+      },
+      {
+        "name": "local-package",
+        "args": [
+          "bash",
+          "scripts/verify-local-runner.sh"
+        ],
+        "phase": "package",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-21T20:00:24.425554+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-21T20:01:05.303413+00:00",
+        "source_before": "f0d30f45dc5722ef28fad96f29cf103eee2c5b439e9badf3a0283f7fb0174014",
+        "source_after": "f0d30f45dc5722ef28fad96f29cf103eee2c5b439e9badf3a0283f7fb0174014",
+        "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/local-package-attempt3.log",
+        "log_sha256": "95d0bf546ff2d67b40931c4fe0a934a6c27d805a25f94cc33f6038a8b0d11206"
+      },
+      {
+        "name": "bundle-freshness",
+        "args": [
+          "node",
+          "scripts/verify-local-runner-bundle-freshness.mjs"
+        ],
+        "phase": "package",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-21T20:01:05.406902+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-21T20:01:11.336999+00:00",
+        "source_before": "f0d30f45dc5722ef28fad96f29cf103eee2c5b439e9badf3a0283f7fb0174014",
+        "source_after": "f0d30f45dc5722ef28fad96f29cf103eee2c5b439e9badf3a0283f7fb0174014",
+        "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/bundle-freshness-attempt3.log",
+        "log_sha256": "4534215e15034b5b5391ab51d71121ebc119c68a2226f6194462a8558e9489b7"
+      },
+      {
+        "name": "public-commands",
+        "args": [
+          "bash",
+          "scripts/verify-public-commands.sh"
+        ],
+        "phase": "package",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-21T20:01:11.455054+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-21T20:01:54.483924+00:00",
+        "source_before": "f0d30f45dc5722ef28fad96f29cf103eee2c5b439e9badf3a0283f7fb0174014",
+        "source_after": "f0d30f45dc5722ef28fad96f29cf103eee2c5b439e9badf3a0283f7fb0174014",
+        "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/public-commands-attempt3.log",
+        "log_sha256": "2121e7f079daf2f2826853340dcdbf7349aeb7e7ed01ffc464e8202cec41e559"
+      },
+      {
+        "name": "packed-offline",
+        "args": [
+          "bash",
+          "scripts/verify-packed-runner.sh"
+        ],
+        "phase": "package",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-21T20:01:54.570414+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-21T20:03:55.351906+00:00",
+        "source_before": "f0d30f45dc5722ef28fad96f29cf103eee2c5b439e9badf3a0283f7fb0174014",
+        "source_after": "f0d30f45dc5722ef28fad96f29cf103eee2c5b439e9badf3a0283f7fb0174014",
+        "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/packed-offline-attempt3.log",
+        "log_sha256": "742074ce6bde6a80e784908c8a22f8c949ef6fbd2b5dcd6c2edcc7bd96acf66f"
+      }
+    ]
+  }
+]

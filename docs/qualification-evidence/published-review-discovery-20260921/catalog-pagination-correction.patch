@@ -1,0 +1,48 @@
+--- a/apps/runner/src/semantic-action-runtime.test.ts
++++ b/apps/runner/src/semantic-action-runtime.test.ts
+@@ -132,9 +132,19 @@
+       await expect(readOperatorExecutionConfig({ projectRoot, config: f.initial, policyStore: f.binding }))
+         .rejects.toMatchObject({ code: "POLICY_EXECUTION_BINDING_CHANGED" });
+       expect(executionBindingDigest(f.current)).not.toBe(executionBindingDigest(f.initial));
+-      expect(await f.services.semanticActions.callTool("app.describe_actions", {})).toMatchObject({ actions: expect.arrayContaining([
+-        expect.objectContaining({ outcome: f.outcomes[2] }),
+-      ]) });
++      // A compatibility page is byte bounded, not an inventory promise.
++      // Follow its real cursor without changing response limits.
++      const catalog: Array<{ outcome: string }> = [];
++      let cursor: unknown;
++      for (let pages = 0; pages < 4; pages++) {
++        const page = await f.services.semanticActions.callTool("app.describe_actions", cursor ? { cursor } : {});
++        catalog.push(...page.actions as Array<{ outcome: string }>);
++        cursor = page.next_cursor;
++        if (!cursor) break;
++      }
++      expect(cursor).toBeNull();
++      expect(catalog.map(entry => entry.outcome).sort()).toEqual([...f.outcomes].sort());
++      expect(new Set(catalog.map(entry => entry.outcome)).size).toBe(3);
+       const request = await f.request(f.outcomes[2]!);
+       expect(request).toMatchObject({ execution: "queued", proposal: { status: "approved" }, source_database_changed: false });
+       expect(await f.request(f.outcomes[2]!)).toMatchObject({ execution: "queued", request_disposition: "already_recorded", source_database_changed: false });
+
+--- a/apps/runner/src/action-rule-authority.test.ts
++++ b/apps/runner/src/action-rule-authority.test.ts
+@@ -433,7 +433,18 @@
+       const firstPage = await runtime.callTool("app.describe_actions", { limit: 20 });
+       const secondPage = await runtime.callTool("app.describe_actions", { limit: 20, cursor: firstPage.next_cursor });
+       const outcomes = [firstPage, secondPage].flatMap((page) => (page.actions as Array<{ outcome: string }>).map((action) => action.outcome));
+-      expect(new Set(outcomes).size).toBe(40);
++      // The requested limit is a maximum under the unchanged byte budget.
++      // Follow the same query/limit cursor until forty entries are observed.
++      let next = secondPage.next_cursor;
++      for (let pages = 0; outcomes.length < 40 && pages < 8; pages++) {
++        expect(next).toEqual(expect.any(String));
++        const page = await runtime.callTool("app.describe_actions", { limit: 20, cursor: next });
++        expect(Buffer.byteLength(JSON.stringify(page))).toBeLessThanOrEqual(16_384);
++        outcomes.push(...(page.actions as Array<{ outcome: string }>).map(action => action.outcome));
++        next = page.next_cursor;
++      }
++      expect(new Set(outcomes).size).toBe(outcomes.length);
++      expect(new Set(outcomes.slice(0, 40)).size).toBe(40);
+       expect(outcomes.every((outcome) => visible.includes(outcome))).toBe(true);
+       for (const outcome of ["billing.option_1999", "billing.missing"]) {
+         await expect(runtime.callTool("app.describe_actions", { outcome })).rejects.toMatchObject({
