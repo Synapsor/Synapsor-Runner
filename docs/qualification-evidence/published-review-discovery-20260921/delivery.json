@@ -1,0 +1,20 @@
+{
+  "report_commit": "ea986cd7aa5a460f8ce3e6841f73e6ea51588f46",
+  "frozen_source_commit": "6793c26a09b5a81c217946cb6c5b7dc066b9425e",
+  "product_commit": "7d881de8942b4089d225cd0a9e6196e6917ec075",
+  "test_commit": "2fc4cdee51f37cd886e6980bf9740c59ec956c12",
+  "candidate_tree": "743ef7430b55022f720ab988bbdb9cb7d17d8fccda0a244a1661cf70b6f06a55",
+  "report": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/FINAL-REPORT.md",
+  "report_sha256": "ade853d6fe757e28f582356ebedb2a4cc2198f54d58600755c49cf90072e13a8",
+  "index": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/EVIDENCE-INDEX.json",
+  "index_sha256": "689d6d645b1f7eee493c9cbbbf1d4d5ff8f44d9ef7d6eef031f5e140e8cd4a84",
+  "immutable_reports_archive": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/delivery/reports.tgz",
+  "reports_archive_sha256": "2c86e2ab5641858359a86b731d7fe161360dbded4c255d262f751a05dedbf6f4",
+  "seal": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/delivery/seal.json",
+  "seal_sha256": "707266a2fcc970cdb0e1eab2f192def8e0dd6e9fd5fcaffe2fff74c661180d42",
+  "private_backup_destination": "https://github.com/Synapsor/Synapsor-Runner-Backup.git",
+  "branch": "codex/tui-safe-action-control-plane",
+  "push_record": "Recorded outside this immutable commit after private push: /home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/PRIVATE-PUSH-RESULT.json",
+  "next_issue": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/INDEPENDENT-BUSINESS-BLOCKER.json",
+  "overall_status": "Main A BUSINESS pass; independent BUSINESS blocked; native continuation not run. No overall Stage B acceptance."
+}
