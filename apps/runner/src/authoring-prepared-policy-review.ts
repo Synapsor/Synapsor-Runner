@@ -1,3 +1,4 @@
+import { scopedDisclosureInventory } from "./authoring-scoped-disclosure.js";
 import { randomUUID } from "node:crypto";
 import type { CoverageReviewEpisode } from "./authoring-policy-source.js";
 import { reviewClientDutyOwnership } from "./authoring-client-duties.js";
@@ -35,6 +36,7 @@ export async function ensurePreparedPolicyCoverage(input: {
   progress?: <T>(label: string, operation: () => Promise<T>) => Promise<T>;
   state: PreparedPolicyReviewState;
   force?: boolean;
+  subjectLocation?: "active" | "draft";
   requireCountingChoice?: boolean;
   onValidated?: (result: { report: PolicyCoverage; key: string; sources: PolicySourceSession; activity: "provider" | "validated_reuse" }, permit: ProjectAuthorityMutationPermit) => Promise<void>;
 }) {
@@ -66,6 +68,10 @@ export async function ensurePreparedPolicyCoverage(input: {
   };
   await assertCurrent();
   let draftRecord = input.currentDraft();
+  // Unknown owner facts do not become a request for another model opinion.
+  // Local inspection/deferral is available before provider consent/selection.
+  if (scopedDisclosureInventory(source, draftRecord).items.some(f => f.state !== "confirmed_non_sensitive"))
+    throw new Error("SCOPED_DISCLOSURE_REVIEW_PENDING: The source-required classification remains pending. Open the local source-required disclosure review; no provider call was made.");
   const decisions = await reviewUnestablishedCounting({ source, draft: draftRecord,
     messages: sources.operator_messages ?? [], session: input.operatorSession, assertCurrent });
   if (decisions === undefined && input.requireCountingChoice) throw new Error("POLICY_COUNTING_REVIEW_PENDING: The counting choice remains unresolved. Resume Review attached rules; no business rule changed.");
@@ -137,7 +143,7 @@ export async function ensurePreparedPolicyCoverage(input: {
         if(feedback) submission.diagnostic=JSON.stringify(feedback);
       })}});
   };
-  const report = reused ?? await (input.progress ? input.progress("Checking attached rules against this exact draft", produce) : produce());
+  const report = reused ?? await (input.progress ? input.progress(input.subjectLocation === "active" ? "Checking attached rules against this active published subject" : "Checking attached rules against this exact draft", produce) : produce());
   const staged = structuredClone(sources);
   bindPolicyCoverage(staged, report, input.authorityDigest);
   staged.coverage_context_digest = key;

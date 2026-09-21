@@ -1,3 +1,4 @@
+import { localScopedDisclosureReview } from "./authoring-scoped-disclosure-operation.js";
 import { resolveAuthoringReviewSubject } from "./authoring-review-subject.js";
 import { actionRuleEffectLines } from "@synapsor-runner/action-rules";
 import { actionRuleDisclosureReconciliation, actionRuleEditDifferenceLines } from "./action-rule-disclosure-review.js";
@@ -27,6 +28,7 @@ import {
   databaseServerCompatibility,
   inspectDatabase,
   schemaFingerprintForInspection,
+  rolePostureFingerprint,
   type SchemaInspection,
 } from "@synapsor-runner/schema-inspector";
 import crypto from "node:crypto";
@@ -4497,7 +4499,9 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   };
   const conversationalJobChoices = [
     ...(availableResume && !revalidateSavedJob ? [{ value: "review_rules", label: "Review attached rules and unresolved decisions",
-      detail: "Recheck the exact saved candidate and current attachment; keep business edits separate." }] : []),
+      detail: "Recheck the exact saved candidate and current attachment; keep business edits separate." },
+      {value:"review_disclosure",label:"Review source-required disclosure meaning (no model)",
+        detail:"Register an exact source-to-field requirement or inspect its owner decision. No access change."}] : []),
     ...(availableResume
       ? [{
           value: "resume",
@@ -4677,6 +4681,18 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       },
     );
     if (selected === undefined) return boundaryAssistResult(boundaryAssistBackNotice());
+    if (availableResume && !revalidateSavedJob && (selected === "review_disclosure" || selected === "review_rules")) {
+      const sources = availableResume.policy_source_session ? await loadPolicySources(input.projectRoot, availableResume.policy_source_session) : undefined;
+      const pendingMeaning = sources?.scoped_disclosure_reviews?.length && [...new Map(sources.scoped_disclosure_reviews.map(r=>[r.id,r])).values()]
+        .some(r=>r.fields.some(f=>f.decision!=='confirmed_non_sensitive'));
+      if (sources && (selected === "review_disclosure" || pendingMeaning)) {
+        const notice = await reviewSavedBoundaryPolicy({projectRoot:input.projectRoot,session:input.session,
+          resume:availableResume,sources,request:"Review attached rules and unresolved decisions",selectCurrentContext:true,
+          localDisclosure:selected === "review_disclosure" ? "register_or_status" : "status",schemaInspector:input.schemaInspector,assertRunning});
+        await input.authoringChat?.streamCheckpoint(notice.title,notice.lines,notice.tone === "warning" ? "warning" : "normal");
+        return {...boundaryAssistResult(notice,false,false,true),navigation:"pause" as const};
+      }
+    }
     if (selected === "advanced") {
       selected = await input.session.chooseOption(
         "ADVANCED BOUNDARY INPUT",
@@ -10615,7 +10631,8 @@ type ModelReadBoundaryExposureRevisionInput = {
 /** Review the exact saved candidate without entering any draft/edit/activation path. */
 export async function reviewSavedBoundaryPolicy(input: {
   projectRoot: string; session: BoundaryReviewInteractiveSession;
-  modelSession: ActionModelSuggestionSession;
+  modelSession?: ActionModelSuggestionSession;
+  localDisclosure?: "register_or_status" | "status";
   resume: BoundaryAuthoringResumeState;
   sources: PolicySourceSession;
   request: string;
@@ -10714,18 +10731,67 @@ export async function reviewSavedBoundaryPolicy(input: {
           enabled_outcomes: execution.enabled ? matching.map(policy => policy.outcome).sort() : [] };
       } catch { /* Deployment evidence unavailable, not verified. */ }
     }
+    const selectedStore = selected.subject?.identity.store ?? (context.bundle.mutation_bindings.authoring
+      ? canonicalJsonDigest({repository_id:context.bundle.mutation_bindings.authoring.repository_id,
+        deployment_id:context.bundle.mutation_bindings.authoring.deployment_id,project_id:context.bundle.mutation_bindings.authoring.project_id}) : undefined);
     const currentDraft = () => policyCoverageDraft({ client: resume.intended_client, read: context.candidate, decisions: context.bundle.decisions,
       actions: [], authority, source: sourceInspection, reviewedVersionFields: boundaryAuthoringVersionReviews(resume),
       policySources: input.sources, countingDomain: domain, executionReview, receiptConfiguration,
-      authoringSession: { provider: input.modelSession.provider, model: input.modelSession.model },
+      ...((input.localDisclosure || input.sources.scoped_disclosure_reviews?.length) ? {reviewStoreDigest:selectedStore} : {}),
+      authoringSession: { provider: input.modelSession?.provider ?? resume.model.provider, model: input.modelSession?.model ?? resume.model.name },
       operatorClarifications: resume.conversation.filter(turn => turn.kind === "clarification"
         && input.sources.operator_messages?.includes(turn.answer)).map(turn => ({ question: turn.question, answer: turn.answer })) });
+    if(input.localDisclosure){
+      let register=false;
+      if(input.localDisclosure === "register_or_status") {
+        if(!input.sources.scoped_disclosure_reviews?.length)register=true;
+        else {
+          const choice=await input.session.chooseOption?.("LOCAL SOURCE-REQUIRED DISCLOSURE REVIEW",[
+            {value:"status",label:"Inspect or revisit saved requirements"},
+            {value:"register",label:"Register an exact source requirement and applicable fields"},
+            {value:"back",label:"Return without changes"}],{initialValue:"status",context:display});
+          if(!choice || choice==='back')return boundaryAssistBackNotice();
+          register=choice==='register';
+        }
+      }
+      const result=await localScopedDisclosureReview({projectRoot:input.projectRoot,sources:input.sources,session:input.session,
+        actor:localInteractiveActor(),register,location:authority?.state === 'active'?'active':'draft',currentDraft,
+        authorityDigest:canonicalJsonDigest({read:readDigest,action:authority?.digest??null}),
+        clarifications:resume.conversation.filter(turn=>turn.kind==='clarification'),assertCurrent,
+        onValidated:async(sources,permit)=>{
+          const next=updateBoundaryPolicyReview(resume,{pending:null,completion:{request,
+            report_digest:canonicalJsonDigest(sources.coverage!),context_digest:sources.coverage_context_digest as `sha256:${string}`,
+            activity:'validated_reuse',completed_at:new Date().toISOString()}});
+          await writeBoundaryAuthoringResumeState(input.projectRoot,next,{expectedRevisionDigest:resume.revision_digest,permit});resume=next;
+        },
+        coordinated:async operation=>{
+          // Refresh the reader outside authority locks. A changed inspection
+          // invalidates this review; it cannot be replaced by writer metadata.
+          const currentInspection=await inspectPolicyReviewSource(context.lock,input.schemaInspector);
+          if(schemaFingerprintForInspection(currentInspection.inspection)!==schemaFingerprintForInspection(sourceInspection.inspection)
+            || rolePostureFingerprint(currentInspection.inspection)!==rolePostureFingerprint(sourceInspection.inspection))throw new Error('SCOPED_DISCLOSURE_METADATA_CHANGED: Reopen the exact current reader review; no decision was saved.');
+          const check=async(permit:ProjectAuthorityMutationPermit)=>{
+            await assertCurrent(permit);
+            const currentReceipt=await authoringReceiptConfiguration(input.projectRoot,authority?.authority.rules.map(r=>r.rule.source)??[],process.env);
+            if(canonicalJsonDigest(currentReceipt)!==canonicalJsonDigest(receiptConfiguration))throw new Error('OBLIGATION_CONFIGURATION_CHANGED: Reopen current review; no stale classification was saved.');
+            await operation(permit);
+          };
+          if(domain && authority) await withCountingOutcomeDomain(input.projectRoot,authority,async(current,permit)=>{
+            if(canonicalJsonDigest(current)!==canonicalJsonDigest(domain))throw new Error('POLICY_COUNTING_DOMAIN_CHANGED: No stale review saved.');
+            await check(permit);
+          });
+          else await withProjectAuthorityMutation(input.projectRoot,check);
+        }});
+      return {tone:result.ready?'success':'warning',title:result.cancelled?'Local review cancelled.':result.ready?'Current business review validated.':'Current BUSINESS conformance remains pending.',
+        lines:[...display,...result.summary],footer:'Review attached rules and unresolved decisions reopens this saved local status without a model. Existing authority is unchanged.'};
+    }
+    if(!input.modelSession)throw new Error('POLICY_REVIEW_MODEL_UNAVAILABLE: Full semantic review needs its configured model; local source-required disclosure review remains available.');
     const state: PreparedPolicyReviewState = {};
     const checked = await ensurePreparedPolicyCoverage({ projectRoot: input.projectRoot, sources: input.sources,
       modelSession: input.modelSession, operatorSession: input.session, currentDraft, authority,
       authorityDigest: canonicalJsonDigest({ read: readDigest, action: authority?.digest ?? null }), countingDomain: domain,
       clarifications: resume.conversation.filter(turn => turn.kind === "clarification"), assertCurrent,
-      progress: input.progress, state, requireCountingChoice: true,
+      progress: input.progress, state, requireCountingChoice: true, subjectLocation:authority?.state === "active" ? "active" : "draft",
       onValidated: async (result, permit) => {
         if (!policyReviewReadiness(source, result.report, result.sources).ready) return;
         const next = updateBoundaryPolicyReview(resume, { pending: null, completion: { request,
@@ -10739,7 +10805,7 @@ export async function reviewSavedBoundaryPolicy(input: {
       const section = policyCoverageSection(source, checked.report, checked.draftRecord);
       input.session.rememberDetails?.(section.title, reviewSectionLines(section));
     }
-    const readiness = policyReviewReadiness(source, checked.report, input.sources);
+    const readiness = policyReviewReadiness(source, checked.report, input.sources, authority?.state === "active" ? "active" : "draft");
     return { tone: readiness.ready ? "success" : "warning", title: readiness.ready ? "Business review completed for this saved subject." : "Business review remains pending.",
       lines: [...display, `Review activity: ${checked.activity ?? "not completed"}.`, ...readiness.summary,
         ...(resume.pending_job_revision || resume.pending_action_revision || resume.pending_read_revision || resume.pending_action_addition || resume.pending_action_removal

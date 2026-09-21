@@ -1,3 +1,4 @@
+import { scopedDisclosureInventory } from "./authoring-scoped-disclosure.js";
 import { receiptConfigurationComponentOnly } from "./authoring-policy-source.js";
 import { CoverageSourceLinesError, missingReviewSourceLines, reviewSourceInventory } from "./authoring-source-coverage.js";
 import { CoverageComponentError, CoverageComponentsError, CoverageCurrentDescriptionError, recordCoverageFindingSubject, recordCheckedCoveragePassage, coverageFinding, MAX_COVERAGE_FINDINGS, MAX_COVERAGE_FEEDBACK_BYTES, MAX_COVERAGE_SUBMISSIONS, permitsSecondCoverageCorrection, type CoverageFeedback } from "./authoring-coverage-feedback.js";
@@ -731,7 +732,7 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
     passages.push({ ...component, ...(assessment ? { obligation_assessment: assessment } : {}) });
   }
   const inventory = configuredCountingLimits(draft);
-  return { source_digest: source.digest, draft_digest: canonicalJsonDigest(draft), passages, client_duties: clientDutyInventory(draft),
+  return { scoped_disclosure: scopedDisclosureInventory(source, draft), source_digest: source.digest, draft_digest: canonicalJsonDigest(draft), passages, client_duties: clientDutyInventory(draft),
     counting_inventory: { version: 1, digest: canonicalJsonDigest(inventory.map(({ path, digest }) => ({ path, digest }))), paths: inventory.map(i => i.path) } };
 }
 

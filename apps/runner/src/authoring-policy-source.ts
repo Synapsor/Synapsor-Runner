@@ -1,3 +1,4 @@
+import { assertScopedDisclosureReviews, type ScopedDisclosureReview, type ScopedDisclosureInventory } from "./authoring-scoped-disclosure.js";
 import fs from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";
@@ -98,7 +99,7 @@ export type PolicyPassage = {
   source_counter_resolution?: { source_digest: string; path: string; dependencies_digest: string;
     proof_digest: string; external_assurance: "unverified" };
 };
-export type PolicyCoverage = { client_duties?: ClientDutyInventory; counting_inventory?: { version: 1; digest: string; paths: string[] }; source_digest: string; draft_digest: string; passages: PolicyPassage[] };
+export type PolicyCoverage = { scoped_disclosure?: ScopedDisclosureInventory; client_duties?: ClientDutyInventory; counting_inventory?: { version: 1; digest: string; paths: string[] }; source_digest: string; draft_digest: string; passages: PolicyPassage[] };
 
 export function isDeferredPolicyDeployment(passage: PolicyPassage): boolean {
   const prerequisite = passage.deployment_prerequisite;
@@ -203,6 +204,8 @@ export type PolicySourceSession = {
   operator_messages?: string[];
   coverage?: PolicyCoverage;
   counting_decisions?: CountingDecision[];
+  /** Attributable source-to-field requirements and owner decisions, never grants. */
+  scoped_disclosure_reviews?: ScopedDisclosureReview[];
   coverage_episodes?: CoverageReviewEpisode[];
   coverage_context_digest?: string;
   coverage_authority_digest?: string;
@@ -362,6 +365,16 @@ export async function savePolicySources(root: string, session: PolicySourceSessi
   options?: { expectedDigest?: string | null; permit?: ProjectAuthorityMutationPermit }): Promise<void> {
   return withProjectAuthorityMutation(root, async () => {
     const file = sourcePath(root, session.id), temporary = `${file}.${randomUUID()}.tmp`;
+    assertScopedDisclosureReviews(session.scoped_disclosure_reviews);
+    // Once represented, omission by an older writer cannot delete a source
+    // requirement. Explicit removal of the source uses removePolicySources.
+    try {
+      const existing=JSON.parse(await fs.readFile(file,"utf8")) as PolicySourceSession;
+      const prior=existing.scoped_disclosure_reviews??[];
+      assertScopedDisclosureReviews(prior);
+      if (prior.some((r,i)=>r.digest!==session.scoped_disclosure_reviews?.[i]?.digest))
+        throw new Error("SCOPED_DISCLOSURE_HISTORY_CHANGED: Existing requirements and decisions must be retained; no review was overwritten.");
+    } catch(error) { if((error as NodeJS.ErrnoException).code!=="ENOENT")throw error; }
     const serialized = JSON.stringify(session);
     if (Buffer.byteLength(serialized) > 2 * 1024 * 1024) throw new Error("Saved policy sources exceed the supported size. The previous snapshot remains unchanged; remove older sources explicitly before adding more context.");
     if (options?.expectedDigest !== undefined && await policySourceSavedDigest(root, session.id) !== options.expectedDigest) {
@@ -402,6 +415,7 @@ export async function loadPolicySources(root: string, id: string): Promise<Polic
         || s.diagnostic !== undefined && (typeof s.diagnostic !== "string" || Buffer.byteLength(s.diagnostic)>8192))))) {
     throw new Error("POLICY_COVERAGE_EPISODE_INVALID: Saved review attempt accounting is invalid; no provider call or retry was started.");
   }
+  assertScopedDisclosureReviews(value.scoped_disclosure_reviews);
   if (value.counting_decisions && (!Array.isArray(value.counting_decisions) || value.counting_decisions.length > 120
     || value.counting_decisions.some(d => !d || d.origin !== "OPERATOR-COUNTING-REVIEW"
       || !value.snapshots.some(s => s.digest === d.source_digest) || typeof d.path !== "string"
@@ -470,7 +484,7 @@ function validStoredCoverage(report: PolicyCoverage, sources: PolicyTextSnapshot
 
 export async function removePolicySources(root: string, session: PolicySourceSession): Promise<void> {
   await fs.unlink(sourcePath(root, session.id)).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
-  session.snapshots = []; session.approvals = []; delete session.active; delete session.operator_messages; delete session.coverage; delete session.coverage_authority_digest; delete session.application_assignments; delete session.read_interpretations; delete session.counting_decisions;
+  session.snapshots = []; session.approvals = []; delete session.active; delete session.operator_messages; delete session.coverage; delete session.coverage_authority_digest; delete session.application_assignments; delete session.read_interpretations; delete session.counting_decisions; delete session.scoped_disclosure_reviews;
 }
 
 export type CountingDecision = {

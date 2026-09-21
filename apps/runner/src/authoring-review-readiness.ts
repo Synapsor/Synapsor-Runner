@@ -1,3 +1,4 @@
+import { disclosureReportMatchesSession } from "./authoring-scoped-disclosure.js";
 import { validClientDutyInventory, clientDutyAssigned, isClientDutyPassage, type ClientDuty } from "./authoring-client-duties.js";
 import { deferredReviewObligation } from "./authoring-obligation-review.js";
 import { isDeferredPolicyDeployment, isDeferredSourceReadback, isDeferredSourceCounterMaintenance, type PolicyCoverage, type PolicyTextSnapshot, type PolicyPassage, type PolicySourceSession } from "./authoring-policy-source.js";
@@ -25,6 +26,18 @@ export function policyReadinessItems(report?: PolicyCoverage, session?: PolicySo
   if (!report) return [{ kind: "provider_failure", title: "Attached rules need checking",
     nextStep: "Retry the coverage check for this saved draft.", passages: [], blocksReview: true }];
   const grouped = new Map<string, AuthoringReadinessItem>();
+  const required = session?.scoped_disclosure_reviews?.length;
+  const disclosure = report.scoped_disclosure;
+  if (required && !disclosureReportMatchesSession(disclosure, session!)) {
+    grouped.set("disclosure-current", {kind:"business_decision", title:"Source-required description classification needs current review",
+      nextStep:"Open the local source-required disclosure review. Saved requirements remain pending; no model opinion or access change is required to inspect them.", passages:[],blocksReview:true});
+  }
+  for (const field of disclosure?.items ?? []) if (field.state !== "confirmed_non_sensitive") grouped.set(`disclosure:${field.id}:${field.resource}:${field.field}`, {
+    kind:"business_decision", title:`${field.resource}.${field.field}: classification ${field.state === "deferred" ? "deliberately pending" : field.state}`,
+    nextStep:field.state === "stale" ? "Revalidate the exact source, selected Read and store before renewing this owner decision. Prior evidence remains history."
+      : "Use the local source-required disclosure review to inspect or revisit this exact owner decision. A grant is not classification; Keep pending does not accept risk or establish sensitivity.",
+    passages:[],blocksReview:true,
+  });
   const inventory = report.client_duties && validClientDutyInventory(report.client_duties) ? report.client_duties : undefined;
   if (!inventory || inventory.mode === "unresolved") grouped.set("client-contract", { kind: "business_decision",
     title: "Current client contract needs review", nextStep: "Recheck the saved job to establish the applicable client contract. Historical authority is unchanged.", passages: [], blocksReview: true });
@@ -71,9 +84,9 @@ export function policyReadinessItems(report?: PolicyCoverage, session?: PolicySo
   return [...grouped.values()];
 }
 
-export function policyReviewReadiness(source: PolicyTextSnapshot, report?: PolicyCoverage, session?: PolicySourceSession) {
+export function policyReviewReadiness(source: PolicyTextSnapshot, report?: PolicyCoverage, session?: PolicySourceSession, location: "active" | "draft" = "draft") {
   if (!report || report.source_digest !== source.digest) return { ready: false, privacy: false, summary: [
-    "Before activation: recheck the attached rules. Activation is unavailable; the saved draft and exact details remain available.",
+    location === "active" ? "Current BUSINESS conformance needs rechecking. Active published rules are unchanged; no new authority or execution permission is granted." : "Before activation: recheck the attached rules. Activation is unavailable; the saved draft and exact details remain available.",
   ] };
   if (report.passages.some(p => p.counter_requirements?.length || p.counting_components?.length || p.counting_requirement_bindings?.length)
     && report.counting_inventory?.version !== 1) return { ready: false, privacy: false, summary: [
@@ -90,8 +103,8 @@ export function policyReviewReadiness(source: PolicyTextSnapshot, report?: Polic
   ]))])];
   const privacy = pending.some((passage) => passage.field_checks?.some((check) => check.expectation === "private"));
   return { ready: !items.some(item => item.blocksReview), privacy, items, summary: [...(items.some(item => item.blocksReview) ? [
-    `Before activation: ${topics.join("; ")}. These are required decisions, not optional recommendations.`,
-    "Use the applicable review controls to resolve these decisions in this saved draft. Activation is unavailable until the checks pass.",
+    location === "active" ? `Current BUSINESS conformance: pending. ${topics.join("; ")}.` : `Before activation: ${topics.join("; ")}. These are required decisions, not optional recommendations.`,
+    location === "active" ? "Active published rules are unchanged. Missing classification is not established by prior access approval. No new authority or execution permission is granted by this review." : "Use the applicable review controls to resolve these decisions in this saved draft. Activation is unavailable until the checks pass.",
   ] : [`Attached rules: ${source.name} v${source.version}; interpretation checked for this revision.`]),
     ...(clientChecks.length ? [`Client integration still unverified: ${clientChecks.join(", ")}. Check these during client setup before customer use.`] : []),
     ...(assigned.some(item => item.passages.some(isDeferredSourceReadback))
@@ -103,7 +116,8 @@ export function policyReviewReadiness(source: PolicyTextSnapshot, report?: Polic
       return obligation?.family === "receipt_setup" ? [obligation.requirement] : [];
     })))].map(mode => `Receipt requirement: ${mode}. Receipt/execution setup pending: review this exact mode through execution setup. No receipt, provisioning or independent observation is established by BUSINESS review.`),
     ...(assigned.some((item) => item.passages.some((passage) => passage.deployment_prerequisite === "runner_execution_setup"))
-      ? ["Execution setup pending: dedicated writer review, separate execution permission and worker startup. Continue to these checks after authority review; automatic completion is not yet enabled."] : []),
+      ? [location === "active" ? "Execution reviews remain separate. This BUSINESS review does not establish current writer or worker readiness or authorize a new execution. Existing execution settings and receipt history are unchanged."
+        : "Execution setup pending: dedicated writer review, separate execution permission and worker startup. Continue to these checks after authority review; automatic completion is not yet enabled."] : []),
   ] };
 }
 

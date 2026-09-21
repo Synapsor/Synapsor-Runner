@@ -97,6 +97,7 @@ function inspectedReadScopes(read: ExplorationBoundaryDraft, source?: PolicySour
  * runtime identities, rows, credentials or model assertions belong here. */
 export function policyCoverageDraft(input: {
   client?: string;
+  reviewStoreDigest?: string;
   read: ExplorationBoundaryDraft;
   decisions: Array<{ decision: string; confirmed: boolean }>;
   actions: CompiledActionRuleModelDraftV1[];
@@ -298,6 +299,12 @@ export function policyCoverageDraft(input: {
     read: input.read,
     actions: actions.map((action) => action.draft),
     runner_evidence: {
+      ...((input.policySources?.scoped_disclosure_reviews?.length || input.reviewStoreDigest) ? {scoped_disclosure: {
+        source_session: input.policySources?.id ?? "",
+        metadata_digest: input.source && readerPosture ? canonicalJsonDigest({schema:schemaFingerprintForInspection(input.source.inspection),role:rolePostureFingerprint(input.source.inspection)}) : null,
+        read_digest: readDigest, store_digest: input.reviewStoreDigest ?? input.countingDomain?.store_binding_digest ?? null,
+        reviews: input.policySources?.scoped_disclosure_reviews ?? [],
+      }} : {}),
       ...(sourceConstraints ? { source_constraints: sourceConstraints } : {}),
       ...(excludedFields && Object.keys(excludedFields).length ? { excluded_field_access: {
         selected_read_digest: canonicalJsonDigest(input.read), selected_actions_digest: canonicalJsonDigest(actions.map(action => action.draft)),
