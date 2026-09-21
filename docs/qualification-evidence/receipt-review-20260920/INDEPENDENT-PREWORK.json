@@ -1,0 +1,25 @@
+{
+  "at": "2026-09-20T23:48:03.666113+00:00",
+  "classification": "independent prefreeze probes/restore evidence; not final immutable candidate acceptance",
+  "reports": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/receipt-review-association-independent-20260920/PREWORK-CONSTRAINTS.md",
+      "sha256": "b891b40115bebe8f867b2e7fd0528e2044e13edd097fb771a7f551c7a4891ec0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/receipt-review-association-independent-20260920/INPUT-AVAILABILITY.json",
+      "sha256": "0ba4cb2190f3d1b66c79c1dfedab16587390e33e5e4fb080117386ca0b292d90"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/receipt-review-association-independent-20260920/RESTORE-PREFLIGHT.json",
+      "sha256": "62901216c5c7b73e47faa744e9d6e92f23038b21536ae782034b13f494ce882d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/receipt-review-association-independent-20260920/prework/INDEPENDENT-CONTRACT-PROBES.json",
+      "sha256": "671ee62e612c97954c642fc794268cc1aa607dfee8468ddf440894d97e5d2098"
+    }
+  ],
+  "historical_first_B": "NOT ESTABLISHED; bounded provenance search closed",
+  "current_B_label": "Independent known-case saved-review continuation from a shared, implementer-prepared input.",
+  "paid_calls": 0
+}

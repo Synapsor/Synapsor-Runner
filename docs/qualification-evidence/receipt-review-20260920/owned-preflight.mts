@@ -1,0 +1,11 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { canonicalJsonDigest } from '../../../packages/protocol/src/index.ts';
+import { inspectActionProject } from '../../../apps/runner/src/action-tui.ts';
+import { readProjectReadAuthoring } from '../../../apps/runner/src/control-policy-read-authoring-project.ts';
+import { listActionRuleAuthorityDrafts } from '../../../apps/runner/src/action-rule-authority.ts';
+const root=process.cwd(),selected=(await readProjectReadAuthoring(root))!.selected!;
+const inspection=await inspectActionProject(root);
+const authority=await listActionRuleAuthorityDrafts(root);
+await fs.writeFile(path.join(root,'../home/reinspection.json'),JSON.stringify({origin:'new owned source-only reinspection, not a historical raw inspection',inspection,selected,authority},null,2));
+console.log(JSON.stringify({origin:'new owned reinspection',lock:canonicalJsonDigest(selected.draft_lock),read:canonicalJsonDigest(selected.progress.candidate),authority:authority.map(a=>a.digest),resources:inspection.tables.length}));

@@ -1,0 +1,39 @@
+{
+  "assignment": "Receipt review component association and bounded actionable feedback; saved A/B BUSINESS and explicit restarted review",
+  "baseline": "5d92ca56d8b3c19fc2f013b14347d3fa4b8fb641",
+  "branch": "codex/tui-safe-action-control-plane",
+  "started_at": "2026-09-20T23:24:39.302884+00:00",
+  "implementation_deadline": "2026-09-21T03:24:39.302884+00:00",
+  "stable_budget_minutes": 120,
+  "main_final_minutes": 90,
+  "provider_limits": {
+    "development": 6,
+    "main_final": 18,
+    "main_restart_reserved": 6,
+    "tester_final": 12,
+    "tester_restart_reserved": 4,
+    "shared_usd_ceiling": 5,
+    "balance_verification": "8.35781609 USD observed; shared task ceiling remains 5 USD, main/development protected 3 USD, tester 2 USD"
+  },
+  "raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920",
+  "next": "Freeze one complete new installation, verify it, set finite final windows LIVE, run main and independent saved-review continuations/rechecks.",
+  "phase": "All stable gates passed; evidence checkpoint committed next, then complete freeze",
+  "product": "d450f4c77057d58f393019e090cdc051a827481d",
+  "tests": "d450f4c77057d58f393019e090cdc051a827481d",
+  "stable_started_at": "2026-09-20T23:43:28.344212+00:00",
+  "stable_deadline": "2026-09-21T01:43:28.344212+00:00",
+  "development": "STOPPED1transport/$0.14536; A provider BUSINESS, B validated-reuse BUSINESS; final not yetrun",
+  "full_suite": {
+    "exit": 0,
+    "passed": 6778,
+    "skipped": 478,
+    "files_passed": 326,
+    "files_skipped": 21,
+    "source_unchanged": true
+  },
+  "stable_completed_at": "2026-09-21T00:23:36.924796+00:00",
+  "offline_checks": {
+    "passed": 10,
+    "failed": 0
+  }
+}

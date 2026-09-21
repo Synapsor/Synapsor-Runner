@@ -1,0 +1,28 @@
+{
+  "A": {
+    "classification": "authentic main current pending continuation, sealed before new repair/public work; not historical first-only tester B",
+    "origin": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/owned-final-states/main-A",
+    "files": {
+      "whole-project-home.tgz": "bad178bd080d533380023fd588d1a1668456b332c4058b6c2551fc5facb7d813",
+      "source.dump": "590ffd43701116f5144a1e703766f94dfd2e9649a7f9f5ee6d34c8c83d7d1380",
+      "roles-without-passwords.sql": "8ee784b566b05b7960585fd130fd3bea5caf2c856b3bbdf36314fcea943fcd12",
+      "manifest.json": "90acb4c1da2d28db6eb0a4cac38597c1750afc246cef3a8fd4698a6ccad87768"
+    },
+    "source_rows": 38,
+    "logical_project": "/var/tmp/synapsor-new-stageb-20260920-A/project",
+    "acl": "full pg_dump includes source ACLs; password-free roles restored before pg_restore; fresh private local credentials required"
+  },
+  "B": {
+    "classification": "authentic main current pending continuation, sealed before new repair/public work; not historical first-only tester B",
+    "origin": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-association-97de715-20260920/owned-final-states/main-B",
+    "files": {
+      "whole-project-home.tgz": "c73130f65acd3d889fb5345404c78f8eeb79d7f3ca10ea4ea664a6f7986d3edb",
+      "source.dump": "3d699ffc189323e460cadd6f3e555bb8823ea75e6266491e70389c16aa7b2faa",
+      "roles-without-passwords.sql": "20a9f13d11d25e77706e751db7d6d81b5330de876f95d0b76c77bde4c254458d",
+      "manifest.json": "12e5d959a8901a523a1c1adee4646c8156ddc1ba00b1eefedb2ce0b02bf80abd"
+    },
+    "source_rows": 196,
+    "logical_project": "/var/tmp/synapsor-new-stageb-20260920-B/project",
+    "acl": "full pg_dump includes source ACLs; password-free roles restored before pg_restore; fresh private local credentials required"
+  }
+}

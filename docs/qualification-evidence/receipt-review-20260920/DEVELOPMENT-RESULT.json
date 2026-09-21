@@ -1,0 +1,35 @@
+{
+  "at": "2026-09-20T23:39:28.524737+00:00",
+  "A": {
+    "activity": "provider",
+    "transports": 1,
+    "cost_usd": 0.14536,
+    "BUSINESS": "completed; persisted verification to follow final artifact tests",
+    "ownership": "explicit renewed, client_application verified:false",
+    "source_control": "equal complete rows and all logical tables",
+    "persisted_BUSINESS_ready": true,
+    "captured_context_reparse": {
+      "classification": "current captured prepared context, not a new provider or atomic store read",
+      "equal": true,
+      "draft_digest": "sha256:54af511d21d07ac5dac763ba82f7f109a7923535b8028dc676daeca0cae345eb"
+    },
+    "program_readback": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/dev-A/state-readbacks/review-saved-program-readback.json",
+    "application_verified": false
+  },
+  "B": {
+    "activity": "validated_reuse",
+    "transports": 0,
+    "BUSINESS": "completed with original saved response revalidated including new host association",
+    "source_control": "equal complete rows and all logical tables",
+    "persisted_BUSINESS_ready": true,
+    "captured_context_reparse": {
+      "classification": "current captured prepared context, not a new provider or atomic store read",
+      "equal": true,
+      "draft_digest": "sha256:ce571d62cb4e3c1a56c0d3a357d3830f30bdbeec16fdf075c79e7760789fbe77"
+    },
+    "program_readback": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/dev-B/state-readbacks/review-saved-program-readback.json",
+    "application_verified": false
+  },
+  "source_changes_after_development": "Receipt-mode display plus final equivalent compiled-effect-root correction eligibility; all old mixed submissions remain refused. Covered by final-source focused, full-suite/backend and forthcoming installed verification; development is earlier-source evidence.",
+  "old_attempts_preserved": true
+}

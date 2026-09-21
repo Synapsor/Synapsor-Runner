@@ -1,0 +1,127 @@
+[
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/exact-after-replay.json",
+    "sha256": "7937bd466a16da62b6aa1e101691589b23df0239c07cd718cc3589942f8b80f5",
+    "bytes": 21654
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/local-wire/openai-request-1.json",
+    "sha256": "eda16944abed53e6a76834680eb55f00cca999fd1d4631eb19da8831cdb2edf0",
+    "bytes": 183830
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/local-wire/openai-request-2.json",
+    "sha256": "1efb59a9ed728b77799a2e35c6adad28724b5e7db3ac293e6aa658deb665521d",
+    "bytes": 185661
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/local-wire/openai-result.json",
+    "sha256": "47e25640b27d4e27fc55cbc06618918fd8f6e13608a687d344d30a165c370f84",
+    "bytes": 1770
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/local-wire/openrouter-request-1.json",
+    "sha256": "caa4ddc9f4dbb08d855b23dd12d33cd40c06018ec8ecbe332ac7d562ab9d3462",
+    "bytes": 184909
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/local-wire/openrouter-request-2.json",
+    "sha256": "8f35b7b7c5c997751eae3fa3d3bb3026611293f55decae14983b775d48e969dc",
+    "bytes": 186740
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/local-wire/openrouter-result.json",
+    "sha256": "47e25640b27d4e27fc55cbc06618918fd8f6e13608a687d344d30a165c370f84",
+    "bytes": 1770
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/offline-logs/bundle-freshness-attempt2.log",
+    "sha256": "4534215e15034b5b5391ab51d71121ebc119c68a2226f6194462a8558e9489b7",
+    "bytes": 182
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/offline-logs/cursor-plugin-attempt1.log",
+    "sha256": "cc12e22d29ebd660345c60ee249826505ffccb62bb45e1b39590202b7ee7135f",
+    "bytes": 391
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/offline-logs/cursor-plugin-attempt2.log",
+    "sha256": "cc12e22d29ebd660345c60ee249826505ffccb62bb45e1b39590202b7ee7135f",
+    "bytes": 391
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/offline-logs/dsl-sources-attempt1.log",
+    "sha256": "3bd663b10b211bb9dbfa01117dd164a3a851d9936e4be1568a6bd5f9ccf7d50a",
+    "bytes": 89
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/offline-logs/dsl-sources-attempt2.log",
+    "sha256": "3bd663b10b211bb9dbfa01117dd164a3a851d9936e4be1568a6bd5f9ccf7d50a",
+    "bytes": 89
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/offline-logs/human-commands-attempt1.log",
+    "sha256": "4ca02cff1d23604455f2707b16fc58bea2d0beb7f6adff085887cbdae1379222",
+    "bytes": 43
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/offline-logs/human-commands-attempt2.log",
+    "sha256": "4ca02cff1d23604455f2707b16fc58bea2d0beb7f6adff085887cbdae1379222",
+    "bytes": 43
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/offline-logs/licenses-attempt1.log",
+    "sha256": "81c81f063c5391a1e9f237b114a7ba197da9b6cece450fa3fd851f6fcac80bac",
+    "bytes": 30
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/offline-logs/licenses-attempt2.log",
+    "sha256": "81c81f063c5391a1e9f237b114a7ba197da9b6cece450fa3fd851f6fcac80bac",
+    "bytes": 30
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/offline-logs/local-package-attempt2.log",
+    "sha256": "8d8cc1a49cc9552d71340358535b23d7279ec3752228f581fde8fdaaa2c2e502",
+    "bytes": 293
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/offline-logs/mcp-client-configs-attempt1.log",
+    "sha256": "a61f33a0918009a044aaaede959658bba3184fb54d00088b5a29142595b0f3cd",
+    "bytes": 1601
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/offline-logs/mcp-client-configs-attempt2.log",
+    "sha256": "a61f33a0918009a044aaaede959658bba3184fb54d00088b5a29142595b0f3cd",
+    "bytes": 1601
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/offline-logs/offline-package-plan-attempt1.json",
+    "sha256": "c79c0655fc7e17aaf7a7d439ade2f48b9535e3282ee416d953af048bfecd091e",
+    "bytes": 3433
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/offline-logs/offline-package-plan-attempt2.json",
+    "sha256": "f282ba7fee4a21b992276dac85a80375b79ad0ecd9417ee4759c269794ed4304",
+    "bytes": 5537
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/offline-logs/packed-offline-attempt2.log",
+    "sha256": "b47554083925a9d6a8b37978adb9723eab934de07e916d55035d64130dee039c",
+    "bytes": 2193
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/offline-logs/public-commands-attempt2.log",
+    "sha256": "2121e7f079daf2f2826853340dcdbf7349aeb7e7ed01ffc464e8202cec41e559",
+    "bytes": 803
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/offline-logs/trusted-core-attempt1.log",
+    "sha256": "769f536b43e8b58856566fc93401462eff7e4f1847b80ef24518f0f4972afea7",
+    "bytes": 73
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/offline-logs/trusted-core-attempt2.log",
+    "sha256": "769f536b43e8b58856566fc93401462eff7e4f1847b80ef24518f0f4972afea7",
+    "bytes": 73
+  }
+]
