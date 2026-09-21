@@ -15,3 +15,10 @@ Operator work and reader re-inspection run outside the existing short project au
 Bounds reuse the 2 MiB source-session limit, with at most 64 mapping/decision records, 128 fields per record and a 16,000-character exact source excerpt. This covers explicitly represented source requirements; it is not extraction of arbitrary prose or a claim that every possible omitted condition has been discovered. Source registration does not waive a prohibition or independently classify any data.
 
 The real A owner selected Keep pending. Both A lineages must remain pending; synthetic affirmative controls cannot transfer. B and all Runner paid/native/business execution are excluded by this amendment.
+
+
+### Before-freeze corrections — 2026-09-21T22:34:06.328996+00:00
+The public explicit path and guided preparation used different hashes for the same effective store. A real postpublication test failed before correction and passed afterward. Both now use the existing counting-domain store proof, with the existing Read-only binding fallback. No runtime counting or store resolution changes.
+The trusted-core offline gate found a type-import dependency cycle. Record types and validation now live in a leaf module; interactive code remains outside policy-source persistence. No validator or assertion was weakened.
+Full suite stable-full-001 was deliberately interrupted (exit -15, source unchanged) before either correction; it is not a pass. Its complete log and STOP-REASON remain. A new full run follows focused/type checks.
+Development public deferral and restart used zero provider credentials/calls;42 logical tables and38 source rows unchanged. Archive restoration passed all42/config/HOME/schema/ACL/source checks. A classification remains unknown and BUSINESS remains pending.

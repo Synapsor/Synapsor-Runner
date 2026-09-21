@@ -3,7 +3,7 @@ from pathlib import Path
 import json,os,sys,subprocess,sqlite3,hashlib,datetime
 os.umask(0o077)
 root=Path(sys.argv[1]).resolve();archive=root.parent/'owned-final-states'/root.name
-assert root.name=='main-A-final';fixture=json.loads((root/'fixture.json').read_text());name=fixture['container']
+assert root.name in ['development-A-001','main-A-final'];fixture=json.loads((root/'fixture.json').read_text());name=fixture['container']
 info=json.loads(subprocess.check_output(['docker','inspect',name]))[0];owned=json.loads((root/'private/container.json').read_text())
 assert info['Id']==owned['id'] and info['Config']['Labels']['synapsor.task']=='scoped-disclosure-repair-20260921'
 manifest=json.loads((archive/'manifest.json').read_text())

@@ -2,7 +2,7 @@
 from pathlib import Path
 import json, os, sys, subprocess, hashlib, datetime
 os.umask(0o077)
-root=Path(sys.argv[1]).resolve(); assert root.name in ['main-A-reproduction','main-A-development','main-A-final']
+root=Path(sys.argv[1]).resolve(); assert root.name in ['development-A-001','main-A-final']
 fixture=json.loads((root/'fixture.json').read_text()); name=fixture['container']
 info=json.loads(subprocess.check_output(['docker','inspect',name]))[0]
 owned=json.loads((root/'private/container.json').read_text())
