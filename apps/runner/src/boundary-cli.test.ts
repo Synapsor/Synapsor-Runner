@@ -16775,7 +16775,7 @@ describe("saved review operation dispatch and persistence", () => {
       }
       const exact = "Recheck the current saved rules against the attached policy and existing decisions without changing the rules or authority.";
       let resume = buildBoundaryAuthoringResumeState({ binding, stage: "planning", jobIntent: "Maintain the reviewed visit job.", provider: "openai", model: "gpt-test",
-        policySourceSession: source.id, action: { intent: "Keep the visit job.", outcome: "maintenance.complete_visit", strategy: "rule_derived" },
+        policySourceSession: source.id, action: { intent: "Keep the visit job.", outcome: authority.reviews[0]!.outcome, strategy: "rule_derived" },
         pendingJobRevision: ["unrelated-edit", "genuine-noop", "model-review-edit", "fallback-edit"].includes(mode) ? "Change the maximum to four." : exact,
         ...(maintenance ? { reviewedVersionFields: mode === "maintenance-missing" ? counterReviews.slice(0, 1) : counterReviews } : {}) });
       if (mode.startsWith("context-")) resume = buildBoundaryAuthoringResumeState({ binding, stage: "authority_review",
@@ -16799,6 +16799,13 @@ describe("saved review operation dispatch and persistence", () => {
         rememberDetails: (_title, lines) => { notices.push(lines); },
         chooseOption: async (title, options) => {
           menus.push(title);
+          if (title === "SELECT EXACT ACTION SUBJECT TO REVIEW") {
+            expect(["context-renew", "context-decline", "context-race"]).toContain(mode);
+            expect(options).toHaveLength(1);
+            expect(options[0]!.label).toContain("Disabled candidate: reviewed_staging_rules");
+            expect(options[0]!.detail).toContain(authority.digest);
+            return "0";
+          }
           if (title === "CLIENT INTEGRATION RESPONSIBILITIES") {
             ownershipReviews++;
             if (mode === "client-source-race") {
@@ -16824,7 +16831,7 @@ describe("saved review operation dispatch and persistence", () => {
           throw new Error(`Unexpected review-only menu: ${title}`);
         },
         confirm: async title => {
-          if (title === "Review this current disabled context instead of the prior pending revision?") {
+          if (title === "Review this explicitly selected current context instead of the prior pending revision?") {
             expect(restarted).toBe(false); confirmations++;
             if (mode === "context-race") {
               const current = await readBoundaryAuthoringResumeState(root, binding); if (current.status !== "ready") throw new Error("Missing current context");
@@ -16974,7 +16981,10 @@ describe("saved review operation dispatch and persistence", () => {
         expect(stored.application_assignments?.filter(a => a.origin === "PRODUCT-CLIENT-CONTRACT")).toEqual([
           expect.objectContaining({ obligations: ["customer_selection", "status_presentation"], owner: "client_application", verified: false })]);
         expect(ownershipReviews).toBe(1);
-        expect(resume.pending_job_revision).toBe(["unrelated-edit", "model-review-edit"].includes(mode) ? "Change the maximum to four." : undefined);
+        // Explicitly inspecting a different context does not complete the old
+        // retained request; only the newly selected review is completed.
+        expect(resume.pending_job_revision).toBe(mode === "context-renew" ? exact
+          : ["unrelated-edit", "model-review-edit"].includes(mode) ? "Change the maximum to four." : undefined);
         expect(stored.coverage?.passages[0]?.disposition).toBe("implemented");
         if (counting) { expect(choices).toBe(2); expect(confirmations).toBe(2); expect(stored.counting_decisions).toHaveLength(2); }
         if (receipt) {

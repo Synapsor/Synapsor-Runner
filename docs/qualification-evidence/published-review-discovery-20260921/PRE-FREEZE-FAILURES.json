@@ -1,0 +1,44 @@
+{
+  "classification": "pre-freeze test expectation/setup corrections; product unchanged",
+  "initial_suite": {
+    "exit": 1,
+    "passed": 6853,
+    "failed": 6,
+    "skipped": 489,
+    "files_passed": 326,
+    "files_failed": 3,
+    "files_skipped": 21,
+    "duration_seconds": 1553.28,
+    "source_unchanged": true
+  },
+  "failures": [
+    {
+      "file": "apps/runner/src/boundary-cli.test.ts",
+      "cases": [
+        "context-renew",
+        "context-decline",
+        "context-race",
+        "captured-contract"
+      ],
+      "detail_log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/dispatch-failure-detail.log",
+      "exit": 1,
+      "correction": "Drive explicit current-subject selection/confirmation; retain historical pending intent; use actual saved fixture outcome in resume. Keep completion/cancellation/CAS/ownership assertions."
+    },
+    {
+      "file": "apps/runner/src/action-rule-authority.test.ts",
+      "case": "loads and searches a real 2000-outcome authority without recompiling warm requests",
+      "detail_log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/discovery-failure-detail.log",
+      "exit": 1,
+      "actual": "36 distinct outcomes in first two byte-bounded pages, not assumed40",
+      "correction": "Follow same-query/limit cursor to obtain at least40; assert uniqueness, allowed scope, unchanged byte bound and warm registry identity."
+    },
+    {
+      "file": "apps/runner/src/semantic-action-runtime.test.ts",
+      "case": "queues a third separately reviewed writer on the same held client without changing its read or trust context",
+      "detail_log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/discovery-failure-detail.log",
+      "exit": 1,
+      "actual": "Third full contract is on a subsequent bounded page",
+      "correction": "Follow cursor and assert exact3-outcome inventory before unchanged queue/execution/trust assertions."
+    }
+  ]
+}

@@ -433,7 +433,18 @@ describe("semantic Action Rule authority persistence", () => {
       const firstPage = await runtime.callTool("app.describe_actions", { limit: 20 });
       const secondPage = await runtime.callTool("app.describe_actions", { limit: 20, cursor: firstPage.next_cursor });
       const outcomes = [firstPage, secondPage].flatMap((page) => (page.actions as Array<{ outcome: string }>).map((action) => action.outcome));
-      expect(new Set(outcomes).size).toBe(40);
+      // The requested limit is a maximum under the unchanged byte budget.
+      // Follow the same query/limit cursor until forty entries are observed.
+      let next = secondPage.next_cursor;
+      for (let pages = 0; outcomes.length < 40 && pages < 8; pages++) {
+        expect(next).toEqual(expect.any(String));
+        const page = await runtime.callTool("app.describe_actions", { limit: 20, cursor: next });
+        expect(Buffer.byteLength(JSON.stringify(page))).toBeLessThanOrEqual(16_384);
+        outcomes.push(...(page.actions as Array<{ outcome: string }>).map(action => action.outcome));
+        next = page.next_cursor;
+      }
+      expect(new Set(outcomes).size).toBe(outcomes.length);
+      expect(new Set(outcomes.slice(0, 40)).size).toBe(40);
       expect(outcomes.every((outcome) => visible.includes(outcome))).toBe(true);
       for (const outcome of ["billing.option_1999", "billing.missing"]) {
         await expect(runtime.callTool("app.describe_actions", { outcome })).rejects.toMatchObject({

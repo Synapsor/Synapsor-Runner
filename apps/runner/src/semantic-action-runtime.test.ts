@@ -132,9 +132,19 @@ describe("composed semantic Action runtime", () => {
       await expect(readOperatorExecutionConfig({ projectRoot, config: f.initial, policyStore: f.binding }))
         .rejects.toMatchObject({ code: "POLICY_EXECUTION_BINDING_CHANGED" });
       expect(executionBindingDigest(f.current)).not.toBe(executionBindingDigest(f.initial));
-      expect(await f.services.semanticActions.callTool("app.describe_actions", {})).toMatchObject({ actions: expect.arrayContaining([
-        expect.objectContaining({ outcome: f.outcomes[2] }),
-      ]) });
+      // A compatibility page is byte bounded, not an inventory promise.
+      // Follow its real cursor without changing response limits.
+      const catalog: Array<{ outcome: string }> = [];
+      let cursor: unknown;
+      for (let pages = 0; pages < 4; pages++) {
+        const page = await f.services.semanticActions.callTool("app.describe_actions", cursor ? { cursor } : {});
+        catalog.push(...page.actions as Array<{ outcome: string }>);
+        cursor = page.next_cursor;
+        if (!cursor) break;
+      }
+      expect(cursor).toBeNull();
+      expect(catalog.map(entry => entry.outcome).sort()).toEqual([...f.outcomes].sort());
+      expect(new Set(catalog.map(entry => entry.outcome)).size).toBe(3);
       const request = await f.request(f.outcomes[2]!);
       expect(request).toMatchObject({ execution: "queued", proposal: { status: "approved" }, source_database_changed: false });
       expect(await f.request(f.outcomes[2]!)).toMatchObject({ execution: "queued", request_disposition: "already_recorded", source_database_changed: false });
