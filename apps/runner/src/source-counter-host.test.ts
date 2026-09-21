@@ -187,7 +187,11 @@ describe("existing compiled counter host review before policy coverage", () => {
           expect(events.slice(0, 3)).toEqual(["review", "review", "coverage"]);
           expect(records[0]!.reviews.every(Boolean)).toBe(true);
         } else expect(records).toHaveLength(0);
-        if (["decline", "save_failed", "save_noop"].includes(mode)) expect(messages.filter(message => message === "SOURCE COUNTER REVIEW PENDING")).toHaveLength(1);
+        if (["decline", "save_failed", "save_noop"].includes(mode)) {
+          expect(messages.filter(message => message === "SOURCE COUNTER REVIEW PENDING")).toHaveLength(1);
+          expect(messages).toContain("Attached rules review could not complete.");
+          expect(messages.join("\n")).toContain(mode === "decline" ? "ACTION_COUNTER_REVIEW_PENDING" : "ACTION_CHECKPOINT_NOT_SAVED");
+        }
         round++; failSave = false; cancellation = new AbortController();
         await expect(run()).resolves.toBe(0);
         expect(reviewCount).toBe(mode === "confirm" || mode === "cancel_after_save" ? 2 : mode === "decline" ? 4 : 3);

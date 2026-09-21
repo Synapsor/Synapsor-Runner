@@ -8663,10 +8663,12 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     const sources = authoringConversation?.policySources;
     const source = activePolicySource(sources);
     if (!source || !input.authoringChat || !modelAssistSession) return undefined;
+    let reviewingSourceCounters = false;
     try {
       policySourceInspection = undefined;
       policySourceInspection = await runWithProgress("Checking current review source", () =>
         inspectPolicyReviewSource(context.lock, input.schemaInspector));
+      reviewingSourceCounters = true;
       await reviewCompiledSourceCounters();
     }
     catch (error) {
@@ -8675,7 +8677,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       policyReport = undefined;
       if (reportedSourceCounterFailure !== policyFailure) {
         reportedSourceCounterFailure = policyFailure;
-        input.authoringChat.rememberDetails("SAVED REVIEW PREREQUISITE UNAVAILABLE", [policyFailure,
+        input.authoringChat.rememberDetails(reviewingSourceCounters ? "SOURCE COUNTER REVIEW PENDING" : "SAVED REVIEW PREREQUISITE UNAVAILABLE", [policyFailure,
           "The saved rules and active authority are unchanged. Reopen this job after resolving the source review or checkpoint prerequisite."]);
       }
       return undefined;
