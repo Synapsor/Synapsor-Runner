@@ -1,0 +1,42 @@
+[
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/preservation-after-main-public.json",
+    "sha256": "2028b669b3d82edf36a379cef37dc2475654fbe0bf763495f73f651f48cfc6ba",
+    "bytes": 12986
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/preservation-before-final-freeze.json",
+    "sha256": "63fdd4041f75d190a86f159ab85eb88223aa5b450592ca143b3e4e49704aab4b",
+    "bytes": 12459
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/preservation-final-after-independent.json",
+    "sha256": "cc18ea308dfedff857792ea7194dc5f0d650e0ba18eae5dea2b50c7a5539c75c",
+    "bytes": 12992
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/preservation-frozen-before-public.json",
+    "sha256": "ebd9303fdadd1d15d562c8920ce399fe15ea325273c6477318d47e79207769dc",
+    "bytes": 12989
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/shared/provider-budget-final.json",
+    "sha256": "68a0d9d73d8b5cc937534bc5b0bef54d5879f60cf281978b95d1381a4bddbb4d",
+    "bytes": 6295
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/final-window.json",
+    "sha256": "90afe7c994c455d5472852642efeae485e660f5c5c6bef7e72acf6db7b857017",
+    "bytes": 523
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/main-final-result.json",
+    "sha256": "8fc97f88a0987fe339e1793fb32c05b0c7c1a53d6e0c9d3d12663d7e31ce5eff",
+    "bytes": 5168
+  },
+  {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/preservation-original-captures-final.json",
+    "sha256": "83d29f8df18632577e6e94048f50b31370457d62f656ef5365738bd54f53901b",
+    "bytes": 16694
+  }
+]

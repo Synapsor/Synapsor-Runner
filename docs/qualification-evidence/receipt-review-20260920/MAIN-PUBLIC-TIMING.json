@@ -1,0 +1,38 @@
+{
+  "A": [
+    {
+      "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/main-A/operator-captures/exit-001.json",
+      "start": "2026-09-21T00:25:29.352346+00:00",
+      "end": "2026-09-21T00:27:11.220081+00:00",
+      "wall_seconds_including_operator_navigation": 101.867735,
+      "exit": 0,
+      "artifact": "e81826e022472e8dfa342505418c2a1a1d8442c7a6a0cdb953f5b3075b1d3065"
+    },
+    {
+      "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/main-A/operator-captures/exit-002.json",
+      "start": "2026-09-21T00:27:44.260729+00:00",
+      "end": "2026-09-21T00:28:11.699242+00:00",
+      "wall_seconds_including_operator_navigation": 27.438513,
+      "exit": 0,
+      "artifact": "e81826e022472e8dfa342505418c2a1a1d8442c7a6a0cdb953f5b3075b1d3065"
+    }
+  ],
+  "B": [
+    {
+      "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/main-B/operator-captures/exit-001.json",
+      "start": "2026-09-21T00:26:13.856900+00:00",
+      "end": "2026-09-21T00:26:39.474390+00:00",
+      "wall_seconds_including_operator_navigation": 25.61749,
+      "exit": 0,
+      "artifact": "e81826e022472e8dfa342505418c2a1a1d8442c7a6a0cdb953f5b3075b1d3065"
+    },
+    {
+      "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/main-B/operator-captures/exit-002.json",
+      "start": "2026-09-21T00:27:11.505443+00:00",
+      "end": "2026-09-21T00:27:43.968675+00:00",
+      "wall_seconds_including_operator_navigation": 32.463232,
+      "exit": 0,
+      "artifact": "e81826e022472e8dfa342505418c2a1a1d8442c7a6a0cdb953f5b3075b1d3065"
+    }
+  ]
+}

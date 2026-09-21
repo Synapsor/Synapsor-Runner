@@ -1,0 +1,73 @@
+{
+  "frozen_at": "2026-09-21T00:23:53.299Z",
+  "source_commit": "6e87cd2996b1aca3058e5f4086bb743d745e434d",
+  "product_commit": "d450f4c77057d58f393019e090cdc051a827481d",
+  "test_commit": "d450f4c77057d58f393019e090cdc051a827481d",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/frozen/installed",
+  "installed_tree_sha256": "e81826e022472e8dfa342505418c2a1a1d8442c7a6a0cdb953f5b3075b1d3065",
+  "node": {
+    "version": "v22.22.2",
+    "executable": "/usr/bin/node",
+    "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+  },
+  "runner_version": "1.8.0",
+  "spec_version": "1.11.0",
+  "package_lock_sha256": "c4d05adf1cf8f1d73ff0e1bc6c4982870d06bc93890be5051bc29ca7f98741c9",
+  "tarballs": [
+    {
+      "name": "synapsor-runner-1.8.0.tgz",
+      "sha256": "41cdf62123f549acd0bc9dd252f74746a3db42a1d1f56b0f7e73f7721d348bb5"
+    },
+    {
+      "name": "synapsor-spec-1.11.0.tgz",
+      "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+    }
+  ],
+  "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/frozen/installed-artifact-manifest.json",
+  "manifest_sha256": "8b46ee72a1d88eb4aadee31be3d8a674717dd640fb506ba9b919761974febf60",
+  "archive": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/frozen/installed-artifact.tar.gz",
+  "archive_sha256": "91c9baa6f70cbd95046823e2ae18d0c69d06c532ed0d0734d4cda1f7318e53f0",
+  "entries": 7569,
+  "entrypoints": [
+    {
+      "path": "node_modules/@synapsor/runner/dist/authoring.mjs",
+      "mode": 256,
+      "kind": "file",
+      "bytes": 197679,
+      "sha256": "b82d745464b0e275993266d6eff074f4e0752a69117e75e8166a3f9d5b177116"
+    },
+    {
+      "path": "node_modules/@synapsor/runner/dist/cli.js",
+      "mode": 320,
+      "kind": "file",
+      "bytes": 3841,
+      "sha256": "fd5383c5bd241f7c1f917ee548bc679b00a188ebeac0f117ac3e6224a7ea6acc"
+    },
+    {
+      "path": "node_modules/@synapsor/runner/dist/runner.mjs",
+      "mode": 256,
+      "kind": "file",
+      "bytes": 11843319,
+      "sha256": "546e88b71ba0a26c09702d9d5480a15b8e5502f8d14176496ae0f36792214439"
+    },
+    {
+      "path": "node_modules/@synapsor/runner/dist/runtime.mjs",
+      "mode": 256,
+      "kind": "file",
+      "bytes": 1672086,
+      "sha256": "f9ac1ab310021deda1f38ef26d3d09d9c726f66d026a56177258f64b6ae6103d"
+    },
+    {
+      "path": "node_modules/@synapsor/runner/dist/shadow.mjs",
+      "mode": 256,
+      "kind": "file",
+      "bytes": 554074,
+      "sha256": "789acbc31a9106f5e72ae8739c4751bff4bc2a7d6d97d0b206a712f57f8e2fa2"
+    }
+  ],
+  "source_archive": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/frozen/source-6e87cd2996b1aca3058e5f4086bb743d745e434d.tar.gz",
+    "sha256": "43fb368956a1370ae79605345708995d4ac257bdf44049c7f737a120446c3ca3",
+    "bytes": 92951423
+  }
+}

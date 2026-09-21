@@ -1,6 +1,6 @@
 # Independent receipt-review handoff
 
-This is a pre-freeze handoff checkpoint. Do not start final provider work until `FINAL-ARTIFACT.json` identifies the new unchanged package and your ledger allocation is LIVE. Final local and installed results must not be inferred from these development records.
+The new complete candidate is frozen: see `FINAL-ARTIFACT.json`. Main installed A/B and restarted explicit Reviews passed; `MAIN-FINAL-RESULT.json` records exact state checks. Your independent verdict remains separate. Do not infer it from development or main success. The shared final allocation deadline is2026-09-21T01:54:55.661271Z, with all original ceilings retained.
 
 Raw root: `/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920`.
 
@@ -13,3 +13,5 @@ Final route: installed `start --project-root . --cli` -> Review attached rules -
 Use `capture-owned-state.py`, `program-readback.py`, `review-readback.mts` and your independent probes; these are evidence helpers, not authority setters. Snapshot and archive before removing any owned resource. Shared task API cap$5; main/development$3 and independent$2. Tester hard ceiling12 calls with4 protected for restart,90min from declared LIVE time. Same OpenRouter/openai/gpt-5.6-terra and saved omitted/explicit settings; opaque continuation remains private. The main owns the heavy suite/build window.
 
 Your verdict must separately cover original A refusal/feedback, B positive association, confinement/drift negatives, exact saved main-input A/B continuation/restart, source/program preservation and pending deployment duties. Do not convert independent prefreeze probes or main development success into acceptance of a later artifact. No Stage B/unseen/runtime result follows.
+
+Independent final PASS is now recorded in `INDEPENDENT-FINAL-RESULT.json`; report hash b6c4a55d6266fc1fef41d101b61014eeb4ed46b1dc8a20c49e451322346ae3a6. All three new provider transports settled at$0.345746 total and all allocations are STOPPED. No further trial is requested. See `FINAL-REPORT.md` for exact accepted scope and evidence-index bookkeeping.

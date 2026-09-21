@@ -1,0 +1,117 @@
+{
+  "at": "2026-09-21T00:30:51.984476+00:00",
+  "artifact_tree": "e81826e022472e8dfa342505418c2a1a1d8442c7a6a0cdb953f5b3075b1d3065",
+  "public_scope": "saved BUSINESS Review only; no runtime/activation/provisioning/source effects",
+  "cases": {
+    "A": {
+      "BUSINESS_ready": true,
+      "blockers": [],
+      "initial_activity": "provider",
+      "restart_activity": "validated_reuse",
+      "provider_transports": 1,
+      "provider_cost_usd": 0.150232,
+      "restart_transports": 0,
+      "structural_corrections": 0,
+      "rows": 38,
+      "source_equal": true,
+      "source_sha256": "51687e126e9b7b2860fe38c3678e6c54a965fd1518aec33cb2ca89d1bf75f7a4",
+      "logical_table_count": 42,
+      "logical_tables_equal": true,
+      "program_record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/main-A/state-readbacks/rechecked-program-readback.json",
+      "saved_review_record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/main-A/state-readbacks/rechecked-business.json",
+      "policy_source_and_business_answers_equal": true,
+      "changed_review_state_keys": [
+        "application_assignments",
+        "coverage",
+        "coverage_context_digest",
+        "coverage_episodes"
+      ],
+      "receipt_assessments": [
+        {
+          "configuration_digest": "sha256:97215f95d954b2b5e53163cef203991794ca042d2586f9919164f15d2d650425",
+          "association": {
+            "kind": "reviewed_receipt_configuration",
+            "submitted_path": "/runner_evidence/runtime_contract/receipt_configuration",
+            "evidence_digest": "sha256:9f1f710119940aa534a4aabb0b591c6adf4bab83765db7746f7e7a6401ac741a"
+          },
+          "origin": "HOST-RESOLVED",
+          "family": "receipt_setup",
+          "path": "/runner_evidence/runtime_contract/receipts",
+          "source_digest": "sha256:d4e783115e819649c2be8fa5cfc7abe9d31f891c51eb0315b0a44a0c90388cd5",
+          "requirement": "runner_ledger",
+          "phase": "after_authority_review",
+          "state": "pending",
+          "verified": false,
+          "dependencies_digest": "sha256:1724a9053fe04abc235573daae31dcee2209415f03c284d60cea703cc980680c"
+        }
+      ],
+      "all_obligation_families": [
+        "source_counter_maintenance",
+        "receipt_setup"
+      ],
+      "application_verified": false,
+      "saved_review_byte_equal_after_restart": true,
+      "reviewed_to_rechecked_changed_files": [
+        ".synapsor/boundary-authoring/resume.json"
+      ],
+      "operator_intervention": [
+        "explicit new bounded episode (default No)",
+        "exact client_application planned ownership renewed, verified:false"
+      ],
+      "business_questions": 0
+    },
+    "B": {
+      "BUSINESS_ready": true,
+      "blockers": [],
+      "initial_activity": "validated_reuse",
+      "restart_activity": "validated_reuse",
+      "provider_transports": 0,
+      "provider_cost_usd": 0,
+      "restart_transports": 0,
+      "structural_corrections": 0,
+      "rows": 196,
+      "source_equal": true,
+      "source_sha256": "3d350f3f75ea99b020e95264008f90a0a0ae286d659c36e3a46d0a59cc6fd9bc",
+      "logical_table_count": 42,
+      "logical_tables_equal": true,
+      "program_record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/main-B/state-readbacks/rechecked-program-readback.json",
+      "saved_review_record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/main-B/state-readbacks/rechecked-business.json",
+      "policy_source_and_business_answers_equal": true,
+      "changed_review_state_keys": [
+        "coverage"
+      ],
+      "receipt_assessments": [
+        {
+          "configuration_digest": "sha256:678139c012064cc962be2a6f8f656232d646e3cc5b2d2d6ed517c34c3230ee33",
+          "association": {
+            "kind": "reviewed_receipt_configuration",
+            "submitted_path": "/runner_evidence/runtime_contract/receipt_configuration",
+            "evidence_digest": "sha256:c9c392e11e078c9d9bf12c5579410408cfc459b4a90a6a560228c500ae16ecd1"
+          },
+          "origin": "HOST-RESOLVED",
+          "family": "receipt_setup",
+          "path": "/runner_evidence/runtime_contract/receipts",
+          "source_digest": "sha256:809b76df7917a192accc5061b20e4cb0a363508b5cd7fe877727518f2147a55c",
+          "requirement": "source_db",
+          "phase": "after_authority_review",
+          "state": "pending",
+          "verified": false,
+          "dependencies_digest": "sha256:fb4750bbf1db9b8f368b32ee120f9eb4dddf1c0425e31dd9609bdaf8d4a05edf"
+        }
+      ],
+      "all_obligation_families": [
+        "source_counter_maintenance",
+        "source_counter_maintenance",
+        "receipt_setup",
+        "independent_source_readback"
+      ],
+      "application_verified": false,
+      "saved_review_byte_equal_after_restart": true,
+      "reviewed_to_rechecked_changed_files": [
+        ".synapsor/boundary-authoring/resume.json"
+      ],
+      "operator_intervention": [],
+      "business_questions": 0
+    }
+  }
+}

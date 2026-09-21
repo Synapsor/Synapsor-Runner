@@ -1,0 +1,131 @@
+{
+  "verdict": "PASS for exact narrow receipt-review/refusal/persistence and known-case saved-review continuation contract",
+  "reviewer_task": "01a0bcb8-0925-7380-911a-8bab207b9e0b",
+  "product_test_commit": "d450f4c77057d58f393019e090cdc051a827481d",
+  "frozen_tree": "e81826e022472e8dfa342505418c2a1a1d8442c7a6a0cdb953f5b3075b1d3065",
+  "files": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/receipt-review-association-independent-20260920/REVIEW.md",
+      "sha256": "b6c4a55d6266fc1fef41d101b61014eeb4ed46b1dc8a20c49e451322346ae3a6",
+      "bytes": 5625
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/receipt-review-association-independent-20260920/PUBLIC-RESULT.json",
+      "sha256": "b6e286d8fed737d52e573511a5e5015e9a6794495e3ea6c6255dd7fcf7cf5151",
+      "bytes": 3913
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/receipt-review-association-independent-20260920/EVIDENCE-INDEX.json",
+      "sha256": "c3cc730dbbfdb545cb551e2f8cf535570cd05bacd2bcdf8cc6f6d9029b70c688",
+      "bytes": 12272
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/receipt-review-association-independent-20260920/FINAL-ARTIFACT-POST-REVIEW-VERIFY.json",
+      "sha256": "8c59f2efbe0fef59ca78737f6042cb56e61eb72e341ae3ad8c78c3e922b5b582",
+      "bytes": 329
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/receipt-review-association-independent-20260920/INSPECTED-GATES.json",
+      "sha256": "53b2329220a20c74afa6969c8d91aa059fc55a0e8dc5614cd35f178bdc023250",
+      "bytes": 14335
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/receipt-review-association-independent-20260920/prework/INDEPENDENT-CONTRACT-PROBES.json",
+      "sha256": "ea07b3dd92d11ae65b2e91a35f86351a40b42d2ecbea94a6a3cf1a18f98c102e",
+      "bytes": 1263
+    }
+  ],
+  "result": {
+    "candidate": {
+      "archive_sha256": "91c9baa6f70cbd95046823e2ae18d0c69d06c532ed0d0734d4cda1f7318e53f0",
+      "entries": 7569,
+      "installed_tree": "e81826e022472e8dfa342505418c2a1a1d8442c7a6a0cdb953f5b3075b1d3065",
+      "manifest_sha256": "8b46ee72a1d88eb4aadee31be3d8a674717dd640fb506ba9b919761974febf60",
+      "product_test_commit": "d450f4c77057d58f393019e090cdc051a827481d",
+      "source_report_commit": "6e87cd2996b1aca3058e5f4086bb743d745e434d"
+    },
+    "classification": "independent tester result; no implementation contribution; installed public authoring/review only",
+    "inspected": {
+      "implementer_scripts_as_sole_oracle": false,
+      "stable_gates": {
+        "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/receipt-review-association-independent-20260920/INSPECTED-GATES.json",
+        "verdict": "PASS"
+      }
+    },
+    "limits": {
+      "complete_unseen_Stage_B": "NOT ESTABLISHED",
+      "historical_first_only_B": "NOT ESTABLISHED",
+      "repair_scope_verdict": "PASS",
+      "runtime_or_deployment": "NOT TESTED / NOT AUTHORIZED",
+      "stage_B": "ATTEMPTED / NOT PASSED"
+    },
+    "personally_executed": {
+      "T_A": {
+        "application_verified": false,
+        "business_ready": true,
+        "execution_authority_added": false,
+        "initial_activity": "provider",
+        "input": "unchanged authentic main A checkpoint",
+        "logical_tables_equal": true,
+        "provider_calls": 1,
+        "provider_cost_usd": 0.050154,
+        "pty": "100x30",
+        "receipt_requirement": "runner_ledger",
+        "receipt_state": "pending",
+        "receipt_verified": false,
+        "restart_activity": "validated_reuse",
+        "restart_calls": 0,
+        "route": "start --project-root . --cli; Review attached rules and unresolved decisions",
+        "source_equal": true,
+        "source_rows": 38,
+        "verdict": "PASS"
+      },
+      "T_B": {
+        "application_verified": false,
+        "business_ready": true,
+        "execution_authority_added": false,
+        "historical_first_only_recovery": "NOT ESTABLISHED",
+        "independent_source_readback": "pending/unverified",
+        "initial_activity": "validated_reuse",
+        "input_label": "Independent known-case saved-review continuation from a shared, implementer-prepared input",
+        "logical_tables_equal": true,
+        "provider_calls": 0,
+        "pty": "100x30",
+        "receipt_requirement": "source_db",
+        "receipt_state": "pending",
+        "receipt_verified": false,
+        "restart_activity": "validated_reuse",
+        "restart_calls": 0,
+        "route": "start --project-root . --cli; Review attached rules and unresolved decisions",
+        "source_equal": true,
+        "source_rows": 196,
+        "verdict": "PASS"
+      },
+      "artifact_recheck": {
+        "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/receipt-review-association-independent-20260920/FINAL-ARTIFACT-POST-REVIEW-VERIFY.json",
+        "verdict": "PASS"
+      },
+      "contract_probes": {
+        "failed": 0,
+        "passed": 8,
+        "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/receipt-review-association-independent-20260920/prework/INDEPENDENT-CONTRACT-PROBES.json",
+        "verdict": "PASS"
+      },
+      "preservation": {
+        "all_42_logical_tables_equal": true,
+        "only_review_metadata_changed": true,
+        "read_rule_effect_private_approval_active_business_equal": true,
+        "source_mutation": false,
+        "verdict": "PASS"
+      }
+    },
+    "provider_budget": {
+      "restart_calls": 0,
+      "tester_A_calls": 1,
+      "tester_B_calls": 0,
+      "tester_total_cost_usd": 0.050154
+    },
+    "reviewer_prior_participation": "No participation in receipt-review association implementation or implementer tests. Prior independent source/selected-field evidence acceptance is a distinct tester result.",
+    "verdict": "PASS for the narrow receipt-review association, refusal, persistence and known-case saved-review continuation contract on the exact candidate."
+  }
+}

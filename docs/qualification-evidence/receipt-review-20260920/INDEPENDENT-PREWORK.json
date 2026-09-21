@@ -21,5 +21,6 @@
   ],
   "historical_first_B": "NOT ESTABLISHED; bounded provenance search closed",
   "current_B_label": "Independent known-case saved-review continuation from a shared, implementer-prepared input.",
-  "paid_calls": 0
+  "paid_calls": 0,
+  "historical_probe_record_note": "The seven-probe JSON was a mutable working checkpoint later replaced by the final eight-probe result. The recorded original hash remains historical; no surviving immutable seven-probe file was found in a bounded lookup. Final acceptance uses INDEPENDENT-FINAL-RESULT.json and ea07b3dd92d11ae65b2e91a35f86351a40b42d2ecbea94a6a3cf1a18f98c102e."
 }

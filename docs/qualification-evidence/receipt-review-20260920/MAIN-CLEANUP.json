@@ -1,0 +1,74 @@
+{
+  "at": "2026-09-21T00:33:59.827702+00:00",
+  "owned_resources": [
+    {
+      "fixture": "dev-A",
+      "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/owned-final-states/dev-A/manifest.json",
+      "manifest_sha256": "6b286e54100c82e16dd5a02316eb2949f78230f784892c9cb92287502cbb210d",
+      "cleanup": {
+        "stopped_container": {
+          "name": "synapsor-receipt-receipt-dev-a",
+          "id": "95307ff6f8cdcd6dd7ee5cecb1b3932d592e37bace2a7f4beec3e652b8d4339f",
+          "owner": "receipt-review-20260920"
+        },
+        "saved_before_stop": true,
+        "removed": false
+      }
+    },
+    {
+      "fixture": "dev-B",
+      "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/owned-final-states/dev-B/manifest.json",
+      "manifest_sha256": "59e413c575ddbac6dceb95c8fc4f07af961e83a2816e52765c71f1867628db36",
+      "cleanup": {
+        "stopped_container": {
+          "name": "synapsor-receipt-receipt-dev-b",
+          "id": "4f989e3de5d0656b906c981be4159f0ca5ca53dcaf90effa4de8c2a8fe27059a",
+          "owner": "receipt-review-20260920"
+        },
+        "saved_before_stop": true,
+        "removed": false
+      }
+    },
+    {
+      "fixture": "main-A",
+      "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/owned-final-states/main-A/manifest.json",
+      "manifest_sha256": "b0caf0e53afce07d253abcb3a05685baf231b53a1f7faeaf87dcdf7946446bfb",
+      "cleanup": {
+        "stopped_container": {
+          "name": "synapsor-receipt-receipt-main-a",
+          "id": "2e47de05768d834bc73c2fdee6dbc69a239aadf6c84471ac86584bcd6c5f84eb",
+          "owner": "receipt-review-20260920"
+        },
+        "saved_before_stop": true,
+        "removed": false
+      }
+    },
+    {
+      "fixture": "main-B",
+      "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/owned-final-states/main-B/manifest.json",
+      "manifest_sha256": "37ebd8e75a1f16ab8afffc2c9e54b29bddfb9e24138ce135b0f08d6805765d68",
+      "cleanup": {
+        "stopped_container": {
+          "name": "synapsor-receipt-receipt-main-b",
+          "id": "0caa7b630b92e5f7059d92862b44ad42323a2781b1050822ebb8c505d2cb69cd",
+          "owner": "receipt-review-20260920"
+        },
+        "saved_before_stop": true,
+        "removed": false
+      }
+    },
+    {
+      "fixture": "gate-postgres",
+      "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/owned-final-states/gate-postgres/manifest.json",
+      "manifest_sha256": "081c9221896914634501c44160b1cd1cb60ae2eadb9c863c9370c4eddc334e6f",
+      "cleanup": {
+        "saved_before_stop": true,
+        "stopped": "synapsor-receipt-review-gates",
+        "id": "7da9c61c4815bd3506ead071317d9e70a1c5da765f1e32399aba8f80196ad39c",
+        "removed": false
+      }
+    }
+  ],
+  "known_completed_suite_pids_present": [],
+  "independent_resources": "not accessed or stopped by main"
+}

@@ -1,0 +1,14 @@
+{
+  "at": "2026-09-21T00:38:41.408699+00:00",
+  "matched": 41,
+  "total": 42,
+  "changed": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/shared/provider-budget-ledger.json",
+      "recorded_sha256": "a4aa1b42206834a223135983b3a59fb86530551aaa53a5c556088889ab443f08",
+      "current_sha256": "68a0d9d73d8b5cc937534bc5b0bef54d5879f60cf281978b95d1381a4bddbb4d",
+      "equal": false
+    }
+  ],
+  "note": "Shared allocation ledger intentionally changes as main and tester close their own lanes. Original index remains historical; final immutable budget snapshot is recorded separately."
+}

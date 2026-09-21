@@ -1,0 +1,9 @@
+# Next decision after independent acceptance
+
+No downstream work is started by this receipt-review ticket. If the independent reviewer accepts this exact milestone, the next bounded assignment can cover **deployment, actual receipts/readback and the declared ordinary-language edit on these same known A/B cases**, starting from the archived completed main states or independently completed current shared-input states.
+
+Use frozen tree `e81826e022472e8dfa342505418c2a1a1d8442c7a6a0cdb953f5b3075b1d3065` and the exact manifests in `FINAL-ARTIFACT.json`. The main completed archives are under raw/owned-final-states/main-A and main-B; they are final-state continuation inputs, not untouched authoring starts. The separately sealed original pending starts remain available for review reproduction. Preserve A’s38 and B’s196 rows and canonical policies/Read/effects/limits.
+
+A retains Runner-ledger receipt intent; B retains source_db/precreated intent. Neither job has newly established active authority, writer readiness, receipt infrastructure, execution permission, a completed effect or independent source readback. Applicable source-owner counter contracts, unverified client duties and exact renewed activation/execution reviews remain necessary. Provisioning and runtime activity require the separate next assignment. This authoring milestone does not demonstrate runtime lookup suitability, production identity or provider-family generality.
+
+The missing historical first-only tester B checkpoint remains NOT ESTABLISHED. Current shared-input completion must not be relabelled as that recovery or fresh independent generation. Original Stage B and NEW-SB remain ATTEMPTED / NOT PASSED; no new unseen qualification or automatic downstream continuation is proposed here. If the independent review instead finds a material counterexample, preserve it and make that precise finding the next repair decision.

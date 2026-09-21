@@ -1,0 +1,46 @@
+{
+  "at": "2026-09-21T00:37:34.309980+00:00",
+  "calls": 3,
+  "cost_usd": 0.345746,
+  "all_settled": true,
+  "all_allocations_stopped": true,
+  "shared_ceiling_usd": 5,
+  "lanes": [
+    {
+      "case": "RECEIPT-DEV-A",
+      "calls": 1,
+      "cost_usd": 0.14536,
+      "status": "STOPPED"
+    },
+    {
+      "case": "RECEIPT-DEV-B",
+      "calls": 0,
+      "cost_usd": 0,
+      "status": "STOPPED"
+    },
+    {
+      "case": "RECEIPT-MAIN-A",
+      "calls": 1,
+      "cost_usd": 0.150232,
+      "status": "STOPPED"
+    },
+    {
+      "case": "RECEIPT-MAIN-B",
+      "calls": 0,
+      "cost_usd": 0,
+      "status": "STOPPED"
+    },
+    {
+      "case": "RECEIPT-TESTER-A",
+      "calls": 1,
+      "cost_usd": 0.050154,
+      "status": "STOPPED"
+    },
+    {
+      "case": "RECEIPT-TESTER-B",
+      "calls": 0,
+      "cost_usd": 0,
+      "status": "STOPPED"
+    }
+  ]
+}
