@@ -121,6 +121,19 @@ describe("public structured Boundary authoring integration", () => {
       const savedMeaning=await loadPolicySources(root,sources.id);
       expect(savedMeaning.scoped_disclosure_reviews).toHaveLength(2);
       expect(savedMeaning.scoped_disclosure_reviews?.at(-1)?.fields[0]?.decision).toBe(mode==='local_confirmed'?'confirmed_non_sensitive':'deferred');
+      const {readActionRuleReviewSubjects}=await import('./action-rule-authority.js');
+      const {withCountingOutcomeDomain}=await import('./authoring-counting-domain.js');
+      const {inspectPolicyReviewSource}=await import('./authoring-policy-evidence.js');
+      const {scopedDisclosureInventory}=await import('./authoring-scoped-disclosure.js');
+      const activeSubject=(await readActionRuleReviewSubjects(root)).find(s=>s.identity.location==='active')!;
+      const currentContext=await loadBoundaryReviewContext(root);
+      const domain=await withCountingOutcomeDomain(root,activeSubject.authority,async d=>d);
+      // The guided preparation does not receive the explicit resolver's opaque
+      // store hash. Both paths must use the same existing effective-store proof.
+      const guided=policyCoverageDraft({read:currentContext.candidate,decisions:currentContext.bundle.decisions,actions:[],
+        authority:activeSubject.authority,policySources:savedMeaning,countingDomain:domain,
+        source:await inspectPolicyReviewSource(currentContext.lock,inspect)});
+      expect(scopedDisclosureInventory(snapshot,guided).items.every(f=>f.state!=='stale')).toBe(true);
       const restarted=await local(false);expect(restarted.lines.join('\n')).toContain('Provider calls: 0');
       expect((await loadPolicySources(root,sources.id)).scoped_disclosure_reviews).toEqual(savedMeaning.scoped_disclosure_reviews);
       expect(await readActionRuleAuthorityActivation(root)).toEqual(beforeAuthority);
