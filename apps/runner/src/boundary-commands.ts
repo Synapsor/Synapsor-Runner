@@ -307,7 +307,7 @@ import { newPolicySourceSession, loadPolicySources, activePolicySource, authorin
 import { BoundaryJobPlanningError, planningDiagnosticLines, saveBoundaryJobPlanningDiagnostic } from "./boundary-job-diagnostics.js";
 import { installPolicySourceCommands } from "./authoring-policy-source-ui.js";
 import { reviewPolicyCoverage, parsePolicyCoverage, policyCoverageSection, policyCoverageSummary, unresolvedPolicyPassages, isMechanicalApprovalCounterPassage, isReadOnlyPolicyPassage, referencesReadPolicy, actionablePolicyRequirements, prioritizePolicyRepairs, type PolicyCoverage } from "./authoring-policy-coverage.js";
-import { policyCoverageDraft, policyCoverageActionTargets } from "./authoring-policy-evidence.js";
+import { inspectPolicyReviewSource, policyCoverageDraft, policyCoverageActionTargets } from "./authoring-policy-evidence.js";
 import { hasReviewedCustomerReadEntry } from "./read-relationship-access.js";
 import { knownPolicyPrivacyReductions, policyReviewReadiness, policyReadinessItems } from "./authoring-review-readiness.js";
 import { ActionAuthoringReadOnlyRequest } from "./action-rule-model.js";
@@ -4549,7 +4549,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     const notice = await reviewSavedBoundaryPolicy({ projectRoot: input.projectRoot, session: input.session,
       resume: activeResume, sources: authoringConversation.policySources,
       modelSession: boundaryAuthoringModelSession({ ...selectedResumeModel, conversation: authoringConversation }, input.authoringChat),
-      request, confirmedReviewRequest, selectCurrentContext: selectCurrentReviewContext, actionProjectInspector: input.actionProjectInspector, progress: runWithProgress, assertRunning });
+      request, confirmedReviewRequest, selectCurrentContext: selectCurrentReviewContext, schemaInspector: input.schemaInspector, progress: runWithProgress, assertRunning });
     await input.authoringChat?.streamCheckpoint(notice.title, notice.lines, notice.tone === "warning" ? "warning" : "normal");
     return { ...boundaryAssistResult(notice, false, false, true), navigation: "pause" as const };
   };
@@ -8580,17 +8580,18 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   let receiptConfigurationEvidence: Parameters<typeof policyCoverageDraft>[0]["receiptConfiguration"];
   let executionReviewEvidence: Parameters<typeof policyCoverageDraft>[0]["executionReview"];
   let countingDomain: CountingOutcomeDomain | undefined;
+  let policySourceInspection: Awaited<ReturnType<typeof inspectPolicyReviewSource>> | undefined;
   const currentPolicyCoverageDraft = () => policyCoverageDraft({ client: intendedClient, read: context.candidate, decisions: context.bundle.decisions,
     reviewedVersionFields, policySources: authoringConversation?.policySources, executionReview: executionReviewEvidence, receiptConfiguration: receiptConfigurationEvidence, countingDomain,
     operatorClarifications: authoringConversation?.turns.filter(turn => turn.kind === "clarification"
       && authoringConversation?.policySources?.operator_messages?.includes(turn.answer)).map(turn => ({ question: turn.question, answer: turn.answer })) ?? [],
     ...(modelAssistSession ? { authoringSession: { provider: modelAssistSession.provider, model: modelAssistSession.model } } : {}),
-    ...(actionInspection ? { source: { inspection: actionInspection, generationLock: context.lock } } : {}),
+    ...(policySourceInspection ? { source: policySourceInspection } : {}),
     actions: semanticActionDrafts.map((entry) => entry.result.compiled), authority: semanticActionAuthorityDraft });
   const sourceCounterReviewAttempts = new Map<string, { failure?: string }>();
   let reportedSourceCounterFailure: string | undefined;
   const reviewCompiledSourceCounters = async () => {
-    const authority = semanticActionAuthorityDraft, inspection = actionInspection, reviewedContext = context;
+    const authority = semanticActionAuthorityDraft, inspection = policySourceInspection?.inspection, reviewedContext = context;
     if (!authority || !inspection) return;
     const checkpoint = await readBoundaryAuthoringResumeState(input.projectRoot, boundaryAuthoringResumeBinding(reviewedContext.bundle));
     const durableReviews = (checkpoint.status === "ready" || checkpoint.status === "stale")
@@ -8662,14 +8663,19 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     const sources = authoringConversation?.policySources;
     const source = activePolicySource(sources);
     if (!source || !input.authoringChat || !modelAssistSession) return undefined;
-    try { await reviewCompiledSourceCounters(); }
+    try {
+      policySourceInspection = undefined;
+      policySourceInspection = await runWithProgress("Checking current review source", () =>
+        inspectPolicyReviewSource(context.lock, input.schemaInspector));
+      await reviewCompiledSourceCounters();
+    }
     catch (error) {
       assertRunning(error);
       policyFailure = redactCliErrorMessage(error instanceof Error ? error.message : String(error));
       policyReport = undefined;
       if (reportedSourceCounterFailure !== policyFailure) {
         reportedSourceCounterFailure = policyFailure;
-        input.authoringChat.rememberDetails("SOURCE COUNTER REVIEW PENDING", [policyFailure,
+        input.authoringChat.rememberDetails("SAVED REVIEW PREREQUISITE UNAVAILABLE", [policyFailure,
           "The saved rules and active authority are unchanged. Reopen this job after resolving the source review or checkpoint prerequisite."]);
       }
       return undefined;
@@ -9326,8 +9332,10 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   };
   const pauseAttachedRules = async (): Promise<BoundaryAssistOutcome> => {
     await persistAuthoringResume("authority_review");
-    const notice: BoundaryAccessNotice = { tone: "warning", title: "Attached rules review paused.",
-      lines: ["The draft, complete rules and available check evidence remain saved. Existing authority and source data are unchanged."],
+    const notice: BoundaryAccessNotice = { tone: "warning", title: policyFailure ? "Attached rules review could not complete." : "Attached rules review paused.",
+      lines: [...(policyFailure ? [policyFailure,
+        "Resolve the reported review prerequisite, then resume this saved job. The saved business edit does not need to be drafted again."] : []),
+        "The draft, complete rules and available check evidence remain saved. Existing authority and source data are unchanged."],
       footer: "Resume this saved job to continue its guided rules review." };
     input.authoringChat?.checkpoint(notice.title, notice.lines, "warning");
     return { ...boundaryAssistResult(notice, false, false, Boolean(input.authoringChat)), navigation: "pause" };
@@ -10612,7 +10620,7 @@ export async function reviewSavedBoundaryPolicy(input: {
   confirmedReviewRequest?: string;
   /** Explicit public Review selection; automatic Resume cannot retarget a pending review. */
   selectCurrentContext?: boolean;
-  actionProjectInspector?: typeof inspectActionProject;
+  schemaInspector?: typeof inspectDatabase;
   progress?: <T>(label: string, operation: () => Promise<T>) => Promise<T>;
   assertRunning?: () => void;
 }): Promise<BoundaryAccessNotice> {
@@ -10688,7 +10696,7 @@ export async function reviewSavedBoundaryPolicy(input: {
     });
   }
   try {
-    const inspection = await (input.actionProjectInspector ?? inspectActionProject)(input.projectRoot, process.env);
+    const sourceInspection = await inspectPolicyReviewSource(context.lock, input.schemaInspector);
     let domain: CountingOutcomeDomain | undefined;
     if (authority) {
       try { domain = await withCountingOutcomeDomain(input.projectRoot, authority, async current => current); }
@@ -10706,7 +10714,7 @@ export async function reviewSavedBoundaryPolicy(input: {
       } catch { /* Deployment evidence unavailable, not verified. */ }
     }
     const currentDraft = () => policyCoverageDraft({ client: resume.intended_client, read: context.candidate, decisions: context.bundle.decisions,
-      actions: [], authority, source: { inspection, generationLock: context.lock }, reviewedVersionFields: boundaryAuthoringVersionReviews(resume),
+      actions: [], authority, source: sourceInspection, reviewedVersionFields: boundaryAuthoringVersionReviews(resume),
       policySources: input.sources, countingDomain: domain, executionReview, receiptConfiguration,
       authoringSession: { provider: input.modelSession.provider, model: input.modelSession.model },
       operatorClarifications: resume.conversation.filter(turn => turn.kind === "clarification"

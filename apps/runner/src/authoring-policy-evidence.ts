@@ -10,7 +10,7 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { activePolicySource, type PolicyCoverage, type PolicyPassage, type PolicySourceSession } from "./authoring-policy-source.js";
 import { hasReviewedCustomerReadEntry, reviewedReadEntryPaths } from "./read-relationship-access.js";
 import { policySourceConstraintEvidence, type PolicySourceInspection } from "./action-rule-source-evidence.js";
-import { rolePostureFingerprint, schemaFingerprintForInspection } from "@synapsor-runner/schema-inspector";
+import { inspectDatabase, rolePostureFingerprint, schemaFingerprintForInspection } from "@synapsor-runner/schema-inspector";
 import { actionRuleRelationshipPairs, normalizeActionRuleCatalog, type ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
 import { inspectedPostgresScopeMapping } from "./inspected-scope-mapping.js";
 import { actionRuleRelationshipsForTable, buildActionRuleAuthoringCatalog, uniqueKey } from "./action-rule-authoring.js";
@@ -19,6 +19,20 @@ import { prepareActionVersionField } from "./action-rule-version-review.js";
 import { preparePrivateActionSource } from "./action-rule-resource-review.js";
 import type { DerivedEffectEnvelopeSpecV1 } from "@synapsor/spec";
 import type { AskProvider } from "./model-ask.js";
+
+/** Policy and counter evidence is bound to the reviewed reader, not the
+ * writer-enriched inspection used to compile Actions. Never substitute writer
+ * posture or fall back after a failed reader inspection. The normal exact
+ * lock/schema/role validators still validate the returned evidence. */
+export async function inspectPolicyReviewSource(
+  generationLock: PolicySourceInspection["generationLock"],
+  inspect: typeof inspectDatabase = inspectDatabase,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<PolicySourceInspection> {
+  const inspection = await inspect({ engine: generationLock.engine, databaseUrlEnv: generationLock.source_env,
+    ...(generationLock.inspected_schema ? { schema: generationLock.inspected_schema } : {}), env });
+  return { inspection, generationLock };
+}
 
 function inspectedReaderPosture(read: ExplorationBoundaryDraft, source?: PolicySourceInspection) {
   if (!source) return null;
