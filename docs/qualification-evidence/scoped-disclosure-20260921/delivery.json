@@ -1,0 +1,31 @@
+{
+  "baseline": "9ec593e8c3fe1ba4b9276847e3bcb648fe59cda6",
+  "report_commit": "d25d66f7d7d8c3d05f27b85777dd5ac9b3850644",
+  "product_commit": "7d881de8942b4089d225cd0a9e6196e6917ec075",
+  "candidate_tree": "743ef7430b55022f720ab988bbdb9cb7d17d8fccda0a244a1661cf70b6f06a55",
+  "status": "STOPPED: owner classification pending; omission inconsistency unrepaired; no BUSINESS/B pass",
+  "report": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-20260921/FINAL-REPORT.md",
+    "sha256": "1662de1b4500d9bb8e19f31b2f4b6fcb227089cefecb6b83be67481c3fda4657"
+  },
+  "index": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-20260921/EVIDENCE-INDEX.json",
+    "sha256": "c284fc8ba8677cf531d9ee066f03782f6b88bba2941688362de16685810e1b08"
+  },
+  "resume_handoff": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-20260921/RESUME-HANDOFF.md",
+    "sha256": "9168bf35768e09f4b6c7ca8741898830048788d62d083d186a5ef5c2e85c0759"
+  },
+  "seal": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/delivery/seal.json",
+    "sha256": "591baa58e126620390fc8f4005b9b1df086cb57e20c1df53da92ef6161757e7b"
+  },
+  "report_archive": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/delivery/reports.tgz",
+    "sha256": "f632431d12282ebc4501f36e1e16a1dbcb0b7c98dfd901e384f7fc11a429358d"
+  },
+  "backup": "https://github.com/Synapsor/Synapsor-Runner-Backup.git",
+  "actual_final_push_record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-9ec593e-20260921/PRIVATE-PUSH-RESULT.json",
+  "openrouter_cap_usd": 5,
+  "openrouter_new_spend_usd": 0
+}
