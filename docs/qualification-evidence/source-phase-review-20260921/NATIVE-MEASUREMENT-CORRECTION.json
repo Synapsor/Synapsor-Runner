@@ -1,0 +1,26 @@
+{
+  "at": "2026-09-21T17:22:09.395936+00:00",
+  "classification": "Final A measurement correction; frozen product untouched",
+  "first_attempt": "native-continuing, KC-A-2; full response captured; process terminated before completed turn",
+  "observation": "Response accounting failed with Error at the same millisecond as the MCP observer budget write. Original log omitted errno; exact original exception is unavailable. Existing fail-immediately lock reproducibly raises Error/EEXIST on overlap. Saved usage succeeds without overlap.",
+  "fix": "Only qualification budget lock waits up to500ms for another short measurement write; abandoned lock still fails, never reclaimed. Same helper used by usage accounting and MCP observer. Capture logs retain safe errno for future diagnosis. Product requests/policy/timeouts/worker/source locks unchanged.",
+  "tests": [
+    "failing-before Error/EEXIST",
+    "short competing writer completes156ms",
+    "abandoned lock refuses506ms and retained",
+    "two synthetic complete turns preserve cumulative accounting",
+    "stdio observer bytes/count/refusal unchanged"
+  ],
+  "provider_calls": 1,
+  "business_requests": 0,
+  "source_changes": 0,
+  "control_tables_changed": [],
+  "complete_usage_provisional_upper_usd": 0.25192,
+  "actual_provider_cost": "UNKNOWN; no client complete-turn result; conservative observed-token upper retained",
+  "old_TLS_liability_usd": 0.985804,
+  "original_raw_capture_sha256": "d1ef3c07862e6e0b0580e6a3cbb8dd2337cfdd6368597fe946ced35c617e4734",
+  "harness_corrections_conservatively_counted": 2,
+  "included_first_minor_correction": "Local namespace phase-file read outside bwrap corrected before restart selection; no public call affected.",
+  "remaining_harness_corrections": 0,
+  "next": "One measurement-corrected current native process, same model/settings, original deadlines/counters. Stop further harness failure; no favorable-response selection."
+}

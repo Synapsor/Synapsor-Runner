@@ -2,9 +2,21 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+export function acquireBudgetLock(lock) {
+  // Qualification ledger only: response accounting and the MCP observer can
+  // finish together in separate processes. Never reclaim another writer's lock.
+  const deadline = performance.now() + 500;
+  for (;;) {
+    try { return fs.openSync(lock, 'wx', 0o600); }
+    catch (error) {
+      if (error.code !== 'EEXIST' || performance.now() >= deadline) throw error;
+      Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 5);
+    }
+  }
+}
 function update(file, operation) {
   const lock = file + '.lock';
-  const fd = fs.openSync(lock, 'wx', 0o600); // A competing meter fails closed; no unbounded wait.
+  const fd = acquireBudgetLock(lock); // At most 500ms; abandoned locks fail closed.
   try {
     const state = JSON.parse(fs.readFileSync(file, 'utf8'));
     const result = operation(state);
