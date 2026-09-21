@@ -4,7 +4,7 @@ import { policyCountingInterpretations } from "./authoring-counting-review.js";
 import type { CountingOutcomeDomain } from "./authoring-policy-source.js";
 import { explorationBoundaryCandidateDigest, hasReviewedPrincipalScope, type ExplorationBoundaryDraft } from "./auto-boundary.js";
 import { actionRuleModelDraftFromAuthority, type CompiledActionRuleModelDraftV1 } from "./action-rule-draft.js";
-import type { ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";
+import type { ActionRuleAuthorityReviewSubjectV1 } from "./action-rule-authority.js";
 import { readBoundaryRevisionCatalog } from "./read-boundary-revision-model.js";
 import type { ManagedMcpProjectClient } from "./managed-mcp-project.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -100,7 +100,7 @@ export function policyCoverageDraft(input: {
   read: ExplorationBoundaryDraft;
   decisions: Array<{ decision: string; confirmed: boolean }>;
   actions: CompiledActionRuleModelDraftV1[];
-  authority?: ActionRuleAuthorityDraftV1;
+  authority?: ActionRuleAuthorityReviewSubjectV1;
   source?: PolicySourceInspection;
   /** Host-confirmed operating commitments, never model assertions or proof of external enforcement. */
   reviewedVersionFields?: readonly ReviewedActionVersionField[];

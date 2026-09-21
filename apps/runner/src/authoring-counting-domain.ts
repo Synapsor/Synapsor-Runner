@@ -3,7 +3,7 @@ export type { CountingOutcomeDomain } from "./authoring-policy-source.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { readActionRuleAuthorityActivation, type ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";
+import { readActionRuleAuthorityActivation, type ActionRuleAuthorityReviewSubjectV1 } from "./action-rule-authority.js";
 import { borrowRuntimeControlPolicies, createProjectRuntimeStore } from "./control-policy-store.js";
 import { readLedgerRuntimeConfig, runnerConfigPath } from "./cli-project.js";
 import { SEMANTIC_ACTION_RUNTIME_CONFIG } from "./semantic-action-deployment.js";
@@ -13,7 +13,7 @@ import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } fro
 /** Read the already selected store, including before execution setup exists.
  * Runtime gate -> authority mutex -> store read; provider work stays outside.
  * A missing/mismatched store is unavailable evidence, never empty history. */
-export async function withCountingOutcomeDomain<T>(projectRoot: string, proposed: ActionRuleAuthorityDraftV1,
+export async function withCountingOutcomeDomain<T>(projectRoot: string, proposed: ActionRuleAuthorityReviewSubjectV1,
   operation: (domain: CountingOutcomeDomain, permit: ProjectAuthorityMutationPermit) => Promise<T>,
   env: NodeJS.ProcessEnv = process.env): Promise<T> {
   return withProjectRuntimeAdmission(projectRoot, async root => {

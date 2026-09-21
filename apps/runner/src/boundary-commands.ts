@@ -1,3 +1,4 @@
+import { resolveAuthoringReviewSubject } from "./authoring-review-subject.js";
 import { actionRuleEffectLines } from "@synapsor-runner/action-rules";
 import { actionRuleDisclosureReconciliation, actionRuleEditDifferenceLines } from "./action-rule-disclosure-review.js";
 import { readActivationImpact, readActivationImpactLines } from "./read-activation-impact.js";
@@ -10631,34 +10632,29 @@ export async function reviewSavedBoundaryPolicy(input: {
   const source = activePolicySource(input.sources);
   if (!source || resume.policy_source_session !== input.sources.id) throw new Error("POLICY_REVIEW_SOURCE_UNAVAILABLE: Select the saved job's complete attached source before review.");
   const readDigest = explorationBoundaryCandidateDigest(context.candidate);
-  const drafts = (await listActionRuleAuthorityDrafts(input.projectRoot)).filter(draft => draft.authority.rules.every(rule =>
-    rule.read_boundary_name === context.candidate.pack.name && rule.read_boundary_digest === readDigest));
-  let authority: ActionRuleAuthorityDraftV1 | undefined;
-  if (resume.pending_policy_review?.action_name) {
-    authority = drafts.find(draft => draft.authority.name === resume.pending_policy_review!.action_name);
-    if (!authority || authority.digest !== resume.pending_policy_review.action_digest && !input.selectCurrentContext) throw new Error("POLICY_REVIEW_CANDIDATE_CHANGED: The selected review candidate changed. Select its current revision explicitly; the unfinished review is retained.");
-  } else if (drafts.length === 1) authority = drafts[0];
-  else if (drafts.length > 1) {
-    const chosen = await input.session.chooseOption?.("SELECT SAVED ACTION CANDIDATE TO REVIEW", drafts.map((draft, index) => ({
-      value: String(index), label: draft.authority.name, detail: `Saved candidate ${draft.digest}; active authority is separate.`,
-    })), { reviewOnly: true });
-    if (chosen === undefined || !drafts[Number(chosen)]) return boundaryAssistBackNotice("Review selection cancelled. Saved work is unchanged.");
-    authority = drafts[Number(chosen)];
-  } else if (resume.action) throw new Error("POLICY_REVIEW_CANDIDATE_UNAVAILABLE: This job has no saved Action candidate matching the selected Read revision. Revalidate its existing draft before review; no replacement was inferred.");
+  const selected = await resolveAuthoringReviewSubject({ projectRoot: input.projectRoot, resume,
+    context: { source_session: input.sources.id, source_digest: source.digest as `sha256:${string}`,
+      read_name: context.candidate.pack.name, read_digest: readDigest },
+    session: input.session, selectCurrentContext: input.selectCurrentContext });
+  if (selected.cancelled) return boundaryAssistBackNotice("Review selection cancelled. Saved work is unchanged.");
+  const authority = selected.subject?.authority;
   const prior = resume.pending_policy_review;
   const changedContext = prior && (prior.source_session !== input.sources.id || prior.source_digest !== source.digest
-    || prior.read_digest !== readDigest || prior.action_digest !== authority?.digest);
+    || prior.read_digest !== readDigest || prior.action_digest !== authority?.digest
+    || (prior.action_subject
+      ? canonicalJsonDigest(prior.action_subject) !== canonicalJsonDigest(selected.subject?.identity ?? null)
+      : selected.subject?.identity.location === "active"));
   if (changedContext && !input.selectCurrentContext) {
     throw new Error("POLICY_REVIEW_CONTEXT_CHANGED: The selected source or Read candidate changed. The prior review remains pending; explicitly select the new context before continuing.");
   }
   const display = [`Saved job: ${resume.job_intent}`, `Read candidate: ${context.candidate.pack.name} · ${readDigest}`,
-    ...(authority ? [`Action candidate: ${authority.authority.name} · ${authority.digest}`] : []),
+    ...(authority ? [`Action subject (${authority.state === "active" ? "active published" : "disabled candidate"}): ${authority.authority.name} · ${authority.digest}`] : []),
     `Attached source: ${source.name} v${source.version} · ${source.digest} · ${source.bytes} bytes / ${source.lines} lines (complete)`,
-    "Operation: review this saved candidate. Rules, active authority, execution and application history stay unchanged."];
+    "Operation: review this exact saved subject. Rules, active authority, execution and application history stay unchanged."];
   input.session.rememberDetails?.("REVIEW ATTACHED RULES AND UNRESOLVED DECISIONS", display);
   if (changedContext) {
     if ((prior!.prior_contexts?.length ?? 0) >= 16) throw new Error("POLICY_REVIEW_CONTEXT_HISTORY_FULL: Prior failed contexts are preserved. No new review was started.");
-    const accepted = await input.session.confirm("Review this current disabled context instead of the prior pending revision?", { defaultValue: false,
+    const accepted = await input.session.confirm("Review this explicitly selected current context instead of the prior pending revision?", { defaultValue: false,
       context: [...display, `Prior source: ${prior!.source_digest}; Read: ${prior!.read_digest}; Action: ${prior!.action_digest ?? "none"}.`,
         "The prior pending context will remain recorded as history, not completed or reusable coverage. No policy meaning or business edit is inferred.",
         "The complete current candidate still needs normal validation; existing independent unfinished edits and deployment duties remain pending."] });
@@ -10667,7 +10663,7 @@ export async function reviewSavedBoundaryPolicy(input: {
   if (input.confirmedReviewRequest !== undefined && input.confirmedReviewRequest !== resume.pending_job_revision) {
     throw new Error("BOUNDARY_AUTHORING_RESUME_CHANGED: The confirmed review request no longer matches the saved item.");
   }
-  let supersedes = prior?.supersedes_pending_job_revision ?? input.confirmedReviewRequest;
+  let supersedes = (!changedContext ? prior?.supersedes_pending_job_revision : undefined) ?? input.confirmedReviewRequest;
   if (!prior && resume.pending_job_revision && !supersedes) {
     const choice = await input.session.chooseOption?.("REVIEW OR UNFINISHED EDIT?", [
       { value: "keep", label: "Review this candidate; retain the separate unfinished edit" },
@@ -10677,17 +10673,20 @@ export async function reviewSavedBoundaryPolicy(input: {
     if (!choice || choice === "pause") return boundaryAssistBackNotice("Review paused. The unfinished request remains saved.");
     if (choice === "review") supersedes = resume.pending_job_revision;
   }
-  const request: BoundaryPolicyReviewRequest = prior && !changedContext ? prior : { operation: "review_rules", request: input.request,
+  const request: BoundaryPolicyReviewRequest = prior && !changedContext ? { ...prior,
+    ...(selected.subject ? { action_subject: selected.subject.identity } : {}) } : { operation: "review_rules", request: input.request,
     source_session: input.sources.id, source_digest: source.digest as `sha256:${string}`, read_digest: readDigest,
-    ...(authority ? { action_name: authority.authority.name, action_digest: authority.digest } : {}),
+    ...(authority ? { action_name: authority.authority.name, action_digest: authority.digest, action_subject: selected.subject!.identity } : {}),
     ...(supersedes ? { supersedes_pending_job_revision: supersedes } : {}),
     ...(changedContext ? { prior_contexts: [...(prior!.prior_contexts ?? []), { source_session: prior!.source_session,
       source_digest: prior!.source_digest, read_digest: prior!.read_digest,
-      ...(prior!.action_name ? { action_name: prior!.action_name, action_digest: prior!.action_digest } : {}) }] } : {}) };
+      ...(prior!.action_name ? { action_name: prior!.action_name, action_digest: prior!.action_digest } : {}),
+      ...(prior!.action_subject ? { action_subject: prior!.action_subject } : {}) }] } : {}) };
   const assertCurrent = async (permit?: ProjectAuthorityMutationPermit) => {
     input.assertRunning?.();
     await assertBoundaryAuthoringResumeCurrent(input.projectRoot, resume, undefined, { permit });
-    await reloadReadReviewForModelRevision(input.projectRoot, context, authority);
+    await reloadReadReviewForModelRevision(input.projectRoot, context);
+    await selected.assertCurrent();
   };
   if (!prior || changedContext) {
     await withProjectAuthorityMutation(input.projectRoot, async permit => {
@@ -10741,7 +10740,7 @@ export async function reviewSavedBoundaryPolicy(input: {
       input.session.rememberDetails?.(section.title, reviewSectionLines(section));
     }
     const readiness = policyReviewReadiness(source, checked.report, input.sources);
-    return { tone: readiness.ready ? "success" : "warning", title: readiness.ready ? "Business review completed for this saved candidate." : "Business review remains pending.",
+    return { tone: readiness.ready ? "success" : "warning", title: readiness.ready ? "Business review completed for this saved subject." : "Business review remains pending.",
       lines: [...display, `Review activity: ${checked.activity ?? "not completed"}.`, ...readiness.summary,
         ...(resume.pending_job_revision || resume.pending_action_revision || resume.pending_read_revision || resume.pending_action_addition || resume.pending_action_removal
           ? ["Separate unfinished edits remain saved; this review did not implement them."] : []),

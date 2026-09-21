@@ -70,9 +70,20 @@ export type LoadedActiveActionRuleAuthorityV1 = LoadedActionRuleAuthorityV1 & {
   unavailable_outcomes?: string[];
 };
 
-type ExistingActionRuleAuthorityV1 =
+export type ActionRuleAuthorityReviewSubjectV1 =
   | ActionRuleAuthorityDraftV1
   | ActionRuleAuthorityActivationV1;
+type ExistingActionRuleAuthorityV1 = ActionRuleAuthorityReviewSubjectV1;
+
+export type ActionRuleReviewSubject = {
+  authority: ActionRuleAuthorityReviewSubjectV1;
+  identity: { location: "disabled" | "active"; record: string; store: `sha256:${string}` };
+  /** Existing immutable draft + activation event, never a reconstructed draft. */
+  published_from?: string;
+  /** Validated immutable records in this same repository/name, for explicit
+   * current-authority selection after a competing publication. Not completion. */
+  prior_subjects?: Array<{ record: string; digest: `sha256:${string}` }>;
+};
 
 export type ActionRuleAuthorityRevisionBaseline = {
   projectRoot: string;
@@ -470,6 +481,53 @@ export async function readActionRuleAuthorityActivation(
     throw invalidActivation();
   }
   return activation;
+}
+
+/** Trusted authoring read. Keep lifecycle records distinct and bind the result
+ * to the selected repository. An active record alone is not job lineage.
+ * History work is bounded by the existing repository page limit; unavailable
+ * lineage never falls back to a guessed draft or a different active revision. */
+export async function readActionRuleReviewSubjects(projectRoot: string): Promise<ActionRuleReviewSubject[]> {
+  const stored = await withStoredActionPolicies(projectRoot, undefined, async (binding, current) => {
+    const store = canonicalJsonDigest({ project: path.resolve(projectRoot), repository: binding.repository_id,
+      deployment: binding.deployment_id, project_id: binding.project_id });
+    const subjects: ActionRuleReviewSubject[] = current.drafts.map(revision => ({ authority: parseStoredActionDraft(revision),
+      identity: { location: "disabled", record: revision.revision_id, store } }));
+    const revision = current.active[0];
+    if (revision) {
+      const { activation } = parseStoredActionActivation(revision);
+      const key = actionKey(revision.name);
+      const history = await binding.repository.history({ deployment_id: binding.deployment_id, key, limit: 100 });
+      const publication = await binding.repository.policyHistory({ deployment_id: binding.deployment_id, key, limit: 100 }, {
+        keys: [key], authorize: ([active]) => {
+          if (active?.revision_id !== revision.revision_id) throw authorityError("POLICY_REVISION_CONFLICT", "The selected active Action changed during review preparation.");
+        },
+      });
+      const eventRef = publication.items.find(item => item.operation === "revision_created" && item.revision_id === revision.revision_id);
+      const event = eventRef ? await binding.repository.event(binding.deployment_id, eventRef.event_id) : undefined;
+      const receipt = event?.receipt as Record<string, unknown> | undefined;
+      const material = (value: ExistingActionRuleAuthorityV1) => canonicalJsonDigest({ authority: value.authority, reviews: value.reviews });
+      const prior = receipt?.operation === "activate_action" && receipt.after === revision.revision_id && receipt.name === revision.name
+        ? history.find(item => item.epoch < event!.epoch && (storedActionContent(item.revision) as { state?: unknown })?.state === "disabled"
+          && material(parseStoredActionDraft(item.revision)) === material(activation)) : undefined;
+      subjects.push({ authority: activation, identity: { location: "active", record: revision.revision_id, store },
+        ...(prior ? { published_from: prior.revision.revision_id } : {}),
+        prior_subjects: history.map(item => {
+          const content = storedActionContent(item.revision) as { state?: unknown };
+          const checked = content.state === "disabled" ? parseStoredActionDraft(item.revision) : parseStoredActionActivation(item.revision).activation;
+          return { record: item.revision.revision_id, digest: checked.digest };
+        }) });
+    }
+    if ((await binding.repository.deployment(binding.deployment_id))?.epoch !== current.epoch)
+      throw authorityError("POLICY_REVISION_CONFLICT", "Action authority changed during review preparation. Reopen its current review.");
+    return subjects;
+  });
+  if (stored) return stored;
+  const store = canonicalJsonDigest({ project: path.resolve(projectRoot), storage: "legacy_files" });
+  const drafts = await listActionRuleAuthorityDrafts(projectRoot);
+  const active = await readActionRuleAuthorityActivation(projectRoot);
+  return [...drafts, ...(active ? [active] : [])].map(authority => ({ authority,
+    identity: { location: authority.state, record: canonicalJsonDigest(authority), store } }));
 }
 
 export async function activateActionRuleAuthority(input: {

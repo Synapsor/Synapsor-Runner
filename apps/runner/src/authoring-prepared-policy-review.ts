@@ -3,7 +3,7 @@ import type { CoverageReviewEpisode } from "./authoring-policy-source.js";
 import { reviewClientDutyOwnership } from "./authoring-client-duties.js";
 import { authoringReceiptConfiguration } from "./authoring-receipt-configuration.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import type { ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";
+import type { ActionRuleAuthorityReviewSubjectV1 } from "./action-rule-authority.js";
 import { withCountingOutcomeDomain, type CountingOutcomeDomain } from "./authoring-counting-domain.js";
 import { reviewUnestablishedCounting } from "./authoring-counting-decision-review.js";
 import { parsePolicyCoverage, reviewPolicyCoverage } from "./authoring-policy-coverage.js";
@@ -28,7 +28,7 @@ export async function ensurePreparedPolicyCoverage(input: {
   operatorSession: BoundaryReviewInteractiveSession;
   currentDraft: () => ReturnType<typeof policyCoverageDraft>;
   authorityDigest: string;
-  authority?: ActionRuleAuthorityDraftV1;
+  authority?: ActionRuleAuthorityReviewSubjectV1;
   countingDomain?: CountingOutcomeDomain;
   clarifications: unknown[];
   assertCurrent: (permit?: ProjectAuthorityMutationPermit) => Promise<void>;

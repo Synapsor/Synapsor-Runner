@@ -46,6 +46,7 @@ export const REQUEST_CHANGE_TOOL = "app.request_change";
 const OUTCOME_PATTERN = /^[A-Za-z_][A-Za-z0-9_.:-]{0,255}$/u;
 const BINDING_PATTERN = /^[A-Za-z_][A-Za-z0-9_]{0,127}$/u;
 const SUBJECT_REFERENCE_PATTERN = /^obj_[A-Za-z0-9_-]{32,128}$/u;
+const APPROVAL_DISCLOSURE_GUIDANCE = "Omitted or undisclosed approval conditions do not mean automatic approval is absent or human review is the only path. Proposal-only separates requesting from execution; it does not mean manual-only. Exact detail may disclose the approval mode but not private conditions. Actual request disposition governs; request_change is not a read-only eligibility probe. Approval never establishes execution readiness.";
 
 export function createInactiveSemanticActionRuntime(): SemanticActionRuntime {
   return {
@@ -54,7 +55,8 @@ export function createInactiveSemanticActionRuntime(): SemanticActionRuntime {
     async callTool(name, args) {
       if (name === DESCRIBE_ACTIONS_TOOL) {
         parseCatalogRequest(args);
-        return { ok: true, actions: [], availability: "operator_review_required", source_database_changed: false };
+        return { ok: true, actions: [], availability: "operator_review_required",
+          approval_information: { disclosure: "unavailable", guidance: APPROVAL_DISCLOSURE_GUIDANCE }, source_database_changed: false };
       }
       if (name === REQUEST_CHANGE_TOOL) {
         parseRequestChange(args);
@@ -146,7 +148,7 @@ export function createSemanticActionRuntime(input: {
             return { id: activated.compiled.outcome, ...metadata,
               value: { outcome: activated.compiled.outcome, description, summary: metadata.summary, availability,
                 subjects: activated.compiled.rule.subjects.map(({ binding, resource }) => ({ binding, resource })),
-                eligibility: "not_checked" },
+                eligibility: "not_checked", approval: { disclosure: availability === "available" ? "not_reported" : "unavailable" } },
               detail: () => describeAction(registry, activated, availability),
             };
           }));
@@ -326,7 +328,7 @@ function semanticActionToolMetadata(): LocalToolMetadata[] {
     {
       name: DESCRIBE_ACTIONS_TOOL,
       title: "Describe reviewed actions",
-      description: 'Choose listing {} or {"query":"text","limit":5}, OR exact detail {"outcome":"<exact id>"}. Host rejects outcome combined with non-null query/limit/cursor. Optional null means omitted: full-property detail uses query:null, limit:null, cursor:null; listing uses outcome:null. Never invent listing defaults for detail. Limit is a maximum; byte-bounded pages may contain fewer entries. Follow next_cursor until null. Keep the same query/context. Search returns bounded summaries; empty input retains a bounded compatibility page of full contracts. Inspect the chosen outcome before requesting it. Availability is not eligibility. No source rows are read and no authority is granted.',
+      description: 'Choose listing {} or {"query":"text","limit":5}, OR exact detail {"outcome":"<exact id>"}. Host rejects outcome combined with non-null query/limit/cursor. Optional null means omitted: full-property detail uses query:null, limit:null, cursor:null; listing uses outcome:null. Never invent listing defaults for detail. Limit is a maximum; byte-bounded pages may contain fewer entries. Follow next_cursor until null. Keep the same query/context. Search returns bounded summaries; empty input retains a bounded compatibility page of public request contracts. Inspect the chosen outcome before requesting it. Availability is not eligibility. No source rows are read and no authority is granted. ' + APPROVAL_DISCLOSURE_GUIDANCE,
       kind: "action_catalog",
       input_schema: { query: { type: "string", required: false }, limit: { type: "number", required: false },
         cursor: { type: "string", required: false }, outcome: { type: "string", required: false } },
@@ -372,6 +374,7 @@ function actionCatalogContext(exactDetail = false): Record<string, unknown> {
       subject_refs: { "<binding from the selected action's request_shape>": "obj_<opaque reference>" },
     } } : {}),
     request_guidance: "Use the selected action's request_shape and reviewed inputs, not another outcome's subjects. Listed availability is not customer eligibility.",
+    approval_information: { disclosure: "partial", guidance: APPROVAL_DISCLOSURE_GUIDANCE },
     authority: {
       proposal_only: true,
       model_can_supply_patch: false,

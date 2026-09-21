@@ -26,7 +26,7 @@ export function actionRuleDiscoveryMetadata(rule: ActionRuleSpecV1): { title: st
   return { title, summary, aliases: aliases as string[] };
 }
 
-/** A complete public request contract, not the private verification program. */
+/** A complete public request shape, not the private approval/verification program. */
 export function actionRuleDiscoveryContract(compiled: CompiledActionRuleV1, approvalMode: "policy" | "human", availability = "available"): Record<string, unknown> {
   const metadata = actionRuleDiscoveryMetadata(compiled.rule);
   return {
@@ -41,8 +41,13 @@ export function actionRuleDiscoveryContract(compiled: CompiledActionRuleV1, appr
     proposal_effect: { scope: "primary_only; see business_effects for all components", operation: compiled.effect_envelope.operation, resource: compiled.effect_envelope.target_resource,
       fields: compiled.effect_envelope.allowed_fields.map((field) => field.name), max_rows: 1 },
     business_effects: actionRulePublicEffects(compiled),
-    approval: { class: compiled.approval_class, decision: approvalMode === "policy"
-      ? "automatic only when the separate reviewed policy and atomic limits pass; otherwise human review" : "human review required" },
+    approval: { class: compiled.approval_class,
+      disclosure: availability !== "available" ? "unavailable" : approvalMode === "policy" ? "mode_only" : "manual_only",
+      decision: availability !== "available" ? "current approval route unavailable until operator review; no approval or execution readiness established"
+        : approvalMode === "policy" ? "automatic only when current eligibility, the separate reviewed policy and available atomic allowance pass; otherwise human review"
+          : "human review required",
+      ...(approvalMode === "policy" && availability === "available" ? { conditions: "not_disclosed; no automatic threshold is established by this description" } : {}),
+    },
     source_write: "never during request_change",
   };
 }

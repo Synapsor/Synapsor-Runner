@@ -45,6 +45,21 @@ unknown and execution enablement as not reported. A proposal-only tool does
 not imply a separately operated worker is disabled. Only an execution receipt
 establishes completion; approval by itself does not.
 
+Approval information is partial. `approval_information.disclosure` and each
+Action's `approval.disclosure` describe the information returned, not a new
+approval decision. Summaries use `not_reported`; available policy-based exact
+detail uses `mode_only` without exposing private conditions or thresholds.
+`manual_only` is used only for an available, current human-review contract.
+Paused or absent authority uses `unavailable`, not manual-only.
+
+An omitted condition does not mean automatic approval is absent. A human-review
+fallback does not mean every request requires it. `proposal_only` separates a
+request from source execution; it does not mean approval is always manual.
+Any automatic route still depends on current eligibility, policy and available
+allowance. Use the actual request disposition; `app.request_change` is a business
+request, not a read-only eligibility probe. Discovery grants no approval or
+execution authority, and cannot establish an undisclosed threshold.
+
 Empty Read discovery returns a bounded resource shortlist, not full field
 details. Exact `resource` returns the complete reviewed contract. Public Read
 v2 details retain `valid_plan_examples.rows` and `.aggregate`, but omit the
