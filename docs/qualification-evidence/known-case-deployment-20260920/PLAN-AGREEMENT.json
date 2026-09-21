@@ -1,0 +1,21 @@
+{
+  "at": "2026-09-21T01:11:02.261064+00:00",
+  "common_plan_sha256": "ae7c75b898ac1e0727bf84bca60c586656b4a62885b85fb31f1192dfb3d44665",
+  "main_agreed": true,
+  "independent_agreed": true,
+  "independent_message": "Both B restore and no-work/ready prerequisites independently checked. Public/provider operations zero before agreement.",
+  "files": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/prework/public/B-RESTORE-PREFLIGHT.json",
+      "sha256": "66469f8d9489043f0cdf1132a574b3b26050872f372590b356a9998aa3e26a19"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/untouched-seal/MANIFEST.json",
+      "sha256": "703e47602293b2b597aa8ce5e9b14c0fb136d3bcbe1c38e647174357b70a3714"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/prework/public/TESTER-PLAN.md",
+      "sha256": "9e621dd4b57b29cc09efcca974000d666a1e0dc6f059ccc21734de58703fb9e9"
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "source_rows": 38,
+  "oracle_sha256": "9cfc8434708a8b0f01deb98ac509ea5c03bf9960d8bbc1647ed4aa355f1b1e22",
+  "expected_success_effects": 3,
+  "exact_effect": "one selected assessment state/days plus maintained version +1; all other business rows equal",
+  "baseline": "ALPHA-BASE,three days; ordinary authentic model lookup/reference",
+  "human": "ALPHA-HUMAN,four days; pending until authentic supervisor approval",
+  "old_unstarted": "ALPHA-EDIT-OLD,six days; second committed center automatic approval",
+  "post_edit": "BETA-POSITIVE,six refused then five eligible under distinct reviewed client context",
+  "unchanged_counts": "tenant2/capability8/inclusive86400 both outcome-specific",
+  "original_concurrency_add_remove": "NOT RUN in this assignment"
+}

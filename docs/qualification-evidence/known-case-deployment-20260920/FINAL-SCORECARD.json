@@ -1,0 +1,33 @@
+{
+  "artifact_tree": "e81826e022472e8dfa342505418c2a1a1d8442c7a6a0cdb953f5b3075b1d3065",
+  "overall": "CHECKPOINT1 BLOCKED; NOT PASSED",
+  "A": {
+    "operator": "main; independent tester inspected",
+    "deployment": "PASS",
+    "receipt_mode": "runner_ledger",
+    "source_receipt_probe": "NOT RUN / inapplicable",
+    "worker_check": "PASS",
+    "native_four_tools": "FAIL",
+    "runtime_request_effect_receipt": "NOT RUN / blocked before provider",
+    "human_invalid_privacy_scope_replay": "NOT RUN",
+    "numeric_edit": "NOT RUN / checkpoint1 prerequisite",
+    "rows": 38,
+    "logical_tables_nonmutated_on_runtime_stop": 42
+  },
+  "B": {
+    "operator": "independent tester; shared prepared BUSINESS input, not independently generated rules",
+    "deployment": "PASS",
+    "receipt_mode": "source_db/precreated",
+    "source_receipt_probe": "PASS / 2reported rolled-back results, internal SQL count unknown",
+    "worker_check": "PASS",
+    "native_four_tools": "FAIL",
+    "runtime_request_effect_receipt": "NOT ESTABLISHED / no-forward stopped",
+    "human_invalid_privacy_scope_replay": "NOT RUN",
+    "numeric_edit": "NOT RUN / checkpoint1 prerequisite",
+    "rows": 196,
+    "logical_tables_nonmutated_on_runtime_stop": 42
+  },
+  "original_add_remove_concurrency_rows": "NOT RUN / not waived",
+  "historical_Stage_A": "artifact-specific accepted scope retained",
+  "historical_Stage_B": "ATTEMPTED / NOT PASSED"
+}

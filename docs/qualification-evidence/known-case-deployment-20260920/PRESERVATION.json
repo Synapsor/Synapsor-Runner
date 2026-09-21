@@ -1,0 +1,188 @@
+{
+  "at": "2026-09-21T01:36:09.948602+00:00",
+  "original_and_new_seal_files": [
+    {
+      "case": "A",
+      "kind": "source",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/owned-final-states/main-A/evidence.tgz",
+      "same": true
+    },
+    {
+      "case": "A",
+      "kind": "source",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/owned-final-states/main-A/cleanup.json",
+      "same": true
+    },
+    {
+      "case": "A",
+      "kind": "source",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/owned-final-states/main-A/roles-without-passwords.sql",
+      "same": true
+    },
+    {
+      "case": "A",
+      "kind": "source",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/owned-final-states/main-A/manifest.json",
+      "same": true
+    },
+    {
+      "case": "A",
+      "kind": "source",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/owned-final-states/main-A/database.log",
+      "same": true
+    },
+    {
+      "case": "A",
+      "kind": "source",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/owned-final-states/main-A/whole-project-home.tgz",
+      "same": true
+    },
+    {
+      "case": "A",
+      "kind": "source",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/owned-final-states/main-A/source.dump",
+      "same": true
+    },
+    {
+      "case": "A",
+      "kind": "sealed",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/sealed-continuation-starts/A/evidence.tgz",
+      "same": true
+    },
+    {
+      "case": "A",
+      "kind": "sealed",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/sealed-continuation-starts/A/cleanup.json",
+      "same": true
+    },
+    {
+      "case": "A",
+      "kind": "sealed",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/sealed-continuation-starts/A/roles-without-passwords.sql",
+      "same": true
+    },
+    {
+      "case": "A",
+      "kind": "sealed",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/sealed-continuation-starts/A/manifest.json",
+      "same": true
+    },
+    {
+      "case": "A",
+      "kind": "sealed",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/sealed-continuation-starts/A/database.log",
+      "same": true
+    },
+    {
+      "case": "A",
+      "kind": "sealed",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/sealed-continuation-starts/A/whole-project-home.tgz",
+      "same": true
+    },
+    {
+      "case": "A",
+      "kind": "sealed",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/sealed-continuation-starts/A/source.dump",
+      "same": true
+    },
+    {
+      "case": "B",
+      "kind": "source",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/owned-final-states/main-B/evidence.tgz",
+      "same": true
+    },
+    {
+      "case": "B",
+      "kind": "source",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/owned-final-states/main-B/cleanup.json",
+      "same": true
+    },
+    {
+      "case": "B",
+      "kind": "source",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/owned-final-states/main-B/roles-without-passwords.sql",
+      "same": true
+    },
+    {
+      "case": "B",
+      "kind": "source",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/owned-final-states/main-B/manifest.json",
+      "same": true
+    },
+    {
+      "case": "B",
+      "kind": "source",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/owned-final-states/main-B/database.log",
+      "same": true
+    },
+    {
+      "case": "B",
+      "kind": "source",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/owned-final-states/main-B/whole-project-home.tgz",
+      "same": true
+    },
+    {
+      "case": "B",
+      "kind": "source",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/owned-final-states/main-B/source.dump",
+      "same": true
+    },
+    {
+      "case": "B",
+      "kind": "sealed",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/sealed-continuation-starts/B/evidence.tgz",
+      "same": true
+    },
+    {
+      "case": "B",
+      "kind": "sealed",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/sealed-continuation-starts/B/cleanup.json",
+      "same": true
+    },
+    {
+      "case": "B",
+      "kind": "sealed",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/sealed-continuation-starts/B/roles-without-passwords.sql",
+      "same": true
+    },
+    {
+      "case": "B",
+      "kind": "sealed",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/sealed-continuation-starts/B/manifest.json",
+      "same": true
+    },
+    {
+      "case": "B",
+      "kind": "sealed",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/sealed-continuation-starts/B/database.log",
+      "same": true
+    },
+    {
+      "case": "B",
+      "kind": "sealed",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/sealed-continuation-starts/B/whole-project-home.tgz",
+      "same": true
+    },
+    {
+      "case": "B",
+      "kind": "sealed",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/sealed-continuation-starts/B/source.dump",
+      "same": true
+    }
+  ],
+  "candidate": {
+    "verified_at": "2026-09-21T01:36:09.899Z",
+    "installed_tree_sha256": "e81826e022472e8dfa342505418c2a1a1d8442c7a6a0cdb953f5b3075b1d3065",
+    "entries": 7569
+  },
+  "installed_archive_and_manifest_equal": true,
+  "main_container": {
+    "id": "7cac0a73933347235342ba4318a32b8c72a42618b52150aed5efed0d4539e5bc",
+    "name": "synapsor-kc-kc-a",
+    "running": false,
+    "removed": false
+  },
+  "independent_cleanup": "verified in separately authored result and preserved manifest; tester owns B",
+  "new_deployed_start": "read-only archive retained; no requests in it",
+  "no_product_edits": true
+}

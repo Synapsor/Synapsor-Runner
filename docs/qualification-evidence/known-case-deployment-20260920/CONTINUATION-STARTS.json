@@ -1,0 +1,35 @@
+{
+  "kind": "NEW known-case continuation starts from accepted completed BUSINESS review; not historical untouched onboarding",
+  "previous_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920",
+  "artifact_tree": "e81826e022472e8dfa342505418c2a1a1d8442c7a6a0cdb953f5b3075b1d3065",
+  "cases": {
+    "A": {
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/owned-final-states/main-A",
+      "sealed": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/sealed-continuation-starts/A",
+      "rows": 38,
+      "files": {
+        "evidence.tgz": "c6f0ce72892bec61d878e15f05e968a9b87d680d54410751e7f95656fb868d68",
+        "cleanup.json": "5623d09d9fb85769e70a43dbfea52abb363eb520d29d0ab216af97d738b4117b",
+        "roles-without-passwords.sql": "5bf286f46aa506f1b49eb29f5508239c30af01ed601b577d0e1e4ad0e5155496",
+        "manifest.json": "b0caf0e53afce07d253abcb3a05685baf231b53a1f7faeaf87dcdf7946446bfb",
+        "database.log": "3b40203dfc1c385f899c480ae7a933e6998f91c03ed6e44e762435a6b70618c1",
+        "whole-project-home.tgz": "8cf16192407d9db528f4f0bf78b1a91aec216ecbd1511925e27b44f273ee1069",
+        "source.dump": "21619ea17f688e0c3cb55b17d105577e778df23106675aebf206334359220782"
+      }
+    },
+    "B": {
+      "source": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/owned-final-states/main-B",
+      "sealed": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/sealed-continuation-starts/B",
+      "rows": 196,
+      "files": {
+        "evidence.tgz": "5b3fa873afed546a202ce21b360545b972c56d7d413d678f801ff6deffb1bb89",
+        "cleanup.json": "a2346cad78f2ade29e0c0d4696599905d5dff453793e980219f91e0936683ad0",
+        "roles-without-passwords.sql": "a3dba92675f3fae13a40e65ee93999fb633f4118ce70b87a2d0f86414114d2c5",
+        "manifest.json": "37ebd8e75a1f16ab8afffc2c9e54b29bddfb9e24138ce135b0f08d6805765d68",
+        "database.log": "e55eaffe45b824a167d5740e6bffd42e829150c39896d898e74a10e4cc604434",
+        "whole-project-home.tgz": "93cdf98ec0f54941f268f8f2aa8aa66a4d6037f51c20582f50a5fa75369b4ddf",
+        "source.dump": "a23536dd3deb3153cd357350b227ac8f5a11b67dc18874da640ee7fd8dcd4b43"
+      }
+    }
+  }
+}

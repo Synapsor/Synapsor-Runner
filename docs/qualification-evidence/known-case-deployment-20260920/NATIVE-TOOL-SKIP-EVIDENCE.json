@@ -1,0 +1,19 @@
+{
+  "native_log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/main-A/home/.cache/claude-cli-nodejs/-var-tmp-synapsor-new-stageb-20260920-A-project/mcp-logs-synapsor-kc-a-primary-fc09f7140648ff6a238c012b78c028f0933ac72e524222c65a378975c5eb7b08/2026-09-21T01-25-17-117Z.jsonl",
+  "sha256": "4f01b542e91b701cf686a61ef5782da0dfdc41eb8b09d1a7f1f1049b997d196c",
+  "diagnostics": [
+    {
+      "error": "Skipping tool \"app.describe_actions\": its input schema uses top-level anyOf, which the Anthropic API does not accept. Other tools from this server remain available.",
+      "timestamp": "2026-09-21T01:25:17.998Z",
+      "sessionId": "2cb7c6de-6a48-4d4c-9c39-2b1321c9c378",
+      "cwd": "/var/tmp/synapsor-new-stageb-20260920-A/project"
+    },
+    {
+      "error": "Skipping tool \"app.describe_data\": its input schema uses top-level anyOf, which the Anthropic API does not accept. Other tools from this server remain available.",
+      "timestamp": "2026-09-21T01:25:17.998Z",
+      "sessionId": "2cb7c6de-6a48-4d4c-9c39-2b1321c9c378",
+      "cwd": "/var/tmp/synapsor-new-stageb-20260920-A/project"
+    }
+  ],
+  "interpretation": "Native Claude Code2.1.278 skips these two root-anyOf MCP input schemas before provider invocation. No upstream Anthropic rejection was exercised; stated API restriction is the native client diagnostic."
+}

@@ -1,0 +1,186 @@
+{
+  "entries": 30,
+  "matched": 30,
+  "checks": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/REVIEW.md",
+      "match": true,
+      "expected": "7a61ba8334ee2b9734a158547522a96db19c6b762f816681bd886bb3c396fa58",
+      "actual": "7a61ba8334ee2b9734a158547522a96db19c6b762f816681bd886bb3c396fa58"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/RESULT.json",
+      "match": true,
+      "expected": "ebe0936dc4b3d44e1046cdc118e5e5172df087bbf5244ed7fe0620ddc925bbb5",
+      "actual": "ebe0936dc4b3d44e1046cdc118e5e5172df087bbf5244ed7fe0620ddc925bbb5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/prework/public/TESTER-PLAN.md",
+      "match": true,
+      "expected": "9e621dd4b57b29cc09efcca974000d666a1e0dc6f059ccc21734de58703fb9e9",
+      "actual": "9e621dd4b57b29cc09efcca974000d666a1e0dc6f059ccc21734de58703fb9e9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/prework/public/INPUT-VERIFICATION.json",
+      "match": true,
+      "expected": "76abaefecc3ff960f98d63f284f2be91696653bf7ed37bb960144b0d5c19a42a",
+      "actual": "76abaefecc3ff960f98d63f284f2be91696653bf7ed37bb960144b0d5c19a42a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/prework/public/B-RESTORE-PREFLIGHT.json",
+      "match": true,
+      "expected": "66469f8d9489043f0cdf1132a574b3b26050872f372590b356a9998aa3e26a19",
+      "actual": "66469f8d9489043f0cdf1132a574b3b26050872f372590b356a9998aa3e26a19"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/untouched-seal/MANIFEST.json",
+      "match": true,
+      "expected": "703e47602293b2b597aa8ce5e9b14c0fb136d3bcbe1c38e647174357b70a3714",
+      "actual": "703e47602293b2b597aa8ce5e9b14c0fb136d3bcbe1c38e647174357b70a3714"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/owned-final-state-KC-B/MANIFEST.json",
+      "match": true,
+      "expected": "7256f085257357edd2de4c1ebc5ec448a9462b6c1c78b25c5337196ad30eda73",
+      "actual": "7256f085257357edd2de4c1ebc5ec448a9462b6c1c78b25c5337196ad30eda73"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/owned-final-state-KC-B/CLEANUP.json",
+      "match": true,
+      "expected": "65f0fb03e07ea969375a0710a8f08f48b5b6a353408637cbf6d24b4ea81f1189",
+      "actual": "65f0fb03e07ea969375a0710a8f08f48b5b6a353408637cbf6d24b4ea81f1189"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/fixture-KC-B/CLEANUP.json",
+      "match": true,
+      "expected": "65f0fb03e07ea969375a0710a8f08f48b5b6a353408637cbf6d24b4ea81f1189",
+      "actual": "65f0fb03e07ea969375a0710a8f08f48b5b6a353408637cbf6d24b4ea81f1189"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/fixture-KC-B/ADMIN-APPLICATION.json",
+      "match": true,
+      "expected": "c260847a33d1607498e646a6d936af9d8973bd2efdd403eef9e5160dd039dc60",
+      "actual": "c260847a33d1607498e646a6d936af9d8973bd2efdd403eef9e5160dd039dc60"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/fixture-KC-B/deployed-before-first-request/MANIFEST.json",
+      "match": true,
+      "expected": "1af6eb7555ca7274ada36f9fe534e1a1c185eea1db4a6f5c93b449e38a9574f8",
+      "actual": "1af6eb7555ca7274ada36f9fe534e1a1c185eea1db4a6f5c93b449e38a9574f8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/fixture-KC-B/FINAL-COMPARISON.json",
+      "match": true,
+      "expected": "7d46648ab2789155abd68ce85b467a23bb30c3c0af0bab3d1ca4d2776da4e3a1",
+      "actual": "7d46648ab2789155abd68ce85b467a23bb30c3c0af0bab3d1ca4d2776da4e3a1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/fixture-KC-B/PROVIDER-LEDGER-AT-STOP.json",
+      "match": true,
+      "expected": "c82309894d9edea86e166a99bc52958250081367c71ae13f2c334e2a0956e1eb",
+      "actual": "c82309894d9edea86e166a99bc52958250081367c71ae13f2c334e2a0956e1eb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/fixture-KC-B/state-readbacks/deployed-before-first-request-summary.json",
+      "match": true,
+      "expected": "64ccc818108c64e6dcc4e2c3373a8e0d9cf478d2b3d4c91546114cae73a78cf1",
+      "actual": "64ccc818108c64e6dcc4e2c3373a8e0d9cf478d2b3d4c91546114cae73a78cf1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/fixture-KC-B/state-readbacks/after-runtime-client-blocker-summary.json",
+      "match": true,
+      "expected": "d96009b4f97c6c7f5b10968fcb8baee619d0e259108b30fea3695f77aab6aea5",
+      "actual": "d96009b4f97c6c7f5b10968fcb8baee619d0e259108b30fea3695f77aab6aea5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/fixture-KC-B/runtime-local-diagnostic/DIRECT-MCP-CATALOG.json",
+      "match": true,
+      "expected": "2b516443d8a7372f1b511408353c0fa43a49c3e760a7867d418a2561d06ddd14",
+      "actual": "2b516443d8a7372f1b511408353c0fa43a49c3e760a7867d418a2561d06ddd14"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/fixture-KC-B/runtime-local-diagnostic/DIRECT-MCP-CATALOG-SUMMARY.json",
+      "match": true,
+      "expected": "dee02a3b84a5b944799cce586df2e94fed190c1ed2010422b2daf802ba3e40cf",
+      "actual": "dee02a3b84a5b944799cce586df2e94fed190c1ed2010422b2daf802ba3e40cf"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/fixture-KC-B/runtime-local-diagnostic/RESULT.json",
+      "match": true,
+      "expected": "fa6a42b00262926622bbbd8d2e8bde85744bf5059ffd2d5c14b04fce5a131936",
+      "actual": "fa6a42b00262926622bbbd8d2e8bde85744bf5059ffd2d5c14b04fce5a131936"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/fixture-KC-B/home/.cache/claude-cli-nodejs/-var-tmp-synapsor-new-stageb-20260920-B-project/mcp-logs-synapsor-kc-b-primary-aff6e7af6c19616d8e294a63cbb9e76279becfb107ab51f3a538c797352c202c/2026-09-21T01-28-11-736Z.jsonl",
+      "match": true,
+      "expected": "ee51f7af15219d1ff90aa65cc2b98bae3ced2477b89db2d703d43977730cdf4d",
+      "actual": "ee51f7af15219d1ff90aa65cc2b98bae3ced2477b89db2d703d43977730cdf4d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/main-A/RUNTIME-BLOCKER.json",
+      "match": true,
+      "expected": "1522d8741aed7e970138dc4c16a387bd87b087811262abead63480e73c0de2e9",
+      "actual": "1522d8741aed7e970138dc4c16a387bd87b087811262abead63480e73c0de2e9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/main-A/RUNTIME-NONMUTATION.json",
+      "match": true,
+      "expected": "ab3e6aab13b3da9513ed0992027d94bdf8f82ee58dc9c71569371e2516b56a07",
+      "actual": "ab3e6aab13b3da9513ed0992027d94bdf8f82ee58dc9c71569371e2516b56a07"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/deployed-before-first-request/A/manifest.json",
+      "match": true,
+      "expected": "a9cefaed46cd775ba84fe76c29e14d91895c32ea4de95f4fab9c8f0440d06765",
+      "actual": "a9cefaed46cd775ba84fe76c29e14d91895c32ea4de95f4fab9c8f0440d06765"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/fixture-KC-B/operator-captures/terminal-001.log",
+      "match": true,
+      "expected": "bca9864f584c96bbe414be7bb6e30055784328df1ee3b13e127096b25674ddbc",
+      "actual": "bca9864f584c96bbe414be7bb6e30055784328df1ee3b13e127096b25674ddbc"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/fixture-KC-B/operator-captures/terminal-002.log",
+      "match": true,
+      "expected": "0266d64adbc7547518891ed2d6335a506414affab0f85dab705b44bed67f5cfd",
+      "actual": "0266d64adbc7547518891ed2d6335a506414affab0f85dab705b44bed67f5cfd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/fixture-KC-B/operator-captures/terminal-003.log",
+      "match": true,
+      "expected": "c81547622c31fa70ef8fb7217794868718676becc68c8f0ebe4f31eddb8ae67f",
+      "actual": "c81547622c31fa70ef8fb7217794868718676becc68c8f0ebe4f31eddb8ae67f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/fixture-KC-B/operator-captures/terminal-004.log",
+      "match": true,
+      "expected": "1f77d6a2fd15fdf5ac79bbf20acdd8379a0d0ef63507aaef72e3049327a9c530",
+      "actual": "1f77d6a2fd15fdf5ac79bbf20acdd8379a0d0ef63507aaef72e3049327a9c530"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/fixture-KC-B/operator-captures/exit-001.json",
+      "match": true,
+      "expected": "dbeca5a2e4427c30e12db9547e6b0afae1f9c6b2be6c61e8168f9a0be032f465",
+      "actual": "dbeca5a2e4427c30e12db9547e6b0afae1f9c6b2be6c61e8168f9a0be032f465"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/fixture-KC-B/operator-captures/exit-002.json",
+      "match": true,
+      "expected": "5f487c97de66a708875e82e226115706ee74b6332e26f0d2eb7b317638231b47",
+      "actual": "5f487c97de66a708875e82e226115706ee74b6332e26f0d2eb7b317638231b47"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/fixture-KC-B/operator-captures/exit-003.json",
+      "match": true,
+      "expected": "77d98674c23c27424e5649d602b790a7b46dee610a90e940e609fc1671a7e56a",
+      "actual": "77d98674c23c27424e5649d602b790a7b46dee610a90e940e609fc1671a7e56a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/fixture-KC-B/operator-captures/exit-004.json",
+      "match": true,
+      "expected": "19ce40443438216cca58ec09d3d4f200fd1fe8287dd431ce0b013ef0d5a47fec",
+      "actual": "19ce40443438216cca58ec09d3d4f200fd1fe8287dd431ce0b013ef0d5a47fec"
+    }
+  ]
+}

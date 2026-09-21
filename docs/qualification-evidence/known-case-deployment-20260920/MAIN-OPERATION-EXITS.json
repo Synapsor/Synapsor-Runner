@@ -1,0 +1,96 @@
+[
+  {
+    "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/main-A/operator-captures/exit-001.json",
+    "sha256": "43239eadb496fd30663346606f5bf21bfd6d0fbfdd79113a67bda8539f177af9",
+    "start": "2026-09-21T01:13:25.071241+00:00",
+    "end": "2026-09-21T01:18:28.977985+00:00",
+    "exit": 0,
+    "args": [
+      "start",
+      "--project-root",
+      ".",
+      "--cli"
+    ],
+    "environment_names": [
+      "PATH",
+      "HOME",
+      "TMPDIR",
+      "NO_COLOR",
+      "TERM",
+      "NODE_NO_WARNINGS",
+      "DATABASE_URL",
+      "OPENROUTER_API_KEY",
+      "QUALIFICATION_PROVIDER_METER",
+      "NODE_OPTIONS"
+    ],
+    "PTY": [
+      100,
+      30
+    ],
+    "artifact": "e81826e022472e8dfa342505418c2a1a1d8442c7a6a0cdb953f5b3075b1d3065"
+  },
+  {
+    "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/main-A/operator-captures/exit-002.json",
+    "sha256": "822eb1a3412edde6ef2ca94accadd4bc5db26e1086c526c68ab168e8242e4b80",
+    "start": "2026-09-21T01:18:46.100719+00:00",
+    "end": "2026-09-21T01:20:14.947339+00:00",
+    "exit": 0,
+    "args": [
+      "action",
+      "review",
+      "--project-root",
+      "."
+    ],
+    "environment_names": [
+      "PATH",
+      "HOME",
+      "TMPDIR",
+      "NO_COLOR",
+      "TERM",
+      "NODE_NO_WARNINGS",
+      "DATABASE_URL",
+      "SYNAPSOR_DATABASE_WRITE_URL",
+      "OPENROUTER_API_KEY",
+      "QUALIFICATION_PROVIDER_METER",
+      "NODE_OPTIONS"
+    ],
+    "PTY": [
+      100,
+      30
+    ],
+    "artifact": "e81826e022472e8dfa342505418c2a1a1d8442c7a6a0cdb953f5b3075b1d3065"
+  },
+  {
+    "file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/main-A/operator-captures/exit-003.json",
+    "sha256": "d3b2df9580f1cc720b888fbc3853c5f0fd7aa387e196e50f886bb42e3a6626ec",
+    "start": "2026-09-21T01:21:02.841930+00:00",
+    "end": "2026-09-21T01:21:03.722686+00:00",
+    "exit": 0,
+    "args": [
+      "worker",
+      "check",
+      "--supervised",
+      "--config",
+      "synapsor.actions.runner.json",
+      "--capability",
+      "release.clear_assessment"
+    ],
+    "environment_names": [
+      "PATH",
+      "HOME",
+      "TMPDIR",
+      "NO_COLOR",
+      "TERM",
+      "NODE_NO_WARNINGS",
+      "DATABASE_URL",
+      "SYNAPSOR_DATABASE_WRITE_URL",
+      "SYNAPSOR_PRINCIPAL",
+      "SYNAPSOR_TENANT_ID"
+    ],
+    "PTY": [
+      100,
+      30
+    ],
+    "artifact": "e81826e022472e8dfa342505418c2a1a1d8442c7a6a0cdb953f5b3075b1d3065"
+  }
+]

@@ -1,0 +1,129 @@
+{
+  "snapshot": {
+    "assignment": "known-case-deployment-20260920",
+    "start": "2026-09-21T00:58:00Z",
+    "spend_ceiling_usd": 8.01207009,
+    "basis": "lower verified current OpenRouter balance applied conservatively to ALL authoring/runtime estimates",
+    "historical_ledgers_untouched": true,
+    "case_allocations": [
+      {
+        "case_id": "KC-A",
+        "status": "STOPPED",
+        "models": {
+          "authoring": "openai/gpt-5.6-terra",
+          "runtime": "claude-opus-5"
+        },
+        "spend_ceiling_usd": 8.01207009,
+        "deadline": "2026-09-21T04:13:25.002293+00:00",
+        "transports": [
+          {
+            "id": "KC-A-1",
+            "role": "authoring",
+            "phase": "initial",
+            "at": "2026-09-21T01:15:16.454Z",
+            "reservation_usd": 0.076004,
+            "input_bytes": 15401,
+            "maximum_output_tokens": 800,
+            "status": "SETTLED",
+            "cost_usd": 0.008688,
+            "completed_at": "2026-09-21T01:15:19.240Z",
+            "http_status": 200,
+            "capture_complete": true,
+            "response_sha256": "49c43400838783773782156c3d6bd93d06a11c3cc850da2c75b13a3e9d92c4ec"
+          }
+        ],
+        "live_start": "2026-09-21T01:13:25.002293+00:00",
+        "checkpoint1_deadline": "2026-09-21T03:13:25.002293+00:00",
+        "stopped_at": "2026-09-21T01:30:17.118209+00:00",
+        "stop_reason": "Incomplete native four-tool surface; no forward/business operation. No further preflight."
+      },
+      {
+        "case_id": "KC-B",
+        "status": "STOPPED",
+        "models": {
+          "authoring": "openai/gpt-5.6-terra",
+          "runtime": "claude-opus-5"
+        },
+        "spend_ceiling_usd": 8.01207009,
+        "deadline": "2026-09-21T04:13:51.552416+00:00",
+        "transports": [
+          {
+            "id": "KC-B-1",
+            "role": "authoring",
+            "phase": "initial",
+            "at": "2026-09-21T01:18:47.274Z",
+            "reservation_usd": 0.10217599999999999,
+            "input_bytes": 21944,
+            "maximum_output_tokens": 800,
+            "status": "SETTLED",
+            "cost_usd": 0.0118325,
+            "completed_at": "2026-09-21T01:18:50.588Z",
+            "http_status": 200,
+            "capture_complete": true,
+            "response_sha256": "3d625dc7421308c4d2c4eb159e143d626f00d4d286343749be5fd65b87f2693b"
+          }
+        ],
+        "started_at": "2026-09-21T01:13:51.552416+00:00",
+        "checkpoint1_deadline": "2026-09-21T03:13:51.552416+00:00",
+        "artifact_tree": "e81826e022472e8dfa342505418c2a1a1d8442c7a6a0cdb953f5b3075b1d3065",
+        "stopped_at": "2026-09-21T01:33:17.579019+00:00",
+        "stop_reason": "Native required four-tool client exposed/offered only two; stopped before upstream runtime transport or business request."
+      },
+      {
+        "case_id": "NEUTRAL",
+        "status": "STOPPED",
+        "models": {
+          "authoring": "openai/gpt-5.6-terra",
+          "runtime": "claude-opus-5"
+        },
+        "spend_ceiling_usd": 1,
+        "deadline": "2026-09-21T01:58:00Z",
+        "transports": [
+          {
+            "id": "NEUTRAL-1",
+            "role": "runtime",
+            "phase": "runtime",
+            "at": "2026-09-21T01:12:41.946Z",
+            "reservation_usd": 0.62658,
+            "input_bytes": 10849,
+            "maximum_output_tokens": 4096,
+            "status": "TURN_COST_SETTLED",
+            "cost_group": "NEUTRAL-runtime-turn-1"
+          }
+        ],
+        "runtime_cost_groups": [
+          {
+            "id": "NEUTRAL-runtime-turn-1",
+            "transport_ids": [
+              "NEUTRAL-1"
+            ],
+            "cost_usd": 0.033049999999999996,
+            "basis": "native client total_cost_usd delta for complete turn; not individual transport cost",
+            "at": "2026-09-21T01:12:43.346Z"
+          }
+        ],
+        "stopped_at": "2026-09-21T01:30:17.118209+00:00",
+        "stop_reason": "Incomplete native four-tool surface; no forward/business operation. No further preflight."
+      }
+    ],
+    "allocation_events": [
+      {
+        "at": "2026-09-21T01:12:41.574999+00:00",
+        "change": "NEUTRAL per-allocation .60->1.00 within unchanged shared8.01207009",
+        "reason": "measured legitimate native envelope10888bytes+4096output gives conservative .62736, old sub-allocation too small;0upstream calls before correction"
+      }
+    ],
+    "consolidation_start": "2026-09-21T01:30:17.118209+00:00",
+    "consolidation_deadline": "2026-09-21T02:15:17.118209+00:00"
+  },
+  "authoring_actual_reported_usd": 0.0205205,
+  "native_neutral_estimate_usd": 0.03305,
+  "combined_reported_estimated_usd": 0.0535705,
+  "case_runtime_upstream": 0,
+  "tools_call": 0,
+  "request_change": 0,
+  "worker_runs": 0,
+  "committed_business_effects": 0,
+  "total_upstream_transports": 3,
+  "unchanged_historical_ledgers": true
+}

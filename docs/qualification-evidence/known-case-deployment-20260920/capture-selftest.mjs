@@ -1,0 +1,24 @@
+import assert from 'node:assert/strict';
+import { captureBody, redactCapture, assertNoPrivateInput } from './capture-redaction.mjs';
+const secret = 'ARTIFICIAL_SECRET_SENTINEL_83752';
+const thinking = 'ARTIFICIAL_PRIVATE_CONTINUATION_62754';
+const metadata = { enum: ['held', 'ready'], description: 'held is a permitted metadata enum', reasoning: { effort: 'low' } };
+assert.deepEqual(redactCapture(metadata), metadata);
+assert.doesNotThrow(() => assertNoPrivateInput(JSON.stringify(metadata), [secret]));
+assert.throws(() => assertNoPrivateInput(JSON.stringify({ content: secret }), [secret]), /PRIVATE_INPUT_REFUSED/);
+const reply = { choices: [{ delta: { reasoning_details: [{ text: thinking }], tool_calls: [{ index: 0, function: { name: 'review', arguments: '{"value":"ready"}' } }] } }], usage: { cost: 0.002 } };
+const text = captureBody('data: '+JSON.stringify(reply)+'\n\ndata: [DONE]\n');
+assert(!text.includes(thinking)); assert(text.includes('tool_calls')); assert(text.includes('ready')); assert(text.includes('0.002'));
+const request = { messages: [{ role: 'assistant', reasoning: thinking, tool_calls: [{ id: 'call_test', function: { name: 'review', arguments: '{}' } }] }], ...metadata };
+const recorded = JSON.parse(captureBody(JSON.stringify(request)));
+assert(!JSON.stringify(recorded).includes(thinking)); assert.deepEqual(recorded.reasoning, { effort: 'low' });
+assert.equal(recorded.messages[0].tool_calls[0].id, 'call_test');
+assert(!captureBody(JSON.stringify({ secret }), [secret]).includes(secret));
+assert(!captureBody('data: {malformed '+thinking+'\n').includes(thinking));
+assert(!captureBody(thinking).includes(thinking));
+assert(!captureBody(JSON.stringify({ type: 'reasoning', summary: thinking })).includes(thinking));
+assert(!captureBody(JSON.stringify({ type: 'redacted_thinking', data: thinking })).includes(thinking));
+assert.deepEqual(redactCapture({thinking:{type:'adaptive',display:'omitted'}}),{thinking:{type:'adaptive',display:'omitted'}});
+assert.equal(reply.choices[0].delta.reasoning_details[0].text, thinking);
+console.log(JSON.stringify({ status: 'PASS', provider_calls: 0, wire_mutation: false,
+  coverage: ['secret sentinel', 'private continuation', 'metadata enums', 'tool envelopes', 'settings', 'usage', 'malformed opaque capture'] }));

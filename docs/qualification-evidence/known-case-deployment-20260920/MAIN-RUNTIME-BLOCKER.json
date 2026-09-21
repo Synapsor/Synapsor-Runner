@@ -1,0 +1,36 @@
+{
+  "at": "2026-09-21T01:29:36.835421+00:00",
+  "case": "KC-A",
+  "status": "CHECKPOINT1 BLOCKED BEFORE PROVIDER/REQUEST",
+  "candidate_tree": "e81826e022472e8dfa342505418c2a1a1d8442c7a6a0cdb953f5b3075b1d3065",
+  "runner_catalog": [
+    "app.describe_actions",
+    "app.request_change",
+    "app.describe_data",
+    "app.explore_data"
+  ],
+  "native_tools": [
+    "mcp__synapsor-kc-a-primary-fc09f7140648ff6a238c012b78c028f0933ac72e524222c65a378975c5eb7b08__app_explore_data",
+    "mcp__synapsor-kc-a-primary-fc09f7140648ff6a238c012b78c028f0933ac72e524222c65a378975c5eb7b08__app_request_change"
+  ],
+  "native_server": [
+    {
+      "name": "synapsor-kc-a-primary-fc09f7140648ff6a238c012b78c028f0933ac72e524222c65a378975c5eb7b08",
+      "status": "connected",
+      "source": "dynamic"
+    }
+  ],
+  "missing_semantic_tools": [
+    "app.describe_data",
+    "app.describe_actions"
+  ],
+  "local_refusal": "Expected values to be strictly equal: 2 !== 4 (offered tools check)",
+  "upstream_case_runtime_transports": 0,
+  "tools_call": 0,
+  "source_mutations": 0,
+  "provider_retries": "native local API retries recorded/refused; no upstream transport reservation",
+  "projection_next": "No valid real runtime four-tool task; live edit not begun. Deployment/receipt selection/writer review are separate passing evidence.",
+  "initial_root_cause_observation": "NOT ESTABLISHED. Both missing schemas root anyOf and lack root properties; correlation only pending independent unwrapped control.",
+  "root_cause": "Native Claude Code locally skips root-anyOf input schemas for both describe tools, explicitly recorded in its original cache log. Provider API restriction is reported by client, not separately tested here.",
+  "native_skip_evidence": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/main-A/NATIVE-TOOL-SKIP-EVIDENCE.json"
+}

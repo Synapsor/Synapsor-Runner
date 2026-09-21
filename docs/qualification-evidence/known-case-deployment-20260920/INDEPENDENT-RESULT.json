@@ -1,0 +1,125 @@
+{
+  "report": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/REVIEW.md",
+  "hashes": {
+    "REVIEW.md": "7a61ba8334ee2b9734a158547522a96db19c6b762f816681bd886bb3c396fa58",
+    "RESULT.json": "ebe0936dc4b3d44e1046cdc118e5e5172df087bbf5244ed7fe0620ddc925bbb5",
+    "EVIDENCE-INDEX.json": "4ff123218b51b7465203c3c6e5ba61bedd90cb133e212a77faf0121c4daff102",
+    "owned-final-state-KC-B/MANIFEST.json": "7256f085257357edd2de4c1ebc5ec448a9462b6c1c78b25c5337196ad30eda73"
+  },
+  "result": {
+    "at": "2026-09-21T01:32:39.205978+00:00",
+    "reviewer": "independent tester; no candidate implementation participation",
+    "overall": "BLOCKED / NOT PASSED AT CHECKPOINT 1",
+    "candidate": {
+      "product_tests": "d450f4c77057d58f393019e090cdc051a827481d",
+      "frozen_source": "6e87cd2996b1aca3058e5f4086bb743d745e434d",
+      "installed_tree": "e81826e022472e8dfa342505418c2a1a1d8442c7a6a0cdb953f5b3075b1d3065",
+      "entries": 7569
+    },
+    "kc_b": {
+      "operation": "personally executed from shared implementer-prepared BUSINESS-ready continuation",
+      "artifact_identity": "PASS",
+      "restore": "PASS",
+      "read_action_review": "PASS",
+      "source_db_writer_receipt_verification": "PASS",
+      "default_no_then_explicit_execution": "PASS",
+      "named_local_identity_and_generated_handshake": "PASS",
+      "worker_check": "PASS",
+      "required_native_four_tool_runtime": "FAIL",
+      "runtime_positive_journey": "NOT ESTABLISHED",
+      "numeric_edit": "NOT RUN",
+      "preservation": "PASS"
+    },
+    "counterexample": {
+      "runner_tools_list": 4,
+      "native_client_tools": 2,
+      "missing": [
+        "app.describe_actions",
+        "app.describe_data"
+      ],
+      "native_client_basis": "saved local log says each skipped because input schema uses top-level anyOf",
+      "upstream_api_rejection": "NOT TESTED / NOT ESTABLISHED",
+      "observer_ruled_out": true
+    },
+    "counts": {
+      "authoring_transports": 1,
+      "authoring_cost_usd": 0.0118325,
+      "runtime_upstream_transports": 0,
+      "runtime_cost_usd": 0,
+      "deterministic_mcp_calls": 0,
+      "request_change_calls": 0,
+      "worker_runs": 0,
+      "business_effects": 0,
+      "proposals": 0,
+      "approvals": 0,
+      "queued": 0,
+      "control_receipts": 0,
+      "source_receipts": 0
+    },
+    "preservation": {
+      "logical_control_tables_equal": 42,
+      "source_rows_equal": 196,
+      "candidate_tree_reverified": true
+    },
+    "kc_a": {
+      "classification": "main-operated; tester-inspected",
+      "deployment_through_worker_check": "PASS (inspected)",
+      "required_native_four_tool_runtime": "FAIL (inspected)",
+      "preservation": "PASS (inspected)",
+      "runtime_and_edit": "NOT ESTABLISHED / NOT RUN"
+    },
+    "stage_b": "ATTEMPTED / NOT PASSED",
+    "live_window": {
+      "start": "2026-09-21T01:13:51.552416+00:00",
+      "stop": "2026-09-21T01:33:17.579019+00:00"
+    },
+    "cleanup": {
+      "owned_container_stopped": true,
+      "removed": false,
+      "shared_ledger_status": "STOPPED",
+      "saved_before_stop": true
+    },
+    "preserved_final_state": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/owned-final-state-KC-B/MANIFEST.json",
+      "manifest_sha256": "7256f085257357edd2de4c1ebc5ec448a9462b6c1c78b25c5337196ad30eda73"
+    }
+  },
+  "main_action": "inspected report/source/control/transport results, did not alter independent verdict",
+  "additive_supplement": {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/known-case-deployment-independent-20260920/SUPPLEMENT-VERIFICATION-ROUNDS.json",
+    "sha256": "a37f7794c74e5e74303af6ce4f55c97f0ce670f4b3864b951684a0fb4bd50b77",
+    "data": {
+      "classification": "additive accounting from existing terminal/exit/readback captures; no new operation",
+      "observed_public_writer_verification_rounds": 2,
+      "observed_receipt_probe_result_lines": 2,
+      "observed_rounds": [
+        {
+          "decision": "default No",
+          "writer_verification": "PASSED",
+          "receipt_probe": "PASSED, rolled back; no persisted receipt",
+          "execution_enabled_after_round": false
+        },
+        {
+          "decision": "explicit Yes",
+          "writer_verification": "PASSED",
+          "receipt_probe": "PASSED, rolled back; no persisted receipt",
+          "execution_enabled_after_round": true
+        }
+      ],
+      "low_level_sql_probe_count": "NOT INSTRUMENTED / UNKNOWN; evidence establishes two public verifier invocations and one reported rollback-only probe result per invocation, not the internal SQL statement count",
+      "time_to_passing_worker_check": {
+        "from_declared_live_start_seconds": 654.42424,
+        "from_first_public_cli_start_seconds": 579.521276,
+        "worker_check_completed_at": "2026-09-21T01:24:45.976656+00:00"
+      },
+      "time_to_sealed_deployed_pre_request_state": {
+        "from_declared_live_start_seconds": 676.267138,
+        "from_first_public_cli_start_seconds": 601.364174,
+        "sealed_at": "2026-09-21T01:25:07.819554+00:00"
+      },
+      "source_receipts_after_both_rounds": 0,
+      "business_requests": 0,
+      "worker_runs": 0
+    }
+  }
+}
