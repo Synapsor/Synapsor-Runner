@@ -1,0 +1,19 @@
+{
+  "at": "2026-09-21T15:53:10.288032+00:00",
+  "classification": "DEVELOPMENT public Resume, real configured model; not final candidate",
+  "provider_calls": 1,
+  "cost_usd": 0.14803,
+  "correction_responses": 0,
+  "preflight_unsent": 1,
+  "owner_business_answers": 0,
+  "owner_actions": [
+    "separate bounded episode confirmation after unsent preflight",
+    "explicit planned client_application ownership"
+  ],
+  "changed_tables": [],
+  "all_other_tables_equal": true,
+  "source_unchanged": true,
+  "readiness": "Strict full stored report reload PASS; policyReviewReadiness.ready=true, privacy_observed=false, applicable deployment/client/counter duties pending and unverified",
+  "no_source_execution": true,
+  "strict_reload": "raw/replays/development-A-reload-result.json"
+}

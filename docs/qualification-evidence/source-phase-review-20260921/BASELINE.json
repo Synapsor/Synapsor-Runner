@@ -1,0 +1,26 @@
+{
+  "head": "e288ac2049b32aa5f794463746d23c45c92e1fe5",
+  "branch": "codex/tui-safe-action-control-plane",
+  "ancestry_verified": true,
+  "checks": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/frozen/installed-artifact-manifest.json",
+      "sha256": "3239c2697717eeb1456ce33eac2d15e5a3eb8e92755b6e7958ab58c07b7efddd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/frozen/installed-artifact.tar.gz",
+      "sha256": "70df20f24c4ab24eec70a9643dfac0b747dbb2e5962ece992434cf902e0ea752"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/REVIEW.md",
+      "sha256": "0226d7a3dba1d6e1a0dcbfdd5cc6573e4429792fa1ba17e597b844e1da2651f2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/B-FINAL-EVIDENCE-INDEX.json",
+      "sha256": "07328776d032f126d72e2237d346dd8bf5139919e36eb9ddff87609651564722"
+    }
+  ],
+  "raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921",
+  "old_errors": "Preserved unchanged; no repaired raw responses",
+  "scope": "Whole-source and phase-correct authoring review; original saved5day/15threshold numeric edits only"
+}

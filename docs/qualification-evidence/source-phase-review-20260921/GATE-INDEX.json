@@ -1,0 +1,160 @@
+{
+  "at": "2026-09-21T16:38:47.857492+00:00",
+  "full_result": {
+    "tests_passed": 6841,
+    "tests_skipped": 478,
+    "files_passed": 328,
+    "files_skipped": 21,
+    "exit": 0
+  },
+  "records": [
+    {
+      "name": "focused-final",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/source-phase-review.test.ts",
+        "apps/runner/src/receipt-review-association.test.ts",
+        "apps/runner/src/authoring-coverage-correction.test.ts",
+        "apps/runner/src/authoring-policy-coverage.test.ts",
+        "apps/runner/src/authoring-review-continuation.test.ts",
+        "apps/runner/src/obligation-readiness.test.ts",
+        "apps/runner/src/source-counter-host.test.ts",
+        "apps/runner/src/semantic-receipt-setup.test.ts",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "started_at": "2026-09-21T16:02:27.323557+00:00",
+      "source_commit": "e288ac2049b32aa5f794463746d23c45c92e1fe5",
+      "source_digest": "b3440407ab7b75685d415fba9340f76b4e5943ed79d267e8248b65dca8ee6481",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 66805,
+      "exit": 0,
+      "finished_at": "2026-09-21T16:04:11.667430+00:00",
+      "source_unchanged": true,
+      "log_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/gates/focused-final.log",
+      "log_sha256": "06598edc60b0aa24fadfde396f5d367cc8f6b879922f18f2df5276a00285deb8"
+    },
+    {
+      "name": "postgres-review-receipt",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/authoring-counting-domain.test.ts",
+        "apps/runner/src/authoring-counting-freshness.test.ts",
+        "apps/runner/src/semantic-receipt-setup.test.ts",
+        "-t",
+        "postgres",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "started_at": "2026-09-21T16:09:31.335076+00:00",
+      "source_commit": "e288ac2049b32aa5f794463746d23c45c92e1fe5",
+      "source_digest": "b3440407ab7b75685d415fba9340f76b4e5943ed79d267e8248b65dca8ee6481",
+      "credentials": "owned PostgreSQL gate URL only",
+      "umask": "0077",
+      "database_destination": {
+        "host": "127.0.0.1",
+        "port": 32771,
+        "database": "source_phase_gate",
+        "container_id": "72b35e89b6faa8547af88e531ea356b716cba36b020b4506672a7163c785999f"
+      },
+      "pid": 72834,
+      "exit": 0,
+      "finished_at": "2026-09-21T16:09:42.968812+00:00",
+      "source_unchanged": true,
+      "log_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/gates/postgres-review-receipt.log",
+      "log_sha256": "3825bd2e4e9eecf04fdf2f4bb5061a2d7221bb8a0e5918be881f84f24c5236bc"
+    },
+    {
+      "name": "postgres-sqlite-review-save",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/control-policy-authority-codec.test.ts",
+        "-t",
+        "saves and reloads receipt readiness under the existing review lock",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "started_at": "2026-09-21T16:10:15.737488+00:00",
+      "source_commit": "e288ac2049b32aa5f794463746d23c45c92e1fe5",
+      "source_digest": "b3440407ab7b75685d415fba9340f76b4e5943ed79d267e8248b65dca8ee6481",
+      "credentials": "owned PostgreSQL gate URL only",
+      "umask": "0077",
+      "database_destination": {
+        "host": "127.0.0.1",
+        "port": 32771,
+        "database": "source_phase_gate",
+        "container_id": "72b35e89b6faa8547af88e531ea356b716cba36b020b4506672a7163c785999f"
+      },
+      "pid": 73734,
+      "exit": 0,
+      "finished_at": "2026-09-21T16:10:32.059709+00:00",
+      "source_unchanged": true,
+      "log_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/gates/postgres-sqlite-review-save.log",
+      "log_sha256": "a26b6c41ceba3de3d328cce7bb38ab00db8394676b592a2caea85809b0d8ab02"
+    },
+    {
+      "name": "stable-full-01",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "--maxWorkers=4",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "started_at": "2026-09-21T16:12:54.441991+00:00",
+      "source_commit": "ddd4ee4f0424a4e8078cbddba4b2d72c225ea065",
+      "source_digest": "b3440407ab7b75685d415fba9340f76b4e5943ed79d267e8248b65dca8ee6481",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 76473,
+      "exit": 0,
+      "finished_at": "2026-09-21T16:38:08.022471+00:00",
+      "source_unchanged": true,
+      "log_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/gates/stable-full-01.log",
+      "log_sha256": "9031de107f3fbf7b9a88f78ed5d0d07d23cfd12b4ae5c31de4215234763ee06b"
+    },
+    {
+      "name": "types-final",
+      "command": [
+        "corepack",
+        "pnpm",
+        "typecheck"
+      ],
+      "started_at": "2026-09-21T16:08:33.564907+00:00",
+      "source_commit": "e288ac2049b32aa5f794463746d23c45c92e1fe5",
+      "source_digest": "b3440407ab7b75685d415fba9340f76b4e5943ed79d267e8248b65dca8ee6481",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 71626,
+      "exit": 0,
+      "finished_at": "2026-09-21T16:08:38.453311+00:00",
+      "source_unchanged": true,
+      "log_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/gates/types-final.log",
+      "log_sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5"
+    }
+  ],
+  "skipped_not_passed": true
+}

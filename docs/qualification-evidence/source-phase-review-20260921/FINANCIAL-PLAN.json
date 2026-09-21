@@ -1,0 +1,18 @@
+{
+  "rates": {
+    "model": "openai/gpt-5.6-terra",
+    "input_or_cache_write_per_token": 2.5e-06,
+    "output_per_token": 1.2e-05,
+    "long_context_threshold": 272000,
+    "maximum_envelope_bytes": 250000,
+    "framing_token_allowance": 16000,
+    "basis": "Current configured-provider catalog: prompt $2/M, cache-write $2.5/M, output $12/M below 272k input tokens. UTF8 complete-envelope bytes are a conservative input-token bound; retain 16k extra framing allowance. Unknown/oversize/long-context envelope refuses before body send; no fallback. No web/search tools. Recheck current rate before each final launch."
+  },
+  "one_response_max_usd": 0.809,
+  "development_episode_max_usd": 2.427,
+  "final_episode_plus_restart_max_usd": 4.045,
+  "hard_total": 5.74585469,
+  "carried_liability": 0.985804,
+  "lanes": "Serial only. HELD until actual-envelope check and whole episode capacity is reserved. Other lanes do not share an active reservation. Actual settled usage can release only new reserves; old TLS liability stays deducted. Operational turns are separately held.",
+  "actual_model_calls": 0
+}

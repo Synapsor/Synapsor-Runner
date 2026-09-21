@@ -1,0 +1,63 @@
+{
+  "raw_files": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/logs/development-state-capture.json",
+      "sha256": "9918f7f7ddd69176f5f758d8020679f8ce43bb9a8503d9fb33745a950ada36f3",
+      "bytes": 6930
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/logs/development-types-01.log",
+      "sha256": "d08186e746d550cd13a11ca7d5335211f28919ff668434b95cdca513e9488c42",
+      "bytes": 227
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/logs/development-types-02.log",
+      "sha256": "7ead0002eef147bc61127c479de56427cde4518272eac96df4e4f945fcd281e6",
+      "bytes": 297
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/logs/development-types-03.log",
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+      "bytes": 0
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/logs/failing-before.log",
+      "sha256": "c0b7dcefa7afc3a414d48e7e2599f2545125dd8a2350e05508e01eb32c3cea30",
+      "bytes": 2946
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/logs/focused-01.log",
+      "sha256": "9bda8a23d618ed3ae0e21179529053046a8705a88e1dab169c3705a65c33ad75",
+      "bytes": 973
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/logs/focused-02.log",
+      "sha256": "590430c85abb53fd89bd87f238e0efdbdf60e406dbac3208cd45082ac0930b9a",
+      "bytes": 113512
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/logs/focused-03.log",
+      "sha256": "8ea5ec6b9965492bda9c04c31dd7204ed96770e0e32fc1d49d2c96a9b101db70",
+      "bytes": 7539
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/logs/focused-04.log",
+      "sha256": "f99cea6ad2e84533e3c4dd56da88e19a41e405db2aa1286a0c1b3986432560fe",
+      "bytes": 1858
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/logs/focused-05.log",
+      "sha256": "6ec88f6ea41d1b895d1ebd2911a1f7188e9dca982dfd0ffbc8c59db01b745830",
+      "bytes": 8994
+    }
+  ],
+  "classification": {
+    "failing-before": "Expected actual pre-repair guard/diagnostic failures; retained",
+    "development-types-01": "Implementation missing lines local corrected before stable",
+    "development-types-02": "Test indexed value undefined typing corrected before stable",
+    "focused-02": "Derived-test expectation corrected; no required source duty added",
+    "focused-03": "Derived negative pointer corrected to the real runner-evidence root; guard unchanged",
+    "focused-05": "Test-only competing save moved outside held coordination to the provider callback; nested writer fixture timed out. Product lock order not changed."
+  },
+  "all_precede_stable_suite": true
+}

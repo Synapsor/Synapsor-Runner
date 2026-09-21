@@ -1,0 +1,44 @@
+{
+  "declared_at": "2026-09-21T15:16:41.967895+00:00",
+  "implementation_deadline": "2026-09-21T18:20:00Z",
+  "preparation_deadline": "2026-09-21T16:50:00Z",
+  "stable_gates_minutes": 150,
+  "stable_gates_latest_deadline": "2026-09-21T20:50:00Z",
+  "closure_minutes": 60,
+  "development_authoring_transports": 6,
+  "final_A": {
+    "authoring": 8,
+    "runtime": 12,
+    "deterministic_mcp": 80,
+    "request_change": 12,
+    "workers": 6,
+    "effects": 2
+  },
+  "final_B": {
+    "authoring": 8,
+    "runtime": 16,
+    "deterministic_mcp": 100,
+    "request_change": 16,
+    "workers": 6,
+    "effects": 3
+  },
+  "final_each_review_minutes": 90,
+  "final_each_operations_minutes": 120,
+  "reserved_each_final_recheck": {
+    "authoring": 2,
+    "runtime": 2
+  },
+  "harness_corrections_each_final": 2,
+  "financial": {
+    "at": "2026-09-21T15:16:41.967895+00:00",
+    "observed_account_available_usd": 6.73165869,
+    "outstanding_prior_liability_usd": 0.985804,
+    "liability_origin": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/shared/provider-budget-ledger-final.json",
+    "liability_handling": "Retained once as carried liability; earlier allocation remains closed, not charged a second time as new spend. No actual generation/account evidence yet resolves the failed TLS send.",
+    "new_hard_total_usd": 5.74585469,
+    "calls": 0,
+    "purchase": false
+  },
+  "paid_lanes": "HELD until deterministic complete positives, actual envelope financial preflight and declared episode allocation",
+  "operational_gate": "Independent exact-candidate contract acceptance plus complete persisted/restarted A and B BUSINESS readiness and sealed prepublication starts"
+}

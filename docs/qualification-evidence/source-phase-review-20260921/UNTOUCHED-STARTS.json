@@ -1,0 +1,15 @@
+{
+  "A": {
+    "report": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/a-final-start-verify-v1/records/A-FINAL-START-INDEPENDENT-VERIFICATION.json",
+    "sha256": "27bac47256db9608fffdadfa9b1631020ef572b809aeb7ca54531873a9bcb396",
+    "verdict": "PASS independently restored42tables/38source, active7draft5"
+  },
+  "B": {
+    "manifest": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/sealed-checkpoints/tester-B-final/untouched/manifest.json",
+    "sha256": "2e93e88b4a9bcafe64a53e84e07dd62ca81b5c79d8ab76c0a14dc6f826f899fb",
+    "all9_file_hashes_main_checked": true,
+    "protection_addendum_sha256": "fc0f49f4cc9ac04743565c0697c3627d0282dd23b28c59247c78474bd201ab48",
+    "mode_note": "Manifest modes are pre-protection; current files400, directory500."
+  },
+  "final_public_runs": 0
+}

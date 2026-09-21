@@ -1,0 +1,21 @@
+{
+  "baseline": "e288ac2049b32aa5f794463746d23c45c92e1fe5",
+  "product_files": [
+    "authoring-policy-coverage.ts",
+    "authoring-coverage-feedback.ts",
+    "authoring-policy-evidence.ts",
+    "authoring-obligation-review.ts",
+    "authoring-receipt-read-evidence.ts",
+    "authoring-source-coverage.ts",
+    "authoring-receipt-configuration.ts"
+  ],
+  "tests": [
+    "source-phase-review.test.ts",
+    "test-fixtures/source-phase-review.json"
+  ],
+  "runtime_changes": false,
+  "new_tools": false,
+  "new_ledger": false,
+  "complete_replacement": true,
+  "conditional_operations": "HELD until independent contract plus actual final A/B review and restarted recheck"
+}

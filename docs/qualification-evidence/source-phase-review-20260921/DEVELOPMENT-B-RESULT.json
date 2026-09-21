@@ -1,0 +1,51 @@
+{
+  "classification": "DEVELOPMENT real public boundary-access W Resume; not final candidate",
+  "provider_calls": 2,
+  "correction_responses": 1,
+  "cost_usd": 0.3068683,
+  "meter_phase_note": "Meter labels both initial; actual serialized second request contains structured correction, counted as correction here. No counter reset.",
+  "preflight_unsent": 1,
+  "source_unchanged": true,
+  "source_rows": 196,
+  "source_receipts": 1,
+  "old_events_retained": true,
+  "changed_tables": [
+    "control_policy_deployments",
+    "control_policy_events"
+  ],
+  "epoch_before": 25,
+  "epoch_after": 27,
+  "new_events": [
+    {
+      "epoch": 26,
+      "after": "policy:3a9b0b7c78303ae18b48589c5979029ff562a02e3fa1e98028355171bb1db466",
+      "before": "policy:3a9b0b7c78303ae18b48589c5979029ff562a02e3fa1e98028355171bb1db466",
+      "name": "reviewed_staging_rules",
+      "operation": "save_disabled_action",
+      "source_database_changed": false
+    },
+    {
+      "epoch": 27,
+      "after": "policy:3a9b0b7c78303ae18b48589c5979029ff562a02e3fa1e98028355171bb1db466",
+      "before": "policy:3a9b0b7c78303ae18b48589c5979029ff562a02e3fa1e98028355171bb1db466",
+      "name": "reviewed_staging_rules",
+      "operation": "save_disabled_action",
+      "source_database_changed": false
+    }
+  ],
+  "remaining_40_tables_equal": true,
+  "business_ready": true,
+  "privacy_observed": false,
+  "strict_reload": "raw/replays/development-B-reload-result.json",
+  "public_action": "Declined activation, retained active30/saved15, quit editor",
+  "owner_business_answers": 0,
+  "owner_actions": [
+    "Explicit fresh bounded episode after unsent preflight",
+    "planned client_application ownership"
+  ],
+  "pending": "deployment renewal, source_db setup, source-counter maintenance, identity/client duties and independent readback remain unverified",
+  "event_evidence": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/source-phase-review-e288ac2-20260921/main-B-development/review-epoch-event-diff.json",
+    "sha256": "4c50a34ffd05587fab663c5b0b5d2c4154dbb395217c402435c70a4029d2ede6"
+  }
+}

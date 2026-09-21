@@ -1,0 +1,15 @@
+{
+  "at": "2026-09-21T15:49:32.260281+00:00",
+  "exact_initial_envelope_bytes": 194639,
+  "sha256": "656ea3dd348a45677c23e39b4b0b8491b99213cbf21bdb55d8f20deef4a4876e",
+  "initial_reservation_usd": 0.6705975,
+  "whole_episode_reserved_usd": 2.427,
+  "includes": 3,
+  "maximum_envelope_bytes": 250000,
+  "feedback_bound_unchanged": 8192,
+  "outer_development_calls": 0,
+  "preflight_unsent": 1,
+  "body_cap_enforcement": "before provider body send; no hidden context strip",
+  "other_lanes": "HELD",
+  "final_starts": "not used; exact old seals retained"
+}

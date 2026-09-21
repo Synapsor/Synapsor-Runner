@@ -1,0 +1,62 @@
+{
+  "at": "2026-09-21T16:17:56.562176+00:00",
+  "maximum_byte_and_rate_contract": "See FINANCIAL-PLAN.json and raw/provider-pricing-preflight.json",
+  "entries": [
+    {
+      "case": "main-A-development",
+      "actual_prepared_envelopes": [
+        {
+          "at": "2026-09-21T15:48:31.629Z",
+          "pid": 54352,
+          "kind": "prepared_envelope",
+          "bytes": 194639,
+          "reservation_usd": 0.6705975000000001,
+          "request_sha256": "656ea3dd348a45677c23e39b4b0b8491b99213cbf21bdb55d8f20deef4a4876e"
+        },
+        {
+          "at": "2026-09-21T15:50:43.078Z",
+          "pid": 55513,
+          "kind": "prepared_envelope",
+          "bytes": 194639,
+          "reservation_usd": 0.6705975000000001,
+          "request_sha256": "656ea3dd348a45677c23e39b4b0b8491b99213cbf21bdb55d8f20deef4a4876e"
+        }
+      ],
+      "actual_sends": 1,
+      "field_bound_bytes": 250000,
+      "no_trim_or_substitution": true
+    },
+    {
+      "case": "main-B-development",
+      "actual_prepared_envelopes": [
+        {
+          "at": "2026-09-21T16:02:29.363Z",
+          "pid": 65702,
+          "kind": "prepared_envelope",
+          "bytes": 233576,
+          "reservation_usd": 0.7679400000000001,
+          "request_sha256": "70f604a2f046f5d3a927e3a28086981957428724c9138d76fc0a82108a747830"
+        },
+        {
+          "at": "2026-09-21T16:08:41.371Z",
+          "pid": 71087,
+          "kind": "prepared_envelope",
+          "bytes": 233576,
+          "reservation_usd": 0.7679400000000001,
+          "request_sha256": "70f604a2f046f5d3a927e3a28086981957428724c9138d76fc0a82108a747830"
+        },
+        {
+          "at": "2026-09-21T16:09:22.389Z",
+          "pid": 71087,
+          "kind": "prepared_envelope",
+          "bytes": 237425,
+          "reservation_usd": 0.7775625,
+          "request_sha256": "95e34626c392e1239d66df6d5712c2df20dec2a0d9a5395d4edeb77e1b638c69"
+        }
+      ],
+      "actual_sends": 2,
+      "field_bound_bytes": 250000,
+      "no_trim_or_substitution": true
+    }
+  ]
+}

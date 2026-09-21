@@ -1,0 +1,15 @@
+{
+  "source": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/harness",
+  "exact_copies": {
+    "runtime-proxy.mjs": "18bd9249e62aea9cfeb6e87ed7ef5be57b3ab5e9de4fc78b2847ae2fd027e4ea",
+    "test-runtime-turn-reset.mjs": "ae86165724b64cf62f2db28796348942741e84ecd1e33ecc4ed8ad103bc0ae10"
+  },
+  "other_harness_source": "docs/qualification-evidence/saved-review-resume-20260920",
+  "new_provider_budget": "same shared ledger; new authoring rate bound; runtime conservative rate contract unchanged",
+  "status": "prepared only; no native launch",
+  "main_adaptations": [
+    "Synthetic selftest writes to an explicit new owned output directory; original synthetic result preserved separately.",
+    "Restore existing main runtime_phase_file labeling for the reserved restart; per-turn reset and funding logic unchanged."
+  ],
+  "product_changes": false
+}

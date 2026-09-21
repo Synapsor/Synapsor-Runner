@@ -1,0 +1,394 @@
+diff --git a/apps/runner/src/authoring-coverage-feedback.ts b/apps/runner/src/authoring-coverage-feedback.ts
+index 3127f20..d308b84 100644
+--- a/apps/runner/src/authoring-coverage-feedback.ts
++++ b/apps/runner/src/authoring-coverage-feedback.ts
+@@ -1,4 +1,5 @@
+ import { canonicalJsonDigest } from '@synapsor-runner/protocol';
++import { CoverageSourceLinesError } from './authoring-source-coverage.js';
+ 
+ /** Only host-authored text and fixed response coordinates leave this boundary. */
+ export class CoverageComponentError extends Error {
+@@ -25,9 +26,13 @@ export class CoverageReceiptObservationError extends Error {
+     super('OBLIGATION_OBSERVATION_UNESTABLISHED: Receipt capability or selected configuration is not an observed receipt or independent source readback. Keep the applicable exact setup/after-execution duty pending; no observation evidence is supplied by this review.');
+   }
+ }
++export class CoverageReceiptReadContextError extends Error {
++  constructor() { super('COVERAGE_RECEIPT_REFERENCE_OVERBROAD: The receipt guarantee overview is not evidence for the separate Read-exclusion claim.'); }
++}
+ export type CoverageFinding = {
+   code: string; component: string; identity: string; component_identity: string; passage_identity?: string; reason: string; repair: string; structural: boolean;
+   current_evidence?: CoverageCurrentDescriptionError['evidence'];
++  source_digest?: string; missing_ranges?: Array<{ start: number; end: number }>; omitted_range_count?: number;
+ };
+ export type CoverageFeedback = {
+   context: string; findings: CoverageFinding[]; limited: boolean;
+@@ -52,12 +57,26 @@ export const MAX_COVERAGE_SUBMISSIONS = 3;
+ export function coverageFinding(error: unknown, component: string, identityBasis: unknown): CoverageFinding {
+   if (error instanceof CoverageComponentError) component = error.component;
+   const cause = error instanceof CoverageComponentError ? error.cause : error;
++  if (cause instanceof CoverageReceiptReadContextError) return {
++    code: 'COVERAGE_RECEIPT_REFERENCE_OVERBROAD', component, component_identity: canonicalJsonDigest(identityBasis),
++    identity: canonicalJsonDigest({component: identityBasis, code: 'COVERAGE_RECEIPT_REFERENCE_OVERBROAD'}), structural: true,
++    reason: 'This receipt overview/Read combination mixes evidence kinds. The current host context has a separate narrow configured-destination Read-exclusion record; it supplies no observation proof.',
++    repair: 'If the claim is exclusion of configured receipt storage from the selected Read, isolate it using only /runner_evidence/runtime_contract/receipt_read_exclusion and its exact excluded value. Keep the source range and every other claim. This evidence proves neither provisioning, database-wide privacy, execution, a performed receipt nor independent readback. Keep those duties separate and unverified where applicable. A broader privacy or observation claim remains unresolved. Return the COMPLETE REPLACEMENT review and account for the entire source inventory; do not change policy or configuration.',
++  };
++  if (cause instanceof CoverageSourceLinesError) return {
++    code: 'COVERAGE_SOURCE_LINES_MISSING', component,
++    component_identity: canonicalJsonDigest({source: cause.source_digest, ranges: cause.missing_ranges}),
++    identity: canonicalJsonDigest({code: 'COVERAGE_SOURCE_LINES_MISSING', source: cause.source_digest, ranges: cause.missing_ranges}),
++    structural: true, source_digest: cause.source_digest, missing_ranges: cause.missing_ranges, omitted_range_count: cause.omitted_range_count,
++    reason: 'The listed nonblank source ranges have no submitted disposition. This is a structural omission, not a conclusion about their meaning.',
++    repair: 'Read each missing range in the exact consented source inventory and give it its own supported disposition in the COMPLETE REPLACEMENT report. Preserve every other requirement and unresolved claim. Headings and definitions are not automatically background; overlapping ranges may represent separate claims. Nothing from a rejected response is accepted or silently retained. Check the entire inventory when omitted_range_count is nonzero.',
++  };
+   if (cause instanceof CoverageReceiptObservationError) return {
+     code: cause.code, component, component_identity: canonicalJsonDigest(identityBasis),
+     identity: canonicalJsonDigest({component: identityBasis, code: cause.code}), structural: cause.structural,
+     reason: 'A supported execution capability or reviewed receipt selection does not establish provisioned execution, an observed receipt or independent readback.',
+     repair: cause.structural
+-      ? 'Separate the compiled capability claim from receipt setup and observation duties. The current /runner_evidence/runtime_contract/receipt_configuration links reviewed intent only; /runner_evidence/runtime_contract/receipts describes the distinct receipt guarantee; /runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup keeps setup pending. Resubmit a complete review with the isolated receipt setup duty needs_decision/deployment/missing_configuration and unperformed work unverified. Keep independent readback separately pending where required. Do not change source policy, program, receipt mode or any other requirement. No observation claim was accepted.'
++      ? 'Separate the compiled capability claim from receipt setup and observation duties. /runner_evidence/runtime_contract/receipt_configuration reports its actual current configuration and separately candidate-bound reviewed_intent; neither establishes a performed receipt. /runner_evidence/runtime_contract/receipts describes the distinct guarantee; /runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup keeps applicable setup pending. Resubmit a complete review with the isolated receipt setup duty needs_decision/deployment/missing_configuration and unperformed work unverified. Preserve applicable historical achievements without attributing them to this edited revision. Keep independent readback separately pending. Do not change source policy, program, receipt mode or any other requirement. No observation claim was accepted.'
+       : 'Keep the observation unestablished and the review unresolved. Required meaning, applicable configuration, deployment permission and performed receipts/readback need their own evidence; another opinion cannot supply it. Do not change the receipt guarantee or mark unperformed work verified.',
+   };
+   if (cause instanceof CoverageCurrentDescriptionError) return {
+@@ -113,6 +132,14 @@ export function coverageFinding(error: unknown, component: string, identityBasis
+     code = 'COVERAGE_SOURCE_LINES_MISSING'; structural = true;
+     reason = 'One or more nonblank source lines have no submitted disposition.';
+     repair = 'Account for every nonblank line of the current consented source, including restrictions and unsupported requirements. Submit the complete replacement; omission is not evidence of implementation.';
++  } else if (message.startsWith('RECEIPT_READ_EXCLUSION_UNESTABLISHED:')) {
++    code = 'RECEIPT_READ_EXCLUSION_UNESTABLISHED';
++    reason = 'The exact isolated receipt-destination exclusion is absent, stale, false or combined with claims outside its scope.';
++    repair = 'Keep this privacy requirement unresolved. The narrow selected-Read proof cannot establish unrelated fields, conditions, provisioning, execution or observations. Revalidate its actual configuration/Read binding; do not infer privacy from an absent name or select a nearby receipt overview.';
++  } else if (message.startsWith('COVERAGE_DUPLICATE_COMPONENT:')) {
++    code = 'COVERAGE_DUPLICATE_COMPONENT'; structural = true;
++    reason = 'The complete response repeats an identical validated component. Distinct claims may share a source range; identical records are not distinct claims.';
++    repair = 'Return one copy of this component in the COMPLETE REPLACEMENT, preserving all distinct claims, unresolved concerns and full source coverage. Do not combine contrary dispositions or replace the source.';
+   } else if (message.startsWith('Mechanical evidence mismatch at')) {
+     code = 'COVERAGE_EVIDENCE_VALUE_MISMATCH'; structural = true;
+     reason = 'Mechanical evidence mismatch: the typed claim does not equal the value in the existing prepared context.';
+@@ -143,7 +170,7 @@ export function permitsSecondCoverageCorrection(prior: CoverageFeedback[], next:
+   if (prior.length !== 1 || !next.findings.length || next.limited || !next.findings.every(f => f.structural)) return false;
+   const old = prior.flatMap(r => r.findings);
+   const checked = checkedPassages.get(next);
+-  if (!checked || old.some(f => !f.passage_identity || checked.get(f.component.match(/^\/passages\/\d+/u)?.[0] ?? "/") !== f.passage_identity)) return false;
++  if (!checked || old.some(f => !f.passage_identity || checked.get(f.component === '/passages' ? '/passages' : f.component.match(/^\/passages\/\d+/u)?.[0] ?? "/") !== f.passage_identity)) return false;
+   return prior.every(r => r.context === next.context && !r.limited && r.findings.every(f => f.structural))
+     && next.findings.every(f => !old.some(p => (findingSubjects.has(f) && findingSubjects.get(p) === findingSubjects.get(f)) || p.identity === f.identity || p.component_identity === f.component_identity || p.component === f.component
+       || p.component.split('/counter_requirements/')[0] === f.component.split('/counter_requirements/')[0]))
+diff --git a/apps/runner/src/authoring-obligation-review.ts b/apps/runner/src/authoring-obligation-review.ts
+index 3d08989..3265ac1 100644
+--- a/apps/runner/src/authoring-obligation-review.ts
++++ b/apps/runner/src/authoring-obligation-review.ts
+@@ -1,15 +1,35 @@
+ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+ import { isDeferredSourceCounterMaintenance, isDeferredSourceReadback, receiptSetupComponentOnly as receiptOnly, receiptConfigurationComponentOnly, type ReviewObligationAssessment, type PolicyPassage, type PolicyTextSnapshot } from "./authoring-policy-source.js";
+-import { CoverageReceiptObservationError } from "./authoring-coverage-feedback.js";
++import { CoverageReceiptObservationError, CoverageReceiptReadContextError } from "./authoring-coverage-feedback.js";
+ export { deferredReviewObligation } from "./authoring-policy-source.js";
+ 
+ export const RECEIPT_PATH = "/runner_evidence/runtime_contract/receipts";
+ const SETUP_PATH = "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup";
+ const READBACK_PATH = "/runner_evidence/runtime_contract/application_obligations/independent_source_readback";
+ const CONFIGURATION_PATH = "/runner_evidence/runtime_contract/receipt_configuration";
++export const RECEIPT_READ_PATH = "/runner_evidence/runtime_contract/receipt_read_exclusion";
+ function at(draft: unknown, pointer: string): any {
+   return pointer.slice(1).split("/").reduce<any>((value, key) => value?.[key.replace(/~1/gu, "/").replace(/~0/gu, "~")], draft);
+ }
++function currentReceiptReadExclusion(draft: unknown): boolean {
++  const proof = at(draft, RECEIPT_READ_PATH), read = at(draft, '/read'), configuration = at(draft, CONFIGURATION_PATH);
++  return proof?.origin === 'HOST-CONFIGURATION-AND-READ' && proof.scope === 'selected_read_graph' && proof.excluded === true
++    && configuration?.status === 'current' && proof.configuration_digest === configuration.digest
++    && proof.selected_read_digest === canonicalJsonDigest(read) && proof.graph_digest === canonicalJsonDigest(read?.pack?.resources)
++    && proof.generation_lock_fingerprint === read?.generation_lock_fingerprint
++    && configuration.modes?.length > 0
++    && configuration.modes.every((mode: any) => mode.source === read.source && mode.authority === 'source_db')
++    && configuration.source_receipt_destinations?.length > 0
++    && configuration.source_receipt_destinations.length === configuration.modes.length
++    && configuration.source_receipt_destinations.every((destination: any) => destination.source === read.source
++      && /^sha256:[a-f0-9]{64}$/u.test(destination.relation_digest ?? ''))
++    && proof.destination_binding_digest === canonicalJsonDigest(configuration.source_receipt_destinations);
++}
++function isolatedReceiptReadFields(p: PolicyPassage): boolean {
++  return p.responsibility === 'runner' && !p.field_checks?.length && !p.counter_requirements?.length
++    && !p.application_obligations?.length && !p.deployment_prerequisite && !p.source_counter_obligation && !p.operator_override
++    && !p.evidence_checks?.length;
++}
+ 
+ /** Host preparation already checks the selected management revision against
+  * project/store, metadata and policy binding. Check its exact candidate links
+@@ -100,6 +120,18 @@ export function receiptSelectionComponent(p: PolicyPassage, source: PolicyTextSn
+ /** Recomputed from current host inputs, never deserialized as a provider claim.
+  * All three families use the same phase record; their proof requirements differ. */
+ export function assessReviewObligation(p: PolicyPassage, source: PolicyTextSnapshot, draft: unknown): ReviewObligationAssessment | undefined {
++  if (p.disposition === 'implemented' && p.draft_paths.some(path => path === RECEIPT_READ_PATH || path.startsWith(`${RECEIPT_READ_PATH}/`))) {
++    if (!currentReceiptReadExclusion(draft) || !isolatedReceiptReadFields(p)
++      || p.draft_paths.length !== 1 || p.draft_paths[0] !== RECEIPT_READ_PATH) {
++      throw new Error('RECEIPT_READ_EXCLUSION_UNESTABLISHED: The exact current selected-Read exclusion must be isolated; it proves no other privacy, business or observation claim.');
++    }
++  }
++  // No claim is accepted or rewritten here. A narrow alternative exists only
++  // with current host proof; the provider must resubmit a complete report.
++  if (p.disposition === 'implemented' && isolatedReceiptReadFields(p) && currentReceiptReadExclusion(draft)
++    && p.draft_paths.length === 2 && p.draft_paths.includes('/read') && p.draft_paths.includes(RECEIPT_PATH)) {
++    throw new CoverageReceiptReadContextError();
++  }
+   const selection = receiptSelectionComponent(p, source, draft);
+   if (p.disposition === "implemented" && (p.draft_paths.includes(READBACK_PATH)
+     || p.draft_paths.includes(RECEIPT_PATH) && receiptRequirement(source, p) && !selection)) {
+diff --git a/apps/runner/src/authoring-policy-coverage.ts b/apps/runner/src/authoring-policy-coverage.ts
+index eda22fe..55974ff 100644
+--- a/apps/runner/src/authoring-policy-coverage.ts
++++ b/apps/runner/src/authoring-policy-coverage.ts
+@@ -1,4 +1,5 @@
+ import { receiptConfigurationComponentOnly } from "./authoring-policy-source.js";
++import { CoverageSourceLinesError, missingReviewSourceLines, reviewSourceInventory } from "./authoring-source-coverage.js";
+ import { CoverageComponentError, CoverageComponentsError, CoverageCurrentDescriptionError, recordCoverageFindingSubject, recordCheckedCoveragePassage, coverageFinding, MAX_COVERAGE_FINDINGS, MAX_COVERAGE_FEEDBACK_BYTES, MAX_COVERAGE_SUBMISSIONS, permitsSecondCoverageCorrection, type CoverageFeedback } from "./authoring-coverage-feedback.js";
+ import { clientDutyInventory } from "./authoring-client-duties.js";
+ import { assessReviewObligation, deferredReviewObligation, receiptSelectionComponent } from "./authoring-obligation-review.js";
+@@ -555,6 +556,7 @@ export function collectCoverageFeedback(args: Record<string, unknown>, source: P
+     const basis = raw as {start?:number|null;end?:number|null};
+     if(typeof raw === "object" && raw !== null) f.passage_identity=canonicalJsonDigest({start:basis.start??null,end:basis.end??null});
+     else if(raw === "envelope") f.passage_identity=canonicalJsonDigest("envelope");
++    if (f.code === "COVERAGE_SOURCE_LINES_MISSING") f.passage_identity = canonicalJsonDigest({ source: source.digest });
+     // No submitted strings are included. This optional structural alternative
+     // must itself pass the existing requirement validator in the SAME context.
+     if (f.code === "COUNTING_SUPPORT_MISMATCH" && error instanceof CoverageComponentError) {
+@@ -582,12 +584,26 @@ export function collectCoverageFeedback(args: Record<string, unknown>, source: P
+     add(new Error("Coverage passages must be an array"), "/", "envelope"); result.unevaluated.push("/passages"); return result;
+   }
+   recordCheckedCoveragePassage(result,"/",canonicalJsonDigest("envelope"));
++  // Range completeness is independently checkable before claim validation,
++  // but malformed ranges cannot establish even tentative source accounting.
++  const missing = missingReviewSourceLines(source, args.passages);
++  if (missing === undefined) result.unevaluated.push("source-range completeness (invalid passage ranges)");
++  else if (missing.length) {
++    const finding = new CoverageSourceLinesError(source.digest, missing);
++    add(finding, "/passages", "source_coverage");
++    if (finding.omitted_range_count) result.limited = true;
++  } else recordCheckedCoveragePassage(result, "/passages", canonicalJsonDigest({ source: source.digest }));
+   try { requirements = countingSourceRequirements(source,draft,messagesForCoverage(operatorHistory)); }
+   catch(error) { add(error,"/", "context"); result.unevaluated.push("/passages"); return result; }
+   const fields = fieldPrivacyEvidence(draft);
++  const seen = new Set<string>();
+   for (const [index, raw] of args.passages.entries()) {
+     const component = `/passages/${index}`;
+-    try { parseCoveragePassage(raw,index,source,draft,operatorHistory,requirements,fields);
++    try {
++      const parsed = parseCoveragePassage(raw,index,source,draft,operatorHistory,requirements,fields);
++      const identity = canonicalJsonDigest(parsed);
++      if (seen.has(identity)) throw new Error("COVERAGE_DUPLICATE_COMPONENT: Identical component repeated in the complete replacement.");
++      seen.add(identity);
+       recordCheckedCoveragePassage(result,component,canonicalJsonDigest({start:raw.start,end:raw.end})); }
+     catch(error) {
+       const errors = error instanceof CoverageComponentsError ? error.errors : [error];
+@@ -621,13 +637,16 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
+     });
+   });
+   if (missingReferences.length) throw new Error(`Draft pointer(s) not present: ${[...new Set(missingReferences)].join(", ")}. Use the supplied exact coverage references; do not invent a missing setting or edit a rule to repair a link. Private verification-only fields are under /runner_evidence/actions/<outcome>/scoped_bindings/<binding>/fields/<field>, not nonexistent read_access resources. Select an existing exact path; no missing Read path is redirected.`);
+-  const covered = new Set<number>(), lines = policyTextLines(source.text);
+   const fieldEvidence = fieldPrivacyEvidence(draft);
++  const lines = policyTextLines(source.text);
+   const passages: PolicyPassage[] = [];
++  const seen = new Set<string>();
+   for (const [index, raw] of args.passages.entries()) {
+     const passage = parseCoveragePassage(raw, index, source, draft, operatorHistory, sourceRequirements, fieldEvidence);
++    const identity = canonicalJsonDigest(passage);
++    if (seen.has(identity)) throw new CoverageComponentError(`/passages/${index}`, new Error("COVERAGE_DUPLICATE_COMPONENT: Identical component repeated in the complete replacement."));
++    seen.add(identity);
+     passages.push(passage);
+-    for (let line = passage.start; line <= passage.end; line++) covered.add(line);
+   }
+   // Keep the established comparison and its domain condition durable even if
+   // a later review agrees without repeating the typed counter detail. This adds
+@@ -699,8 +718,10 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
+       next_step: "Review an obtainable subject with an existing exact binding only if all eligible targets remain reachable, or request a separate explicit Read/reference decision. The disabled draft is retained; publication is not ready." });
+   }
+   if (passages.length > 120) throw new Error("Coverage including retained counting comparisons exceeds 120 passages; group the remaining clauses without dropping requirements.");
+-  const missing = lines.flatMap((line, index) => line.trim() && !covered.has(index + 1) ? [index + 1] : []);
+-  if (missing.length) throw new Error(`Unaccounted source lines: ${missing.join(", ")}. Include restrictions and unsupported clauses, not only implemented clauses.`);
++  // Only the provider's complete submission accounts for source text. Host
++  // inventory/pending components added above must never fill an omitted line.
++  const missing = missingReviewSourceLines(source, args.passages)!;
++  if (missing.length) throw new CoverageSourceLinesError(source.digest, missing);
+   // Configuration evidence proves only the selected mode. Preserve its submitted
+   // passage and an isolated, still-pending duty rather than calling a receipt done.
+   for (const passage of [...passages]) {
+@@ -726,10 +747,11 @@ export async function reviewPolicyCoverage(input: {
+   // Bind references to this request's operator evidence, then persist quotes,
+   // not indexes that could mean something different after history changes.
+   const operatorMessages = [...(input.session.conversation?.policySources?.operator_messages ?? [])];
+-  const tools: AskToolDefinition[] = [{ name: TOOL, description: "Record untrusted policy interpretation against the exact disabled draft. Does not change or activate it.",
++  const inventory = reviewSourceInventory(input.source);
++  const tools: AskToolDefinition[] = [{ name: TOOL, description: "Record a COMPLETE REPLACEMENT untrusted review against the exact disabled draft and source inventory. Every nonblank line needs a disposition, including headings and definitions. Overlapping ranges may separate claims; rejected reports are never merged or partially saved. Does not change or activate authority.",
+     input_schema: { type: "object", additionalProperties: false, required: ["passages"], properties: { passages: { type: "array", maxItems: 120,
+       items: { type: "object", additionalProperties: false, required: ["start", "end", "disposition", "interpretation", "draft_paths"], properties: {
+-        start: { type: "integer", minimum: 1 }, end: { type: "integer", minimum: 1 }, disposition: { type: "string", enum: [...DISPOSITIONS] },
++        start: { type: "integer", minimum: 1, maximum: inventory.line_count }, end: { type: "integer", minimum: 1, maximum: inventory.line_count }, disposition: { type: "string", enum: [...DISPOSITIONS] },
+         interpretation: { type: "string", maxLength: 800 }, draft_paths: { type: "array", items: { type: "string", enum: coverageReferences(input.draft) } }, operator_override: { type: "string" },
+         ...(operatorMessages.length ? { operator_message_id: { type: "integer", minimum: 1, maximum: operatorMessages.length,
+           description: "Exact indexed operator evidence. For disposition=overridden Runner saves its original text as the override. A reference on another disposition is saved as its exact supporting clarification only: it does not waive any requirement or replace validation. Prefer this ID without a redundant operator_override quote. A pause or deferred action is not an override." } } : {}),
+@@ -825,6 +847,8 @@ export async function reviewPolicyCoverage(input: {
+       await runAskProviderTurn({ configuration, authorityDigest, gateway, tools, signal: new AbortController().signal,
+         dependencies: session.dependencies, history: modelAuthoringHistory(session.conversation, session),
+         question: ["Review every nonblank source line against this actual draft. Return all dispositions, not just successes.",
++          `Fixed source inventory for this episode: ${JSON.stringify(inventory)}`,
++          "Each nonblank line must occur in at least one submitted range. Read the text: a heading or definition may contain a requirement. Background is an explicit interpretation, never a default for omitted text, and covers no children outside its range. Return the complete report after any correction; preserve unrelated valid and unresolved components. Missing ranges and invalid claims are independently refused, not automatically repaired.",
+           `Current draft (JSON pointer root): ${JSON.stringify(input.draft)}`,
+           `Host counting requirement states (unknown is not boundary-wide; source and explicit review establish meaning): ${JSON.stringify(countingSourceRequirements(input.source, input.draft, operatorMessages))}`,
+           `Exact coverage references (select, do not invent paths): ${JSON.stringify(coverageReferences(input.draft))}`,
+@@ -869,6 +893,8 @@ export async function reviewPolicyCoverage(input: {
+           'For connecting a supported Runner-managed local stdio client such as Claude Code, use deployment_prerequisite=runner_client_connection with disposition=needs_decision, responsibility=deployment and issue_kind=missing_configuration. Link only /runner_evidence/runtime_contract/deployment_prerequisites/runner_client_connection, not its parent overview. This installation is a later handoff after authority review, not external application business implementation or a preactivation requirement. Keep connection unverified and configuration unchecked; do not label it implemented or assign it through application_obligations. Split customer selection, status presentation and authenticated identity into their own passages, preserving genuine application assignment choices. Custom client implementation or unsupported transport requirements must remain unresolved, not waived by supported local installation. Reconcile old group-level coverage against this exact evidence without changing business rules.',
+           "For a genuine business/schema question, next_step must ask ONE short question in ordinary language, at most two sentences. Do not repeat the action summary, tell the operator to revise a permission, or include technical routing instructions. If the operator confirms an existing permission, record the clarified interpretation and recheck actual evidence; do not demand a nonempty access diff.",
+           "runtime_contract.receipt_configuration.reviewed_intent, when current and bound to every exact selected source-writing Action and attached source, is only a separately confirmed disabled setup requirement. It is not an execution configuration, provisioned object, writer verification or receipt. Keep an agreed receipt-only setup passage needs_decision/deployment/missing_configuration with its exact evidence path and setup still pending. Do not mark configuration or receipt observations implemented from that intent. An absent, stale, ambiguous or mismatched intent cannot resolve the requirement; preserve its actual prerequisite.",
++          "Use runtime_contract.review_evidence_phases to distinguish the edited candidate, current configuration, candidate-specific intent, applicable execution permission and unavailable historical observations. Current configuration and stale intent can coexist. Null saved_execution_review does not say an older revision never executed. Do not require a new receipt before publication or infer that old infrastructure is absent. Keep each actual pending renewal/observation separate from an implemented compiled capability, with no claim of completed work.",
++          "The runtime_contract.receipts overview describes receipt guarantees, not Read exclusion or completed observations. When supplied, runtime_contract.receipt_read_exclusion is host-derived evidence about exact configured receipt destinations and the complete selected Read graph. Only excluded=true proves this narrow exclusion. Cite only that exact root in an isolated implemented exclusion claim; no receipt/configuration overview, unrelated field/threshold checks, broader privacy or observation claim may inherit it. A missing record or false excluded value is not proof: retain the requirement unresolved. Source receipt storage is not automatically a public Read resource. No receipt content is supplied to authoring.",
+           "Use runtime_contract.saved_execution_review only for its exact Action revision and enabled_outcomes. A non-null inspected record can establish that separately reviewed execution configuration was saved; an empty enabled set cannot. Do not ask to implement an Action expression for an already saved operator policy. Its false live-writer, worker, receipt-mode and independent-observation verification fields remain limitations, not proof those operations failed or never happened. Null means no applicable record is available here. Preserve separate source_db requirements; this record alone does not verify receipt mode or source receipt objects.",
+           "This is a disabled-draft coverage review, not a live deployment check. When an execution requirement is fully represented by the compiled direct_sql effect and supported worker contract, mark that drafted behavior implemented and explicitly retain writer review, execution consent and worker startup as later prerequisites in its interpretation/next_step. Do not require those later stages to have run before allowing the operator to reach them. Missing effect support, missing business rules, ambiguous scope or unassigned application obligations remain unresolved; prepared must never mean running or completed.",
+           "For dedicated writer provisioning, keeping the reader separate, execution permission or worker startup, use a separate needs_decision/deployment/missing_configuration passage with deployment_prerequisite=runner_execution_setup ONLY when its current evidence says supported=true. Link only /runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup, not /read or individual action/execution links. Those links describe business enforcement, not deployment status. The operator reaches exact writer requirements and private credential setup AFTER authority review; do not send them back to business authoring merely because no writer exists yet. Keep actual grants, credential checks, execution consent, worker startup and receipts outstanding. An unsupported effect, missing action or undecided business condition still blocks review; this is not permission to waive it.",
+diff --git a/apps/runner/src/authoring-policy-evidence.ts b/apps/runner/src/authoring-policy-evidence.ts
+index 04cd91c..759a04c 100644
+--- a/apps/runner/src/authoring-policy-evidence.ts
++++ b/apps/runner/src/authoring-policy-evidence.ts
+@@ -1,4 +1,5 @@
+ import { actionSubjectCompatibility } from "./action-subject-compatibility.js";
++import { receiptReadExclusion, reviewEvidencePhases } from "./authoring-receipt-read-evidence.js";
+ import { policyCountingInterpretations } from "./authoring-counting-review.js";
+ import type { CountingOutcomeDomain } from "./authoring-policy-source.js";
+ import { explorationBoundaryCandidateDigest, hasReviewedPrincipalScope, type ExplorationBoundaryDraft } from "./auto-boundary.js";
+@@ -477,6 +478,8 @@ export function policyCoverageDraft(input: {
+             meaning: "These outcomes have an enabled operator execution policy bound to this exact Action revision. This existing record is not a fresh writer/grant check, worker liveness check, receipt mode verification, completed execution or independent observation. Preserve its history without repeating a business Action repair. Inspect remaining setup separately." }
+           : null,
+         receipt_configuration: input.receiptConfiguration ?? null,
++        receipt_read_exclusion: receiptReadExclusion(input.read, input.receiptConfiguration, input.source),
++        review_evidence_phases: reviewEvidencePhases(input.authority?.authority.action_boundary.digest ?? null, input.read),
+         receipts: "Runner supports distinct receipt authorities. runner_ledger records processing and execution receipts in the control ledger, separately from source effects; it is not a source-atomic receipt. For supported direct SQL effects, source_db records the applied receipt in the same source transaction as the guarded effects. It requires separately reviewed receipt objects and writer grants through writeback setup (precreated or reviewed auto-migration), then execution verification and a worker. Receipt mode and readiness are not established by this disabled draft. A source-atomic requirement cannot be satisfied by a control-ledger receipt or by adding a model-authored audit INSERT. Independent source readback is a separate verification step, not an automatic client behavior guarantee. request_change distinguishes queued/human_review/not_enabled/completed; completed requires applied state. Pending/failed is not completed.",
+         client_responsibilities: "The application authenticates the person, supplies trusted session identity, captures their selection and uses returned execution status/receipts for messages. A scoped subject reference authorizes one reviewed row; it does not prove the human clicked a UI. When an effective date is in the future, recording the change is not proof its benefits are already in force. Boundary rules cannot prove arbitrary client UI wording.",
+         client_contract: { mode: "interactive_four_tool", client: input.client ?? "unselected",
+diff --git a/apps/runner/src/authoring-receipt-configuration.ts b/apps/runner/src/authoring-receipt-configuration.ts
+index 868b250..cf9ab4f 100644
+--- a/apps/runner/src/authoring-receipt-configuration.ts
++++ b/apps/runner/src/authoring-receipt-configuration.ts
+@@ -25,7 +25,16 @@ async function executionReceiptConfiguration(projectRoot: string, sources: reado
+       if (authority !== "runner_ledger" && authority !== "source_db") throw new Error("Unknown receipt authority");
+       return { source, authority, explicitly_configured: record.receipts?.authority !== undefined };
+     });
+-    return { status: "current" as const, digest, modes };
++    // Opaque metadata identities only; source receipt rows and relation names
++    // are not authoring inputs. An unqualified destination is unresolved (its
++    // runtime search path must not be guessed by the review projection).
++    const source_receipt_destinations = modes.filter(mode => mode.authority === "source_db").map(mode => {
++      const receipts = config.sources[mode.source].receipts;
++      return { source: mode.source, relation_digest: typeof receipts.schema === "string" && receipts.schema.length
++        && typeof receipts.table === "string" && receipts.table.length
++        ? canonicalJsonDigest({ schema: receipts.schema, table: receipts.table }) : null };
++    });
++    return { status: "current" as const, digest, modes, source_receipt_destinations };
+   } catch { return { status: "unavailable" as const, digest, modes: [] }; }
+ }
+ 
+diff --git a/apps/runner/src/authoring-receipt-read-evidence.ts b/apps/runner/src/authoring-receipt-read-evidence.ts
+new file mode 100644
+index 0000000..6fb904d
+--- /dev/null
++++ b/apps/runner/src/authoring-receipt-read-evidence.ts
+@@ -0,0 +1,57 @@
++import { canonicalJsonDigest } from "@synapsor-runner/protocol";
++import { rolePostureFingerprint, schemaFingerprintForInspection } from "@synapsor-runner/schema-inspector";
++import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
++import type { PolicySourceInspection } from "./action-rule-source-evidence.js";
++import type { authoringReceiptConfiguration } from "./authoring-receipt-configuration.js";
++
++/** Exclusion from the exact selected Read graph, not database-wide privacy or
++ * proof of receipt provisioning/production. Unknown views, destinations, source
++ * aliases and incomplete inspected mappings yield no proof. No private name or
++ * receipt content is returned. The ordinary prepared-draft/configuration checks
++ * bind this derived summary again at save and reuse. */
++export function receiptReadExclusion(read: ExplorationBoundaryDraft,
++  configuration: Awaited<ReturnType<typeof authoringReceiptConfiguration>> | undefined,
++  source: PolicySourceInspection | undefined) {
++  if (!configuration || configuration.status !== "current" || !configuration.modes.length
++    || !source || source.inspection.engine !== "postgres" || source.generationLock.engine !== "postgres"
++    || canonicalJsonDigest(source.generationLock) !== read.generation_lock_fingerprint
++    || schemaFingerprintForInspection(source.inspection) !== source.generationLock.schema_fingerprint
++    || rolePostureFingerprint(source.inspection) !== source.generationLock.role_posture_fingerprint
++    || read.role_posture_fingerprint !== source.generationLock.role_posture_fingerprint) return null;
++  if (!configuration.modes.every(mode => mode.source === read.source && mode.authority === "source_db")
++    || !('source_receipt_destinations' in configuration)) return null;
++  const destinations = configuration.source_receipt_destinations;
++  if (!destinations || destinations.length !== configuration.modes.length
++    || !destinations.every(d => d.source === read.source && /^sha256:[a-f0-9]{64}$/u.test(d.relation_digest ?? ""))
++    || new Set(destinations.map(d => d.source)).size !== destinations.length) return null;
++  const resources = read.pack.resources;
++  if (!resources.length || new Set(resources.map(r => r.id)).size !== resources.length) return null;
++  for (const resource of resources) {
++    const tables = source.inspection.tables.filter(t => t.schema === resource.schema && t.name === resource.table);
++    if (tables.length !== 1 || tables[0]!.type !== "table"
++      || resource.relationships?.some(r => !resources.some(target => target.id === r.target_resource))) return null;
++  }
++  const excluded = destinations.every(destination => resources.every(resource =>
++    canonicalJsonDigest({ schema: resource.schema, table: resource.table }) !== destination.relation_digest));
++  return { origin: "HOST-CONFIGURATION-AND-READ" as const, scope: "selected_read_graph" as const,
++    excluded, selected_read_digest: canonicalJsonDigest(read), configuration_digest: configuration.digest,
++    generation_lock_fingerprint: read.generation_lock_fingerprint,
++    schema_fingerprint: source.generationLock.schema_fingerprint,
++    graph_digest: canonicalJsonDigest(resources), destination_binding_digest: canonicalJsonDigest(destinations),
++    resource_count: resources.length, destination_count: destinations.length,
++    meaning: "Only whether the exact configured source receipt destinations are excluded from this complete selected Read graph of inspected base tables. Views/unresolved mappings supply no proof. This does not attest database-wide privacy, another interface, provisioning, execution permission, a performed receipt or independent readback. A false value is not exclusion; a missing record is unknown." };
++}
++
++/** Phase contract for the exact selected candidate; no historical observations are imported. */
++export function reviewEvidencePhases(candidateActionDigest: string | null, read: ExplorationBoundaryDraft) {
++  return {
++          candidate_action_digest: candidateActionDigest,
++          selected_read_digest: canonicalJsonDigest(read),
++          response_contract: "complete_replacement",
++          compiled_capability: "The candidate's supported behavior, not deployment or a performed operation.",
++          configuration: "receipt_configuration.status=current establishes the existing bound configuration only. Its reviewed_intent has separate candidate/source applicability; stale intent does not erase the current configuration or historical infrastructure. Neither establishes provisioning or observations.",
++          execution_authorization: "saved_execution_review is only an applicable record for this exact candidate. Null means none supplied for this revision, not that an older revision never had authorization or executed. Non-null does not establish a performed operation.",
++          historical_observations: "No operation-bound historical receipts or independent readbacks are supplied in this review. Do not assert their absence, invent them, or attribute an old achievement to the edited candidate. Existing history is retained outside this review.",
++          pending: "Keep applicable deployment renewal and after-execution observation duties pending. They do not require a post-edit receipt before publication. A missing business capability, wrong receipt mode or privacy conflict still blocks BUSINESS review.",
++        };
++}
+diff --git a/apps/runner/src/authoring-source-coverage.ts b/apps/runner/src/authoring-source-coverage.ts
+new file mode 100644
+index 0000000..52b5cbf
+--- /dev/null
++++ b/apps/runner/src/authoring-source-coverage.ts
+@@ -0,0 +1,38 @@
++import { policyTextLines, type PolicyTextSnapshot } from "./authoring-policy-source.js";
++
++/** Source coordinates only. No classification, implicit background, retained
++ * prose or semantic acceptance is supplied by this structural inventory. */
++export function reviewSourceInventory(source: PolicyTextSnapshot) {
++  const lines = policyTextLines(source.text);
++  return { source_digest: source.digest, line_count: lines.length,
++    nonblank_lines: lines.flatMap((line, index) => line.trim() ? [index + 1] : []),
++    response_contract: "complete_replacement" as const };
++}
++
++export function missingReviewSourceLines(source: PolicyTextSnapshot, passages: readonly unknown[]): number[] | undefined {
++  const inventory = reviewSourceInventory(source), covered = new Set<number>();
++  for (const raw of passages) {
++    if (!raw || typeof raw !== "object" || Array.isArray(raw)) return undefined;
++    const p = raw as { start: number; end: number };
++    if (!Number.isSafeInteger(p.start) || !Number.isSafeInteger(p.end)
++      || p.start < 1 || p.end < p.start || p.end > inventory.line_count) return undefined;
++    for (let line = p.start; line <= p.end; line++) covered.add(line);
++  }
++  return inventory.nonblank_lines.filter(line => !covered.has(line));
++}
++
++export class CoverageSourceLinesError extends Error {
++  readonly missing_ranges: Array<{ start: number; end: number }>;
++  readonly omitted_range_count: number;
++  constructor(readonly source_digest: string, missing: number[]) {
++    super(`Unaccounted source lines: ${missing.join(", ")}. Include restrictions and unsupported clauses, not only implemented clauses.`);
++    const ranges: Array<{ start: number; end: number }> = [];
++    for (const line of missing) {
++      const previous = ranges.at(-1);
++      if (previous && previous.end === line - 1) previous.end = line;
++      else ranges.push({ start: line, end: line });
++    }
++    this.missing_ranges = ranges.slice(0, 16);
++    this.omitted_range_count = Math.max(0, ranges.length - this.missing_ranges.length);
++  }
++}

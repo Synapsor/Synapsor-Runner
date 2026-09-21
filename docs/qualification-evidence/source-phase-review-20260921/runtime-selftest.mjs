@@ -1,0 +1,23 @@
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import os from 'node:os';
+import assert from 'node:assert/strict';
+import {runtimeProxy,toolNames} from './runtime-proxy.mjs';
+const root=await fs.mkdtemp(path.join(os.tmpdir(),'stageb-runtime-test-'));
+const ledger=path.join(root,'ledger.json');
+await fs.writeFile(ledger,JSON.stringify({spend_ceiling_usd:8.01207009,case_allocations:[{case_id:'LOCAL',status:'LIVE',deadline:new Date(Date.now()+60000).toISOString(),spend_ceiling_usd:4.9,models:{runtime:'claude-opus-5'},transport_limits:{runtime:24,authoring:0},transports:[]}]}));
+let forwarded=0,refused=0,upstreamBodies=[];
+const response='event: message_start\ndata: '+JSON.stringify({type:'message_start',message:{id:'local-message',model:'claude-opus-5',usage:{input_tokens:3}}})+'\n\nevent: content_block_delta\ndata: '+JSON.stringify({type:'content_block_delta',delta:{type:'thinking_delta',thinking:'PRIVATE_CONTINUATION_TEST'}})+'\n\nevent: content_block_delta\ndata: '+JSON.stringify({type:'content_block_delta',delta:{type:'input_json_delta',partial_json:'{"plan":{"kind":"rows"}}'}})+'\n\ndata: '+JSON.stringify({type:'message_delta',usage:{output_tokens:2}})+'\n\ndata: '+JSON.stringify({type:'message_stop'})+'\n\n';
+const p=await runtimeProxy({plan:{ledger,case_id:'LOCAL',selected_mcp_server:'synapsor-local-reviewed-opaque-reference'},root,secrets:['TEST_SECRET_VALUE'],privateValues:['TEST_IDENTITY_VALUE'],forward:async(_url,x)=>{forwarded++;upstreamBodies.push(x.body);return new Response(response,{status:200,headers:{'content-type':'text/event-stream'}});},onRefusal:()=>refused++});
+const body={model:'claude-opus-5',max_tokens:4096,output_config:{effort:'high'},thinking:{type:'adaptive',display:'omitted'},tools:toolNames.map(x=>({name:'mcp__synapsor-local-reviewed-opaque-reference__'+x.replaceAll('.','_'),input_schema:{type:'object'}})),messages:[{role:'user',content:'neutral local controller test'}]};
+const send=x=>fetch(p.url+'/v1/messages',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(x)});
+const result=await send(body);assert.equal(result.status,200);assert.equal(await result.text(),response);assert.equal(upstreamBodies[0],JSON.stringify(body));
+p.settleTurn({total_cost_usd:0.01});
+const duplicateAliasTools=['app.describe_data','app_describe_data','app.explore_data','app_explore_data'].map(x=>({name:'mcp__synapsor__'+x,input_schema:{type:'object'}}));
+for(const x of [{...body,model:'other'},{...body,tools:[]},{...body,tools:duplicateAliasTools},{...body,messages:[{content:'TEST_IDENTITY_VALUE'}]}]){const r=await send(x);assert.equal(r.status,503);}
+assert.equal(forwarded,1);assert.equal(refused,4);
+let state=JSON.parse(await fs.readFile(ledger));assert.equal(state.case_allocations[0].transports.length,1);assert.equal(state.case_allocations[0].runtime_cost_groups[0].cost_usd,0.01);
+state.case_allocations[0].transports=Array.from({length:24},(_,i)=>({id:'prior-'+i,role:'runtime',cost_usd:0}));state.case_allocations[0].runtime_cost_groups=[];await fs.writeFile(ledger,JSON.stringify(state));assert.equal((await send(body)).status,503);assert.equal(forwarded,1);
+state.case_allocations[0].transports=[];state.case_allocations[0].spend_ceiling_usd=0;await fs.writeFile(ledger,JSON.stringify(state));assert.equal((await send(body)).status,503);assert.equal(forwarded,1);
+await p.close();const captured=await fs.readFile(path.join(root,'LOCAL-1-response.txt'),'utf8');assert(!captured.includes('PRIVATE_CONTINUATION_TEST'));assert(captured.includes('input_json_delta'));
+await fs.rm(root,{recursive:true});console.log(JSON.stringify({status:'PASS',provider_calls:0,paths:['persistent runtime proxy transport'],request_response_bytes_unchanged:true,controls:['exact model/settings','four tools','private identity','24 transport ceiling','shared spend ceiling','native turn cost settlement','private continuation suppression','tool envelope preserved']}));

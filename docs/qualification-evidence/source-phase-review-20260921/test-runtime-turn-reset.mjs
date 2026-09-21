@@ -1,0 +1,16 @@
+import fs from 'node:fs/promises';import path from 'node:path';import assert from 'node:assert/strict';import {fileURLToPath} from 'node:url';import {runtimeProxy,wireToolNamesFor} from './runtime-proxy.mjs';
+assert(process.argv[2], 'Explicit owned synthetic output directory required');const root=path.resolve(process.argv[2]);await fs.mkdir(root);
+const ledgerPath=path.join(root,'ledger.json');
+const future=new Date(Date.now()+3600000).toISOString();
+const ledger={spend_ceiling_usd:100,case_allocations:[{case_id:'KC-B',status:'LIVE',deadline:future,spend_ceiling_usd:100,models:{runtime:'claude-opus-5'},transport_limits:{runtime:24},transports:[],runtime_cost_groups:[]}]};await fs.writeFile(ledgerPath,JSON.stringify(ledger));
+const server='test-server';const offered=wireToolNamesFor(server).filter(x=>!x.includes('app_'));
+const request={model:'claude-opus-5',max_tokens:4096,output_config:{effort:'high'},tools:offered.map(name=>({name,input_schema:{type:'object'}})),messages:[{role:'user',content:'offline harness test'}]};
+let forwards=0;const forward=async()=>{forwards++;return new Response('data: '+JSON.stringify({type:'message_start',message:{usage:{input_tokens:10,output_tokens:0}}})+'\n\ndata: '+JSON.stringify({type:'message_delta',usage:{output_tokens:10}})+'\n\ndata: '+JSON.stringify({type:'message_stop'})+'\n\n',{status:200,headers:{'content-type':'text/event-stream'}})};
+const plan={ledger:ledgerPath,case_id:'KC-B',selected_mcp_server:server,runtime_request_byte_ceiling:78787,runtime_provisional_response_ceiling_usd:1.98534,whole_turn_transport_count:2,whole_turn_worst_case_usd:3.97068};
+const proxy=await runtimeProxy({plan,root,secrets:[],privateValues:[],forward});
+const send=()=>fetch(proxy.url+'/v1/messages',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(request)});
+assert.equal((await send()).status,200);proxy.settleTurn({total_cost_usd:0.10});
+assert.equal((await send()).status,200);proxy.settleTurn({total_cost_usd:0.20});
+await proxy.close();
+const final=JSON.parse(await fs.readFile(ledgerPath,'utf8'));const c=final.case_allocations[0];assert.equal(forwards,2);assert.equal(c.runtime_cost_groups.length,2);assert.deepEqual(c.runtime_cost_groups.map(x=>x.transport_ids.length),[1,1]);
+const out={verdict:'PASS',provider_forwards:0,synthetic_forwards:forwards,separate_turns:2,transports_each:[1,1],persistent_proxy_reused:true,total_runtime_limit_retained:c.transport_limits.runtime};await fs.writeFile(path.join(root,'result.json'),JSON.stringify(out,null,2)+'\n');console.log(JSON.stringify(out));
