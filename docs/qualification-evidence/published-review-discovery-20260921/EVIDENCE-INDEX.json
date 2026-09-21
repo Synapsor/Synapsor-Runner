@@ -1,0 +1,1012 @@
+{
+  "created_at": "2026-09-21T20:53:58.447978+00:00",
+  "candidate_tree": "743ef7430b55022f720ab988bbdb9cb7d17d8fccda0a244a1661cf70b6f06a55",
+  "status": "Bounded repair delivery; independent BUSINESS blocked; native continuation not run",
+  "records": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/BACKUP-DESTINATION-VERIFIED.json",
+      "sha256": "6b7fe8e0d771562479b5b2a5490be11aa14554093219aa1338e7c0b03c1a848e",
+      "bytes": 312
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/EVIDENCE-SECRET-SCAN.json",
+      "sha256": "0f8ae13dc8a64619c563de8c91d78708d6134003c0c590674754332fe557dd78",
+      "bytes": 279
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/INDEPENDENT-BUSINESS-BLOCKER.json",
+      "sha256": "c4aecb007d79af082606d933f49c3a799e25cc066cf88d14bb8441788e1001a2",
+      "bytes": 6355
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/INDEPENDENT-FOLLOWUP-INTERRUPTION.json",
+      "sha256": "b4f852149828285c33504bef343e87c899b2e618a3517b9e5f49d1232b8f1ab1",
+      "bytes": 490
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/INDEX-SEAL-REFUSAL.json",
+      "sha256": "5702da69c517cd60d13b388bc550595bc1459f1e0b2d3b458205a1e9122d5aae",
+      "bytes": 1067
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/MAIN-CLEANUP.json",
+      "sha256": "7b846f13116d03e43f0e66e4ecf3c98c7251e0dd05cd52c269ce4b5cd8a7265a",
+      "bytes": 1437
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/PRESERVATION.json",
+      "sha256": "1657a95246ca14919ea627397fe114487b65b642ff69c1272d2fd2189c446fe4",
+      "bytes": 5170
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/frozen/installed-artifact-manifest.json",
+      "sha256": "13576f347c3aed7b89f47c26227aa2c72137783406d3fba5d39e288e3966b4d4",
+      "bytes": 1622719
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/frozen/installed-artifact.tar.gz",
+      "sha256": "a99f4462fe55347765c68230d61889a881ea0f57bf025e4b729e7ad524ea672d",
+      "bytes": 17893555
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/corrected-six-exit.json",
+      "sha256": "1017f05a78ae0d1ea292cd0ea45e8f6f89f7b0b304c94026306afcd7329f6cbc",
+      "bytes": 830
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/corrected-six.log",
+      "sha256": "b3967c1d6847b2e77db7640b2e7ce72112c8cb49180c99f7269f3fc196da4593",
+      "bytes": 2881
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/discovery-failure-detail-exit.json",
+      "sha256": "17dc01be787c0828be42c7a716f0b0f020c537db3e574ecb190825b0596d712d",
+      "bytes": 764
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/discovery-failure-detail.log",
+      "sha256": "46f2a4073e6e34cd2be34e290d28971b3769147f560158de2b70bcf441bbde46",
+      "bytes": 20811
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/discovery-final-exit.json",
+      "sha256": "d8e7ccf6e6792792cc56f48d5c766d9e25aedff82ef2ea4e0c6a7017b5876f6c",
+      "bytes": 629
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/discovery-final.log",
+      "sha256": "24b19a7e882245aa31acb0ce7e845718322bd267dfb665634abe00993464cbb2",
+      "bytes": 1736
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/dispatch-failure-detail-exit.json",
+      "sha256": "dd59260e3e907c28012218b81a444e0cc5159c6d96376d36ca7e125816825b0d",
+      "bytes": 739
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/dispatch-failure-detail.log",
+      "sha256": "2f24320bfb14df8515861bcacc65a6a89983ec22e32c633518decadbe703b038",
+      "bytes": 49963
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/eligible-wording-after-exit.json",
+      "sha256": "f2c768db2f40e9344890c4f9921e9d976e63dc09b3f018fe80a28634849fd862",
+      "bytes": 678
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/eligible-wording-after.log",
+      "sha256": "b85f329bed0e7fbd88c3f58abe6f41b495a24f3b390d4e75edb9fdf07cb98caa",
+      "bytes": 513
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/eligible-wording-before-exit.json",
+      "sha256": "40d1577bd6e5460dba548d3be13c372593ab5d1256555be79b9c4700de02d333",
+      "bytes": 679
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/eligible-wording-before.log",
+      "sha256": "6c43097cc1ddd4d1399c1b0c8b04188fafda3d5cf4b35f31f3d8508205a84b22",
+      "bytes": 9837
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/focused-combined-exit.json",
+      "sha256": "aaa0622dabc4dabc2892cd807e869304496f2475725ec744d125e793310c8e0a",
+      "bytes": 1038
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/focused-combined.log",
+      "sha256": "d600e6fbbddcfdf83574fcc7c7c1046b446bc8d1f0b6f86d52a2b97f21f388c3",
+      "bytes": 7405
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/focused-history-schema-exit.json",
+      "sha256": "a70050c0abb8c78d53cdd43c0c2d8d686e56e7ba943326b63e09a5e7ca9a5637",
+      "bytes": 743
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/focused-history-schema.log",
+      "sha256": "9cf04ce1799fe93ecaae0bb213e275ae34d2984603d00a6c53bf9635889ca003",
+      "bytes": 2864
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/postgres-candidate-exit.json",
+      "sha256": "5371e97f2160fd9fe809447512e1ce72c3a06400b98a7c24be5d1c8890a95b0a",
+      "bytes": 1058
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/postgres-candidate.log",
+      "sha256": "f2c9611dcf3827f88c8d05a9ac3c152d8a45fddf18bb940b703b5627d48e5e5b",
+      "bytes": 3195
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/postgres-review-exit.json",
+      "sha256": "53aa767c717d8b404656b62786910d7a25be345808bf00ce9ded5c61a0741dee",
+      "bytes": 1055
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/postgres-review-final-exit.json",
+      "sha256": "79452544a3869d87c9a00984c31bdb9ad52c745b6df8f957d8243552e8b7be0a",
+      "bytes": 1061
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/postgres-review-final.log",
+      "sha256": "36941959c65ceef7c4bf06715a5366d887432ef46bd46519166f3b23de06d080",
+      "bytes": 2517
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/postgres-review.log",
+      "sha256": "9cfd5a22aa08539cd6652b6bef9469f50bd6b2d54373e8106e1fc60f713d52b2",
+      "bytes": 2489
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/postgres-sqlite-save-exit.json",
+      "sha256": "05fb7ef9f1b6632f42c7e85f19f0e13d35c7f693d482ff3d473c56fc26a773b7",
+      "bytes": 953
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/postgres-sqlite-save.log",
+      "sha256": "79f890aff5c5b5462f187af131d8a626d4794736c02fd81e65200b9b7313eeb7",
+      "bytes": 1069
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/postgres-stable-final-exit.json",
+      "sha256": "554d028ffeadfa89f3f332df17939457ae0d8ae84b1208eb8aa5a17d1d68b02d",
+      "bytes": 1061
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/postgres-stable-final.log",
+      "sha256": "7e4e55a0c15d441113c0b3647f91184b2cb6d9e5603b5ed54e52b32d73dd429c",
+      "bytes": 2628
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/stable-full-01-exit.json",
+      "sha256": "f6f647ccb12a860b53b49520278a2d2335e0a8cdb9a3add5f5991b4692f768d4",
+      "bytes": 572
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/stable-full-01.log",
+      "sha256": "a5fe4899b3d2e709d075f44a760b154519266fc182d8d0202f867083342b4b3b",
+      "bytes": 566431
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/stable-full-02-exit.json",
+      "sha256": "a03d801650959fe9d26ae90f814f0c313e0643fc333c493b4993b2954ddca2a8",
+      "bytes": 574
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/stable-full-02.log",
+      "sha256": "5abed2eeb9127be375aa230e73ccefd3beb6fff27c3c657ef195ad44e3ba9b62",
+      "bytes": 73438
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/stable-full-03-exit.json",
+      "sha256": "dc77008a32346b17e3d610d461b301a939b0ddd39f900a8feb77ba1e7400cc08",
+      "bytes": 572
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/stable-full-03.log",
+      "sha256": "913dbc5a4fde42708e0ec1237a0b2e24c09808425a32ff6563d02f4dad2955bc",
+      "bytes": 518096
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/store-save-candidate-exit.json",
+      "sha256": "c4b787b19dc7fb1d215870c9f17b489a5634a9dbe1bc13b71dd25db4e2489a22",
+      "bytes": 953
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/store-save-candidate.log",
+      "sha256": "e9993a386650114d34fb4f9621450f2a19b76e1b719553281cd58d265f9371f9",
+      "bytes": 1261
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/store-save-stable-exact-exit.json",
+      "sha256": "ec02bdaa2376e41c88c513c61278459dafd9b7a927cc6a863a2b0be76ae9ecf3",
+      "bytes": 956
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/store-save-stable-exact.log",
+      "sha256": "1671706804d8497cc2ac2c9417bf22ec706a86e529b0d73c3dd317a2c4596035",
+      "bytes": 1261
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/store-save-stable-final-exit.json",
+      "sha256": "4d4cf78dc8659e4662fbdef7fdca38d25f8316f9fa6173459e9d0b1a4c489a0e",
+      "bytes": 916
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/store-save-stable-final.log",
+      "sha256": "c42bd533d8cb4aaf58407e8d2990e85b84ec78f2c1894be3f2ead5105546e9db",
+      "bytes": 507
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/types-candidate-exit.json",
+      "sha256": "3cff87be9e293ea40ee9f093046e95efcbdc6b7b3ef2fa1e5dc5373e490751ba",
+      "bytes": 455
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/types-candidate.log",
+      "sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5",
+      "bytes": 118
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/types-disclosure-final-exit.json",
+      "sha256": "44211d2ee6b4d5259d8cef858312b86371ae15c2789a3a580e6014c112515974",
+      "bytes": 462
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/types-disclosure-final.log",
+      "sha256": "0f1c00a413582a591e432aff97a82a0d1f16c086d9095e1588647d5db36a97ba",
+      "bytes": 288
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/types-final-exit.json",
+      "sha256": "2305ef77bd1f5ee870b778d34521dd9d25d2c05a592ca582f4952fde11a3d7fc",
+      "bytes": 451
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/types-final.log",
+      "sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5",
+      "bytes": 118
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/types-focused-exit.json",
+      "sha256": "0602e4bc1a3225c283b3eadaf27750804015d4fbfb1a76d5e58b4bfd78e4c9cc",
+      "bytes": 453
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/types-focused.log",
+      "sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5",
+      "bytes": 118
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/types-stable-final-exit.json",
+      "sha256": "7ed746ccb94889c766bb721a69b915be8db5a5d30f271c83f62b6b5839aec599",
+      "bytes": 458
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/gates/types-stable-final.log",
+      "sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5",
+      "bytes": 118
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-final/REVIEW-BOOKKEEPING-DIFFERENCE.json",
+      "sha256": "6fa04c640a490843b994101f3a161b91e4b0538e05a16b143b6c5198cb767dd2",
+      "bytes": 2031
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-final/authoring-meter/MAIN-A-REVIEW-1-request.json",
+      "sha256": "2ef967551319dc1c0e0ce43f7eca5baa587db71d2c492a60e6b24d0e7858fa3d",
+      "bytes": 195584
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-final/authoring-meter/MAIN-A-REVIEW-1-response.txt",
+      "sha256": "1edb4235ea0de41692cec0872509a03a03d871fc35f54a30618006229ee635f0",
+      "bytes": 1178663
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-final/authoring-meter/MAIN-A-REVIEW-1-tool-arguments.json",
+      "sha256": "2fd7189a9a73efd2361add2410c1be35570483bd7dba47f6765929f578a46e9b",
+      "bytes": 21745
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-final/operator-captures/exit-001.json",
+      "sha256": "6ee81b6393851779a0925fc32a3b5784770212336482fd27856a4c34487d80e6",
+      "bytes": 551
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-final/operator-captures/exit-002.json",
+      "sha256": "27ca30d7449eb42d0dffb74021d1f5da9b376f2f7cbefab6f54fcaec51ee3abc",
+      "bytes": 551
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-final/operator-captures/terminal-001.log",
+      "sha256": "c98395cdd242940c22e1f1f644fa09743bb654f15350e3ac5f9a143f96847223",
+      "bytes": 54004
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-final/operator-captures/terminal-002.log",
+      "sha256": "b94f5e5bdfc346270adfa873691dbce7d43d647a985c72327d946b9aefd13763",
+      "bytes": 5712
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-final/state-readbacks/before-final-to-after-first-difference.json",
+      "sha256": "7ac7557ccba7c11dc141f9e3ab49c3f8309548f30a447579ed378530a48539c0",
+      "bytes": 550
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-final/state-readbacks/before-final-to-after-restart-difference.json",
+      "sha256": "080684229e7ee7a98b075cdc58c298d4fafe02b73ad7a95bd98ba535fdbe0fe7",
+      "bytes": 552
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/bundle-freshness-attempt3.log",
+      "sha256": "4534215e15034b5b5391ab51d71121ebc119c68a2226f6194462a8558e9489b7",
+      "bytes": 182
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/cursor-plugin-attempt1.log",
+      "sha256": "cc12e22d29ebd660345c60ee249826505ffccb62bb45e1b39590202b7ee7135f",
+      "bytes": 391
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/cursor-plugin-attempt2.log",
+      "sha256": "cc12e22d29ebd660345c60ee249826505ffccb62bb45e1b39590202b7ee7135f",
+      "bytes": 391
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/cursor-plugin-attempt3.log",
+      "sha256": "cc12e22d29ebd660345c60ee249826505ffccb62bb45e1b39590202b7ee7135f",
+      "bytes": 391
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/dsl-sources-attempt1.log",
+      "sha256": "3bd663b10b211bb9dbfa01117dd164a3a851d9936e4be1568a6bd5f9ccf7d50a",
+      "bytes": 89
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/dsl-sources-attempt2.log",
+      "sha256": "3bd663b10b211bb9dbfa01117dd164a3a851d9936e4be1568a6bd5f9ccf7d50a",
+      "bytes": 89
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/dsl-sources-attempt3.log",
+      "sha256": "3bd663b10b211bb9dbfa01117dd164a3a851d9936e4be1568a6bd5f9ccf7d50a",
+      "bytes": 89
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/human-commands-attempt1.log",
+      "sha256": "4ca02cff1d23604455f2707b16fc58bea2d0beb7f6adff085887cbdae1379222",
+      "bytes": 43
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/human-commands-attempt2.log",
+      "sha256": "4ca02cff1d23604455f2707b16fc58bea2d0beb7f6adff085887cbdae1379222",
+      "bytes": 43
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/human-commands-attempt3.log",
+      "sha256": "4ca02cff1d23604455f2707b16fc58bea2d0beb7f6adff085887cbdae1379222",
+      "bytes": 43
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/licenses-attempt1.log",
+      "sha256": "81c81f063c5391a1e9f237b114a7ba197da9b6cece450fa3fd851f6fcac80bac",
+      "bytes": 30
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/licenses-attempt2.log",
+      "sha256": "81c81f063c5391a1e9f237b114a7ba197da9b6cece450fa3fd851f6fcac80bac",
+      "bytes": 30
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/licenses-attempt3.log",
+      "sha256": "81c81f063c5391a1e9f237b114a7ba197da9b6cece450fa3fd851f6fcac80bac",
+      "bytes": 30
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/local-package-attempt3.log",
+      "sha256": "95d0bf546ff2d67b40931c4fe0a934a6c27d805a25f94cc33f6038a8b0d11206",
+      "bytes": 293
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/mcp-client-configs-attempt1.log",
+      "sha256": "a61f33a0918009a044aaaede959658bba3184fb54d00088b5a29142595b0f3cd",
+      "bytes": 1601
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/mcp-client-configs-attempt2.log",
+      "sha256": "a61f33a0918009a044aaaede959658bba3184fb54d00088b5a29142595b0f3cd",
+      "bytes": 1601
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/mcp-client-configs-attempt3.log",
+      "sha256": "a61f33a0918009a044aaaede959658bba3184fb54d00088b5a29142595b0f3cd",
+      "bytes": 1601
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/packed-offline-attempt3.log",
+      "sha256": "742074ce6bde6a80e784908c8a22f8c949ef6fbd2b5dcd6c2edcc7bd96acf66f",
+      "bytes": 2193
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/public-commands-attempt3.log",
+      "sha256": "2121e7f079daf2f2826853340dcdbf7349aeb7e7ed01ffc464e8202cec41e559",
+      "bytes": 803
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/trusted-core-attempt1.log",
+      "sha256": "39e1d5fcff03cc3d3cfc39b6c42b27e0d971b88aba5abcbcb3277dfaff4b471a",
+      "bytes": 73
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/trusted-core-attempt2.log",
+      "sha256": "39e1d5fcff03cc3d3cfc39b6c42b27e0d971b88aba5abcbcb3277dfaff4b471a",
+      "bytes": 73
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/offline-logs/trusted-core-attempt3.log",
+      "sha256": "39e1d5fcff03cc3d3cfc39b6c42b27e0d971b88aba5abcbcb3277dfaff4b471a",
+      "bytes": 73
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/gate/database.log",
+      "sha256": "934c23149f0e8c0cf4e101fb3f784bc3fbfdc97b71333bbc5d54934b9a8094a8",
+      "bytes": 4639
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/gate/manifest.json",
+      "sha256": "ba721428981829ba52989cfdecc63e9498c1e7734729a4014b3db37d4cd5aa71",
+      "bytes": 674
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/gate/roles-without-passwords.sql",
+      "sha256": "315eec8a7093c2b31a099ca73fa0597cc8f4882da83fcb6bd50f198993143bdd",
+      "bytes": 524
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/gate/source.dump",
+      "sha256": "f82d233bbb6bd0ff9dabde689bf9d6c19aa62a13d731dee20d8d46ab05ff1cad",
+      "bytes": 503113
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/main-A-development/cleanup.json",
+      "sha256": "360f739243e4e14faff01aba5531850a029f245bc161293ea9f1e0ebb5e056d9",
+      "bytes": 271
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/main-A-development/database.log",
+      "sha256": "96ebe3e22e55bafa42ca515e932a7b36a749f98ca5d49648707ce3fc26de38ed",
+      "bytes": 3549
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/main-A-development/evidence.tgz",
+      "sha256": "9cd7883d31b8e126c65fa6265a7b9b9559561a8e5dca52f1db1298a3118ecbc2",
+      "bytes": 135860
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/main-A-development/manifest.json",
+      "sha256": "6aab4094058d37de3868e8a912b9328986bb8a8ee66ff6887a9f9f7eb9a12a13",
+      "bytes": 953
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/main-A-development/roles-without-passwords.sql",
+      "sha256": "0c27ec48a0741bcafd4df7757d1bae118f7f208b072a0cec621a548b960a7f51",
+      "bytes": 1032
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/main-A-development/source.dump",
+      "sha256": "dbd9edc8ee109fc8c6200e3823cd263c59be55ddd594081b7bd59c7582ce318e",
+      "bytes": 16775
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/main-A-development/whole-project-home.tgz",
+      "sha256": "2dbc99bce42132f77c5bd32e8cd6df66d5e4d0a03766e57a66fae41adca999f9",
+      "bytes": 316642
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/main-A-final/cleanup.json",
+      "sha256": "ec3d0c25f10bb5a296e7a8bfe0205bff8de2ffbde71f103aa18ea09666e9d041",
+      "bytes": 322
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/main-A-final/database.log",
+      "sha256": "b9f7185fa64d4d79c9d99b31e49d304d99fa2573208b314423865baf2f671746",
+      "bytes": 3549
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/main-A-final/evidence.tgz",
+      "sha256": "ac5b6d30338aa3135ad5d3737f6d3753effbcbb1607dcd67ba58197214e36dd0",
+      "bytes": 492433
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/main-A-final/manifest.json",
+      "sha256": "887ace2ced2b2a331a69d6a7ec806d52f4ce6e14be0af12a9eb32b54eee6a42f",
+      "bytes": 953
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/main-A-final/roles-without-passwords.sql",
+      "sha256": "491e2d3b701f0562bdb1095afbc5cc3a0adf388840d46c40efe635485ed575c0",
+      "bytes": 1032
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/main-A-final/source.dump",
+      "sha256": "18c99105bf279f75ec06d8c372f9aab4e1f8287b0c484f888837bbcb49aa1ed6",
+      "bytes": 16775
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/main-A-final/whole-project-home.tgz",
+      "sha256": "f79570156937d7713d4e4aaf5fb396837f2fb4397fd9962fe260f54f814c013f",
+      "bytes": 317072
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/main-A-reproduction/cleanup.json",
+      "sha256": "42f62c500394694babe08145ad2e5ac0c8066758abdcf28f8342e1362648c8a4",
+      "bytes": 272
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/main-A-reproduction/database.log",
+      "sha256": "4cb693df6818dd834e3c57e9df5952892656cbb1aa8c9eb8eb34173c74d6d8be",
+      "bytes": 3549
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/main-A-reproduction/evidence.tgz",
+      "sha256": "0f1696c2bf0e2a3253f2ecae5c0c304c7171d4833b4edb9509d8df6270ec1fd3",
+      "bytes": 135477
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/main-A-reproduction/manifest.json",
+      "sha256": "952db6d8d087c762986839344aa763ca12e6bf0a303d842b1d08bd4b950cf286",
+      "bytes": 953
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/main-A-reproduction/roles-without-passwords.sql",
+      "sha256": "a346dcacb2e43af02092c9cbc445ebfd76524f4adb5038f50b1379d14f2b1178",
+      "bytes": 1032
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/main-A-reproduction/source.dump",
+      "sha256": "dbd9edc8ee109fc8c6200e3823cd263c59be55ddd594081b7bd59c7582ce318e",
+      "bytes": 16775
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/owned-final-states/main-A-reproduction/whole-project-home.tgz",
+      "sha256": "fe08dd88adba32b48dc8fd909221eef7a36f4aaa90eb4b220415bf776ee0fa00",
+      "bytes": 316419
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/restoration-checks/main-A-final/RESULT.json",
+      "sha256": "6a49d19a22398a66221ca52a9f565d5f298b9cce12c138c29593558e5a418b40",
+      "bytes": 596
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/shared/provider-budget-ledger-final.json",
+      "sha256": "336f8fe64dcac96a4555a42fabe69700d2dfec37d87970f2f5b6ba81bcd345cb",
+      "bytes": 5290
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/shared/provider-preflight-MAIN-A-REVIEW.json",
+      "sha256": "70037733c379d8aa52eb60f8f1f7a4016f56482e8f539abb3b84000cd1deada1",
+      "bytes": 631
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/shared/provider-preflight-TESTER-A-REVIEW.json",
+      "sha256": "95658b7a1c1f5bcc2a572227d82ddb10f712df6bf718757ead1b8cdb0cf43c5b",
+      "bytes": 631
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/untouched-starts/main-A/RESTORE-VERDICT.json",
+      "sha256": "a78982cfa21fd163017d1f1ff2fee6d161bb231370c29b4d7afac4bd754b4959",
+      "bytes": 126
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/untouched-starts/main-A/fixture.json",
+      "sha256": "9e607cd2cb2165369e958eb406702a74c905a43856d5bfc25356722e600cb25c",
+      "bytes": 949
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/untouched-starts/main-A/manifest.json",
+      "sha256": "35ee56fc1962eb95ca32e72b721c6b721f9bf10542e6083b2a1eec6c3d175db3",
+      "bytes": 1126
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/untouched-starts/main-A/preflight-before-open.json",
+      "sha256": "c426121fe0544e0f46cdb2248fce89ab0f116a4892c080f830ab7c46b67b3cae",
+      "bytes": 192
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/untouched-starts/main-A/roles-without-passwords.sql",
+      "sha256": "6621bc1ae56adc97a76f4505a27dc50ab2cb2d33f608b32857753335c493907d",
+      "bytes": 1032
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/untouched-starts/main-A/source.dump",
+      "sha256": "3325c16e71d36f24112d1509c27902ee4204ab5cb20e22d514c711af529b7984",
+      "bytes": 16775
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/untouched-starts/main-A/whole-project-home.tgz",
+      "sha256": "cb7f69afa76f3d703e5e864e7bc2baa4fb9e1ecb25e7a2bb9fd02ee0b0915945",
+      "bytes": 316425
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/A-DEVELOPMENT-SELECTION.json",
+      "sha256": "814de4e4f149b122d11d028d999324dab549aecb5030481bdff08b965a0d02ac",
+      "bytes": 929
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/A-FAILING-BEFORE.json",
+      "sha256": "dc93a6438f9a306ffedf991530c8274fad012e63147705844177bd8c3e66957a",
+      "bytes": 1340
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/ASSIGNMENT.md",
+      "sha256": "47185937520ed27ffc39bd5fe5703ec46cdb808fa80e97fe0060907003630bec",
+      "bytes": 4611
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/B-TRACE-BEFORE.json",
+      "sha256": "6c1dd7a808c3298b2eeec546c1a2894a919fcc6d126d56e05bdc73c1e6565998",
+      "bytes": 5079
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/BASELINE.json",
+      "sha256": "5328a9e92cf6bb1454d0ceb0c2c38ff976a846199d98830f7f2c6e4176edf096",
+      "bytes": 997
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/CANDIDATE.json",
+      "sha256": "d800c76f38e74c2c455fb3439dfe7cd218062ae2e5c8f2f0cf4befc1921fd614",
+      "bytes": 1412
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/FINAL-FINANCIAL-RESULT.json",
+      "sha256": "bc0101de3df71e8886fd312a18e86d4998600ad8fa0deaf245563e59dbb71611",
+      "bytes": 1709
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/FINAL-REPORT.md",
+      "sha256": "ade853d6fe757e28f582356ebedb2a4cc2198f54d58600755c49cf90072e13a8",
+      "bytes": 23035
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/FINANCIAL-BASELINE.json",
+      "sha256": "7176bdbaea3915150ea2e0a257a8ec1b6ddfa103230e6962e0afe82980f1eb00",
+      "bytes": 649
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/FINANCIAL-PLAN.json",
+      "sha256": "2d847e3e7a27f64fc4272f6a1f16d8d1f0eb3b47c05ce196404820c19cf1b665",
+      "bytes": 1904
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/GATE-INDEX.json",
+      "sha256": "d5f97d88aba7d80d29476239c2e6e500265e3b08f53e63edbcb31c4386de140b",
+      "bytes": 37872
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/IMPLEMENTATION-NOTE.md",
+      "sha256": "d5ba7a7511c6f3599ae7eab2dd5434351577cb036e4d4cc2cb240e6cc46de1b2",
+      "bytes": 7115
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/INDEPENDENT-ACCEPTANCE.json",
+      "sha256": "12398336f31703c8dd6476566d880f170b217e874de1bea69979b667c731b34c",
+      "bytes": 22677
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/INDEPENDENT-BUSINESS-BLOCKER.json",
+      "sha256": "0ed525e5322cdbd86f07322bbf675f06ed2878d0cddbf8ca9176ca9d20c3bfcf",
+      "bytes": 4569
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/MAIN-A-RESULT.json",
+      "sha256": "b8bec774320aa901bc8d03cd4ca59c3c1563c81b9e34432e35ea578aa9b8dce6",
+      "bytes": 11033
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/NEXT-DECISIONS.md",
+      "sha256": "b6ead5d22ab0dc1ab82511cdc8ae70790e575752f4ac1db5801d86a627511831",
+      "bytes": 1887
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/OFFLINE-GATE-INDEX.json",
+      "sha256": "11208821a090bb18f6dfb8c82b0d737afa043b7cdb676bc042068f5cdbfd07f7",
+      "bytes": 18462
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/PRE-FREEZE-FAILURES.json",
+      "sha256": "2eeb5851e573d76c1f0189c58296d7e2196b3281fec4ea723947e150893b1460",
+      "bytes": 4072
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/PREPUBLIC-FUNDING.md",
+      "sha256": "d6938405bab26eea0b73d12afa61bbd2d8400612863b2db7a148f68788631ac5",
+      "bytes": 3371
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/PROVIDER-PREFLIGHT.json",
+      "sha256": "3c9926a2d93d9350cb1e593c0f9cb44c61b9ec8e24897b66e4b6c3155784e538",
+      "bytes": 634
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/REVIEWER-HANDOFF.md",
+      "sha256": "2c751d22ae105dd48bdcdead7a7253b7e9d363867e80f9cab67043ca69debb08",
+      "bytes": 8620
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/SCORECARD.json",
+      "sha256": "7973f15f338a74e9fad0ea5fd2b26d31b6f2216a9d41c8e3d2a5b31f6f9addbf",
+      "bytes": 3515
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/VERIFICATION-CHECKPOINT.md",
+      "sha256": "cac96fb6f813e3218178e4184bbe568478417db446e5cbbc0d31776327ab9690",
+      "bytes": 6306
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/allocate-authoring-review.py",
+      "sha256": "14f5e04c792d2c71646bb905346a630196130af2a69fb95eca17c089e82387af",
+      "bytes": 3370
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/build-final-index.py",
+      "sha256": "1a6c69fe2795a2b6045cc6c8f0fcc704866ec7171b449d6fcd2c1f3552418fef",
+      "bytes": 3934
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/build-gate-index.py",
+      "sha256": "cfefb93c3d1439813e6699dbbd905bc7ebcf2b78c80b965f53f6ef6f23769c1d",
+      "bytes": 1670
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/capture-owned-state.py",
+      "sha256": "99cb5c9a6695a2bd540bd18fbfe13e74b77428d1c87b6cfdd90f1e1d43aacbce",
+      "bytes": 2739
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/capture-redaction.mjs",
+      "sha256": "ed6828d84d881432911db16eee55b69dfbb340f4e6af5ec03ac8e56e24d0450e",
+      "bytes": 2829
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/catalog-pagination-correction.patch",
+      "sha256": "2ecf6502955709bac75dda64f499b067b5f1d37b0e6a401a123831b3619987ac",
+      "bytes": 3257
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/compare-review-state.py",
+      "sha256": "67f02cb4658792e152789e134552d2ab59191dc59c0d9755010b7c51ccf5ff36",
+      "bytes": 1391
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/diagnostic-no-send.mjs",
+      "sha256": "91c05a81463afaa08aeb02d951faef3518e7923c97a00b6d0c2ca68a7819bd6d",
+      "bytes": 653
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/dispatch-fixture-correction.patch",
+      "sha256": "99e52e0e13063c41a8acd416c8f2f2bfbdd63c97e941786a89036c8492545792",
+      "bytes": 3588
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/freeze-repair.mjs",
+      "sha256": "b846ae3fff2d877b9838cf4fbb8e063d73dd41742fd6bddf49d19c777b841eff",
+      "bytes": 6651
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/launch-public.py",
+      "sha256": "da9464d5d573633a85b9c636e9b91a27c22c005ba460331d8bfacf3e1a838b7f",
+      "bytes": 3695
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/offline-package-plan-attempt1.json",
+      "sha256": "b8fe04588c108ddf49d3ff8d3cd96d193eb8acdd91a3b2cfe5831390a01b6e2e",
+      "bytes": 3445
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/offline-package-plan-attempt2.json",
+      "sha256": "01e0d562ee7faa14ed504f8d410f5df5c00cf7bed9604d47ff617caf586f38af",
+      "bytes": 3445
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/offline-package-plan-attempt3.json",
+      "sha256": "93456bfa21159e6e24dc0cd78ee1fd5c67dce0e8b2475c7340d4f9876ddbb188",
+      "bytes": 5549
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/product-revision.json",
+      "sha256": "4d94c5785f1f933130b6f29f272a796c7b268b1ca0aaf0ee7f37fad6401c9641",
+      "bytes": 446
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/provider-budget.mjs",
+      "sha256": "8007d3c67ce1f0f7b47d55d4a2d3888c31a807d1eb8b9f984b459f6daeb018b3",
+      "bytes": 6523
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/provider-meter.mjs",
+      "sha256": "e6467c2ab778fb717bf074afb1b796481f341db053be5f2ebce28fc6f84e1ba5",
+      "bytes": 6490
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/restore-posteffect-a.py",
+      "sha256": "d9bdf19640afdf8f42d21a71f677fedef616e2964959f5e193c4a76fbcae3786",
+      "bytes": 8549
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/run-freeze.py",
+      "sha256": "b1628d2b91bcafedf32bb56d591254163b4209e300b0bbb8dc0190de3ae1569d",
+      "bytes": 1444
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/run-gate.py",
+      "sha256": "0875c2d86fd8390baca3ecb04afcec815430fb2344a2cec86348fc48a4ad3181",
+      "bytes": 3362
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/run-offline-checks.py",
+      "sha256": "e5156387af032ceb9df31a4cd83811db688f058fde7bcd30c6aeb05dcfa7b015",
+      "bytes": 4145
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/save-owned-state.py",
+      "sha256": "c4022a11ee0830f7b5db023de07b41491af913b358b30f273857c845cb250181",
+      "bytes": 2491
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/test-budget-lock.mjs",
+      "sha256": "842aff12418209af26ccf0a11335f2c49ff71bad691bea822a8737b4b502fa24",
+      "bytes": 1849
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/published-review-discovery-20260921/verify-owned-archive.py",
+      "sha256": "131312e6e3e22dc951d1a12d721581fc0e062f6369612b9fa248c6a88cd49b3b",
+      "bytes": 4025
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/archive-independent-v2/IDENTITY-CHECK-REENUMERATION-20260921.json",
+      "sha256": "7f74edf6e0a89b5bfdb9e9c736cc8c125098ff9e462fe649176677a0061b2625",
+      "bytes": 1410
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/archive-independent-v2/IDENTITY-EVIDENCE-VERSION-CORRECTION.json",
+      "sha256": "7790d33ab28d1d398c8f2e0e777b9c14fda457f1c2ff7742552211c77d79813a",
+      "bytes": 2283
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/archive-independent-v2/IDENTITY-EVIDENCE-VERSION-CORRECTION.md",
+      "sha256": "041b36d927785166827f06325dec94cec7cfc77a19f1f07f366b3d8808cbc7fc",
+      "bytes": 1121
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/GATE-PROVENANCE-INSPECTION.json",
+      "sha256": "3d9e2e4e41557d7802ff67964d62c0a1953b2da9ad538e83f114074ee7b95056",
+      "bytes": 80979
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/INDEPENDENT-DISCLOSURE-BOUNDS-02.log",
+      "sha256": "514143e4f44fc53bf153ddb8453fb79c34efda273dbe5e355517e2ac8b8b4aec",
+      "bytes": 598
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/INDEPENDENT-DISCLOSURE-FOCUSED-02.log",
+      "sha256": "c27c2a9044be25ed5960ad89b0bfc80875a3882ccb3e8e2365f98710ff335414",
+      "bytes": 599
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/INDEPENDENT-DISCLOSURE-FOCUSED.log",
+      "sha256": "b1217bb41333411eaa60557a07852ac5902a676a46e96d236ab289a550de6544",
+      "bytes": 3399
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/INDEPENDENT-LIFECYCLE-FOCUSED-02.log",
+      "sha256": "ab89196d82926ee9fe26cee6bef0144a4ce29ef9da083dcc3cb22010297ad3da",
+      "bytes": 2008
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/INDEPENDENT-LIFECYCLE-FOCUSED.log",
+      "sha256": "1a91bd92b1974594b2ebb307340f723752aee30583cdb009ea9f907c11b03ea5",
+      "bytes": 3439
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/INDEPENDENT-OWNED-BUILD.log",
+      "sha256": "a6c0296d2942e23fa5b7a5eb9fce16f4969298ebc36592afeca11bcb1b80edeb",
+      "bytes": 183
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/INDEPENDENT-ZERO-PROVIDER-FOCUSED.json",
+      "sha256": "6b187e68b57f39c6c92a58cc3dd64df0bcb9efa09dbf69dde264968c579bf1ca",
+      "bytes": 4006
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/sealed-checkpoints/tester-A-published-review-final/manifest.json",
+      "sha256": "5b77dd900962447bac2638687cfa18907155551daefca8aa0b61552fd62a76e3",
+      "bytes": 965
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/ADDENDUM.json",
+      "sha256": "7bcd7646c15caf787a6b8814d2fb8b6915503b9e4eaabbf07e32a02510dfc862",
+      "bytes": 7333
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/ADDENDUM.md",
+      "sha256": "a5a25612a4f32c7ab90cdb04cfa6156404885df8663f1e922aa9c19ec8541452",
+      "bytes": 3141
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/BUSINESS-BLOCKER-EVIDENCE.json",
+      "sha256": "e8dee713f1269bc89fda7332c8e048b8063f5abc061655465561c2ed7f067eb4",
+      "bytes": 5188
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/CORRECTION-ADDENDUM.json",
+      "sha256": "839fda5877736a7c328eba33d27e298800a0d724a0c850d3d5a20f8211df26bb",
+      "bytes": 3277
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/CORRECTION-ADDENDUM.md",
+      "sha256": "69bfeb95d2304e7e38483ea524f4b3a3f06ef2a039de3b913eac4aab063b7db4",
+      "bytes": 2385
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/RESULT.json",
+      "sha256": "82cd0a5a0cbb93dab57d7d0d02c9a127c852f3cae380d9c37905ba7831055dda",
+      "bytes": 6628
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/REVIEW.md",
+      "sha256": "3015e2fbbffe9ed764fc295a2529ce83df189bcc02c70a91977fbc33fe25f199",
+      "bytes": 3242
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/authoring-meter/TESTER-A-REVIEW-1-request.json",
+      "sha256": "2ef967551319dc1c0e0ce43f7eca5baa587db71d2c492a60e6b24d0e7858fa3d",
+      "bytes": 195584
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/mcp-probes/DISCLOSURE-ASSERTIONS.json",
+      "sha256": "5c4edcc54123da745488e8d28e5332325a8680ade0916b04817bee5afdeba786",
+      "bytes": 3015
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/mcp-probes/detail.json",
+      "sha256": "293ae6a8c31b924f99632a6606836e1b569a6699bbc71e0ea5ce58686355eebe",
+      "bytes": 9173
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/mcp-probes/listing.json",
+      "sha256": "3327e32ac2763b9f172ca85caf118de4d5ac0b39d7ba5536256aa4189ad46895",
+      "bytes": 4592
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/mcp-probes/protocol.jsonl",
+      "sha256": "1c0f54c0cdc87e6ad6ea3c73dbb62e88a5796329bce42b0034561b4d6bd384ac",
+      "bytes": 81808
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/operator-captures/terminal-002.log",
+      "sha256": "7f6956d899a0596534503630fec4af7fc6f47200e55c472412c26507a935524b",
+      "bytes": 52471
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/operator-captures/terminal-003.log",
+      "sha256": "8814540c259ad2f801f79e81c1b8ae34d0bc55ecb1f341c700eaf1e6a3925c95",
+      "bytes": 5841
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/state-readbacks/after-initial-to-after-restart-difference.json",
+      "sha256": "448b211678baa34cd9449f28bcbb7ec6d4e7864bb9cba40e574e323a12bb5c2c",
+      "bytes": 410
+    }
+  ],
+  "unavailable_historical_references": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/archive-independent-v2/IDENTITY-CHECK.json",
+      "sha256": "aa1b9e45bd265c1a176b4199c87f2554ac1d3bde0adae6f481fc9198fcba6d63",
+      "status": "Original verification JSON overwritten by tester final re-enumeration; original bytes not recovered. Previously rehashed successfully by main; original reports remain unchanged.",
+      "replacement_is_not_original": true
+    }
+  ],
+  "privacy": "Raw captures, stores, source/ACL archives and credentials remain in private owned roots. Hashing does not grant runtime disclosure.",
+  "self_hash": "Stored separately in delivery.json; this index deliberately does not hash itself."
+}

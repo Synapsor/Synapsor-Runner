@@ -1,0 +1,97 @@
+{
+  "candidate_tree": "743ef7430b55022f720ab988bbdb9cb7d17d8fccda0a244a1661cf70b6f06a55",
+  "known_case_only": true,
+  "original_Stage_B": "ATTEMPTED / NOT PASSED",
+  "rows": [
+    {
+      "id": "A-selection-lifecycle",
+      "status": "PASS_IMPLEMENTER",
+      "evidence": [
+        "A-FAILING-BEFORE.json",
+        "GATE-INDEX.json"
+      ],
+      "scope": "Implementer lifecycle tests passed; tester personally reran supplied SQLite/legacy assertions and own installed A selection/reuse, not independent PostgreSQL lifecycle."
+    },
+    {
+      "id": "approval-disclosure-contract",
+      "status": "PASS_IMPLEMENTER",
+      "evidence": [
+        "B-TRACE-BEFORE.json",
+        "GATE-INDEX.json"
+      ],
+      "scope": "Real public serialization tests; partial/mode-only/manual-only/unavailable, privacy twin; no new native-answer claim"
+    },
+    {
+      "id": "native-wording",
+      "status": "NOT_RUN_FINANCIALLY_BLOCKED",
+      "evidence": [
+        "B-TRACE-BEFORE.json",
+        "PREPUBLIC-FUNDING.md"
+      ],
+      "scope": "Old B material false manual-only claim preserved; no new candidate native turn"
+    },
+    {
+      "id": "main-A-active-review-restart",
+      "status": "PASS_PERSONALLY_EXECUTED",
+      "evidence": [
+        "MAIN-A-RESULT.json"
+      ],
+      "scope": "Active5 BUSINESS review, restart validated reuse;42controltables/38source rows preserved"
+    },
+    {
+      "id": "A-native-current-state-restart",
+      "status": "NOT_RUN_FINANCIALLY_BLOCKED",
+      "evidence": [
+        "PREPUBLIC-FUNDING.md"
+      ],
+      "scope": "New native discovery/status/restart not funded"
+    },
+    {
+      "id": "A-optional-new-effect",
+      "status": "NOT_RUN_FINANCIALLY_BLOCKED",
+      "evidence": [
+        "MAIN-A-RESULT.json",
+        "PREPUBLIC-FUNDING.md"
+      ],
+      "scope": "Zero requests/workers/new effects; old five-day effect remains old-artifact evidence"
+    },
+    {
+      "id": "tester-B-numeric-publication-renewal-effect-recheck",
+      "status": "NOT_RUN_FINANCIALLY_BLOCKED_AND_INDEPENDENT_CHECKPOINT_INCOMPLETE",
+      "evidence": [
+        "PREPUBLIC-FUNDING.md",
+        "INDEPENDENT-ACCEPTANCE.json",
+        "INDEPENDENT-BUSINESS-BLOCKER.json"
+      ],
+      "scope": "Authentic active30/draft15 retained; no publication/renewal/new receipt or native restart"
+    },
+    {
+      "id": "stable-gates",
+      "status": "PASS_PERSONALLY_EXECUTED",
+      "evidence": [
+        "GATE-INDEX.json",
+        "OFFLINE-GATE-INDEX.json",
+        "PRE-FREEZE-FAILURES.json"
+      ],
+      "scope": "Complete final suite6859pass/489skip exit0;types,realPGcontrolstore,SQLite/PGsave,tenofflinechecks; earlier failures preserved"
+    },
+    {
+      "id": "independent-acceptance",
+      "status": "PARTIAL_PASS_BUSINESS_BLOCKED",
+      "evidence": [
+        "INDEPENDENT-ACCEPTANCE.json",
+        "INDEPENDENT-BUSINESS-BLOCKER.json"
+      ],
+      "scope": "Personal active selection/reuse and installed disclosure pass. BUSINESS remains blocked. Tester additionally reran supplied SQLite/legacy/disclosure/size assertions; independent PostgreSQL/full>100/all-race coverage not claimed. No overall completion acceptance."
+    },
+    {
+      "id": "historical-native-and-StageB",
+      "status": "HISTORICAL_ATTEMPTED_NOT_PASSED",
+      "evidence": [
+        "B-TRACE-BEFORE.json",
+        "FINAL-REPORT.md"
+      ],
+      "scope": "Old A supplied-reference/incomplete turn and B false statement preserved; add/remove and remaining concurrency/runtime unrun"
+    }
+  ]
+}

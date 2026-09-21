@@ -1,0 +1,227 @@
+{
+  "at": "2026-09-21T20:15:51.662118+00:00",
+  "verdict": "PASS: main installed active review and explicit restart/recheck",
+  "candidate": {
+    "frozen_at": "2026-09-21T20:04:48.556Z",
+    "source_commit": "6793c26a09b5a81c217946cb6c5b7dc066b9425e",
+    "installed_tree_sha256": "743ef7430b55022f720ab988bbdb9cb7d17d8fccda0a244a1661cf70b6f06a55",
+    "manifest_sha256": "13576f347c3aed7b89f47c26227aa2c72137783406d3fba5d39e288e3966b4d4",
+    "archive_sha256": "a99f4462fe55347765c68230d61889a881ea0f57bf025e4b729e7ad524ea672d",
+    "package_lock_sha256": "107f8dace5a6ffe29ac92d9028e1fa34614abdfa52b3406bcb1be8553319916c",
+    "entries": 7569,
+    "tarballs": [
+      {
+        "name": "synapsor-runner-1.8.0.tgz",
+        "sha256": "dcfa3cdfedbed2a48facada945d83440efa4ae0377a55c9bc56d3c799abec14e"
+      },
+      {
+        "name": "synapsor-spec-1.11.0.tgz",
+        "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+      }
+    ],
+    "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/frozen/installed",
+    "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/frozen/installed-artifact-manifest.json",
+    "archive": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/frozen/installed-artifact.tar.gz",
+    "product_commit": "7d881de8942b4089d225cd0a9e6196e6917ec075",
+    "test_commit": "2fc4cdee51f37cd886e6980bf9740c59ec956c12"
+  },
+  "reviewed_subject": {
+    "location": "active",
+    "record": "policy:38224d09795925014a8efb375cfe93baef232bbf8d09fa40bc3f6f83d934e11e",
+    "store": "sha256:614276979e3dd6ce73ca9c49e84f56010139ace3bebaa2b607e99a78f5011a7e"
+  },
+  "authority_digest": "sha256:a26bae477f409339e9c284d7e2d6d51f102f20e9e3bf95ae5e26dcb8165accc8",
+  "source_digest": "sha256:d4e783115e819649c2be8fa5cfc7abe9d31f891c51eb0315b0a44a0c90388cd5",
+  "read_digest": "sha256:42947f9d8d549e3a34de616b505c188d69765967712485748ba196ccf57a61f3",
+  "action_draft_still_null": true,
+  "completed_reviews_before": 4,
+  "completed_reviews_after": 6,
+  "latest_completed_reviews": [
+    {
+      "request": {
+        "operation": "review_rules",
+        "request": "Review attached rules and unresolved decisions",
+        "source_session": "e631e9a6-e7d6-4428-a423-be36465405f7",
+        "source_digest": "sha256:d4e783115e819649c2be8fa5cfc7abe9d31f891c51eb0315b0a44a0c90388cd5",
+        "read_digest": "sha256:42947f9d8d549e3a34de616b505c188d69765967712485748ba196ccf57a61f3",
+        "action_name": "reviewed_staging_rules",
+        "action_digest": "sha256:a26bae477f409339e9c284d7e2d6d51f102f20e9e3bf95ae5e26dcb8165accc8",
+        "action_subject": {
+          "location": "active",
+          "record": "policy:38224d09795925014a8efb375cfe93baef232bbf8d09fa40bc3f6f83d934e11e",
+          "store": "sha256:614276979e3dd6ce73ca9c49e84f56010139ace3bebaa2b607e99a78f5011a7e"
+        }
+      },
+      "report_digest": "sha256:6f3991be54e026bf2e4bec47cdfe20221ce7a6b6b1d7f4c13168dde1e3f4c9f5",
+      "context_digest": "sha256:d3fb431e9fb7ff2e7e9e12435d9ab3a86533661d893434cfd169fa937e08b0f3",
+      "activity": "provider",
+      "completed_at": "2026-09-21T20:12:15.000Z"
+    },
+    {
+      "request": {
+        "operation": "review_rules",
+        "request": "Review attached rules and unresolved decisions",
+        "source_session": "e631e9a6-e7d6-4428-a423-be36465405f7",
+        "source_digest": "sha256:d4e783115e819649c2be8fa5cfc7abe9d31f891c51eb0315b0a44a0c90388cd5",
+        "read_digest": "sha256:42947f9d8d549e3a34de616b505c188d69765967712485748ba196ccf57a61f3",
+        "action_name": "reviewed_staging_rules",
+        "action_digest": "sha256:a26bae477f409339e9c284d7e2d6d51f102f20e9e3bf95ae5e26dcb8165accc8",
+        "action_subject": {
+          "location": "active",
+          "record": "policy:38224d09795925014a8efb375cfe93baef232bbf8d09fa40bc3f6f83d934e11e",
+          "store": "sha256:614276979e3dd6ce73ca9c49e84f56010139ace3bebaa2b607e99a78f5011a7e"
+        }
+      },
+      "report_digest": "sha256:6f3991be54e026bf2e4bec47cdfe20221ce7a6b6b1d7f4c13168dde1e3f4c9f5",
+      "context_digest": "sha256:d3fb431e9fb7ff2e7e9e12435d9ab3a86533661d893434cfd169fa937e08b0f3",
+      "activity": "validated_reuse",
+      "completed_at": "2026-09-21T20:13:20.050Z"
+    }
+  ],
+  "client_assignment": {
+    "source_digest": "sha256:d4e783115e819649c2be8fa5cfc7abe9d31f891c51eb0315b0a44a0c90388cd5",
+    "draft_digest": "sha256:a4266f76acef769a04438eb65134fd62a9158c26d31582423f9c801481eff907",
+    "origin": "PRODUCT-CLIENT-CONTRACT",
+    "contract_digest": "sha256:00701fb6a546bdd989bd711ecd35b2299c05e55e6886e69380f7f5b811e1c374",
+    "obligations": [
+      "customer_selection",
+      "status_presentation"
+    ],
+    "assigned_at": "2026-09-21T20:12:13.730Z",
+    "owner": "client_application",
+    "verified": false
+  },
+  "pending_obligations": [
+    {
+      "disposition": "needs_decision",
+      "responsibility": "deployment",
+      "paths": [
+        "/runner_evidence/actions/release.clear_assessment/effect/source_counter_maintenance"
+      ],
+      "deployment_prerequisite": null
+    },
+    {
+      "disposition": "needs_decision",
+      "responsibility": "deployment",
+      "paths": [
+        "/runner_evidence/runtime_contract/receipt_configuration"
+      ],
+      "deployment_prerequisite": null
+    },
+    {
+      "disposition": "needs_decision",
+      "responsibility": "deployment",
+      "paths": [
+        "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"
+      ],
+      "deployment_prerequisite": "runner_execution_setup"
+    },
+    {
+      "disposition": "needs_decision",
+      "responsibility": "application",
+      "paths": [
+        "/runner_evidence/runtime_contract/application_obligations/customer_selection"
+      ],
+      "deployment_prerequisite": null
+    },
+    {
+      "disposition": "needs_decision",
+      "responsibility": "application",
+      "paths": [
+        "/runner_evidence/runtime_contract/application_obligations/status_presentation"
+      ],
+      "deployment_prerequisite": null
+    },
+    {
+      "disposition": "needs_decision",
+      "responsibility": "deployment",
+      "paths": [
+        "/runner_evidence/runtime_contract/deployment_prerequisites/authenticated_identity"
+      ],
+      "deployment_prerequisite": "authenticated_identity"
+    },
+    {
+      "disposition": "needs_decision",
+      "responsibility": "deployment",
+      "paths": [
+        "/runner_evidence/runtime_contract/deployment_prerequisites/runner_client_connection"
+      ],
+      "deployment_prerequisite": "runner_client_connection"
+    }
+  ],
+  "all42_control_tables_equal": true,
+  "epoch_before_after": [
+    24,
+    24
+  ],
+  "full38_source_rows_equal": true,
+  "source_sha256": "5750578b01e52f027cb09eaf6fce6db957f5b281fd3aec42d9934c337f2905c2",
+  "changed_files": [
+    ".synapsor/boundary-authoring/resume.json",
+    ".synapsor/boundary-authoring/policy-sources/e631e9a6-e7d6-4428-a423-be36465405f7.json"
+  ],
+  "new_business_operations": {
+    "publication": 0,
+    "requests": 0,
+    "workers": 0,
+    "effects": 0,
+    "receipt_provisioning": 0,
+    "execution_renewal": 0,
+    "native_calls": 0
+  },
+  "authoring_transports": 1,
+  "structural_corrections": 0,
+  "actual_cost_usd": 0.151214,
+  "restart_new_calls": 0,
+  "operator_confirmation": "Explicit current client-duty ownership, planned/unverified. No business-policy restatement or redraft.",
+  "harness_corrections": 0,
+  "limitations": [
+    "Generic working spinner says exact draft; final subject is explicitly active published.",
+    "Review reports separate deployment/receipt/readback duties pending; it creates no new receipt or execution permission.",
+    "Current-native discovery/restart and optional new effect NOT RUN: financially blocked. Historical five-day effect is prior-artifact evidence."
+  ],
+  "evidence": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-final/operator-captures/terminal-001.log",
+      "sha256": "c98395cdd242940c22e1f1f644fa09743bb654f15350e3ac5f9a143f96847223"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-final/operator-captures/terminal-002.log",
+      "sha256": "b94f5e5bdfc346270adfa873691dbce7d43d647a985c72327d946b9aefd13763"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-final/operator-captures/exit-001.json",
+      "sha256": "6ee81b6393851779a0925fc32a3b5784770212336482fd27856a4c34487d80e6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-final/operator-captures/exit-002.json",
+      "sha256": "27ca30d7449eb42d0dffb74021d1f5da9b376f2f7cbefab6f54fcaec51ee3abc"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-final/authoring-meter/MAIN-A-REVIEW-1-request.json",
+      "sha256": "2ef967551319dc1c0e0ce43f7eca5baa587db71d2c492a60e6b24d0e7858fa3d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-final/authoring-meter/MAIN-A-REVIEW-1-response.txt",
+      "sha256": "1edb4235ea0de41692cec0872509a03a03d871fc35f54a30618006229ee635f0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-final/authoring-meter/MAIN-A-REVIEW-1-tool-arguments.json",
+      "sha256": "2fd7189a9a73efd2361add2410c1be35570483bd7dba47f6765929f578a46e9b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-final/state-readbacks/before-final-to-after-first-difference.json",
+      "sha256": "7ac7557ccba7c11dc141f9e3ab49c3f8309548f30a447579ed378530a48539c0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-final/state-readbacks/before-final-to-after-restart-difference.json",
+      "sha256": "080684229e7ee7a98b075cdc58c298d4fafe02b73ad7a95bd98ba535fdbe0fe7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-final/REVIEW-BOOKKEEPING-DIFFERENCE.json",
+      "sha256": "6fa04c640a490843b994101f3a161b91e4b0538e05a16b143b6c5198cb767dd2"
+    }
+  ],
+  "prior_source_snapshots_answers_counting_decisions_preserved": true,
+  "prior_review_episode_assignment_entries_preserved": true
+}

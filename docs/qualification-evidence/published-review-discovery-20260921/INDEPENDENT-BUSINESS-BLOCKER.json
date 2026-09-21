@@ -1,0 +1,89 @@
+{
+  "at": "2026-09-21T20:35:31.909151+00:00",
+  "status": "BLOCKED independent BUSINESS completion; target selection succeeds",
+  "new_product_defect_established": false,
+  "classification": "Saved review disagreement about source-required non-sensitive meaning of related public descriptions. No missing context/changed target demonstrated. Safe pending result retained.",
+  "identical_provider_envelopes": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/main-A-final/authoring-meter/MAIN-A-REVIEW-1-request.json",
+      "sha256": "2ef967551319dc1c0e0ce43f7eca5baa587db71d2c492a60e6b24d0e7858fa3d",
+      "bytes": 195584
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/authoring-meter/TESTER-A-REVIEW-1-request.json",
+      "sha256": "2ef967551319dc1c0e0ce43f7eca5baa587db71d2c492a60e6b24d0e7858fa3d",
+      "bytes": 195584
+    }
+  ],
+  "model": "openai/gpt-5.6-terra",
+  "adapter": "openrouter",
+  "provider_calls_main_tester": [
+    1,
+    1
+  ],
+  "tester_blocking_passage": {
+    "start": 3,
+    "end": 3,
+    "disposition": "needs_decision",
+    "interpretation": "Read also returns animal public_name, species_group, and habitat public_site_name. The source permits related descriptions only when they are explicitly reviewed as non-sensitive, but the supplied evidence does not establish that business meaning for these fields.",
+    "draft_paths": [
+      "/runner_evidence/read_access/release_ops.animals/fields/public_name",
+      "/runner_evidence/read_access/release_ops.animals/fields/species_group",
+      "/runner_evidence/read_access/release_ops.habitat_sites/fields/public_site_name"
+    ],
+    "topic": "Related public descriptions",
+    "responsibility": "operator",
+    "issue_kind": "schema_meaning",
+    "next_step": "Are animal public name, species group, and habitat public site name the explicitly reviewed non-sensitive related descriptions the assistant may receive?"
+  },
+  "tester_completed_review_count": 4,
+  "tester_pending_review": {
+    "operation": "review_rules",
+    "request": "Review attached rules and unresolved decisions",
+    "source_session": "e631e9a6-e7d6-4428-a423-be36465405f7",
+    "source_digest": "sha256:d4e783115e819649c2be8fa5cfc7abe9d31f891c51eb0315b0a44a0c90388cd5",
+    "read_digest": "sha256:42947f9d8d549e3a34de616b505c188d69765967712485748ba196ccf57a61f3",
+    "action_name": "reviewed_staging_rules",
+    "action_digest": "sha256:a26bae477f409339e9c284d7e2d6d51f102f20e9e3bf95ae5e26dcb8165accc8",
+    "action_subject": {
+      "location": "active",
+      "record": "policy:38224d09795925014a8efb375cfe93baef232bbf8d09fa40bc3f6f83d934e11e",
+      "store": "sha256:614276979e3dd6ce73ca9c49e84f56010139ace3bebaa2b607e99a78f5011a7e"
+    }
+  },
+  "main_completed_review_count": 6,
+  "restart": "Both reused their respective saved review; tester reused pending BUSINESS, main reused completed BUSINESS.",
+  "invariant": "No source/control/authority mutation in either run.",
+  "unresolved_question": "Whether already reviewed Read field inclusion/current evidence establishes the source clause explicitly reviewed as non-sensitive for these related descriptions, or a separate existing business-meaning record is required. Allowed field exposure alone is not assumed proof of that semantic claim.",
+  "not_attempted": [
+    "New owner restatement",
+    "Changed policy/Read permissions",
+    "Another provider opinion",
+    "Frozen package repair",
+    "B publication/effect"
+  ],
+  "required_next_decision": "Inspect the exact source/evidence association as a separate bounded decision; this assignment does not repair it or require a new owner answer.",
+  "private_full_record": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/INDEPENDENT-BUSINESS-BLOCKER.json",
+    "sha256": "c4aecb007d79af082606d933f49c3a799e25cc066cf88d14bb8441788e1001a2"
+  },
+  "main_same_source_line_passages_summary": [
+    {
+      "source_lines": [
+        3,
+        3
+      ],
+      "disposition": "implemented",
+      "topic": "Public assessment discovery"
+    },
+    {
+      "source_lines": [
+        3,
+        3
+      ],
+      "disposition": "implemented",
+      "topic": "Sensitive-source privacy"
+    }
+  ],
+  "packaging": "Public-field blocker references retained; full source-line privacy evidence remains in private raw record, not repeated here."
+}

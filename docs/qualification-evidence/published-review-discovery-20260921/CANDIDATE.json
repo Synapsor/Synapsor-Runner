@@ -1,0 +1,24 @@
+{
+  "frozen_at": "2026-09-21T20:04:48.556Z",
+  "source_commit": "6793c26a09b5a81c217946cb6c5b7dc066b9425e",
+  "installed_tree_sha256": "743ef7430b55022f720ab988bbdb9cb7d17d8fccda0a244a1661cf70b6f06a55",
+  "manifest_sha256": "13576f347c3aed7b89f47c26227aa2c72137783406d3fba5d39e288e3966b4d4",
+  "archive_sha256": "a99f4462fe55347765c68230d61889a881ea0f57bf025e4b729e7ad524ea672d",
+  "package_lock_sha256": "107f8dace5a6ffe29ac92d9028e1fa34614abdfa52b3406bcb1be8553319916c",
+  "entries": 7569,
+  "tarballs": [
+    {
+      "name": "synapsor-runner-1.8.0.tgz",
+      "sha256": "dcfa3cdfedbed2a48facada945d83440efa4ae0377a55c9bc56d3c799abec14e"
+    },
+    {
+      "name": "synapsor-spec-1.11.0.tgz",
+      "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+    }
+  ],
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/frozen/installed",
+  "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/frozen/installed-artifact-manifest.json",
+  "archive": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/frozen/installed-artifact.tar.gz",
+  "product_commit": "7d881de8942b4089d225cd0a9e6196e6917ec075",
+  "test_commit": "2fc4cdee51f37cd886e6980bf9740c59ec956c12"
+}

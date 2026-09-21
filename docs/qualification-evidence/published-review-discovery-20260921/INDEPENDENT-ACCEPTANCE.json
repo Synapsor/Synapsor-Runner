@@ -1,0 +1,357 @@
+{
+  "at": "2026-09-21T20:30:40.013146+00:00",
+  "candidate": {
+    "source_commit": "6793c26a09b5a81c217946cb6c5b7dc066b9425e",
+    "product_commit": "7d881de8942b4089d225cd0a9e6196e6917ec075",
+    "test_commit": "2fc4cdee51f37cd886e6980bf9740c59ec956c12",
+    "installed_tree_sha256": "743ef7430b55022f720ab988bbdb9cb7d17d8fccda0a244a1661cf70b6f06a55",
+    "manifest_sha256": "13576f347c3aed7b89f47c26227aa2c72137783406d3fba5d39e288e3966b4d4",
+    "archive_sha256": "a99f4462fe55347765c68230d61889a881ea0f57bf025e4b729e7ad524ea672d",
+    "entries": 7569
+  },
+  "independent_of_implementation": true,
+  "verdict": "PARTIAL: PASS selected subject/reuse and tested disclosure; independent BUSINESS completion BLOCKED",
+  "personally_executed": {
+    "identity": "Manifest, live installed root, and fresh archive extraction compared bidirectionally for all 7,569 entries including type, mode, file size/hash and symlink target; tree hash reproduced.",
+    "A_review": "Ordinary installed start --project-root . --cli, selected Review attached rules, explicitly started the bounded episode, and accepted the displayed current client responsibilities as planned/unverified. Exact subject was the active published Action digest a26bae477f409339e9c284d7e2d6d51f102f20e9e3bf95ae5e26dcb8165accc8. Review activity was provider. Overall business state truthfully remained pending because separate integration/setup checks remain unverified.",
+    "A_restart": "Reopened ordinary installed flow and selected Review again. Review activity was validated_reuse; no additional transport or ownership prompt occurred.",
+    "MCP": "Started the installed four-tool authoring MCP server through the owned logical namespace. Captured initialize, tools/list, listing, exact detail and invalid mixed-mode call. Listing/detail disclosure and exact text/structured agreement passed; mixed arguments refused.",
+    "preservation": "Read back all 42 logical control tables and all 38 source rows. Untouched baseline, post-review and post-restart hashes are equal. No publication, authority, request, worker, receipt, source effect or execution permission was created."
+  },
+  "gate_evidence": "inspected and rehashed, not rerun",
+  "cost": {
+    "calls": 1,
+    "settled_cost_usd": 0.0632684,
+    "transport_ids": [
+      "TESTER-A-REVIEW-1"
+    ],
+    "restart_calls": 0,
+    "capture_complete": true
+  },
+  "original_report_preserved": true,
+  "qualification": "Final independent BUSINESS BLOCKED / NOT PASSED. Exact subject/reuse and tested disclosure pass. Additional candidate-authored SQLite/legacy/disclosure assertions personally rerun; not newly authored independent tests. PostgreSQL lifecycle/full >100 history/all race permutations not independently executed. Original verdict language is superseded by CORRECTION-ADDENDUM, all original files unchanged.",
+  "evidence": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/REVIEW.md",
+      "sha256": "3015e2fbbffe9ed764fc295a2529ce83df189bcc02c70a91977fbc33fe25f199"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/RESULT.json",
+      "sha256": "82cd0a5a0cbb93dab57d7d0d02c9a127c852f3cae380d9c37905ba7831055dda"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/sealed-checkpoints/tester-A-published-review-final/manifest.json",
+      "sha256": "5b77dd900962447bac2638687cfa18907155551daefca8aa0b61552fd62a76e3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/GATE-PROVENANCE-INSPECTION.json",
+      "sha256": "3d9e2e4e41557d7802ff67964d62c0a1953b2da9ad538e83f114074ee7b95056"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/operator-captures/terminal-002.log",
+      "sha256": "7f6956d899a0596534503630fec4af7fc6f47200e55c472412c26507a935524b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/operator-captures/terminal-003.log",
+      "sha256": "8814540c259ad2f801f79e81c1b8ae34d0bc55ecb1f341c700eaf1e6a3925c95"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/state-readbacks/after-initial-to-after-restart-difference.json",
+      "sha256": "448b211678baa34cd9449f28bcbb7ec6d4e7864bb9cba40e574e323a12bb5c2c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/mcp-probes/DISCLOSURE-ASSERTIONS.json",
+      "sha256": "5c4edcc54123da745488e8d28e5332325a8680ade0916b04817bee5afdeba786"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/mcp-probes/protocol.jsonl",
+      "sha256": "1c0f54c0cdc87e6ad6ea3c73dbb62e88a5796329bce42b0034561b4d6bd384ac"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/mcp-probes/listing.json",
+      "sha256": "3327e32ac2763b9f172ca85caf118de4d5ac0b39d7ba5536256aa4189ad46895"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/mcp-probes/detail.json",
+      "sha256": "293ae6a8c31b924f99632a6606836e1b569a6699bbc71e0ea5ce58686355eebe"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/ADDENDUM.md",
+      "sha256": "a5a25612a4f32c7ab90cdb04cfa6156404885df8663f1e922aa9c19ec8541452"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/ADDENDUM.json",
+      "sha256": "7bcd7646c15caf787a6b8814d2fb8b6915503b9e4eaabbf07e32a02510dfc862"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/CORRECTION-ADDENDUM.md",
+      "sha256": "69bfeb95d2304e7e38483ea524f4b3a3f06ef2a039de3b913eac4aab063b7db4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/CORRECTION-ADDENDUM.json",
+      "sha256": "839fda5877736a7c328eba33d27e298800a0d724a0c850d3d5a20f8211df26bb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/BUSINESS-BLOCKER-EVIDENCE.json",
+      "sha256": "e8dee713f1269bc89fda7332c8e048b8063f5abc061655465561c2ed7f067eb4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/INDEPENDENT-ZERO-PROVIDER-FOCUSED.json",
+      "sha256": "6b187e68b57f39c6c92a58cc3dd64df0bcb9efa09dbf69dde264968c579bf1ca"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/INDEPENDENT-LIFECYCLE-FOCUSED.log",
+      "sha256": "1a91bd92b1974594b2ebb307340f723752aee30583cdb009ea9f907c11b03ea5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/INDEPENDENT-DISCLOSURE-FOCUSED.log",
+      "sha256": "b1217bb41333411eaa60557a07852ac5902a676a46e96d236ab289a550de6544"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/INDEPENDENT-OWNED-BUILD.log",
+      "sha256": "a6c0296d2942e23fa5b7a5eb9fce16f4969298ebc36592afeca11bcb1b80edeb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/INDEPENDENT-LIFECYCLE-FOCUSED-02.log",
+      "sha256": "ab89196d82926ee9fe26cee6bef0144a4ce29ef9da083dcc3cb22010297ad3da"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/INDEPENDENT-DISCLOSURE-FOCUSED-02.log",
+      "sha256": "c27c2a9044be25ed5960ad89b0bfc80875a3882ccb3e8e2365f98710ff335414"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/INDEPENDENT-DISCLOSURE-BOUNDS-02.log",
+      "sha256": "514143e4f44fc53bf153ddb8453fb79c34efda273dbe5e355517e2ac8b8b4aec"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/archive-independent-v2/IDENTITY-CHECK-REENUMERATION-20260921.json",
+      "sha256": "7f74edf6e0a89b5bfdb9e9c736cc8c125098ff9e462fe649176677a0061b2625"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/archive-independent-v2/IDENTITY-EVIDENCE-VERSION-CORRECTION.json",
+      "sha256": "7790d33ab28d1d398c8f2e0e777b9c14fda457f1c2ff7742552211c77d79813a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/archive-independent-v2/IDENTITY-EVIDENCE-VERSION-CORRECTION.md",
+      "sha256": "041b36d927785166827f06325dec94cec7cfc77a19f1f07f366b3d8808cbc7fc"
+    }
+  ],
+  "status_clarification": {
+    "terminal_title": "Business review remains pending.",
+    "current_run_activities": [
+      "provider",
+      "validated_reuse"
+    ],
+    "persisted_field": "boundary-authoring/resume.json completed_policy_reviews",
+    "persisted_completed_policy_review_count_before": 4,
+    "persisted_completed_policy_review_count_after": 4,
+    "persisted_activities": [
+      "provider",
+      "validated_reuse",
+      "provider",
+      "validated_reuse"
+    ],
+    "resume_before_sha256": "b0c3773e4d4f5725bf7e2772173fcaef58bd7515d918b1bafa3458f1e4e35512",
+    "resume_after_sha256": "69baead24c22397894369ad29a32316b68ca79f2116af34e098986ec2b669433",
+    "interpretation": "The provider review interaction and its restart completed for the exact subject, while overall readiness remained pending because client/deployment/receipt/execution verification is separate. The current run did not append a fifth completed_policy_reviews entry; it preserved the existing four-entry completed review history and changed only boundary-authoring state. The original report phrase \u201cinitial A Review completed\u201d means the interactive review episode returned normally, not that overall BUSINESS/deployment readiness became ready."
+  },
+  "main_correction": "Related public descriptions is a BUSINESS blocker, not only deferred deployment readiness. See INDEPENDENT-BUSINESS-BLOCKER.json.",
+  "historical_original_addendum_matrix": [
+    {
+      "control": "immutable artifact membership/content/archive identity",
+      "verdict": "PASS",
+      "basis": "PERSONALLY EXECUTED",
+      "record": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/archive-independent-v2/IDENTITY-CHECK.json"
+    },
+    {
+      "control": "ordinary installed Review selects exact active published Action",
+      "verdict": "PASS",
+      "basis": "PERSONALLY EXECUTED",
+      "record": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/operator-captures/terminal-002.log"
+    },
+    {
+      "control": "restart uses validated_reuse with no repeated ownership prompt or transport",
+      "verdict": "PASS",
+      "basis": "PERSONALLY EXECUTED",
+      "record": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/operator-captures/terminal-003.log"
+    },
+    {
+      "control": "listing/detail partial approval disclosure, mode-only exact detail, no threshold claim, text/structured equality",
+      "verdict": "PASS",
+      "basis": "PERSONALLY EXECUTED",
+      "record": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/mcp-probes/DISCLOSURE-ASSERTIONS.json"
+    },
+    {
+      "control": "mixed meaningful detail/listing arguments",
+      "verdict": "PASS (refused ARGUMENT_INVALID)",
+      "basis": "PERSONALLY EXECUTED",
+      "record": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/mcp-probes/mixed-refusal.json"
+    },
+    {
+      "control": "42 control tables and 38 source rows preserved through Review/restart",
+      "verdict": "PASS",
+      "basis": "PERSONALLY EXECUTED",
+      "record": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/tester-A-review-20260921/state-readbacks/after-initial-to-after-restart-difference.json"
+    },
+    {
+      "control": "duplicate equivalent disabled history record selection",
+      "verdict": "NOT ESTABLISHED",
+      "basis": "READ-ONLY CODE/GATE INSPECTION ONLY; no independent frozen execution",
+      "record": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/MOVING-SOURCE-INSPECTION.json"
+    },
+    {
+      "control": "history beyond 100-event bound refuses",
+      "verdict": "NOT ESTABLISHED",
+      "basis": "READ-ONLY CODE/GATE INSPECTION ONLY; no independent frozen execution",
+      "record": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/MOVING-SOURCE-INSPECTION.json"
+    },
+    {
+      "control": "repository/deployment or Read/Action race after resolution",
+      "verdict": "NOT ESTABLISHED",
+      "basis": "READ-ONLY CODE/GATE INSPECTION ONLY; no independent frozen execution",
+      "record": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/MOVING-SOURCE-INSPECTION.json"
+    },
+    {
+      "control": "active plus unrelated draft cancellation preservation",
+      "verdict": "NOT ESTABLISHED",
+      "basis": "READ-ONLY CODE/GATE INSPECTION ONLY; no independent frozen execution",
+      "record": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/MOVING-SOURCE-INSPECTION.json"
+    },
+    {
+      "control": "legacy active authority without published lineage",
+      "verdict": "NOT ESTABLISHED",
+      "basis": "READ-ONLY CODE/GATE INSPECTION ONLY; no independent frozen execution",
+      "record": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/MOVING-SOURCE-INSPECTION.json"
+    },
+    {
+      "control": "wrong Read/source/store governed lifecycle refusals",
+      "verdict": "NOT ESTABLISHED",
+      "basis": "IMPLEMENTER GATE EVIDENCE INSPECTED; no independent execution"
+    },
+    {
+      "control": "competing publication/save and cancellation through real installed CLI",
+      "verdict": "NOT ESTABLISHED",
+      "basis": "IMPLEMENTER GATE EVIDENCE INSPECTED; no independent execution"
+    },
+    {
+      "control": "manual-only, unavailable-authority and private-threshold-twin MCP controls",
+      "verdict": "NOT ESTABLISHED",
+      "basis": "IMPLEMENTER TEST/GATE EVIDENCE INSPECTED; no independent frozen serialization"
+    },
+    {
+      "control": "pagination, truncation and privacy at actual frozen MCP serialization",
+      "verdict": "NOT ESTABLISHED beyond single-page complete A payload",
+      "basis": "PERSONALLY EXECUTED one complete listing/detail page; broader controls inspected only"
+    },
+    {
+      "control": "native B model inference",
+      "verdict": "NOT ESTABLISHED",
+      "basis": "FINANCIALLY BLOCKED; no new native/provider execution"
+    }
+  ],
+  "final_independent_verdicts": {
+    "independent_BUSINESS_completion": "BLOCKED / NOT PASSED",
+    "exact_active_published_subject_selection": "PASS",
+    "provider_to_validated_reuse_restart_behavior": "PASS but reuses the same blocked review result",
+    "approval_disclosure_serialization": "PASS",
+    "state_source_preservation": "PASS",
+    "focused_SQLite_legacy_lifecycle_controls": "PASS for executed candidate-authored assertions",
+    "focused_PostgreSQL_lifecycle_controls": "NOT ESTABLISHED independently",
+    "full_over_100_history_and_all_race_permutations": "NOT ESTABLISHED independently",
+    "native_B": "NOT ESTABLISHED / financially blocked"
+  },
+  "focused_candidate_authored_tests_personally_executed": {
+    "schema": "independent-zero-provider-focused/v1",
+    "at": "2026-09-21T20:45:35.224972+00:00",
+    "worktree": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-zero-provider-worktree",
+    "commit": "6793c26a09b5a81c217946cb6c5b7dc066b9425e",
+    "dependency_tree": "owned pnpm --offline --frozen-lockfile installation",
+    "source_status_after": "clean",
+    "provider_calls": 0,
+    "public_operations": 0,
+    "attempts": [
+      {
+        "name": "unbuilt lifecycle collection",
+        "exit": 1,
+        "tests_collected": 0,
+        "classification": "SETUP FAILURE: workspace packages not built; not a product test result",
+        "log": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/INDEPENDENT-LIFECYCLE-FOCUSED.log",
+        "sha256": "1a91bd92b1974594b2ebb307340f723752aee30583cdb009ea9f907c11b03ea5"
+      },
+      {
+        "name": "unbuilt disclosure collection",
+        "exit": 1,
+        "tests_collected": 0,
+        "classification": "SETUP FAILURE: workspace packages not built; not a product test result",
+        "log": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/INDEPENDENT-DISCLOSURE-FOCUSED.log",
+        "sha256": "b1217bb41333411eaa60557a07852ac5902a676a46e96d236ab289a550de6544"
+      },
+      {
+        "name": "owned build",
+        "exit": 0,
+        "log": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/INDEPENDENT-OWNED-BUILD.log",
+        "sha256": "a6c0296d2942e23fa5b7a5eb9fce16f4969298ebc36592afeca11bcb1b80edeb"
+      },
+      {
+        "name": "lifecycle focused SQLite/legacy",
+        "exit": 0,
+        "passed": 12,
+        "skipped": 11,
+        "coverage": [
+          "published resolution/restart",
+          "pending edit/current publication distinction",
+          "wrong source/read/record/store/unrelated/revoked refusal",
+          "post-resolution drift",
+          "cancellation and draft preservation",
+          "same-value unrelated record",
+          "bounded-history refusal",
+          "legacy-lineage refusal"
+        ],
+        "log": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/INDEPENDENT-LIFECYCLE-FOCUSED-02.log",
+        "sha256": "ab89196d82926ee9fe26cee6bef0144a4ce29ef9da083dcc3cb22010297ad3da"
+      },
+      {
+        "name": "disclosure focused",
+        "exit": 0,
+        "passed": 8,
+        "skipped": 55,
+        "coverage": [
+          "automatic/manual serialization",
+          "private-threshold twin equality",
+          "unavailable authority",
+          "retired/unknown outcome",
+          "withdrawn authority/scope/availability",
+          "pagination cursor context and registry integrity"
+        ],
+        "log": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/INDEPENDENT-DISCLOSURE-FOCUSED-02.log",
+        "sha256": "c27c2a9044be25ed5960ad89b0bfc80875a3882ccb3e8e2365f98710ff335414"
+      },
+      {
+        "name": "disclosure size bound",
+        "exit": 0,
+        "passed": 1,
+        "skipped": 62,
+        "coverage": [
+          "oversized complete contract refuses rather than dropping constraints"
+        ],
+        "log": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/records/INDEPENDENT-DISCLOSURE-BOUNDS-02.log",
+        "sha256": "514143e4f44fc53bf153ddb8453fb79c34efda273dbe5e355517e2ac8b8b4aec"
+      }
+    ],
+    "limitations": [
+      "These are candidate-authored assertions personally executed by the independent reviewer, not newly authored tests.",
+      "PostgreSQL variants were not executed in this focused set.",
+      "A full >100-event history and every repository/deployment race permutation remain NOT ESTABLISHED independently."
+    ]
+  },
+  "budget_accounting": "Original preparation window charged 42.503 minutes before candidate availability, leaving 47.497. Candidate identity/gate checkpoint used approximately 8 additional minutes. The isolated worktree/install/build and three focused zero-provider runs used the remaining declared preparation/probe window without resetting it. No heavy suite ran. Remaining NOT ESTABLISHED rows require additional fixtures or PostgreSQL execution beyond this bounded set.",
+  "unavailable_historical_references": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/published-review-prework-20260921/archive-independent-v2/IDENTITY-CHECK.json",
+      "sha256": "aa1b9e45bd265c1a176b4199c87f2554ac1d3bde0adae6f481fc9198fcba6d63",
+      "status": "Original verification JSON overwritten by tester final re-enumeration; original bytes not recovered. Previously rehashed successfully by main; original reports remain unchanged.",
+      "replacement_is_not_original": true
+    }
+  ],
+  "evidence_version_limitation": "The current final re-enumeration verifies the same candidate, but does not substitute for the lost originally cited verification file. Exact old/new byte diff is unavailable."
+}

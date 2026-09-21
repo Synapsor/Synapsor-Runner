@@ -1,0 +1,42 @@
+{
+  "at": "2026-09-21T20:37:12.573785+00:00",
+  "initial_authorized_net_usd": 3.76430509,
+  "actual_new_cost_usd": 0.2144824,
+  "remaining_authorized_net_usd": 3.54982269,
+  "old_tls_liability_usd": 0.985804,
+  "old_native_unknown_upper_usd": 0.88932,
+  "old_liabilities_already_deducted_once": true,
+  "old_unknown_refunds": false,
+  "case_allocations": [
+    {
+      "case_id": "MAIN-A-REVIEW",
+      "status": "COMPLETE",
+      "transports": 1,
+      "cost_usd": 0.151214,
+      "restart_activity": "validated_reuse; zero new provider calls",
+      "unused_new_reservation_released": true
+    },
+    {
+      "case_id": "TESTER-A-REVIEW",
+      "status": "COMPLETE_BLOCKED_BUSINESS",
+      "transports": 1,
+      "cost_usd": 0.0632684,
+      "restart_activity": "validated_reuse of pending BUSINESS review; zero new transports",
+      "unused_new_reservation_released": true
+    }
+  ],
+  "provider_body_calls": 2,
+  "runtime_native_calls": 0,
+  "provider_control_reads": "Credit/model-price metadata GETs recorded separately; no purchases",
+  "native_scenarios": {
+    "preserved_two_send": 3.97068,
+    "two_send_shortfall_after_authoring": 0.42085731,
+    "eight_sends": 15.88272,
+    "eight_plus_one_restart": 17.86806,
+    "eight_plus_one_shortfall_after_authoring": 14.31823731,
+    "new_eight_send_growth_qualified": false
+  },
+  "ledger": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/published-review-discovery-ed32e38-20260921/shared/provider-budget-ledger-final.json",
+  "ledger_sha256": "336f8fe64dcac96a4555a42fabe69700d2dfec37d87970f2f5b6ba81bcd345cb",
+  "status": "All declared paid episodes closed. Native continuation financially blocked; no favorable reruns."
+}
