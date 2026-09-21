@@ -368,7 +368,13 @@ describe("fixed semantic Action MCP", () => {
       expect(detail.structuredContent).toMatchObject({actions: [{approval: {disclosure: automaticApproval ? "mode_only" : "manual_only"}}],
         execution_status: {enablement: "not_reported_by_discovery", worker_liveness: "unknown"}});
       expect(JSON.parse((detail.content as Array<{text: string}>)[0]!.text)).toEqual(detail.structuredContent);
-      if(automaticApproval) expect(JSON.stringify(detail)).toContain("no automatic threshold is established");
+      if(automaticApproval) {
+        expect(JSON.stringify(detail)).toContain("no automatic threshold is established");
+        // The fallback concerns an approval decision, never a promise that an
+        // ineligible request can proceed merely by obtaining human approval.
+        expect((detail.structuredContent as {actions: Array<{approval: {decision: string}}>}).actions[0]!.approval.decision)
+          .toContain("otherwise eligible requests require human review");
+      }
       expect(JSON.stringify([listing, detail])).not.toMatch(/auto_approve_when|account_id|principal_id|raw-preference-42/);
       expect(fixture.store.listProposals()).toHaveLength(0); expect(fixture.queries).toHaveLength(0);
     } finally { await client.close(); await server.close(); fixture.store.close(); }
