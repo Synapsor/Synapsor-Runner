@@ -1,4 +1,5 @@
 import { canonicalJsonDigest } from '@synapsor-runner/protocol';
+import { CoverageSourceLinesError } from './authoring-source-coverage.js';
 
 /** Only host-authored text and fixed response coordinates leave this boundary. */
 export class CoverageComponentError extends Error {
@@ -25,9 +26,13 @@ export class CoverageReceiptObservationError extends Error {
     super('OBLIGATION_OBSERVATION_UNESTABLISHED: Receipt capability or selected configuration is not an observed receipt or independent source readback. Keep the applicable exact setup/after-execution duty pending; no observation evidence is supplied by this review.');
   }
 }
+export class CoverageReceiptReadContextError extends Error {
+  constructor() { super('COVERAGE_RECEIPT_REFERENCE_OVERBROAD: The receipt guarantee overview is not evidence for the separate Read-exclusion claim.'); }
+}
 export type CoverageFinding = {
   code: string; component: string; identity: string; component_identity: string; passage_identity?: string; reason: string; repair: string; structural: boolean;
   current_evidence?: CoverageCurrentDescriptionError['evidence'];
+  source_digest?: string; missing_ranges?: Array<{ start: number; end: number }>; omitted_range_count?: number;
 };
 export type CoverageFeedback = {
   context: string; findings: CoverageFinding[]; limited: boolean;
@@ -52,12 +57,26 @@ export const MAX_COVERAGE_SUBMISSIONS = 3;
 export function coverageFinding(error: unknown, component: string, identityBasis: unknown): CoverageFinding {
   if (error instanceof CoverageComponentError) component = error.component;
   const cause = error instanceof CoverageComponentError ? error.cause : error;
+  if (cause instanceof CoverageReceiptReadContextError) return {
+    code: 'COVERAGE_RECEIPT_REFERENCE_OVERBROAD', component, component_identity: canonicalJsonDigest(identityBasis),
+    identity: canonicalJsonDigest({component: identityBasis, code: 'COVERAGE_RECEIPT_REFERENCE_OVERBROAD'}), structural: true,
+    reason: 'This receipt overview/Read combination mixes evidence kinds. The current host context has a separate narrow configured-destination Read-exclusion record; it supplies no observation proof.',
+    repair: 'If the claim is exclusion of configured receipt storage from the selected Read, isolate it using only /runner_evidence/runtime_contract/receipt_read_exclusion and its exact excluded value. Keep the source range and every other claim. This evidence proves neither provisioning, database-wide privacy, execution, a performed receipt nor independent readback. Keep those duties separate and unverified where applicable. A broader privacy or observation claim remains unresolved. Return the COMPLETE REPLACEMENT review and account for the entire source inventory; do not change policy or configuration.',
+  };
+  if (cause instanceof CoverageSourceLinesError) return {
+    code: 'COVERAGE_SOURCE_LINES_MISSING', component,
+    component_identity: canonicalJsonDigest({source: cause.source_digest, ranges: cause.missing_ranges}),
+    identity: canonicalJsonDigest({code: 'COVERAGE_SOURCE_LINES_MISSING', source: cause.source_digest, ranges: cause.missing_ranges}),
+    structural: true, source_digest: cause.source_digest, missing_ranges: cause.missing_ranges, omitted_range_count: cause.omitted_range_count,
+    reason: 'The listed nonblank source ranges have no submitted disposition. This is a structural omission, not a conclusion about their meaning.',
+    repair: 'Read each missing range in the exact consented source inventory and give it its own supported disposition in the COMPLETE REPLACEMENT report. Preserve every other requirement and unresolved claim. Headings and definitions are not automatically background; overlapping ranges may represent separate claims. Nothing from a rejected response is accepted or silently retained. Check the entire inventory when omitted_range_count is nonzero.',
+  };
   if (cause instanceof CoverageReceiptObservationError) return {
     code: cause.code, component, component_identity: canonicalJsonDigest(identityBasis),
     identity: canonicalJsonDigest({component: identityBasis, code: cause.code}), structural: cause.structural,
     reason: 'A supported execution capability or reviewed receipt selection does not establish provisioned execution, an observed receipt or independent readback.',
     repair: cause.structural
-      ? 'Separate the compiled capability claim from receipt setup and observation duties. The current /runner_evidence/runtime_contract/receipt_configuration links reviewed intent only; /runner_evidence/runtime_contract/receipts describes the distinct receipt guarantee; /runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup keeps setup pending. Resubmit a complete review with the isolated receipt setup duty needs_decision/deployment/missing_configuration and unperformed work unverified. Keep independent readback separately pending where required. Do not change source policy, program, receipt mode or any other requirement. No observation claim was accepted.'
+      ? 'Separate the compiled capability claim from receipt setup and observation duties. /runner_evidence/runtime_contract/receipt_configuration reports its actual current configuration and separately candidate-bound reviewed_intent; neither establishes a performed receipt. /runner_evidence/runtime_contract/receipts describes the distinct guarantee; /runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup keeps applicable setup pending. Resubmit a complete review with the isolated receipt setup duty needs_decision/deployment/missing_configuration and unperformed work unverified. Preserve applicable historical achievements without attributing them to this edited revision. Keep independent readback separately pending. Do not change source policy, program, receipt mode or any other requirement. No observation claim was accepted.'
       : 'Keep the observation unestablished and the review unresolved. Required meaning, applicable configuration, deployment permission and performed receipts/readback need their own evidence; another opinion cannot supply it. Do not change the receipt guarantee or mark unperformed work verified.',
   };
   if (cause instanceof CoverageCurrentDescriptionError) return {
@@ -113,6 +132,14 @@ export function coverageFinding(error: unknown, component: string, identityBasis
     code = 'COVERAGE_SOURCE_LINES_MISSING'; structural = true;
     reason = 'One or more nonblank source lines have no submitted disposition.';
     repair = 'Account for every nonblank line of the current consented source, including restrictions and unsupported requirements. Submit the complete replacement; omission is not evidence of implementation.';
+  } else if (message.startsWith('RECEIPT_READ_EXCLUSION_UNESTABLISHED:')) {
+    code = 'RECEIPT_READ_EXCLUSION_UNESTABLISHED';
+    reason = 'The exact isolated receipt-destination exclusion is absent, stale, false or combined with claims outside its scope.';
+    repair = 'Keep this privacy requirement unresolved. The narrow selected-Read proof cannot establish unrelated fields, conditions, provisioning, execution or observations. Revalidate its actual configuration/Read binding; do not infer privacy from an absent name or select a nearby receipt overview.';
+  } else if (message.startsWith('COVERAGE_DUPLICATE_COMPONENT:')) {
+    code = 'COVERAGE_DUPLICATE_COMPONENT'; structural = true;
+    reason = 'The complete response repeats an identical validated component. Distinct claims may share a source range; identical records are not distinct claims.';
+    repair = 'Return one copy of this component in the COMPLETE REPLACEMENT, preserving all distinct claims, unresolved concerns and full source coverage. Do not combine contrary dispositions or replace the source.';
   } else if (message.startsWith('Mechanical evidence mismatch at')) {
     code = 'COVERAGE_EVIDENCE_VALUE_MISMATCH'; structural = true;
     reason = 'Mechanical evidence mismatch: the typed claim does not equal the value in the existing prepared context.';
@@ -143,7 +170,7 @@ export function permitsSecondCoverageCorrection(prior: CoverageFeedback[], next:
   if (prior.length !== 1 || !next.findings.length || next.limited || !next.findings.every(f => f.structural)) return false;
   const old = prior.flatMap(r => r.findings);
   const checked = checkedPassages.get(next);
-  if (!checked || old.some(f => !f.passage_identity || checked.get(f.component.match(/^\/passages\/\d+/u)?.[0] ?? "/") !== f.passage_identity)) return false;
+  if (!checked || old.some(f => !f.passage_identity || checked.get(f.component === '/passages' ? '/passages' : f.component.match(/^\/passages\/\d+/u)?.[0] ?? "/") !== f.passage_identity)) return false;
   return prior.every(r => r.context === next.context && !r.limited && r.findings.every(f => f.structural))
     && next.findings.every(f => !old.some(p => (findingSubjects.has(f) && findingSubjects.get(p) === findingSubjects.get(f)) || p.identity === f.identity || p.component_identity === f.component_identity || p.component === f.component
       || p.component.split('/counter_requirements/')[0] === f.component.split('/counter_requirements/')[0]))

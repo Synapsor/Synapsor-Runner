@@ -25,7 +25,16 @@ async function executionReceiptConfiguration(projectRoot: string, sources: reado
       if (authority !== "runner_ledger" && authority !== "source_db") throw new Error("Unknown receipt authority");
       return { source, authority, explicitly_configured: record.receipts?.authority !== undefined };
     });
-    return { status: "current" as const, digest, modes };
+    // Opaque metadata identities only; source receipt rows and relation names
+    // are not authoring inputs. An unqualified destination is unresolved (its
+    // runtime search path must not be guessed by the review projection).
+    const source_receipt_destinations = modes.filter(mode => mode.authority === "source_db").map(mode => {
+      const receipts = config.sources[mode.source].receipts;
+      return { source: mode.source, relation_digest: typeof receipts.schema === "string" && receipts.schema.length
+        && typeof receipts.table === "string" && receipts.table.length
+        ? canonicalJsonDigest({ schema: receipts.schema, table: receipts.table }) : null };
+    });
+    return { status: "current" as const, digest, modes, source_receipt_destinations };
   } catch { return { status: "unavailable" as const, digest, modes: [] }; }
 }
 

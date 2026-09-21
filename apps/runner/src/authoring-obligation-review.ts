@@ -1,14 +1,34 @@
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { isDeferredSourceCounterMaintenance, isDeferredSourceReadback, receiptSetupComponentOnly as receiptOnly, receiptConfigurationComponentOnly, type ReviewObligationAssessment, type PolicyPassage, type PolicyTextSnapshot } from "./authoring-policy-source.js";
-import { CoverageReceiptObservationError } from "./authoring-coverage-feedback.js";
+import { CoverageReceiptObservationError, CoverageReceiptReadContextError } from "./authoring-coverage-feedback.js";
 export { deferredReviewObligation } from "./authoring-policy-source.js";
 
 export const RECEIPT_PATH = "/runner_evidence/runtime_contract/receipts";
 const SETUP_PATH = "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup";
 const READBACK_PATH = "/runner_evidence/runtime_contract/application_obligations/independent_source_readback";
 const CONFIGURATION_PATH = "/runner_evidence/runtime_contract/receipt_configuration";
+export const RECEIPT_READ_PATH = "/runner_evidence/runtime_contract/receipt_read_exclusion";
 function at(draft: unknown, pointer: string): any {
   return pointer.slice(1).split("/").reduce<any>((value, key) => value?.[key.replace(/~1/gu, "/").replace(/~0/gu, "~")], draft);
+}
+function currentReceiptReadExclusion(draft: unknown): boolean {
+  const proof = at(draft, RECEIPT_READ_PATH), read = at(draft, '/read'), configuration = at(draft, CONFIGURATION_PATH);
+  return proof?.origin === 'HOST-CONFIGURATION-AND-READ' && proof.scope === 'selected_read_graph' && proof.excluded === true
+    && configuration?.status === 'current' && proof.configuration_digest === configuration.digest
+    && proof.selected_read_digest === canonicalJsonDigest(read) && proof.graph_digest === canonicalJsonDigest(read?.pack?.resources)
+    && proof.generation_lock_fingerprint === read?.generation_lock_fingerprint
+    && configuration.modes?.length > 0
+    && configuration.modes.every((mode: any) => mode.source === read.source && mode.authority === 'source_db')
+    && configuration.source_receipt_destinations?.length > 0
+    && configuration.source_receipt_destinations.length === configuration.modes.length
+    && configuration.source_receipt_destinations.every((destination: any) => destination.source === read.source
+      && /^sha256:[a-f0-9]{64}$/u.test(destination.relation_digest ?? ''))
+    && proof.destination_binding_digest === canonicalJsonDigest(configuration.source_receipt_destinations);
+}
+function isolatedReceiptReadFields(p: PolicyPassage): boolean {
+  return p.responsibility === 'runner' && !p.field_checks?.length && !p.counter_requirements?.length
+    && !p.application_obligations?.length && !p.deployment_prerequisite && !p.source_counter_obligation && !p.operator_override
+    && !p.evidence_checks?.length;
 }
 
 /** Host preparation already checks the selected management revision against
@@ -100,6 +120,18 @@ export function receiptSelectionComponent(p: PolicyPassage, source: PolicyTextSn
 /** Recomputed from current host inputs, never deserialized as a provider claim.
  * All three families use the same phase record; their proof requirements differ. */
 export function assessReviewObligation(p: PolicyPassage, source: PolicyTextSnapshot, draft: unknown): ReviewObligationAssessment | undefined {
+  if (p.disposition === 'implemented' && p.draft_paths.some(path => path === RECEIPT_READ_PATH || path.startsWith(`${RECEIPT_READ_PATH}/`))) {
+    if (!currentReceiptReadExclusion(draft) || !isolatedReceiptReadFields(p)
+      || p.draft_paths.length !== 1 || p.draft_paths[0] !== RECEIPT_READ_PATH) {
+      throw new Error('RECEIPT_READ_EXCLUSION_UNESTABLISHED: The exact current selected-Read exclusion must be isolated; it proves no other privacy, business or observation claim.');
+    }
+  }
+  // No claim is accepted or rewritten here. A narrow alternative exists only
+  // with current host proof; the provider must resubmit a complete report.
+  if (p.disposition === 'implemented' && isolatedReceiptReadFields(p) && currentReceiptReadExclusion(draft)
+    && p.draft_paths.length === 2 && p.draft_paths.includes('/read') && p.draft_paths.includes(RECEIPT_PATH)) {
+    throw new CoverageReceiptReadContextError();
+  }
   const selection = receiptSelectionComponent(p, source, draft);
   if (p.disposition === "implemented" && (p.draft_paths.includes(READBACK_PATH)
     || p.draft_paths.includes(RECEIPT_PATH) && receiptRequirement(source, p) && !selection)) {

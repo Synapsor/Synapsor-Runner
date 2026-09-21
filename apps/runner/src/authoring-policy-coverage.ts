@@ -1,4 +1,5 @@
 import { receiptConfigurationComponentOnly } from "./authoring-policy-source.js";
+import { CoverageSourceLinesError, missingReviewSourceLines, reviewSourceInventory } from "./authoring-source-coverage.js";
 import { CoverageComponentError, CoverageComponentsError, CoverageCurrentDescriptionError, recordCoverageFindingSubject, recordCheckedCoveragePassage, coverageFinding, MAX_COVERAGE_FINDINGS, MAX_COVERAGE_FEEDBACK_BYTES, MAX_COVERAGE_SUBMISSIONS, permitsSecondCoverageCorrection, type CoverageFeedback } from "./authoring-coverage-feedback.js";
 import { clientDutyInventory } from "./authoring-client-duties.js";
 import { assessReviewObligation, deferredReviewObligation, receiptSelectionComponent } from "./authoring-obligation-review.js";
@@ -555,6 +556,7 @@ export function collectCoverageFeedback(args: Record<string, unknown>, source: P
     const basis = raw as {start?:number|null;end?:number|null};
     if(typeof raw === "object" && raw !== null) f.passage_identity=canonicalJsonDigest({start:basis.start??null,end:basis.end??null});
     else if(raw === "envelope") f.passage_identity=canonicalJsonDigest("envelope");
+    if (f.code === "COVERAGE_SOURCE_LINES_MISSING") f.passage_identity = canonicalJsonDigest({ source: source.digest });
     // No submitted strings are included. This optional structural alternative
     // must itself pass the existing requirement validator in the SAME context.
     if (f.code === "COUNTING_SUPPORT_MISMATCH" && error instanceof CoverageComponentError) {
@@ -582,12 +584,26 @@ export function collectCoverageFeedback(args: Record<string, unknown>, source: P
     add(new Error("Coverage passages must be an array"), "/", "envelope"); result.unevaluated.push("/passages"); return result;
   }
   recordCheckedCoveragePassage(result,"/",canonicalJsonDigest("envelope"));
+  // Range completeness is independently checkable before claim validation,
+  // but malformed ranges cannot establish even tentative source accounting.
+  const missing = missingReviewSourceLines(source, args.passages);
+  if (missing === undefined) result.unevaluated.push("source-range completeness (invalid passage ranges)");
+  else if (missing.length) {
+    const finding = new CoverageSourceLinesError(source.digest, missing);
+    add(finding, "/passages", "source_coverage");
+    if (finding.omitted_range_count) result.limited = true;
+  } else recordCheckedCoveragePassage(result, "/passages", canonicalJsonDigest({ source: source.digest }));
   try { requirements = countingSourceRequirements(source,draft,messagesForCoverage(operatorHistory)); }
   catch(error) { add(error,"/", "context"); result.unevaluated.push("/passages"); return result; }
   const fields = fieldPrivacyEvidence(draft);
+  const seen = new Set<string>();
   for (const [index, raw] of args.passages.entries()) {
     const component = `/passages/${index}`;
-    try { parseCoveragePassage(raw,index,source,draft,operatorHistory,requirements,fields);
+    try {
+      const parsed = parseCoveragePassage(raw,index,source,draft,operatorHistory,requirements,fields);
+      const identity = canonicalJsonDigest(parsed);
+      if (seen.has(identity)) throw new Error("COVERAGE_DUPLICATE_COMPONENT: Identical component repeated in the complete replacement.");
+      seen.add(identity);
       recordCheckedCoveragePassage(result,component,canonicalJsonDigest({start:raw.start,end:raw.end})); }
     catch(error) {
       const errors = error instanceof CoverageComponentsError ? error.errors : [error];
@@ -621,13 +637,16 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
     });
   });
   if (missingReferences.length) throw new Error(`Draft pointer(s) not present: ${[...new Set(missingReferences)].join(", ")}. Use the supplied exact coverage references; do not invent a missing setting or edit a rule to repair a link. Private verification-only fields are under /runner_evidence/actions/<outcome>/scoped_bindings/<binding>/fields/<field>, not nonexistent read_access resources. Select an existing exact path; no missing Read path is redirected.`);
-  const covered = new Set<number>(), lines = policyTextLines(source.text);
   const fieldEvidence = fieldPrivacyEvidence(draft);
+  const lines = policyTextLines(source.text);
   const passages: PolicyPassage[] = [];
+  const seen = new Set<string>();
   for (const [index, raw] of args.passages.entries()) {
     const passage = parseCoveragePassage(raw, index, source, draft, operatorHistory, sourceRequirements, fieldEvidence);
+    const identity = canonicalJsonDigest(passage);
+    if (seen.has(identity)) throw new CoverageComponentError(`/passages/${index}`, new Error("COVERAGE_DUPLICATE_COMPONENT: Identical component repeated in the complete replacement."));
+    seen.add(identity);
     passages.push(passage);
-    for (let line = passage.start; line <= passage.end; line++) covered.add(line);
   }
   // Keep the established comparison and its domain condition durable even if
   // a later review agrees without repeating the typed counter detail. This adds
@@ -699,8 +718,10 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
       next_step: "Review an obtainable subject with an existing exact binding only if all eligible targets remain reachable, or request a separate explicit Read/reference decision. The disabled draft is retained; publication is not ready." });
   }
   if (passages.length > 120) throw new Error("Coverage including retained counting comparisons exceeds 120 passages; group the remaining clauses without dropping requirements.");
-  const missing = lines.flatMap((line, index) => line.trim() && !covered.has(index + 1) ? [index + 1] : []);
-  if (missing.length) throw new Error(`Unaccounted source lines: ${missing.join(", ")}. Include restrictions and unsupported clauses, not only implemented clauses.`);
+  // Only the provider's complete submission accounts for source text. Host
+  // inventory/pending components added above must never fill an omitted line.
+  const missing = missingReviewSourceLines(source, args.passages)!;
+  if (missing.length) throw new CoverageSourceLinesError(source.digest, missing);
   // Configuration evidence proves only the selected mode. Preserve its submitted
   // passage and an isolated, still-pending duty rather than calling a receipt done.
   for (const passage of [...passages]) {
@@ -726,10 +747,11 @@ export async function reviewPolicyCoverage(input: {
   // Bind references to this request's operator evidence, then persist quotes,
   // not indexes that could mean something different after history changes.
   const operatorMessages = [...(input.session.conversation?.policySources?.operator_messages ?? [])];
-  const tools: AskToolDefinition[] = [{ name: TOOL, description: "Record untrusted policy interpretation against the exact disabled draft. Does not change or activate it.",
+  const inventory = reviewSourceInventory(input.source);
+  const tools: AskToolDefinition[] = [{ name: TOOL, description: "Record a COMPLETE REPLACEMENT untrusted review against the exact disabled draft and source inventory. Every nonblank line needs a disposition, including headings and definitions. Overlapping ranges may separate claims; rejected reports are never merged or partially saved. Does not change or activate authority.",
     input_schema: { type: "object", additionalProperties: false, required: ["passages"], properties: { passages: { type: "array", maxItems: 120,
       items: { type: "object", additionalProperties: false, required: ["start", "end", "disposition", "interpretation", "draft_paths"], properties: {
-        start: { type: "integer", minimum: 1 }, end: { type: "integer", minimum: 1 }, disposition: { type: "string", enum: [...DISPOSITIONS] },
+        start: { type: "integer", minimum: 1, maximum: inventory.line_count }, end: { type: "integer", minimum: 1, maximum: inventory.line_count }, disposition: { type: "string", enum: [...DISPOSITIONS] },
         interpretation: { type: "string", maxLength: 800 }, draft_paths: { type: "array", items: { type: "string", enum: coverageReferences(input.draft) } }, operator_override: { type: "string" },
         ...(operatorMessages.length ? { operator_message_id: { type: "integer", minimum: 1, maximum: operatorMessages.length,
           description: "Exact indexed operator evidence. For disposition=overridden Runner saves its original text as the override. A reference on another disposition is saved as its exact supporting clarification only: it does not waive any requirement or replace validation. Prefer this ID without a redundant operator_override quote. A pause or deferred action is not an override." } } : {}),
@@ -825,6 +847,8 @@ export async function reviewPolicyCoverage(input: {
       await runAskProviderTurn({ configuration, authorityDigest, gateway, tools, signal: new AbortController().signal,
         dependencies: session.dependencies, history: modelAuthoringHistory(session.conversation, session),
         question: ["Review every nonblank source line against this actual draft. Return all dispositions, not just successes.",
+          `Fixed source inventory for this episode: ${JSON.stringify(inventory)}`,
+          "Each nonblank line must occur in at least one submitted range. Read the text: a heading or definition may contain a requirement. Background is an explicit interpretation, never a default for omitted text, and covers no children outside its range. Return the complete report after any correction; preserve unrelated valid and unresolved components. Missing ranges and invalid claims are independently refused, not automatically repaired.",
           `Current draft (JSON pointer root): ${JSON.stringify(input.draft)}`,
           `Host counting requirement states (unknown is not boundary-wide; source and explicit review establish meaning): ${JSON.stringify(countingSourceRequirements(input.source, input.draft, operatorMessages))}`,
           `Exact coverage references (select, do not invent paths): ${JSON.stringify(coverageReferences(input.draft))}`,
@@ -869,6 +893,8 @@ export async function reviewPolicyCoverage(input: {
           'For connecting a supported Runner-managed local stdio client such as Claude Code, use deployment_prerequisite=runner_client_connection with disposition=needs_decision, responsibility=deployment and issue_kind=missing_configuration. Link only /runner_evidence/runtime_contract/deployment_prerequisites/runner_client_connection, not its parent overview. This installation is a later handoff after authority review, not external application business implementation or a preactivation requirement. Keep connection unverified and configuration unchecked; do not label it implemented or assign it through application_obligations. Split customer selection, status presentation and authenticated identity into their own passages, preserving genuine application assignment choices. Custom client implementation or unsupported transport requirements must remain unresolved, not waived by supported local installation. Reconcile old group-level coverage against this exact evidence without changing business rules.',
           "For a genuine business/schema question, next_step must ask ONE short question in ordinary language, at most two sentences. Do not repeat the action summary, tell the operator to revise a permission, or include technical routing instructions. If the operator confirms an existing permission, record the clarified interpretation and recheck actual evidence; do not demand a nonempty access diff.",
           "runtime_contract.receipt_configuration.reviewed_intent, when current and bound to every exact selected source-writing Action and attached source, is only a separately confirmed disabled setup requirement. It is not an execution configuration, provisioned object, writer verification or receipt. Keep an agreed receipt-only setup passage needs_decision/deployment/missing_configuration with its exact evidence path and setup still pending. Do not mark configuration or receipt observations implemented from that intent. An absent, stale, ambiguous or mismatched intent cannot resolve the requirement; preserve its actual prerequisite.",
+          "Use runtime_contract.review_evidence_phases to distinguish the edited candidate, current configuration, candidate-specific intent, applicable execution permission and unavailable historical observations. Current configuration and stale intent can coexist. Null saved_execution_review does not say an older revision never executed. Do not require a new receipt before publication or infer that old infrastructure is absent. Keep each actual pending renewal/observation separate from an implemented compiled capability, with no claim of completed work.",
+          "The runtime_contract.receipts overview describes receipt guarantees, not Read exclusion or completed observations. When supplied, runtime_contract.receipt_read_exclusion is host-derived evidence about exact configured receipt destinations and the complete selected Read graph. Only excluded=true proves this narrow exclusion. Cite only that exact root in an isolated implemented exclusion claim; no receipt/configuration overview, unrelated field/threshold checks, broader privacy or observation claim may inherit it. A missing record or false excluded value is not proof: retain the requirement unresolved. Source receipt storage is not automatically a public Read resource. No receipt content is supplied to authoring.",
           "Use runtime_contract.saved_execution_review only for its exact Action revision and enabled_outcomes. A non-null inspected record can establish that separately reviewed execution configuration was saved; an empty enabled set cannot. Do not ask to implement an Action expression for an already saved operator policy. Its false live-writer, worker, receipt-mode and independent-observation verification fields remain limitations, not proof those operations failed or never happened. Null means no applicable record is available here. Preserve separate source_db requirements; this record alone does not verify receipt mode or source receipt objects.",
           "This is a disabled-draft coverage review, not a live deployment check. When an execution requirement is fully represented by the compiled direct_sql effect and supported worker contract, mark that drafted behavior implemented and explicitly retain writer review, execution consent and worker startup as later prerequisites in its interpretation/next_step. Do not require those later stages to have run before allowing the operator to reach them. Missing effect support, missing business rules, ambiguous scope or unassigned application obligations remain unresolved; prepared must never mean running or completed.",
           "For dedicated writer provisioning, keeping the reader separate, execution permission or worker startup, use a separate needs_decision/deployment/missing_configuration passage with deployment_prerequisite=runner_execution_setup ONLY when its current evidence says supported=true. Link only /runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup, not /read or individual action/execution links. Those links describe business enforcement, not deployment status. The operator reaches exact writer requirements and private credential setup AFTER authority review; do not send them back to business authoring merely because no writer exists yet. Keep actual grants, credential checks, execution consent, worker startup and receipts outstanding. An unsupported effect, missing action or undecided business condition still blocks review; this is not permission to waive it.",
