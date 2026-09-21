@@ -1,0 +1,52 @@
+{
+  "verdict": "PASS",
+  "scope": "Registered requirement omission independence, scoped mapping, pending/restart and readiness; actual A remains unknown/pending",
+  "files": {
+    "REVIEW-v2-final.md": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-candidate-acceptance-20260921-attempt1/REVIEW-v2-final.md",
+      "sha256": "f2988435bcf0d89e8df3e613f47067d07ebe61ca1a1fc39e60338e1ced8db192"
+    },
+    "EVIDENCE-INDEX-v2-final.json": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-candidate-acceptance-20260921-attempt1/EVIDENCE-INDEX-v2-final.json",
+      "sha256": "333dfb20efda3026c4dbbfb0b29745f7f84bfc4874122159c363083691138908"
+    },
+    "CITATION-CORRECTION.json": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-candidate-acceptance-20260921-attempt1/CITATION-CORRECTION.json",
+      "sha256": "26963480a9b17868e0502fc3c3aecfdcc3d83fbeb6c64b2ce8704443eee89a81"
+    },
+    "RESULT.json": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-candidate-acceptance-20260921-attempt1/RESULT.json",
+      "sha256": "dada0f32403fca33107dbcf4d590e999cdcc5cbe71e972530fb2d525b8c13556"
+    },
+    "REVIEW-v1-stale-scope-label.md": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-candidate-acceptance-20260921-attempt1/REVIEW-v1-stale-scope-label.md",
+      "sha256": "f2c92ffbf7436f2e9d0bb6dc454b66ac2b3e677e3cd18fa7a7af77b14947a537"
+    },
+    "EVIDENCE-INDEX-v1.json": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-candidate-acceptance-20260921-attempt1/EVIDENCE-INDEX-v1.json",
+      "sha256": "17a260c40cf6b8e13814ef805157569a33fec3ac7d2384c75ab63f9e974e6176"
+    }
+  },
+  "verified_index_entries": 33,
+  "personally_by_tester": {
+    "installed_cli_processes": 3,
+    "provider_calls": 0,
+    "source_writes": 0,
+    "business_requests": 0,
+    "workers": 0,
+    "candidate_focused_tests": {
+      "passed": 36,
+      "failed": 0,
+      "exit": 0
+    },
+    "independent_assertions": {
+      "passed": 13,
+      "failed": 0,
+      "exit": 0
+    },
+    "control_tables_compared": 42,
+    "source_rows_compared": 38
+  },
+  "main_gates": "inspected; not rerun by tester",
+  "original_report_and_index_exact_bytes_preserved": true
+}

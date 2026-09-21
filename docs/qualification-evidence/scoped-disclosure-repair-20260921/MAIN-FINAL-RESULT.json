@@ -1,0 +1,60 @@
+{
+  "at": "2026-09-21T23:12:47.258440+00:00",
+  "artifact_tree": "d600bfbeee91f4b79ed54a68c93c1319f1c7c3f7871434dd80c9688ca187dca9",
+  "installed_public_pending_restart": "PASS",
+  "actual_owner_classification": "UNESTABLISHED",
+  "BUSINESS": "PENDING",
+  "provider_calls": 0,
+  "spend_usd": 0,
+  "runtime_requests_workers_effects": 0,
+  "config_changes": [
+    {
+      "file": ".synapsor/boundary-authoring/policy-sources/e631e9a6-e7d6-4428-a423-be36465405f7.json",
+      "changed_top_level_keys": [
+        "coverage",
+        "coverage_context_digest",
+        "scoped_disclosure_reviews"
+      ]
+    },
+    {
+      "file": ".synapsor/boundary-authoring/resume.json",
+      "changed_top_level_keys": [
+        "pending_policy_review",
+        "revision_digest",
+        "updated_at"
+      ]
+    }
+  ],
+  "decision": {
+    "records": 2,
+    "times": [
+      "2026-09-21T23:10:26.257Z",
+      "2026-09-21T23:10:57.833Z"
+    ],
+    "record_digests": [
+      "sha256:d8ff06eda162c065808a711f406050d738deb309514dc99aa9c12cd5a22581bd",
+      "sha256:2141d58f77f8465b193e3ce88aad32870b05e2978fd8c2dd4dbc7739d9866f3f"
+    ],
+    "verified": [
+      false,
+      false
+    ],
+    "source_reviews_history_unchanged": true,
+    "raw_normalized_passages_unchanged": true,
+    "original_operator_messages_unchanged": true,
+    "states": [
+      "deferred",
+      "deferred",
+      "deferred"
+    ]
+  },
+  "public_exits": [
+    0,
+    0
+  ],
+  "control_tables": 42,
+  "source_rows": 38,
+  "controls_and_source_unchanged": true,
+  "harness_corrections": 1,
+  "B": "NOT RUN"
+}

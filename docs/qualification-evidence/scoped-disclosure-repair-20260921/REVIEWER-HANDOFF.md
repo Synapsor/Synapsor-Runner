@@ -1,6 +1,6 @@
 # Scoped disclosure repair: independent handoff
 
-Candidate pending freeze. This document will be completed with exact manifest/archive identities before use.
+Candidate frozen: tree `d600bfbeee91f4b79ed54a68c93c1319f1c7c3f7871434dd80c9688ca187dca9`; source `7c56ff7845ab0a90c21c981433bc10d194ee8e11`. Full identities are in FINAL-REPORT.md and the raw root frozen/installed-artifact-manifest.json. External fixture helper has one recorded container-prefix correction; installed bytes remain unchanged.
 
 The owner classification stays **Keep pending — classification not established**. Do not supply affirmative facts for real A. The source mapping and the deliberately deferred decision are new operator acts in owned copies, not imported historical decisions. B, workers, requests, activation and all paid provider use are outside this amendment.
 

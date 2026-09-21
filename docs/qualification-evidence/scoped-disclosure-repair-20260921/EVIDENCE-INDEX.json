@@ -1,0 +1,167 @@
+{
+  "schema": "scoped-disclosure-repair-final-index/v1",
+  "at": "2026-09-21T23:38:55.734300+00:00",
+  "artifact_tree": "d600bfbeee91f4b79ed54a68c93c1319f1c7c3f7871434dd80c9688ca187dca9",
+  "entries": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/ARTIFACT.json",
+      "sha256": "556f35b69312a92e1f6db49b85629742a16cf3c8ba128aefa091c8d740bf1126",
+      "bytes": 2186
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/FINAL-REPORT.md",
+      "sha256": "a96d967b1ed8323894069646fa449ce435d4894f8d5f558b6ef845bc285f939b",
+      "bytes": 11995
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/IMPLEMENTATION-NOTE.md",
+      "sha256": "3ae41a0d9a4be37fcd955c622c34f1e5e54ee34f3a2b1962430a998ffe0dc4c6",
+      "bytes": 4633
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/INDEPENDENT-REVIEW.json",
+      "sha256": "3dd57c1633acdf164b498fccb558c9c892a93f6edd8bff839d3de17a8c0239e2",
+      "bytes": 2613
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/MAIN-FINAL-RESULT.json",
+      "sha256": "8a4e1404cc0e8bf60a949cdb83bb64ca8acbe90eaeee92c6a633511b68abe978",
+      "bytes": 1564
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/NO-PROVIDER-PROOF.json",
+      "sha256": "82076a2c21ba4d8f60fd3ab834a2cfd7b3474b6f9d9784d6ed376bf08a599543",
+      "bytes": 715
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/RESUME-HANDOFF.md",
+      "sha256": "e6a26c98a20ae6b20f6a9f6c837801f487499fd5f875c0e34a989b7a772863f8",
+      "bytes": 4108
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/REVIEWER-HANDOFF.md",
+      "sha256": "8f5a2e457bdd933030beee763a1de8332d19174d62eed992c5b1d31711483306",
+      "bytes": 4607
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/SOURCE-SCOPE.json",
+      "sha256": "a3cabfb4d2bd35586cb7f62ef7677bc27a9d68ec290f0ad4ebaa3a9f06f24249",
+      "bytes": 1076
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/capture-owned-state.py",
+      "sha256": "46bcf537fe1136721c7e5f172316ea7907560454b06f11d36df3c02f6e257426",
+      "bytes": 2737
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/compare-review-state.py",
+      "sha256": "67f02cb4658792e152789e134552d2ab59191dc59c0d9755010b7c51ccf5ff36",
+      "bytes": 1391
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/diagnostic-no-send.mjs",
+      "sha256": "91c05a81463afaa08aeb02d951faef3518e7923c97a00b6d0c2ca68a7819bd6d",
+      "bytes": 653
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/freeze-repair.mjs",
+      "sha256": "b846ae3fff2d877b9838cf4fbb8e063d73dd41742fd6bddf49d19c777b841eff",
+      "bytes": 6651
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/launch-public.py",
+      "sha256": "c390acc0fdada5aaaf0ebf44d5ba1260d30c8e47082826677e4d20328f0effd6",
+      "bytes": 2609
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/offline-package-plan-attempt1.json",
+      "sha256": "22150c63e379b0c07c5f89f3943325895a5a6aa9e691583bb19c63a1762c73fb",
+      "bytes": 833
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/offline-package-plan-attempt2.json",
+      "sha256": "a0df530519c42a98d23bcea5e8c72258c9a99fbcfe92b2fe815075ce9eaddc64",
+      "bytes": 5547
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/product-revision.json",
+      "sha256": "c7010526d6d6f1f195963bb6c7ec191423fa014d76c8af0c727e7e597a4e354f",
+      "bytes": 193
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/restore-posteffect-a.py",
+      "sha256": "67c9c76bd862043359cba24405530f07957f9d03aec8c8ce1cc36c896a8fbea7",
+      "bytes": 8733
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/run-freeze.py",
+      "sha256": "9c113376c83235a8ecc4ef3c0275b79520a2ea5939280013b74b6feec88ab190",
+      "bytes": 1429
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/run-gate.py",
+      "sha256": "2a973126b91d9ec13e21270fe5c5cb7030f8c8de8013e73548e5e9b82defd4ed",
+      "bytes": 3498
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/run-offline-checks.py",
+      "sha256": "0bf5e332bc01cfa79440aa4d03d8837530b4248a9c5db360e50547dd66d199f3",
+      "bytes": 4141
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/save-owned-state.py",
+      "sha256": "a30d78f1ce58365e1662c4e0ff838a8debf157a890cc8f3a7dbf9b9aeeea3d39",
+      "bytes": 2466
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/summarize-evidence.py",
+      "sha256": "641c52f59c3ae04b2d88c2444ea58dbb7a51d63389ce3eea0b89d32376ac1e82",
+      "bytes": 1334
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/verify-owned-archive.py",
+      "sha256": "9aee2a5432d1746b7cc7d69421c229af4ae1e40f76566c7b6f587799b254a252",
+      "bytes": 4047
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-repair-aa3a454-20260921/MAIN-EVIDENCE-INDEX-001.json",
+      "sha256": "60cf6d994b01db7019f768d2dd6ee98e4cb8a1960944e579f81b610a2170e574",
+      "bytes": 42510
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-repair-aa3a454-20260921/GATE-RESULTS-001.json",
+      "sha256": "9b16dba279c8062641d2b2dc512f784f079c61c15a05add5a2f0f7d0e1b7d995",
+      "bytes": 37640
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-candidate-acceptance-20260921-attempt1/REVIEW-v2-final.md",
+      "sha256": "f2988435bcf0d89e8df3e613f47067d07ebe61ca1a1fc39e60338e1ced8db192",
+      "bytes": 9255
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-candidate-acceptance-20260921-attempt1/EVIDENCE-INDEX-v2-final.json",
+      "sha256": "333dfb20efda3026c4dbbfb0b29745f7f84bfc4874122159c363083691138908",
+      "bytes": 5746
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-candidate-acceptance-20260921-attempt1/CITATION-CORRECTION.json",
+      "sha256": "26963480a9b17868e0502fc3c3aecfdcc3d83fbeb6c64b2ce8704443eee89a81",
+      "bytes": 1614
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-candidate-acceptance-20260921-attempt1/RESULT.json",
+      "sha256": "dada0f32403fca33107dbcf4d590e999cdcc5cbe71e972530fb2d525b8c13556",
+      "bytes": 3223
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-candidate-acceptance-20260921-attempt1/REVIEW-v1-stale-scope-label.md",
+      "sha256": "f2c92ffbf7436f2e9d0bb6dc454b66ac2b3e677e3cd18fa7a7af77b14947a537",
+      "bytes": 9266
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/scoped-disclosure-candidate-acceptance-20260921-attempt1/EVIDENCE-INDEX-v1.json",
+      "sha256": "17a260c40cf6b8e13814ef805157569a33fec3ac7d2384c75ab63f9e974e6176",
+      "bytes": 5737
+    }
+  ]
+}

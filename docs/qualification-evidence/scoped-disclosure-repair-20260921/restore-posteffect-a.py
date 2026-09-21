@@ -14,7 +14,7 @@ assert hashlib.sha256((sealed/'manifest.json').read_bytes()).hexdigest()=='887ac
 for item in json.loads((sealed/'manifest.json').read_text())['files']:
  assert hashlib.sha256((sealed/item['file']).read_bytes()).hexdigest()==item['sha256']
 root.mkdir(mode=0o700);private=root/'private';private.mkdir();home=root/'home';home.mkdir();meter=root/'authoring-meter';meter.mkdir()
-container='synapsor-published-review-'+root.name;db='stageb_a'
+container='synapsor-scoped-disclosure-'+root.name;db='stageb_a'
 admin=secrets.token_urlsafe(32);reader=secrets.token_urlsafe(32)
 (private/'postgres.env').write_text(f'POSTGRES_PASSWORD={admin}\nPOSTGRES_DB={db}\n')
 def run(args,data=None):

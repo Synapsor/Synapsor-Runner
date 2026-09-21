@@ -1,0 +1,45 @@
+{
+  "frozen_at": "2026-09-21T23:07:12.041Z",
+  "purpose": "Publication-aware exact review subjects and honest partial approval discovery; bounded known-case continuation",
+  "cases": [
+    "Main A deployed continuation",
+    "Independent tester B deployed continuation"
+  ],
+  "report_commit": "recorded separately after verification",
+  "source_commit": "7c56ff7845ab0a90c21c981433bc10d194ee8e11",
+  "source_status": "?? .claude/",
+  "unpackaged_unrelated_directory": ".claude/ (preserved, no contents read)",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-repair-aa3a454-20260921/frozen/installed",
+  "installed_tree_sha256": "d600bfbeee91f4b79ed54a68c93c1319f1c7c3f7871434dd80c9688ca187dca9",
+  "node": {
+    "version": "v22.22.2",
+    "executable": "/usr/bin/node",
+    "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+  },
+  "runner_version": "1.8.0",
+  "spec_version": "1.11.0",
+  "package_lock_sha256": "f0df4d08b8a245a0f7de600991ff4520e66a6e0174c06c286f2400bdce4d33a2",
+  "tarballs": [
+    {
+      "name": "synapsor-runner-1.8.0.tgz",
+      "sha256": "e5878a28373a9a782c64a08ee2471fea03987811971a8cf6749213f9403f57fc"
+    },
+    {
+      "name": "synapsor-spec-1.11.0.tgz",
+      "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+    }
+  ],
+  "entry_count": 7569,
+  "manifest": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-repair-aa3a454-20260921/frozen/installed-artifact-manifest.json",
+    "sha256": "9c363c2ea1f08bf05d5db0897e0a28ed286c51e609bbba670563a2346b999f8f"
+  },
+  "archive": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-repair-aa3a454-20260921/frozen/installed-artifact.tar.gz",
+    "sha256": "4d3e60ff5db452303e5480eb1601b25110abe6cf5b460fb455cec7dfb79097e0"
+  },
+  "gate_results": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-repair-aa3a454-20260921/GATE-RESULTS-001.json",
+    "sha256": "9b16dba279c8062641d2b2dc512f784f079c61c15a05add5a2f0f7d0e1b7d995"
+  }
+}

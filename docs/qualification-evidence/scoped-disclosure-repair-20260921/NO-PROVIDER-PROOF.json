@@ -1,0 +1,21 @@
+{
+  "at": "2026-09-21T23:13:51.412485+00:00",
+  "actual_guard_file": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-disclosure-repair-aa3a454-20260921/main-A-final/authoring-meter/diagnostic-send-refused.jsonl",
+  "guard_attempts": 0,
+  "forwarded_calls": 0,
+  "provider_credentials_absent": true,
+  "writer_admin_credentials_absent_from_operator": true,
+  "environment_names": [
+    "DATABASE_URL",
+    "HOME",
+    "NODE_NO_WARNINGS",
+    "NODE_OPTIONS",
+    "NO_COLOR",
+    "PATH",
+    "QUALIFICATION_PROVIDER_METER",
+    "TERM",
+    "TMPDIR"
+  ],
+  "guard_module_sha256": "91c05a81463afaa08aeb02d951faef3518e7923c97a00b6d0c2ca68a7819bd6d",
+  "two_complete_public_exits": true
+}
