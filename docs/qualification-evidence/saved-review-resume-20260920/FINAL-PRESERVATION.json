@@ -1,0 +1,67 @@
+{
+  "verified_at": "2026-09-21T07:47:43.026186+00:00",
+  "originals": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/originals-final-verification.json",
+    "sha256": "7732234dccacfb76ed20060f166ba68225a9a1158c6d6db29d439f43328886be"
+  },
+  "candidate": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/candidate-final-verification.json",
+    "sha256": "a4d4741453d28c589cd49a28bf055733dffa7093b5d3810362a3877cecb3758e"
+  },
+  "prior_candidate": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/old-candidate-final-verification.json",
+    "sha256": "5cdc07e39dd5c484f1ece340d6fe52ff5dd252c643db523d71ec4b0095633443"
+  },
+  "main_final_archive": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/MAIN-A-PRESERVATION.json",
+    "sha256": "044f9d50461bf287d3640069aecd47d6b6b7f13074805f5161717a6681a2e515"
+  },
+  "tester_final_archives": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/B-FINAL-ARCHIVE-READBACK.json",
+    "sha256": "eea1bac44363dc6d67e216bf2a73b6c697a2fd6856bf4a3f4f1999d043af87a3"
+  },
+  "tester_cleanup": {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/CLEANUP-ADDENDUM.json",
+    "sha256": "8c6d33732b6aa9b6fb2d86fd7b6651eda5934449de0f87d94b735bc4c4d53c84"
+  },
+  "main_containers": [
+    {
+      "name": "synapsor-resume-main-A",
+      "id": "9958fb99e233132b84700a1227b1183dfa5e94447d1d97b25d1293353054e2a3",
+      "running": false,
+      "removed": false,
+      "owner": "saved-review-resume-20260920"
+    },
+    {
+      "name": "synapsor-resume-gate",
+      "id": "93353c61cb4e6698ad156e5a468667526a2059b6e86527e375f187c53dc13cea",
+      "running": false,
+      "removed": false,
+      "owner": "saved-review-resume-20260920"
+    },
+    {
+      "name": "synapsor-resume-dev-review-A",
+      "id": "c36051b6a11f65e959a5ed813f8825641547d0fde246a2b7f4f00fd72244566f",
+      "running": false,
+      "removed": false,
+      "owner": "saved-review-resume-20260920"
+    },
+    {
+      "name": "synapsor-resume-dev-A",
+      "id": "40e5b7f50a0739cc60092e02816a350cb83a6c46809ea27d3f15483baaf42645",
+      "running": false,
+      "removed": false,
+      "owner": "saved-review-resume-20260920"
+    },
+    {
+      "name": "synapsor-resume-diag-A",
+      "id": "87a40b5a6f1f7d608f7829711fe7320a9bc6b5662d4d5b753588af14969dd314",
+      "running": false,
+      "removed": false,
+      "owner": "saved-review-resume-20260920"
+    }
+  ],
+  "source_since_final_product_tests": "unchanged in apps/packages/scripts/bin/package/lock",
+  "no_new_provider_or_business_operations": true,
+  "unrelated_resources": "Not stopped or removed"
+}

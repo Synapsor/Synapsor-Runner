@@ -1,0 +1,50 @@
+{
+  "recorded_at": "2026-09-21T07:47:43.026186+00:00",
+  "role": "Main inspected independently operated tester evidence; did not operate B or rewrite tester reports.",
+  "overall": "NOT ESTABLISHED",
+  "disabled_edit": "PASS",
+  "business_review": "BLOCKED",
+  "publication_execution_runtime": "NOT RUN",
+  "records": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/REVIEW.md",
+      "sha256": "0226d7a3dba1d6e1a0dcbfdd5cc6573e4429792fa1ba17e597b844e1da2651f2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/B-FINAL-RESULT.json",
+      "sha256": "1ef832817c863fb9b614b1812cc43ed3572da8193e0bf084b2de1f275990a2d4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/FINAL-PRESERVATION.json",
+      "sha256": "b24a206c7a5917be8717bfcfc2f0a00453e6c53ebaa9738d5e69a81062625931"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/FINAL-ARCHIVE-SUMMARY.json",
+      "sha256": "48336791567516aff71e57b57d4f2ac97782c61faf6e46f373e9ef73cd2a8798"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/PUBLIC-ROUTE.json",
+      "sha256": "1fd46ca0461a65b069f5dde37f27d23bdaf119a3be2b2ebaba48dab47c9dbaed"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/B-FINAL-EVIDENCE-INDEX.json",
+      "sha256": "07328776d032f126d72e2237d346dd8bf5139919e36eb9ddff87609651564722"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/CLEANUP-ADDENDUM.json",
+      "sha256": "8c6d33732b6aa9b6fb2d86fd7b6651eda5934449de0f87d94b735bc4c4d53c84"
+    }
+  ],
+  "archive_readback": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/B-FINAL-ARCHIVE-READBACK.json",
+    "sha256": "eea1bac44363dc6d67e216bf2a73b6c697a2fd6856bf4a3f4f1999d043af87a3"
+  },
+  "route": "boundary review --access --project-root . -> W -> START BOUNDARY DRAFTING -> Resume the interrupted job [recommended]; not a separate start shell invocation.",
+  "final_blocker": "OBLIGATION_OBSERVATION_UNESTABLISHED /passages/25; incomplete validation, no BUSINESS readiness.",
+  "transports": 10,
+  "settled_usd": 0.4937966,
+  "runtime_transports": 0,
+  "business_operations": 0,
+  "state_preservation": "All197source rows unchanged;42control tables compared (including sqlite_sequence). Four management tables changed, +4events/+1disabled revision. Historical business records unchanged.",
+  "seal_version_note": "The tester finalized route and archive metadata at07:38UTC, superseding its earlier provisional report/result/index hashes. This index pins the later final seal; cleanup is a separate addendum."
+}

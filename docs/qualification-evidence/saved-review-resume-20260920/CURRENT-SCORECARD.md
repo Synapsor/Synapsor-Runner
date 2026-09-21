@@ -1,27 +1,29 @@
-# Current candidate scorecard — A stopped, B preflight pending
+# Final candidate scorecard
 
-Candidate: `5f375284d7c5d35746437a148bfa7fe4415a47fa7b45eadb1a2b4bc1e4d5483c` (7,569 entries). Product/tests `a3250feb1c930549743dadf17b4f0536f35af254`; frozen source/evidence `1dd748a0de40be4d6e1b1c4212d4eef44c27b291`. This is a checkpoint, not final acceptance or a completed live edit.
+Candidate `5f375284d7c5d35746437a148bfa7fe4415a47fa7b45eadb1a2b4bc1e4d5483c` (7,569 entries). Product/tests `a3250feb1c930549743dadf17b4f0536f35af254`; frozen source/evidence `1dd748a0de40be4d6e1b1c4212d4eef44c27b291`. All paid lanes are stopped. Historical Stage B remains **ATTEMPTED / NOT PASSED**.
 
-The original A pause came from passing writer-enriched Action inspection to the strict reader-bound policy evidence validator. It correctly rejected the wrong role fingerprint before any provider send, but the caller hid the actual error in details and presented an unexplained pause. Guided Resume and explicit Review now inspect the exact reviewed reader separately. Genuine counter-review stops retain their counter-specific heading; the actual sanitized error is visible in the pause notice. All existing validators, source counter commitments, persistence and runtime behavior remain intact. No prompt change.
-
-| Claim | Current result |
+| Claim | Final result |
 | --- | --- |
-| Exact original stopped A public reproduction | Reproduced on unchanged old installed copy; zero provider calls. |
-| Reader-association repair and specific prerequisite reporting | Focused/public-dispatch regressions pass; seven counter-host and four saved-review controls pass on final source. |
-| Stable full suite | PASS: separate second full run, exit0, 6,790 passed/478 skipped. First full remains failed with three diagnostic-heading regressions, subsequently corrected. |
-| Types and offline gates | PASS: types and all ten final-source offline checks. |
-| Selected SQLite/real PostgreSQL review/freshness/persistence | PASS on final source; prior wrong-port connection failure remains an environment finding. Other opt-in skips are not live-backend passes. |
-| Native discovery preservation | Nine source regressions pass; runtime.mjs bytes equal prior accepted native build. Independent new-candidate observation pending. |
-| Owned main A continuation baseline | All42 logical tables and all38 source rows equal; original saved five-day draft and prior history retained. |
-| Independent A/B restoration | Authentic A/B restores verified. Complete installed/archive/native surface independently passed; A final archive usability independently passed. |
-| Development real review | Reaches provider through recommended Resume. Two replies repeat unsupported receipt proof association and are strictly refused. BUSINESS completion NOT ESTABLISHED. |
-| Independent frozen A review-only probe | Narrow Resume/preservation PASS; BUSINESS not established after invalid proof then TLS failure. Restart declined a new episode. |
-| Main A BUSINESS review / restart | BLOCKED after two replies (invalid receipt proof then missing heading disposition). Restart preserved the stopped episode, no third send. |
-| Main A publication / execution renewal / current-rule effect / native restart | NOT RUN; actual BUSINESS readiness blocked. Main A state sealed, independently archive-checked, container stopped. |
-| Tester B numeric edit and remaining runtime checks | NOT RUN; prelaunch funding/call-limit harness corrections pending, no paid or business calls. |
+| Exact historical A pause | Reproduced on owned old-build copy, zero provider sends. Writer-enriched Action inspection was wrongly supplied as reader-bound review evidence; strict RLS check refused and its cause was hidden. |
+| Narrow Resume/post-save repair | PASS in focused composed/public-dispatch regressions. Exact reader preparation shared by Resume and explicit Review; real current review reached on owned installed A. No guard/prompt/runtime change. |
+| Independent narrow repair | PASS for actual Resume, preservation, artifact and four-tool checks. BUSINESS completion not established. Concurrency/cancellation regression evidence inspected, not independently rerun. |
+| Stable full suite | PASS: second complete run exit0,6,790passed/478skipped. First full's three heading regressions remain a failed attempt, corrected before separate rerun. |
+| Types / ten offline checks | PASS: each exit0 on final source. |
+| Selected SQLite / real PostgreSQL control-store gates | PASS: review/freshness4pass34skip; persistence4pass420skip. First wrong-port connection attempt remains an environment failure. Opt-in skips are not live coverage. |
+| Native discovery | Source regressions and independent installed MCP2025-11-25/four-tool preflight PASS. Zero paid native/runtime transports; no client behavior across publication established. |
+| Authentic A/B continuation | PASS: A38source rows/all42control tables; B196business rows+1historical receipt/all42control tables. Original post-effect histories retained. |
+| Development A review | Two real responses refused unsupported observation proof. Review-only diagnostic progress; BUSINESS not established. |
+| Independent A review-only probe | One invalid response then one TLS-failed transport; no third send. Narrow repair passes, BUSINESS not established. |
+| Main final A review / restart | BLOCKED: first unsupported observation proof, second missing nonblank source-heading disposition. Pause and restarted explicit Review retain exact draft/stopped episode; no third send. |
+| B exact numeric edit | PASS: ordinary-language30-to-15 disabled save, exact four-field business/review diff. Active threshold30 unchanged. |
+| B reopened route / review | Recommended Resume personally reached via boundary review --access → W → START BOUNDARY DRAFTING. Counting corrections resolved; final observation-proof refusal blocks BUSINESS. Separate start shell invocation not claimed. |
+| A/B publication, renewal, current-rule effect and receipt/readback | NOT RUN: actual current BUSINESS readiness did not pass. |
+| A/B same-native-client edit and final native restart | NOT RUN. No provider narration is confused with historical durable effect evidence. |
+| Preservation and cleanup | PASS: both installed trees/original hashes unchanged; both stopped archives checked before owner cleanup. Main containers stopped/retained; tester B container and logical namespace removed. |
+| Overall known-case live edits | **NOT ESTABLISHED**. Saved disabled edits are real; neither is published. |
 
-The historical A six-day unstarted proof expired before this assignment's publication. Its nonexecution alone cannot establish a replacement-order refusal. The exact old records and two canonical receipts remain preserved. The five-day draft changes exactly three numeric bounds; unrelated selectors and 2/8/86400 limits are unchanged.
+A retains the exact three7→5 bounds and unrelated canonical2/8/86400 limits. B retains4/6/86400, source_db/precreated, two effects and all unrelated clauses. A's old six-day work expired before publication; its nonexecution is not replacement-order evidence. Historical approvals/receipts are retained; no refunds or new effects.
 
-Actual settled spend so far: development $0.2668628 (two transports), independent A $0.1371825 plus one TLS-failed $0.985804 unresolved reservation, main A $0.2383551 (two transports). Shared usable after costs/reservations: $6.23965129. B's historical/provisional five-transport estimate was rejected as a worst-case full-turn proof; prelaunch copied limits also need correction. No money or call counter is reset; no additional A episode is authorized by remaining headroom.
+Total16authoring transports:15settled/$1.136197 plus one TLS-failed unresolved reservation/$0.985804. New shared ceiling$7.86785569; unused after reserve$5.74585469. B's two allowed live harness corrections and explicit non-additive capacity amendment are separate from product results. No budget/counter reset or new sampling on remaining funds.
 
-See FINAL-REPORT.md, FINAL-ARTIFACT.json, FINAL-GATE-RESULT.json, MAIN-A-REVIEW-BLOCKER.md, MAIN-A-FINAL-RESULT.json, INDEPENDENT-PROBE-RESULT.json and B-PRELAUNCH-FUNDING-REVIEW.json. The immutable candidate/source checkpoint was pushed only to verified private backup; final reports await B's exact disposition. Historical Stage B remains ATTEMPTED / NOT PASSED.
+See FINAL-REPORT.md, FINAL-GATE-RESULT.json, FINAL-ARTIFACT.json, INDEPENDENT-PROBE-RESULT.json, INDEPENDENT-B-RESULT.json, KNOWN-CASE-REVIEW-BLOCKERS.md, FINAL-PROVIDER-ACCOUNTING.json and FINAL-EVIDENCE-INDEX.json. Add/remove, unrun runtime rows and unseen qualification remain unrun; historical acceptance belongs to its exact artifact.

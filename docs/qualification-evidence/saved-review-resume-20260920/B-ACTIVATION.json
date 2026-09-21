@@ -1,0 +1,61 @@
+{
+  "at": "2026-09-21T07:00:28.324916+00:00",
+  "remaining_shared_at_activation": 6.239651290000001,
+  "case": {
+    "case_id": "KC-B",
+    "phase_kind": "final",
+    "status": "LIVE",
+    "spend_ceiling_usd": 5,
+    "transport_limits": {
+      "authoring": 30,
+      "runtime": 24
+    },
+    "models": {
+      "authoring": "openai/gpt-5.6-terra",
+      "runtime": "claude-opus-5"
+    },
+    "deadline": "2026-09-21T10:00:28.324916+00:00",
+    "business_authorized": false,
+    "transports": [],
+    "operation_limits": {
+      "deterministic": 100,
+      "request_change": 18,
+      "workers": 8,
+      "effects": 4
+    },
+    "started_at": "2026-09-21T07:00:28.324916+00:00",
+    "checkpoint1_deadline": "2026-09-21T09:00:28.324916+00:00",
+    "artifact_tree": "5f375284d7c5d35746437a148bfa7fe4415a47fa7b45eadb1a2b4bc1e4d5483c",
+    "protected_authoring_transports": 4,
+    "protected_runtime_transports": 2,
+    "whole_native_turn": {
+      "maximum_transports": 2,
+      "maximum_request_bytes": 78787,
+      "maximum_output_tokens": 4096,
+      "hard_reservation_usd": 3.97068,
+      "includes_final_narration": true,
+      "incomplete_means": "NOT ESTABLISHED; no third-send retry"
+    },
+    "activation_note": "Review/disabled edit and deterministic read preparation. Numeric publication/effect require actual current readiness and same-client prerequisite. Record actual current checks before business enablement."
+  },
+  "independent_prework_files": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/B-FUNDING-PROOF.json",
+      "sha256": "0fcb35ccf57e138ca0d2b762fd9de2e04cb9a239c73c087b07939736cf5db9dd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/B-LAUNCH-PLAN.json",
+      "sha256": "1c05dbbec4dc1de21aa88d0084647801cc3f4f0d830284c978f185cdf4c0601e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/B-PREWORK-INDEX.json",
+      "sha256": "2bcce9683d0357f0fb5b8dc1b40c44fdb309467b46584055f83dbf5275717206"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/HARNESS-LIMIT-TEST.json",
+      "sha256": "08ca1c4fadb421824dc02431fc99e1b1f02065918a8a7da1f26ecc194d7e8c40"
+    }
+  ],
+  "coordinator_prelaunch_measurement_correction": "First script used old proof field whole_runtime_turn_worst_case_usd, KeyError before lock/mutation. Premature prose activation promptly corrected. Actual activation is only the timestamp in this record.",
+  "prior_funding_errors_retained": true
+}

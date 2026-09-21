@@ -1,0 +1,40 @@
+{
+  "at": "2026-09-21T07:37:03.574843+00:00",
+  "cases": [
+    {
+      "case_id": "DEV-A",
+      "status": "STOPPED",
+      "actual_transports": 2,
+      "settled_usd": 0.2668628,
+      "unsettled_reservation_usd": 0
+    },
+    {
+      "case_id": "PROBE-A",
+      "status": "STOPPED",
+      "actual_transports": 2,
+      "settled_usd": 0.1371825,
+      "unsettled_reservation_usd": 0.9858039999999999
+    },
+    {
+      "case_id": "KC-A",
+      "status": "STOPPED",
+      "actual_transports": 2,
+      "settled_usd": 0.2383551,
+      "unsettled_reservation_usd": 0
+    },
+    {
+      "case_id": "KC-B",
+      "status": "STOPPED",
+      "actual_transports": 10,
+      "settled_usd": 0.49379660000000003,
+      "unsettled_reservation_usd": 0
+    }
+  ],
+  "shared_hard_ceiling_usd": 7.867855690000001,
+  "settled_total_usd": 1.1361970000000001,
+  "unresolved_reserved_usd": 0.9858039999999999,
+  "unspent_after_reservations_usd": 5.745854690000001,
+  "runtime_transports": 0,
+  "business_operations": 0,
+  "no_refund_or_reset": true
+}

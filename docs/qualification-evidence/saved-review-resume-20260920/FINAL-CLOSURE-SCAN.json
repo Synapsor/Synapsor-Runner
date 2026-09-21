@@ -1,0 +1,23 @@
+{
+  "recorded_at": "2026-09-21T07:51:03.985501+00:00",
+  "scope": "All currently intended changed/untracked report/harness files; exact full database credentials/environment values and private fixture strings of at least16characters. Does not claim a general secret detector.",
+  "files": [
+    "docs/qualification-evidence/saved-review-resume-20260920/B-PRELAUNCH-FUNDING-REVIEW.json",
+    "docs/qualification-evidence/saved-review-resume-20260920/CURRENT-SCORECARD.md",
+    "docs/qualification-evidence/saved-review-resume-20260920/FINAL-REPORT.md",
+    "docs/qualification-evidence/saved-review-resume-20260920/REVIEWER-HANDOFF.md",
+    "docs/qualification-evidence/saved-review-resume-20260920/checkpoint.json",
+    "docs/qualification-evidence/saved-review-resume-20260920/B-ACTIVATION.json",
+    "docs/qualification-evidence/saved-review-resume-20260920/B-REMAINING-ALLOCATION-AMENDMENT.json",
+    "docs/qualification-evidence/saved-review-resume-20260920/FINAL-PRESERVATION.json",
+    "docs/qualification-evidence/saved-review-resume-20260920/FINAL-PROVIDER-ACCOUNTING.json",
+    "docs/qualification-evidence/saved-review-resume-20260920/INDEPENDENT-B-RESULT.json",
+    "docs/qualification-evidence/saved-review-resume-20260920/KNOWN-CASE-REVIEW-BLOCKERS.md",
+    "docs/qualification-evidence/saved-review-resume-20260920/PRIVATE-BACKUP-FINAL-CHECK.json",
+    "docs/qualification-evidence/saved-review-resume-20260920/verify-b-final-archive.py"
+  ],
+  "specific_values_checked": 74,
+  "exact_private_value_matches": 0,
+  "result": "PASS",
+  "raw_payloads_and_credentials": "External only; not staged"
+}

@@ -1,0 +1,313 @@
+{
+  "closed_at": "2026-09-21T07:52:20.958521+00:00",
+  "scope": "Final handoff index. Raw payloads, private fixture state and credentials are not committed. Earlier raw77-record index remains byte-valid and preserved. Tester final19-record index remains independently authored; this record pins its sealed version and cleanup addendum.",
+  "product_tests": "a3250feb1c930549743dadf17b4f0536f35af254",
+  "source_evidence": "1dd748a0de40be4d6e1b1c4212d4eef44c27b291",
+  "installed_tree": "5f375284d7c5d35746437a148bfa7fe4415a47fa7b45eadb1a2b4bc1e4d5483c",
+  "repository_records": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/FINAL-REPORT.md",
+      "sha256": "63d8113b15f700840559ae5003f5974a56c57bd4423698b42b1214f992732fed",
+      "bytes": 19679
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/CURRENT-SCORECARD.md",
+      "sha256": "cf880f9736060ea8fc4e2a74cb366a63ebba52e16dd56982fe13d180112f1125",
+      "bytes": 4438
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/REVIEWER-HANDOFF.md",
+      "sha256": "c207ba910797ce7d7ccb399e39eb3696714654063533809a5c777e38260abe4f",
+      "bytes": 9375
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/KNOWN-CASE-REVIEW-BLOCKERS.md",
+      "sha256": "378ff08a570b50aee6d3aff300d17cbd4a9592083bc88fe3ad5ad31726fdb84d",
+      "bytes": 3463
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/ROOT-CAUSE.md",
+      "sha256": "4cfab9076aff57609121d222bf26c881d481c1d731210be0f3445056b2cfcdd3",
+      "bytes": 2680
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/IMPLEMENTATION-NOTE.md",
+      "sha256": "0f5554277c43443cf938f559f1dd48ddc2831b949d7672aca66beb9c1d161e6b",
+      "bytes": 3744
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/SOURCE-DIFF-SCOPE.json",
+      "sha256": "73cd507c4c241e4256a8e67fe71254fafe68f7e95f8377d9d9ddf7427d2a150e",
+      "bytes": 1974
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/FINAL-ARTIFACT.json",
+      "sha256": "3915c0e43258be01ceb83acb1d8529958484652ec66a86cde27fdafad0bd8aff",
+      "bytes": 1562
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/GATE-INDEX.json",
+      "sha256": "b68f8fb3a283ebbb8b0ef804738f40a53fedbf94e7f17a32b5db46a970881092",
+      "bytes": 21884
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/FINAL-GATE-RESULT.json",
+      "sha256": "254d50281fb507ad63883192c5bfe220e04cdbd8c6eeaaaed120719e8dc73dd4",
+      "bytes": 1354
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/RAW-EVIDENCE-INDEX.json",
+      "sha256": "62f3db013d3cf2ee6331d364aa58445567b3a65902b2bd14693983d9ca48ee71",
+      "bytes": 27373
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/MAIN-A-REVIEW-BLOCKER.md",
+      "sha256": "bec5efc6979c61c0e457c3d88ff3a0afb98a7dc842cd384f4e8c35722f441bde",
+      "bytes": 3368
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/MAIN-A-FINAL-RESULT.json",
+      "sha256": "a2fe393da57c178cad57d07694a442c53ecb92da40d4f7762271e5b06f64edd5",
+      "bytes": 11797
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/MAIN-A-PRESERVATION.json",
+      "sha256": "044f9d50461bf287d3640069aecd47d6b6b7f13074805f5161717a6681a2e515",
+      "bytes": 909
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/INDEPENDENT-PROBE-RESULT.json",
+      "sha256": "a75e2b03d180563ae3fdff067416e5bb5707dca4a2a07802ad84ee1a354a7d13",
+      "bytes": 819
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/INDEPENDENT-B-RESULT.json",
+      "sha256": "b3d43250bf21ebff95df360bb70682d30480d9d1773ab19974fb7e6cd57272b8",
+      "bytes": 3293
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/FINAL-PROVIDER-ACCOUNTING.json",
+      "sha256": "ed66a6c2865239b5e931981988fa461bedb850491c715c6d6d4cd67d79fde218",
+      "bytes": 1032
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/FINAL-PRESERVATION.json",
+      "sha256": "389add013e036b239047fb0d61172d715c38e6fef0f25b4af67803e549066471",
+      "bytes": 3018
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/B-ACTIVATION.json",
+      "sha256": "c28cb5e778e046a2ab0a2a060f878e45f57ca59cfef2e7c89055a4fc8b398682",
+      "bytes": 2837
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/B-PRELAUNCH-FUNDING-REVIEW.json",
+      "sha256": "e50e8c7a712e4ee0eaf05c8ac6dde4c64df084e5fe60f3ff935cb470fc7175ef",
+      "bytes": 2225
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/B-REMAINING-ALLOCATION-AMENDMENT.json",
+      "sha256": "9e9f6f70be40a231258f83921ddacbfaa337b2bbef24010ea8ba92a5dc0165ae",
+      "bytes": 1172
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/PRIVATE-BACKUP-FINAL-CHECK.json",
+      "sha256": "dd7ac7e3814fdf5a643a9d6a39d194ed11fb2406f41174f39d6535d21f9cb3ad",
+      "bytes": 409
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/FINAL-CLOSURE-SCAN.json",
+      "sha256": "5745712d9da2929420e5815c54571d92bad1ac48fbc8d50a2c442de86746f727",
+      "bytes": 1610
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/verify-b-final-archive.py",
+      "sha256": "8201f775b360c414732ed622cdfe18398335ad17ded1bea3dc3c107c9724b766",
+      "bytes": 5526
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/saved-review-resume-20260920/checkpoint.json",
+      "sha256": "f2e30e3242aebf8bef5331f9016f16628a44655bf38468341f9ed21dc071172d",
+      "bytes": 2990
+    }
+  ],
+  "raw_records": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/originals-final-verification.json",
+      "sha256": "7732234dccacfb76ed20060f166ba68225a9a1158c6d6db29d439f43328886be",
+      "bytes": 2980
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/candidate-final-verification.json",
+      "sha256": "a4d4741453d28c589cd49a28bf055733dffa7093b5d3810362a3877cecb3758e",
+      "bytes": 162
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/old-candidate-final-verification.json",
+      "sha256": "5cdc07e39dd5c484f1ece340d6fe52ff5dd252c643db523d71ec4b0095633443",
+      "bytes": 162
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/B-FINAL-ARCHIVE-READBACK.json",
+      "sha256": "eea1bac44363dc6d67e216bf2a73b6c697a2fd6856bf4a3f4f1999d043af87a3",
+      "bytes": 2859
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/shared/provider-budget-ledger-final.json",
+      "sha256": "244f3bbd9c314b02b6b958ccb751d14266a802a8f422e67aa7daf7eba88503e2",
+      "bytes": 15243
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/B-FINAL-EVIDENCE-INDEX.json",
+      "sha256": "07328776d032f126d72e2237d346dd8bf5139919e36eb9ddff87609651564722",
+      "bytes": 6319
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/CLEANUP-ADDENDUM.json",
+      "sha256": "8c6d33732b6aa9b6fb2d86fd7b6651eda5934449de0f87d94b735bc4c4d53c84",
+      "bytes": 2020
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/private/final-state/SHA256SUMS",
+      "sha256": "43f37f4dab37fba932c798862aa32c4d077a835f37547dbfee31234e5643c2b9",
+      "bytes": 665
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/private/final-state/container-final-inspect.json",
+      "sha256": "60c7e787abdd0a73c702ae9c59edb87298245177d13358ac752b58b2a590f0de",
+      "bytes": 10972
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/authoring-meter/KC-B-1-request.json",
+      "sha256": "33464f90da01bcd71ca41fd2cae1927337b35e0033958a42556ef052f76b894d",
+      "bytes": 21785
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/authoring-meter/KC-B-1-response.txt",
+      "sha256": "9982997d877a425fc2e1687a08d7d8cb9e4b47a19d69f606fb5d671efc7bbcc4",
+      "bytes": 11283
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/authoring-meter/KC-B-10-request.json",
+      "sha256": "bf6d2561abf94c736eb4a13b65474dfe6a629554687346ea96ebd514323d2371",
+      "bytes": 230996
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/authoring-meter/KC-B-10-response.txt",
+      "sha256": "dcfb17045e8210ebb04b83326b4b717a35a72aa394c9a7519ecbcb1ff380db9f",
+      "bytes": 1324006
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/authoring-meter/KC-B-2-request.json",
+      "sha256": "18aea4b25c5375f8ecc1a7ae9c700d9c801b3b1b614f1d3e7ca6a436ab565e74",
+      "bytes": 37687
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/authoring-meter/KC-B-2-response.txt",
+      "sha256": "9fe566b880a1d3dce8ce6523f5a48ac096bb4113b99faa502c41609d00c3cae5",
+      "bytes": 29079
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/authoring-meter/KC-B-3-request.json",
+      "sha256": "9b92e24e16181a225450e451ded9ab9610c51c37d3604c5a0d100fc60bbc110b",
+      "bytes": 39804
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/authoring-meter/KC-B-3-response.txt",
+      "sha256": "190bf5d33c40ea3c6d120f2cf7b1a3b64d28f8a24df90008892637d7e55eccfc",
+      "bytes": 86516
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/authoring-meter/KC-B-4-request.json",
+      "sha256": "93d1f7279aa229d10ebb6ebe7aff67daee4f9f631b7eb50456ebe9832bd54b60",
+      "bytes": 100027
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/authoring-meter/KC-B-4-response.txt",
+      "sha256": "98e221cd8800f6e7c6ae64bc7e5dad84e2088f4885148083d7a2d04f33e5deee",
+      "bytes": 9591
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/authoring-meter/KC-B-5-request.json",
+      "sha256": "499f3620f0a972d10ef9a6e2c0efd24592cc399afda768e2ca42111ee5b4d37d",
+      "bytes": 121593
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/authoring-meter/KC-B-5-response.txt",
+      "sha256": "36d818bb219375b358125a375a6153516afdcfa51cfbb75185495039d69ac3c3",
+      "bytes": 2166
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/authoring-meter/KC-B-6-request.json",
+      "sha256": "8618b901347579121d032b9706de6e107ccd27fd034332c7afd0d68e7b64c7e4",
+      "bytes": 124293
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/authoring-meter/KC-B-6-response.txt",
+      "sha256": "2b848112ff39c10516e01d7f62e57bbab6d8e85cdbde4cbf06dbfc0b94f3e3bf",
+      "bytes": 46543
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/authoring-meter/KC-B-7-request.json",
+      "sha256": "a46eea23e178d97c5faa471372bcf2400f247beb1d4a3e6c7cfcb9c434568a40",
+      "bytes": 25334
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/authoring-meter/KC-B-7-response.txt",
+      "sha256": "7cf3390c85fd3db5e3a6f31e0a2ee2731373c25a66f626378e0ef09f1b675512",
+      "bytes": 24859
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/authoring-meter/KC-B-8-request.json",
+      "sha256": "a624234c89f90de73d191bbc66a4be76dd9a7881fa4a8d9264fe3488150054b5",
+      "bytes": 228293
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/authoring-meter/KC-B-8-response.txt",
+      "sha256": "a4b40381ccc46f932356d4aeedbc7dac97845c86c8d5addacee7356d2a48ae38",
+      "bytes": 1157787
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/authoring-meter/KC-B-9-request.json",
+      "sha256": "a624234c89f90de73d191bbc66a4be76dd9a7881fa4a8d9264fe3488150054b5",
+      "bytes": 228293
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/authoring-meter/KC-B-9-response.txt",
+      "sha256": "fb4f081776d799d934aadef79d679d4ae18aaa08f8a9ddf04323ce90e4e5110d",
+      "bytes": 1143872
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/authoring-meter/events.jsonl",
+      "sha256": "1c3030d5ee0dde541b2a11274c45c26555c2109bdd66bf63527edcfe2dfd63b6",
+      "bytes": 11093
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/authoring-meter/phase.json",
+      "sha256": "10850c06f7a99904b206e4422220ebb4bc86abf0a8a8df93aa6d90dab1e29b00",
+      "bytes": 21
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/authoring-meter/plan.json",
+      "sha256": "ddbb440e6907ba5595a7824206302627884fd604cd4973cd4dfb31a5e6198dfc",
+      "bytes": 414
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/authoring-meter/private-values.json",
+      "sha256": "193fb32b9d0f1ee0f1dba6e87875432214ee0d3e63a87d8546f57866e2416d62",
+      "bytes": 5476
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/B-FUNDING-PROPOSAL-PRE-REJECTION.json",
+      "sha256": "785dd873ad546b2500cd1b8efaab920d12d2b01c38f80c4f1ab7a196e916efba",
+      "bytes": 2363
+    }
+  ],
+  "not_claimed": [
+    "BUSINESS-ready review for either final case",
+    "numeric-edit publication",
+    "same-native-client changed behavior",
+    "new receipt/source effect",
+    "new Stage B acceptance"
+  ]
+}

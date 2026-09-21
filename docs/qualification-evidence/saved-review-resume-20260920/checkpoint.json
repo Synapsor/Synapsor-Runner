@@ -1,12 +1,12 @@
 {
-  "status": "A_PRESERVED_STOPPED_B_PREFLIGHT_CORRECTION",
-  "next": "Tester corrects prelaunch whole-native-turn reservation proof and copied historical harness limits. B remains PREPARED, zero sends. Final A archive independently usable; main A stopped.",
+  "status": "CLOSED_FOR_REVIEW",
+  "next": "STOP. No active test, provider, runtime or business lane. Next repair/continuation decision is KNOWN-CASE-REVIEW-BLOCKERS.md; final report-only delivery recorded externally after push.",
   "started_at": "2026-09-21T04:39:00Z",
-  "provider_calls": 6,
+  "provider_calls": 16,
   "raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920",
   "combined_tests": 538,
   "stable_started_at": "2026-09-21T05:10:54.293557+00:00",
-  "updated_at": "2026-09-21T06:52:56.073808+00:00",
+  "updated_at": "2026-09-21T07:52:20.958521+00:00",
   "offline_checks": "attempt2: 10/10 exit0 on a3250fe content",
   "independent_classification": "invalid provider proof association; strict refusal; not another demonstrated Resume defect",
   "first_stable": {
@@ -21,12 +21,11 @@
   "active_gate_record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/gates/stable-full-2-exit.json",
   "final_source_digest": "bde0189a0c9cbe0de412731d6e17e55562cad5346e09eafb62047f1b8a3036a6",
   "stable_deadline": "2026-09-21T07:40:54Z",
-  "source_edits": "None while stable-full-2 runs; no concurrent build",
-  "remaining_balance": 7.600992890000001,
-  "paid_lanes": "DEV-A/PROBE-A/KC-A STOPPED; KC-B PREPARED",
+  "source_edits": "None after a3250fe or during stable-full-2/final trials",
+  "remaining_balance": 5.74585469,
+  "paid_lanes": "All STOPPED",
   "tester_task": "01a0bcb8-0925-7380-911a-8bab207b9e0b",
   "main_start": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A",
-  "next_after_full_pass": "Update gate/index/raw hashes; commit intended credential-free E evidence; run run-freeze.py; independently verify whole installation; activate only PROBE-A first; Main A and B stay held until clearance.",
   "full_result": {
     "run": "stable-full-2",
     "exit": 0,
@@ -38,5 +37,18 @@
     "source_unchanged": true,
     "source_build_overlap": false
   },
-  "artifact_tree": "5f375284d7c5d35746437a148bfa7fe4415a47fa7b45eadb1a2b4bc1e4d5483c"
+  "artifact_tree": "5f375284d7c5d35746437a148bfa7fe4415a47fa7b45eadb1a2b4bc1e4d5483c",
+  "closure_deadline": "2026-09-21T08:37:03.574843+00:00",
+  "settled_usd": 1.136197,
+  "unresolved_reserved_usd": 0.985804,
+  "independent_B": "NOT ESTABLISHED: exact disabled15save PASS, BUSINESS blocked by observation proof; no runtime/publication/effect",
+  "tester_cleanup": "Completed after main archive verification; separate immutable addendum",
+  "final_ledger": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/shared/provider-budget-ledger-final.json",
+    "sha256": "244f3bbd9c314b02b6b958ccb751d14266a802a8f422e67aa7daf7eba88503e2"
+  },
+  "closure_complete": true,
+  "independent_narrow_repair": "PASS",
+  "known_case_live_edits": "NOT ESTABLISHED",
+  "historical_Stage_B": "ATTEMPTED / NOT PASSED"
 }

@@ -1,8 +1,9 @@
 {
   "at": "2026-09-21T06:52:56.073808+00:00",
   "proposal": {
-    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/B-FUNDING-PROOF.json",
-    "sha256": "0fcb35ccf57e138ca0d2b762fd9de2e04cb9a239c73c087b07939736cf5db9dd"
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/B-FUNDING-PROPOSAL-PRE-REJECTION.json",
+    "sha256": "785dd873ad546b2500cd1b8efaab920d12d2b01c38f80c4f1ab7a196e916efba",
+    "original_mutable_path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/B-FUNDING-PROOF.json"
   },
   "verdict": "Conditional progression bound, not accepted as full worst-case turn reservation",
   "finding": "Prior response provisional costs capped only after response; the complete five-send hard bound at declared per-send request/output caps is 5*1.98534 = 9.92670, above remaining shared funds and B purpose cap.",
@@ -12,5 +13,13 @@
   ],
   "paid_calls_before_finding": 0,
   "product_change": false,
-  "required_next": "Correct prelaunch guards and use a truthful fully funded bounded ordinary turn or leave native unrun. Independent safe disabled-edit/review work may proceed within actual caps; publication/same-client prerequisite remains."
+  "required_next": "Correct prelaunch guards and use a truthful fully funded bounded ordinary turn or leave native unrun. Independent safe disabled-edit/review work may proceed within actual caps; publication/same-client prerequisite remains.",
+  "preservation_note": "Tester archived rejected proposal with rejection annotation; this exact original serialization was reconstructed by removing only those annotations and restoring original status, and its SHA matches the pre-rejection hash captured before changes.",
+  "corrected_funding": {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/B-FUNDING-PROOF.json",
+    "sha256": "0fcb35ccf57e138ca0d2b762fd9de2e04cb9a239c73c087b07939736cf5db9dd",
+    "hard_two_transport_reservation_usd": 3.97068,
+    "accepted_at": "B-ACTIVATION.json"
+  },
+  "closure_index_correction": "The earlier report pointed at a mutable funding path and copied its later corrected hash. Closure pins the reconstructed exact pre-rejection bytes to785dd873\u2026; corrected two-send proof remains0fcb35cc\u2026. This is an evidence-index correction, not a new funding decision."
 }

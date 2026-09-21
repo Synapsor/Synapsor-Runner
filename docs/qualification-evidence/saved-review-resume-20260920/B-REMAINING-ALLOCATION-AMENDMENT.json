@@ -1,0 +1,16 @@
+{
+  "at": "2026-09-21T07:27:25.036680+00:00",
+  "old_B_nonadditive_cap_usd": 5,
+  "new_B_nonadditive_cap_usd": 6.23965129,
+  "unchanged_shared_hard_cap_usd": 7.867855690000001,
+  "other_closed_lanes_charged_or_reserved_usd": 1.6282044,
+  "unresolved_probe_reservation_retained": true,
+  "reason": "B is the only remaining paid lane. Exact unchanged coverage envelope measured228293bytes needs1.129172 conservative reservation; retaining hard native turn3.970680 can exceed the earlier internal5 purpose cap while remaining within original user-authorized shared ceiling. Allocate remaining shared capacity explicitly; no top-up, cost refund, hidden transfer, fresh budget, deadline/call/effect reset.",
+  "measured_refusal": {
+    "bytes": 228293,
+    "sha256": "a624234c89f90de73d191bbc66a4be76dd9a7881fa4a8d9264fe3488150054b5",
+    "output_tokens": 12000,
+    "reservation_usd": 1.129172
+  },
+  "constraints": "At most two demonstrated live harness corrections. No product/request/output cap, provider payload, model or setting changes. Native entire turn must fit before launch; every send still checks actual shared remaining. No guarantee of complete B financing."
+}
