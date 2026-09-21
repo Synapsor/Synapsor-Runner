@@ -1,0 +1,135 @@
+{
+  "at": "2026-09-21T03:55:59.937005+00:00",
+  "public_resume": "FAIL: immediate same pause, exit 0; no provider review call, reason not established",
+  "disabled_exact_program_diff": "PASS",
+  "old_active_revision": "policy:a8e217a549235a1eb6501182850920613c2784524a46b62dc89704329b9cad38",
+  "new_disabled_revision": "policy:6136e62ff8d68da57c915fca78668a22e10fee3a501ff2e60e9316e0eda5309d",
+  "compiled_semantic_changes": [
+    {
+      "path": "/rules/0/effect_envelope/allowed_fields/1/maximum",
+      "before": 7,
+      "after": 5
+    },
+    {
+      "path": "/rules/0/rule/inputs/0/maximum",
+      "before": 7,
+      "after": 5
+    },
+    {
+      "path": "/rules/0/rule/require/expressions/7/right/value",
+      "before": 7,
+      "after": 5
+    },
+    {
+      "path": "/rules/0/rule/x-runner-discovery/summary",
+      "before": "Request clearance for a selected release assessment and a release window of one to seven days.",
+      "after": "Request clearance for a selected release assessment and a release window of one to five days."
+    }
+  ],
+  "derived_changes": [
+    {
+      "path": "/action_boundary/digest",
+      "before": "sha256:60400e62b373343df3d94a939c7a16497b59d233cbcfdaf8fa05790bacf3faf1",
+      "after": "sha256:9501511df09109e8fd6acaf1756f85d4b355128bc77dd46dd1537544058969ad"
+    },
+    {
+      "path": "/action_boundary/rules/0/action_rule_digest",
+      "before": "sha256:b9eb1bf44e755f4c10e4fa4fdee3811ac7410723d829a6581bb4b5a77c517c36",
+      "after": "sha256:8deb60d473a3e22fee295af4da00439964a49d8c5b9072137f611e3819cdb594"
+    },
+    {
+      "path": "/action_boundary/rules/0/approval_policy_digest",
+      "before": "sha256:8c16d1ef491d07e540e2cf7446a6024644324b440d0160182326a2d59e9816ee",
+      "after": "sha256:8651cd29ed302930193deda6cd517c9bacf73c736c12cf2aa80320e7c049532c"
+    },
+    {
+      "path": "/action_boundary/rules/0/compiled_plan_digest",
+      "before": "sha256:c35892b512b7a52c6b5a679d67fcf11536a12b76b63bf92572d39dcebced0756",
+      "after": "sha256:46de2c841e8345987dcc08b1f72767420fa40da56b5cbddabfe2898d77282e57"
+    },
+    {
+      "path": "/action_boundary/rules/0/effect_envelope_digest",
+      "before": "sha256:76f14d73ab667b64f310674a5d6c70b2b5f7c799619ece400e606f914ed97270",
+      "after": "sha256:bfefc9e58e9cbf5ac1625d8940ca40af5c457c3ee4adb16b35656bd1c13915b3"
+    },
+    {
+      "path": "/digest",
+      "before": "sha256:66466d3ab46df930b123a0b5ecb481ca3290a8e3bf34fc8290e46db129940f70",
+      "after": "sha256:a26bae477f409339e9c284d7e2d6d51f102f20e9e3bf95ae5e26dcb8165accc8"
+    },
+    {
+      "path": "/rules/0/activated_at",
+      "before": "2026-09-20T17:46:45.715Z",
+      "after": "2026-09-21T03:40:09.422Z"
+    }
+  ],
+  "source_row_count": 38,
+  "source_unchanged_across_edit_and_resume": true,
+  "all_active_pointers_unchanged": true,
+  "approval_classes_and_catalog_unchanged": true,
+  "all_tables_count": 42,
+  "unchanged_tables": [
+    "approvals",
+    "attention_events",
+    "attention_items",
+    "cloud_governance_events",
+    "cloud_outbox",
+    "control_policy_active",
+    "control_policy_budget_accounts",
+    "control_policy_budget_entries",
+    "control_policy_budget_receipts",
+    "control_policy_budget_requests",
+    "control_policy_effect_admissions",
+    "control_policy_effect_receipts",
+    "control_policy_identity",
+    "control_policy_reviews",
+    "control_policy_runtime_proofs",
+    "evidence_items",
+    "explore_privacy_releases",
+    "idempotency_receipts",
+    "notification_deliveries",
+    "policy_recommendations",
+    "proposal_events",
+    "proposal_store_schema",
+    "proposals",
+    "replay_records",
+    "runner_state",
+    "shadow_human_actions",
+    "shadow_outcomes",
+    "shadow_studies",
+    "shadow_study_cases",
+    "worker_queue",
+    "writeback_intents",
+    "writeback_jobs",
+    "writeback_receipts"
+  ],
+  "changed_tables_preedit_to_final": [
+    "control_policy_deployments",
+    "control_policy_drafts",
+    "control_policy_events",
+    "control_policy_revisions",
+    "evidence_bundles",
+    "explore_budget_reservations",
+    "observed_subject_references",
+    "query_audit",
+    "sqlite_sequence"
+  ],
+  "changed_tables_saved_edit_to_final": [
+    "control_policy_deployments",
+    "control_policy_events"
+  ],
+  "business_counts": {
+    "proposals": 3,
+    "approvals": 3,
+    "worker_queue": 3,
+    "writeback_receipts": 2,
+    "idempotency_receipts": 2
+  },
+  "old_unstarted_work": "retained, not dispatched; handling after publication NOT RUN",
+  "publication": "NOT RUN",
+  "new_rule_execution": "NOT RUN",
+  "reason_not_diagnosed": "A missing prerequisite/session state may cause the pause; no source-level cause claimed without trace",
+  "raw_snapshots": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/main-A/state-readbacks",
+  "terminal": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/main-A/operator-captures/terminal-009.log",
+  "postprocessing_correction": "An initial offline inventory assertion used nonexistent writeback_queue instead of actual worker_queue. It failed before writing a result. Corrected against captured table inventory only; no new application operation, provider call, changed snapshot or extra live harness attempt."
+}

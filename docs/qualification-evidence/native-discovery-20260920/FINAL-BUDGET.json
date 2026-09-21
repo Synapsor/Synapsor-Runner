@@ -1,0 +1,91 @@
+{
+  "global_cap_usd": 7.99154959,
+  "balance_evidence": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/balance-initial.json",
+  "cases": [
+    {
+      "case": "DEV-A",
+      "status": "STOPPED",
+      "transport_counts": {
+        "runtime": 3
+      },
+      "MCP_counts_by_role": {
+        "runtime": 5,
+        "deterministic": 58
+      },
+      "MCP_tools": {
+        "app.describe_data": 34,
+        "app.describe_actions": 28,
+        "app.explore_data": 1
+      },
+      "finite_workers": 0,
+      "spend_cap_usd": 1.99154959,
+      "native_complete_turn_reported_usd": 0,
+      "authoring_provider_reported_usd": 0,
+      "unsettled_conservative_observed_token_upper_usd": 0.9123600000000001,
+      "ledger_bound_usd": 0.9123600000000001,
+      "actual_total_charge": "not independently established; native/provider reports and unsettled conservative bounds are separate",
+      "started_at": "2026-09-21T02:38:24.420957+00:00",
+      "stopped_at": null,
+      "deadline": "2026-09-21T04:55:00Z",
+      "stop_reason": "Development catalog/list/detail/read completed; fourth narration reservation refused; no further development sampling."
+    },
+    {
+      "case": "KC-A",
+      "status": "STOPPED",
+      "transport_counts": {
+        "runtime": 13,
+        "authoring": 7
+      },
+      "MCP_counts_by_role": {
+        "deterministic": 52,
+        "runtime": 14
+      },
+      "MCP_tools": {
+        "app.describe_data": 20,
+        "app.describe_actions": 17,
+        "app.explore_data": 15,
+        "app.request_change": 14
+      },
+      "finite_workers": 2,
+      "spend_cap_usd": 3,
+      "native_complete_turn_reported_usd": 0.6088994999999999,
+      "authoring_provider_reported_usd": 0.1236939,
+      "unsettled_conservative_observed_token_upper_usd": 0,
+      "ledger_bound_usd": 0.7325934,
+      "actual_total_charge": "not independently established; native/provider reports and unsettled conservative bounds are separate",
+      "started_at": "2026-09-21T03:13:44.400671+00:00",
+      "stopped_at": "2026-09-21T03:54:19.787067+00:00",
+      "deadline": "2026-09-21T06:13:44.400671+00:00",
+      "stop_reason": "Exact disabled7-to5edit saved; public start->Resume immediately paused without coverage call or actionable reason. Substantive final no-progress; no alternate-path sampling or product repair. Publication/new-rule/recheck unverified."
+    },
+    {
+      "case": "KC-B",
+      "status": "STOPPED",
+      "transport_counts": {
+        "runtime": 6
+      },
+      "MCP_counts_by_role": {
+        "deterministic": 48,
+        "runtime": 7
+      },
+      "MCP_tools": {
+        "app.describe_data": 27,
+        "app.describe_actions": 18,
+        "app.explore_data": 9,
+        "app.request_change": 1
+      },
+      "finite_workers": 1,
+      "spend_cap_usd": 3,
+      "native_complete_turn_reported_usd": 0.30216350000000003,
+      "authoring_provider_reported_usd": 0,
+      "unsettled_conservative_observed_token_upper_usd": 1.1549,
+      "ledger_bound_usd": 1.4570635,
+      "actual_total_charge": "not independently established; native/provider reports and unsettled conservative bounds are separate",
+      "started_at": "2026-09-21T03:13:44.400671+00:00",
+      "stopped_at": "2026-09-21T03:33:44.787128+00:00",
+      "deadline": "2026-09-21T06:13:44.400671+00:00",
+      "stop_reason": "Independent reviewer harness correction allowance exhausted after one read-only Explore; remaining controls and numeric edit/restart NOT ESTABLISHED/NOT RUN. No product counterexample."
+    }
+  ],
+  "budgets_not_reset": true
+}

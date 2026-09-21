@@ -1,0 +1,42 @@
+{
+  "at": "2026-09-21T04:00:40.930992+00:00",
+  "main_clients": "native primary/beta and deterministic primary/beta stopped normally; exit0",
+  "control_logical_after_client_stop_equal": true,
+  "source_state_saved_before_owned_database_stop": true,
+  "owned_containers": [
+    {
+      "name": "synapsor-native-main-A",
+      "id": "02e5da5c55bcc8753ad3097c7feb59fa85e0f00ac2fe4a050973465f9cb1e21c",
+      "running": false,
+      "removed": false,
+      "label": "native-discovery-20260920"
+    },
+    {
+      "name": "synapsor-native-dev-A",
+      "id": "0175828cf451b15576ce5d2e8b3da1c74d64ac81175d4c0ab9ffab021c9af0e7",
+      "running": false,
+      "removed": false,
+      "label": "native-discovery-20260920"
+    },
+    {
+      "name": "synapsor-native-discovery-gates",
+      "id": "0899f21a111ca474fa56b50216c2b9d41a51a2c21ac002e5c0f2b4670614acea",
+      "running": false,
+      "removed": false,
+      "label": "native-discovery-20260920"
+    }
+  ],
+  "tester_cleanup": "Independent report records B container removed after matched state preservation",
+  "historical_containers": "not touched",
+  "new_full_walk": {
+    "verified_at": "2026-09-21T03:55:12.007Z",
+    "installed_tree_sha256": "4b33cde27ebfe5b33c9b65e9fcc716b1f6a3a354a137c17848633167798e47d6",
+    "entries": 7569
+  },
+  "old_full_walk": {
+    "verified_at": "2026-09-21T03:57:07.838Z",
+    "installed_tree_sha256": "e81826e022472e8dfa342505418c2a1a1d8442c7a6a0cdb953f5b3075b1d3065",
+    "entries": 7569
+  },
+  "remaining_owned_runtime_processes": []
+}

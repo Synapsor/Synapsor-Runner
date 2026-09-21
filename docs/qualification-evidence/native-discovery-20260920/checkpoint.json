@@ -1,27 +1,26 @@
 {
-  "status": "FREEZING",
-  "at": "2026-09-21T03:12:13.325009+00:00",
-  "raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920",
-  "product_commit": "b81207e08b7300f6d892f02ce4c2b014dc1894cc",
-  "full_suite": {
-    "exit": 0,
-    "passed": 6782,
-    "skipped": 478,
-    "source_unchanged": true
+  "status": "STOPPED_FOR_REVIEW",
+  "at": "2026-09-21T04:01:09.769559+00:00",
+  "product": "b81207e08b7300f6d892f02ce4c2b014dc1894cc",
+  "source": "f33d9fd8a2cebc09e24459ba6b6821d5372468dd",
+  "candidate_tree": "4b33cde27ebfe5b33c9b65e9fcc716b1f6a3a354a137c17848633167798e47d6",
+  "native_discovery": "PASS independent",
+  "A": {
+    "automatic_effect": "PASS",
+    "human_effect": "PASS",
+    "exact_disabled_7_to_5_edit": "PASS",
+    "public_resume": "FAIL no progress",
+    "publication_and_changed_rule": "NOT RUN",
+    "effects": 2,
+    "preserved_unstarted_work": 1
   },
-  "types_exit": 0,
-  "offline_checks": 10,
-  "offline_exits": [
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0,
-    0
-  ],
-  "next": "Freeze complete installation, independent tester checkpoint, bounded A/B continuation"
+  "B": {
+    "baseline_effect": "PASS independent",
+    "remaining_controls": "NOT ESTABLISHED reviewer harness stop",
+    "numeric_edit": "NOT RUN"
+  },
+  "Stage_B": "ATTEMPTED / NOT PASSED",
+  "next": "Separate decision on PUBLIC-EDIT-RESUME-FINDING.md and independent B harness/continuation; no automatic runs",
+  "cleanup": "owned states saved and resources stopped; CLEANUP.json",
+  "delivery": "Final report commit/private push recorded in external delivery.json and existing tracker"
 }

@@ -1,0 +1,85 @@
+{
+  "at": "2026-09-21T03:39:39.304579+00:00",
+  "native_model_first_request": "automatic / queued; completed status only after verified receipt and source re-read",
+  "baseline_effect": {
+    "status": "PASS",
+    "label": "ALPHA-BASE",
+    "requested_days": 3,
+    "whole_source_rows": 38,
+    "changed_rows": 1,
+    "changed_fields": [
+      "assessment_state",
+      "planned_release_days",
+      "row_version"
+    ],
+    "version_advance": 1,
+    "unrelated_rows_unchanged": 37,
+    "receipt_authority": "runner_ledger",
+    "canonical_receipt_hash": "sha256:c3a3e68849fdafca4d861f4b62ba20353fab785a8556b5d267bf6226509fa528",
+    "stored_receipt_bytes_sha256": "3558559361be9815263906eaaa58d76c1b3edfd7a83f4459dcb13c391022886f",
+    "idempotency_receipt_bytes_equal": true,
+    "approvals_before": 1,
+    "approvals_after": 1,
+    "source_receipt": "not applicable for declared Runner-ledger mode",
+    "receipt_probe": "not execution evidence",
+    "inputs": {
+      "beforeFile": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/main-A/state-readbacks/baseline-before-worker-source.json",
+      "afterFile": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/main-A/state-readbacks/baseline-after-worker-source.json",
+      "beforeControl": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/main-A/state-readbacks/baseline-before-worker-control.json",
+      "afterControl": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/main-A/state-readbacks/baseline-after-worker-control.json"
+    }
+  },
+  "human_effect": {
+    "status": "PASS",
+    "label": "ALPHA-HUMAN",
+    "requested_days": 4,
+    "whole_source_rows": 38,
+    "changed_rows": 1,
+    "changed_fields": [
+      "assessment_state",
+      "planned_release_days",
+      "row_version"
+    ],
+    "version_advance": 1,
+    "unrelated_rows_unchanged": 37,
+    "receipt_authority": "runner_ledger",
+    "canonical_receipt_hash": "sha256:6548f1f24bd6f3c0638398b9fca2a601f40b0a0f02a7e050bbd9225455ebbff7",
+    "stored_receipt_bytes_sha256": "97034cda1c8938143a7ad424a0458c4acb6986ff278fb0cf30fee215b6b726ec",
+    "idempotency_receipt_bytes_equal": true,
+    "approvals_before": 2,
+    "approvals_after": 2,
+    "source_receipt": "not applicable for declared Runner-ledger mode",
+    "receipt_probe": "not execution evidence",
+    "inputs": {
+      "beforeFile": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/main-A/state-readbacks/human-before-worker-source.json",
+      "afterFile": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/main-A/state-readbacks/human-after-worker-source.json",
+      "beforeControl": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/main-A/state-readbacks/human-before-worker-control.json",
+      "afterControl": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/main-A/state-readbacks/human-after-worker-control.json"
+    }
+  },
+  "human_operator": "Existing reviewed local dev_env / release_supervisor, verified:false; not production auth",
+  "negative_calls": {
+    "0_and_string_five": "ARGUMENT_INVALID",
+    "four_ineligible_subjects": "SEMANTIC_ACTION_NOT_ELIGIBLE; no private reason",
+    "notes_select_and_filter": "EXPLORE_FIELD_FORBIDDEN",
+    "animal_site_roots": "EXPLORE_RESOURCE_FORBIDDEN relationship-only; not a deeper field check",
+    "tenant_group": "EXPLORE_FIELD_FORBIDDEN",
+    "tenant_filter": "EXPLORE_SCOPE_FORBIDDEN",
+    "cross_context_issued_refs_both_directions": "SUBJECT_REFERENCE_UNAVAILABLE; actual public refusal, not every deeper row-scope layer"
+  },
+  "scoped_count_observation": "Plain count of SAME10 accessible assessments permitted with cohort5 and current trusted scope; not unrestricted population access. Do not claim all aggregates refused. Original policy says unrestricted populations/analytics.",
+  "context_limits": "Primary and beta each positive own-scope reads; both tenant/principal differ. No same-tenant different-principal row exists in unchanged sealed fixture; an attempted second setup was cancelled before label/save. No fixture rows added.",
+  "pre_edit": {
+    "proposals": 3,
+    "approvals": 3,
+    "automatic_approvals": 2,
+    "human_approvals": 1,
+    "receipts": 2,
+    "old_unstarted_six_days": 1,
+    "effects": 2
+  },
+  "queued_and_applied_identical_replays": "all42 logical tables and fullsource equal around each measured deterministic replay",
+  "harness_correction": "one consumed: aggregate measure op corrected to published function, original invalid-plan response retained; no reset",
+  "references": "ordinary five-minute refs; native refreshed expired first-read references normally before baseline. Its statement about post-expiry replay was not established by that narration.",
+  "claim_limits": "known-case evidence, no exactly-once/multihost/production; historic StageB not passed"
+}

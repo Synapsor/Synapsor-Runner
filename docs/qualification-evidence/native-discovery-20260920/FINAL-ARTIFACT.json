@@ -1,0 +1,29 @@
+{
+  "frozen_at": "2026-09-21T03:12:22.446Z",
+  "source_commit": "f33d9fd8a2cebc09e24459ba6b6821d5372468dd",
+  "product_commit": "b81207e08b7300f6d892f02ce4c2b014dc1894cc",
+  "test_commit": "b81207e08b7300f6d892f02ce4c2b014dc1894cc",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/frozen/installed",
+  "installed_tree_sha256": "4b33cde27ebfe5b33c9b65e9fcc716b1f6a3a354a137c17848633167798e47d6",
+  "node": {
+    "version": "v22.22.2",
+    "executable": "/usr/bin/node",
+    "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+  },
+  "runner_version": "1.8.0",
+  "spec_version": "1.11.0",
+  "package_lock_sha256": "41ab5de4b423284fa32da49da73de56d77d0652da2cc153166263a8240ec17da",
+  "entries": 7569,
+  "manifest": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/frozen/installed-artifact-manifest.json",
+    "sha256": "b03ba9b9fde1d06b339ec4fd34f3d92aed9e6bd6d3d86d25436403221ad00f6d"
+  },
+  "archive": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/frozen/installed-artifact.tar.gz",
+    "sha256": "0b4b680535e0955b8cb0efc9d65ec65da95ac373de0727b06f0792fbbbb9f243"
+  },
+  "source_archive": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/frozen/source-f33d9fd.tar.gz",
+    "sha256": "8e570e4053b133a7376035f8e9d2432b160bbdd58be4ab54102522b2730bc023"
+  }
+}

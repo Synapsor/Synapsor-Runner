@@ -1,0 +1,12 @@
+{
+  "report": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/FINAL-REVIEW.md",
+  "sha256": "539fe75cd8a380612f9f083fdf6d1cacf128cbd8ebc51b46eec8d9811b5ca4d3",
+  "verdict": "NOT ESTABLISHED overall; native discovery and baseline atomic receipt PASS; remaining controls/edit/restart NOT ESTABLISHED/NOT RUN",
+  "cause": "local cost reservation ended runtime after successful request; later reviewer assertion error with harness-correction allowance already consumed",
+  "product_counterexample": false,
+  "source_effects": 1,
+  "rows_changed": 2,
+  "finite_workers": 1,
+  "source_rows": 196,
+  "provider_transports": 6
+}

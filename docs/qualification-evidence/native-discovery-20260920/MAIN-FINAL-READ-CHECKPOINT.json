@@ -1,0 +1,40 @@
+{
+  "status": "PASS",
+  "candidate_tree": "4b33cde27ebfe5b33c9b65e9fcc716b1f6a3a354a137c17848633167798e47d6",
+  "native_tools": 4,
+  "real_provider_transports": 4,
+  "native_cost_groups": [
+    {
+      "id": "KC-A-runtime-turn-1",
+      "transport_ids": [
+        "KC-A-1",
+        "KC-A-2",
+        "KC-A-3",
+        "KC-A-4"
+      ],
+      "cost_usd": 0.1436295,
+      "basis": "native client total_cost_usd delta for complete turn; not individual transport cost",
+      "at": "2026-09-21T03:15:37.822Z"
+    }
+  ],
+  "model_discovery": [
+    "data listing",
+    "action listing",
+    "data detail",
+    "action detail"
+  ],
+  "permitted_read_rows": 10,
+  "completed_native_turn": true,
+  "source_rows": 38,
+  "source_unchanged": true,
+  "zero_business_records": true,
+  "changed_read_bookkeeping": [
+    "evidence_bundles",
+    "explore_budget_reservations",
+    "observed_subject_references",
+    "query_audit",
+    "sqlite_sequence"
+  ],
+  "still_business_authorized": false,
+  "raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/main-A/final-runtime"
+}
