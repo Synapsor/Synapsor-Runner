@@ -1,0 +1,8 @@
+{
+  "checked_at": "2026-09-21T02:51:01.074824+00:00",
+  "remote": "backup",
+  "url": "https://github.com/Synapsor/Synapsor-Runner-Backup.git",
+  "github_isPrivate": true,
+  "source": "git remote get-url and gh repo view",
+  "push": "not yet"
+}

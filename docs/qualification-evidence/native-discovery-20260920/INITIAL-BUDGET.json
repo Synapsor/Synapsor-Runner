@@ -1,0 +1,51 @@
+{
+  "assignment": "native-discovery-20260920",
+  "created_at": "2026-09-21T02:31:31.796852+00:00",
+  "spend_ceiling_usd": 7.99154959,
+  "balance_evidence": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/balance-initial.json",
+  "historical_ledgers": "closed; not reused",
+  "case_allocations": [
+    {
+      "case_id": "DEV-A",
+      "phase_kind": "development",
+      "status": "PREPARED",
+      "spend_ceiling_usd": 1.99154959,
+      "models": {
+        "runtime": "claude-opus-5",
+        "authoring": "openai/gpt-5.6-terra"
+      },
+      "transports": [],
+      "runtime_cost_groups": [],
+      "deadline": null,
+      "checkpoint1_deadline": null
+    },
+    {
+      "case_id": "KC-A",
+      "phase_kind": "final",
+      "status": "PREPARED",
+      "spend_ceiling_usd": 3.0,
+      "models": {
+        "runtime": "claude-opus-5",
+        "authoring": "openai/gpt-5.6-terra"
+      },
+      "transports": [],
+      "runtime_cost_groups": [],
+      "deadline": null,
+      "checkpoint1_deadline": null
+    },
+    {
+      "case_id": "KC-B",
+      "phase_kind": "final",
+      "status": "PREPARED",
+      "spend_ceiling_usd": 3.0,
+      "models": {
+        "runtime": "claude-opus-5",
+        "authoring": "openai/gpt-5.6-terra"
+      },
+      "transports": [],
+      "runtime_cost_groups": [],
+      "deadline": null,
+      "checkpoint1_deadline": null
+    }
+  ]
+}

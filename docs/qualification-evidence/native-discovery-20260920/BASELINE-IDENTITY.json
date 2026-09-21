@@ -1,0 +1,36 @@
+{
+  "baseline_commit": "3d02c0b2638c2d33107df1e039b8452535f1a431",
+  "records": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/frozen/installed-artifact-manifest.json",
+      "sha256": "8b46ee72a1d88eb4aadee31be3d8a674717dd640fb506ba9b919761974febf60",
+      "bytes": 1622776
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-review-5d92ca5-20260920/frozen/installed-artifact.tar.gz",
+      "sha256": "91c9baa6f70cbd95046823e2ae18d0c69d06c532ed0d0734d4cda1f7318e53f0",
+      "bytes": 17884866
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/known-case-deployment-7be82c7-20260920/deployed-before-first-request/A/manifest.json",
+      "sha256": "a9cefaed46cd775ba84fe76c29e14d91895c32ea4de95f4fab9c8f0440d06765",
+      "bytes": 962
+    },
+    {
+      "path": "/home/sandesh-tiwari/.npm-global/lib/node_modules/@anthropic-ai/claude-code/bin/claude.exe",
+      "sha256": "5c4735937844e84f8a93306e841a5b0e12252909b07870f789b190468da147ab",
+      "bytes": 234119480
+    },
+    {
+      "path": "/usr/bin/node",
+      "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90",
+      "bytes": 124679552
+    }
+  ],
+  "native_version": "2.1.278 (Claude Code)",
+  "emitters": {
+    "mcp_sdk": "1.29.0",
+    "zod_to_json_schema": "3.25.2"
+  },
+  "state": "readonly originals; whole deploy seal restored before writable preflight"
+}

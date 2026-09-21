@@ -1,0 +1,440 @@
+{
+  "scope": "real installed old/current development MCP producers and handlers on same owned A; discovery only",
+  "rows": [
+    {
+      "tool": "app.describe_data",
+      "case": "empty",
+      "arguments": {},
+      "baseline_wire_valid": true,
+      "current_wire_valid": true,
+      "baseline_host_success": true,
+      "current_host_success": true,
+      "host_code": null,
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_data",
+      "case": "listing",
+      "arguments": {
+        "query": "release",
+        "limit": 1
+      },
+      "baseline_wire_valid": true,
+      "current_wire_valid": true,
+      "baseline_host_success": true,
+      "current_host_success": true,
+      "host_code": null,
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_data",
+      "case": "detail",
+      "arguments": {
+        "resource": "release_ops.release_assessments"
+      },
+      "baseline_wire_valid": true,
+      "current_wire_valid": true,
+      "baseline_host_success": true,
+      "current_host_success": true,
+      "host_code": null,
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_data",
+      "case": "strict-detail",
+      "arguments": {
+        "resource": "release_ops.release_assessments",
+        "query": null,
+        "limit": null,
+        "cursor": null
+      },
+      "baseline_wire_valid": true,
+      "current_wire_valid": true,
+      "baseline_host_success": true,
+      "current_host_success": true,
+      "host_code": null,
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_data",
+      "case": "strict-listing",
+      "arguments": {
+        "resource": null,
+        "query": "release",
+        "limit": 1,
+        "cursor": null
+      },
+      "baseline_wire_valid": true,
+      "current_wire_valid": true,
+      "baseline_host_success": true,
+      "current_host_success": true,
+      "host_code": null,
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_data",
+      "case": "mixed-query",
+      "arguments": {
+        "resource": "release_ops.release_assessments",
+        "query": "release"
+      },
+      "baseline_wire_valid": false,
+      "current_wire_valid": true,
+      "baseline_host_success": false,
+      "current_host_success": false,
+      "host_code": "ARGUMENT_INVALID",
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_data",
+      "case": "mixed-limit",
+      "arguments": {
+        "resource": "release_ops.release_assessments",
+        "limit": 1
+      },
+      "baseline_wire_valid": false,
+      "current_wire_valid": true,
+      "baseline_host_success": false,
+      "current_host_success": false,
+      "host_code": "ARGUMENT_INVALID",
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_data",
+      "case": "mixed-cursor",
+      "arguments": {
+        "resource": "release_ops.release_assessments",
+        "cursor": "cur_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "baseline_wire_valid": false,
+      "current_wire_valid": true,
+      "baseline_host_success": false,
+      "current_host_success": false,
+      "host_code": "ARGUMENT_INVALID",
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_data",
+      "case": "empty-cursor",
+      "arguments": {
+        "cursor": ""
+      },
+      "baseline_wire_valid": false,
+      "current_wire_valid": false,
+      "baseline_host_success": false,
+      "current_host_success": false,
+      "host_code": "SDK_ARGUMENT_REFUSAL",
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_data",
+      "case": "fabricated-cursor",
+      "arguments": {
+        "cursor": "cur_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "baseline_wire_valid": true,
+      "current_wire_valid": true,
+      "baseline_host_success": false,
+      "current_host_success": false,
+      "host_code": "CATALOG_CURSOR_INVALID",
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_data",
+      "case": "unknown-key",
+      "arguments": {
+        "extra": null
+      },
+      "baseline_wire_valid": false,
+      "current_wire_valid": false,
+      "baseline_host_success": false,
+      "current_host_success": false,
+      "host_code": "SDK_ARGUMENT_REFUSAL",
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_data",
+      "case": "wrong-type",
+      "arguments": {
+        "resource": 12
+      },
+      "baseline_wire_valid": false,
+      "current_wire_valid": false,
+      "baseline_host_success": false,
+      "current_host_success": false,
+      "host_code": "SDK_ARGUMENT_REFUSAL",
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_data",
+      "case": "unavailable",
+      "arguments": {
+        "resource": "unavailable.unknown"
+      },
+      "baseline_wire_valid": true,
+      "current_wire_valid": true,
+      "baseline_host_success": false,
+      "current_host_success": false,
+      "host_code": "CATALOG_ENTRY_UNAVAILABLE",
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_data",
+      "case": "detail-neutral-zero",
+      "arguments": {
+        "boundary": null,
+        "resource": "release_ops.release_assessments",
+        "query": null,
+        "limit": 0,
+        "cursor": 0
+      },
+      "baseline_wire_valid": true,
+      "current_wire_valid": true,
+      "baseline_host_success": true,
+      "current_host_success": true,
+      "host_code": null,
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_data",
+      "case": "boundary-detail",
+      "arguments": {
+        "boundary": "reviewed_staging",
+        "resource": "release_ops.release_assessments"
+      },
+      "baseline_wire_valid": true,
+      "current_wire_valid": true,
+      "baseline_host_success": true,
+      "current_host_success": true,
+      "host_code": null,
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_data",
+      "case": "boundary-listing",
+      "arguments": {
+        "boundary": "reviewed_staging",
+        "limit": 1
+      },
+      "baseline_wire_valid": true,
+      "current_wire_valid": true,
+      "baseline_host_success": true,
+      "current_host_success": true,
+      "host_code": null,
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_actions",
+      "case": "empty",
+      "arguments": {},
+      "baseline_wire_valid": true,
+      "current_wire_valid": true,
+      "baseline_host_success": true,
+      "current_host_success": true,
+      "host_code": null,
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_actions",
+      "case": "listing",
+      "arguments": {
+        "query": "release",
+        "limit": 1
+      },
+      "baseline_wire_valid": true,
+      "current_wire_valid": true,
+      "baseline_host_success": true,
+      "current_host_success": true,
+      "host_code": null,
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_actions",
+      "case": "detail",
+      "arguments": {
+        "outcome": "release.clear_assessment"
+      },
+      "baseline_wire_valid": true,
+      "current_wire_valid": true,
+      "baseline_host_success": true,
+      "current_host_success": true,
+      "host_code": null,
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_actions",
+      "case": "strict-detail",
+      "arguments": {
+        "outcome": "release.clear_assessment",
+        "query": null,
+        "limit": null,
+        "cursor": null
+      },
+      "baseline_wire_valid": true,
+      "current_wire_valid": true,
+      "baseline_host_success": true,
+      "current_host_success": true,
+      "host_code": null,
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_actions",
+      "case": "strict-listing",
+      "arguments": {
+        "outcome": null,
+        "query": "release",
+        "limit": 1,
+        "cursor": null
+      },
+      "baseline_wire_valid": true,
+      "current_wire_valid": true,
+      "baseline_host_success": true,
+      "current_host_success": true,
+      "host_code": null,
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_actions",
+      "case": "mixed-query",
+      "arguments": {
+        "outcome": "release.clear_assessment",
+        "query": "release"
+      },
+      "baseline_wire_valid": false,
+      "current_wire_valid": true,
+      "baseline_host_success": false,
+      "current_host_success": false,
+      "host_code": "ARGUMENT_INVALID",
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_actions",
+      "case": "mixed-limit",
+      "arguments": {
+        "outcome": "release.clear_assessment",
+        "limit": 1
+      },
+      "baseline_wire_valid": false,
+      "current_wire_valid": true,
+      "baseline_host_success": false,
+      "current_host_success": false,
+      "host_code": "ARGUMENT_INVALID",
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_actions",
+      "case": "mixed-cursor",
+      "arguments": {
+        "outcome": "release.clear_assessment",
+        "cursor": "cur_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "baseline_wire_valid": false,
+      "current_wire_valid": true,
+      "baseline_host_success": false,
+      "current_host_success": false,
+      "host_code": "ARGUMENT_INVALID",
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_actions",
+      "case": "empty-cursor",
+      "arguments": {
+        "cursor": ""
+      },
+      "baseline_wire_valid": false,
+      "current_wire_valid": false,
+      "baseline_host_success": false,
+      "current_host_success": false,
+      "host_code": "SDK_ARGUMENT_REFUSAL",
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_actions",
+      "case": "fabricated-cursor",
+      "arguments": {
+        "cursor": "cur_aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+      },
+      "baseline_wire_valid": true,
+      "current_wire_valid": true,
+      "baseline_host_success": false,
+      "current_host_success": false,
+      "host_code": "CATALOG_CURSOR_INVALID",
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_actions",
+      "case": "unknown-key",
+      "arguments": {
+        "extra": null
+      },
+      "baseline_wire_valid": false,
+      "current_wire_valid": false,
+      "baseline_host_success": false,
+      "current_host_success": false,
+      "host_code": "SDK_ARGUMENT_REFUSAL",
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_actions",
+      "case": "wrong-type",
+      "arguments": {
+        "outcome": 12
+      },
+      "baseline_wire_valid": false,
+      "current_wire_valid": false,
+      "baseline_host_success": false,
+      "current_host_success": false,
+      "host_code": "SDK_ARGUMENT_REFUSAL",
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    },
+    {
+      "tool": "app.describe_actions",
+      "case": "unavailable",
+      "arguments": {
+        "outcome": "unavailable.unknown"
+      },
+      "baseline_wire_valid": true,
+      "current_wire_valid": true,
+      "baseline_host_success": false,
+      "current_host_success": false,
+      "host_code": "CATALOG_ENTRY_UNAVAILABLE",
+      "baseline_native_retained": false,
+      "current_native_retained": true
+    }
+  ],
+  "canonical_meanings_preserved": true,
+  "native_retention_basis": [
+    "dev-A/native-before-buffered",
+    "dev-A/native-after"
+  ],
+  "live_provider_basis": "dev-A/development-runtime; three HTTP200, both catalog listing/detail calls and permitted read; final narration budget-blocked",
+  "wire_semantics": "current structural superset intentionally leaves six meaningful branch combinations host-refused"
+}

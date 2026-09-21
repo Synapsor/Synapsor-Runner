@@ -1,0 +1,12 @@
+{
+  "status": "PASS",
+  "all_logical_tables": 42,
+  "logical_contents_equal": true,
+  "source_rows": 38,
+  "source_hash": "51687e126e9b7b2860fe38c3678e6c54a965fd1518aec33cb2ca89d1bf75f7a4",
+  "business_counts_zero": true,
+  "starting_authority": "active reviewed Read/Action/execution from authentic deployed seal, not fresh onboarding",
+  "private_passwords": "fresh existing restricted roles, unchanged grants",
+  "public_operations": 0,
+  "final_candidate": "PENDING_FREEZE"
+}

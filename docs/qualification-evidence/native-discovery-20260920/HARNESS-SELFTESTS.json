@@ -1,0 +1,45 @@
+{
+  "at": "2026-09-21T03:03:55.556933+00:00",
+  "results": [
+    {
+      "command": [
+        "node",
+        "docs/qualification-evidence/native-discovery-20260920/capture-selftest.mjs"
+      ],
+      "exit": 0,
+      "stdout": "{\"status\":\"PASS\",\"provider_calls\":0,\"wire_mutation\":false,\"coverage\":[\"secret sentinel\",\"private continuation\",\"metadata enums\",\"tool envelopes\",\"settings\",\"usage\",\"malformed opaque capture\"]}\n",
+      "stderr": "",
+      "provider_calls": 0
+    },
+    {
+      "command": [
+        "node",
+        "docs/qualification-evidence/native-discovery-20260920/budget-selftest.mjs"
+      ],
+      "exit": 0,
+      "stdout": "{\"status\":\"PASS\",\"provider_calls\":0,\"controls\":[\"sole allocation\",\"model\",\"competing lock\",\"protected phase\",\"spend\",\"settlement\"]}\n",
+      "stderr": "",
+      "provider_calls": 0
+    },
+    {
+      "command": [
+        "node",
+        "docs/qualification-evidence/native-discovery-20260920/runtime-selftest.mjs"
+      ],
+      "exit": 0,
+      "stdout": "{\"status\":\"PASS\",\"provider_calls\":0,\"paths\":[\"persistent runtime proxy transport\"],\"request_response_bytes_unchanged\":true,\"controls\":[\"exact model/settings\",\"four tools\",\"private identity\",\"24 transport ceiling\",\"shared spend ceiling\",\"native turn cost settlement\",\"private continuation suppression\",\"tool envelope preserved\"]}\n",
+      "stderr": "",
+      "provider_calls": 0
+    },
+    {
+      "command": [
+        "node",
+        "docs/qualification-evidence/native-discovery-20260920/mcp-observer-selftest.mjs"
+      ],
+      "exit": 0,
+      "stdout": "{\"status\":\"PASS\",\"provider_calls\":0,\"product_calls\":0,\"controls\":[\"exact stdio bytes preserved\",\"pre-forward shared deterministic count\",\"budget refuses before child receives request\"],\"fixture\":\"synthetic local echo child; no authority/result substitution\"}\n",
+      "stderr": "",
+      "provider_calls": 0
+    }
+  ]
+}

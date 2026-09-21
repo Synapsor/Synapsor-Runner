@@ -1,0 +1,21 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import assert from 'node:assert/strict';
+import { reserve, settle } from './provider-budget.mjs';
+const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'new-stage-b-budget-test-'));
+const file = path.join(dir, 'ledger.json');
+const state = { spend_ceiling_usd:0.3, case_allocations: [{case_id:'TEST',status:'LIVE',deadline:new Date(Date.now()+60000).toISOString(),
+  checkpoint1_deadline:new Date(Date.now()+60000).toISOString(),spend_ceiling_usd:0.3,models:{authoring:'declared'},transports:[]}] };
+fs.writeFileSync(file, JSON.stringify(state));
+const req = { model:'declared',max_tokens:1000,messages:[] };
+const a = reserve(file,'TEST','authoring','initial',req); settle(file,'TEST',a.id,0.01);
+assert.throws(()=>reserve(file,'TEST','authoring','initial',{...req,model:'other'}),/Undeclared model/);
+fs.writeFileSync(file+'.lock','owned-test-lock');
+assert.throws(()=>reserve(file,'TEST','authoring','initial',req),{code:'EEXIST'});fs.unlinkSync(file+'.lock');
+const j=JSON.parse(fs.readFileSync(file));j.case_allocations[0].transports=Array.from({length:28},(_,i)=>({id:String(i),role:'authoring',phase:'initial',cost_usd:0}));fs.writeFileSync(file,JSON.stringify(j));
+assert.throws(()=>reserve(file,'TEST','authoring','initial',req),/Protect twelve/);
+assert.doesNotThrow(()=>reserve(file,'TEST','authoring','evolution',req));
+const k=JSON.parse(fs.readFileSync(file));k.case_allocations[0].spend_ceiling_usd=0;fs.writeFileSync(file,JSON.stringify(k));
+assert.throws(()=>reserve(file,'TEST','authoring','restart',req),/monetary ceiling/);
+fs.rmSync(dir,{recursive:true});console.log(JSON.stringify({status:'PASS',provider_calls:0,controls:['sole allocation','model','competing lock','protected phase','spend','settlement']}));

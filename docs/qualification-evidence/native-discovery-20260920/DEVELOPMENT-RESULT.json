@@ -1,0 +1,49 @@
+{
+  "status": "DISCOVERY_AND_READ_PASS; FINAL_NARRATION_BUDGET_BLOCKED",
+  "source": "development checkout c449c2ddf18a5edfe25b1792c60d2ecf15be5fbad529f1a64535aea57e28d723",
+  "native": "2.1.278; sha5c4735937844e84f8a93306e841a5b0e12252909b07870f789b190468da147ab",
+  "retained_tools": 4,
+  "real_provider_transports": 3,
+  "http_statuses": [
+    200,
+    200,
+    200
+  ],
+  "model_tools": [
+    "describe_data listing",
+    "describe_actions listing",
+    "describe_data exact detail",
+    "describe_actions exact detail",
+    "explore_data rows projection"
+  ],
+  "permitted_rows": 10,
+  "request_change": 0,
+  "worker": 0,
+  "effects": 0,
+  "source_unchanged": true,
+  "changed_logical_tables": {
+    "evidence_bundles": {
+      "before": 0,
+      "after": 1
+    },
+    "explore_budget_reservations": {
+      "before": 0,
+      "after": 1
+    },
+    "observed_subject_references": {
+      "before": 0,
+      "after": 10
+    },
+    "query_audit": {
+      "before": 0,
+      "after": 1
+    },
+    "sqlite_sequence": {
+      "before": 0,
+      "after": 1
+    }
+  },
+  "stop": "Fourth proposed transport exceeded predeclared DEV-A$1.99154959 reservation ceiling. Not forwarded/reserved. No cap increase, fresh sample or counter reset; unknown actual charge retains conservative observed-usage bound. Final client narration NOT COMPLETED.",
+  "raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/dev-A/development-runtime",
+  "protocol": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/native-discovery-3d02c0b-20260920/dev-A/authoring-meter/runtime-development.jsonl"
+}

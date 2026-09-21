@@ -1,0 +1,7 @@
+# Native capture corrections
+
+Development no-forward native-before on fresh deployed A confirmed a two-tool outgoing envelope, but the gate exited1 because it applied JSON-aware capture redaction to arbitrary stdout chunks. Without preserving line delimiters, separate JSON records could concatenate; arbitrary partial chunks could also become opaque captures. The recorded stdout begins with a valid init object but was not parseable as JSON lines. This is a measurement error, not a product verdict. Preserve original native-before/RESULT.json, attempted envelope and original stdout. Correct line buffering and await capture writes; repeat only zero-provider ingestion in a separate native-before-buffered directory. No schema/payload transformation, business request or budget reset.
+
+Previous assignment demonstrated namespace launcher termination could leave owned descendants. New harness uses its own process group and signals only that group. Before any guard refusal the safely redacted attempted envelope is now retained separately from reserved/upstream transports. All four-tool/model/privacy/budget guards remain unchanged; development explicitly refuses request_change before dispatch. Runtime local transport selftest passed with zero provider calls.
+
+Zero-provider installed matrix first launch failed at module resolution before any process/store call: Ajv is installed under the runner workspace, not repo root. Resolve that existing dependency using createRequire(apps/runner/package.json); no dependency install/change.

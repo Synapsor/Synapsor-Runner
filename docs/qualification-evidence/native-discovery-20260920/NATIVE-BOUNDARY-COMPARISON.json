@@ -1,0 +1,58 @@
+{
+  "basis": "old/current actualSDK catalogs and actual forwardeddevelopment firstrequest; no proxyrewrite",
+  "rows": [
+    {
+      "name": "app.describe_actions",
+      "input_schema_unchanged": false,
+      "native_property_names": [
+        "outcome",
+        "query",
+        "limit",
+        "cursor"
+      ],
+      "description_exact": true,
+      "description_core_retained": true,
+      "root_combinators": []
+    },
+    {
+      "name": "app.request_change",
+      "input_schema_unchanged": true,
+      "native_property_names": [
+        "outcome",
+        "subject_refs",
+        "inputs"
+      ],
+      "description_exact": true,
+      "description_core_retained": null,
+      "root_combinators": []
+    },
+    {
+      "name": "app.describe_data",
+      "input_schema_unchanged": false,
+      "native_property_names": [
+        "boundary",
+        "resource",
+        "query",
+        "cursor",
+        "limit"
+      ],
+      "description_exact": true,
+      "description_core_retained": true,
+      "root_combinators": []
+    },
+    {
+      "name": "app.explore_data",
+      "input_schema_unchanged": true,
+      "native_property_names": [
+        "boundary",
+        "plan"
+      ],
+      "description_exact": false,
+      "description_core_retained": null,
+      "root_combinators": []
+    }
+  ],
+  "all_four_upstream_accepted": true,
+  "first_upstream_http_status": 200,
+  "existing_explore_description_limit": "Native outgoing Explore description is truncated at its existing client bound; first Rows/select and aggregate grammar remains, unchanged Explore input schema. Both newly changed discovery descriptions survive exactly, including leading operation/null guidance. No schema rewrite by capture."
+}
