@@ -1,0 +1,16 @@
+{
+  "at": "2026-09-21T06:52:56.073808+00:00",
+  "proposal": {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/b-live-prepared/B-FUNDING-PROOF.json",
+    "sha256": "0fcb35ccf57e138ca0d2b762fd9de2e04cb9a239c73c087b07939736cf5db9dd"
+  },
+  "verdict": "Conditional progression bound, not accepted as full worst-case turn reservation",
+  "finding": "Prior response provisional costs capped only after response; the complete five-send hard bound at declared per-send request/output caps is 5*1.98534 = 9.92670, above remaining shared funds and B purpose cap.",
+  "related_prelaunch_harness_findings": [
+    "Copied authoring40 versus assignment30",
+    "Copied request_change24 versus assignment18"
+  ],
+  "paid_calls_before_finding": 0,
+  "product_change": false,
+  "required_next": "Correct prelaunch guards and use a truthful fully funded bounded ordinary turn or leave native unrun. Independent safe disabled-edit/review work may proceed within actual caps; publication/same-client prerequisite remains."
+}

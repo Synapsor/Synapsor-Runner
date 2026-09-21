@@ -1,0 +1,241 @@
+{
+  "at": "2026-09-21T06:41:50.012936+00:00",
+  "result": "BLOCKED: BUSINESS review not established",
+  "candidate_tree": "5f375284d7c5d35746437a148bfa7fe4415a47fa7b45eadb1a2b4bc1e4d5483c",
+  "public_resume": "Reached current review, no original silent pause",
+  "initial_finding": {
+    "code": "OBLIGATION_OBSERVATION_UNESTABLISHED",
+    "component": "/passages/19"
+  },
+  "final_finding": {
+    "code": "COVERAGE_SOURCE_LINES_MISSING",
+    "component": "/",
+    "missing_nonblank_source_lines": [
+      22
+    ],
+    "later_validation": "unevaluated; no claim that receipt association or residual claims passed"
+  },
+  "authoring_transports": [
+    {
+      "id": "KC-A-1",
+      "role": "authoring",
+      "phase": "initial",
+      "at": "2026-09-21T06:37:44.162Z",
+      "reservation_usd": 0.9784799999999999,
+      "input_bytes": 190620,
+      "maximum_output_tokens": 12000,
+      "status": "SETTLED",
+      "cost_usd": 0.1163858,
+      "completed_at": "2026-09-21T06:38:18.572Z",
+      "http_status": 200,
+      "capture_complete": true,
+      "response_sha256": "c517052bbfb128a0e5409b97d2555fe42c80d972d7ef5ec68ef42d299016525c"
+    },
+    {
+      "id": "KC-A-2",
+      "role": "authoring",
+      "phase": "initial",
+      "at": "2026-09-21T06:38:20.206Z",
+      "reservation_usd": 0.9858039999999999,
+      "input_bytes": 192451,
+      "maximum_output_tokens": 12000,
+      "status": "SETTLED",
+      "cost_usd": 0.1219693,
+      "completed_at": "2026-09-21T06:38:58.864Z",
+      "http_status": 200,
+      "capture_complete": true,
+      "response_sha256": "ffe8ea37376886a5e179bb2231259484cf41d2b13a5d802b3539c7e775b67450"
+    }
+  ],
+  "actual_spend_usd": 0.2383551,
+  "restart": "Explicit Review offered a separately recorded episode; default No. POLICY_COVERAGE_EPISODE_PENDING, zero new provider sends.",
+  "cli_exits": [
+    0,
+    0
+  ],
+  "business_review_completed": false,
+  "publication": false,
+  "runtime_model_calls": 0,
+  "deterministic_runtime_calls": 0,
+  "workers": 0,
+  "source_effects": 0,
+  "unchanged_source_rows": 38,
+  "source_sha256": "b3c6b48ed5936be078a7e2adb749e9ecf3303a06c158ca9582ff232bf143bb62",
+  "unchanged_logical_tables": [
+    "approvals",
+    "attention_events",
+    "attention_items",
+    "cloud_governance_events",
+    "cloud_outbox",
+    "control_policy_active",
+    "control_policy_budget_accounts",
+    "control_policy_budget_entries",
+    "control_policy_budget_receipts",
+    "control_policy_budget_requests",
+    "control_policy_drafts",
+    "control_policy_effect_admissions",
+    "control_policy_effect_receipts",
+    "control_policy_identity",
+    "control_policy_reviews",
+    "control_policy_revisions",
+    "control_policy_runtime_proofs",
+    "evidence_bundles",
+    "evidence_items",
+    "explore_budget_reservations",
+    "explore_privacy_releases",
+    "idempotency_receipts",
+    "notification_deliveries",
+    "observed_subject_references",
+    "policy_recommendations",
+    "proposal_events",
+    "proposal_store_schema",
+    "proposals",
+    "query_audit",
+    "replay_records",
+    "runner_state",
+    "shadow_human_actions",
+    "shadow_outcomes",
+    "shadow_studies",
+    "shadow_study_cases",
+    "sqlite_sequence",
+    "worker_queue",
+    "writeback_intents",
+    "writeback_jobs",
+    "writeback_receipts"
+  ],
+  "changed_tables": {
+    "control_policy_deployments": {
+      "before": 1,
+      "after": 1
+    },
+    "control_policy_events": {
+      "before": 20,
+      "after": 21
+    }
+  },
+  "same_control_table_membership": true,
+  "raw": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/authoring-meter/KC-A-1-request.json",
+      "sha256": "4dcefa59a626c586c933091768fe4563f7617c617ac0a81883237a3f1f5853fa"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/authoring-meter/KC-A-1-response-tool-0-arguments.reconstructed.json",
+      "sha256": "974ceca2efbfd04c8442175166bf408226fc12f65ff72e2f84fa534b70644102"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/authoring-meter/KC-A-1-response.txt",
+      "sha256": "09bccf883057082c262de39406ec28d5a952175a5830f36692f94a709c5757e0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/authoring-meter/KC-A-2-request.json",
+      "sha256": "8d5e064daf5df744723e69ad5759d1261683d3510e72ae250e51a02ae41cc741"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/authoring-meter/KC-A-2-response-tool-0-arguments.reconstructed.json",
+      "sha256": "11b8fa1cd2cde0bd0ecf689a7d995b73ced1d128eec0f09e8014c8344e3a059e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/authoring-meter/KC-A-2-response.txt",
+      "sha256": "368496203b5cdceb9c18503c1d64a6d39904790ee60d51c32300c0afcfb77ef8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/authoring-meter/events.jsonl",
+      "sha256": "1e46b92ebf5a852b207edf07f54defb732424afc27aa9d5aeabead06d9ccb0cb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/authoring-meter/prepared-envelopes.jsonl",
+      "sha256": "0dc44ceff125d1d455c51476f950ba1663361bfb6b5ebee782463b736ff9b119"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/operator-captures/exit-001.json",
+      "sha256": "29ddae175382f00c7e2471796ac508aeb7de6b168fa4d2826e6ff40ca05c8f2a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/operator-captures/exit-002.json",
+      "sha256": "3b35c888e081a06d13f3eb70a3cdf44a92d93c6d641fc833866af7feadfdf163"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/operator-captures/preflight-001.json",
+      "sha256": "e5b90b82860f532bd12d51d089f4876bdb38c5b1473253751923bfec6c4d2138"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/operator-captures/preflight-002.json",
+      "sha256": "e5b90b82860f532bd12d51d089f4876bdb38c5b1473253751923bfec6c4d2138"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/operator-captures/terminal-001.log",
+      "sha256": "103752cd2b4e45349fa571cb76073184a9df25cd1348997125668c33a7e4925c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/operator-captures/terminal-002.log",
+      "sha256": "cf9055b39390acb082a6fbaa6b452553e5ce5056119e708d9e41f57b8afb2d9d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/state-readbacks/final-before-review-control.json",
+      "sha256": "bf869fc48fd895b52153f9e0758523a54f898e421614974c1832528d921c9ab3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/state-readbacks/final-before-review-source.json",
+      "sha256": "b3c6b48ed5936be078a7e2adb749e9ecf3303a06c158ca9582ff232bf143bb62"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/state-readbacks/final-before-review-summary.json",
+      "sha256": "1b02a257bd22682332ee8a61ed58e5609a535d2dd5fa08674f7128821a04c22b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/state-readbacks/final-restart-stopped-control.json",
+      "sha256": "47fa0102b1912c749b81e907dfcea2dae8b6cf99e80efdde7a2520786b5f4b59"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/state-readbacks/final-restart-stopped-output.json",
+      "sha256": "df0fc30627065f3c4becc97ad5f7bbae4c7692004595dc5efbae78667ef35978"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/state-readbacks/final-restart-stopped-source.json",
+      "sha256": "b3c6b48ed5936be078a7e2adb749e9ecf3303a06c158ca9582ff232bf143bb62"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/state-readbacks/final-restart-stopped-summary.json",
+      "sha256": "13edb501d3ee22a96bb15c68512cb5abb45722d46ca02b4d1f6e31fd53ae9506"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/state-readbacks/final-review-stopped-control.json",
+      "sha256": "47fa0102b1912c749b81e907dfcea2dae8b6cf99e80efdde7a2520786b5f4b59"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/state-readbacks/final-review-stopped-output.json",
+      "sha256": "80f81e0ef845c82f1cc113f25495a4c32eef42879312dd0146b9b1cc27aa1774"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/state-readbacks/final-review-stopped-source.json",
+      "sha256": "b3c6b48ed5936be078a7e2adb749e9ecf3303a06c158ca9582ff232bf143bb62"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/main-A/state-readbacks/final-review-stopped-summary.json",
+      "sha256": "31e7f460bb10213084eee750f5f19ae989add864ef5e270be80178a5cc37e56b"
+    }
+  ],
+  "config_changes": {
+    ".synapsor/boundary-authoring/policy-sources/e631e9a6-e7d6-4428-a423-be36465405f7.json": {
+      "before": "c33d90b39cf344626e4a8242de9e379013da3c712abe8bb7c0b2bd565699a503",
+      "after": "3157812338ab2ecd1867cb12e5c4a9c8b460bc4ec8e5d0ba6f0641fc68773f62"
+    },
+    ".synapsor/boundary-authoring/resume.json": {
+      "before": "9dab735675046721675ad19787977ac63d51302602448c3747d739cbf9ba6d3b",
+      "after": "8a48bf589037e4d784a2466a6fc9a05fbcf9aa751b5fbd5bf9e5dfc5d42b62d3"
+    },
+    ".synapsor/delegations/help_a_wildlife_rehabilitation_coordinator_find_a_release_assess/draft.json": {
+      "before": "00c3db2991216a49d4d9440cea3ef01cee8bafce771355d83a9c46264679c587",
+      "after": "e911be74daed050ebbbfee48161a64cca7687a041c8d5667d2beb2641e34cd90"
+    },
+    ".synapsor/delegations/help_a_wildlife_rehabilitation_coordinator_find_a_release_assess/revisions/6826d32ccc8716839c27720c15cd4e0e8464b843a2581b9e1d51fcda52dd920c/delegation.json": {
+      "before": null,
+      "after": "e911be74daed050ebbbfee48161a64cca7687a041c8d5667d2beb2641e34cd90"
+    }
+  },
+  "execution_and_read_configs_unchanged": true,
+  "source_text_unchanged": true,
+  "missing_line_is_heading": "Scope, privacy, receipts, and duties",
+  "later_claims": "Second reply removed the offending broad receipts path; strict full validation stopped at missing heading. No assertion that all residual claims passed."
+}

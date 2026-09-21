@@ -1,0 +1,19 @@
+{
+  "at": "2026-09-21T06:15:41.066013+00:00",
+  "deadline": "2026-09-21T07:15:41.066013+00:00",
+  "case": "PROBE-A",
+  "status": "LIVE",
+  "business_authorized": false,
+  "source": "1dd748a0de40be4d6e1b1c4212d4eef44c27b291",
+  "artifact_tree": "5f375284d7c5d35746437a148bfa7fe4415a47fa7b45eadb1a2b4bc1e4d5483c",
+  "schedule": {
+    "maximum_transports": 3,
+    "maximum_prepared_request_bytes": 196000,
+    "maximum_output_tokens": 12000,
+    "per_transport_worst_case_reservation_usd": 1,
+    "whole_schedule_reservation_usd": 3,
+    "third_response": "Only the existing product-authorized distinct structural correction after prior findings resolve; no repeat/no-progress or alternate route."
+  },
+  "remaining_before_reservations": 7.600992890000001,
+  "main_and_B": "PREPARED; no parallel paid lane"
+}

@@ -1,0 +1,18 @@
+{
+  "at": "2026-09-21T06:36:13.739268+00:00",
+  "files": {
+    "REVIEW.md": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/candidate-a-probe/REVIEW.md",
+      "sha256": "1d74e684e064e9d45619f1eff9f39b0c942d99d5296c26717217027fc90f2f54"
+    },
+    "EVIDENCE-INDEX.json": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/candidate-a-probe/EVIDENCE-INDEX.json",
+      "sha256": "b35cc83591c91c5cbd9bff829e32dc2665c041142271ea4fe976a37126b50a2e"
+    }
+  },
+  "narrow_repair": "PASS",
+  "business_readiness": "NOT ESTABLISHED",
+  "settled_spend": 0.1371825,
+  "unresolved_reservation": 0.985804,
+  "new_episode_on_probe": "Declined; no third send"
+}

@@ -1,0 +1,21 @@
+{
+  "frozen_at": "2026-09-21T06:13:23.877Z",
+  "source_commit": "1dd748a0de40be4d6e1b1c4212d4eef44c27b291",
+  "product_commit": "a3250feb1c930549743dadf17b4f0536f35af254",
+  "test_commit": "a3250feb1c930549743dadf17b4f0536f35af254",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/frozen/installed",
+  "installed_entrypoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/frozen/installed/node_modules/@synapsor/runner/dist/cli.js",
+  "installed_tree_sha256": "5f375284d7c5d35746437a148bfa7fe4415a47fa7b45eadb1a2b4bc1e4d5483c",
+  "entries": 7569,
+  "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/frozen/installed-artifact-manifest.json",
+  "manifest_sha256": "3239c2697717eeb1456ce33eac2d15e5a3eb8e92755b6e7958ab58c07b7efddd",
+  "archive": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/frozen/installed-artifact.tar.gz",
+  "archive_sha256": "70df20f24c4ab24eec70a9643dfac0b747dbb2e5962ece992434cf902e0ea752",
+  "package_lock_sha256": "fae85113ae22d59d7066018873b3da60c0d8801af2c632803011b7c5397dcf59",
+  "node": {
+    "version": "v22.22.2",
+    "executable": "/usr/bin/node",
+    "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+  },
+  "independent_status": "Pending candidate-specific verification; old native acceptance remains historical."
+}

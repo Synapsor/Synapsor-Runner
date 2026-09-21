@@ -1,0 +1,19 @@
+{
+  "archive_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/saved-review-resume-9685c50-20260920/owned-final-states/main-A",
+  "manifest_sha256": "d5e3a111585b435a8607dcb3ddc0523a296af273064bf73733223c4eeb7a6288",
+  "cleanup": {
+    "at": "2026-09-21T06:50:45.619124+00:00",
+    "stopped_container": {
+      "name": "synapsor-resume-main-A",
+      "id": "9958fb99e233132b84700a1227b1183dfa5e94447d1d97b25d1293353054e2a3",
+      "owner": "saved-review-resume-20260920"
+    },
+    "removed": false,
+    "saved_before_stop": true,
+    "independent_archive_check": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/native-discovery-independent-20260920/continuation-prework/main-a-archive-usability-check/RESULT.json",
+      "sha256": "939fb8a122b6acef61a01d8d1809891298fb7c662cb36ca322de4bc6168d96ce"
+    },
+    "other_resources_untouched": true
+  }
+}

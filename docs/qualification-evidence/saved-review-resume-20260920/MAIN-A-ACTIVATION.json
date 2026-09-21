@@ -1,0 +1,31 @@
+{
+  "at": "2026-09-21T06:36:13.739268+00:00",
+  "case": {
+    "case_id": "KC-A",
+    "phase_kind": "final",
+    "status": "LIVE",
+    "spend_ceiling_usd": 3.3,
+    "transport_limits": {
+      "authoring": 18,
+      "runtime": 12
+    },
+    "models": {
+      "authoring": "openai/gpt-5.6-terra",
+      "runtime": "claude-opus-5"
+    },
+    "deadline": "2026-09-21T09:36:13.739268+00:00",
+    "business_authorized": false,
+    "transports": [],
+    "operation_limits": {
+      "deterministic": 80,
+      "request_change": 12,
+      "workers": 6,
+      "effects": 2
+    },
+    "started_at": "2026-09-21T06:36:13.739268+00:00",
+    "checkpoint1_deadline": "2026-09-21T08:36:13.739268+00:00",
+    "artifact_tree": "5f375284d7c5d35746437a148bfa7fe4415a47fa7b45eadb1a2b4bc1e4d5483c"
+  },
+  "usable_shared_before": 6.478006390000001,
+  "sequence": "One untouched final A Resume/review episode now. B held. No business operations before actual readiness and required reviews. No favorable-response retry after substantive no progress."
+}

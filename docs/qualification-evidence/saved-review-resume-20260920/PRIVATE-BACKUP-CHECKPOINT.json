@@ -1,0 +1,8 @@
+{
+  "pushed_commit": "1dd748a0de40be4d6e1b1c4212d4eef44c27b291",
+  "remote": "backup",
+  "destination": "https://github.com/Synapsor/Synapsor-Runner-Backup.git",
+  "verified_private": true,
+  "branch": "codex/tui-safe-action-control-plane",
+  "scope": "Product/tests and frozen source/evidence checkpoint only. Final operational report follows separately."
+}

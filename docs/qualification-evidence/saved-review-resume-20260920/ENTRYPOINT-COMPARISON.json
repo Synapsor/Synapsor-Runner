@@ -1,0 +1,37 @@
+{
+  "old_tree": "4b33cde27ebfe5b33c9b65e9fcc716b1f6a3a354a137c17848633167798e47d6",
+  "new_tree": "5f375284d7c5d35746437a148bfa7fe4415a47fa7b45eadb1a2b4bc1e4d5483c",
+  "files": [
+    {
+      "path": "node_modules/@synapsor/runner/dist/cli.js",
+      "old_sha256": "fd5383c5bd241f7c1f917ee548bc679b00a188ebeac0f117ac3e6224a7ea6acc",
+      "new_sha256": "fd5383c5bd241f7c1f917ee548bc679b00a188ebeac0f117ac3e6224a7ea6acc",
+      "bytes_identical": true
+    },
+    {
+      "path": "node_modules/@synapsor/runner/dist/runner.mjs",
+      "old_sha256": "c0896109f9bd30c11a773bab608a21cda4520285b266daf4695bfb23c0050d8c",
+      "new_sha256": "5d269856236e9baadb8451a2fb74af817ce40788fc84b20c0942dabfac5c4932",
+      "bytes_identical": false
+    },
+    {
+      "path": "node_modules/@synapsor/runner/dist/runtime.mjs",
+      "old_sha256": "e84fa2fb3824f5d69248603d4ba94cd2f9544dd63e46bab54451123a5e846518",
+      "new_sha256": "e84fa2fb3824f5d69248603d4ba94cd2f9544dd63e46bab54451123a5e846518",
+      "bytes_identical": true
+    },
+    {
+      "path": "node_modules/@synapsor/runner/dist/authoring.mjs",
+      "old_sha256": "b82d745464b0e275993266d6eff074f4e0752a69117e75e8166a3f9d5b177116",
+      "new_sha256": "b82d745464b0e275993266d6eff074f4e0752a69117e75e8166a3f9d5b177116",
+      "bytes_identical": true
+    },
+    {
+      "path": "node_modules/@synapsor/runner/dist/shadow.mjs",
+      "old_sha256": "789acbc31a9106f5e72ae8739c4751bff4bc2a7d6d97d0b206a712f57f8e2fa2",
+      "new_sha256": "789acbc31a9106f5e72ae8739c4751bff4bc2a7d6d97d0b206a712f57f8e2fa2",
+      "bytes_identical": true
+    }
+  ],
+  "limit": "File comparison only. Current tests/independent observations remain required; no whole-artifact acceptance transfer."
+}

@@ -1,0 +1,8 @@
+{
+  "at": "2026-09-21T06:51:22.908643+00:00",
+  "scope": "Current intended report additions only; full private environment URL strings and exact private values compared without printing them",
+  "files": 14,
+  "exact_private_value_matches": 0,
+  "result": "PASS",
+  "raw_captures_not_committed": true
+}
