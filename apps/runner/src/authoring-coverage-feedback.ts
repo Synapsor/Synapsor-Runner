@@ -38,7 +38,7 @@ export class CoverageReceiptReadExclusionError extends Error {
  * A mixed configuration claim remains invalid even when correction is possible. */
 export type ReceiptConfigurationFindingReason =
   | 'source_requirement_unestablished' | 'selection_unavailable' | 'mode_mismatch'
-  | 'component_not_isolatable' | 'current_selection_mixed_component';
+  | 'component_not_isolatable' | 'responsibility_mismatch' | 'reference_overbroad' | 'current_selection_mixed_component';
 const receiptConfigurationFindings = {
   source_requirement_unestablished: { code: 'OBLIGATION_RECEIPT_REQUIREMENT_UNESTABLISHED', structural: false,
     reason: 'The exact source-required receipt mode is not established for this component.',
@@ -49,6 +49,14 @@ const receiptConfigurationFindings = {
   mode_mismatch: { code: 'OBLIGATION_RECEIPT_MODE_MISMATCH', structural: false,
     reason: 'The source-required receipt mode conflicts with the applicable selected mode.',
     repair: 'Keep this genuine conflict unresolved. Use the existing separate reviewed receipt setup if authorized; do not downgrade the source requirement, relabel the conflict as formatting or change business policy to clear review.' },
+  reference_overbroad: { code: 'OBLIGATION_CONFIGURATION_REFERENCE_OVERBROAD', structural: false,
+    reason: 'The submitted reference does not identify the exact receipt-configuration comparison; a scalar child or broad contract cannot establish this receipt requirement.',
+    repair: 'Keep the receipt requirement unresolved. Review its exact source meaning against the applicable receipt_configuration root, with authentic current evidence. Broad context or a selected scalar cannot prove the receipt guarantee, effects, setup or observations; keep those claims separately supported.',
+  },
+  responsibility_mismatch: { code: 'OBLIGATION_CONFIGURATION_COMPONENT_MIXED', structural: false,
+    reason: 'An implemented receipt-configuration comparison must be a Runner evidence claim. The submitted responsibility does not establish that claim.',
+    repair: 'Keep this claim unresolved. Separate the actual Runner selection comparison from deployment, application duties and observed outcomes; each needs its own applicable evidence and responsibility. Do not relabel a substantive duty as implemented to bypass validation.',
+  },
   component_not_isolatable: { code: 'OBLIGATION_CONFIGURATION_COMPONENT_MIXED', structural: false,
     reason: 'The configuration claim has unsupported, duplicated or unrelated components. No supported representation correction is established.',
     repair: 'Keep the complete review unresolved. Each configuration, effect, privacy, condition and observation claim needs its own applicable evidence. Do not erase a residual requirement or invent an observation to make this report valid.' },

@@ -173,7 +173,16 @@ export function receiptRequirement(source: PolicyTextSnapshot, p: Pick<PolicyPas
  * The enclosing provider passage is retained; a pending component below keeps
  * future setup/observation duties visible. No other fields use this proof. */
 export function receiptSelectionComponent(p: PolicyPassage, source: PolicyTextSnapshot, draft: unknown): PolicyPassage | undefined {
-  if (p.disposition !== "implemented" || p.responsibility !== "runner" || !p.draft_paths.includes(CONFIGURATION_PATH)) return undefined;
+  if (p.disposition !== "implemented") return undefined;
+  const configurationReference = p.draft_paths.some(path => path === CONFIGURATION_PATH || path.startsWith(`${CONFIGURATION_PATH}/`));
+  // A broad ancestor does not become a narrow mode comparison. Use the same
+  // existing explicit source requirement, not interpretation keywords, to
+  // identify this bounded receipt claim before model-selected paths can skip it.
+  const broadReceiptReference = receiptRequirement(source, p) && p.draft_paths.some(path =>
+    path === '/runner_evidence' || path === '/runner_evidence/runtime_contract');
+  if (!configurationReference && !broadReceiptReference) return undefined;
+  if (!p.draft_paths.includes(CONFIGURATION_PATH)) throw new CoverageReceiptConfigurationError('reference_overbroad');
+  if (p.responsibility !== "runner") throw new CoverageReceiptConfigurationError("responsibility_mismatch");
   const mode = receiptRequirement(source, p), problem = receiptSelectionProblem(source, draft, mode);
   // Determine evidence independently of the submitted disposition/shape. A
   // conflict or unavailable binding is not a formatting problem, regardless of
