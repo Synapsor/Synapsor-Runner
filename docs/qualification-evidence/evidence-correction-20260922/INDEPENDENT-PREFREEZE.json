@@ -1,0 +1,57 @@
+{
+  "report": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-correction-review-20260922/pre-freeze-contract-attempt1/records/PREFREEZE-ACCEPTANCE-001.json",
+  "sha256": "ef03db2fe08259759662c5c59cd21d1e4806f3a62bcda1cee3a8670ec4e91234",
+  "result": {
+    "schema": "independent-prefreeze-acceptance/v1",
+    "verdict": "PASS_FOR_FREEZE",
+    "candidate_diff_snapshot_sha256": "ce51e26981d15d2656ec07f13db244438daa5a5cd1d01d98385d9b83f25a3a21",
+    "baseline_original_refusal": "PASS",
+    "typed_current_proof_mixed_eligibility": "PASS",
+    "negative_evidence_matrix": "PASS",
+    "wrong_action_and_runner_ledger_controls": "PASS",
+    "renamed_reordered_control": "PASS",
+    "duplicate_root_counterexample": "FIXED_AND_RETESTED_PASS",
+    "complete_separated_replacement": "PASS",
+    "optional_counter_support_boundary": "PASS",
+    "actual_serialized_correction": "PASS",
+    "local_http_sse_persist_restart_reuse": "PASS",
+    "client_duties_verified_false": "PASS",
+    "provider_calls": 0,
+    "product_edits": 0,
+    "heavy_suites": 0,
+    "records": {
+      "probe_v2": {
+        "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-correction-review-20260922/pre-freeze-contract-attempt1/records/PREFREEZE-INDEPENDENT-PROBES-002.json",
+        "sha256": "4a164ee00971340459a846ecc9e4d6d5c51bc6b80ab606ab9b54d09af32ead3d"
+      },
+      "loopback_pass": {
+        "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-correction-review-20260922/pre-freeze-contract-attempt1/records/PREFREEZE-LOOPBACK-004.log",
+        "sha256": "850c0af92107176258b695c892b64b59a7f9e388d9ec5afd7b261c83736bc897"
+      },
+      "preserved_first_finding": {
+        "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-correction-review-20260922/pre-freeze-contract-attempt1/records/PREFREEZE-FINDING-DUPLICATE-ROOT-001.json",
+        "sha256": "487600f2b19f4a17753d163aa5ebf2308614ab09285122c47842937b31d00573"
+      }
+    },
+    "harness_attempts": [
+      {
+        "record": "records/PREFREEZE-LOOPBACK-002.log",
+        "result": "setup failure before test collection: owned export lacked app dependency symlink",
+        "product_operation": false
+      },
+      {
+        "record": "records/PREFREEZE-LOOPBACK-003.log",
+        "result": "tester scope-label typo caused HTTPS refusal before request",
+        "product_operation": false
+      },
+      {
+        "record": "records/PREFREEZE-LOOPBACK-004.log",
+        "result": "PASS after harness-only correction custom_loopback",
+        "wire_requests": 2,
+        "provider_calls": 0
+      }
+    ],
+    "paid_lane": "HOLD_UNTIL_IMMUTABLE_CANDIDATE_AND_SHARED_LEDGER_RESERVATION"
+  },
+  "scope": "independent pre-freeze contract; installed final review not yet run"
+}

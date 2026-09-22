@@ -1,0 +1,151 @@
+{
+  "at": "2026-09-22T04:50:30.984119+00:00",
+  "gates": {
+    "focused-04": {
+      "name": "focused-04",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/evidence-aware-correction.test.ts",
+        "apps/runner/src/source-phase-review.test.ts",
+        "apps/runner/src/receipt-review-association.test.ts",
+        "apps/runner/src/authoring-coverage-correction.test.ts",
+        "apps/runner/src/obligation-readiness.test.ts",
+        "apps/runner/src/authoring-policy-coverage.test.ts",
+        "apps/runner/src/authoring-scoped-disclosure.test.ts",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "started_at": "2026-09-22T04:21:54.962742+00:00",
+      "source_commit": "f0a6fd1a267b1836798c29d708e696967130c140",
+      "source_digest": "8e71e14f15ac15d92fdc2eac32db8452d1866173029ec6ab164da7bd4f0b377f",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 754026,
+      "exit": 0,
+      "finished_at": "2026-09-22T04:22:07.208768+00:00",
+      "source_unchanged": true
+    },
+    "types-02": {
+      "name": "types-02",
+      "command": [
+        "corepack",
+        "pnpm",
+        "typecheck"
+      ],
+      "started_at": "2026-09-22T04:25:10.298820+00:00",
+      "source_commit": "56110270c47beb577ca0ec7cd068f0bd4bea1f7a",
+      "source_digest": "8e71e14f15ac15d92fdc2eac32db8452d1866173029ec6ab164da7bd4f0b377f",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 763044,
+      "exit": 0,
+      "finished_at": "2026-09-22T04:25:15.678844+00:00",
+      "source_unchanged": true
+    },
+    "backend-01": {
+      "name": "backend-01",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/authoring-review-subject.test.ts",
+        "apps/runner/src/authoring-counting-domain.test.ts",
+        "apps/runner/src/authoring-counting-freshness.test.ts",
+        "apps/runner/src/semantic-receipt-setup.test.ts",
+        "apps/runner/src/control-policy-authority-codec.test.ts",
+        "packages/proposal-store/src/control-policy-reviews.test.ts",
+        "-t",
+        "postgres|exact policy review|published authoring review|saves source-required pending meaning|saves and reloads receipt readiness",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "started_at": "2026-09-22T04:22:41.527360+00:00",
+      "source_commit": "f0a6fd1a267b1836798c29d708e696967130c140",
+      "source_digest": "8e71e14f15ac15d92fdc2eac32db8452d1866173029ec6ab164da7bd4f0b377f",
+      "credentials": "owned PostgreSQL gate URL only",
+      "umask": "0077",
+      "database_destination": {
+        "host": "127.0.0.1",
+        "port": 32789,
+        "database": "evidence_correction",
+        "container_id": "5dff2a398b99f2ff895230fca91e648c0e08f68415b45f6add580217607186ef"
+      },
+      "pid": 755614,
+      "exit": 0,
+      "finished_at": "2026-09-22T04:25:46.980653+00:00",
+      "source_unchanged": true
+    },
+    "stable-full-001": {
+      "name": "stable-full-001",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "--maxWorkers=4",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "started_at": "2026-09-22T04:26:09.189794+00:00",
+      "source_commit": "44a390ceed49c0f0e9cc421ca2ab010c269f9abc",
+      "source_digest": "8e71e14f15ac15d92fdc2eac32db8452d1866173029ec6ab164da7bd4f0b377f",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 764494,
+      "exit": 0,
+      "finished_at": "2026-09-22T04:48:37.884633+00:00",
+      "source_unchanged": true
+    }
+  },
+  "full_suite": {
+    "test_files_passed": 331,
+    "test_files_skipped": 21,
+    "tests_passed": 6932,
+    "tests_skipped": 490,
+    "exit": 0
+  },
+  "selected_backend": {
+    "passed": 246,
+    "skipped_or_selected_out": 281,
+    "scope": "selected SQLite and real PostgreSQL control review/persistence/freshness; separate from installed B PostgreSQL source"
+  },
+  "focused": {
+    "passed": 296,
+    "skipped": 1
+  },
+  "offline": {
+    "passed": 10,
+    "exit_codes": [
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+    ],
+    "plan": "offline-package-plan-attempt1.json",
+    "network": "offline namespace; installed cache/local Spec only"
+  },
+  "unsuccessful_attempts": [
+    "focused01 test fixture assertion reached earlier pointer check",
+    "focused02 test fixture did not persist competing source decision"
+  ],
+  "independent": "PASS_FOR_FREEZE; duplicate-path counterexample001 retained and fixed before stable gates",
+  "provider_inference_calls": 0
+}
