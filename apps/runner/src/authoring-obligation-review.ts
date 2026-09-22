@@ -1,6 +1,6 @@
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { isDeferredSourceCounterMaintenance, isDeferredSourceReadback, receiptSetupComponentOnly as receiptOnly, receiptConfigurationComponentOnly, type ReviewObligationAssessment, type PolicyPassage, type PolicyTextSnapshot } from "./authoring-policy-source.js";
-import { CoverageReceiptObservationError, CoverageReceiptReadContextError, CoverageReceiptReadExclusionError } from "./authoring-coverage-feedback.js";
+import { CoverageReceiptObservationError, CoverageReceiptReadContextError, CoverageReceiptReadExclusionError, CoverageReceiptConfigurationError, type ReceiptConfigurationFindingReason } from "./authoring-coverage-feedback.js";
 export { deferredReviewObligation } from "./authoring-policy-source.js";
 
 export const RECEIPT_PATH = "/runner_evidence/runtime_contract/receipts";
@@ -72,10 +72,69 @@ function currentReceiptSelection(source: PolicyTextSnapshot, draft: unknown, mod
       && entry.action_digest === canonicalJsonDigest(action)));
 }
 
+/** Prepared configuration is host-built under the governed binding reader.
+ * Recheck its local source/candidate links here; persistence/reuse still compare
+ * the whole prepared context. This establishes selection, never an observation. */
+function receiptSelectionProblem(source: PolicyTextSnapshot, draft: unknown, mode: string | undefined): ReceiptConfigurationFindingReason | undefined {
+  if (!mode) return 'source_requirement_unestablished';
+  const configured = at(draft, CONFIGURATION_PATH);
+  const modes = configured?.modes;
+  if (configured?.status === 'current' && Array.isArray(modes) && modes.some((entry: any) => ['runner_ledger', 'source_db'].includes(entry.authority) && entry.authority !== mode)) return 'mode_mismatch';
+  if (!currentReceiptSelection(source, draft, mode)) return 'selection_unavailable';
+  if (configured.status === 'current') {
+    if (!/^sha256:[a-f0-9]{64}$/u.test(configured.digest ?? '')
+      || !Array.isArray(modes) || !modes.length
+      || new Set(modes.map((entry: any) => entry.source)).size !== modes.length
+      || modes.some((entry: any) => entry.authority !== mode || entry.source !== at(draft, '/read/source'))) return 'selection_unavailable';
+    if (mode === 'source_db') {
+      const destinations = configured.source_receipt_destinations;
+      if (!Array.isArray(destinations) || destinations.length !== modes.length
+        || destinations.some((entry: any) => entry.source !== at(draft, '/read/source') || !/^sha256:[a-f0-9]{64}$/u.test(entry.relation_digest ?? ''))
+        || new Set(destinations.map((entry: any) => entry.source)).size !== destinations.length) return 'selection_unavailable';
+      const exclusion = at(draft, RECEIPT_READ_PATH);
+      // When supplied, this independent host binding must agree even though
+      // exclusion itself does not prove selection or any other receipt fact.
+      if (exclusion && (exclusion.configuration_digest !== configured.digest
+        || exclusion.destination_binding_digest !== canonicalJsonDigest(destinations)
+        || exclusion.selected_read_digest !== canonicalJsonDigest(at(draft, '/read')))) return 'selection_unavailable';
+    }
+  }
+  const snapshot = at(draft, '/runner_evidence/runtime_contract/authoring_lifecycle/current_policy_snapshot');
+  if (snapshot && snapshot.digest !== source.digest) return 'selection_unavailable';
+  return undefined;
+}
+function receiptCapabilityRoots(draft: unknown): string[] {
+  return (at(draft, '/actions') ?? []).flatMap((action: any, index: number) => {
+    const base = `/runner_evidence/actions/${action.outcome.replace(/~/gu, '~0').replace(/\//gu, '~1')}`;
+    const effect = at(draft, `${base}/effect`), execution = at(draft, `${base}/execution`);
+    return action.effect?.writeback === 'supervised' && effect
+      && effect.target_resource === action.effect.target_resource && effect.target_binding === action.effect.target_binding
+      && effect.operation === action.effect.operation && execution?.configured_mode === 'direct_sql'
+      && execution.activation === 'separate_operator_review'
+      ? [`${base}/effect`, `${base}/execution`, `/actions/${index}/effect`] : [];
+  });
+}
+function isolatableReceiptConfiguration(p: PolicyPassage, source: PolicyTextSnapshot, draft: unknown): boolean {
+  const mode = receiptRequirement(source, p);
+  if (!mode || receiptSelectionProblem(source, draft, mode) || !supportedReceiptSetup(draft, mode)
+    || !isolatedReceiptReadFields(p) || p.issue_kind !== 'coverage_link'
+    || p.draft_paths.length < 2 || new Set(p.draft_paths).size !== p.draft_paths.length) return false;
+  const roots = receiptCapabilityRoots(draft);
+  return p.draft_paths.includes(CONFIGURATION_PATH) && p.draft_paths.some(path => roots.includes(path))
+    && p.draft_paths.every(path => path === CONFIGURATION_PATH || path === RECEIPT_PATH || roots.includes(path));
+}
+
 function supportedReceiptSetup(draft: unknown, mode: string): boolean {
-  const setup = at(draft, SETUP_PATH);
+  const setup = at(draft, SETUP_PATH), actions = at(draft, '/actions')?.filter((action: any) => action.effect?.writeback === 'supervised');
   return setup?.supported === true && setup.stage === "after_authority_review" && setup.verified === false
-    && Array.isArray(setup.receipt_modes_supported) && setup.receipt_modes_supported.includes(mode);
+    && Array.isArray(setup.receipt_modes_supported) && setup.receipt_modes_supported.includes(mode)
+    && Array.isArray(actions) && actions.length > 0 && Array.isArray(setup.outcomes) && setup.outcomes.length === actions.length
+    && new Set(setup.outcomes.map((entry: any) => entry.outcome)).size === actions.length
+    && actions.every((action: any) => {
+      const execution = at(draft, `/runner_evidence/actions/${action.outcome.replace(/~/gu, '~0').replace(/\//gu, '~1')}/execution`);
+      return execution?.configured_mode === 'direct_sql' && setup.outcomes.some((entry: any) => entry.outcome === action.outcome
+        && entry.configured_mode === execution.configured_mode);
+    });
 }
 
 /** A correction, never a successful assessment. Exact typed capability roots
@@ -89,16 +148,10 @@ function isolatableReceiptCapability(p: PolicyPassage, source: PolicyTextSnapsho
     || p.application_obligations?.length || p.deployment_prerequisite || p.source_counter_obligation || p.operator_override) return false;
   const configured = at(draft, CONFIGURATION_PATH);
   if (configured?.status === "unavailable" || configured?.modes?.some((e: any) => e.authority !== mode)) return false;
-  const roots = (at(draft, "/actions") ?? []).flatMap((action: any, index: number) => {
-    const base = `/runner_evidence/actions/${action.outcome.replace(/~/gu,"~0").replace(/\//gu,"~1")}`;
-    const pointer = `${base}/execution`;
-    const execution = at(draft, pointer);
-    const effect = at(draft, `${base}/effect`);
-    return action.effect?.writeback === "supervised" && execution?.configured_mode === "direct_sql"
-      && execution.activation === "separate_operator_review" ? [`/actions/${index}/effect`, pointer,
-        ...(effect?.target_resource === action.effect.target_resource && effect?.operation === action.effect.operation ? [`${base}/effect`] : [])] : [];
-  });
-  return p.draft_paths.includes(RECEIPT_PATH) && p.draft_paths.some(path => roots.includes(path))
+  const roots = receiptCapabilityRoots(draft);
+  return !receiptSelectionProblem(source, draft, mode)
+    && new Set(p.draft_paths).size === p.draft_paths.length
+    && p.draft_paths.includes(RECEIPT_PATH) && p.draft_paths.some(path => roots.includes(path))
     && p.draft_paths.every(path => path === RECEIPT_PATH || path === CONFIGURATION_PATH || roots.includes(path));
 }
 /** Only an explicit receipt-mode requirement can supply this narrow binding.
@@ -121,15 +174,19 @@ export function receiptRequirement(source: PolicyTextSnapshot, p: Pick<PolicyPas
  * future setup/observation duties visible. No other fields use this proof. */
 export function receiptSelectionComponent(p: PolicyPassage, source: PolicyTextSnapshot, draft: unknown): PolicyPassage | undefined {
   if (p.disposition !== "implemented" || p.responsibility !== "runner" || !p.draft_paths.includes(CONFIGURATION_PATH)) return undefined;
-  const mode = receiptRequirement(source, p), configuration = at(draft, CONFIGURATION_PATH);
-  if (!mode || p.draft_paths.some(path => path !== CONFIGURATION_PATH && path !== RECEIPT_PATH)
+  const mode = receiptRequirement(source, p), problem = receiptSelectionProblem(source, draft, mode);
+  // Determine evidence independently of the submitted disposition/shape. A
+  // conflict or unavailable binding is not a formatting problem, regardless of
+  // which pointer is first. The original grouping is still strictly rejected.
+  if (problem) throw new CoverageReceiptConfigurationError(problem);
+  if (p.draft_paths.some(path => path !== CONFIGURATION_PATH && path !== RECEIPT_PATH)
+    || new Set(p.draft_paths).size !== p.draft_paths.length
     || p.field_checks?.length || p.counter_requirements?.length || p.application_obligations?.length || p.deployment_prerequisite
     || p.source_counter_obligation || p.operator_override || p.evidence_checks?.some(c => !c.path.startsWith(`${CONFIGURATION_PATH}/`))) {
-    throw new Error("OBLIGATION_CONFIGURATION_COMPONENT_MIXED: A selected receipt mode comparison must reference only its exact configuration and optional receipt context. Keep effects, conditions and observations separately checked.");
+    throw new CoverageReceiptConfigurationError(isolatableReceiptConfiguration(p, source, draft)
+      ? 'current_selection_mixed_component' : 'component_not_isolatable');
   }
-  if (configuration?.status !== "current" || !configuration.modes?.length || configuration.modes.some((entry: { authority: string }) => entry.authority !== mode)) {
-    throw new Error("OBLIGATION_RECEIPT_MODE_MISMATCH: The current receipt configuration does not establish the exact source-required mode. Keep this comparison unresolved and use the separate reviewed setup.");
-  }
+  if (at(draft, CONFIGURATION_PATH)?.status !== 'current') throw new CoverageReceiptConfigurationError('selection_unavailable');
   return { start: p.start, end: p.end, disposition: "needs_decision", responsibility: "deployment", issue_kind: "missing_configuration",
     topic: "Receipt/execution setup", draft_paths: [RECEIPT_PATH],
     interpretation: "HOST-RESOLVED pending component: the configured receipt mode matches the explicit source requirement. Writer/provisioning verification, execution authorization and receipt production remain separate and unverified. The submitted configuration claim is retained separately.",
@@ -180,7 +237,7 @@ export function assessReviewObligation(p: PolicyPassage, source: PolicyTextSnaps
     const configured = at(draft, "/runner_evidence/runtime_contract/receipt_configuration");
     if (configured?.status === "unavailable") return undefined;
     if (configured?.modes?.some((entry: { authority: string }) => entry.authority !== mode)) {
-      throw new Error("OBLIGATION_RECEIPT_MODE_MISMATCH: The source receipt requirement differs from current configuration. Use the existing separately reviewed receipt setup; no receipt guarantee was deferred or weakened.");
+      throw new CoverageReceiptConfigurationError("mode_mismatch");
     }
     // A configuration pointer is not a global receipt alias. It needs an exact
     // current selection as well as independent required meaning. Submitted

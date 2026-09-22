@@ -34,6 +34,44 @@ export class CoverageReceiptReadExclusionError extends Error {
     super('RECEIPT_READ_EXCLUSION_UNESTABLISHED: The exact current selected-Read exclusion must be isolated; it proves no other privacy, business or observation claim.');
   }
 }
+/** Assessment reasons are host-only; each has a complete safe feedback mapping.
+ * A mixed configuration claim remains invalid even when correction is possible. */
+export type ReceiptConfigurationFindingReason =
+  | 'source_requirement_unestablished' | 'selection_unavailable' | 'mode_mismatch'
+  | 'component_not_isolatable' | 'current_selection_mixed_component';
+const receiptConfigurationFindings = {
+  source_requirement_unestablished: { code: 'OBLIGATION_RECEIPT_REQUIREMENT_UNESTABLISHED', structural: false,
+    reason: 'The exact source-required receipt mode is not established for this component.',
+    repair: 'Keep the requirement unresolved. Current configuration cannot supply owner meaning. Use the existing source decision or evidence review; do not invent a receipt guarantee.' },
+  selection_unavailable: { code: 'OBLIGATION_CONFIGURATION_UNAVAILABLE', structural: false,
+    reason: 'The applicable current receipt selection or its source, Read, Action or destination binding is unavailable or does not agree.',
+    repair: 'Revalidate the exact selected receipt configuration and its current bindings. Do not substitute another source, outcome, destination or historical selection, infer an observation, or obtain another opinion to manufacture evidence.' },
+  mode_mismatch: { code: 'OBLIGATION_RECEIPT_MODE_MISMATCH', structural: false,
+    reason: 'The source-required receipt mode conflicts with the applicable selected mode.',
+    repair: 'Keep this genuine conflict unresolved. Use the existing separate reviewed receipt setup if authorized; do not downgrade the source requirement, relabel the conflict as formatting or change business policy to clear review.' },
+  component_not_isolatable: { code: 'OBLIGATION_CONFIGURATION_COMPONENT_MIXED', structural: false,
+    reason: 'The configuration claim has unsupported, duplicated or unrelated components. No supported representation correction is established.',
+    repair: 'Keep the complete review unresolved. Each configuration, effect, privacy, condition and observation claim needs its own applicable evidence. Do not erase a residual requirement or invent an observation to make this report valid.' },
+  current_selection_mixed_component: { code: 'OBLIGATION_CONFIGURATION_COMPONENT_MIXED', structural: true,
+    reason: 'The exact current receipt selection matches the independently established source mode, but its narrow comparison is mixed with supported capability or receipt-overview roots. The submitted report remains invalid.',
+    repair: 'Return the COMPLETE REPLACEMENT review. Isolate the selected receipt-mode comparison at /runner_evidence/runtime_contract/receipt_configuration; give compiled effects and receipt guarantees their own separately supported components. Preserve every source range, condition, privacy claim and duty. Configuration is not execution, a performed receipt or independent source readback. Retain applicable pending setup and observation duties and authentic historical facts without inventing evidence. Keep optional counter citations only when their exact support is authentic. Do not change policy, selectors, configuration or owner decisions.' },
+} satisfies Record<ReceiptConfigurationFindingReason, {code:string;structural:boolean;reason:string;repair:string}>;
+export class CoverageReceiptConfigurationError extends Error {
+  readonly code: string;
+  constructor(readonly reason: ReceiptConfigurationFindingReason) {
+    super(`${receiptConfigurationFindings[reason].code}: ${receiptConfigurationFindings[reason].reason}`);
+    this.code = receiptConfigurationFindings[reason].code;
+  }
+}
+/** Known early receipt-duty/currentness refusals must not become an unlabelled
+ * generic error. None supplies a formatting-only retry or positive evidence. */
+export class CoverageReceiptDutyError extends Error {
+  constructor(readonly reason: 'readback_unestablished' | 'setup_unestablished' | 'evidence_stale') {
+    super(reason === 'evidence_stale' ? 'OBLIGATION_EVIDENCE_STALE: The saved obligation no longer matches current source and phase evidence.'
+      : reason === 'readback_unestablished' ? 'OBLIGATION_READBACK_UNESTABLISHED: Independent source readback needs its exact unverified after-execution contract.'
+      : 'OBLIGATION_SETUP_UNESTABLISHED: Execution setup can remain pending only for already compiled, supported direct SQL effects and a separate later writer/consent/worker review. Do not defer missing effects, business decisions, eligibility, privacy or approval limits; setup remains unverified.');
+  }
+}
 export class CoverageReceiptReadContextError extends Error {
   constructor() { super('COVERAGE_RECEIPT_REFERENCE_OVERBROAD: The receipt guarantee overview is not evidence for the separate Read-exclusion claim.'); }
 }
@@ -65,6 +103,21 @@ export const MAX_COVERAGE_SUBMISSIONS = 3;
 export function coverageFinding(error: unknown, component: string, identityBasis: unknown): CoverageFinding {
   if (error instanceof CoverageComponentError) component = error.component;
   const cause = error instanceof CoverageComponentError ? error.cause : error;
+  if (cause instanceof CoverageReceiptConfigurationError) return {
+    ...receiptConfigurationFindings[cause.reason], component, component_identity: canonicalJsonDigest(identityBasis),
+    identity: canonicalJsonDigest({ component: identityBasis, code: cause.code, reason: cause.reason }),
+  };
+  if (cause instanceof CoverageReceiptDutyError) {
+    const descriptions = {
+      readback_unestablished: {code: 'OBLIGATION_READBACK_UNESTABLISHED', reason: 'The submitted readback duty lacks its exact applicable unverified after-execution contract.'},
+      setup_unestablished: {code: 'OBLIGATION_SETUP_UNESTABLISHED', reason: 'Supported execution setup and its exact current unverified phase are not established.'},
+      evidence_stale: {code: 'OBLIGATION_EVIDENCE_STALE', reason: 'The saved obligation no longer matches its exact current source and phase evidence.'},
+    } satisfies Record<CoverageReceiptDutyError['reason'], {code:string;reason:string}>;
+    const finding = descriptions[cause.reason];
+    return {...finding, component, component_identity: canonicalJsonDigest(identityBasis),
+      identity: canonicalJsonDigest({component: identityBasis, code:finding.code}), structural:false,
+      repair: 'Keep the requirement unresolved and revalidate its actual source, component and current phase evidence. A selected mode or compiled capability is not deployment verification, a performed receipt or independent readback. Do not invent an observation, assign away a business requirement or request another favorable opinion.'};
+  }
   if (cause instanceof CoverageReceiptReadExclusionError) return {
     code: cause.code, component, component_identity: canonicalJsonDigest(identityBasis),
     identity: canonicalJsonDigest({component: identityBasis, code: cause.code}),
