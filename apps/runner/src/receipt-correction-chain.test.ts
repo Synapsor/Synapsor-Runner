@@ -124,10 +124,29 @@ describe('complete captured configuration correction chain',()=>{
   const p=g.arguments.passages.find((x:any)=>x.draft_paths.includes(CONFIG)&&x.draft_paths.includes(RECEIPTS));
   expect(collectCoverageFeedback({passages:[p]},g.source,g.draft,g.operator_messages).findings.find(x=>x.code==='OBLIGATION_CONFIGURATION_COMPONENT_MIXED')).toMatchObject({structural:true});
  });
- it.each(['source_requirement_unestablished','selection_unavailable','mode_mismatch','component_not_isolatable','current_selection_mixed_component'] as const)('maps typed configuration reason %s exhaustively; identical plain text stays conservative',reason=>{
+ it.each(['source_requirement_unestablished','selection_unavailable','mode_mismatch','component_not_isolatable','responsibility_mismatch','reference_overbroad','current_selection_mixed_component'] as const)('maps typed configuration reason %s exhaustively; identical plain text stays conservative',reason=>{
   const e=new CoverageReceiptConfigurationError(reason),finding=coverageFinding(e,'/passages/0',{});
   expect(finding.code).not.toBe('COVERAGE_VALIDATION_INCOMPLETE');expect(finding.structural).toBe(reason==='current_selection_mixed_component');
   expect(coverageFinding(new Error(e.message),'/passages/0',{}).structural).toBe(false);
+ });
+ it.each(['deployment','application',undefined] as const)('implemented configuration cannot bypass assessment through responsibility %s',responsibility=>{
+  for(const roots of [[CONFIG],[CONFIG,EFFECT],[CONFIG,EFFECT,RECEIPTS]]){
+   const f=fixture(),args=structuredClone(f.arguments);for(const p of args.passages)for(const c of p.counter_requirements??[])delete c.operator_message_id;
+   args.passages[25].draft_paths=roots;args.passages[25].responsibility=responsibility;
+   if(responsibility===undefined)delete args.passages[25].responsibility;
+   const report=collectCoverageFeedback(args,f.source,f.draft,f.operator_messages);
+   expect(report.findings.find(x=>x.component==='/passages/25')).toMatchObject({code:'OBLIGATION_CONFIGURATION_COMPONENT_MIXED',structural:false});
+   expect(()=>parse(f,args)).toThrow('OBLIGATION_CONFIGURATION_COMPONENT_MIXED');
+  }
+ });
+ it.each([CONFIG+'/status','/runner_evidence/runtime_contract','/runner_evidence'])('scalar/broad %s cannot bypass receipt assessment',reference=>{
+  for(const roots of [[reference],[reference,EFFECT]]){
+   const f=fixture(),args=structuredClone(f.arguments);for(const p of args.passages)for(const c of p.counter_requirements??[])delete c.operator_message_id;
+   args.passages[25].draft_paths=roots;
+   const report=collectCoverageFeedback(args,f.source,f.draft,f.operator_messages);
+   expect(report.findings.find(x=>x.component==='/passages/25')).toMatchObject({code:'OBLIGATION_CONFIGURATION_REFERENCE_OVERBROAD',structural:false});
+   expect(()=>parse(f,args)).toThrow('OBLIGATION_CONFIGURATION_REFERENCE_OVERBROAD');
+  }
  });
  it.each(['readback_unestablished','setup_unestablished','evidence_stale'] as const)('maps early typed %s without a generic retry',reason=>{
   const finding=coverageFinding(new CoverageReceiptDutyError(reason),'/passages/0',{});
