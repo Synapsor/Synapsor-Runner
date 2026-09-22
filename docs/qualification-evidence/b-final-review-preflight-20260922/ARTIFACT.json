@@ -1,0 +1,16 @@
+{
+  "scope": "Existing unchanged installed artifact; no new package/build",
+  "prior_artifact_record": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/scoped-disclosure-repair-20260921/ARTIFACT.json",
+  "prior_artifact_record_sha256": "556f35b69312a92e1f6db49b85629742a16cf3c8ba128aefa091c8d740bf1126",
+  "product": "43315690a3f58a54fd708fbed76a68420bb57c93",
+  "tests": "1a1def4e0b8d5630a0533df90082093f71abe674",
+  "frozen_source": "7c56ff7845ab0a90c21c981433bc10d194ee8e11",
+  "installed_tree": "d600bfbeee91f4b79ed54a68c93c1319f1c7c3f7871434dd80c9688ca187dca9",
+  "entries": 7569,
+  "manifest_sha256": "9c363c2ea1f08bf05d5db0897e0a28ed286c51e609bbba670563a2346b999f8f",
+  "archive_sha256": "4d3e60ff5db452303e5480eb1601b25110abe6cf5b460fb455cec7dfb79097e0",
+  "main_full_verifier_at": "2026-09-22T02:59:30.722Z",
+  "main_full_verifier_exit": 0,
+  "node_spec_dependencies_lock_entrypoints": "Exact records in prior_artifact_record; not replaced with current workspace build",
+  "heavy_gates": "Inherited exact-build evidence only; no new full suite/types/backend/offline gate campaign"
+}

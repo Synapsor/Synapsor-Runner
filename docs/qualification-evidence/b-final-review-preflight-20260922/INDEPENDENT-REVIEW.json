@@ -1,0 +1,32 @@
+{
+  "at": "2026-09-22T03:46:57.433117+00:00",
+  "tester_task": "01a0bcb8-0925-7380-911a-8bab207b9e0b",
+  "root": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260922/case-b-final-review-20260922-attempt1",
+  "references": {
+    "report": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260922/case-b-final-review-20260922-attempt1/REVIEW-v2.md",
+      "sha256": "b00bd472cd0625812654e157564e166a16afd7bd9dafa8d9f232fc121f36b550"
+    },
+    "result": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260922/case-b-final-review-20260922-attempt1/RESULT-v2.json",
+      "sha256": "e33e37151b309daeb9b827b50ab4ec42201b148c87012ae361c4e82bbe7a3c26"
+    },
+    "index": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260922/case-b-final-review-20260922-attempt1/EVIDENCE-INDEX-v2.json",
+      "sha256": "8e85f6124d80269a3814d0d9e1dae031ee3bc14ddc678b67e348a890e901fb01"
+    },
+    "checkpoint": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260922/case-b-final-review-20260922-attempt1/checkpoints/stopped-after-review-v1/manifest-v2.json",
+      "sha256": "ec488d1a7ea821e93f7779322357ca5d74ff96790426adbb97fb57d561038618"
+    }
+  },
+  "main_verification": "All 141 indexed member sizes/hashes and all four stopped-state archive members independently recomputed; main inspected tester cold-restore result, did not repeat app Review or database restore.",
+  "indexed_members_verified": 141,
+  "verdict": "FAIL_ACTIVE15_BUSINESS_REVIEW; preservation/harness PASS; restart NOT_RUN",
+  "classification": "correct refusal of invalid provider arguments; no demonstrated host product defect",
+  "new_provider_calls": 1,
+  "cost_usd": 0.166652,
+  "new_business_operations": 0,
+  "reporting_correction": "v1 descriptive source-count map wrong; preserved. v2 cold restore measured 196 business rows +2 receipts. Distinct wire and redacted-capture hashes retained.",
+  "independence": "Existing independent tester personally executed public Review. Main inspected evidence and separately compared complete snapshots; no claim of second public run."
+}

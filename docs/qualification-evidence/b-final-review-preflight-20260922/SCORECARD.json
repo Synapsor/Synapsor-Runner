@@ -1,0 +1,31 @@
+{
+  "scope": "Current frozen artifact final B Review and harness preparation only",
+  "installed_tree": "d600bfbeee91f4b79ed54a68c93c1319f1c7c3f7871434dd80c9688ca187dca9",
+  "rows": {
+    "artifact": "PASS",
+    "authentic_final_state_restore": "PASS_TESTER_EXECUTED_MAIN_INSPECTED",
+    "provider_access_and_episode_funding": "PASS",
+    "published15_target": "PASS_TESTER_EXECUTED",
+    "current_complete_business_review": "FAIL_TO_COMPLETE_SAFE_VALIDATION_REFUSAL",
+    "restart_explicit_recheck": "NOT_RUN_AFTER_SUBSTANTIVE_FAILURE",
+    "complete_logical_preservation": "PASS_TESTER_CAPTURE_MAIN_INDEPENDENT_COMPARISON",
+    "main_harness_controls": "PASS_22",
+    "tester_independent_harness_challenges": "PASS_BOUNDED_SCOPE",
+    "historical_numeric_edit_effect": "RETAINED_NARROW_PASS_NOT_RERUN",
+    "historical_continuity": "NOT_ESTABLISHED",
+    "historical_full_per_replay_snapshots": "NOT_ESTABLISHED",
+    "historical_worker_minimal_credentials": "NOT_ESTABLISHED",
+    "native_model_completion": "NOT_RUN",
+    "add_remove": "NOT_RUN",
+    "fresh_stage_b": "NOT_RUN"
+  },
+  "provider_transports": 1,
+  "new_business_requests": 0,
+  "workers": 0,
+  "publications": 0,
+  "new_effects": 0,
+  "product_code_changed": false,
+  "host_safety_defect_demonstrated": false,
+  "A": "CLASSIFICATION_UNESTABLISHED_BUSINESS_PENDING_BY_OWNER",
+  "original_stage_b": "ATTEMPTED_NOT_PASSED"
+}
