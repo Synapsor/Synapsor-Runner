@@ -1,0 +1,68 @@
+{
+  "source": "734fcc40532347ba21d403facabfb96749f94698",
+  "provider_calls": 0,
+  "first": {
+    "context": "sha256:60f1284ef04b1feb81cffdb866d0b82af0efc697ee47e8a5ccf58accddf3656c",
+    "findings": [
+      {
+        "code": "RECEIPT_READ_EXCLUSION_UNESTABLISHED",
+        "component": "/passages/24",
+        "component_identity": "sha256:a72d6c4f33772fc9cd0e91de801cf072670ef15f2c3a7612fbd3c09c37e89e5f",
+        "identity": "sha256:772a5aec2007240f9319505bd420b3fc19cdb372a65c27a125b26c0b4228a009",
+        "structural": true,
+        "reason": "The current host proof establishes only exclusion of configured receipt destinations from this selected Read. Its exact root is mixed with recognized effect/configuration roots; the submitted claim remains invalid.",
+        "repair": "Return the COMPLETE REPLACEMENT review. Isolate the receipt Read-exclusion claim with only /runner_evidence/runtime_contract/receipt_read_exclusion in draft_paths and no unrelated checks or duties. Preserve its source range. Give the effect and selected receipt configuration their own separately supported claims, retaining every condition, privacy requirement and obligation. This narrow proof establishes neither provisioning, execution permission, a performed receipt, independent readback nor privacy of other data/interfaces. Do not invent observations or erase applicable history; use only evidence actually supplied for each claim. Do not change policy, selectors, configuration or owner decisions.",
+        "passage_identity": "sha256:46b9bb8f84f868e775cac89a28b126bf61d844a69ae759665d56d9543a7808da"
+      }
+    ],
+    "limited": false,
+    "unevaluated": [
+      "/passages/24",
+      "whole-report acceptance, retained obligations and persistence"
+    ],
+    "complete_validation": false
+  },
+  "second": {
+    "context": "sha256:60f1284ef04b1feb81cffdb866d0b82af0efc697ee47e8a5ccf58accddf3656c",
+    "findings": [
+      {
+        "code": "COUNTING_SUPPORT_MISMATCH",
+        "component": "/passages/26/counter_requirements/0",
+        "component_identity": "sha256:846ce3f0420f2d2e9f5442ecab6480eca064322694962e8064fb69bdb50e871c",
+        "identity": "sha256:3c78c4dd29100451319b7f7a563af3d417d4c62cace12439710bc534ee328a99",
+        "reason": "The counter-specific citation has no applicable exact support association; a paragraph citation is separate.",
+        "repair": "Correct only this counter citation using its current scoped support. Cite an accepted operator message only when it actually supports this exact comparison. If the prepared source or typed host-recorded counting review independently establishes required meaning without a linked message, omit the OPTIONAL counter operator_message_id while retaining the comparison and that authentic positive basis. Omission or current/required equality alone supplies no proof. Keep paragraph support separate, preserve every source requirement and other claim, and do not change selectors or invent or repeat an owner decision. Return the complete replacement review. The current host/source association supports this comparison without an OPTIONAL counter-specific citation: omit operator_message_id/operator_clarification on this counter, retain its path and actual/required capability values, and keep the paragraph citation separate. This removes no counting claim or proof obligation.",
+        "structural": true,
+        "passage_identity": "sha256:e4c3587f56df529162a7710e81bad44c09b5cb2c62db4fef8f165502a355f632"
+      },
+      {
+        "code": "COUNTING_SUPPORT_MISMATCH",
+        "component": "/passages/26/counter_requirements/1",
+        "component_identity": "sha256:ea8b3f4b6ccd03b0d533eaaa77c4a2d4b83c117c440c9d8a9461ad5ec78aa344",
+        "identity": "sha256:70bbe4bd18e506d28edd3450164d503e8795f482da155af2cc93ffb9d309e3c7",
+        "reason": "The counter-specific citation has no applicable exact support association; a paragraph citation is separate.",
+        "repair": "Correct only this counter citation using its current scoped support. Cite an accepted operator message only when it actually supports this exact comparison. If the prepared source or typed host-recorded counting review independently establishes required meaning without a linked message, omit the OPTIONAL counter operator_message_id while retaining the comparison and that authentic positive basis. Omission or current/required equality alone supplies no proof. Keep paragraph support separate, preserve every source requirement and other claim, and do not change selectors or invent or repeat an owner decision. Return the complete replacement review. The current host/source association supports this comparison without an OPTIONAL counter-specific citation: omit operator_message_id/operator_clarification on this counter, retain its path and actual/required capability values, and keep the paragraph citation separate. This removes no counting claim or proof obligation.",
+        "structural": true,
+        "passage_identity": "sha256:e4c3587f56df529162a7710e81bad44c09b5cb2c62db4fef8f165502a355f632"
+      },
+      {
+        "code": "OBLIGATION_OBSERVATION_UNESTABLISHED",
+        "component": "/passages/29",
+        "component_identity": "sha256:a72d6c4f33772fc9cd0e91de801cf072670ef15f2c3a7612fbd3c09c37e89e5f",
+        "identity": "sha256:3e3b9a37334ab3a9fe47d27baeed2d3a9a6d86434142671a35212248e267eefc",
+        "structural": true,
+        "reason": "A supported execution capability or reviewed receipt selection does not establish provisioned execution, an observed receipt or independent readback.",
+        "repair": "Separate the compiled capability claim from receipt setup and observation duties. /runner_evidence/runtime_contract/receipt_configuration reports its actual current configuration and separately candidate-bound reviewed_intent; neither establishes a performed receipt. /runner_evidence/runtime_contract/receipts describes the distinct guarantee; /runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup keeps applicable setup pending. Resubmit a complete review with the isolated receipt setup duty needs_decision/deployment/missing_configuration and unperformed work unverified. Preserve applicable historical achievements without attributing them to this edited revision. Keep independent readback separately pending. Do not change source policy, program, receipt mode or any other requirement. No observation claim was accepted.",
+        "passage_identity": "sha256:46b9bb8f84f868e775cac89a28b126bf61d844a69ae759665d56d9543a7808da"
+      }
+    ],
+    "limited": false,
+    "unevaluated": [
+      "/passages/26",
+      "/passages/29",
+      "whole-report acceptance, retained obligations and persistence"
+    ],
+    "complete_validation": false
+  },
+  "permits_third": false
+}

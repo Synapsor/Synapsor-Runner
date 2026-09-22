@@ -1,0 +1,27 @@
+{
+  "manifest": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-correction-chain-2f6c952-20260922/frozen/installed-artifact-manifest.json",
+    "sha256": "c715f1f6cc35045a67e072744535852245f55c863d54188aa5bab0d9328b421e",
+    "matches": true
+  },
+  "archive": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-correction-chain-2f6c952-20260922/frozen/installed-artifact.tar.gz",
+    "sha256": "a8966f8a075395958cf358db46955183b394fd1837d70ce085a695ae9d05fa76",
+    "matches": true
+  },
+  "source_archive": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-correction-chain-2f6c952-20260922/frozen/source.tar",
+    "sha256": "97d4840bb256451677897653baadc25f6e9cdcbb966c8b27b0028c4c94933618",
+    "matches": true
+  },
+  "latest_start": {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/public-b-review-attempt1/checkpoints/stopped-after-receipt-chain-failure-v1/manifest.json",
+    "sha256": "3ea3fb806c4a4fe4b3db801775124d941985b7a436638be36cb22a34a476fd98"
+  },
+  "ancestry": {
+    "40b1ad54960a2dd22cf25a05a7dbbdddbe9090e4": true,
+    "5cd42df9478f62758de9206a8649652f08f546a4": true,
+    "f14ce84eaec053c8df8822e224c11fffac150a50": true,
+    "734fcc40532347ba21d403facabfb96749f94698": true
+  }
+}

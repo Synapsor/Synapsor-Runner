@@ -1,0 +1,15 @@
+# Scoped generation, complete certification
+
+The actual 31-passage parent fails receipt Read-exclusion isolation at passage 24. Its actual 37-passage whole replacement adds two wrong counter citations and still fails the same source requirement. The unchanged no-progress guard correctly stopped. `BEFORE-REPLAY.json` records the zero-provider replay; neither response is accepted.
+
+The host will nominate complete source-overlap groups from the immediately preceding unaccepted report, binding raw record identities, source ranges, context and full parent digest. A correction tool accepts only those groups. Records outside them remain exact JSON values, including absent optional fields. Group membership is not determined by heading, timestamp or error-code similarity. Unlocatable/global, ambiguous, limited or nonstructural findings cannot start a scoped rewrite.
+
+Raw parent, scope, replacement and assembled report remain explicitly tentative evidence in the existing bounded episode. No fragment is certified. The assembled whole report runs ordinary validation, then existing coordinated currentness/save and ownership review. Failed validation or persistence never installs partial readiness. Provider work remains outside locks.
+
+Receipt selection, effects and source-transaction coupling are distinct. Existing PostgreSQL/MySQL engines already place guarded primary/companion effects and required source receipts in one transaction; no engine change is needed. Existing review had no positive coupling assessor, and a broad effect pointer plus prose could evade that distinction. An explicit authoring component will validate exact complete effect bindings, supported execution, current receipt selection and the existing coupling contract. It proves capability only, never provisioning, execution permission, a performed receipt or independent readback. Deterministic capability wording will be recorded separately from submitted raw data. No general prose splitter or expanded natural-language detector is introduced.
+
+The existing source-mode interpreter establishes source_db/runner_ledger requirements, not arbitrary natural-language atomicity. The bounded correction pins the exact original source span and retains its coupling requirement; full validation also refuses implemented effect claims on an explicit source_db span without the coupling component. Pure selection proves only selection. This is not a general proof of every possible prose claim.
+
+For a second correction, every obligation in the first nominated region must have fully validated in the assembled report, including all replacement children and complete-source checks. Reindexing, splitting or changing a diagnostic cannot count as progress. Repeated or reintroduced findings stop under the existing three-submission ceiling.
+
+Runtime, accounting, receipts, policy, grants and worker behavior remain out of scope. Main provider calls: zero. The independent tester alone owns any later funded installed Review/restart episode.

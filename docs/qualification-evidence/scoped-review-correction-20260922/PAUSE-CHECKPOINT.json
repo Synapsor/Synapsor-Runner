@@ -1,0 +1,17 @@
+{
+  "status": "PAUSED_BY_USER",
+  "at": "2026-09-22T08:15:20.491242+00:00",
+  "head": "734fcc40532347ba21d403facabfb96749f94698",
+  "archive_sha256": "2948837e0791782161e00914ff976197272eb816ec3d044b086c7f4ad3bfc3b0",
+  "main_paid_calls": 0,
+  "tester_paid_calls": 0,
+  "remaining_net_authorization_usd": 2.87995169,
+  "tester_harness_corrections_used": 2,
+  "main_harness_corrections_used": 0,
+  "new_candidate": null,
+  "full_stable_gates": "NOT_RUN",
+  "processes": "All main helpers and tester report stopped; no owned runtime/database resources started by main",
+  "tester_pause_manifest": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-scoped-correction-review-20260922/pre-freeze-attempt1/checkpoints/graceful-pause-001/manifest.json",
+  "tester_pause_manifest_sha256": "1cf98f187ff4decacd385fb56017d9efc684d0590ff7c4591cad2083b8cc6465",
+  "next_operation": "STOP until user resumes; read detailed handoff and enforce original phase deadlines/budgets"
+}

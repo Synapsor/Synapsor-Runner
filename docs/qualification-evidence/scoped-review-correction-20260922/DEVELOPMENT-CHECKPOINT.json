@@ -1,0 +1,34 @@
+{
+  "at": "2026-09-22T20:54:32.811870+00:00",
+  "head": "734fcc40532347ba21d403facabfb96749f94698",
+  "source_digest": "301cd56d608d63b99b4a82cccef5e106df301d3da4acf41149359a833307130a",
+  "pre_freeze_manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-review-correction-734fcc4-20260922/pre-freeze-source-001/manifest.json",
+  "pre_freeze_tar_sha256": "5243567670c2528b613e69e98a084b5dccff0081c54a9e23c2a539b856424de9",
+  "focused_combined": {
+    "exit": 0,
+    "passed": 526,
+    "skipped": 1,
+    "files": 11,
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-review-correction-734fcc4-20260922/gates/focused-wire-combined-08.log"
+  },
+  "types": {
+    "exit": 0,
+    "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-review-correction-734fcc4-20260922/gates/focused-types-10.log"
+  },
+  "prior_failed_focus": [
+    "focused-neighbors-01",
+    "focused-main-neighbors-02",
+    "focused-main-neighbors-03",
+    "focused-policy-04",
+    "focused-types-09"
+  ],
+  "provider_calls_main": 0,
+  "provider_calls_tester": 0,
+  "independent_status": "IN_PROGRESS_ON_EXACT_PRE_FREEZE_SNAPSHOT",
+  "stable_full_suite": "NOT_STARTED",
+  "backend_gates": "NOT_STARTED",
+  "offline_package": "NOT_STARTED",
+  "frozen_installation": "NOT_CREATED",
+  "public_B": "NOT_STARTED",
+  "deadline_status": "Expired original deadlines during explicit user pause; elapsed overrun recorded and call/spend/harness counts not reset."
+}

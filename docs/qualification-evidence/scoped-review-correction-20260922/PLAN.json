@@ -1,0 +1,18 @@
+{
+  "created_at": "2026-09-22T07:33:12.142270+00:00",
+  "baseline": "734fcc40532347ba21d403facabfb96749f94698",
+  "branch": "codex/tui-safe-action-control-plane",
+  "worktree_initially_clean": true,
+  "diagnosis_deadline": "2026-09-22T08:30:00Z",
+  "implementation_deadline": "2026-09-22T11:30:00Z",
+  "preliminary_reads_included": true,
+  "budget_note": "Conservative fixed deadlines include the brief-reading prelude; not reset. Stable gates/freeze2hours starts when that phase begins.",
+  "main_paid_calls": 0,
+  "tester_max_authoring_calls": 4,
+  "net_authorization_carried_usd": 2.87995169,
+  "paid_lane_status": "NOT_RESERVED_NOT_LIVE",
+  "main_raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/scoped-review-correction-734fcc4-20260922",
+  "tester_thread": "01a0bcb8-0925-7380-911a-8bab207b9e0b",
+  "scope": "Host-scoped replacements of exact immediate tentative parent, explicit receipt evidence categories, full assembly/validation/save; no partial certification",
+  "next_step": "Reproduce actual31\u219237 chain and map actual transaction-coupling proof before product changes."
+}
