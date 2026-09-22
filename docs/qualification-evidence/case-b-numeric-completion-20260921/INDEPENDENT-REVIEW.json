@@ -1,0 +1,22 @@
+{
+  "role": "Independent tester personally operated; main inspected sealed evidence",
+  "root": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/case-b-known-edit-continuation-20260921-attempt2",
+  "files": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/case-b-known-edit-continuation-20260921-attempt2/REVIEW.md",
+      "sha256": "036ffdc94abcf09418ae05ba9a779cccc49607ad993cc5f86d60ff86785edd05"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/case-b-known-edit-continuation-20260921-attempt2/RESULT.json",
+      "sha256": "d0c25ea27cba79c2d77efe6e8a41fbb740b56d1df7d30c42ca3296df7a2bc781"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/case-b-known-edit-continuation-20260921-attempt2/EVIDENCE-INDEX.json",
+      "sha256": "d15cbcb96ee897481e98071939626b4450bc134606d2bd8769d5377b6cec3269"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-phase-review-20260921/case-b-known-edit-continuation-20260921-attempt2/checkpoints/final-state-v1/manifest.json",
+      "sha256": "558b8c587d3689e8907f275adf7776699e34162e4f4399ca7072135f602710d5"
+    }
+  ]
+}

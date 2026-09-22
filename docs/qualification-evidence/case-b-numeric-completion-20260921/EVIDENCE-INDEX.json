@@ -1,0 +1,181 @@
+{
+  "schema": "case-b-main-evidence-index/v1",
+  "created_at": "2026-09-22T02:24:43.072085+00:00",
+  "independent_index": "See INDEPENDENT-REVIEW.json; preserved separately",
+  "entries": [
+    {
+      "kind": "canonical_report_or_read_only_script",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/case-b-numeric-completion-20260921/FINAL-REPORT.md",
+      "sha256": "cd52e8b180d733225e8c4a0f72925a04605a3c3afd6e691db0a476f1163877cc",
+      "bytes": 16547
+    },
+    {
+      "kind": "canonical_report_or_read_only_script",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/case-b-numeric-completion-20260921/INDEPENDENT-REVIEW.json",
+      "sha256": "238ef01a732889f96f256e9b21024b2b473962e91a71a5aca0aaa9b1ff93a5ed",
+      "bytes": 1362
+    },
+    {
+      "kind": "canonical_report_or_read_only_script",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/case-b-numeric-completion-20260921/PLAN.md",
+      "sha256": "02fa68550ac795904d70affb13b2fb65416d5f7706cdca5e7bae521a415ee09c",
+      "bytes": 6974
+    },
+    {
+      "kind": "canonical_report_or_read_only_script",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/case-b-numeric-completion-20260921/REPRODUCE.md",
+      "sha256": "acff1773d87355d244f24991e52f5c789fabd4317f9320ebbeb259f705570de1",
+      "bytes": 3220
+    },
+    {
+      "kind": "canonical_report_or_read_only_script",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/case-b-numeric-completion-20260921/RESULT.json",
+      "sha256": "20f88d1745f1660c9e156ae9d392966d4e45868d3a13a077c762e125aa1eb845",
+      "bytes": 1737
+    },
+    {
+      "kind": "canonical_report_or_read_only_script",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/case-b-numeric-completion-20260921/RESUME-HANDOFF.md",
+      "sha256": "ca78dc99205607a877572ca5bf74fcfb5379efcf28996125173d7b1ac391b165",
+      "bytes": 8349
+    },
+    {
+      "kind": "canonical_report_or_read_only_script",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/case-b-numeric-completion-20260921/inspect-sealed-evidence.py",
+      "sha256": "f408def664ec6808e312da70ae05b4a4ab84c6ce8454a4fc72a7521b3a0a5d4e",
+      "bytes": 4156
+    },
+    {
+      "kind": "main_private_readback_or_correction",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/case-b-numeric-completion-ddae38b-20260921/IDENTITY-001.json",
+      "sha256": "95bcf04330e7adc0d5994dda99235b769cf6a908978ea650f171f6ba010550a1",
+      "bytes": 390
+    },
+    {
+      "kind": "main_private_readback_or_correction",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/case-b-numeric-completion-ddae38b-20260921/B-START-INDEX-VERIFICATION-001.json",
+      "sha256": "656594a5ba81891ab041b7583012645fccb376df21c08a253e37e965b4a1d015",
+      "bytes": 4411
+    },
+    {
+      "kind": "main_private_readback_or_correction",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/case-b-numeric-completion-ddae38b-20260921/B-ARCHIVE-CONTROL-INVENTORY-001.json",
+      "sha256": "45223ddeb2affbc27172283c06396ded191241a0aa3be7caba069650f78f95db",
+      "bytes": 1448
+    },
+    {
+      "kind": "main_private_readback_or_correction",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/case-b-numeric-completion-ddae38b-20260921/B-EXACT-PROGRAM-DIFF-001.json",
+      "sha256": "ee5507ff89bd48f08e9e30326ff9bd254be55d9a83ece6a1094d71116750dee0",
+      "bytes": 1901
+    },
+    {
+      "kind": "main_private_readback_or_correction",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/case-b-numeric-completion-ddae38b-20260921/B-SEAL-COMPARISON-001.json",
+      "sha256": "234e21b6cfa6057ef1da57cd6c718acad6e97b8a98b2a1f5dcc8e6aac72981d0",
+      "bytes": 3053
+    },
+    {
+      "kind": "main_private_readback_or_correction",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/case-b-numeric-completion-ddae38b-20260921/FINANCIAL-PREFLIGHT-001.json",
+      "sha256": "6b4b76a5fd1983a6ff1d49c1e3cfea9bf8d50df2324cf98d3cda0234dd091069",
+      "bytes": 1065
+    },
+    {
+      "kind": "main_private_readback_or_correction",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/case-b-numeric-completion-ddae38b-20260921/PRIOR-EVIDENCE-INSPECTION-001.json",
+      "sha256": "97a8f50144f32b6be43068441d3d8ede73d08befc4ee62db34e92e5fca2ddaa2",
+      "bytes": 21262
+    },
+    {
+      "kind": "main_private_readback_or_correction",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/case-b-numeric-completion-ddae38b-20260921/MAIN-CHECKPOINT-ASSESSMENT-001.json",
+      "sha256": "aba05ce46d83afa189b53308fe03e3fd2bd7e1be2333348c218956414adb2335",
+      "bytes": 1939
+    },
+    {
+      "kind": "main_private_readback_or_correction",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/case-b-numeric-completion-ddae38b-20260921/PUBLICATION-CHECKPOINT-INSPECTION-001.json",
+      "sha256": "e8832469245dd17977a858a2fecc867136fbe7a00cb88d9de4db856be2f1e9f0",
+      "bytes": 1475
+    },
+    {
+      "kind": "main_private_readback_or_correction",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/case-b-numeric-completion-ddae38b-20260921/MAIN-ASSESSMENT-WINDOW-001.json",
+      "sha256": "c757290774f39e1cb3d00b7638fc870d0d43d15a7780c71cb0a0da3133f6e235",
+      "bytes": 472
+    },
+    {
+      "kind": "main_private_readback_or_correction",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/case-b-numeric-completion-ddae38b-20260921/MCP-CAPTURE-ASSESSMENT-001.json",
+      "sha256": "90905bf44fd6c2b17317550477af08ca897db321dabdf790dac1b7022230ca46",
+      "bytes": 6185
+    },
+    {
+      "kind": "main_private_readback_or_correction",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/case-b-numeric-completion-ddae38b-20260921/SEALED-EVIDENCE-ASSESSMENT-002.json",
+      "sha256": "23bd25c837a348cd2c3586d996777e479017c25ea727c83bb567c8a08627a74c",
+      "bytes": 6525
+    },
+    {
+      "kind": "main_private_readback_or_correction",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/case-b-numeric-completion-ddae38b-20260921/INDEPENDENT-SEAL-VERIFICATION-001.json",
+      "sha256": "70526886b7d6f65ea9a9924358de87728e084a552cdadf59d5a804c489a6f781",
+      "bytes": 11918
+    },
+    {
+      "kind": "main_private_readback_or_correction",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/case-b-numeric-completion-ddae38b-20260921/MAIN-RECEIPT-RECOMPUTATION-001.json",
+      "sha256": "a7fbda676f2c99149a211b043e9c0fa86a6e2f556e10c34a99e72dce8b03733b",
+      "bytes": 771
+    },
+    {
+      "kind": "main_private_readback_or_correction",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/case-b-numeric-completion-ddae38b-20260921/MAIN-RECEIPT-RECOMPUTATION-002.json",
+      "sha256": "dc46729e958ba387f27435e52e2ced1e95cd81139e2b4e488a029e3c53c7b0a0",
+      "bytes": 770
+    },
+    {
+      "kind": "main_private_readback_or_correction",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/case-b-numeric-completion-ddae38b-20260921/MAIN-REFERENCE-EXPIRY-001.json",
+      "sha256": "05b1ac9535807705c690c187c0313c3bb44b9fe22000565235fd63b59694b149",
+      "bytes": 623
+    },
+    {
+      "kind": "main_private_readback_or_correction",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/case-b-numeric-completion-ddae38b-20260921/FINAL-PRESERVATION-001.json",
+      "sha256": "f5d03ceb0d54000b50fbf51f988ad770da828df84dfb0bdc1b94a8cc46b72387",
+      "bytes": 693
+    },
+    {
+      "kind": "main_private_readback_or_correction",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/case-b-numeric-completion-ddae38b-20260921/OWNED-CLEANUP-CONFIRMATION-002.json",
+      "sha256": "9ebb28a805c9f02c99196f385bc9210fdedcbc8c28cfdad3fdda5541225d98ba",
+      "bytes": 707
+    },
+    {
+      "kind": "main_private_readback_or_correction",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/case-b-numeric-completion-ddae38b-20260921/TESTER-MEASUREMENT-BOUNDARY-001.json",
+      "sha256": "98f72a0e979511764615c86def9dcd9fa9bd71e3456d5565d247843d8c59354c",
+      "bytes": 733
+    },
+    {
+      "kind": "main_private_readback_or_correction",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/case-b-numeric-completion-ddae38b-20260921/candidate-final-verify.log",
+      "sha256": "069951cffdc5ce3164461847ee30d1d67cd6c9df3c6e9c690078485401707a68",
+      "bytes": 149
+    },
+    {
+      "kind": "main_private_readback_or_correction",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/case-b-numeric-completion-ddae38b-20260921/CHECKPOINT-016.json",
+      "sha256": "7281e8c55b12feec2d335d050c59677bd1318e197e14687f2bbe8b616aab0622",
+      "bytes": 442
+    },
+    {
+      "kind": "main_financial_closure",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/case-b-numeric-completion-ddae38b-20260921/FINANCIAL-CLOSURE-001.json",
+      "sha256": "2dc0a16f9d55013115cc87d09835e9ed65773e873e5d52dfb166c54a9a03d661",
+      "bytes": 593
+    }
+  ]
+}

@@ -1,0 +1,40 @@
+{
+  "schema": "case-b-main-assessment/v1",
+  "at": "2026-09-22T02:22:18.263816+00:00",
+  "baseline": "ddae38b57e3054539b4c0b81c253b6899b7ea07e",
+  "product_changed": false,
+  "installed_tree": "d600bfbeee91f4b79ed54a68c93c1319f1c7c3f7871434dd80c9688ca187dca9",
+  "full_requested_sequence": "NOT_ESTABLISHED",
+  "independent_narrow_verdict": "PASS_WITH_EXPLICIT_NOT_ESTABLISHED_ROWS",
+  "main_role": "COORDINATED_AND_INSPECTED; no duplicate fixture operations",
+  "numeric_publication_threshold_pair_single_effect_receipts": "PASS_OBSERVED",
+  "current_catalog_read_restart": "PASS_OBSERVED",
+  "final_authoring_review": "REVIEW_REVALIDATION_FUNDING_BLOCKED",
+  "prepublication_catalog_and_connection_continuity": "NOT_ESTABLISHED",
+  "worker_credential_minimality": "NOT_ESTABLISHED",
+  "full_per_replay_tables_config_nonmutation": "NOT_ESTABLISHED",
+  "old_ref_status_after_restart": "REFUSED_EXPIRED; positive status NOT_ESTABLISHED",
+  "provider_calls": 0,
+  "new_spend_usd": 0,
+  "operations": {
+    "non_request_mcp": 7,
+    "request_change": 5,
+    "workers": 1,
+    "publication": 1,
+    "business_effects": 1,
+    "rollback_only_probes": 2,
+    "tester_harness_corrections": 2
+  },
+  "case_a": "OWNER_UNESTABLISHED_BUSINESS_PENDING_UNTOUCHED",
+  "native_model_lane": "NOT_RUN",
+  "add_remove": "NOT_RUN",
+  "original_stage_b": "ATTEMPTED_NOT_PASSED",
+  "source_rows": {
+    "business": 196,
+    "receipts_before": 1,
+    "receipts_after": 2
+  },
+  "cleanup": "Main confirmed tester owned containers absent; no main fixture resources",
+  "funds": "Current credit unconfirmed; historical net is not balance; no paid reservation",
+  "next_operations": "STOP; no duplicated publication/effect; see FINAL-REPORT and RESUME-HANDOFF"
+}
