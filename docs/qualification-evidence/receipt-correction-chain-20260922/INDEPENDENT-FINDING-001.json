@@ -1,0 +1,16 @@
+{
+  "at": "2026-09-22T06:09:48.463745+00:00",
+  "classification": "Real pre-freeze correction eligibility counterexample, fixed before stable gates",
+  "finding": "Generic setup supported=true did not constrain per-outcome setup record; wrong/missing/duplicated/proposal_only bindings were structural",
+  "fix": "Existing supportedReceiptSetup now demands one exact unique entry per supervised Action matching actual direct_sql execution evidence; no new positive review or runtime change",
+  "evidence": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/pre-freeze-attempt1/probes/candidate-action-binding-edges-001.ts",
+      "sha256": "3b7f3cd917d0af7f2e14a998e19a3f1013171b1ba6e94179d966247da8d2731d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/pre-freeze-attempt1/records/CANDIDATE-ACTION-BINDING-EDGES-001.json",
+      "sha256": "ca458c2ca00a9a98ada3d8f7f9a5680455acb4cf43f4cfcf691fc08cb3b27a9e"
+    }
+  ]
+}

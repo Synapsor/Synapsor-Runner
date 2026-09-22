@@ -1,0 +1,16 @@
+{
+  "at": "2026-09-22T06:18:27.080021+00:00",
+  "classification": "Material pre-freeze receipt-chain routing discrepancy, fixed before full suite",
+  "cause": "Implemented configuration role early-return permitted deployment/application/omitted to bypass exact configuration assessment.",
+  "fix": "Implemented configuration references always assessed; unsupported responsibility gets typed nonstructural refusal.",
+  "evidence": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/pre-freeze-attempt1/probes/candidate-responsibility-routing-001.ts",
+      "sha256": "e61aa6b26e46168116004c7ed4f347561cc6b120bfad9280987e75fb581296ab"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/pre-freeze-attempt1/records/CANDIDATE-RESPONSIBILITY-ROUTING-001.json",
+      "sha256": "05569d2d3687134761ef591f3b32e1aa38d2fd5e017229e986ce46511f182715"
+    }
+  ]
+}

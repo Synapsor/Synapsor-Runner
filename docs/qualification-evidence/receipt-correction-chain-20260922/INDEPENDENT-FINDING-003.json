@@ -1,0 +1,16 @@
+{
+  "at": "2026-09-22T06:18:27.080250+00:00",
+  "classification": "Material pre-freeze receipt-chain routing discrepancy, fixed before full suite",
+  "cause": "Child-only and broad-ancestor references bypassed exact-includes configuration routing.",
+  "fix": "Configuration descendants and broad ancestors of the existing explicit source receipt requirement enter assessment; missing exact root gets typed nonstructural refusal.",
+  "evidence": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/pre-freeze-attempt1/probes/candidate-responsibility-routing-002.ts",
+      "sha256": "6f1b13db404e0e75a021c65f8797f4d59ba6f4d16fbf75e6be3107edac3a5c1a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/pre-freeze-attempt1/records/CANDIDATE-RESPONSIBILITY-ROUTING-002.json",
+      "sha256": "035b16552b8ade6bec1e36375a6b71f0899751be309c5c374282932201f6fb3a"
+    }
+  ]
+}

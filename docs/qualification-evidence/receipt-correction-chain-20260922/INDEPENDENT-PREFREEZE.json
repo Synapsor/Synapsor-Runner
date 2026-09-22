@@ -1,0 +1,89 @@
+{
+  "inspected_at": "2026-09-22T06:19:43.724642+00:00",
+  "verdict": "PASS for exact pre-freeze contract; heavy gates/artifact/public excluded",
+  "files": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/pre-freeze-attempt1/signoff/PRE-FREEZE-REVIEW.md",
+      "sha256": "842df622cec873a2d0737189678fb7b93d0e77edebc47625b08ca66b6b70e1b6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/pre-freeze-attempt1/signoff/PRE-FREEZE-RESULT.json",
+      "sha256": "50ea33d972197bd4803367c78d8a46f065fb728e8fddc8997505109d0237fbf9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/pre-freeze-attempt1/signoff/PRE-FREEZE-INDEX.json",
+      "sha256": "afb2105f625df20327e990755a3a6e47713b883a4523b8a8f5bc51246b27dc05"
+    }
+  ],
+  "result": {
+    "schema": "independent-receipt-chain-prefreeze-result/v1",
+    "role": "independent_tester",
+    "implemented_product_changes": false,
+    "baseline_delivery": "2f6c9524966d6bd51d8267a9e48cbc9e1e1021b4",
+    "tested_base_commit": "0e67393bf4289fcf4171946badb4389f5fcd9ded",
+    "tested_snapshot": "candidate-snapshot-005",
+    "tested_product_hashes": {
+      "authoring_obligation_review": "9692b949a45aeb957909b7bdabda41b8a60fd3650cc1977eb89a1e6eaf614ce1",
+      "authoring_coverage_feedback": "bd8289025b343c5c25b2c3449c56bd6af4ab9934c1c1d4fccc3ff239cb7daafe",
+      "authoring_policy_coverage": "41d6733ba4c303d86257157cec364c8e8afa2b1da37ab41ef1b041551dbd03be"
+    },
+    "window": {
+      "started_at": "2026-09-22T05:57:53.129992Z",
+      "sealed_at": "2026-09-22T06:18:18.338943842Z"
+    },
+    "verdict": "PASS",
+    "scope": "bounded_pre_freeze_receipt_correction_contract",
+    "provider_calls": 0,
+    "paid_lane": "HOLD",
+    "material_counterexamples": [
+      {
+        "id": "setup_outcome_binding",
+        "initial_result": "FAIL",
+        "final_result": "PASS",
+        "closure": "exact unique direct_sql setup outcome required for every supervised Action"
+      },
+      {
+        "id": "responsibility_routing_bypass",
+        "initial_result": "FAIL",
+        "final_result": "PASS",
+        "closure": "implemented configuration-bearing claims always enter assessment; non-Runner or omitted responsibility refuses nonstructurally"
+      },
+      {
+        "id": "child_and_broad_pointer_bypass",
+        "initial_result": "FAIL",
+        "final_result": "PASS",
+        "closure": "configuration descendants and source-receipt broad ancestors enter assessment and refuse as typed nonstructural overbroad references"
+      }
+    ],
+    "checks": {
+      "latest_exact_reply_invalid_and_three_findings_delivered": "PASS",
+      "prior_exact_reply_invalid_and_typed_correction": "PASS",
+      "configuration_effect_overview_family": "PASS",
+      "duplicates_invalid_unrelated_and_observation_controls": "PASS",
+      "source_read_action_selection_mode_destination_currentness": "PASS",
+      "responsibility_routing": "PASS_AFTER_REPAIR",
+      "child_and_broad_pointer_routing": "PASS_AFTER_REPAIR",
+      "counter_citation_and_complete_source_retention": "PASS",
+      "derived_full_positive_parser_and_readiness": "PASS",
+      "local_http_sse_both_encoders": "PASS_SYNTHETIC",
+      "coordinated_save_reload_validated_reuse": "PASS",
+      "failure_and_drift_preservation": "PASS",
+      "heavy_stable_gates": "NOT_ESTABLISHED_MAIN_OWNS",
+      "immutable_artifact_identity": "NOT_ESTABLISHED",
+      "paid_public_review": "NOT_RUN"
+    },
+    "focused_test": {
+      "personally_executed": true,
+      "authorship": "implementer_authored",
+      "passed": 70,
+      "failed": 0
+    },
+    "limits": [
+      "pre-freeze source checkpoint only",
+      "no external provider/model behavior established",
+      "no artifact/install acceptance",
+      "no deployment or execution acceptance",
+      "no Stage B acceptance"
+    ]
+  }
+}
