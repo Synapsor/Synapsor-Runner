@@ -1,0 +1,15 @@
+{
+  "start": "2026-09-22T04:08:12.526688+00:00",
+  "implementation_deadline": "2026-09-22T08:08:12.526688+00:00",
+  "implementation_hours": 4,
+  "stable_gates_freeze_hours": 2,
+  "development_provider_calls": 0,
+  "final_provider_transports": 4,
+  "final_owner": "independent tester only",
+  "prior_ledger_closed": true,
+  "prior_net_authorization_usd": 3.38317069,
+  "new_funding": "must reconcile and reserve before final lane, not currently active",
+  "new_business_operations": 0,
+  "baseline_head": "f0a6fd1a267b1836798c29d708e696967130c140",
+  "raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922"
+}

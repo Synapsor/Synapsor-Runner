@@ -1,0 +1,6 @@
+{
+  "product_commit": "4794ce527840459685510a9bbd7435cd85d8cf95",
+  "test_commit": "56110270c47beb577ca0ec7cd068f0bd4bea1f7a",
+  "baseline_commit": "f0a6fd1a267b1836798c29d708e696967130c140",
+  "scope": "review correction eligibility and generic producer/feedback only"
+}
