@@ -26,6 +26,14 @@ export class CoverageReceiptObservationError extends Error {
     super('OBLIGATION_OBSERVATION_UNESTABLISHED: Receipt capability or selected configuration is not an observed receipt or independent source readback. Keep the applicable exact setup/after-execution duty pending; no observation evidence is supplied by this review.');
   }
 }
+/** Host-only reason from the strict exclusion validator, never a provider flag.
+ * A current narrow proof can justify repairing a representation, not accepting it. */
+export class CoverageReceiptReadExclusionError extends Error {
+  readonly code = 'RECEIPT_READ_EXCLUSION_UNESTABLISHED';
+  constructor(readonly reason: 'proof_unavailable' | 'component_not_isolatable' | 'current_proof_mixed_component') {
+    super('RECEIPT_READ_EXCLUSION_UNESTABLISHED: The exact current selected-Read exclusion must be isolated; it proves no other privacy, business or observation claim.');
+  }
+}
 export class CoverageReceiptReadContextError extends Error {
   constructor() { super('COVERAGE_RECEIPT_REFERENCE_OVERBROAD: The receipt guarantee overview is not evidence for the separate Read-exclusion claim.'); }
 }
@@ -57,6 +65,17 @@ export const MAX_COVERAGE_SUBMISSIONS = 3;
 export function coverageFinding(error: unknown, component: string, identityBasis: unknown): CoverageFinding {
   if (error instanceof CoverageComponentError) component = error.component;
   const cause = error instanceof CoverageComponentError ? error.cause : error;
+  if (cause instanceof CoverageReceiptReadExclusionError) return {
+    code: cause.code, component, component_identity: canonicalJsonDigest(identityBasis),
+    identity: canonicalJsonDigest({component: identityBasis, code: cause.code}),
+    structural: cause.reason === 'current_proof_mixed_component',
+    reason: cause.reason === 'current_proof_mixed_component'
+      ? 'The current host proof establishes only exclusion of configured receipt destinations from this selected Read. Its exact root is mixed with recognized effect/configuration roots; the submitted claim remains invalid.'
+      : 'The required current exclusion proof is unavailable or the mixed claim is outside the supported isolation boundary. No exclusion or repairable representation is established.',
+    repair: cause.reason === 'current_proof_mixed_component'
+      ? 'Return the COMPLETE REPLACEMENT review. Isolate the receipt Read-exclusion claim with only /runner_evidence/runtime_contract/receipt_read_exclusion in draft_paths and no unrelated checks or duties. Preserve its source range. Give the effect and selected receipt configuration their own separately supported claims, retaining every condition, privacy requirement and obligation. This narrow proof establishes neither provisioning, execution permission, a performed receipt, independent readback nor privacy of other data/interfaces. Do not invent observations or erase applicable history; use only evidence actually supplied for each claim. Do not change policy, selectors, configuration or owner decisions.'
+      : 'Keep the unsupported requirement unresolved and revalidate its actual evidence. Do not infer exclusion from missing names, substitute a nearby receipt overview or request another opinion to invent proof. The complete report still requires independent support for every residual claim.',
+  };
   if (cause instanceof CoverageReceiptReadContextError) return {
     code: 'COVERAGE_RECEIPT_REFERENCE_OVERBROAD', component, component_identity: canonicalJsonDigest(identityBasis),
     identity: canonicalJsonDigest({component: identityBasis, code: 'COVERAGE_RECEIPT_REFERENCE_OVERBROAD'}), structural: true,
@@ -93,7 +112,7 @@ export function coverageFinding(error: unknown, component: string, identityBasis
   if (message.startsWith('COUNTING_SUPPORT_MISMATCH:')) {
     code = 'COUNTING_SUPPORT_MISMATCH'; structural = true;
     reason = 'The counter-specific citation has no applicable exact support association; a paragraph citation is separate.';
-    repair = 'Correct only this counter citation using its current scoped support. Retain the counting comparison, all source requirements and every other claim. Do not change selectors or invent an owner decision.';
+    repair = 'Correct only this counter citation using its current scoped support. Cite an accepted operator message only when it actually supports this exact comparison. If the prepared source or typed host-recorded counting review independently establishes required meaning without a linked message, omit the OPTIONAL counter operator_message_id while retaining the comparison and that authentic positive basis. Omission or current/required equality alone supplies no proof. Keep paragraph support separate, preserve every source requirement and other claim, and do not change selectors or invent or repeat an owner decision. Return the complete replacement review.';
   } else if (message.startsWith('Draft pointer(s) not present:') || message.startsWith('Draft pointer not present:')) {
     code = 'COVERAGE_REFERENCE_MISSING'; structural = true;
     reason = 'The submitted reference is absent from the current prepared review context. Its untrusted value is withheld.';

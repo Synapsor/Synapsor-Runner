@@ -1,6 +1,6 @@
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { isDeferredSourceCounterMaintenance, isDeferredSourceReadback, receiptSetupComponentOnly as receiptOnly, receiptConfigurationComponentOnly, type ReviewObligationAssessment, type PolicyPassage, type PolicyTextSnapshot } from "./authoring-policy-source.js";
-import { CoverageReceiptObservationError, CoverageReceiptReadContextError } from "./authoring-coverage-feedback.js";
+import { CoverageReceiptObservationError, CoverageReceiptReadContextError, CoverageReceiptReadExclusionError } from "./authoring-coverage-feedback.js";
 export { deferredReviewObligation } from "./authoring-policy-source.js";
 
 export const RECEIPT_PATH = "/runner_evidence/runtime_contract/receipts";
@@ -29,6 +29,25 @@ function isolatedReceiptReadFields(p: PolicyPassage): boolean {
   return p.responsibility === 'runner' && !p.field_checks?.length && !p.counter_requirements?.length
     && !p.application_obligations?.length && !p.deployment_prerequisite && !p.source_counter_obligation && !p.operator_override
     && !p.evidence_checks?.length;
+}
+
+/** A bounded correction subcase, not acceptance or a claim about prose meaning.
+ * Only known prepared capability/configuration roots may accompany the current
+ * exclusion proof. Their actual claims still undergo full replacement validation. */
+function isolatableReceiptReadExclusion(p: PolicyPassage, draft: unknown): boolean {
+  if (!isolatedReceiptReadFields(p) || p.issue_kind !== 'coverage_link'
+    || p.draft_paths.length < 2 || !p.draft_paths.includes(RECEIPT_READ_PATH)
+    || new Set(p.draft_paths).size !== p.draft_paths.length
+    || !p.draft_paths.some(path => path !== RECEIPT_READ_PATH)) return false;
+  const roots = (at(draft, '/actions') ?? []).flatMap((action: any) => {
+    const root = `/runner_evidence/actions/${action.outcome.replace(/~/gu, '~0').replace(/\//gu, '~1')}/effect`;
+    const effect = at(draft, root);
+    return action.effect?.writeback === 'supervised' && effect
+      && effect.target_resource === action.effect.target_resource
+      && effect.target_binding === action.effect.target_binding
+      && effect.operation === action.effect.operation ? [root] : [];
+  });
+  return p.draft_paths.every(path => path === RECEIPT_READ_PATH || path === CONFIGURATION_PATH || roots.includes(path));
 }
 
 /** Host preparation already checks the selected management revision against
@@ -121,9 +140,10 @@ export function receiptSelectionComponent(p: PolicyPassage, source: PolicyTextSn
  * All three families use the same phase record; their proof requirements differ. */
 export function assessReviewObligation(p: PolicyPassage, source: PolicyTextSnapshot, draft: unknown): ReviewObligationAssessment | undefined {
   if (p.disposition === 'implemented' && p.draft_paths.some(path => path === RECEIPT_READ_PATH || path.startsWith(`${RECEIPT_READ_PATH}/`))) {
-    if (!currentReceiptReadExclusion(draft) || !isolatedReceiptReadFields(p)
-      || p.draft_paths.length !== 1 || p.draft_paths[0] !== RECEIPT_READ_PATH) {
-      throw new Error('RECEIPT_READ_EXCLUSION_UNESTABLISHED: The exact current selected-Read exclusion must be isolated; it proves no other privacy, business or observation claim.');
+    if (!currentReceiptReadExclusion(draft)) throw new CoverageReceiptReadExclusionError('proof_unavailable');
+    if (!isolatedReceiptReadFields(p) || p.draft_paths.length !== 1 || p.draft_paths[0] !== RECEIPT_READ_PATH) {
+      throw new CoverageReceiptReadExclusionError(isolatableReceiptReadExclusion(p, draft)
+        ? 'current_proof_mixed_component' : 'component_not_isolatable');
     }
   }
   // No claim is accepted or rewritten here. A narrow alternative exists only
