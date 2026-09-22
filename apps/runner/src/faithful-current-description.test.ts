@@ -1,3 +1,4 @@
+import {derivedScopedResponse} from "./test-fixtures/coverage-derived.js";
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -38,7 +39,7 @@ function transport(f:ReturnType<typeof fixture>,replies:any[],provider:'openai'|
   const conversation=createModelAuthoringConversation();conversation.policySources=f.sources;
   const requests:any[]=[];
   const requestJson=vi.fn(async(r:any)=>{
-    requests.push(structuredClone(r.body));const reply=replies[requests.length-1];if(reply instanceof Error)throw reply;
+    requests.push(structuredClone(r.body));const rawReply=replies[requests.length-1];if(rawReply instanceof Error)throw rawReply;const reply=derivedScopedResponse(r.body,rawReply);
     return {status:200,body:provider==='openai'?{output:[{type:'function_call',call_id:'derived',name:'runner__review_policy_coverage',arguments:JSON.stringify(reply)}]}:
       {choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[{id:'derived',type:'function',function:{name:'runner__review_policy_coverage',arguments:JSON.stringify(reply)}}]}}]}};
   });
@@ -118,7 +119,7 @@ describe('faithful current counter description, exact NEW-SB-A capture',()=>{
       expect(saved.application_assignments?.every(a=>a.owner==='client_application'&&a.verified===false)).toBe(true);
       const readiness=policyReviewReadiness(f.source,saved.coverage,saved);
       expect(readiness.ready).toBe(false);
-      expect(readiness.items?.filter(i=>i.blocksReview).map(i=>i.title)).toEqual(['Runner-ledger receipt selection']);
+      expect(readiness.items?.filter(i=>i.blocksReview).map(i=>i.title)).toEqual(['Find assessment by public label','Runner-ledger receipt selection']);
       t.session.conversation.policySources=saved;
       const again=await ensurePreparedPolicyCoverage({...input,sources:saved,state:{}});
       expect(again.activity).toBe('validated_reuse');expect(t.requests).toHaveLength(2);

@@ -1,4 +1,5 @@
 import { canonicalJsonDigest } from '@synapsor-runner/protocol';
+import { createHash } from 'node:crypto';
 import { CoverageSourceLinesError } from './authoring-source-coverage.js';
 
 /** Only host-authored text and fixed response coordinates leave this boundary. */
@@ -62,7 +63,7 @@ const receiptConfigurationFindings = {
     repair: 'Keep the complete review unresolved. Each configuration, effect, privacy, condition and observation claim needs its own applicable evidence. Do not erase a residual requirement or invent an observation to make this report valid.' },
   current_selection_mixed_component: { code: 'OBLIGATION_CONFIGURATION_COMPONENT_MIXED', structural: true,
     reason: 'The exact current receipt selection matches the independently established source mode, but its narrow comparison is mixed with supported capability or receipt-overview roots. The submitted report remains invalid.',
-    repair: 'Return the COMPLETE REPLACEMENT review. Isolate the selected receipt-mode comparison at /runner_evidence/runtime_contract/receipt_configuration; give compiled effects and receipt guarantees their own separately supported components. Preserve every source range, condition, privacy claim and duty. Configuration is not execution, a performed receipt or independent source readback. Retain applicable pending setup and observation duties and authentic historical facts without inventing evidence. Keep optional counter citations only when their exact support is authentic. Do not change policy, selectors, configuration or owner decisions.' },
+    repair: 'Replace only the host-nominated region with explicit supported components; the host validates the complete assembled report. Isolate the selected receipt-mode comparison at /runner_evidence/runtime_contract/receipt_configuration; give compiled effects and receipt guarantees their own separately supported components. Preserve every source range, condition, privacy claim and duty. Configuration is not execution, a performed receipt or independent source readback. Retain applicable pending setup and observation duties and authentic historical facts without inventing evidence. Keep optional counter citations only when their exact support is authentic. Do not change policy, selectors, configuration or owner decisions.' },
 } satisfies Record<ReceiptConfigurationFindingReason, {code:string;structural:boolean;reason:string;repair:string}>;
 export class CoverageReceiptConfigurationError extends Error {
   readonly code: string;
@@ -101,6 +102,11 @@ export function recordCoverageFindingSubject(finding: CoverageFinding, subject: 
   findingSubjects.set(finding, canonicalJsonDigest(subject));
 }
 const checkedPassages = new WeakMap<CoverageFeedback, Map<string,string>>();
+const feedbackParents = new WeakMap<CoverageFeedback,string>();
+export function recordCoverageFeedbackParent(feedback:CoverageFeedback,parent:unknown):void {
+  feedbackParents.set(feedback,`sha256:${createHash('sha256').update(JSON.stringify(parent) ?? 'undefined').digest('hex')}`);
+}
+export function coverageFeedbackParentDigest(feedback:CoverageFeedback):string|undefined {return feedbackParents.get(feedback);}
 export function recordCheckedCoveragePassage(feedback: CoverageFeedback, component: string, identity: string): void {
   const checked=checkedPassages.get(feedback)??new Map<string,string>(); checked.set(component,identity); checkedPassages.set(feedback,checked);
 }
@@ -134,14 +140,14 @@ export function coverageFinding(error: unknown, component: string, identityBasis
       ? 'The current host proof establishes only exclusion of configured receipt destinations from this selected Read. Its exact root is mixed with recognized effect/configuration roots; the submitted claim remains invalid.'
       : 'The required current exclusion proof is unavailable or the mixed claim is outside the supported isolation boundary. No exclusion or repairable representation is established.',
     repair: cause.reason === 'current_proof_mixed_component'
-      ? 'Return the COMPLETE REPLACEMENT review. Isolate the receipt Read-exclusion claim with only /runner_evidence/runtime_contract/receipt_read_exclusion in draft_paths and no unrelated checks or duties. Preserve its source range. Give the effect and selected receipt configuration their own separately supported claims, retaining every condition, privacy requirement and obligation. This narrow proof establishes neither provisioning, execution permission, a performed receipt, independent readback nor privacy of other data/interfaces. Do not invent observations or erase applicable history; use only evidence actually supplied for each claim. Do not change policy, selectors, configuration or owner decisions.'
+      ? 'Replace only the host-nominated region with explicit supported components; the host validates the complete assembled report. Isolate the receipt Read-exclusion claim with only /runner_evidence/runtime_contract/receipt_read_exclusion in draft_paths and no unrelated checks or duties. Preserve its source range. Give the effect and selected receipt configuration their own separately supported claims, retaining every condition, privacy requirement and obligation. This narrow proof establishes neither provisioning, execution permission, a performed receipt, independent readback nor privacy of other data/interfaces. Do not invent observations or erase applicable history; use only evidence actually supplied for each claim. Do not change policy, selectors, configuration or owner decisions.'
       : 'Keep the unsupported requirement unresolved and revalidate its actual evidence. Do not infer exclusion from missing names, substitute a nearby receipt overview or request another opinion to invent proof. The complete report still requires independent support for every residual claim.',
   };
   if (cause instanceof CoverageReceiptReadContextError) return {
     code: 'COVERAGE_RECEIPT_REFERENCE_OVERBROAD', component, component_identity: canonicalJsonDigest(identityBasis),
     identity: canonicalJsonDigest({component: identityBasis, code: 'COVERAGE_RECEIPT_REFERENCE_OVERBROAD'}), structural: true,
     reason: 'This receipt overview/Read combination mixes evidence kinds. The current host context has a separate narrow configured-destination Read-exclusion record; it supplies no observation proof.',
-    repair: 'If the claim is exclusion of configured receipt storage from the selected Read, isolate it using only /runner_evidence/runtime_contract/receipt_read_exclusion and its exact excluded value. Keep the source range and every other claim. This evidence proves neither provisioning, database-wide privacy, execution, a performed receipt nor independent readback. Keep those duties separate and unverified where applicable. A broader privacy or observation claim remains unresolved. Return the COMPLETE REPLACEMENT review and account for the entire source inventory; do not change policy or configuration.',
+    repair: 'If the claim is exclusion of configured receipt storage from the selected Read, isolate it using only /runner_evidence/runtime_contract/receipt_read_exclusion and its exact excluded value. Keep the source range and every other claim. This evidence proves neither provisioning, database-wide privacy, execution, a performed receipt nor independent readback. Keep those duties separate and unverified where applicable. A broader privacy or observation claim remains unresolved. Use only the host-nominated replacement region; the complete assembled report must account for the entire source inventory; do not change policy or configuration.',
   };
   if (cause instanceof CoverageSourceLinesError) return {
     code: 'COVERAGE_SOURCE_LINES_MISSING', component,
@@ -156,7 +162,7 @@ export function coverageFinding(error: unknown, component: string, identityBasis
     identity: canonicalJsonDigest({component: identityBasis, code: cause.code}), structural: cause.structural,
     reason: 'A supported execution capability or reviewed receipt selection does not establish provisioned execution, an observed receipt or independent readback.',
     repair: cause.structural
-      ? 'Separate the compiled capability claim from receipt setup and observation duties. /runner_evidence/runtime_contract/receipt_configuration reports its actual current configuration and separately candidate-bound reviewed_intent; neither establishes a performed receipt. /runner_evidence/runtime_contract/receipts describes the distinct guarantee; /runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup keeps applicable setup pending. Resubmit a complete review with the isolated receipt setup duty needs_decision/deployment/missing_configuration and unperformed work unverified. Preserve applicable historical achievements without attributing them to this edited revision. Keep independent readback separately pending. Do not change source policy, program, receipt mode or any other requirement. No observation claim was accepted.'
+      ? 'Separate the compiled capability claim from receipt setup and observation duties. /runner_evidence/runtime_contract/receipt_configuration reports its actual current configuration and separately candidate-bound reviewed_intent; neither establishes a performed receipt. /runner_evidence/runtime_contract/receipts describes the distinct guarantee; /runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup keeps applicable setup pending. Within the host-nominated region retain the isolated receipt setup duty needs_decision/deployment/missing_configuration and unperformed work unverified. Preserve applicable historical achievements without attributing them to this edited revision. Keep independent readback separately pending. Do not change source policy, program, receipt mode or any other requirement. No observation claim was accepted.'
       : 'Keep the observation unestablished and the review unresolved. Required meaning, applicable configuration, deployment permission and performed receipts/readback need their own evidence; another opinion cannot supply it. Do not change the receipt guarantee or mark unperformed work verified.',
   };
   if (cause instanceof CoverageCurrentDescriptionError) return {
@@ -164,16 +170,20 @@ export function coverageFinding(error: unknown, component: string, identityBasis
     identity: canonicalJsonDigest({component: identityBasis, code: cause.code}), structural: true,
     current_evidence: cause.evidence,
     reason: 'The submitted current_capability misdescribes the exact configuration supplied in this review context; this does not establish that configuration changed.',
-    repair: 'Resubmit this counter with current_capability equal to current_evidence.actual. This is an observation, not an owner decision. Do not infer required_capability from it: establish required meaning independently from its authentic source/support, and keep a real disagreement unresolved. Do not change selectors, invent singleton equivalence, omit a counter or drop other claims. Return the complete replacement review.',
+    repair: 'Resubmit this counter with current_capability equal to current_evidence.actual. This is an observation, not an owner decision. Do not infer required_capability from it: establish required meaning independently from its authentic source/support, and keep a real disagreement unresolved. Do not change selectors, invent singleton equivalence, omit a counter or drop other claims. Use only the exact host-nominated replacement region; every part of the assembled report is revalidated.',
   };
   const message = error instanceof Error ? error.message : '';
   let code = 'COVERAGE_VALIDATION_INCOMPLETE', structural = false;
   let reason = 'Complete coverage validation did not finish; no partial review was accepted.';
   let repair = 'Keep the saved review pending. Use the current attached-rules review to resolve its requirement or revalidate its evidence; no business edit was inferred.';
-  if (message.startsWith('COUNTING_SUPPORT_MISMATCH:')) {
+  if (message.startsWith('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED:')) {
+    code = 'OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED';
+    reason = 'The prepared review does not establish the required same-source-transaction coupling for this exact Action and receipt selection.';
+    repair = 'Keep BUSINESS review pending. Revalidate the exact current candidate, source, receipt mode and complete effect group through the supported review path; separate effects and receipt selection cannot prove one transaction. Do not infer a performed receipt, change the business policy or ask another model opinion to supply missing host evidence.';
+  } else if (message.startsWith('COUNTING_SUPPORT_MISMATCH:')) {
     code = 'COUNTING_SUPPORT_MISMATCH'; structural = true;
     reason = 'The counter-specific citation has no applicable exact support association; a paragraph citation is separate.';
-    repair = 'Correct only this counter citation using its current scoped support. Cite an accepted operator message only when it actually supports this exact comparison. If the prepared source or typed host-recorded counting review independently establishes required meaning without a linked message, omit the OPTIONAL counter operator_message_id while retaining the comparison and that authentic positive basis. Omission or current/required equality alone supplies no proof. Keep paragraph support separate, preserve every source requirement and other claim, and do not change selectors or invent or repeat an owner decision. Return the complete replacement review.';
+    repair = 'Correct only this counter citation using its current scoped support. Cite an accepted operator message only when it actually supports this exact comparison. If the prepared source or typed host-recorded counting review independently establishes required meaning without a linked message, omit the OPTIONAL counter operator_message_id while retaining the comparison and that authentic positive basis. Omission or current/required equality alone supplies no proof. Keep paragraph support separate, preserve every source requirement and other claim, and do not change selectors or invent or repeat an owner decision. Use only the exact host-nominated replacement region; every part of the assembled report is revalidated.';
   } else if (message.startsWith('Draft pointer(s) not present:') || message.startsWith('Draft pointer not present:')) {
     code = 'COVERAGE_REFERENCE_MISSING'; structural = true;
     reason = 'The submitted reference is absent from the current prepared review context. Its untrusted value is withheld.';
@@ -219,7 +229,7 @@ export function coverageFinding(error: unknown, component: string, identityBasis
   } else if (message.startsWith('COVERAGE_DUPLICATE_COMPONENT:')) {
     code = 'COVERAGE_DUPLICATE_COMPONENT'; structural = true;
     reason = 'The complete response repeats an identical validated component. Distinct claims may share a source range; identical records are not distinct claims.';
-    repair = 'Return one copy of this component in the COMPLETE REPLACEMENT, preserving all distinct claims, unresolved concerns and full source coverage. Do not combine contrary dispositions or replace the source.';
+    repair = 'Return one copy of this component within the host-nominated region, preserving all distinct claims, unresolved concerns and full source coverage. Do not combine contrary dispositions or replace the source.';
   } else if (message.startsWith('Mechanical evidence mismatch at')) {
     code = 'COVERAGE_EVIDENCE_VALUE_MISMATCH'; structural = true;
     reason = 'Mechanical evidence mismatch: the typed claim does not equal the value in the existing prepared context.';
@@ -231,7 +241,7 @@ export function coverageFinding(error: unknown, component: string, identityBasis
   } else if (message.includes('Invalid counter requirements record')) {
     code = 'COVERAGE_COUNTER_STRUCTURE_INVALID'; structural = true;
     reason = 'The counter comparison has an unsupported shape, responsibility or disposition.';
-    repair = 'Counter requirements need Runner responsibility and implemented or conflict disposition. Keep an actual threshold override in its own passage with its exact accepted decision, and retain every unchanged scope, window, filter and limit. Omit an inapplicable comparison property rather than null or an empty array. Return the complete corrected coverage.';
+    repair = 'Counter requirements need Runner responsibility and implemented or conflict disposition. Keep an actual threshold override in its own passage with its exact accepted decision, and retain every unchanged scope, window, filter and limit. Omit an inapplicable comparison property rather than null or an empty array. Use the host-nominated correction scope; complete assembled coverage must validate.';
   } else if (message.includes('An override must reference an actual operator message.')) {
     code = 'COVERAGE_OVERRIDE_UNESTABLISHED';
     reason = 'The purported override has no valid current operator support. Leaving work pending is not an override.';
@@ -239,7 +249,7 @@ export function coverageFinding(error: unknown, component: string, identityBasis
   } else if (message.includes('Invalid application obligation record')) {
     code = 'COVERAGE_OBLIGATION_STRUCTURE_INVALID'; structural = true;
     reason = 'The application-obligation record does not match the supported isolated duty structure.';
-    repair = 'Use the exact named application contract, responsibility=application and a pending disposition. Keep field/privacy, counter and Runner claims separately validated; assignment remains unverified. Return the complete corrected coverage.';
+    repair = 'Use the exact named application contract, responsibility=application and a pending disposition. Keep field/privacy, counter and Runner claims separately validated; assignment remains unverified. Use the host-nominated correction scope; complete assembled coverage must validate.';
   }
   return {code,component,component_identity:canonicalJsonDigest(identityBasis),identity:canonicalJsonDigest({component:identityBasis,code}),reason,repair,structural};
 }
@@ -255,4 +265,27 @@ export function permitsSecondCoverageCorrection(prior: CoverageFeedback[], next:
     && next.findings.every(f => !old.some(p => (findingSubjects.has(f) && findingSubjects.get(p) === findingSubjects.get(f)) || p.identity === f.identity || p.component_identity === f.component_identity || p.component === f.component
       || p.component.split('/counter_requirements/')[0] === f.component.split('/counter_requirements/')[0]))
     && old.every(p => !next.unevaluated.some(c => p.component.startsWith(c) || c.startsWith(p.component)));
+}
+
+/** Scoped generation can change array positions, never the progress standard.
+ * The host's assembly maps the original failed group to ALL replacement children.
+ * Each must pass its ordinary validator; any remaining finding in the region,
+ * incomplete source inventory or recurrence prevents another submission. */
+export function permitsSecondScopedCoverageCorrection(prior: CoverageFeedback[], next: CoverageFeedback,
+  mapping: Array<{ parent_indices: number[]; assembled_indices: number[] }>): boolean {
+  if (prior.length !== 1 || !next.findings.length || next.limited || !next.findings.every(f => f.structural)
+    || prior.some(p => p.context !== next.context || p.limited || !p.findings.every(f => f.structural))) return false;
+  const checked = checkedPassages.get(next);
+  if (!checked?.has('/passages')) return false;
+  const old = prior[0]!.findings;
+  for (const finding of old) {
+    const match = /^\/passages\/(\d+)(?:\/|$)/u.exec(finding.component);
+    if (!match) return false;
+    const group = mapping.find(m => m.parent_indices.includes(Number(match[1])));
+    if (!group?.assembled_indices.length || group.assembled_indices.some(index =>
+      !checked.has(`/passages/${index}`) || next.findings.some(f => f.component === `/passages/${index}`
+        || f.component.startsWith(`/passages/${index}/`)))) return false;
+  }
+  return next.findings.every(f => !old.some(p => p.identity === f.identity || p.component_identity === f.component_identity
+    || findingSubjects.has(f) && findingSubjects.get(p) === findingSubjects.get(f)));
 }

@@ -36,6 +36,14 @@ describe("saved policy review continuation", () => {
     const review = { action_digest: baseline.authority.authority.action_boundary.digest,
       enabled_outcomes: baseline.authority.authority.rules.map(rule => rule.rule.outcome), policy_digest: canonicalJsonDigest("exact reviewed operator policy") };
     const evidence = policyCoverageDraft({ ...input, executionReview: review }).runner_evidence.runtime_contract;
+    const prepared = policyCoverageDraft(input);
+    expect(prepared.runner_evidence.action_revision).toMatchObject({
+      action_boundary_digest: baseline.authority.authority.action_boundary.digest,
+      review_record_digest: baseline.authority.digest,
+    });
+    expect(prepared.runner_evidence.runtime_contract.review_evidence_phases.candidate_action_binding_digest)
+      .toBe(canonicalJsonDigest({ candidate_action_digest: baseline.authority.authority.action_boundary.digest,
+        actions: prepared.actions }));
     expect(evidence.saved_execution_review).toMatchObject({ ...review, authority: "existing_operator_execution_policy",
       live_writer_rechecked: false, worker_running_verified: false, receipt_mode_verified: false,
       independent_source_readback_verified: false });

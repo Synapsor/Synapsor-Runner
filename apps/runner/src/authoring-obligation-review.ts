@@ -1,5 +1,6 @@
+import { SOURCE_RECEIPT_CONTRACT, ATOMIC_EFFECT_TRANSACTION } from "./authoring-receipt-contract.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { isDeferredSourceCounterMaintenance, isDeferredSourceReadback, receiptSetupComponentOnly as receiptOnly, receiptConfigurationComponentOnly, type ReviewObligationAssessment, type PolicyPassage, type PolicyTextSnapshot } from "./authoring-policy-source.js";
+import { isDeferredSourceCounterMaintenance, isDeferredSourceReadback, receiptSetupComponentOnly as receiptOnly, receiptConfigurationComponentOnly, type ReviewObligationAssessment, type PolicyPassage, type PolicyTextSnapshot, type ReceiptCouplingAssessment } from "./authoring-policy-source.js";
 import { CoverageReceiptObservationError, CoverageReceiptReadContextError, CoverageReceiptReadExclusionError, CoverageReceiptConfigurationError, type ReceiptConfigurationFindingReason } from "./authoring-coverage-feedback.js";
 export { deferredReviewObligation } from "./authoring-policy-source.js";
 
@@ -154,6 +155,154 @@ function isolatableReceiptCapability(p: PolicyPassage, source: PolicyTextSnapsho
     && p.draft_paths.includes(RECEIPT_PATH) && p.draft_paths.some(path => roots.includes(path))
     && p.draft_paths.every(path => path === RECEIPT_PATH || path === CONFIGURATION_PATH || roots.includes(path));
 }
+
+/** This is the existing host receipt contract emitted by policyCoverageDraft,
+ * not a provider-selected description or a proof of a performed operation.
+ * Binding its complete value prevents a contradictory edited overview from
+ * inheriting the capability merely by retaining a familiar phrase. */
+export function receiptCouplingPaths(outcome: string): string[] {
+  const root = `/runner_evidence/actions/${outcome.replace(/~/gu, '~0').replace(/\//gu, '~1')}`;
+  return [`${root}/effect`, `${root}/execution`, RECEIPT_PATH];
+}
+/** Exact canonical meaning for this narrow component. Free prose cannot add an
+ * observation, provisioning claim, or independent readback to its proof. The
+ * raw correction remains retained separately by the scoped producer. */
+export function receiptCouplingInterpretation(outcome: string): string {
+  return `The compiled ${outcome} direct-SQL capability couples every listed business effect and its required source_db receipt in one source transaction: they commit together or roll back. This establishes capability only. Provisioning, execution authorization, a performed receipt and independent source readback remain separately unverified.`;
+}
+function couplingFailure(reason: string): never {
+  throw new Error(`OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED: ${reason} Capability, current selection, setup and observation remain distinct.`);
+}
+function sameSet(actual: unknown, expected: string[]): boolean {
+  return Array.isArray(actual) && actual.every(value => typeof value === 'string')
+    && new Set(actual).size === actual.length && actual.length === expected.length
+    && expected.every(value => actual.includes(value));
+}
+/** Positive authoring binding for the engine's existing source_db transaction
+ * contract. It validates every compiled effect against this exact prepared
+ * candidate; it neither adds an engine capability nor reads receipt contents.
+ * Saved passages call this again against fresh prepared evidence. */
+export function assessReceiptCouplingCapability(p: PolicyPassage, source: PolicyTextSnapshot, draft: unknown): ReceiptCouplingAssessment | undefined {
+  if (p.receipt_component !== 'source_transaction_coupling') return undefined;
+  if (p.disposition !== 'implemented' || p.responsibility !== 'runner' || p.issue_kind !== 'coverage_link'
+    || !isolatedReceiptReadFields(p) || p.operator_clarification !== undefined || p.next_step !== undefined || p.topic !== undefined
+    || (p as PolicyPassage & { operator_message_id?: unknown }).operator_message_id !== undefined) {
+    return couplingFailure('The typed coupling component must contain only the Runner capability claim.');
+  }
+  if (receiptRequirement(source, p) !== 'source_db') return couplingFailure('The exact source_db requirement is not established for this source range.');
+  const problem = receiptSelectionProblem(source, draft, 'source_db');
+  if (problem) return couplingFailure(`The exact current source receipt selection is unavailable (${problem}).`);
+  const configuration = at(draft, CONFIGURATION_PATH), read = at(draft, '/read');
+  if (configuration?.status !== 'current' || !supportedReceiptSetup(draft, 'source_db')) {
+    return couplingFailure('Current source_db selection and complete supported direct-SQL setup bindings are required.');
+  }
+  const candidates = (at(draft, '/actions') ?? []).filter((action: any) => typeof action.outcome === 'string'
+    && sameSet(p.draft_paths, receiptCouplingPaths(action.outcome)));
+  if (candidates.length !== 1) return couplingFailure('Exactly one complete effect/execution/receipt reference group is required.');
+  const action = candidates[0], root = receiptCouplingPaths(action.outcome)[0]!.slice(0, -'/effect'.length);
+  const host = at(draft, root), effect = host?.effect, execution = host?.execution;
+  const phase = at(draft, '/runner_evidence/runtime_contract/review_evidence_phases');
+  const actionRevision = at(draft, '/runner_evidence/action_revision');
+  const executionReview = at(draft, '/runner_evidence/runtime_contract/saved_execution_review');
+  const reader = at(draft, '/runner_evidence/runtime_contract/onboarding_reader');
+  if (p.interpretation !== receiptCouplingInterpretation(action.outcome)) {
+    return couplingFailure('The component must preserve the exact canonical capability meaning, without observation or setup assertions.');
+  }
+  if (action.effect?.writeback !== 'supervised' || host?.outcome !== action.outcome
+    || execution?.configured_mode !== 'direct_sql' || execution.supported_automatic_completion !== true
+    || execution.activation !== 'separate_operator_review'
+    || !['postgres', 'mysql'].includes(reader?.engine) || reader.source !== read?.source
+    || reader.generation_lock_fingerprint !== read?.generation_lock_fingerprint
+    || reader.role_posture_fingerprint !== read?.role_posture_fingerprint
+    || at(draft, '/runner_evidence/runtime_contract/authoring_lifecycle/current_policy_snapshot/digest') !== source.digest
+    || phase?.selected_read_digest !== canonicalJsonDigest(read)
+    || !/^sha256:[a-f0-9]{64}$/u.test(phase?.candidate_action_digest ?? '')
+    || (actionRevision
+      ? actionRevision.action_boundary_digest !== phase.candidate_action_digest
+        || !/^sha256:[a-f0-9]{64}$/u.test(actionRevision.review_record_digest ?? '')
+      : !executionReview?.action_digest)
+    || (executionReview?.action_digest && phase.candidate_action_digest !== executionReview.action_digest)
+    || (phase?.candidate_action_binding_digest
+      ? phase.candidate_action_binding_digest !== canonicalJsonDigest({
+        candidate_action_digest: phase.candidate_action_digest, actions: at(draft, '/actions') })
+      : !executionReview?.action_digest)
+    || canonicalJsonDigest(at(draft, RECEIPT_PATH) ?? null) !== canonicalJsonDigest(SOURCE_RECEIPT_CONTRACT)) {
+    return couplingFailure('The current candidate, source, supported execution and complete host transaction contract do not agree.');
+  }
+  const rawCompanions = action.effect.atomic_updates, hostCompanions = effect?.atomic_updates;
+  if ((rawCompanions === undefined) !== (hostCompanions === undefined)
+    || rawCompanions === undefined && effect?.transaction !== undefined
+    || rawCompanions !== undefined && (!Array.isArray(rawCompanions) || !Array.isArray(hostCompanions)
+      || rawCompanions.length < 1 || rawCompanions.length > 3 || rawCompanions.length !== hostCompanions.length
+      || effect.transaction !== ATOMIC_EFFECT_TRANSACTION)) {
+    return couplingFailure('The complete ordered atomic effect group and its transaction contract are required.');
+  }
+  const rawEffects = [action.effect, ...(rawCompanions ?? [])], hostEffects = [effect, ...(hostCompanions ?? [])];
+  if (new Set(rawEffects.map(entry => entry.target_binding)).size !== rawEffects.length
+    || new Set(rawEffects.map(entry => entry.target_resource)).size !== rawEffects.length) {
+    return couplingFailure('Every business effect must retain its distinct exact verified target.');
+  }
+  for (const [index, raw] of rawEffects.entries()) {
+    const compiled = hostEffects[index], fields = raw.allowed_fields?.map((field: any) => field.name);
+    const bindings = action.verification?.resources?.filter((entry: any) => entry.binding === raw.target_binding);
+    const binding = host.scoped_bindings?.[raw.target_binding];
+    const version = compiled?.version_advance;
+    if (raw.operation !== 'update' || !compiled || index === 0 && compiled.operation !== raw.operation
+      || typeof raw.target_binding !== 'string' || typeof raw.target_resource !== 'string'
+      || compiled.target_binding !== raw.target_binding || compiled.target_resource !== raw.target_resource
+      || !Array.isArray(fields) || !fields.length || new Set(fields).size !== fields.length
+      || !sameSet(compiled.fields, fields) || !raw.set || typeof raw.set !== 'object'
+      || !Object.keys(raw.set).length || Object.keys(raw.set).some(field => !fields.includes(field))
+      || index > 0 && canonicalJsonDigest(compiled.set ?? null) !== canonicalJsonDigest(raw.set)
+      || !Array.isArray(bindings) || bindings.length !== 1 || bindings[0].resource !== raw.target_resource
+      || binding?.binding !== raw.target_binding || binding.resource !== raw.target_resource
+      || binding.database_scope_proof && (binding.database_scope_proof.source !== read.source
+        || binding.database_scope_proof.resource !== raw.target_resource
+        || binding.database_scope_proof.generation_lock_fingerprint !== read.generation_lock_fingerprint)
+      || typeof binding.row_identity !== 'string' || !binding.row_identity
+      || !bindings[0].source || Object.entries(bindings[0].source).some(([key, value]) =>
+        canonicalJsonDigest(value) !== canonicalJsonDigest(binding.source?.[key] ?? null))
+      || version?.strategy !== 'integer_increment' || version.column !== binding.conflict_field
+      || binding.fields?.[version.column]?.type?.kind !== 'integer'
+      || binding.fields?.[version.column]?.nullable !== false
+      || !sameSet(compiled.source_fields_modified, [...new Set([...fields, version.column])])) {
+      return couplingFailure('A primary or companion effect no longer matches its exact compiled fields, assignments, scope and version guard.');
+    }
+  }
+  const evidence = { action, host, read, configuration, phase, reader, receipt_contract: at(draft, RECEIPT_PATH),
+    setup: at(draft, SETUP_PATH) };
+  return { origin: 'HOST-RESOLVED', category: 'source_transaction_coupling', source_digest: source.digest,
+    source_range: { start: p.start, end: p.end }, source: read.source, outcome: action.outcome,
+    effect_count: rawEffects.length, configuration_digest: configuration.digest,
+    dependencies_digest: canonicalJsonDigest({ source: source.digest, range: [p.start, p.end], evidence }),
+    phase: 'compiled_capability', observed: false };
+}
+
+/** Structural conjunction guard, not a new prose/atomicity interpreter. The
+ * existing receiptRequirement establishes mode only. A host-nominated repair
+ * pins its source spans; otherwise an implemented effect/execution claim on an
+ * explicit source_db span must retain a positive coupling component. A pure
+ * configuration comparison continues to establish selection only. */
+export function assertRequiredReceiptCoupling(passages: readonly PolicyPassage[], source: PolicyTextSnapshot, draft: unknown,
+  requiredSpans: readonly Pick<PolicyPassage, 'start' | 'end'>[] = []): void {
+  const proofs = passages.flatMap(p => {
+    const proof = assessReceiptCouplingCapability(p, source, draft);
+    return proof ? [proof] : [];
+  });
+  const identities = proofs.map(proof => canonicalJsonDigest({ range: proof.source_range, outcome: proof.outcome }));
+  if (new Set(identities).size !== identities.length) {
+    couplingFailure('The same source-range/outcome coupling component cannot be duplicated or renamed to manufacture proof.');
+  }
+  const roots = receiptCapabilityRoots(draft);
+  const required = [...requiredSpans, ...passages.filter(p => p.disposition === 'implemented' && p.responsibility === 'runner'
+    && receiptRequirement(source, p) === 'source_db' && p.draft_paths.some(path => roots.includes(path)))];
+  for (const span of required) {
+    if (receiptRequirement(source, span) !== 'source_db') continue;
+    if (!proofs.some(proof => proof.source_range.start === span.start && proof.source_range.end === span.end)) {
+      couplingFailure('The required source transaction conjunction remains unestablished; separate effect and receipt-selection claims cannot replace it.');
+    }
+  }
+}
 /** Only an explicit receipt-mode requirement can supply this narrow binding.
  * Missing/ambiguous prose never means the default mode or an absent duty.
  * This does not interpret arbitrary delivery, atomicity or durability claims. */
@@ -205,6 +354,7 @@ export function receiptSelectionComponent(p: PolicyPassage, source: PolicyTextSn
 /** Recomputed from current host inputs, never deserialized as a provider claim.
  * All three families use the same phase record; their proof requirements differ. */
 export function assessReviewObligation(p: PolicyPassage, source: PolicyTextSnapshot, draft: unknown): ReviewObligationAssessment | undefined {
+  const coupling = assessReceiptCouplingCapability(p, source, draft);
   if (p.disposition === 'implemented' && p.draft_paths.some(path => path === RECEIPT_READ_PATH || path.startsWith(`${RECEIPT_READ_PATH}/`))) {
     if (!currentReceiptReadExclusion(draft)) throw new CoverageReceiptReadExclusionError('proof_unavailable');
     if (!isolatedReceiptReadFields(p) || p.draft_paths.length !== 1 || p.draft_paths[0] !== RECEIPT_READ_PATH) {
@@ -220,7 +370,7 @@ export function assessReviewObligation(p: PolicyPassage, source: PolicyTextSnaps
   }
   const selection = receiptSelectionComponent(p, source, draft);
   if (p.disposition === "implemented" && (p.draft_paths.includes(READBACK_PATH)
-    || p.draft_paths.includes(RECEIPT_PATH) && receiptRequirement(source, p) && !selection)) {
+    || p.draft_paths.includes(RECEIPT_PATH) && receiptRequirement(source, p) && !selection && !coupling)) {
     throw new CoverageReceiptObservationError(isolatableReceiptCapability(p, source, draft));
   }
   let family: ReviewObligationAssessment["family"], phase: ReviewObligationAssessment["phase"], requirement: string, pointer: string, evidence: unknown;

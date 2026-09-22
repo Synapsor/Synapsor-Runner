@@ -6,6 +6,7 @@ import { authoringDestination, newPolicySourceSession, policyTextSnapshot, saveP
 import { createModelAuthoringConversation } from "./model-authoring-conversation.js";
 import { parsePolicyCoverage, policyCoverageSection, reviewPolicyCoverage } from "./authoring-policy-coverage.js";
 import { applicationObligationAssigned, policyReadinessItems, policyReviewReadiness } from "./authoring-review-readiness.js";
+import { derivedScopedResponse } from "./test-fixtures/coverage-derived.js";
 
 const source = policyTextSnapshot(Buffer.from("Capture the customer's selected offer.\nReport completion only from receipts."), "service-policy.txt");
 const draft = { actions: [], runner_evidence: { runtime_contract: { application_obligations: {
@@ -80,7 +81,8 @@ describe("one authoritative guided review readiness model", () => {
         requests.push(JSON.stringify(request.body));
         const corrected = { ...passage, draft_paths: [pointer] };
         return { status: 200, body: { output: [{ type: "function_call", call_id: `coverage_${requests.length}`,
-          name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: [requests.length === 1 ? passage : corrected] }) }] } };
+          name: "runner__review_policy_coverage", arguments: JSON.stringify(requests.length === 1
+            ? { passages: [passage] } : derivedScopedResponse(request, { passages: [corrected] })) }] } };
       } } }, env: { OPENAI_API_KEY: "test-provider-key" },
     });
     expect(requests).toHaveLength(2);

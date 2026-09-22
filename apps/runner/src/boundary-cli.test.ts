@@ -20,6 +20,7 @@ import { loadPolicySources, activePolicySource, newPolicySourceSession, policyTe
 import { ProposalStore } from "@synapsor-runner/proposal-store";
 import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { derivedScopedResponse } from "./test-fixtures/coverage-derived.js";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import {
   AUTO_BOUNDARY_OVERRIDES_VERSION,
@@ -7823,15 +7824,18 @@ describe("boundary operator-plane CLI", () => {
                 throw new Error("ASK_REQUIRED_TOOL_NOT_CALLED");
               }
               if (coverageFailure) throw new Error("COVERAGE_TEST_PROVIDER_UNAVAILABLE");
-              if (writerSetup) return { status: 200, body: { output: [{ type: "function_call", call_id: "coverage", name: "runner__review_policy_coverage",
-                arguments: JSON.stringify({ passages: [{ start: 1, end: 2, disposition: "needs_decision", topic: "Dedicated writer setup",
+              if (writerSetup) {
+                const complete = { passages: [{ start: 1, end: 2, disposition: "needs_decision", topic: "Dedicated writer setup",
                   responsibility: "deployment", issue_kind: "missing_configuration",
                   interpretation: "The writer is not configured; review its requirements while retaining a separate reader.",
                   next_step: "Continue to writer setup after authority review.",
                   ...(coverageRequests.length === 1
                     ? { draft_paths: ["/read", "/runner_evidence/actions/maintenance.create_inspection_followup/execution"] }
                     : { draft_paths: ["/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup"], deployment_prerequisite: "runner_execution_setup" }),
-                }] }) }] } };
+                }] };
+                return { status: 200, body: { output: [{ type: "function_call", call_id: "coverage", name: "runner__review_policy_coverage",
+                  arguments: JSON.stringify(coverageRequests.length === 1 ? complete : derivedScopedResponse(request, complete)) }] } };
+              }
               if (applicationClarification) return { status: 200, body: { output: [{ type: "function_call", call_id: "coverage", name: "runner__review_policy_coverage",
                 arguments: JSON.stringify({ passages: [{ start: 1, end: 1, disposition: "needs_decision",
                   topic: "Customer selection", issue_kind: "missing_configuration", responsibility: "application",
@@ -16874,7 +16878,8 @@ describe("saved review operation dispatch and persistence", () => {
             const prefix = "/runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup";
             const business = { start: 1, end: 1, disposition: "implemented", responsibility: "runner", interpretation: "The saved human-reviewed visit behavior is unchanged.", draft_paths: ["/actions/0"] };
             const duty = { start: 1, end: 1, disposition: "needs_decision", responsibility: "deployment", issue_kind: "missing_configuration", interpretation: "Receipt setup remains pending; no receipt was produced.", draft_paths: ["/runner_evidence/runtime_contract/receipts"], ...(providerCalls === 1 ? { deployment_prerequisite: "runner_execution_setup" } : {}) };
-            return { status: 200, body: { output: [{ type: "function_call", call_id: "coverage", name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: [business, duty] }) }] } };
+            const complete = { passages: [business, duty] };
+            return { status: 200, body: { output: [{ type: "function_call", call_id: "coverage", name: "runner__review_policy_coverage", arguments: JSON.stringify(providerCalls === 1 ? complete : derivedScopedResponse(request, complete)) }] } };
           }
           if (maintenance) {
             const prefix = "/runner_evidence/actions/maintenance.complete_visit/effect";
@@ -16888,7 +16893,8 @@ describe("saved review operation dispatch and persistence", () => {
                 interpretation: "The owner maintains this counter; independent external assurance is unverified.", draft_paths: [path],
                 source_counter_obligation: { path, requirement: "owner_maintenance" },
               }))];
-            return { status: 200, body: { output: [{ type: "function_call", call_id: "coverage", name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages }) }] } };
+            const complete = { passages };
+            return { status: 200, body: { output: [{ type: "function_call", call_id: "coverage", name: "runner__review_policy_coverage", arguments: JSON.stringify(providerCalls === 1 ? complete : derivedScopedResponse(request, complete)) }] } };
           }
           return { status: 200, body: { output: [{ type: "function_call", call_id: "coverage", name: "runner__review_policy_coverage",
             arguments: JSON.stringify({ passages: [{ start: 1, end: 1, disposition: mode === "provider-refusal" ? "needs_decision" : "implemented",
@@ -16985,7 +16991,9 @@ describe("saved review operation dispatch and persistence", () => {
         // retained request; only the newly selected review is completed.
         expect(resume.pending_job_revision).toBe(mode === "context-renew" ? exact
           : ["unrelated-edit", "model-review-edit"].includes(mode) ? "Change the maximum to four." : undefined);
-        expect(stored.coverage?.passages[0]?.disposition).toBe("implemented");
+        if (receipt || maintenance) expect(stored.coverage?.passages.some(p => p.disposition === "implemented"
+          && p.draft_paths.includes("/actions/0"))).toBe(true);
+        else expect(stored.coverage?.passages[0]?.disposition).toBe("implemented");
         if (counting) { expect(choices).toBe(2); expect(confirmations).toBe(2); expect(stored.counting_decisions).toHaveLength(2); }
         if (receipt) {
           expect(providerCalls).toBe(2);

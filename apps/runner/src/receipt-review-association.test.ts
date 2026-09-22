@@ -1,3 +1,4 @@
+import {derivedScopedResponse} from "./test-fixtures/coverage-derived.js";
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -19,9 +20,13 @@ function receipt(report:any) { return report.passages.find((p:any)=>p.obligation
 function correctedA(f:any) {
  const args=structuredClone(f.arguments), p=args.passages[14];
  // DERIVED controlled response. The original is retained byte-for-byte.
- p.draft_paths=p.draft_paths.filter((p:string)=>p!==RECEIPT_PATH);
+ // Scoped effect components use the exact keyed host projection. Receipt
+ // setup stays a separately pending configuration-linked duty; the original
+ // unchallenged duty is retained verbatim by the actual nominated scope.
+ p.draft_paths=p.draft_paths.filter((p:string)=>p!==RECEIPT_PATH)
+  .map((pointer:string)=>pointer==='/actions/0/effect'?'/runner_evidence/actions/release.clear_assessment/effect':pointer);
  args.passages.push({start:p.start,end:p.end,disposition:'needs_decision',responsibility:'deployment',issue_kind:'missing_configuration',
-  draft_paths:[RECEIPT_PATH],interpretation:'The required Runner-ledger guarantee is supported. Receipt setup remains pending and no receipt or source readback is established.',topic:'Receipt setup',next_step:'Perform separate reviewed setup after authority review.'});
+  draft_paths:[CONFIG],interpretation:'The required Runner-ledger guarantee is supported. Receipt setup remains pending and no receipt or source readback is established.',topic:'Receipt setup',next_step:'Perform separate reviewed setup after authority review.'});
  return args;
 }
 describe('receipt review association through exact final complete captures',()=>{
@@ -131,10 +136,10 @@ describe('receipt review association through exact final complete captures',()=>
    expect(()=>parse(changed,{passages:report.passages})).toThrow();
   }
  });
- it.each(['openai','openrouter'] as const)('transmits A correction through actual %s request encoding and validates a full replacement',async provider=>{
+ it.each(['openai','openrouter'] as const)('transmits A scoped correction through actual %s request encoding and validates the full assembly',async provider=>{
   const f=fixture('A'),conversation=createModelAuthoringConversation();conversation.policySources=f.sources;
   const requests:any[]=[],session={provider,model:provider==='openrouter'?'openai/gpt-5.6-terra':'gpt-5.6-terra',apiKey:'synthetic-test-only',conversation,dependencies:{requestJson:async(r:any)=>{
-   requests.push(structuredClone(r.body));const args=requests.length===1?f.arguments:correctedA(f);
+   requests.push(structuredClone(r.body));const args=derivedScopedResponse(r.body,requests.length===1?f.arguments:correctedA(f));
    return {status:200,body:provider==='openai'?{output:[{type:'function_call',call_id:'capture',name:'runner__review_policy_coverage',arguments:JSON.stringify(args)}]}:
     {choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[{id:'capture',type:'function',function:{name:'runner__review_policy_coverage',arguments:JSON.stringify(args)}}]}}]}};
   }}};
@@ -142,14 +147,18 @@ describe('receipt review association through exact final complete captures',()=>
   const report=await reviewPolicyCoverage({session,source:f.source,draft:f.draft});expect(requests).toHaveLength(2);
   const wire=JSON.stringify(requests[1]);expect(wire).toContain('OBLIGATION_OBSERVATION_UNESTABLISHED');expect(wire).toContain('Separate the compiled capability claim');expect(wire).toContain('Do not change source policy, program, receipt mode');
   expect(receipt(report).obligation_assessment.verified).toBe(false);
-  expect(report.passages[14]!.disposition).toBe('implemented');expect(report.passages[14]!.draft_paths).not.toContain(RECEIPT_PATH);
+  const effect=report.passages.find(p=>p.start===26&&p.end===26&&p.disposition==='implemented'
+   &&p.draft_paths.includes('/runner_evidence/actions/release.clear_assessment/effect'));
+  expect(effect).toBeDefined();expect(effect!.draft_paths).not.toContain(RECEIPT_PATH);
+  expect(report.passages.some(p=>p.start===26&&p.end===26&&p.interpretation===f.arguments.passages[13].interpretation
+   &&p.disposition==='needs_decision'&&p.draft_paths.length===1&&p.draft_paths[0]===CONFIG)).toBe(true);
  });
  it.each(['openai','openrouter'] as const)('streams A structural feedback across local %s HTTP without private continuation',async provider=>{
   const f=fixture('A'),conversation=createModelAuthoringConversation();conversation.policySources=f.sources;
   const wire:any[]=[],events:any[]=[];let incomplete=false;
   const server=createServer(async(req,res)=>{
    const chunks:Buffer[]=[];for await(const chunk of req)chunks.push(Buffer.from(chunk));wire.push(JSON.parse(Buffer.concat(chunks).toString()));
-   const args=wire.length===1?f.arguments:correctedA(f);res.setHeader('content-type','text/event-stream');
+   const args=derivedScopedResponse(wire.at(-1),wire.length===1?f.arguments:correctedA(f));res.setHeader('content-type','text/event-stream');
    if(provider==='openai'){
     res.write(`data: ${JSON.stringify({type:'response.output_item.added',item:{type:'function_call',name:'runner__review_policy_coverage'}})}\n\n`);
     res.end(`data: ${JSON.stringify({type:incomplete?'response.incomplete':'response.completed',response:{status:incomplete?'incomplete':'completed',output:[{type:'function_call',name:'runner__review_policy_coverage',call_id:'wire',arguments:JSON.stringify(args)}]}})}\n\n`);

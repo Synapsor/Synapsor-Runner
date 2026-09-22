@@ -8,6 +8,7 @@ import { buildActionRuleAuthorityDraft } from "./action-rule-authority.js";
 import { prepareActionRuleReadRevision } from "./action-rule-read-revision.js";
 import { ACTION_RULE_SOURCE_CONSTRAINT_GUIDANCE, actionRuleSourceConstraints, policySourceConstraintEvidence } from "./action-rule-source-evidence.js";
 import { policyCoverageDraft, policyCoverageActionTargets } from "./authoring-policy-evidence.js";
+import { derivedScopedResponse } from "./test-fixtures/coverage-derived.js";
 import { parsePolicyCoverage, reviewPolicyCoverage } from "./authoring-policy-coverage.js";
 import { authoringDestination, newPolicySourceSession, policyTextSnapshot } from "./authoring-policy-source.js";
 import { createModelAuthoringConversation } from "./model-authoring-conversation.js";
@@ -227,9 +228,11 @@ describe("exact inspected Action source constraints", () => {
     const report = await reviewPolicyCoverage({ source: policy, draft, env: { OPENAI_API_KEY: "test-key" },
       session: { provider: "openai", model: "fixture", conversation, dependencies: { requestJson: async request => {
         requests.push(JSON.stringify(request.body));
+        const response = requests.length === 1
+          ? { passages: [{ ...passage, draft_paths: [keyPath.replace(uniqueName, "invented_key")] }] }
+          : derivedScopedResponse(request, { passages: [passage] });
         return { status: 200, body: { output: [{ type: "function_call", call_id: "source_constraints",
-          name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: [{ ...passage,
-            draft_paths: requests.length === 1 ? [keyPath.replace(uniqueName, "invented_key")] : passage.draft_paths }] }) }] } };
+          name: "runner__review_policy_coverage", arguments: JSON.stringify(response) }] } };
       } } } });
     expect(requests).toHaveLength(2);
     expect(requests[0]).toContain(keyPath);

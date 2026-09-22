@@ -1,3 +1,4 @@
+import {derivedScopedResponse} from "./test-fixtures/coverage-derived.js";
 import fs from 'node:fs/promises';
 import {describe,it,expect} from 'vitest';
 import {parsePolicyCoverage,collectCoverageFeedback} from './authoring-policy-coverage.js';
@@ -49,7 +50,8 @@ function transport(f:any,submissions:any[],provider:'openai'|'openrouter'='openr
  const conversation=createModelAuthoringConversation();conversation.policySources=f.sources;
  const requests:any[]=[];
  const requestJson=vi.fn(async(r:any)=>{
-  requests.push(structuredClone(r.body));const args=submissions[requests.length-1];
+  requests.push(structuredClone(r.body));const rawArgs=submissions[requests.length-1];
+  const args=rawArgs instanceof Error?rawArgs:derivedScopedResponse(r.body,rawArgs);
   if(args instanceof Error)throw args;
   if(!args)throw new Error('No further derived response supplied');
   return {status:200,body:provider==='openai'?{output:[{type:'function_call',call_id:'local',name:'runner__review_policy_coverage',arguments:JSON.stringify(args)}]}:{choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[{id:'local',type:'function',function:{name:'runner__review_policy_coverage',arguments:JSON.stringify(args)}}]}}]}};
@@ -59,18 +61,20 @@ function transport(f:any,submissions:any[],provider:'openai'|'openrouter'='openr
 }
 function question(r:any){return (r.input??r.messages).filter((m:any)=>m.role==='user').map((m:any)=>m.content).join('\n');}
 describe('full replacement composed A review',()=>{
- it.each(['openai','openrouter'] as const)('%s sends the fixed full inventory and exact missing ranges on the real replacement request',async provider=>{
+ it.each(['openai','openrouter'] as const)('%s preserves missing-source refusal without broadening a scoped correction',async provider=>{
   const f=fixture('A'),t=transport(f,[f.replacement,correctedA(f)],provider);
-  const report=await t.run();expect(t.requests).toHaveLength(2);
+  await expect(t.run()).rejects.toThrow('COVERAGE_SCOPED_CORRECTION_REFUSED');
+  expect(t.requests).toHaveLength(1);
   expect(question(t.requests[0])).toContain('"response_contract":"complete_replacement"');
-  expect(question(t.requests[1])).toContain('"missing_ranges":[{"start":22,"end":22}]');
-  expect(question(t.requests[1])).toContain('No policy change is authorized');
-  expect(report.passages).toHaveLength(correctedA(f).passages.length);
-  expect(report.passages.filter(p=>p.obligation_assessment).every(p=>p.obligation_assessment!.verified===false)).toBe(true);
+  expect(collectCoverageFeedback(f.replacement,f.source,f.draft,f.operator_messages).findings)
+    .toContainEqual(expect.objectContaining({code:'COVERAGE_SOURCE_LINES_MISSING'}));
+  // A separately labelled complete DERIVED first submission still validates;
+  // it is not an accepted correction to the historical omitted-source report.
+  expect(parse(f,correctedA(f)).passages).toHaveLength(correctedA(f).passages.length);
  });
- it('accepts the complete derived replacement, preserving all historical failed episodes, then saves/reopens BUSINESS review',async()=>{
+ it('accepts a complete DERIVED first submission, preserving historical failed episodes, then saves/reopens BUSINESS review',async()=>{
   const f=fixture('A'),root=await fs.mkdtemp(path.join(os.tmpdir(),'source-phase-A-'));
-  const t=transport(f,[f.arguments,correctedA(f)]),before=structuredClone(f.sources.coverage_episodes);
+  const t=transport(f,[correctedA(f)]),before=structuredClone(f.sources.coverage_episodes);
   vi.spyOn(receiptConfiguration,'authoringReceiptConfiguration').mockResolvedValue(f.draft.runner_evidence.runtime_contract.receipt_configuration);
   try {
    await savePolicySources(root,f.sources);
@@ -84,7 +88,7 @@ describe('full replacement composed A review',()=>{
    expect(saved.coverage?.passages.filter(p=>p.obligation_assessment?.family==='receipt_setup')).toHaveLength(1);
    t.session.conversation.policySources=saved;
    const again=await ensurePreparedPolicyCoverage({...input,sources:saved,state:{}});
-   expect(again.activity).toBe('validated_reuse');expect(t.requests).toHaveLength(2);
+   expect(again.activity).toBe('validated_reuse');expect(t.requests).toHaveLength(1);
   }finally{vi.restoreAllMocks();await fs.rm(root,{recursive:true,force:true});}
  });
 });
@@ -171,24 +175,26 @@ describe('exact B complete review with separately proven receipt Read exclusion'
   expect(report.passages[28]!.obligation_assessment).toMatchObject({family:'independent_source_readback',verified:false,state:'pending'});
   expect(report.passages.some(p=>p.obligation_assessment?.family==='receipt_setup')).toBe(true);
  });
- it.each(['openai','openrouter'] as const)('%s prepares, delivers the actual phase correction, saves/restarts and reuses completed B BUSINESS review',async provider=>{
+ it.each(['openai','openrouter'] as const)('%s keeps B pending when its historical candidate phase cannot prove receipt coupling',async provider=>{
   const f=preparedB(),root=await fs.mkdtemp(path.join(os.tmpdir(),'source-phase-B-'));
   const t=transport(f,[f.arguments,correctedB(f)],provider),before=structuredClone(f.sources.coverage_episodes);
+  const originalCoverage=structuredClone(f.sources.coverage),originalAssignments=structuredClone(f.sources.application_assignments);
   vi.spyOn(receiptConfiguration,'authoringReceiptConfiguration').mockResolvedValue(f.draft.runner_evidence.runtime_contract.receipt_configuration);
   try {
    await savePolicySources(root,f.sources);
    const input={projectRoot:root,sources:f.sources,modelSession:t.session,operatorSession:{chooseOption:async()=> 'assign',confirm:async()=>true} as any,
     currentDraft:()=>f.draft,authorityDigest:f.sources.coverage_authority_digest,clarifications:[],assertCurrent:async()=>{},state:{}};
-   const result=await ensurePreparedPolicyCoverage(input);expect(result.activity).toBe('provider');expect(t.requests).toHaveLength(2);
+   await expect(ensurePreparedPolicyCoverage(input)).rejects.toThrow('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
+   expect(t.requests).toHaveLength(2);
    expect(question(t.requests[1])).toContain('COVERAGE_RECEIPT_REFERENCE_OVERBROAD');expect(question(t.requests[1])).toContain(READ_EXCLUSION);
    expect(question(t.requests[1])).toContain('No operation-bound historical receipts');
    const saved=await loadPolicySources(root,f.sources.id);
-   expect(policyReviewReadiness(f.source,saved.coverage,saved).ready).toBe(true);
+   expect(saved.coverage).toEqual(originalCoverage);
    expect(saved.coverage_episodes?.slice(0,before.length)).toEqual(before);
-   expect(saved.application_assignments?.at(-1)).toMatchObject({owner:'client_application',verified:false});
-   t.session.conversation.policySources=saved;
-   expect((await ensurePreparedPolicyCoverage({...input,sources:saved,state:{}})).activity).toBe('validated_reuse');expect(t.requests).toHaveLength(2);
-   if(process.env.SYNAPSOR_TEST_EVIDENCE_DIR) await fs.writeFile(path.join(process.env.SYNAPSOR_TEST_EVIDENCE_DIR,`B-${provider}-composed.json`),JSON.stringify({classification:'DERIVED deterministic replacement; local transport; no public provider',requests:t.requests,coverage:saved.coverage,readiness:policyReviewReadiness(f.source,saved.coverage,saved)},null,2));
+   expect(saved.application_assignments).toEqual(originalAssignments);
+   expect(saved.coverage_episodes?.at(-1)?.submissions.at(-1)?.validated).toBe(false);
+   expect(saved.coverage_episodes?.at(-1)?.submissions.at(-1)?.diagnostic).toContain('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
+   if(process.env.SYNAPSOR_TEST_EVIDENCE_DIR) await fs.writeFile(path.join(process.env.SYNAPSOR_TEST_EVIDENCE_DIR,`B-${provider}-composed.json`),JSON.stringify({classification:'DERIVED local transport; historical phase missing current candidate; refused without BUSINESS completion',requests:t.requests,coverage:saved.coverage,latest_episode:saved.coverage_episodes?.at(-1)},null,2));
   }finally{vi.restoreAllMocks();await fs.rm(root,{recursive:true,force:true});}
  });
  it.each(['missing_selection','wrong_mode','wrong_source','destination_unknown','second_authority','partial_graph','view','renamed_alias','stale_read','stale_configuration','historical_substitution'])(

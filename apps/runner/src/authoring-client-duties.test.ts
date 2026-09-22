@@ -10,6 +10,7 @@ import { policyReviewReadiness } from "./authoring-review-readiness.js";
 import { bindPolicyCoverage, loadPolicySources, savePolicySources, type PolicySourceSession } from "./authoring-policy-source.js";
 import { ensurePreparedPolicyCoverage } from "./authoring-prepared-policy-review.js";
 import { createModelAuthoringConversation } from "./model-authoring-conversation.js";
+import { derivedScopedResponse } from "./test-fixtures/coverage-derived.js";
 
 const captured = JSON.parse(await fs.readFile(new URL("./test-fixtures/client-duty-matched-reviews.json", import.meta.url), "utf8"));
 function fixture(name = "terra") {
@@ -146,7 +147,11 @@ describe("intrinsic client duties independent of coverage wording", () => {
       delete sources.coverage_context_digest;
       const conversation = createModelAuthoringConversation(); conversation.policySources = sources;
       let call = 0;
-      const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "captured", name: "runner__review_policy_coverage", arguments: JSON.stringify(name === "terra" ? captured.terra_arguments[call++] : args) }] } }));
+      const requestJson = vi.fn(async (request) => {
+        const response = name === "terra" ? (call++ === 0 ? captured.terra_arguments[0]
+          : derivedScopedResponse(request, captured.terra_arguments[1])) : args;
+        return { status: 200, body: { output: [{ type: "function_call", call_id: "captured", name: "runner__review_policy_coverage", arguments: JSON.stringify(response) }] } };
+      });
       const modelSession = { provider: "openai" as const, model: "gpt-5.6-terra", apiKey: "test-only", conversation, dependencies: { requestJson } };
       if (name === "grok") sources.approvals.push({ digest: sources.snapshots.find(s => s.version === sources.active)!.digest,
         destination: "openai[gpt-5.6-terra] at https://api.openai.com/v1" }); // local captured-response adapter, not a Grok transport claim

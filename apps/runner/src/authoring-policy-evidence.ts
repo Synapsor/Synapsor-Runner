@@ -1,3 +1,4 @@
+import { SOURCE_RECEIPT_CONTRACT, ATOMIC_EFFECT_TRANSACTION } from "./authoring-receipt-contract.js";
 import { actionSubjectCompatibility } from "./action-subject-compatibility.js";
 import { receiptReadExclusion, reviewEvidencePhases } from "./authoring-receipt-read-evidence.js";
 import { policyCountingInterpretations } from "./authoring-counting-review.js";
@@ -299,6 +300,12 @@ export function policyCoverageDraft(input: {
     read: input.read,
     actions: actions.map((action) => action.draft),
     runner_evidence: {
+      // Exact revision identity from the selected authoritative review subject,
+      // separate from the phase description used by the model.
+      action_revision: input.authority ? {
+        action_boundary_digest: input.authority.authority.action_boundary.digest,
+        review_record_digest: input.authority.digest,
+      } : null,
       ...((input.policySources?.scoped_disclosure_reviews?.length || input.reviewStoreDigest) ? {scoped_disclosure: {
         source_session: input.policySources?.id ?? "",
         metadata_digest: input.source && readerPosture ? canonicalJsonDigest({schema:schemaFingerprintForInspection(input.source.inspection),role:rolePostureFingerprint(input.source.inspection)}) : null,
@@ -397,7 +404,7 @@ export function policyCoverageDraft(input: {
             source_fields_modified: [...effect.allowed_fields.map((field) => field.name), effect.version_advance.column].sort(),
             version_advance: effect.version_advance,
             source_counter_maintenance: sourceCounterMaintenance(action, effect, action.rule.atomic_updates?.[index]),
-          })), transaction: "All listed updates share one verification, approval, transaction and receipt. Any failed update rolls back all changes. Permanent consumption requires an explicit change plus eligibility checking that changed fact." } : {}),
+          })), transaction: ATOMIC_EFFECT_TRANSACTION } : {}),
         },
         execution: {
           configured_mode: action.effect_envelope.writeback.mode,
@@ -486,8 +493,9 @@ export function policyCoverageDraft(input: {
           : null,
         receipt_configuration: input.receiptConfiguration ?? null,
         receipt_read_exclusion: receiptReadExclusion(input.read, input.receiptConfiguration, input.source),
-        review_evidence_phases: reviewEvidencePhases(input.authority?.authority.action_boundary.digest ?? null, input.read),
-        receipts: "Runner supports distinct receipt authorities. runner_ledger records processing and execution receipts in the control ledger, separately from source effects; it is not a source-atomic receipt. For supported direct SQL effects, source_db records the applied receipt in the same source transaction as the guarded effects. It requires separately reviewed receipt objects and writer grants through writeback setup (precreated or reviewed auto-migration), then execution verification and a worker. Receipt mode and readiness are not established by this disabled draft. A source-atomic requirement cannot be satisfied by a control-ledger receipt or by adding a model-authored audit INSERT. Independent source readback is a separate verification step, not an automatic client behavior guarantee. request_change distinguishes queued/human_review/not_enabled/completed; completed requires applied state. Pending/failed is not completed.",
+        review_evidence_phases: reviewEvidencePhases(input.authority?.authority.action_boundary.digest ?? null,
+          input.read, actions.map(action => action.draft)),
+        receipts: SOURCE_RECEIPT_CONTRACT,
         client_responsibilities: "The application authenticates the person, supplies trusted session identity, captures their selection and uses returned execution status/receipts for messages. A scoped subject reference authorizes one reviewed row; it does not prove the human clicked a UI. When an effective date is in the future, recording the change is not proof its benefits are already in force. Boundary rules cannot prove arbitrary client UI wording.",
         client_contract: { mode: "interactive_four_tool", client: input.client ?? "unselected",
           origin: "PRODUCT-CLIENT-CONTRACT", ownership: "explicit_unverified" },

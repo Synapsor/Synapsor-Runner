@@ -8,6 +8,7 @@ import { parsePolicyCoverage, reviewPolicyCoverage } from "./authoring-policy-co
 import { policyReviewReadiness } from "./authoring-review-readiness.js";
 import { authoringDestination, bindPolicyCoverage, loadPolicySources, newPolicySourceSession, savePolicySources } from "./authoring-policy-source.js";
 import { createModelAuthoringConversation } from "./model-authoring-conversation.js";
+import { derivedScopedResponse } from "./test-fixtures/coverage-derived.js";
 
 const captured = JSON.parse(await fs.readFile(new URL("./test-fixtures/primary-maintenance-review.json", import.meta.url), "utf8"));
 const pointer = "/runner_evidence/actions/league.result_ratification/effect/source_counter_maintenance";
@@ -93,7 +94,10 @@ describe("source counter responsibility uses exact owner evidence", () => {
         dependencies: { requestJson: async (request: any) => {
           requests.push(request.body);
           return { status: 200, body: { output: [{ type: "function_call", call_id: String(requests.length), name: "runner__review_policy_coverage",
-            arguments: JSON.stringify(requests.length === 1 ? captured.arguments : corrected()) }] } };
+            arguments: JSON.stringify(requests.length === 1 ? captured.arguments : derivedScopedResponse(request, {
+              passages: corrected().passages.filter((passage: any) =>
+                !passage.source_counter_obligation?.path?.includes('/atomic_updates/')),
+            })) }] } };
         } } };
       sources.approvals = [{ digest: captured.source.digest, destination: authoringDestination(session) }];
       await savePolicySources(root, sources);

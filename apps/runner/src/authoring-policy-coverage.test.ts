@@ -1,3 +1,4 @@
+import {derivedScopedResponse} from "./test-fixtures/coverage-derived.js";
 import { reviewUnestablishedCounting } from "./authoring-counting-decision-review.js";
 import { PassThrough } from "node:stream";
 import { describe, expect, it, vi } from "vitest";
@@ -287,13 +288,18 @@ describe("private Action field policy evidence", () => {
     const run = reviewPolicyCoverage({ source, draft, env: { OPENAI_API_KEY: "test-key" },
       session: { provider: "openai", model: "fixture", conversation, dependencies: { requestJson: async request => {
         requests.push(JSON.stringify(request.body));
+        const derived: any = derivedScopedResponse(request.body,{ passages: [requests.length > 1
+          ? { ...passage, draft_paths: [privatePath] } : rejected] });
+        // Submit the invalid pointer through the real host parser, rather than
+        // letting the DERIVED fixture adapter refuse before serialization.
+        if (requests.length > 1 && resultKind === "still invalid")
+          derived.groups[0].replacements[0].passage.draft_paths = [absentReadPath];
         return { status: 200, body: { output: [{ type: "function_call", call_id: `private_${requests.length}`,
-          name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: [requests.length > 1 && resultKind === "corrected"
-            ? { ...passage, draft_paths: [privatePath] } : rejected] }) }] } };
+          name: "runner__review_policy_coverage", arguments: JSON.stringify(derived) }] } };
       } } },
     });
     if (resultKind === "corrected") expect((await run).passages[0]!.disposition).toBe("implemented");
-    else await expect(run).rejects.toThrow("COVERAGE_REFERENCE_MISSING");
+    else await expect(run).rejects.toThrow("COVERAGE_SCOPED_CORRECTION_REFUSED");
     expect(requests).toHaveLength(2);
     expect(requests[0]).toContain(privatePath);
     expect(requests[0]).toContain("verification-only fields");
@@ -327,7 +333,7 @@ describe("execution setup is not a business-rule revision", () => {
       session: { provider: "openai", model: "fixture", conversation, dependencies: { requestJson: async (request) => {
         requests.push(JSON.stringify(request.body));
         return { status: 200, body: { output: [{ type: "function_call", call_id: `coverage_${requests.length}`,
-          name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: [requests.length === 1 ? previous : deferred] }) }] } };
+          name: "runner__review_policy_coverage", arguments: JSON.stringify(derivedScopedResponse(request.body,{ passages: [requests.length === 1 ? previous : deferred] })) }] } };
       } } }, env: { OPENAI_API_KEY: "test-key" },
     });
     expect(requests).toHaveLength(2);
@@ -410,11 +416,11 @@ describe("policy clarification evidence", () => {
       session: { provider: "openai", model: "fixture", conversation, dependencies: { requestJson: async (request) => {
         requests.push(JSON.stringify(request.body));
         return { status: 200, body: { output: [{ type: "function_call", call_id: `coverage_${requests.length}`,
-          name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: [{
+          name: "runner__review_policy_coverage", arguments: JSON.stringify(derivedScopedResponse(request.body,{ passages: [{
             start: 1, end: 1, draft_paths: [], interpretation: "The advising action has not been implemented.",
             ...(requests.length === 1 ? { disposition: "overridden", operator_override: "Skip the third action." }
               : { disposition: "unsupported", responsibility: "operator", issue_kind: "unsupported_requirement", next_step: "Resolve the missing automatic-approval limits." }),
-          }] }) }] } };
+          }] })) }] } };
       } } }, env: { OPENAI_API_KEY: "test-key" },
     });
     await expect(result).rejects.toThrow("COVERAGE_OVERRIDE_UNESTABLISHED");
@@ -511,9 +517,9 @@ describe("application obligation correction diagnostics", () => {
       session: { provider: "openai", model: "fixture", conversation, dependencies: { requestJson: async (request) => {
         requests.push(JSON.stringify(request.body));
         return { status: 200, body: { output: [{ type: "function_call", call_id: `application_${requests.length}`,
-          name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: passages(
+          name: "runner__review_policy_coverage", arguments: JSON.stringify(derivedScopedResponse(request.body,{ passages: passages(
             resultKind === "corrected" && requests.length > 1 ? completion : rejected,
-          ) }) }] } };
+          ) })) }] } };
       } } },
     });
     if (resultKind === "corrected") {
@@ -530,7 +536,8 @@ describe("application obligation correction diagnostics", () => {
     expect(requests[0]).toContain("never null or []");
     expect(requests[1]).toContain("/passages/1");
     expect(requests[1]).toContain("disposition");
-    expect(requests[1]).toContain("Return the complete corrected coverage");
+    expect(requests[1]).toContain("exact host-scoped replacement DATA");
+    expect(requests[1]).toContain("fully validated assembled report");
     expect({ draft, conversation }).toEqual(before);
   });
 });
@@ -595,8 +602,8 @@ describe("Runner client connection is a later unverified handoff", () => {
       session: { provider: "openai", model: "fixture", conversation, dependencies: { requestJson: async (request) => {
         requests.push(JSON.stringify(request.body));
         return { status: 200, body: { output: [{ type: "function_call", call_id: `coverage_${requests.length}`,
-          name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: [requests.length === 1 ? savedClientPassage
-            : { ...savedClientPassage, draft_paths: [clientPointer], deployment_prerequisite: "runner_client_connection" }] }) }] } };
+          name: "runner__review_policy_coverage", arguments: JSON.stringify(derivedScopedResponse(request.body,{ passages: [requests.length === 1 ? savedClientPassage
+            : { ...savedClientPassage, draft_paths: [clientPointer], deployment_prerequisite: "runner_client_connection" }] })) }] } };
       } } }, env: { OPENAI_API_KEY: "test-key" },
     });
     expect(requests).toHaveLength(2);
@@ -634,8 +641,8 @@ describe("Runner client connection is a later unverified handoff", () => {
     conversation.policySources = newPolicySourceSession();
     conversation.policySources.snapshots = [clientSource]; conversation.policySources.active = 1;
     conversation.policySources.approvals = [{ digest: clientSource.digest, destination: authoringDestination({ provider: "openai", model: "fixture" }) }];
-    const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "coverage",
-      name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: [savedClientPassage] }) }] } }));
+    const requestJson = vi.fn(async (request:any) => ({ status: 200, body: { output: [{ type: "function_call", call_id: "coverage",
+      name: "runner__review_policy_coverage", arguments: JSON.stringify(derivedScopedResponse(request.body,{ passages: [savedClientPassage] })) }] } }));
     await expect(reviewPolicyCoverage({ source: clientSource, draft: clientEvidence(),
       session: { provider: "openai", model: "fixture", conversation, dependencies: { requestJson } }, env: { OPENAI_API_KEY: "test-key" },
     })).rejects.toThrow("POLICY_COVERAGE_INVALID");
@@ -690,13 +697,13 @@ describe("Read eligibility is not authentication or an Action prerequisite", () 
       session: { provider: "openai", model: "fixture", conversation, dependencies: { requestJson: async (request) => {
         requests.push(JSON.stringify(request.body));
         return { status: 200, body: { output: [{ type: "function_call", call_id: "admission_read",
-          name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: [{
+          name: "runner__review_policy_coverage", arguments: JSON.stringify(derivedScopedResponse(request.body,{ passages: [{
             start: 1, end: 1, disposition: "unsupported", responsibility: "operator", issue_kind: "unsupported_requirement",
             topic: "Current admission before viewing records", draft_paths: [pointer],
             interpretation: "Admission source data exists, but current admission is not enforced on reads. The Read requirement remains unmet.",
             evidence_checks: [{ path: `${pointer}/runner_private_source_predicates_supported`, equals: false }],
             next_step: "Keep setup pending until an authoritative admission check is enforced for reads.",
-          }] }) }] } };
+          }] })) }] } };
       } } }, env: { OPENAI_API_KEY: "test-key" },
     });
     expect(requests).toHaveLength(1);
@@ -891,9 +898,9 @@ describe("counter coverage correction diagnostics", () => {
       session: { provider: "openai", model: "fixture", conversation, dependencies: { requestJson: async request => {
         requests.push(JSON.stringify(request.body));
         return { status: 200, body: { output: [{ type: "function_call", call_id: `counter_shape_${requests.length}`,
-          name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: passages(
+          name: "runner__review_policy_coverage", arguments: JSON.stringify(derivedScopedResponse(request.body,{ passages: passages(
             mode === "corrected" && requests.length > 1 ? override : rejected,
-          ) }) }] } };
+          ) })) }] } };
       } } },
     });
     if (mode === "corrected") {
@@ -991,12 +998,12 @@ describe("exact approval counter evidence and full-bundle targets", () => {
         requests.push(JSON.stringify(request.body));
         const corrected = requests.length === 2 && mode === "corrected";
         return { status: 200, body: { output: [{ type: "function_call", call_id: `counter_${requests.length}`,
-          name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: [{ ...conflict,
+          name: "runner__review_policy_coverage", arguments: JSON.stringify(derivedScopedResponse(request.body,{ passages: [{ ...conflict,
             disposition: corrected ? "implemented" : "conflict",
             interpretation: corrected ? "The same trusted tenant and boundary history is shared despite different diagnostic IDs."
               : mode === "distinct_capability" ? "These explicit capability filters select different histories; the shared requirement remains unresolved." : conflict.interpretation,
             ...(corrected ? { evidence_checks: [{ path: "/runner_evidence/actions/service.archive/automatic_limits/0/history_selector/capability", equals: null }] } : {}),
-          }] }) }] } };
+          }] })) }] } };
       } } }, env: { OPENAI_API_KEY: "test-key" },
     });
     expect(requests).toHaveLength(1);

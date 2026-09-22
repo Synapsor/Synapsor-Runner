@@ -18,17 +18,33 @@ function fixture() {
   const { sources, draft, arguments: replies } = structuredClone(captured);
   const source = sources.snapshots.find((s:any) => s.version === sources.active);
   // DERIVED structural replacement, never represented as a historical reply.
-  const corrected = structuredClone(replies[1]);
+  const corrected = structuredClone(replies[0]);
+  // DERIVED corrections use only the four challenged records; all unchallenged
+  // dependencies retain the exact immediate-parent fields and optional absence.
+  for(const index of [3,6,8,11])corrected.passages[index]=structuredClone(replies[1].passages[index]);
   for(const p of corrected.passages) for(const c of p.counter_requirements ?? []) delete c.operator_message_id;
   return {sources,draft,replies,source,corrected};
+}
+// Local DERIVED generation from nominated groups, never conversion of an
+// authentic full historical reply into a successful scoped submission.
+function derivedScopedResponse(body:any,candidate:any){
+ const marker='Host repair scope (identities and exact references, not authority): ';
+ const text=(body.messages??body.input).map((m:any)=>m.content).filter((x:any)=>typeof x==='string').join('\n');
+ const line=text.split('\n').find((value:string)=>value.startsWith(marker));if(!line)return candidate;
+ const scope=JSON.parse(line.slice(marker.length));
+ return {scope_digest:scope.scope_digest,parent_digest:scope.parent_digest,context:scope.context,
+  groups:scope.targets.map((target:any)=>({target_id:target.target_id,replacements:candidate.passages
+   .filter((p:any)=>target.source_ranges.some((r:any)=>p.start>=r.start&&p.end<=r.end))
+   .map((passage:any)=>({category:!target.receipt_region?'ordinary':passage.responsibility==='deployment'?'setup':'compiled_effect',passage}))}))};
 }
 function transport(f:ReturnType<typeof fixture>, submissions:any[], provider:'openai'|'openrouter'='openai') {
   if(provider==='openrouter') f.sources.approvals.push({digest:f.source.digest,destination:'openrouter[x-ai/grok-4.6] at https://openrouter.ai/api/v1'}); // local transport fixture consent, not a provider trial
   const conversation=createModelAuthoringConversation(); conversation.policySources=f.sources;
   const requests:any[]=[];
   const requestJson=vi.fn(async(r:any)=>{
-    requests.push(structuredClone(r.body));const args=submissions[requests.length-1];
+    requests.push(structuredClone(r.body));const submitted=submissions[requests.length-1],explicit=typeof submitted==='function';let args=explicit?submitted(r.body):submitted;
     if(args instanceof Error) throw args;
+    if(!explicit&&requests.length>1&&!f.replies.some((raw:any)=>canonicalJsonDigest(raw)===canonicalJsonDigest(args)))args=derivedScopedResponse(r.body,args);
     return {status:200,body:provider==='openai'?{output:[{type:'function_call',call_id:'captured',name:'runner__review_policy_coverage',arguments:JSON.stringify(args)}]}:
       {choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[{id:'captured',type:'function',function:{name:'runner__review_policy_coverage',arguments:JSON.stringify(args)}}]}}]}};
   });
@@ -61,8 +77,8 @@ describe('captured coverage correction round trip',()=>{
     expect(policyReviewReadiness(f.source,report,f.sources).ready).toBe(false); // intrinsic ownership still missing
     if(process.env.SYNAPSOR_TEST_EVIDENCE_DIR) await fs.writeFile(`${process.env.SYNAPSOR_TEST_EVIDENCE_DIR}/${provider}-wire.json`,JSON.stringify({classification:'local adapter transport; derived corrected response',requests:t.requests},null,2));
   });
-  it('stops the two unchanged historical replies after repeated support, with no third opinion',async()=>{
-    const f=fixture(),t=transport(f,f.replies);await expect(t.run()).rejects.toThrow('COUNTING_SUPPORT_MISMATCH');expect(t.requests).toHaveLength(2);
+  it('refuses the unchanged historical full correction envelope with no third opinion',async()=>{
+    const f=fixture(),t=transport(f,f.replies);await expect(t.run()).rejects.toThrow('COVERAGE_SCOPED_CORRECTION_REFUSED');expect(t.requests).toHaveLength(2);
   });
   it.each(['openai','openrouter'] as const)('%s streamed local transport delivers feedback and never executes an incomplete call',async provider=>{
     const f=fixture(),t=transport(f,[f.replies[0],f.corrected],provider),wire:any[]=[],events:any[]=[];
@@ -70,7 +86,7 @@ describe('captured coverage correction round trip',()=>{
     const server=createServer(async(req,res)=>{
       const chunks:Buffer[]=[];for await(const chunk of req) chunks.push(Buffer.from(chunk));
       wire.push(JSON.parse(Buffer.concat(chunks).toString()));
-      const args=wire.length===1?f.replies[0]:f.corrected;
+      const args=wire.length===1?f.replies[0]:derivedScopedResponse(wire.at(-1),f.corrected);
       res.setHeader('content-type','text/event-stream');
       if(provider==='openai') {
         res.write(`data: ${JSON.stringify({type:'response.output_item.added',item:{type:'function_call',name:'runner__review_policy_coverage'}})}\n\n`);
@@ -140,22 +156,35 @@ describe('captured coverage correction round trip',()=>{
     if(mode==='wrong_maximum')p.evidence_checks=[{path:'/runner_evidence/actions/league.result_ratification/automatic_limits/0/maximum',equals:999}];
     expect(()=>parsePolicyCoverage(f.corrected,f.source,f.draft,f.sources.operator_messages)).toThrow();
   });
-  it('permits one newly exposed independent structural correction, then exhausts at three',async()=>{
+  it('preserves the original full-report progress oracle while refusing a new outside mutation in scoped transport',async()=>{
     const f=fixture(),second=structuredClone(f.corrected);second.passages[0].draft_paths=['/not_present'];
-    const t=transport(f,[f.replies[0],second,f.corrected]);await t.run();expect(t.requests).toHaveLength(3);
-    const u=transport(f,[f.replies[0],second,second]);await expect(u.run()).rejects.toThrow('COVERAGE_REFERENCE_MISSING');expect(u.requests).toHaveLength(3);
+    const first=collectCoverageFeedback(f.replies[0],f.source,f.draft,f.sources.operator_messages);
+    const next=collectCoverageFeedback(second,f.source,f.draft,f.sources.operator_messages);
+    expect(permitsSecondCoverageCorrection([first],next)).toBe(true); // historical full-report oracle is unchanged
+    const t=transport(f,[f.replies[0],(body:any)=>{
+      const replacement=derivedScopedResponse(body,f.corrected);
+      replacement.groups[0].replacements.push({category:'ordinary',passage:second.passages[0]});
+      return replacement;
+    },f.corrected]);
+    await expect(t.run()).rejects.toThrow('COVERAGE_SCOPED_CORRECTION_REFUSED');expect(t.requests).toHaveLength(2);
   });
   it('deleting failed components is not evidence of resolved structural findings',async()=>{
     const f=fixture(),replacement={passages:[{...f.corrected.passages[0],draft_paths:['/new_missing']}]};
     const t=transport(f,[f.replies[0],replacement,f.corrected]);
-    await expect(t.run()).rejects.toThrow('COVERAGE_REFERENCE_MISSING');expect(t.requests).toHaveLength(2);
+    await expect(t.run()).rejects.toThrow('COVERAGE_SCOPED_CORRECTION_REFUSED');expect(t.requests).toHaveLength(2);
   });
   it.each(['counter','pointer'])('relocating the same invalid %s is not a newly exposed issue',async kind=>{
     const f=fixture(),second=structuredClone(f.corrected);
     const repeated=structuredClone(f.replies[0].passages[kind==='counter'?8:3]);
     repeated.start=repeated.end=1;second.passages.push(repeated);
-    const t=transport(f,[f.replies[0],second,f.corrected]);
-    await expect(t.run()).rejects.toThrow(kind==='counter'?'COUNTING_SUPPORT_MISMATCH':'COVERAGE_REFERENCE_MISSING');
+    const first=collectCoverageFeedback(f.replies[0],f.source,f.draft,f.sources.operator_messages);
+    expect(permitsSecondCoverageCorrection([first],collectCoverageFeedback(second,f.source,f.draft,f.sources.operator_messages))).toBe(false);
+    const t=transport(f,[f.replies[0],(body:any)=>{
+      const replacement=derivedScopedResponse(body,f.corrected);
+      replacement.groups[0].replacements.push({category:'ordinary',passage:repeated});
+      return replacement;
+    },f.corrected]);
+    await expect(t.run()).rejects.toThrow('COVERAGE_SCOPED_CORRECTION_REFUSED');
     expect(t.requests).toHaveLength(2);
   });
   it('rejects stale context, reintroduced identities and code-only changes as progress',()=>{

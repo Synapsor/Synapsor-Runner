@@ -1,3 +1,4 @@
+import {derivedScopedResponse} from "./test-fixtures/coverage-derived.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -94,7 +95,7 @@ describe("host obligation readiness on primary B's exact review", () => {
   it("retains the exact initial structural refusal, independently of phase association", () => {
     expect(() => parse(captured.arguments[0])).toThrow('runner_execution_setup draft_paths must contain only');
   });
-  it("replays both complete replies through producer, correction, save, reload and readiness", async () => {
+  it("preserves original refusal and uses a DERIVED scoped correction through save, reload and readiness", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-receipt-review-"));
     try {
       const sources = newPolicySourceSession(); sources.snapshots = structuredClone(captured.snapshots); sources.active = captured.source.version;
@@ -109,7 +110,7 @@ describe("host obligation readiness on primary B's exact review", () => {
             : { passages: captured.arguments[1].passages.filter((p: any) => !p.draft_paths.includes(receiptPath)
               && !p.application_obligations?.includes("independent_source_readback")) };
           return { status: 200, body: { output: [{ type: "function_call", call_id: String(requests.length), name: "runner__review_policy_coverage",
-            arguments: JSON.stringify(reply) }] } };
+            arguments: JSON.stringify(derivedScopedResponse(request.body,reply)) }] } };
         } } };
       sources.approvals = [{ digest: captured.source.digest, destination: authoringDestination(session) }];
       await savePolicySources(root, sources);

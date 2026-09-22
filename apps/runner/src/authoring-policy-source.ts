@@ -68,7 +68,19 @@ export type ReadInterpretationRecord = {
   authority_changed: false; record_digest: string;
 };
 
+/** Stored shape only. The strict assessor in authoring-obligation-review
+ * recomputes this proof against current prepared evidence on save and reuse. */
+export type ReceiptCouplingAssessment = {
+  origin: 'HOST-RESOLVED'; category: 'source_transaction_coupling'; source_digest: string;
+  source_range: { start: number; end: number }; source: string; outcome: string;
+  effect_count: number; configuration_digest: string; dependencies_digest: string;
+  phase: 'compiled_capability'; observed: false;
+};
+
 export type PolicyPassage = {
+  /** Explicit capability claim; every load recomputes its exact host proof. */
+  receipt_component?: "source_transaction_coupling";
+  receipt_coupling?: ReceiptCouplingAssessment;
   /** Host-only phase assessment; submitted annotation remains on this passage. */
   obligation_assessment?: ReviewObligationAssessment; start: number; end: number;
   disposition: "implemented" | "needs_decision" | "conflict" | "unsupported" | "background" | "overridden";
@@ -194,7 +206,10 @@ export type PolicyTextSnapshot = {
 export type CoverageReviewEpisode = {
   id: string; context: string; started_at: string;
   submissions: Array<{ number: number; reserved_at: string; completed_at?: string;
-    validated?: boolean; diagnostic?: string }>;
+    validated?: boolean; diagnostic?: string;
+    /** Untrusted generation evidence only; never reusable coverage/ownership. */
+    tentative?: { status: "unaccepted_generation"; context: string; raw_response: unknown;
+      raw_parent?: unknown; scope?: unknown; assembled?: unknown } }>;
 };
 export type PolicySourceSession = {
   id: string;
@@ -412,7 +427,11 @@ export async function loadPolicySources(root: string, id: string): Promise<Polic
       || !Array.isArray(e.submissions) || e.submissions.length > 3 || e.submissions.some((s,i)=>!s || s.number !== i+1
         || !Number.isFinite(Date.parse(s.reserved_at)) || s.completed_at !== undefined && !Number.isFinite(Date.parse(s.completed_at))
         || s.validated !== undefined && typeof s.validated !== "boolean"
-        || s.diagnostic !== undefined && (typeof s.diagnostic !== "string" || Buffer.byteLength(s.diagnostic)>8192))))) {
+        || s.diagnostic !== undefined && (typeof s.diagnostic !== "string" || Buffer.byteLength(s.diagnostic)>8192)
+        || s.tentative !== undefined && (!s.tentative || s.tentative.status !== "unaccepted_generation"
+          || s.tentative.context !== e.context && !/^sha256:[a-f0-9]{64}$/u.test(s.tentative.context)
+          || !Object.hasOwn(s.tentative, "raw_response")
+          || Buffer.byteLength(JSON.stringify(s.tentative)) > 4 * 128 * 1024))))) {
     throw new Error("POLICY_COVERAGE_EPISODE_INVALID: Saved review attempt accounting is invalid; no provider call or retry was started.");
   }
   assertScopedDisclosureReviews(value.scoped_disclosure_reviews);

@@ -137,10 +137,11 @@ export async function ensurePreparedPolicyCoverage(input: {
       episode:{beforeSubmission:async number=>saveEpisode(e=>{
         if(number!==e.submissions.length+1 || number>3) throw new Error("POLICY_COVERAGE_EPISODE_EXHAUSTED");
         e.submissions.push({number,reserved_at:new Date().toISOString()});
-      }),afterSubmission:async(number,feedback,accepted)=>saveEpisode(e=>{
+      }),afterSubmission:async(number,feedback,accepted,tentative)=>saveEpisode(e=>{
         const submission=e.submissions[number-1]!;
         submission.completed_at=new Date().toISOString(); submission.validated=accepted;
         if(feedback) submission.diagnostic=JSON.stringify(feedback);
+        if(tentative) submission.tentative=structuredClone(tentative);
       })}});
   };
   const report = reused ?? await (input.progress ? input.progress(input.subjectLocation === "active" ? "Checking attached rules against this active published subject" : "Checking attached rules against this exact draft", produce) : produce());

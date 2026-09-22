@@ -12,6 +12,9 @@ import {savePolicySources,loadPolicySources,authoringDestination} from './author
 import {policyReadinessItems,policyReviewReadiness} from './authoring-review-readiness.js';
 import {CoverageReceiptConfigurationError,CoverageReceiptDutyError,coverageFinding} from './authoring-coverage-feedback.js';
 import * as receiptConfiguration from './authoring-receipt-configuration.js';
+import {receiptCouplingInterpretation,receiptCouplingPaths} from './authoring-obligation-review.js';
+import {receiptComponentMeanings,validateScopedReceiptComponents} from './authoring-scoped-receipt-components.js';
+import {createCoverageRepairScope,assembleScopedCoverageReplacement} from './authoring-scoped-correction.js';
 const capture=JSON.parse(await fs.readFile(new URL('./test-fixtures/receipt-correction-chain.json',import.meta.url),'utf8'));
 const READ='/runner_evidence/runtime_contract/receipt_read_exclusion';
 const CONFIG='/runner_evidence/runtime_contract/receipt_configuration';
@@ -20,21 +23,42 @@ const fixture=()=>structuredClone(capture);
 const EFFECT='/runner_evidence/actions/energy_ops.finalize_settlement_cycle/effect';
 const parse=(f:any,args=f.arguments)=>parsePolicyCoverage(args,f.source,f.draft,f.operator_messages);
 function separated(f:any){
- // DERIVED complete response, not a historical model reply. Same policy/draft.
+ // DERIVED complete candidate, not a historical model reply. Same policy/draft.
+ // The former effect + selection positive did not prove their transaction
+ // conjunction. This local regression now supplies its explicit typed proof.
  const args=structuredClone(f.arguments);
  for(const p of args.passages)for(const c of p.counter_requirements??[])delete c.operator_message_id;
  const i=args.passages.findIndex((p:any)=>p.draft_paths.includes(CONFIG)&&p.draft_paths.includes(RECEIPTS)),p=args.passages[i];
+ const meanings=receiptComponentMeanings(f.draft),outcome=f.draft.actions[0].outcome;
  args.passages.splice(i,1,
-  {...p,topic:'Compiled effect',interpretation:'The compiled effect supports the listed updates in one guarded transaction. This is capability, not an observation of execution.',draft_paths:p.draft_paths.filter((x:string)=>x!==RECEIPTS&&x!==CONFIG)},
-  {...p,topic:'Configured receipt mode',interpretation:'Current reviewed configuration selects the source-required source_db mode. This proves neither current provisioning, a performed receipt nor independent readback.',draft_paths:[CONFIG]},
-  {start:p.start,end:p.end,topic:'Receipt setup and production',disposition:'needs_decision',responsibility:'deployment',issue_kind:'missing_configuration',interpretation:'Keep the required source-atomic receipt guarantee. Applicable writer/provisioning review, execution permission and a performed receipt require their own evidence; no new receipt is observed here.',draft_paths:[RECEIPTS]});
+  {start:p.start,end:p.end,disposition:'implemented',responsibility:'runner',issue_kind:'coverage_link',receipt_component:'source_transaction_coupling',interpretation:receiptCouplingInterpretation(outcome),draft_paths:receiptCouplingPaths(outcome)},
+  {start:p.start,end:p.end,disposition:'implemented',responsibility:'runner',issue_kind:'coverage_link',interpretation:meanings.receipt_configuration![0],draft_paths:[CONFIG]},
+  {start:p.start,end:p.end,topic:'Receipt setup and production',disposition:'needs_decision',responsibility:'deployment',issue_kind:'missing_configuration',interpretation:'Keep the required source-atomic receipt guarantee. Applicable writer/provisioning review, execution permission and a performed receipt require their own evidence; no new receipt is observed here.',draft_paths:[CONFIG]});
  return args;
+}
+function scopeFromWire(body:any){
+ const marker='Host repair scope (identities and exact references, not authority): ';
+ const line=(body.messages??body.input).flatMap((m:any)=>typeof m.content==='string'?m.content.split('\n'):[]).find((line:string)=>line.startsWith(marker));
+ return line?JSON.parse(line.slice(marker.length)):undefined;
+}
+// DERIVED local producer: construct only the groups nominated by the actual
+// serialized host request. Immutable historical replies remain unchanged.
+function derivedScopedResponse(body:any,candidate:any){
+ const scope=scopeFromWire(body);if(!scope)return candidate;
+ return {scope_digest:scope.scope_digest,parent_digest:scope.parent_digest,context:scope.context,
+  groups:scope.targets.map((target:any)=>({target_id:target.target_id,replacements:candidate.passages
+   .filter((p:any)=>target.source_ranges.some((r:any)=>p.start>=r.start&&p.end<=r.end))
+   .map((passage:any)=>({category:!target.receipt_region?'ordinary':passage.receipt_component==='source_transaction_coupling'?'source_transaction_coupling'
+    :passage.disposition==='needs_decision'&&passage.responsibility==='deployment'?'setup'
+    :passage.draft_paths.includes(READ)?'receipt_read_exclusion':passage.draft_paths.includes(CONFIG)?'receipt_configuration'
+    :passage.draft_paths.includes(RECEIPTS)?'receipt_observation':'compiled_effect',passage}))}))};
 }
 function transport(f:any,replies:any[],provider:'openai'|'openrouter'='openrouter'){
  const conversation=createModelAuthoringConversation();conversation.policySources=f.sources;
  const requests:any[]=[];
  const session={provider,model:provider==='openai'?'gpt-5.6-terra':'openai/gpt-5.6-terra',apiKey:'local-only',conversation,
- dependencies:{requestJson:vi.fn(async(r:any)=>{requests.push(structuredClone(r.body));const args=replies[requests.length-1];if(args instanceof Error)throw args;if(!args)throw new Error('No response permitted');
+ dependencies:{requestJson:vi.fn(async(r:any)=>{requests.push(structuredClone(r.body));let args=replies[requests.length-1];if(args instanceof Error)throw args;if(!args)throw new Error('No response permitted');
+ if(requests.length>1&&canonicalJsonDigest(args)!==canonicalJsonDigest(f.arguments))args=derivedScopedResponse(r.body,args);
  return {status:200,body:provider==='openai'?{output:[{type:'function_call',call_id:'test',name:'runner__review_policy_coverage',arguments:JSON.stringify(args)}]}:{choices:[{finish_reason:'tool_calls',message:{role:'assistant',tool_calls:[{id:'test',type:'function',function:{name:'runner__review_policy_coverage',arguments:JSON.stringify(args)}}]}}]}};})}};
  f.sources.approvals.push({digest:f.source.digest,destination:authoringDestination(session)});
  return {session,requests,run:()=>reviewPolicyCoverage({session,source:f.source,draft:f.draft})};
@@ -63,12 +87,21 @@ describe('complete captured configuration correction chain',()=>{
   const blockers=policyReadinessItems(report,f.sources).filter(x=>x.blocksReview);
   expect(blockers.length).toBeGreaterThan(0);expect(blockers.every(x=>Boolean(x.clientDuty))).toBe(true); // exact renewed ownership is performed by prepared-review tests below
  });
- it.each(['openai','openrouter'] as const)('%s serializes the actual complete correction request',async provider=>{
-  const f=fixture(),t=transport(f,[f.arguments,separated(f)],provider);await t.run();expect(t.requests).toHaveLength(2);
+ it.each(['openai','openrouter'] as const)('%s serializes the scoped correction for the exact historical tentative parent',async provider=>{
+  const f=fixture(),t=transport(f,[f.arguments,separated(f)],provider);
+  const context={source:f.source,draft:f.draft,messages:f.operator_messages};
+  const nominated=createCoverageRepairScope(f.arguments,collectCoverageFeedback(f.arguments,f.source,f.draft,f.operator_messages),context);
+  const derived=derivedScopedResponse({messages:[{content:'Host repair scope (identities and exact references, not authority): '+JSON.stringify(nominated)}]},separated(f));
+  const assembled=assembleScopedCoverageReplacement(nominated,f.arguments,derived,context);
+  validateScopedReceiptComponents(assembled.assembled,assembled.categories,nominated,f.source,f.draft);
+  await t.run();expect(t.requests).toHaveLength(2);
   const fb=correction(t.requests[1]);expect(fb.findings).toHaveLength(3);
   expect(fb.findings.every((x:any)=>x.structural)).toBe(true);
   expect(fb.findings[0].repair).toContain('omit the OPTIONAL counter operator_message_id');
-  expect(fb.findings[2].repair).toContain('COMPLETE REPLACEMENT');expect(fb.findings[2].repair).toContain(CONFIG);
+  expect(fb.findings[2].repair).toContain(CONFIG);
+  const scope=scopeFromWire(t.requests[1]);expect(scope.disposition).toBe('unaccepted_tentative');expect(scope.targets).toHaveLength(2);
+  expect(scope.targets.map((target:any)=>target.receipt_region)).toEqual([false,true]);
+  expect(scope.targets.map((target:any)=>target.allowed_references)).toEqual(nominated.targets.map(target=>target.allowed_references));
  });
  it.each(['effect','overview','triple','reordered','duplicate_only','duplicate_companion','unknown_child','foreign_effect','observation','missing','stale','mode','source','destination','read','action','requirement','field','counter','unsupported_setup','setup_outcome','setup_missing','setup_duplicate','setup_mode'])('classifies %s with an explicit evidence-grounded disposition',kind=>{
   const f=fixture(),c=f.draft.runner_evidence.runtime_contract,p=f.arguments.passages[25];
@@ -176,11 +209,11 @@ describe('current-proof complete save and restart',()=>{
    currentDraft:()=>f.draft,authorityDigest:f.sources.coverage_authority_digest,clarifications:[],assertCurrent:async()=>{},state:{},onValidated:vi.fn()};
   return {root,f,t,input};
  }
- it.each(['openai','openrouter'] as const)('%s loopback SSE drives preparation, full correction, persistence and unchanged reuse',async provider=>{
+ it.each(['openai','openrouter'] as const)('%s loopback SSE drives preparation, scoped correction, full persistence and unchanged reuse',async provider=>{
   const x=await prepared(f=>[f.arguments,separated(f)]),wire:any[]=[],stream:any[]=[],previous=structuredClone(x.f.sources.coverage_episodes);
   const server=createServer(async(req,res)=>{
    const chunks:Buffer[]=[];for await(const c of req)chunks.push(Buffer.from(c));wire.push(JSON.parse(Buffer.concat(chunks).toString()));
-   const args=wire.length===1?x.f.arguments:separated(x.f);res.setHeader('content-type','text/event-stream');
+   const args=wire.length===1?x.f.arguments:derivedScopedResponse(wire.at(-1),separated(x.f));res.setHeader('content-type','text/event-stream');
    if(provider==='openai'){
     res.write(`data: ${JSON.stringify({type:'response.output_item.added',item:{type:'function_call',name:'runner__review_policy_coverage'}})}\n\n`);
     res.end(`data: ${JSON.stringify({type:'response.completed',response:{status:'completed',output:[{type:'function_call',call_id:'local',name:'runner__review_policy_coverage',arguments:JSON.stringify(args)}]}})}\n\n`);
@@ -201,10 +234,14 @@ describe('current-proof complete save and restart',()=>{
    expect(result.activity).toBe('provider');expect(wire).toHaveLength(2);
    expect(correction(wire[1]).findings.map((x:any)=>x.code)).toEqual(['COUNTING_SUPPORT_MISMATCH','COUNTING_SUPPORT_MISMATCH','OBLIGATION_CONFIGURATION_COMPONENT_MIXED']);
    expect(correction(wire[1]).findings.every((x:any)=>x.structural)).toBe(true);
+   expect(scopeFromWire(wire[1]).targets).toHaveLength(2);
    expect(JSON.stringify(wire[1])).not.toContain('opaque-local-private-continuation');expect(JSON.stringify(stream)).not.toContain('opaque-local-private-continuation');
    const saved=await loadPolicySources(x.root,x.f.sources.id);
    expect(saved.coverage_episodes?.slice(0,previous.length)).toEqual(previous);expect(saved.coverage_episodes?.at(-1)?.submissions).toHaveLength(2);
    expect(saved.coverage_episodes?.at(-1)?.submissions.map(s=>s.validated)).toEqual([false,true]);
+   const tentative=saved.coverage_episodes!.at(-1)!.submissions[1]!.tentative!;
+   expect(tentative.raw_parent).toEqual(x.f.arguments);expect(tentative.raw_response).toHaveProperty('groups');
+   expect(tentative.assembled).toHaveProperty('passages');
    expect(policyReviewReadiness(x.f.source,saved.coverage,saved).ready).toBe(true);
    expect(saved.application_assignments?.every(a=>a.verified===false)).toBe(true);
    const duties=saved.coverage!.passages.filter(p=>p.obligation_assessment);expect(duties.length).toBeGreaterThan(0);expect(duties.every(p=>p.obligation_assessment!.verified===false)).toBe(true);

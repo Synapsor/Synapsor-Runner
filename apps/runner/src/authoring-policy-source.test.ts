@@ -11,6 +11,7 @@ import { parsePolicyCoverage, policyCoverageSection, policyCoverageSummary, revi
 import { createBoundaryAuthoringChat } from "./boundary-authoring-chat.js";
 import type { BoundaryAuthoringChat } from "./boundary-authoring-chat.js";
 import type { AnalyticsShellIo } from "./analytics-shell.js";
+import { derivedScopedResponse } from "./test-fixtures/coverage-derived.js";
 
 const roots: string[] = [];
 async function directory() { const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-policy-")); roots.push(root); return root; }
@@ -252,21 +253,21 @@ describe("complete operator-selected policy text", () => {
     expect(view.lines.join("\n")).toContain("not proof");
   });
 
-  it("records complete hosted structured coverage with one targeted correction and no mutation", async () => {
+  it("refuses a missing-source-line initial report instead of inventing a local correction region", async () => {
     const conversation = createModelAuthoringConversation(); conversation.policySources = approved("Limit 25.\nNo duplicates.");
     const draft = { limit: 25 }, before = JSON.stringify(draft);
     const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", name: "runner__review_policy_coverage", call_id: "coverage",
       arguments: JSON.stringify({ passages: [{ start: 1, end: requestJson.mock.calls.length === 1 ? 1 : 2,
         disposition: "needs_decision", interpretation: "Confirm duplicate detection", draft_paths: ["/limit"] }] }),
     }] } }));
-    const report = await reviewPolicyCoverage({ session: { ...destination, conversation, dependencies: { requestJson } },
-      source: activePolicySource(conversation.policySources)!, draft, env: { OPENAI_API_KEY: "test-key" } });
-    expect(requestJson).toHaveBeenCalledTimes(2);
-    expect(report.passages[0]!.disposition).toBe("needs_decision");
+    await expect(reviewPolicyCoverage({ session: { ...destination, conversation, dependencies: { requestJson } },
+      source: activePolicySource(conversation.policySources)!, draft, env: { OPENAI_API_KEY: "test-key" } }))
+      .rejects.toThrow("COVERAGE_SCOPED_CORRECTION_REFUSED");
+    expect(requestJson).toHaveBeenCalledTimes(1);
     expect(JSON.stringify(draft)).toBe(before);
   });
 
-  it("identifies a misplaced schema keyword and gives the correction the exact shape problem", async () => {
+  it("refuses an unsupported initial envelope before nominating a scoped correction", async () => {
     const conversation = createModelAuthoringConversation(); conversation.policySources = approved("Keep the refund bounded.");
     const requestJson = vi.fn(async (request) => {
       if (requestJson.mock.calls.length === 2) {
@@ -279,10 +280,10 @@ describe("complete operator-selected policy text", () => {
       }] } };
     });
     const draft = { limit: null };
-    const report = await reviewPolicyCoverage({ session: { ...destination, conversation, dependencies: { requestJson } },
-      source: activePolicySource(conversation.policySources)!, draft, env: { OPENAI_API_KEY: "test-key" } });
-    expect(requestJson).toHaveBeenCalledTimes(2);
-    expect(report.passages).toHaveLength(1);
+    await expect(reviewPolicyCoverage({ session: { ...destination, conversation, dependencies: { requestJson } },
+      source: activePolicySource(conversation.policySources)!, draft, env: { OPENAI_API_KEY: "test-key" } }))
+      .rejects.toThrow("COVERAGE_SCOPED_CORRECTION_REFUSED");
+    expect(requestJson).toHaveBeenCalledTimes(1);
     expect(draft).toEqual({ limit: null });
   });
 
@@ -395,12 +396,14 @@ describe("complete operator-selected policy text", () => {
     const requests: string[] = [];
     const requestJson = vi.fn(async (request: { body: unknown }) => {
       requests.push(JSON.stringify(request.body));
-      return { status: 200, body: { output: [{ type: "function_call", name: "runner__review_policy_coverage", call_id: "coverage", arguments: JSON.stringify({ passages: [
+      const complete = { passages: [
         { start: 1, end: 1, disposition: "implemented", interpretation: "Account scope uses the reviewed field.", topic: "Three approvals per account",
           responsibility: "runner", draft_paths: ["/runner_evidence/tenant_field"], evidence_checks: [{ path: "/runner_evidence/tenant_field", equals: requests.length === 1 ? "tenant_id" : "account_id" }] },
         { start: 2, end: 2, disposition: "conflict", interpretation: "The private control is still visible.", topic: "Private controls", responsibility: "operator",
           draft_paths: ["/runner_evidence/control_visible"], next_step: "Revise Read privacy." },
-      ] }) }] } };
+      ] };
+      return { status: 200, body: { output: [{ type: "function_call", name: "runner__review_policy_coverage", call_id: "coverage",
+        arguments: JSON.stringify(requests.length === 1 ? complete : derivedScopedResponse(request, complete)) }] } };
     });
     const report = await reviewPolicyCoverage({ session: { ...destination, conversation, dependencies: { requestJson } },
       source: activePolicySource(conversation.policySources)!, draft, env: { OPENAI_API_KEY: "test-key" } });
@@ -443,7 +446,7 @@ describe("complete operator-selected policy text", () => {
     expect(draft).toEqual({ runner_evidence: { source_scope: "reviewed-source", nullable: false } });
   });
 
-  it("corrects one prose-only coverage response without changing the draft", async () => {
+  it("refuses prose-only output without a complete parent report to scope", async () => {
     const conversation = createModelAuthoringConversation(); conversation.policySources = approved("Three approvals per account.");
     const draft = { limit: 3 }, requests: string[] = [];
     const requestJson = vi.fn(async (request: { body: unknown }) => {
@@ -454,11 +457,10 @@ describe("complete operator-selected policy text", () => {
           { start: 1, end: 1, disposition: "implemented", interpretation: "Three approvals per account.", draft_paths: ["/limit"] },
         ] }) }] } };
     });
-    const report = await reviewPolicyCoverage({ session: { ...destination, conversation, dependencies: { requestJson } },
-      source: activePolicySource(conversation.policySources)!, draft, env: { OPENAI_API_KEY: "test-key" } });
-    expect(requests).toHaveLength(2);
-    expect(requests[1]).toContain("prose alone cannot record a review");
-    expect(report.passages[0]!.disposition).toBe("implemented");
+    await expect(reviewPolicyCoverage({ session: { ...destination, conversation, dependencies: { requestJson } },
+      source: activePolicySource(conversation.policySources)!, draft, env: { OPENAI_API_KEY: "test-key" } }))
+      .rejects.toThrow("COVERAGE_SCOPED_CORRECTION_REFUSED");
+    expect(requests).toHaveLength(1);
     expect(draft).toEqual({ limit: 3 });
   });
 

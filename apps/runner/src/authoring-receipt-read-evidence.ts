@@ -43,9 +43,13 @@ export function receiptReadExclusion(read: ExplorationBoundaryDraft,
 }
 
 /** Phase contract for the exact selected candidate; no historical observations are imported. */
-export function reviewEvidencePhases(candidateActionDigest: string | null, read: ExplorationBoundaryDraft) {
+export function reviewEvidencePhases(candidateActionDigest: string | null, read: ExplorationBoundaryDraft, actions?: unknown[]) {
   return {
           candidate_action_digest: candidateActionDigest,
+          // Bind the phase label to the complete host-prepared candidate. The
+          // save/recheck path independently prepares this evidence again.
+          candidate_action_binding_digest: candidateActionDigest && actions
+            ? canonicalJsonDigest({ candidate_action_digest: candidateActionDigest, actions }) : null,
           selected_read_digest: canonicalJsonDigest(read),
           response_contract: "complete_replacement",
           compiled_capability: "The candidate's supported behavior, not deployment or a performed operation.",
