@@ -163,3 +163,5 @@ python3 docs/qualification-evidence/receipt-correction-chain-20260922/run-freeze
 ```
 
 The four package checks began only after stable-full-001 exited0. Exact offline child commands/exits/source invariance are retained in offline-package-plan-attempt1.json. Freeze requires a clean committed checkout. These commands are historical reproduction instructions, not permission to overwrite their exclusive evidence outputs.
+
+Freeze completed exit0 at2026-09-22T06:49:39.840Z on clean sourcef14ce84eaec053c8df8822e224c11fffac150a50. See ARTIFACT.json and raw/frozen/freeze-command.log for exact inventory, archive and installation.

@@ -1,0 +1,82 @@
+{
+  "at": "2026-09-22T07:10:08.494426+00:00",
+  "independent_task": "01a0bcb8-0925-7380-911a-8bab207b9e0b",
+  "artifact_tree": "fc61c14c6220de417227630e12ff31c6b5c0076342f70b962718be3d3a999d8f",
+  "overall_verdict": "FAIL_PUBLIC_B_REVIEW_NOT_COMPLETED",
+  "contract_verdict": "PASS_BOUNDED_LOCAL",
+  "artifact": "PASS",
+  "public_initial": "FAIL_POLICY_COVERAGE_INVALID",
+  "public_restarted_positive": "NOT_ESTABLISHED_PENDING",
+  "preservation": "PASS",
+  "cold_restore": "PASS",
+  "files": {
+    "REVIEW.md": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/public-b-review-attempt1/REVIEW.md",
+      "sha256": "eedb9d086222ed0014e9e31c1600c1505ab11b3af09752502c1eb039dcd3bedf"
+    },
+    "RESULT.json": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/public-b-review-attempt1/RESULT.json",
+      "sha256": "6214bc61322e5fd31105cf123ddc5b2577fa3d0445ced0fb290ac1b016c3421d"
+    },
+    "EVIDENCE-INDEX.json": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/public-b-review-attempt1/EVIDENCE-INDEX.json",
+      "sha256": "6143a4c6d0612bca9b7b80e136c30dd45d2350c4425bb74083482e80f9f0a1e1"
+    },
+    "IMMUTABLE-REVIEW-HASHES.txt": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/public-b-review-attempt1/IMMUTABLE-REVIEW-HASHES.txt",
+      "sha256": "09ea338e0831362471c7951e636cafac2d59b6515daaf26944ff80d1dd69e6d6"
+    },
+    "records/LIVE-RESULT-001.json": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/public-b-review-attempt1/records/LIVE-RESULT-001.json",
+      "sha256": "8992bae57364b574e81fb4d9e0de5064ff0ab980f7ffa5b1babc7fb8940b7832"
+    },
+    "records/STATE-COMPARISON-001.json": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/public-b-review-attempt1/records/STATE-COMPARISON-001.json",
+      "sha256": "925bb388a6e2c228283d93cadf3e9a84576833b3dcb26447b1b1ed7709cdba1a"
+    },
+    "records/FINAL-CHECKPOINT-COLD-RESTORE-001.json": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/public-b-review-attempt1/records/FINAL-CHECKPOINT-COLD-RESTORE-001.json",
+      "sha256": "d741eedd7fb45bdef49bd820635e83b502806d4ff9f27c3c74d3286d636f8b1b"
+    },
+    "records/CLEANUP-AND-IMMUTABILITY-001.json": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/public-b-review-attempt1/records/CLEANUP-AND-IMMUTABILITY-001.json",
+      "sha256": "86ac306c5a7cef55407b173a905213e4114ed449d61e9f2687158f05f85f68d7"
+    },
+    "checkpoints/stopped-after-receipt-chain-failure-v1/manifest.json": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/public-b-review-attempt1/checkpoints/stopped-after-receipt-chain-failure-v1/manifest.json",
+      "sha256": "3ea3fb806c4a4fe4b3db801775124d941985b7a436638be36cb22a34a476fd98"
+    }
+  },
+  "main_verified_final_index_entries": 18,
+  "main_own_logical_comparison": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-correction-chain-2f6c952-20260922/MAIN-LOGICAL-COMPARISON-001.json",
+  "main_direct_wire_inspection": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-correction-chain-2f6c952-20260922/ACTUAL-LIVE-CORRECTION-TRACE-001.json",
+  "procedure_deviation": "Two recorded tester harness corrections vs stricter tester limit1 (restore duplicate precreated postgres role; cold-restore row-order comparator); no additional provider/application rerun for comparator. Tester separately signed procedure FAIL addendum; original sealed report and verdict unchanged.",
+  "addenda": {
+    "PROCEDURE-ADDENDUM.md": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/public-b-review-attempt1/PROCEDURE-ADDENDUM.md",
+      "sha256": "c172ea9a33fca2b9731f8a106d3bce05aaea6e359cf0a5fb7a16461c1820b441"
+    },
+    "PROCEDURE-ADDENDUM.json": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/public-b-review-attempt1/PROCEDURE-ADDENDUM.json",
+      "sha256": "bc3b0b1f43edf26dbf4df92aec18d555e28ec59f662a5398b6ad47c77323c060"
+    },
+    "PROCEDURE-ADDENDUM-INDEX.json": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/public-b-review-attempt1/PROCEDURE-ADDENDUM-INDEX.json",
+      "sha256": "e6d476884dbd1682a33b1db1d0b91444964267c189bb3460d2c6f06ba66c00db"
+    },
+    "FACTUAL-CLARIFICATION-ADDENDUM.md": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/public-b-review-attempt1/FACTUAL-CLARIFICATION-ADDENDUM.md",
+      "sha256": "4918901072c3ee5a337cf6aec2f8c01ba864da2468a42b148d9a4c43ec070006"
+    },
+    "FACTUAL-CLARIFICATION-ADDENDUM.json": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/public-b-review-attempt1/FACTUAL-CLARIFICATION-ADDENDUM.json",
+      "sha256": "2998344b81f11f789e9c68af86c2e1e2c6b1a0b9fd0ecbd82fde1d6d1e172443"
+    },
+    "FACTUAL-CLARIFICATION-ADDENDUM-INDEX.json": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-receipt-chain-review-20260922/public-b-review-attempt1/FACTUAL-CLARIFICATION-ADDENDUM-INDEX.json",
+      "sha256": "f9ed6eccc6be15c186fbf4199bcf7c15ff83ca998e0fe3ffd4922779a292dee8"
+    }
+  },
+  "procedure_verdict": "FAIL_HARNESS_CORRECTION_LIMIT_EXCEEDED",
+  "factual_clarification": "Second reply states compiled capability, not literal historical receipt observation; host refused mixed evidence representation."
+}
