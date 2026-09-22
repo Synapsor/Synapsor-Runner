@@ -1,0 +1,41 @@
+{
+  "product_commit": "4794ce527840459685510a9bbd7435cd85d8cf95",
+  "test_commit": "56110270c47beb577ca0ec7cd068f0bd4bea1f7a",
+  "frozen_source_commit": "eb959ba69946e62cbac183960b14be88ee3cf80a",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/frozen/installed",
+  "entrypoint": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/frozen/installed/node_modules/@synapsor/runner/dist/runner.mjs",
+  "installed_tree_sha256": "62289800dc4f16e86ba57580a69fbc3d91c960285a21498507cb16a4d7266196",
+  "entry_count": 7569,
+  "manifest": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/frozen/installed-artifact-manifest.json",
+    "sha256": "fd665b0a4e213269602c1aeb0b61d478296d126ef2f000b0d439c1b036c227b2"
+  },
+  "archive": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/frozen/installed-artifact.tar.gz",
+    "sha256": "9c9475e01bcfe7d51f4d213187a440c4406656600f430174aaffb3ba67f5e9d3"
+  },
+  "source_archive": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/source-eb959ba.tar.gz",
+    "sha256": "51b6f60e66753bd87db83136f46c942483cb30cfff9995a081983ae0bdaca785"
+  },
+  "package_lock_sha256": "d1b771b33b07a66bd84274885608509cd70202b3b9738bc19e3064a98c1175d8",
+  "node": {
+    "version": "v22.22.2",
+    "executable": "/usr/bin/node",
+    "sha256": "81925c0995b5c1427b5d538e6a90ca2fdc4daffb786b09af749beaf7369d4e90"
+  },
+  "runner_version": "1.8.0",
+  "spec_version": "1.11.0",
+  "tarballs": [
+    {
+      "name": "synapsor-runner-1.8.0.tgz",
+      "sha256": "78292044afd4357f04730bc95353d3d545c9deb493e6e5f02917df30a27afd6e"
+    },
+    {
+      "name": "synapsor-spec-1.11.0.tgz",
+      "sha256": "27cfef8a1f3d85e8897b5da378e50518e67e69facfced6b566b7731c8376f12e"
+    }
+  ],
+  "frozen_at": "2026-09-22T04:54:08.888Z",
+  "no_post_freeze_product_changes": true
+}
