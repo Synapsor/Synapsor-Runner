@@ -24,7 +24,7 @@ Rows below describe distinct proof obligations, not interchangeable receipts.
 | Persistence/reuse | Existing source/subject/configuration/decision CAS | No stale completion; provider outside coordination, no lock redesign | Failed/competing saves, cancellation, restart/reuse |
 | Unknown/unrelated exception | Conservative generic finding | Remains nonstructural; no global whitelist | Plain strings/model eligibility flags/internal error |
 
-Implementation note: keep existing strict acceptance and ordering. Add a small
+Implementation note: retain the positive proof requirements and full-report validation. Route the named early returns through those requirements; formerly bypassed role/broad claims now refuse. Add a small
 host-only typed configuration assessment/error with exhaustive safe mappings.
 Assess evidence separately from the invalid grouping so the early shape refusal
 can carry a justified disposition without moving or skipping its guard. Reuse
@@ -65,7 +65,7 @@ controls. Focused02 and03 passed; final aggregate will include all latest bytes.
 The real local HTTP/SSE round trip runs both encoders, persists only a fully
 validated replacement with current explicit unverified client ownership, then
 reloads and rechecks with validated reuse. Raw local wire is under main raw
-`local-wire-final/`; outputs are labelled DERIVED, never historical/live model
+`local-wire-final-source/`; outputs are labelled DERIVED, never historical/live model
 success. No endpoint beyond loopback is invoked.
 
 

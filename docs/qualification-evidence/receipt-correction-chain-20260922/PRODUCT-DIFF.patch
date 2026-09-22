@@ -1,0 +1,278 @@
+diff --git a/apps/runner/src/authoring-coverage-feedback.ts b/apps/runner/src/authoring-coverage-feedback.ts
+index 48631fe..9e42dca 100644
+--- a/apps/runner/src/authoring-coverage-feedback.ts
++++ b/apps/runner/src/authoring-coverage-feedback.ts
+@@ -34,6 +34,52 @@ export class CoverageReceiptReadExclusionError extends Error {
+     super('RECEIPT_READ_EXCLUSION_UNESTABLISHED: The exact current selected-Read exclusion must be isolated; it proves no other privacy, business or observation claim.');
+   }
+ }
++/** Assessment reasons are host-only; each has a complete safe feedback mapping.
++ * A mixed configuration claim remains invalid even when correction is possible. */
++export type ReceiptConfigurationFindingReason =
++  | 'source_requirement_unestablished' | 'selection_unavailable' | 'mode_mismatch'
++  | 'component_not_isolatable' | 'responsibility_mismatch' | 'reference_overbroad' | 'current_selection_mixed_component';
++const receiptConfigurationFindings = {
++  source_requirement_unestablished: { code: 'OBLIGATION_RECEIPT_REQUIREMENT_UNESTABLISHED', structural: false,
++    reason: 'The exact source-required receipt mode is not established for this component.',
++    repair: 'Keep the requirement unresolved. Current configuration cannot supply owner meaning. Use the existing source decision or evidence review; do not invent a receipt guarantee.' },
++  selection_unavailable: { code: 'OBLIGATION_CONFIGURATION_UNAVAILABLE', structural: false,
++    reason: 'The applicable current receipt selection or its source, Read, Action or destination binding is unavailable or does not agree.',
++    repair: 'Revalidate the exact selected receipt configuration and its current bindings. Do not substitute another source, outcome, destination or historical selection, infer an observation, or obtain another opinion to manufacture evidence.' },
++  mode_mismatch: { code: 'OBLIGATION_RECEIPT_MODE_MISMATCH', structural: false,
++    reason: 'The source-required receipt mode conflicts with the applicable selected mode.',
++    repair: 'Keep this genuine conflict unresolved. Use the existing separate reviewed receipt setup if authorized; do not downgrade the source requirement, relabel the conflict as formatting or change business policy to clear review.' },
++  reference_overbroad: { code: 'OBLIGATION_CONFIGURATION_REFERENCE_OVERBROAD', structural: false,
++    reason: 'The submitted reference does not identify the exact receipt-configuration comparison; a scalar child or broad contract cannot establish this receipt requirement.',
++    repair: 'Keep the receipt requirement unresolved. Review its exact source meaning against the applicable receipt_configuration root, with authentic current evidence. Broad context or a selected scalar cannot prove the receipt guarantee, effects, setup or observations; keep those claims separately supported.',
++  },
++  responsibility_mismatch: { code: 'OBLIGATION_CONFIGURATION_COMPONENT_MIXED', structural: false,
++    reason: 'An implemented receipt-configuration comparison must be a Runner evidence claim. The submitted responsibility does not establish that claim.',
++    repair: 'Keep this claim unresolved. Separate the actual Runner selection comparison from deployment, application duties and observed outcomes; each needs its own applicable evidence and responsibility. Do not relabel a substantive duty as implemented to bypass validation.',
++  },
++  component_not_isolatable: { code: 'OBLIGATION_CONFIGURATION_COMPONENT_MIXED', structural: false,
++    reason: 'The configuration claim has unsupported, duplicated or unrelated components. No supported representation correction is established.',
++    repair: 'Keep the complete review unresolved. Each configuration, effect, privacy, condition and observation claim needs its own applicable evidence. Do not erase a residual requirement or invent an observation to make this report valid.' },
++  current_selection_mixed_component: { code: 'OBLIGATION_CONFIGURATION_COMPONENT_MIXED', structural: true,
++    reason: 'The exact current receipt selection matches the independently established source mode, but its narrow comparison is mixed with supported capability or receipt-overview roots. The submitted report remains invalid.',
++    repair: 'Return the COMPLETE REPLACEMENT review. Isolate the selected receipt-mode comparison at /runner_evidence/runtime_contract/receipt_configuration; give compiled effects and receipt guarantees their own separately supported components. Preserve every source range, condition, privacy claim and duty. Configuration is not execution, a performed receipt or independent source readback. Retain applicable pending setup and observation duties and authentic historical facts without inventing evidence. Keep optional counter citations only when their exact support is authentic. Do not change policy, selectors, configuration or owner decisions.' },
++} satisfies Record<ReceiptConfigurationFindingReason, {code:string;structural:boolean;reason:string;repair:string}>;
++export class CoverageReceiptConfigurationError extends Error {
++  readonly code: string;
++  constructor(readonly reason: ReceiptConfigurationFindingReason) {
++    super(`${receiptConfigurationFindings[reason].code}: ${receiptConfigurationFindings[reason].reason}`);
++    this.code = receiptConfigurationFindings[reason].code;
++  }
++}
++/** Known early receipt-duty/currentness refusals must not become an unlabelled
++ * generic error. None supplies a formatting-only retry or positive evidence. */
++export class CoverageReceiptDutyError extends Error {
++  constructor(readonly reason: 'readback_unestablished' | 'setup_unestablished' | 'evidence_stale') {
++    super(reason === 'evidence_stale' ? 'OBLIGATION_EVIDENCE_STALE: The saved obligation no longer matches current source and phase evidence.'
++      : reason === 'readback_unestablished' ? 'OBLIGATION_READBACK_UNESTABLISHED: Independent source readback needs its exact unverified after-execution contract.'
++      : 'OBLIGATION_SETUP_UNESTABLISHED: Execution setup can remain pending only for already compiled, supported direct SQL effects and a separate later writer/consent/worker review. Do not defer missing effects, business decisions, eligibility, privacy or approval limits; setup remains unverified.');
++  }
++}
+ export class CoverageReceiptReadContextError extends Error {
+   constructor() { super('COVERAGE_RECEIPT_REFERENCE_OVERBROAD: The receipt guarantee overview is not evidence for the separate Read-exclusion claim.'); }
+ }
+@@ -65,6 +111,21 @@ export const MAX_COVERAGE_SUBMISSIONS = 3;
+ export function coverageFinding(error: unknown, component: string, identityBasis: unknown): CoverageFinding {
+   if (error instanceof CoverageComponentError) component = error.component;
+   const cause = error instanceof CoverageComponentError ? error.cause : error;
++  if (cause instanceof CoverageReceiptConfigurationError) return {
++    ...receiptConfigurationFindings[cause.reason], component, component_identity: canonicalJsonDigest(identityBasis),
++    identity: canonicalJsonDigest({ component: identityBasis, code: cause.code, reason: cause.reason }),
++  };
++  if (cause instanceof CoverageReceiptDutyError) {
++    const descriptions = {
++      readback_unestablished: {code: 'OBLIGATION_READBACK_UNESTABLISHED', reason: 'The submitted readback duty lacks its exact applicable unverified after-execution contract.'},
++      setup_unestablished: {code: 'OBLIGATION_SETUP_UNESTABLISHED', reason: 'Supported execution setup and its exact current unverified phase are not established.'},
++      evidence_stale: {code: 'OBLIGATION_EVIDENCE_STALE', reason: 'The saved obligation no longer matches its exact current source and phase evidence.'},
++    } satisfies Record<CoverageReceiptDutyError['reason'], {code:string;reason:string}>;
++    const finding = descriptions[cause.reason];
++    return {...finding, component, component_identity: canonicalJsonDigest(identityBasis),
++      identity: canonicalJsonDigest({component: identityBasis, code:finding.code}), structural:false,
++      repair: 'Keep the requirement unresolved and revalidate its actual source, component and current phase evidence. A selected mode or compiled capability is not deployment verification, a performed receipt or independent readback. Do not invent an observation, assign away a business requirement or request another favorable opinion.'};
++  }
+   if (cause instanceof CoverageReceiptReadExclusionError) return {
+     code: cause.code, component, component_identity: canonicalJsonDigest(identityBasis),
+     identity: canonicalJsonDigest({component: identityBasis, code: cause.code}),
+diff --git a/apps/runner/src/authoring-obligation-review.ts b/apps/runner/src/authoring-obligation-review.ts
+index 64f3d44..f8dca38 100644
+--- a/apps/runner/src/authoring-obligation-review.ts
++++ b/apps/runner/src/authoring-obligation-review.ts
+@@ -1,6 +1,6 @@
+ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+ import { isDeferredSourceCounterMaintenance, isDeferredSourceReadback, receiptSetupComponentOnly as receiptOnly, receiptConfigurationComponentOnly, type ReviewObligationAssessment, type PolicyPassage, type PolicyTextSnapshot } from "./authoring-policy-source.js";
+-import { CoverageReceiptObservationError, CoverageReceiptReadContextError, CoverageReceiptReadExclusionError } from "./authoring-coverage-feedback.js";
++import { CoverageReceiptObservationError, CoverageReceiptReadContextError, CoverageReceiptReadExclusionError, CoverageReceiptConfigurationError, type ReceiptConfigurationFindingReason } from "./authoring-coverage-feedback.js";
+ export { deferredReviewObligation } from "./authoring-policy-source.js";
+ 
+ export const RECEIPT_PATH = "/runner_evidence/runtime_contract/receipts";
+@@ -72,10 +72,69 @@ function currentReceiptSelection(source: PolicyTextSnapshot, draft: unknown, mod
+       && entry.action_digest === canonicalJsonDigest(action)));
+ }
+ 
++/** Prepared configuration is host-built under the governed binding reader.
++ * Recheck its local source/candidate links here; persistence/reuse still compare
++ * the whole prepared context. This establishes selection, never an observation. */
++function receiptSelectionProblem(source: PolicyTextSnapshot, draft: unknown, mode: string | undefined): ReceiptConfigurationFindingReason | undefined {
++  if (!mode) return 'source_requirement_unestablished';
++  const configured = at(draft, CONFIGURATION_PATH);
++  const modes = configured?.modes;
++  if (configured?.status === 'current' && Array.isArray(modes) && modes.some((entry: any) => ['runner_ledger', 'source_db'].includes(entry.authority) && entry.authority !== mode)) return 'mode_mismatch';
++  if (!currentReceiptSelection(source, draft, mode)) return 'selection_unavailable';
++  if (configured.status === 'current') {
++    if (!/^sha256:[a-f0-9]{64}$/u.test(configured.digest ?? '')
++      || !Array.isArray(modes) || !modes.length
++      || new Set(modes.map((entry: any) => entry.source)).size !== modes.length
++      || modes.some((entry: any) => entry.authority !== mode || entry.source !== at(draft, '/read/source'))) return 'selection_unavailable';
++    if (mode === 'source_db') {
++      const destinations = configured.source_receipt_destinations;
++      if (!Array.isArray(destinations) || destinations.length !== modes.length
++        || destinations.some((entry: any) => entry.source !== at(draft, '/read/source') || !/^sha256:[a-f0-9]{64}$/u.test(entry.relation_digest ?? ''))
++        || new Set(destinations.map((entry: any) => entry.source)).size !== destinations.length) return 'selection_unavailable';
++      const exclusion = at(draft, RECEIPT_READ_PATH);
++      // When supplied, this independent host binding must agree even though
++      // exclusion itself does not prove selection or any other receipt fact.
++      if (exclusion && (exclusion.configuration_digest !== configured.digest
++        || exclusion.destination_binding_digest !== canonicalJsonDigest(destinations)
++        || exclusion.selected_read_digest !== canonicalJsonDigest(at(draft, '/read')))) return 'selection_unavailable';
++    }
++  }
++  const snapshot = at(draft, '/runner_evidence/runtime_contract/authoring_lifecycle/current_policy_snapshot');
++  if (snapshot && snapshot.digest !== source.digest) return 'selection_unavailable';
++  return undefined;
++}
++function receiptCapabilityRoots(draft: unknown): string[] {
++  return (at(draft, '/actions') ?? []).flatMap((action: any, index: number) => {
++    const base = `/runner_evidence/actions/${action.outcome.replace(/~/gu, '~0').replace(/\//gu, '~1')}`;
++    const effect = at(draft, `${base}/effect`), execution = at(draft, `${base}/execution`);
++    return action.effect?.writeback === 'supervised' && effect
++      && effect.target_resource === action.effect.target_resource && effect.target_binding === action.effect.target_binding
++      && effect.operation === action.effect.operation && execution?.configured_mode === 'direct_sql'
++      && execution.activation === 'separate_operator_review'
++      ? [`${base}/effect`, `${base}/execution`, `/actions/${index}/effect`] : [];
++  });
++}
++function isolatableReceiptConfiguration(p: PolicyPassage, source: PolicyTextSnapshot, draft: unknown): boolean {
++  const mode = receiptRequirement(source, p);
++  if (!mode || receiptSelectionProblem(source, draft, mode) || !supportedReceiptSetup(draft, mode)
++    || !isolatedReceiptReadFields(p) || p.issue_kind !== 'coverage_link'
++    || p.draft_paths.length < 2 || new Set(p.draft_paths).size !== p.draft_paths.length) return false;
++  const roots = receiptCapabilityRoots(draft);
++  return p.draft_paths.includes(CONFIGURATION_PATH) && p.draft_paths.some(path => roots.includes(path))
++    && p.draft_paths.every(path => path === CONFIGURATION_PATH || path === RECEIPT_PATH || roots.includes(path));
++}
++
+ function supportedReceiptSetup(draft: unknown, mode: string): boolean {
+-  const setup = at(draft, SETUP_PATH);
++  const setup = at(draft, SETUP_PATH), actions = at(draft, '/actions')?.filter((action: any) => action.effect?.writeback === 'supervised');
+   return setup?.supported === true && setup.stage === "after_authority_review" && setup.verified === false
+-    && Array.isArray(setup.receipt_modes_supported) && setup.receipt_modes_supported.includes(mode);
++    && Array.isArray(setup.receipt_modes_supported) && setup.receipt_modes_supported.includes(mode)
++    && Array.isArray(actions) && actions.length > 0 && Array.isArray(setup.outcomes) && setup.outcomes.length === actions.length
++    && new Set(setup.outcomes.map((entry: any) => entry.outcome)).size === actions.length
++    && actions.every((action: any) => {
++      const execution = at(draft, `/runner_evidence/actions/${action.outcome.replace(/~/gu, '~0').replace(/\//gu, '~1')}/execution`);
++      return execution?.configured_mode === 'direct_sql' && setup.outcomes.some((entry: any) => entry.outcome === action.outcome
++        && entry.configured_mode === execution.configured_mode);
++    });
+ }
+ 
+ /** A correction, never a successful assessment. Exact typed capability roots
+@@ -89,16 +148,10 @@ function isolatableReceiptCapability(p: PolicyPassage, source: PolicyTextSnapsho
+     || p.application_obligations?.length || p.deployment_prerequisite || p.source_counter_obligation || p.operator_override) return false;
+   const configured = at(draft, CONFIGURATION_PATH);
+   if (configured?.status === "unavailable" || configured?.modes?.some((e: any) => e.authority !== mode)) return false;
+-  const roots = (at(draft, "/actions") ?? []).flatMap((action: any, index: number) => {
+-    const base = `/runner_evidence/actions/${action.outcome.replace(/~/gu,"~0").replace(/\//gu,"~1")}`;
+-    const pointer = `${base}/execution`;
+-    const execution = at(draft, pointer);
+-    const effect = at(draft, `${base}/effect`);
+-    return action.effect?.writeback === "supervised" && execution?.configured_mode === "direct_sql"
+-      && execution.activation === "separate_operator_review" ? [`/actions/${index}/effect`, pointer,
+-        ...(effect?.target_resource === action.effect.target_resource && effect?.operation === action.effect.operation ? [`${base}/effect`] : [])] : [];
+-  });
+-  return p.draft_paths.includes(RECEIPT_PATH) && p.draft_paths.some(path => roots.includes(path))
++  const roots = receiptCapabilityRoots(draft);
++  return !receiptSelectionProblem(source, draft, mode)
++    && new Set(p.draft_paths).size === p.draft_paths.length
++    && p.draft_paths.includes(RECEIPT_PATH) && p.draft_paths.some(path => roots.includes(path))
+     && p.draft_paths.every(path => path === RECEIPT_PATH || path === CONFIGURATION_PATH || roots.includes(path));
+ }
+ /** Only an explicit receipt-mode requirement can supply this narrow binding.
+@@ -120,16 +173,29 @@ export function receiptRequirement(source: PolicyTextSnapshot, p: Pick<PolicyPas
+  * The enclosing provider passage is retained; a pending component below keeps
+  * future setup/observation duties visible. No other fields use this proof. */
+ export function receiptSelectionComponent(p: PolicyPassage, source: PolicyTextSnapshot, draft: unknown): PolicyPassage | undefined {
+-  if (p.disposition !== "implemented" || p.responsibility !== "runner" || !p.draft_paths.includes(CONFIGURATION_PATH)) return undefined;
+-  const mode = receiptRequirement(source, p), configuration = at(draft, CONFIGURATION_PATH);
+-  if (!mode || p.draft_paths.some(path => path !== CONFIGURATION_PATH && path !== RECEIPT_PATH)
++  if (p.disposition !== "implemented") return undefined;
++  const configurationReference = p.draft_paths.some(path => path === CONFIGURATION_PATH || path.startsWith(`${CONFIGURATION_PATH}/`));
++  // A broad ancestor does not become a narrow mode comparison. Use the same
++  // existing explicit source requirement, not interpretation keywords, to
++  // identify this bounded receipt claim before model-selected paths can skip it.
++  const broadReceiptReference = receiptRequirement(source, p) && p.draft_paths.some(path =>
++    path === '/runner_evidence' || path === '/runner_evidence/runtime_contract');
++  if (!configurationReference && !broadReceiptReference) return undefined;
++  if (!p.draft_paths.includes(CONFIGURATION_PATH)) throw new CoverageReceiptConfigurationError('reference_overbroad');
++  if (p.responsibility !== "runner") throw new CoverageReceiptConfigurationError("responsibility_mismatch");
++  const mode = receiptRequirement(source, p), problem = receiptSelectionProblem(source, draft, mode);
++  // Determine evidence independently of the submitted disposition/shape. A
++  // conflict or unavailable binding is not a formatting problem, regardless of
++  // which pointer is first. The original grouping is still strictly rejected.
++  if (problem) throw new CoverageReceiptConfigurationError(problem);
++  if (p.draft_paths.some(path => path !== CONFIGURATION_PATH && path !== RECEIPT_PATH)
++    || new Set(p.draft_paths).size !== p.draft_paths.length
+     || p.field_checks?.length || p.counter_requirements?.length || p.application_obligations?.length || p.deployment_prerequisite
+     || p.source_counter_obligation || p.operator_override || p.evidence_checks?.some(c => !c.path.startsWith(`${CONFIGURATION_PATH}/`))) {
+-    throw new Error("OBLIGATION_CONFIGURATION_COMPONENT_MIXED: A selected receipt mode comparison must reference only its exact configuration and optional receipt context. Keep effects, conditions and observations separately checked.");
+-  }
+-  if (configuration?.status !== "current" || !configuration.modes?.length || configuration.modes.some((entry: { authority: string }) => entry.authority !== mode)) {
+-    throw new Error("OBLIGATION_RECEIPT_MODE_MISMATCH: The current receipt configuration does not establish the exact source-required mode. Keep this comparison unresolved and use the separate reviewed setup.");
++    throw new CoverageReceiptConfigurationError(isolatableReceiptConfiguration(p, source, draft)
++      ? 'current_selection_mixed_component' : 'component_not_isolatable');
+   }
++  if (at(draft, CONFIGURATION_PATH)?.status !== 'current') throw new CoverageReceiptConfigurationError('selection_unavailable');
+   return { start: p.start, end: p.end, disposition: "needs_decision", responsibility: "deployment", issue_kind: "missing_configuration",
+     topic: "Receipt/execution setup", draft_paths: [RECEIPT_PATH],
+     interpretation: "HOST-RESOLVED pending component: the configured receipt mode matches the explicit source requirement. Writer/provisioning verification, execution authorization and receipt production remain separate and unverified. The submitted configuration claim is retained separately.",
+@@ -180,7 +246,7 @@ export function assessReviewObligation(p: PolicyPassage, source: PolicyTextSnaps
+     const configured = at(draft, "/runner_evidence/runtime_contract/receipt_configuration");
+     if (configured?.status === "unavailable") return undefined;
+     if (configured?.modes?.some((entry: { authority: string }) => entry.authority !== mode)) {
+-      throw new Error("OBLIGATION_RECEIPT_MODE_MISMATCH: The source receipt requirement differs from current configuration. Use the existing separately reviewed receipt setup; no receipt guarantee was deferred or weakened.");
++      throw new CoverageReceiptConfigurationError("mode_mismatch");
+     }
+     // A configuration pointer is not a global receipt alias. It needs an exact
+     // current selection as well as independent required meaning. Submitted
+diff --git a/apps/runner/src/authoring-policy-coverage.ts b/apps/runner/src/authoring-policy-coverage.ts
+index 6c6c517..cbf7f62 100644
+--- a/apps/runner/src/authoring-policy-coverage.ts
++++ b/apps/runner/src/authoring-policy-coverage.ts
+@@ -1,3 +1,4 @@
++import { CoverageReceiptDutyError } from './authoring-coverage-feedback.js';
+ import { scopedDisclosureInventory } from "./authoring-scoped-disclosure.js";
+ import { receiptConfigurationComponentOnly } from "./authoring-policy-source.js";
+ import { CoverageSourceLinesError, missingReviewSourceLines, reviewSourceInventory } from "./authoring-source-coverage.js";
+@@ -324,7 +325,7 @@ function parseCoveragePassage(raw: unknown, index: number, source: PolicyTextSna
+           || draftValue(draft, `${pointer}/verified`) !== false
+           || draftValue(draft, `${pointer}/receipt_proves_observation`) !== false
+           || draftValue(draft, `${pointer}/observation_scope`) !== null) {
+-          throw new Error("Independent source readback must remain an unverified, separate after-execution observation linked only to its exact contract. It cannot satisfy a required automated runtime postcondition, source-atomic receipt, privacy or business condition. Keep an unsupported runtime guarantee in a separate unsupported Runner passage.");
++          throw new CoverageReceiptDutyError("readback_unestablished");
+         }
+       }
+     }
+@@ -349,9 +350,8 @@ function parseCoveragePassage(raw: unknown, index: number, source: PolicyTextSna
+         : draftValue(draft, `${pointer}/reviewed_customer_scope`) === true;
+       if (!isDeferredPolicyDeployment({ ...entry, draft_paths: draftPaths }) || !supported
+         || draftValue(draft, `${pointer}/verified`) !== false) {
+-        throw new Error(executionSetup
+-          ? "Execution setup can remain pending only for already compiled, supported direct SQL effects and a separate later writer/consent/worker review. Do not defer missing effects, business decisions, eligibility, privacy or approval limits; setup remains unverified."
+-          : clientConnection
++        if (executionSetup) throw new CoverageReceiptDutyError("setup_unestablished");
++        throw new Error(clientConnection
+           ? "Runner client setup can remain pending only for supported installation after authority review, with configuration unchecked and connection unverified. Do not move application behavior, authentication, privacy, eligibility or business choices into this prerequisite."
+           : "Identity setup can remain pending until client connection only when exact Runner evidence proves the customer scope is already configured. Do not move privacy, eligibility, or undecided scope into deployment. Keep authentication unverified.");
+       }
+@@ -516,7 +516,7 @@ function parseCoveragePassage(raw: unknown, index: number, source: PolicyTextSna
+     const assessed = { ...normalized, ...(counterMaintenance ? { source_counter_resolution: counterMaintenance } : {}) };
+     const obligationAssessment = assessReviewObligation(assessed, source, draft);
+     if (stored.obligation_assessment && canonicalJsonDigest(stored.obligation_assessment) !== canonicalJsonDigest(obligationAssessment ?? null)) {
+-      throw new Error("OBLIGATION_EVIDENCE_STALE: The saved obligation no longer matches its source requirement and current phase evidence. Recheck its exact requirement; no setup or observation was completed.");
++      throw new CoverageReceiptDutyError("evidence_stale");
+     }
+     return { ...(obligationAssessment ? { obligation_assessment: obligationAssessment } : {}), start: entry.start, end: entry.end, disposition: resolution ? "implemented" : entry.disposition,
+       interpretation: resolution ? "The retained capability choice conditionally implements this source counting requirement. See the host comparison and its exact domain/revalidation condition; the original review claim remains recorded." : entry.interpretation,
+@@ -895,7 +895,7 @@ export async function reviewPolicyCoverage(input: {
+           "For a genuine business/schema question, next_step must ask ONE short question in ordinary language, at most two sentences. Do not repeat the action summary, tell the operator to revise a permission, or include technical routing instructions. If the operator confirms an existing permission, record the clarified interpretation and recheck actual evidence; do not demand a nonempty access diff.",
+           "runtime_contract.receipt_configuration.reviewed_intent, when current and bound to every exact selected source-writing Action and attached source, is only a separately confirmed disabled setup requirement. It is not an execution configuration, provisioned object, writer verification or receipt. Keep an agreed receipt-only setup passage needs_decision/deployment/missing_configuration with its exact evidence path and setup still pending. Do not mark configuration or receipt observations implemented from that intent. An absent, stale, ambiguous or mismatched intent cannot resolve the requirement; preserve its actual prerequisite.",
+           "Use runtime_contract.review_evidence_phases to distinguish the edited candidate, current configuration, candidate-specific intent, applicable execution permission and unavailable historical observations. Current configuration and stale intent can coexist. Null saved_execution_review does not say an older revision never executed. Do not require a new receipt before publication or infer that old infrastructure is absent. Keep each actual pending renewal/observation separate from an implemented compiled capability, with no claim of completed work.",
+-          "The runtime_contract.receipts overview describes receipt guarantees, not Read exclusion or completed observations. When supplied, runtime_contract.receipt_read_exclusion is host-derived evidence about exact configured receipt destinations and the complete selected Read graph. Only current excluded=true proves this narrow exclusion. Keep effect, selected receipt configuration and receipt Read exclusion as separate claims, even when one source sentence states all three; overlapping source ranges are allowed and every claim must remain. Cite only the receipt_read_exclusion root in its isolated implemented exclusion claim; no receipt/configuration overview, unrelated field/threshold checks, broader privacy or observation claim may inherit it. A missing record or false excluded value is not proof: retain the requirement unresolved. Source receipt storage is not automatically a public Read resource. No receipt content is supplied to authoring.",
++          "The runtime_contract.receipts overview describes receipt guarantees, not Read exclusion or completed observations. When supplied, runtime_contract.receipt_read_exclusion is host-derived evidence about exact configured receipt destinations and the complete selected Read graph. Only current excluded=true proves this narrow exclusion. For a current implemented mode comparison use only the exact receipt_configuration root and optional receipts overview; its evidence does not support mixed effect or observation claims. Keep effect, selected receipt configuration and receipt Read exclusion as separate claims, even when one source sentence states all three; overlapping source ranges are allowed and every claim must remain. Cite only the receipt_read_exclusion root in its isolated implemented exclusion claim; no receipt/configuration overview, unrelated field/threshold checks, broader privacy or observation claim may inherit it. A missing record or false excluded value is not proof: retain the requirement unresolved. Source receipt storage is not automatically a public Read resource. No receipt content is supplied to authoring.",
+           "Use runtime_contract.saved_execution_review only for its exact Action revision and enabled_outcomes. A non-null inspected record can establish that separately reviewed execution configuration was saved; an empty enabled set cannot. Do not ask to implement an Action expression for an already saved operator policy. Its false live-writer, worker, receipt-mode and independent-observation verification fields remain limitations, not proof those operations failed or never happened. Null means no applicable record is available here. Preserve separate source_db requirements; this record alone does not verify receipt mode or source receipt objects.",
+           "This is a disabled-draft coverage review, not a live deployment check. When an execution requirement is fully represented by the compiled direct_sql effect and supported worker contract, mark that drafted behavior implemented and explicitly retain writer review, execution consent and worker startup as later prerequisites in its interpretation/next_step. Do not require those later stages to have run before allowing the operator to reach them. Missing effect support, missing business rules, ambiguous scope or unassigned application obligations remain unresolved; prepared must never mean running or completed.",
+           "For dedicated writer provisioning, keeping the reader separate, execution permission or worker startup, use a separate needs_decision/deployment/missing_configuration passage with deployment_prerequisite=runner_execution_setup ONLY when its current evidence says supported=true. Link only /runner_evidence/runtime_contract/deployment_prerequisites/runner_execution_setup, not /read or individual action/execution links. Those links describe business enforcement, not deployment status. The operator reaches exact writer requirements and private credential setup AFTER authority review; do not send them back to business authoring merely because no writer exists yet. Keep actual grants, credential checks, execution consent, worker startup and receipts outstanding. An unsupported effect, missing action or undecided business condition still blocks review; this is not permission to waive it.",

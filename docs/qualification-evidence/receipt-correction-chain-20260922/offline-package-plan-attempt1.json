@@ -86,6 +86,62 @@
       "completed_at": "2026-09-22T06:19:57.174993+00:00",
       "source_before": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514",
       "source_after": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514"
+    },
+    {
+      "name": "local-package",
+      "args": [
+        "bash",
+        "scripts/verify-local-runner.sh"
+      ],
+      "phase": "package",
+      "source_immutable_during_full_suite": false,
+      "started_at": "2026-09-22T06:44:58.360510+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-22T06:45:43.388013+00:00",
+      "source_before": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514",
+      "source_after": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514"
+    },
+    {
+      "name": "bundle-freshness",
+      "args": [
+        "node",
+        "scripts/verify-local-runner-bundle-freshness.mjs"
+      ],
+      "phase": "package",
+      "source_immutable_during_full_suite": false,
+      "started_at": "2026-09-22T06:45:43.497919+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-22T06:45:49.728467+00:00",
+      "source_before": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514",
+      "source_after": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514"
+    },
+    {
+      "name": "public-commands",
+      "args": [
+        "bash",
+        "scripts/verify-public-commands.sh"
+      ],
+      "phase": "package",
+      "source_immutable_during_full_suite": false,
+      "started_at": "2026-09-22T06:45:49.823603+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-22T06:46:40.272363+00:00",
+      "source_before": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514",
+      "source_after": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514"
+    },
+    {
+      "name": "packed-offline",
+      "args": [
+        "bash",
+        "scripts/verify-packed-runner.sh"
+      ],
+      "phase": "package",
+      "source_immutable_during_full_suite": false,
+      "started_at": "2026-09-22T06:46:40.370063+00:00",
+      "exit_code": 0,
+      "completed_at": "2026-09-22T06:48:53.134421+00:00",
+      "source_before": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514",
+      "source_after": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514"
     }
   ]
 }

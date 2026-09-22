@@ -1,0 +1,631 @@
+{
+  "at": "2026-09-22T06:49:34.392294+00:00",
+  "status": "PASS_FINAL_STABLE_GATES",
+  "records": {
+    "backend-01": {
+      "name": "backend-01",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/authoring-review-subject.test.ts",
+        "apps/runner/src/authoring-counting-domain.test.ts",
+        "apps/runner/src/authoring-counting-freshness.test.ts",
+        "apps/runner/src/semantic-receipt-setup.test.ts",
+        "apps/runner/src/control-policy-authority-codec.test.ts",
+        "packages/proposal-store/src/control-policy-reviews.test.ts",
+        "-t",
+        "postgres|exact policy review|published authoring review|saves source-required pending meaning|saves and reloads receipt readiness",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "started_at": "2026-09-22T06:11:17.345821+00:00",
+      "source_commit": "0e67393bf4289fcf4171946badb4389f5fcd9ded",
+      "source_digest": "7c2edd8487326de06ebcb76ef6e1f34d2a506a2fada31dc3a6310eecde0c4a75",
+      "credentials": "owned PostgreSQL gate URL only",
+      "umask": "0077",
+      "database_destination": {
+        "host": "127.0.0.1",
+        "port": 32791,
+        "database": "receipt_chain",
+        "container_id": "064d15021b33385aac5155603ce6f6131e42a5ee0354b95493007ee2a9969d2f"
+      },
+      "pid": 880525,
+      "exit": 0,
+      "finished_at": "2026-09-22T06:14:13.559217+00:00",
+      "source_unchanged": true
+    },
+    "backend-02": {
+      "name": "backend-02",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/authoring-review-subject.test.ts",
+        "apps/runner/src/authoring-counting-domain.test.ts",
+        "apps/runner/src/authoring-counting-freshness.test.ts",
+        "apps/runner/src/semantic-receipt-setup.test.ts",
+        "apps/runner/src/control-policy-authority-codec.test.ts",
+        "packages/proposal-store/src/control-policy-reviews.test.ts",
+        "-t",
+        "postgres|exact policy review|published authoring review|saves source-required pending meaning|saves and reloads receipt readiness",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "started_at": "2026-09-22T06:19:05.809261+00:00",
+      "source_commit": "5cd42df9478f62758de9206a8649652f08f546a4",
+      "source_digest": "9b6752d2d6a5676e7c8a338261456820f07585722c145f05665bc83297035089",
+      "credentials": "owned PostgreSQL gate URL only",
+      "umask": "0077",
+      "database_destination": {
+        "host": "127.0.0.1",
+        "port": 32791,
+        "database": "receipt_chain",
+        "container_id": "064d15021b33385aac5155603ce6f6131e42a5ee0354b95493007ee2a9969d2f"
+      },
+      "pid": 893049,
+      "exit": 0,
+      "finished_at": "2026-09-22T06:22:00.982001+00:00",
+      "source_unchanged": true
+    },
+    "baseline-replay-01": {
+      "name": "baseline-replay-01",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "tsx",
+        "docs/qualification-evidence/receipt-correction-chain-20260922/replay-before.mts"
+      ],
+      "started_at": "2026-09-22T06:01:15.595106+00:00",
+      "source_commit": "2f6c9524966d6bd51d8267a9e48cbc9e1e1021b4",
+      "source_digest": "8e71e14f15ac15d92fdc2eac32db8452d1866173029ec6ab164da7bd4f0b377f",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 866107,
+      "exit": 0,
+      "finished_at": "2026-09-22T06:01:16.798862+00:00",
+      "source_unchanged": true
+    },
+    "focused-01": {
+      "name": "focused-01",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/receipt-correction-chain.test.ts",
+        "apps/runner/src/evidence-aware-correction.test.ts",
+        "apps/runner/src/receipt-review-association.test.ts",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "started_at": "2026-09-22T06:02:52.833204+00:00",
+      "source_commit": "2f6c9524966d6bd51d8267a9e48cbc9e1e1021b4",
+      "source_digest": "e5a33bf9734a884f8c60a7eee88476b165f11550c9a170112de91429e3b7613c",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 868440,
+      "exit": 1,
+      "finished_at": "2026-09-22T06:03:01.028082+00:00",
+      "source_unchanged": true
+    },
+    "focused-02": {
+      "name": "focused-02",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/receipt-correction-chain.test.ts",
+        "apps/runner/src/evidence-aware-correction.test.ts",
+        "apps/runner/src/receipt-review-association.test.ts",
+        "apps/runner/src/source-phase-review.test.ts",
+        "apps/runner/src/authoring-coverage-correction.test.ts",
+        "apps/runner/src/obligation-readiness.test.ts",
+        "apps/runner/src/authoring-policy-coverage.test.ts",
+        "apps/runner/src/authoring-scoped-disclosure.test.ts",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "started_at": "2026-09-22T06:04:06.307871+00:00",
+      "source_commit": "2f6c9524966d6bd51d8267a9e48cbc9e1e1021b4",
+      "source_digest": "702fc4d24cd57b34b2c8503bf9d48def2612353ff28b68c6a4c31ea75e5d380b",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 869843,
+      "exit": 0,
+      "finished_at": "2026-09-22T06:04:19.500921+00:00",
+      "source_unchanged": true
+    },
+    "focused-03": {
+      "name": "focused-03",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/receipt-correction-chain.test.ts",
+        "apps/runner/src/action-rule-source-evidence.test.ts",
+        "apps/runner/src/authoring-policy-coverage.test.ts",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "started_at": "2026-09-22T06:06:21.824012+00:00",
+      "source_commit": "2f6c9524966d6bd51d8267a9e48cbc9e1e1021b4",
+      "source_digest": "457ebaae98ae5a581a773d9c2ee2c00672b7f2317e507f1c1bfbde205beb83af",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 873985,
+      "exit": 0,
+      "finished_at": "2026-09-22T06:06:29.907411+00:00",
+      "source_unchanged": true
+    },
+    "focused-04": {
+      "name": "focused-04",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/receipt-correction-chain.test.ts",
+        "apps/runner/src/evidence-aware-correction.test.ts",
+        "apps/runner/src/receipt-review-association.test.ts",
+        "apps/runner/src/source-phase-review.test.ts",
+        "apps/runner/src/authoring-coverage-correction.test.ts",
+        "apps/runner/src/obligation-readiness.test.ts",
+        "apps/runner/src/authoring-policy-coverage.test.ts",
+        "apps/runner/src/authoring-scoped-disclosure.test.ts",
+        "apps/runner/src/action-rule-source-evidence.test.ts",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "started_at": "2026-09-22T06:08:37.401772+00:00",
+      "source_commit": "2f6c9524966d6bd51d8267a9e48cbc9e1e1021b4",
+      "source_digest": "7c2edd8487326de06ebcb76ef6e1f34d2a506a2fada31dc3a6310eecde0c4a75",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 876366,
+      "exit": 0,
+      "finished_at": "2026-09-22T06:08:49.294889+00:00",
+      "source_unchanged": true
+    },
+    "focused-05": {
+      "name": "focused-05",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/receipt-correction-chain.test.ts",
+        "apps/runner/src/evidence-aware-correction.test.ts",
+        "apps/runner/src/receipt-review-association.test.ts",
+        "apps/runner/src/source-phase-review.test.ts",
+        "apps/runner/src/authoring-coverage-correction.test.ts",
+        "apps/runner/src/obligation-readiness.test.ts",
+        "apps/runner/src/authoring-policy-coverage.test.ts",
+        "apps/runner/src/authoring-scoped-disclosure.test.ts",
+        "apps/runner/src/action-rule-source-evidence.test.ts",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "started_at": "2026-09-22T06:14:53.129604+00:00",
+      "source_commit": "0e67393bf4289fcf4171946badb4389f5fcd9ded",
+      "source_digest": "7685f3bd0938ee6f6612f547474facc851711a9f2c3d30b65db814d6741ceaef",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 887510,
+      "exit": 0,
+      "finished_at": "2026-09-22T06:15:04.771777+00:00",
+      "source_unchanged": true
+    },
+    "focused-06": {
+      "name": "focused-06",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/receipt-correction-chain.test.ts",
+        "apps/runner/src/evidence-aware-correction.test.ts",
+        "apps/runner/src/receipt-review-association.test.ts",
+        "apps/runner/src/source-phase-review.test.ts",
+        "apps/runner/src/authoring-coverage-correction.test.ts",
+        "apps/runner/src/obligation-readiness.test.ts",
+        "apps/runner/src/authoring-policy-coverage.test.ts",
+        "apps/runner/src/authoring-scoped-disclosure.test.ts",
+        "apps/runner/src/action-rule-source-evidence.test.ts",
+        "--maxWorkers=2",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "started_at": "2026-09-22T06:16:59.736293+00:00",
+      "source_commit": "0e67393bf4289fcf4171946badb4389f5fcd9ded",
+      "source_digest": "9b6752d2d6a5676e7c8a338261456820f07585722c145f05665bc83297035089",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 889882,
+      "exit": 0,
+      "finished_at": "2026-09-22T06:17:11.825629+00:00",
+      "source_unchanged": true
+    },
+    "root-probe-after-01": {
+      "name": "root-probe-after-01",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "tsx",
+        "docs/qualification-evidence/receipt-correction-chain-20260922/probe-configuration-roots.mts",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-correction-chain-2f6c952-20260922/ROOT-ROUTING-AFTER-001.json"
+      ],
+      "started_at": "2026-09-22T06:18:27.153563+00:00",
+      "source_commit": "0e67393bf4289fcf4171946badb4389f5fcd9ded",
+      "source_digest": "9b6752d2d6a5676e7c8a338261456820f07585722c145f05665bc83297035089",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 892220,
+      "exit": 0,
+      "finished_at": "2026-09-22T06:18:28.041505+00:00",
+      "source_unchanged": true
+    },
+    "root-probe-before-01": {
+      "name": "root-probe-before-01",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "tsx",
+        "docs/qualification-evidence/receipt-correction-chain-20260922/probe-configuration-roots.mts",
+        "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-correction-chain-2f6c952-20260922/ROOT-ROUTING-BEFORE-001.json"
+      ],
+      "started_at": "2026-09-22T06:15:59.242008+00:00",
+      "source_commit": "0e67393bf4289fcf4171946badb4389f5fcd9ded",
+      "source_digest": "7685f3bd0938ee6f6612f547474facc851711a9f2c3d30b65db814d6741ceaef",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 888774,
+      "exit": 0,
+      "finished_at": "2026-09-22T06:16:00.156264+00:00",
+      "source_unchanged": true
+    },
+    "stable-full-001": {
+      "name": "stable-full-001",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "--maxWorkers=4",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "started_at": "2026-09-22T06:22:39.610592+00:00",
+      "source_commit": "e7d94bc70f410e295cf0f5684bfb940e6ff3afcb",
+      "source_digest": "9b6752d2d6a5676e7c8a338261456820f07585722c145f05665bc83297035089",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 901005,
+      "exit": 0,
+      "finished_at": "2026-09-22T06:44:14.636295+00:00",
+      "source_unchanged": true
+    },
+    "types-01": {
+      "name": "types-01",
+      "command": [
+        "corepack",
+        "pnpm",
+        "typecheck"
+      ],
+      "started_at": "2026-09-22T06:04:30.775264+00:00",
+      "source_commit": "2f6c9524966d6bd51d8267a9e48cbc9e1e1021b4",
+      "source_digest": "702fc4d24cd57b34b2c8503bf9d48def2612353ff28b68c6a4c31ea75e5d380b",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 870669,
+      "exit": 0,
+      "finished_at": "2026-09-22T06:04:44.728194+00:00",
+      "source_unchanged": true
+    },
+    "types-02": {
+      "name": "types-02",
+      "command": [
+        "corepack",
+        "pnpm",
+        "typecheck"
+      ],
+      "started_at": "2026-09-22T06:11:17.319447+00:00",
+      "source_commit": "0e67393bf4289fcf4171946badb4389f5fcd9ded",
+      "source_digest": "7c2edd8487326de06ebcb76ef6e1f34d2a506a2fada31dc3a6310eecde0c4a75",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 880504,
+      "exit": 0,
+      "finished_at": "2026-09-22T06:11:22.848928+00:00",
+      "source_unchanged": true
+    },
+    "types-03": {
+      "name": "types-03",
+      "command": [
+        "corepack",
+        "pnpm",
+        "typecheck"
+      ],
+      "started_at": "2026-09-22T06:19:05.797401+00:00",
+      "source_commit": "5cd42df9478f62758de9206a8649652f08f546a4",
+      "source_digest": "9b6752d2d6a5676e7c8a338261456820f07585722c145f05665bc83297035089",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 893029,
+      "exit": 0,
+      "finished_at": "2026-09-22T06:19:19.140515+00:00",
+      "source_unchanged": true
+    },
+    "wire-export-01": {
+      "name": "wire-export-01",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "tsx",
+        "docs/qualification-evidence/receipt-correction-chain-20260922/record-local-wire.mts"
+      ],
+      "started_at": "2026-09-22T06:05:06.189755+00:00",
+      "source_commit": "2f6c9524966d6bd51d8267a9e48cbc9e1e1021b4",
+      "source_digest": "702fc4d24cd57b34b2c8503bf9d48def2612353ff28b68c6a4c31ea75e5d380b",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 871404,
+      "exit": 1,
+      "finished_at": "2026-09-22T06:05:07.108421+00:00",
+      "source_unchanged": true
+    },
+    "wire-export-02": {
+      "name": "wire-export-02",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "tsx",
+        "docs/qualification-evidence/receipt-correction-chain-20260922/record-local-wire.mts",
+        "--final"
+      ],
+      "started_at": "2026-09-22T06:05:28.554327+00:00",
+      "source_commit": "2f6c9524966d6bd51d8267a9e48cbc9e1e1021b4",
+      "source_digest": "702fc4d24cd57b34b2c8503bf9d48def2612353ff28b68c6a4c31ea75e5d380b",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 871892,
+      "exit": 0,
+      "finished_at": "2026-09-22T06:05:29.646239+00:00",
+      "source_unchanged": true
+    },
+    "wire-export-03": {
+      "name": "wire-export-03",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "tsx",
+        "docs/qualification-evidence/receipt-correction-chain-20260922/record-local-wire.mts",
+        "binding-fixed"
+      ],
+      "started_at": "2026-09-22T06:10:35.907499+00:00",
+      "source_commit": "2f6c9524966d6bd51d8267a9e48cbc9e1e1021b4",
+      "source_digest": "7c2edd8487326de06ebcb76ef6e1f34d2a506a2fada31dc3a6310eecde0c4a75",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 879530,
+      "exit": 0,
+      "finished_at": "2026-09-22T06:10:36.921835+00:00",
+      "source_unchanged": true
+    },
+    "wire-export-04": {
+      "name": "wire-export-04",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "tsx",
+        "docs/qualification-evidence/receipt-correction-chain-20260922/record-local-wire.mts",
+        "final-source"
+      ],
+      "started_at": "2026-09-22T06:39:42.344189+00:00",
+      "source_commit": "e7d94bc70f410e295cf0f5684bfb940e6ff3afcb",
+      "source_digest": "9b6752d2d6a5676e7c8a338261456820f07585722c145f05665bc83297035089",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 918539,
+      "exit": 0,
+      "finished_at": "2026-09-22T06:39:44.361688+00:00",
+      "source_unchanged": true
+    }
+  },
+  "offline": {
+    "started_at": "2026-09-22T06:19:27.930996+00:00",
+    "network": "unshared network namespace; npm offline; writable disposable cache copy",
+    "home": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/receipt-correction-chain-2f6c952-20260922/offline-home",
+    "commands": [
+      {
+        "name": "trusted-core",
+        "args": [
+          "node",
+          "scripts/check-trusted-core-dependencies.mjs"
+        ],
+        "phase": "source",
+        "source_immutable_during_full_suite": true,
+        "started_at": "2026-09-22T06:19:27.978970+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-22T06:19:29.647446+00:00",
+        "source_before": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514",
+        "source_after": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514"
+      },
+      {
+        "name": "licenses",
+        "args": [
+          "node",
+          "scripts/check-license-content.mjs"
+        ],
+        "phase": "source",
+        "source_immutable_during_full_suite": true,
+        "started_at": "2026-09-22T06:19:29.731208+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-22T06:19:30.747389+00:00",
+        "source_before": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514",
+        "source_after": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514"
+      },
+      {
+        "name": "human-commands",
+        "args": [
+          "node",
+          "scripts/verify-human-command-surface.mjs"
+        ],
+        "phase": "source",
+        "source_immutable_during_full_suite": true,
+        "started_at": "2026-09-22T06:19:30.838052+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-22T06:19:31.603921+00:00",
+        "source_before": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514",
+        "source_after": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514"
+      },
+      {
+        "name": "dsl-sources",
+        "args": [
+          "bash",
+          "scripts/verify-dsl-source-paths.sh"
+        ],
+        "phase": "source",
+        "source_immutable_during_full_suite": true,
+        "started_at": "2026-09-22T06:19:31.699244+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-22T06:19:33.074685+00:00",
+        "source_before": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514",
+        "source_after": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514"
+      },
+      {
+        "name": "cursor-plugin",
+        "args": [
+          "node",
+          "scripts/verify-cursor-plugin.mjs"
+        ],
+        "phase": "source",
+        "source_immutable_during_full_suite": true,
+        "started_at": "2026-09-22T06:19:33.165516+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-22T06:19:33.279937+00:00",
+        "source_before": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514",
+        "source_after": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514"
+      },
+      {
+        "name": "mcp-client-configs",
+        "args": [
+          "node",
+          "scripts/verify-mcp-client-configs.mjs"
+        ],
+        "phase": "source",
+        "source_immutable_during_full_suite": true,
+        "started_at": "2026-09-22T06:19:33.409049+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-22T06:19:57.174993+00:00",
+        "source_before": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514",
+        "source_after": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514"
+      },
+      {
+        "name": "local-package",
+        "args": [
+          "bash",
+          "scripts/verify-local-runner.sh"
+        ],
+        "phase": "package",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-22T06:44:58.360510+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-22T06:45:43.388013+00:00",
+        "source_before": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514",
+        "source_after": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514"
+      },
+      {
+        "name": "bundle-freshness",
+        "args": [
+          "node",
+          "scripts/verify-local-runner-bundle-freshness.mjs"
+        ],
+        "phase": "package",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-22T06:45:43.497919+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-22T06:45:49.728467+00:00",
+        "source_before": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514",
+        "source_after": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514"
+      },
+      {
+        "name": "public-commands",
+        "args": [
+          "bash",
+          "scripts/verify-public-commands.sh"
+        ],
+        "phase": "package",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-22T06:45:49.823603+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-22T06:46:40.272363+00:00",
+        "source_before": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514",
+        "source_after": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514"
+      },
+      {
+        "name": "packed-offline",
+        "args": [
+          "bash",
+          "scripts/verify-packed-runner.sh"
+        ],
+        "phase": "package",
+        "source_immutable_during_full_suite": false,
+        "started_at": "2026-09-22T06:46:40.370063+00:00",
+        "exit_code": 0,
+        "completed_at": "2026-09-22T06:48:53.134421+00:00",
+        "source_before": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514",
+        "source_after": "9c4898bb6604970e5dd17dc4ba395ab0e24c51f2b4f5d350c15a37b799ef4514"
+      }
+    ]
+  },
+  "failures_retained": [
+    "focused01 two demonstrated test fixture errors",
+    "wire-export01 missing constants before transport"
+  ],
+  "source_changes_between_gates": "independent material outcome/role/root counterexamples repaired; no source edits during a running gate; previous successful gates remain historical",
+  "full_suite_summary": {
+    "files_passed": 332,
+    "files_skipped": 21,
+    "tests_passed": 7002,
+    "tests_skipped": 490,
+    "exit": 0,
+    "source_unchanged": true
+  }
+}
