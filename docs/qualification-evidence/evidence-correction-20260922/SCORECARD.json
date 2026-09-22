@@ -1,0 +1,61 @@
+{
+  "candidate_tree": "62289800dc4f16e86ba57580a69fbc3d91c960285a21498507cb16a4d7266196",
+  "rows": [
+    {
+      "claim": "Exact original reply remains strictly invalid",
+      "verdict": "PASS",
+      "evidence": "baseline replay and current exact full reply"
+    },
+    {
+      "claim": "Typed current-proof isolation eligibility and actual correction wire",
+      "verdict": "PASS",
+      "evidence": "local Responses/OpenRouter full-chain and independent probes; no paid correction observed"
+    },
+    {
+      "claim": "Complete derived replacement, persistence, unchanged restart/reuse",
+      "verdict": "PASS_DETERMINISTIC",
+      "evidence": "real prepared handler/store with labelled synthetic reply; independent local HTTP/SSE"
+    },
+    {
+      "claim": "Independent narrow correction boundary",
+      "verdict": "PASS_FOR_FREEZE",
+      "evidence": "independent probes002+loopback004; final product bytes and artifact separately matched"
+    },
+    {
+      "claim": "Stable full suite/types/selected backends/tenoffline",
+      "verdict": "PASS",
+      "evidence": "main personally executed; tester inspected"
+    },
+    {
+      "claim": "Installed current active15 BUSINESS completion",
+      "verdict": "FAIL_INCOMPLETE",
+      "evidence": "one live complete response refused; no partial save"
+    },
+    {
+      "claim": "Installed restarted explicit Review",
+      "verdict": "NOT_RUN",
+      "reason": "no persisted BUSINESS completion; stopped on noneligible residual"
+    },
+    {
+      "claim": "Live structural correction send",
+      "verdict": "NOT_EXERCISED",
+      "reason": "different configuration-mixed residual remained nonstructural"
+    },
+    {
+      "claim": "Business/source/authority/history preservation",
+      "verdict": "PASS",
+      "evidence": "all control/source equal,71config members; solechange appended failed episode11to12"
+    },
+    {
+      "claim": "Final restore/cleanup",
+      "verdict": "PASS",
+      "evidence": "independent tested cold restore;5manifest members verified by main;bothownedtestercontainersremoved"
+    }
+  ],
+  "actual_A": "UNESTABLISHED / BUSINESS PENDING; not operated",
+  "original_Stage_B": "ATTEMPTED / NOT PASSED",
+  "known_case_only": true,
+  "paid_calls": 1,
+  "cost_usd": 0.1786815,
+  "broader_qualification": "not established; B add/remove and separately funded native-model lane do not start"
+}

@@ -1,0 +1,15 @@
+{
+  "status": "CLOSED",
+  "actual_new_cost_usd": 0.1786815,
+  "authoring_transports": 1,
+  "correction_transports": 0,
+  "restart_transports": 0,
+  "main_provider_calls": 0,
+  "native_transports": 0,
+  "unused_reservation_released_usd": 3.0573185,
+  "remaining_conservative_authorization_usd": 3.20448919,
+  "old_unknown_liabilities_preserved": true,
+  "new_open_reservations": 0,
+  "ledger_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/shared/provider-budget-ledger.json",
+  "ledger_sha256": "c01b1d78b1a8b2c80dc9a0d17c5f0a5e8e34aea016883e7399d0401d27b88919"
+}

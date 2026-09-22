@@ -1,0 +1,826 @@
+{
+  "schema": "evidence-aware-correction-main-index/v1",
+  "created_at": "2026-09-22T05:38:04.887323+00:00",
+  "repository_root": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922",
+  "raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922",
+  "candidate_tree": "62289800dc4f16e86ba57580a69fbc3d91c960285a21498507cb16a4d7266196",
+  "entry_count": 135,
+  "entries": [
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/ARTIFACT.json",
+      "bytes": 2131,
+      "sha256": "6f8cb29c461ff08f696bb01ec13cf1c84229e98d50c63a964e8052ccd9aa9f17"
+    },
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/COMMANDS.md",
+      "bytes": 6668,
+      "sha256": "3c08494efeceb560a926b97bcfb57d5510a1448e3bcd4b09b6a048cc5400ee62"
+    },
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/FINAL-REPORT.md",
+      "bytes": 7746,
+      "sha256": "d3a868b1e173c4e1dbd16f6ec9dcfc88d962ae84f4ea558091e997ce76e46ec9"
+    },
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/FINANCIAL-CLOSURE.json",
+      "bytes": 634,
+      "sha256": "12391bf5d75438ee9a1b1ecd77f3eb10b9706bb480983fe2148e7ba5cae9e818"
+    },
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/GATES.json",
+      "bytes": 4847,
+      "sha256": "53776cb18c09263830a56c0c6f1d13ebd0a4b3b7a3a62cc1c39b56b59c78aa37"
+    },
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/IMPLEMENTATION-NOTE.md",
+      "bytes": 3651,
+      "sha256": "73c8180ebc0bc4368aa2ffe59cc5b8751a1ac36976c683aa09f058072d04a23a"
+    },
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/INDEPENDENT-PREFREEZE.json",
+      "bytes": 2824,
+      "sha256": "de91fe55979f65a6d3efcf470e650fae3f0cf994ab5d16d8f0ea6d2fa50e0265"
+    },
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/INDEPENDENT-REVIEW.json",
+      "bytes": 5227,
+      "sha256": "78d20d6ab5364ad39f1e1130327ce07b93b34860ba5db4af62861d4d18c8a77a"
+    },
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/PLAN.json",
+      "bytes": 676,
+      "sha256": "d5ad5272e657cb463c19e8de16a84eb7140e4cbc392731a91b70b7f58e660c2e"
+    },
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/PROMPT-BASIS.md",
+      "bytes": 607,
+      "sha256": "ff6e9f3f010be3ac879b1ab6af6a0eb6cb3950f428006460c87881e9d6e084e3"
+    },
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/PROMPT-FEEDBACK-DIFF.patch",
+      "bytes": 18547,
+      "sha256": "41c68f044ba1e7572ff1d7384cabc2c825d71cb9503cde25379238df4a16dc00"
+    },
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/REMAINING-REVIEW-FINDING.md",
+      "bytes": 3711,
+      "sha256": "06cf3a935a2518901a35ea20118002b14d8c888863941cca0d56fbb97b3e6dad"
+    },
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/REVIEWER-HANDOFF.md",
+      "bytes": 5246,
+      "sha256": "da78853c6d9993413ac3379309554b2870e771f21b8ef0e438e0954758b51ecb"
+    },
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/SCORECARD.json",
+      "bytes": 2380,
+      "sha256": "97193753361c4f7ebae564a345280c5b21e6221656b8791a3cfffaaa3d73c4dd"
+    },
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/TEST-MATRIX.md",
+      "bytes": 3146,
+      "sha256": "fba95a1ac7c361e43aabc6b28a14b5a07b00e4fff871e0470ad62548a010cedc"
+    },
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/activate-review.py",
+      "bytes": 3464,
+      "sha256": "bec2453a965d415450ecca57992f9d85a0cb93e7519e06d1c0c23345d26abf02"
+    },
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/freeze-repair.mjs",
+      "bytes": 6674,
+      "sha256": "6d991f1a7a2f6421047659d26abc5e6cf5c05dbdb2bca64bb4be266a5d9ac731"
+    },
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/offline-package-plan-attempt1.json",
+      "bytes": 5542,
+      "sha256": "e196e6862eea13e886aa735390c02b843ed08fe94e8dc453a442ad312e784816"
+    },
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/product-revision.json",
+      "bytes": 272,
+      "sha256": "26f1a0e39c3efe1c449365d1c096d4ca23a5708544d3056b630a1ad7e6b0651f"
+    },
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/record-local-wire.mts",
+      "bytes": 5595,
+      "sha256": "08b058b70d576a00331c8e7448b1a6e1186a625916790041c701eb10ad739e59"
+    },
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/replay-baseline.mts",
+      "bytes": 1911,
+      "sha256": "ab230cbb2e03127490e41772603dc52cd2c59ada035e12467a4737cba7805869"
+    },
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/run-freeze.py",
+      "bytes": 1424,
+      "sha256": "c6d96d5bbce5043d162b8d0aca2a9c8b2bf0129cf48774f2576e3704938fe7bc"
+    },
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/run-gate.py",
+      "bytes": 3488,
+      "sha256": "1c7bf6befecaa0e3fd2e475a337ff7dcbd8bed33ec9a24dd42732ddc28eaae78"
+    },
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/run-offline-checks.py",
+      "bytes": 4131,
+      "sha256": "d7ea6fbc9701ef29332c34d25a077c77c49672e17e79e19893c73503b135fc3d"
+    },
+    {
+      "scope": "repository",
+      "path": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/evidence-correction-20260922/trace-final-residual.mts",
+      "bytes": 1958,
+      "sha256": "ae659e1764a35ca3bd9fc1adf0cdfe6cf42f33cb3a34009a5518bcef20bdb989"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/ACCESS-PRICING-PREFLIGHT-001.json",
+      "bytes": 2327,
+      "sha256": "8da458487421b58ea588b4f1f622f7edceb3fb20ad19d8ef27e7d31478fc5a45"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/ACCESS-PRICING-PREFLIGHT-002.json",
+      "bytes": 1327,
+      "sha256": "ce9da1f0f0f1962228f13a494bfd0893f3cbe89741e089a0d502e91910d81cbe"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/BASELINE-REPLAY-001.json",
+      "bytes": 4097,
+      "sha256": "88aabbdb1d44d13f39640ad595993be57ae5163b7a89cbb233551ba0963b9d01"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/CANDIDATE-VERIFICATION-001.json",
+      "bytes": 162,
+      "sha256": "ea866c5f127ad1a002bf27622c0c96cdb0ea0e73fb6f87a03a53a732520a6923"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/CHECKPOINT-001.json",
+      "bytes": 676,
+      "sha256": "d5ad5272e657cb463c19e8de16a84eb7140e4cbc392731a91b70b7f58e660c2e"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/CHECKPOINT-002.json",
+      "bytes": 700,
+      "sha256": "ca0d15d408fc090e4f316b6ce66918fbbae28eed6bb034ef2765d607e3f8cff7"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/CHECKPOINT-003.json",
+      "bytes": 756,
+      "sha256": "a6ccf0a0d8016913174ca524bd69a474932438be9d54ae22e13dfd1c07b189b5"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/CHECKPOINT-004.json",
+      "bytes": 4623,
+      "sha256": "e6914dc09b1956aef091f66ca72fe6704c2336d9d76152dc112776d7205a0c79"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/CHECKPOINT-005.json",
+      "bytes": 2544,
+      "sha256": "78b29792951cd7cd7ec082342dde97730357da45e793c25cbf3b00dfd0fd44bf"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/CHECKPOINT-006.json",
+      "bytes": 628,
+      "sha256": "05cc02f6b2d7f6cdf3b225494984ecaffc09df8bf35885a9863890a223e486d7"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/CHECKPOINT-007.json",
+      "bytes": 1212,
+      "sha256": "5a1cf6966125c9a737570bae661de00a7f142e0651719c84ffb3c3eb4b5d0b72"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/CHECKPOINT-008.json",
+      "bytes": 493,
+      "sha256": "77ff4830cf23b5788a1c7ddbf0c989462d54f23c8c7f148fc3f76017a0ac43d4"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/CHECKPOINT-009.json",
+      "bytes": 743,
+      "sha256": "058cfc4fe109dcd6b691c704614b9069f7eea9ceef37e7c234a1160cf76b58d3"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/CORRECTION-DELIVERY-TRACE-001.json",
+      "bytes": 11437,
+      "sha256": "843596bceb7678cd80aed0785ea9ec39b70943d39fc2b1683e2e1731c459df1e"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/ENVELOPE-RESERVATION-CHECK-001.json",
+      "bytes": 506,
+      "sha256": "3b1b7f31a35b8a84398b0339da97637e2cbda30c84f1738df88d6497a0d81369"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/EXACT-REPLAY-AFTER-001.json",
+      "bytes": 5518,
+      "sha256": "6f8c19f9443001d44b3cdfd6ef738f521ffe0c683fb10cf740d73636f5c01ecd"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/FINAL-PRESERVATION-001.json",
+      "bytes": 1074,
+      "sha256": "b1c0c2ec8900308883f23708a5c2abedff4676e8cf9b9941361474a625c5c686"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/FINAL-RESIDUAL-TRACE-001.json",
+      "bytes": 1357,
+      "sha256": "92b0e000ff8eb2e3b85a966c1c24eefdb3dbb6aa5db5c721b0e87e307e116ed0"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/FINAL-TRACE-SOURCE-BINDING-001.json",
+      "bytes": 411,
+      "sha256": "c8e980e966a5abba40a38563b54f474341d2bf154123c7352ec5fccae57153bf"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/FINANCIAL-CLOSURE-001.json",
+      "bytes": 634,
+      "sha256": "12391bf5d75438ee9a1b1ecd77f3eb10b9706bb480983fe2148e7ba5cae9e818"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/FINANCIAL-RESERVATION-001.json",
+      "bytes": 515,
+      "sha256": "1fa5bb4bc32299fd33e670dedca741d6dbfd5997a9608b9b16a2248ff4f5c9bd"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/GATE-DATABASE-001.json",
+      "bytes": 402,
+      "sha256": "74869073a81514f891a450c85a8244e911ccf5dbb9543ea4306bd2fc693b5712"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/GATE-DATABASE-CLEANUP-001.json",
+      "bytes": 299,
+      "sha256": "72abad575b5ebed88d36ebe888982f0a35e6271b356bcc0db7f05d28c32f71da"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/GATE-DATABASE-STOPPED-001.json",
+      "bytes": 524,
+      "sha256": "85e2860240d8c01310a5e5cfa51d2918b17937c9a0b57fe75873a66cb6bfe9cd"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/GUIDANCE-MEASUREMENT-CORRECTION-001.json",
+      "bytes": 329,
+      "sha256": "5b47b174e9321e0802ca2caa42ca1a78f70e5191fd2d8dbacf940a71e5724bcb"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/HANDOFF-BEFORE-ASSIGNMENT.md",
+      "bytes": 10090,
+      "sha256": "5ce99d91ce318ec70d9aecbfa95aaaf8404e26dd56d6a2cbad77f0da53ef4ae3"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/HANDOFF-IN-PROGRESS-001.md",
+      "bytes": 9306,
+      "sha256": "64979daa14d1d84434904a8e310acb4f992f019d1c4478f9f74ee1cc5910e676"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/INDEPENDENT-FINAL-VERIFICATION-001.json",
+      "bytes": 5227,
+      "sha256": "78d20d6ab5364ad39f1e1130327ce07b93b34860ba5db4af62861d4d18c8a77a"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/LIVE-INITIAL-GUIDANCE-001.json",
+      "bytes": 433,
+      "sha256": "e6b1bd7a275da68cbc47356b0448dedae5b01806799899fd6c54e6b82b4fc08e"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/MAIN-LAUNCH-SIGNOFF-INSPECTION-001.json",
+      "bytes": 633,
+      "sha256": "f2752f846afc8fedd94515b457be88c93fece0e225028262a21e448d3ce7874d"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/MAIN-LOGICAL-COMPARISON-001.json",
+      "bytes": 774,
+      "sha256": "3bcb6894903b1b45805184de32cdfaca19937d74a2a9e757f8824f53f1787f38"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/ORIGINALS-PRESERVATION-002.json",
+      "bytes": 889,
+      "sha256": "89b869d9941fe53cbbfaca608ae406174b2005b36cbcd7dc1df456d016a40141"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/PRIVATE-BACKUP-PREFLIGHT-001.json",
+      "bytes": 128,
+      "sha256": "d9a6a52baa50b04812079bba113306c02ae11f42371f24bfca92b51af7ca7d53"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/REPORT-DRAFT-001.md",
+      "bytes": 2936,
+      "sha256": "d842f2d5e4a1d6acb8b305f5bf55bf7d6444fa189d63bde0d61c9bf47de385c5"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/STABLE-GATES-PLAN-001.json",
+      "bytes": 521,
+      "sha256": "b1a8421b864ed7a00920015046d19f7bf97dabb81bcef8260812505daa582a72"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/source-eb959ba.tar.gz",
+      "bytes": 93673925,
+      "sha256": "51b6f60e66753bd87db83136f46c942483cb30cfff9995a081983ae0bdaca785"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/backend-01-exit.json",
+      "bytes": 1297,
+      "sha256": "d47a60bfda5df92888d618af81df51862ff404e463f4773651390bac3f4c6873"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/backend-01-source.json",
+      "bytes": 124981,
+      "sha256": "29fd208596cd975e7e8ab6f215926832195ef38def6ab4bc352ea3f852a6ff9f"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/backend-01.log",
+      "bytes": 26341,
+      "sha256": "753e8c7264ea89f1353ca9b46769f1b70eab2ed74812a02ae8b606933f8db10a"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/exact-replay-02-exit.json",
+      "bytes": 560,
+      "sha256": "ebb9f41fb80ae0a6bbe77665445003318e2a9eb2ec2571f8163da39939929b3b"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/exact-replay-02-source.json",
+      "bytes": 124981,
+      "sha256": "29fd208596cd975e7e8ab6f215926832195ef38def6ab4bc352ea3f852a6ff9f"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/exact-replay-02.log",
+      "bytes": 5688,
+      "sha256": "421e06f98360e9a01a17a9ec7f344d7f43091855afcc0524ae93059bbd181836"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/focused-01-exit.json",
+      "bytes": 625,
+      "sha256": "70ab993e7f15d9f0b87d3e90f47d636bfe6aca033a58bc8fd48456c82373b844"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/focused-01-source.json",
+      "bytes": 124981,
+      "sha256": "751fdde9c3b4de89774976b8a8996320d6b904f2dabf034e7d74740bd17f7b0e"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/focused-01.log",
+      "bytes": 4531,
+      "sha256": "54c72b96cd90371d6a6a4e42716d97ad085a1abbc37a8613bf9836599e1b84ba"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/focused-02-exit.json",
+      "bytes": 795,
+      "sha256": "12c67f8192a38f3e9d8d87df2429179fa52ee5c9e0e658d2e5c5141a30cc503e"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/focused-02-source.json",
+      "bytes": 124981,
+      "sha256": "1e370cf1533636a85b735c947036640dbcdc52f07128af5f75281b442ebd9e62"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/focused-02.log",
+      "bytes": 179092,
+      "sha256": "6a46fef3e7fb71e27ed310c92666749226ffab92bbbb7df03961ba224c749b6c"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/focused-03-exit.json",
+      "bytes": 963,
+      "sha256": "0c8e8b15ad640131d4203df2f3229d95aa3933c34b287f9c066c7a1b2557c3d8"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/focused-03-source.json",
+      "bytes": 124981,
+      "sha256": "b0128d31e73519d447b9fe137bde82cb6ea83f7cce1d54120ba1b8a8d75c66f5"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/focused-03.log",
+      "bytes": 1968,
+      "sha256": "46551fd4d2b553144645a5550612feeb8fc2d86f8e5b7cef09014f09036a2e0d"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/focused-04-exit.json",
+      "bytes": 963,
+      "sha256": "472448685e20fd9659ffa77ce52de2058fcb3bbf92e9a419247cde0cd9baad26"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/focused-04-source.json",
+      "bytes": 124981,
+      "sha256": "29fd208596cd975e7e8ab6f215926832195ef38def6ab4bc352ea3f852a6ff9f"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/focused-04.log",
+      "bytes": 1970,
+      "sha256": "a9c15317072e925f52a2591cc6732d44ea3c8b4c28448588dad474cf587a83eb"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/postgres-container.log",
+      "bytes": 4716,
+      "sha256": "2751d7437a9297a7284547a65792a8eeaa3773ca4f22b2dcc252eae2bead0d96"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/stable-full-001-exit.json",
+      "bytes": 573,
+      "sha256": "e10ccf9b2f62c0a3a5e814bdc73673603c79ea2772541c97731c3532c5212a3e"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/stable-full-001-source.json",
+      "bytes": 124981,
+      "sha256": "29fd208596cd975e7e8ab6f215926832195ef38def6ab4bc352ea3f852a6ff9f"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/stable-full-001.log",
+      "bytes": 519462,
+      "sha256": "10467a7e92e8da967db96dc0ebc37eff67ceba529f295b8592b9a78b8e74902d"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/types-01-exit.json",
+      "bytes": 448,
+      "sha256": "9f10a9eb53b05b144027effe01a9d6959ed52d007c8e20e6219c416304e837e5"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/types-01-source.json",
+      "bytes": 124981,
+      "sha256": "b0128d31e73519d447b9fe137bde82cb6ea83f7cce1d54120ba1b8a8d75c66f5"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/types-01.log",
+      "bytes": 118,
+      "sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/types-02-exit.json",
+      "bytes": 448,
+      "sha256": "7ca87c5f0008b17717624fdc8d5e2d2262bf9f404e1f900bbe167d4e5bf92dfe"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/types-02-source.json",
+      "bytes": 124981,
+      "sha256": "29fd208596cd975e7e8ab6f215926832195ef38def6ab4bc352ea3f852a6ff9f"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/types-02.log",
+      "bytes": 118,
+      "sha256": "61b3d346f301a2c5482ab20585505b6629fbbce471b2eff050d05e6e842d38e5"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/wire-export-01-exit.json",
+      "bytes": 546,
+      "sha256": "6c9781eda8eecd78b3ab327b54be7ee1585c212035eeff0cb9d0692152a8ab96"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/wire-export-01-source.json",
+      "bytes": 124981,
+      "sha256": "b0128d31e73519d447b9fe137bde82cb6ea83f7cce1d54120ba1b8a8d75c66f5"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/wire-export-01.log",
+      "bytes": 420,
+      "sha256": "3d1c6337c5896bc28786bcf3fefd2d27967d2fab9b279d6306a89d40cd023ab8"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/wire-export-02-exit.json",
+      "bytes": 561,
+      "sha256": "6ea19aee8e0d3964e9423666d26b6fb8708eead1667376f61d25a806f416f4c1"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/wire-export-02-source.json",
+      "bytes": 124981,
+      "sha256": "29fd208596cd975e7e8ab6f215926832195ef38def6ab4bc352ea3f852a6ff9f"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/gates/wire-export-02.log",
+      "bytes": 420,
+      "sha256": "4e325c84fc95dcccd1990652bd919433dbde068892e175ff168ff1a3c176aa1c"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/local-wire/openai-DERIVED-replacement.json",
+      "bytes": 23213,
+      "sha256": "980dedc4680f07dd506fceeb16332403e701c1ef7b8f56b412c9cd8e031d1d3d"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/local-wire/openai-request-1.json",
+      "bytes": 224009,
+      "sha256": "01e10bfbacb2c917f5c0fa1a1953214d700d51bde4eab84d3eb983fcab26c58c"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/local-wire/openai-request-2.json",
+      "bytes": 228992,
+      "sha256": "65bc5e2f7d30d5a1dd9dd1d580245d22d77c629af19749c2174263a2e8758bac"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/local-wire/openai-result.json",
+      "bytes": 7822,
+      "sha256": "bdad4893a6dcd32df0bea10de55eae90294a5c3f954e86c8ba9861972803dfb4"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/local-wire/openai-validated-report.json",
+      "bytes": 41032,
+      "sha256": "d9bebdbdd67f8bf301c4ff5b81dd22b4425aadd12cd64f24acf770d4e3fe928b"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/local-wire/openrouter-DERIVED-replacement.json",
+      "bytes": 23213,
+      "sha256": "980dedc4680f07dd506fceeb16332403e701c1ef7b8f56b412c9cd8e031d1d3d"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/local-wire/openrouter-request-1.json",
+      "bytes": 225218,
+      "sha256": "bb489e19efe73b25037b2ca7b1c23ee2cfeb7ab7d075c44941b7f38ad13d7812"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/local-wire/openrouter-request-2.json",
+      "bytes": 230201,
+      "sha256": "6c86f6c8b54c55226abaca92f29c40f9bb2ae3255eb9c66e493840a69b2e1197"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/local-wire/openrouter-result.json",
+      "bytes": 7822,
+      "sha256": "bdad4893a6dcd32df0bea10de55eae90294a5c3f954e86c8ba9861972803dfb4"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/local-wire/openrouter-validated-report.json",
+      "bytes": 41032,
+      "sha256": "d9bebdbdd67f8bf301c4ff5b81dd22b4425aadd12cd64f24acf770d4e3fe928b"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/local-wire-final/openai-DERIVED-replacement.json",
+      "bytes": 23213,
+      "sha256": "980dedc4680f07dd506fceeb16332403e701c1ef7b8f56b412c9cd8e031d1d3d"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/local-wire-final/openai-request-1.json",
+      "bytes": 224009,
+      "sha256": "01e10bfbacb2c917f5c0fa1a1953214d700d51bde4eab84d3eb983fcab26c58c"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/local-wire-final/openai-request-2.json",
+      "bytes": 228992,
+      "sha256": "65bc5e2f7d30d5a1dd9dd1d580245d22d77c629af19749c2174263a2e8758bac"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/local-wire-final/openai-result.json",
+      "bytes": 7822,
+      "sha256": "bdad4893a6dcd32df0bea10de55eae90294a5c3f954e86c8ba9861972803dfb4"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/local-wire-final/openai-validated-report.json",
+      "bytes": 41032,
+      "sha256": "d9bebdbdd67f8bf301c4ff5b81dd22b4425aadd12cd64f24acf770d4e3fe928b"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/local-wire-final/openrouter-DERIVED-replacement.json",
+      "bytes": 23213,
+      "sha256": "980dedc4680f07dd506fceeb16332403e701c1ef7b8f56b412c9cd8e031d1d3d"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/local-wire-final/openrouter-request-1.json",
+      "bytes": 225218,
+      "sha256": "bb489e19efe73b25037b2ca7b1c23ee2cfeb7ab7d075c44941b7f38ad13d7812"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/local-wire-final/openrouter-request-2.json",
+      "bytes": 230201,
+      "sha256": "6c86f6c8b54c55226abaca92f29c40f9bb2ae3255eb9c66e493840a69b2e1197"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/local-wire-final/openrouter-result.json",
+      "bytes": 7822,
+      "sha256": "bdad4893a6dcd32df0bea10de55eae90294a5c3f954e86c8ba9861972803dfb4"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/local-wire-final/openrouter-validated-report.json",
+      "bytes": 41032,
+      "sha256": "d9bebdbdd67f8bf301c4ff5b81dd22b4425aadd12cd64f24acf770d4e3fe928b"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/offline-logs/bundle-freshness-attempt1.log",
+      "bytes": 182,
+      "sha256": "4534215e15034b5b5391ab51d71121ebc119c68a2226f6194462a8558e9489b7"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/offline-logs/cursor-plugin-attempt1.log",
+      "bytes": 391,
+      "sha256": "cc12e22d29ebd660345c60ee249826505ffccb62bb45e1b39590202b7ee7135f"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/offline-logs/dsl-sources-attempt1.log",
+      "bytes": 89,
+      "sha256": "3bd663b10b211bb9dbfa01117dd164a3a851d9936e4be1568a6bd5f9ccf7d50a"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/offline-logs/human-commands-attempt1.log",
+      "bytes": 43,
+      "sha256": "4ca02cff1d23604455f2707b16fc58bea2d0beb7f6adff085887cbdae1379222"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/offline-logs/licenses-attempt1.log",
+      "bytes": 30,
+      "sha256": "81c81f063c5391a1e9f237b114a7ba197da9b6cece450fa3fd851f6fcac80bac"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/offline-logs/local-package-attempt1.log",
+      "bytes": 293,
+      "sha256": "49495df26d949b1edc91f3eaf2c385e7bec249ebe5847bda442077aabcd26ac3"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/offline-logs/mcp-client-configs-attempt1.log",
+      "bytes": 1601,
+      "sha256": "a61f33a0918009a044aaaede959658bba3184fb54d00088b5a29142595b0f3cd"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/offline-logs/packed-offline-attempt1.log",
+      "bytes": 2193,
+      "sha256": "b2bb3cc0ef2f71a5e55d6a7a307470534086715df6ccb62b95b73f4c5b017311"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/offline-logs/public-commands-attempt1.log",
+      "bytes": 803,
+      "sha256": "2121e7f079daf2f2826853340dcdbf7349aeb7e7ed01ffc464e8202cec41e559"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/offline-logs/trusted-core-attempt1.log",
+      "bytes": 73,
+      "sha256": "fece0dc04a138da7058617e93cef0248ea8cb966b1420145c012452d87877760"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/shared/provider-budget-ledger.json",
+      "bytes": 4394,
+      "sha256": "c01b1d78b1a8b2c80dc9a0d17c5f0a5e8e34aea016883e7399d0401d27b88919"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/frozen/installed-artifact-manifest.json",
+      "bytes": 1622731,
+      "sha256": "fd665b0a4e213269602c1aeb0b61d478296d126ef2f000b0d439c1b036c227b2"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/frozen/installed-artifact.tar.gz",
+      "bytes": 17902939,
+      "sha256": "9c9475e01bcfe7d51f4d213187a440c4406656600f430174aaffb3ba67f5e9d3"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/frozen/installed-dependency-tree.json",
+      "bytes": 42999,
+      "sha256": "1b8e32fd52fcd396266273745c02f75f49a2b501fcdeed4045e8d6afcd7ade03"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/frozen/freeze-command.log",
+      "bytes": 702,
+      "sha256": "997e5a927da54cb8dcfa1d953c00c1d7c52ef8751572d66ea38bc84be5f8ff7c"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/frozen/artifact-pack.log",
+      "bytes": 18951,
+      "sha256": "8c50b230b156176499a80f95047acb9ed96664c8eb75768ddaa158506c9e0040"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/frozen/artifact-spec-pack.log",
+      "bytes": 3417,
+      "sha256": "6d8fdf01cce660646ffbb7dbd4aaa26c3d02bf84bca739ceab24a4ca8160b1d2"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/frozen/artifact-install.log",
+      "bytes": 26,
+      "sha256": "4469ec9444aab5c80819277cf6b5d7863906c69a26f52da08be4ad00b3c8818e"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/frozen/product-revision.json",
+      "bytes": 272,
+      "sha256": "26f1a0e39c3efe1c449365d1c096d4ca23a5708544d3056b630a1ad7e6b0651f"
+    },
+    {
+      "scope": "raw",
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/evidence-correction-f0a6fd1-20260922/frozen/freeze-repair.mjs",
+      "bytes": 6674,
+      "sha256": "6d991f1a7a2f6421047659d26abc5e6cf5c05dbdb2bca64bb4be266a5d9ac731"
+    }
+  ],
+  "independent_index": "INDEPENDENT-REVIEW.json resolves43members+5external+5restorefiles",
+  "exclusions": [
+    "Private fixture credentials and environment files; private gate database dump retained under private/",
+    "Installed per-file records are bound by the complete artifact manifest; disposable test/cache/extracted directories omitted",
+    "This index, delivery bookkeeping and the mutable account-switch handoff are not self-indexed"
+  ]
+}

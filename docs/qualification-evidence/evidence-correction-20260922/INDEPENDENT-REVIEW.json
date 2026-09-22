@@ -1,0 +1,116 @@
+{
+  "at": "2026-09-22T05:34:59.834428+00:00",
+  "links": {
+    "REVIEW.md": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-correction-review-20260922/final-b-review-attempt1/REVIEW.md",
+      "sha256": "fbdc9b1734970f53bbccf5d2341df7ed10abf137c6de7661cdfaa86d71655771"
+    },
+    "RESULT.json": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-correction-review-20260922/final-b-review-attempt1/RESULT.json",
+      "sha256": "825608b40d0eae8b5d81f9f7617dafb43fc479fd38aa16963e6e142c6cae50cc"
+    },
+    "EVIDENCE-INDEX.json": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-correction-review-20260922/final-b-review-attempt1/EVIDENCE-INDEX.json",
+      "sha256": "1ed2ba57fcd04df7091808f14988c743924ff29cf77a662259d121e913b11c44"
+    },
+    "REMAINING-FINDING.md": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-correction-review-20260922/final-b-review-attempt1/REMAINING-FINDING.md",
+      "sha256": "73dea628568ad10ae17fb30a1d1111469407805e15ddd869f27f860b06b479dd"
+    }
+  },
+  "independent_result": {
+    "schema": "independent-evidence-correction-final-b-result/v1",
+    "completed_at": "2026-09-22T05:31:32.842958+00:00",
+    "independence": {
+      "implemented_product_change": false,
+      "participated_in_main_gates": false,
+      "independent_probes": true,
+      "public_review_personally_executed": true
+    },
+    "candidate": {
+      "product": "4794ce527840459685510a9bbd7435cd85d8cf95",
+      "tests": "56110270c47beb577ca0ec7cd068f0bd4bea1f7a",
+      "source": "eb959ba69946e62cbac183960b14be88ee3cf80a",
+      "tree": "62289800dc4f16e86ba57580a69fbc3d91c960285a21498507cb16a4d7266196",
+      "entries": 7569,
+      "manifest_sha256": "fd665b0a4e213269602c1aeb0b61d478296d126ef2f000b0d439c1b036c227b2",
+      "archive_sha256": "9c9475e01bcfe7d51f4d213187a440c4406656600f430174aaffb3ba67f5e9d3"
+    },
+    "verdicts": {
+      "artifact_identity": "PASS",
+      "bounded_correction_contract": "PASS",
+      "stable_gates_inspection": "PASS",
+      "restore_launch_boundary": "PASS",
+      "installed_active15_business_review": "FAIL_UNCOMPLETED",
+      "restarted_review": "NOT_RUN",
+      "state_preservation": "PASS",
+      "stage_b": "ATTEMPTED_NOT_PASSED"
+    },
+    "live": {
+      "transports": 1,
+      "cost_usd": 0.1786815,
+      "response_complete": true,
+      "classification": "POLICY_COVERAGE_INVALID",
+      "findings": [
+        {
+          "code": "COUNTING_SUPPORT_MISMATCH",
+          "component": "/passages/21/counter_requirements/0",
+          "structural": true
+        },
+        {
+          "code": "COUNTING_SUPPORT_MISMATCH",
+          "component": "/passages/22/counter_requirements/0",
+          "structural": true
+        },
+        {
+          "code": "COVERAGE_VALIDATION_INCOMPLETE",
+          "component": "/passages/25",
+          "structural": false
+        }
+      ],
+      "strict_traced_cause": "OBLIGATION_CONFIGURATION_COMPONENT_MIXED",
+      "correction_sent": false,
+      "business_completion_persisted": false,
+      "restart_run": false
+    },
+    "financial": {
+      "ledger_status": "CLOSED",
+      "case_status": "COMPLETE_REVIEW_REFUSED",
+      "actual_cost_usd": 0.1786815,
+      "released_unused_episode_usd": 3.0573185,
+      "remaining_authorized_net_usd": 3.20448919,
+      "new_open_reservations_usd": 0
+    },
+    "state": {
+      "logical_delta_count": 1,
+      "delta": "append one invalid coverage episode in existing policy-source file",
+      "control_changed": false,
+      "source_changed": false,
+      "authority_changed": false,
+      "business_operations": 0
+    },
+    "checkpoint": {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-correction-review-20260922/final-b-review-attempt1/checkpoints/stopped-after-live-failure-v1/manifest.json",
+      "sha256": "104ba5306b57b8cbe5dd5e3d41394912748f0847818d2ee52522164bcaaa68fd",
+      "restore_test": "PASS"
+    },
+    "cleanup": {
+      "owned_containers_removed": true,
+      "candidate_and_baseline_reverified": true
+    },
+    "remaining_finding": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-correction-review-20260922/final-b-review-attempt1/REMAINING-FINDING.md",
+    "limitations": [
+      "Correction acceptance is limited to the tested typed receipt Read-exclusion representation boundary.",
+      "No external human audit or universal safety proof.",
+      "Actual A, native-model qualification, add/remove evolution, production deployment, effects and new Stage B trials are not accepted."
+    ]
+  },
+  "main_verified_index_members": 43,
+  "main_verified_external_members": 5,
+  "latest_restore": {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-correction-review-20260922/final-b-review-attempt1/checkpoints/stopped-after-live-failure-v1/manifest.json",
+    "sha256": "104ba5306b57b8cbe5dd5e3d41394912748f0847818d2ee52522164bcaaa68fd",
+    "members_verified": 5
+  },
+  "scope": "Tester personally executed public Review/restore/cold restore; main inspected reports and independently compared saved full snapshots"
+}
