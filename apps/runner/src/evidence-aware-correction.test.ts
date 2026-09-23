@@ -14,6 +14,7 @@ import {coverageFinding} from './authoring-coverage-feedback.js';
 import * as receiptConfiguration from './authoring-receipt-configuration.js';
 import {receiptComponentMeanings} from './authoring-scoped-receipt-components.js';
 import {receiptCouplingInterpretation,receiptCouplingPaths} from './authoring-obligation-review.js';
+import {derivedScopedResponse} from './test-fixtures/coverage-derived.js';
 const capture=JSON.parse(await fs.readFile(new URL('./test-fixtures/evidence-aware-correction.json',import.meta.url),'utf8'));
 const READ='/runner_evidence/runtime_contract/receipt_read_exclusion';
 const CONFIG='/runner_evidence/runtime_contract/receipt_configuration';
@@ -35,26 +36,13 @@ function separated(f:any){
   component('receipt_read_exclusion',[READ]));
  return args;
 }
-// DERIVED generation helper: emit only the host-nominated groups from this
-// synthetic candidate. Authentic captured replies never pass through it.
-function derivedScopedResponse(body:any,candidate:any){
- const marker='Host repair scope (identities and exact references, not authority): ';
- const text=(body.messages??body.input).map((m:any)=>m.content).filter((x:any)=>typeof x==='string').join('\n');
- const line=text.split('\n').find((value:string)=>value.startsWith(marker));if(!line)return candidate;
- const scope=JSON.parse(line.slice(marker.length));
- return {scope_digest:scope.scope_digest,parent_digest:scope.parent_digest,context:scope.context,
-  groups:scope.targets.map((target:any)=>({target_id:target.target_id,replacements:candidate.passages
-   .filter((p:any)=>target.source_ranges.some((r:any)=>p.start>=r.start&&p.end<=r.end))
-   .map((passage:any)=>({category:!target.receipt_region?'ordinary':passage.receipt_component==='source_transaction_coupling'?'source_transaction_coupling'
-    :passage.responsibility==='deployment'?'setup':passage.application_obligations?.includes('independent_source_readback')?'independent_readback'
-    :passage.draft_paths.includes(READ)?'receipt_read_exclusion':passage.draft_paths.includes(CONFIG)?'receipt_configuration':'compiled_effect',passage}))}))};
-}
 function transport(f:any,replies:any[],provider:'openai'|'openrouter'='openrouter'){
  const conversation=createModelAuthoringConversation();conversation.policySources=f.sources;
  const requests:any[]=[];
  const session={provider,model:provider==='openai'?'gpt-5.6-terra':'openai/gpt-5.6-terra',apiKey:'local-only',conversation,
  dependencies:{requestJson:vi.fn(async(r:any)=>{requests.push(structuredClone(r.body));let args=replies[requests.length-1];if(args instanceof Error)throw args;if(!args)throw new Error('No response permitted');
- if(requests.length>1&&canonicalJsonDigest(args)!==canonicalJsonDigest(f.arguments))args=derivedScopedResponse(r.body,args);
+ if(typeof args==='function')args=args(r.body);
+ else if(requests.length>1&&canonicalJsonDigest(args)!==canonicalJsonDigest(f.arguments))args=derivedScopedResponse(r.body,args);
  return {status:200,body:provider==='openai'?{output:[{type:'function_call',call_id:'test',name:'runner__review_policy_coverage',arguments:JSON.stringify(args)}]}:{choices:[{finish_reason:'tool_calls',message:{role:'assistant',tool_calls:[{id:'test',type:'function',function:{name:'runner__review_policy_coverage',arguments:JSON.stringify(args)}}]}}]}};})}};
  f.sources.approvals.push({digest:f.source.digest,destination:authoringDestination(session)});
  return {session,requests,run:()=>reviewPolicyCoverage({session,source:f.source,draft:f.draft})};
@@ -193,7 +181,12 @@ describe('current-proof complete save and restart',()=>{
   }finally{await new Promise<void>(r=>server.close(()=>r()));vi.restoreAllMocks();await fs.rm(x.root,{recursive:true,force:true});}
  });
  it.each(['repeated','transport','residual','cancel','failed_save','concurrent_source','drift_read','drift_action','drift_selection','drift_decision'])('%s preserves prior coverage and no partial ownership',async mode=>{
-  const x=await prepared(f=>mode==='repeated'?[f.arguments,f.arguments]:mode==='transport'?[f.arguments,new Error('local transport refused')]:mode==='residual'?[f.arguments,{passages:[...separated(f).passages,{start:18,end:18,disposition:'implemented',responsibility:'runner',interpretation:'Invented observation',draft_paths:[RECEIPTS]}]}]:[f.arguments,separated(f)]);
+  const x=await prepared(f=>mode==='repeated'?[f.arguments,f.arguments]:mode==='transport'?[f.arguments,new Error('local transport refused')]:mode==='residual'?[f.arguments,(body:any)=>{
+   const response=derivedScopedResponse(body,separated(f));
+   response.groups.find((g:any)=>g.passage_replacements.length).passage_replacements[0].fragments.push({category:'compiled_effect',
+    passage:{start:18,end:18,disposition:'implemented',responsibility:'runner',interpretation:'Invented observation',draft_paths:[RECEIPTS]}});
+   return response;
+  }]:[f.arguments,separated(f)]);
   const priorCoverage=structuredClone(x.f.sources.coverage),priorOwners=structuredClone(x.f.sources.application_assignments);
   try{
    if(mode==='cancel')x.input.operatorSession.confirm.mockResolvedValue(false);

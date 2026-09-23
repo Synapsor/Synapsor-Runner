@@ -13,6 +13,7 @@ import { ensurePreparedPolicyCoverage } from './authoring-prepared-policy-review
 import { savePolicySources, loadPolicySources } from './authoring-policy-source.js';
 import { policyReviewReadiness } from './authoring-review-readiness.js';
 import * as receiptConfiguration from './authoring-receipt-configuration.js';
+import {derivedScopedResponse} from './test-fixtures/coverage-derived.js';
 const captured = JSON.parse(await fs.readFile(new URL('./test-fixtures/coverage-correction-captures.json', import.meta.url), 'utf8'));
 function fixture() {
   const { sources, draft, arguments: replies } = structuredClone(captured);
@@ -24,18 +25,6 @@ function fixture() {
   for(const index of [3,6,8,11])corrected.passages[index]=structuredClone(replies[1].passages[index]);
   for(const p of corrected.passages) for(const c of p.counter_requirements ?? []) delete c.operator_message_id;
   return {sources,draft,replies,source,corrected};
-}
-// Local DERIVED generation from nominated groups, never conversion of an
-// authentic full historical reply into a successful scoped submission.
-function derivedScopedResponse(body:any,candidate:any){
- const marker='Host repair scope (identities and exact references, not authority): ';
- const text=(body.messages??body.input).map((m:any)=>m.content).filter((x:any)=>typeof x==='string').join('\n');
- const line=text.split('\n').find((value:string)=>value.startsWith(marker));if(!line)return candidate;
- const scope=JSON.parse(line.slice(marker.length));
- return {scope_digest:scope.scope_digest,parent_digest:scope.parent_digest,context:scope.context,
-  groups:scope.targets.map((target:any)=>({target_id:target.target_id,replacements:candidate.passages
-   .filter((p:any)=>target.source_ranges.some((r:any)=>p.start>=r.start&&p.end<=r.end))
-   .map((passage:any)=>({category:!target.receipt_region?'ordinary':passage.responsibility==='deployment'?'setup':'compiled_effect',passage}))}))};
 }
 function transport(f:ReturnType<typeof fixture>, submissions:any[], provider:'openai'|'openrouter'='openai') {
   if(provider==='openrouter') f.sources.approvals.push({digest:f.source.digest,destination:'openrouter[x-ai/grok-4.6] at https://openrouter.ai/api/v1'}); // local transport fixture consent, not a provider trial
@@ -163,14 +152,18 @@ describe('captured coverage correction round trip',()=>{
     expect(permitsSecondCoverageCorrection([first],next)).toBe(true); // historical full-report oracle is unchanged
     const t=transport(f,[f.replies[0],(body:any)=>{
       const replacement=derivedScopedResponse(body,f.corrected);
-      replacement.groups[0].replacements.push({category:'ordinary',passage:second.passages[0]});
+      replacement.groups.find((g:any)=>g.passage_replacements.length).passage_replacements[0].fragments.push({category:'ordinary',passage:second.passages[0]});
       return replacement;
     },f.corrected]);
     await expect(t.run()).rejects.toThrow('COVERAGE_SCOPED_CORRECTION_REFUSED');expect(t.requests).toHaveLength(2);
   });
   it('deleting failed components is not evidence of resolved structural findings',async()=>{
-    const f=fixture(),replacement={passages:[{...f.corrected.passages[0],draft_paths:['/new_missing']}]};
-    const t=transport(f,[f.replies[0],replacement,f.corrected]);
+    const f=fixture(),t=transport(f,[f.replies[0],(body:any)=>{
+      const replacement=derivedScopedResponse(body,f.corrected);
+      const group=replacement.groups.find((g:any)=>g.counter_replacements.length);
+      group.counter_replacements.pop();
+      return replacement;
+    },f.corrected]);
     await expect(t.run()).rejects.toThrow('COVERAGE_SCOPED_CORRECTION_REFUSED');expect(t.requests).toHaveLength(2);
   });
   it.each(['counter','pointer'])('relocating the same invalid %s is not a newly exposed issue',async kind=>{
@@ -181,7 +174,7 @@ describe('captured coverage correction round trip',()=>{
     expect(permitsSecondCoverageCorrection([first],collectCoverageFeedback(second,f.source,f.draft,f.sources.operator_messages))).toBe(false);
     const t=transport(f,[f.replies[0],(body:any)=>{
       const replacement=derivedScopedResponse(body,f.corrected);
-      replacement.groups[0].replacements.push({category:'ordinary',passage:repeated});
+      replacement.groups.find((g:any)=>g.passage_replacements.length).passage_replacements[0].fragments.push({category:'ordinary',passage:repeated});
       return replacement;
     },f.corrected]);
     await expect(t.run()).rejects.toThrow('COVERAGE_SCOPED_CORRECTION_REFUSED');

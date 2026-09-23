@@ -26,14 +26,14 @@ export function derivedScopedResponse(request:any,complete:any):any {
       const readOnly=context.find((g:any)=>g.target_id===target.target_id)?.read_only_context??[];
       const protectedDigests=new Set(readOnly.map((item:any)=>digest(item.passage)));
       const whole=target.members.filter((member:any)=>target.findings.some((finding:any)=>finding.component===member.path
-        ||finding.component.startsWith(member.path+'/draft_paths/')||finding.component.startsWith(member.path+'/evidence_checks/')));
+        ||finding.component.startsWith(member.path+'/')&&!/\/counter_requirements\/\d+$/u.test(finding.component)));
       if(whole.length>1)throw new Error('TEST_DERIVED_AMBIGUOUS_PASSAGE_ANCHORS');
       const passage_replacements=whole.map((member:any)=>({member_path:member.path,
         fragments:complete.passages.filter((p:any)=>p.start>=member.start&&p.end<=member.end&&!protectedDigests.has(digest(p)))
+          .filter((p:any)=>target.allowed_references[category(target,p)]
+            &&p.draft_paths?.every((path:string)=>target.allowed_references[category(target,p)].includes(path)))
           .map((rawPassage:any)=>{
             const passage=structuredClone(rawPassage),kind=category(target,passage),meaning=meanings[kind as keyof typeof meanings];
-            const outside=passage.draft_paths?.filter((p:string)=>!target.allowed_references[kind]?.includes(p));
-            if(outside?.length)throw new Error('TEST_DERIVED_PATH_OUTSIDE');
             if(meaning?.length===1){passage.interpretation=meaning[0];delete passage.topic;delete passage.next_step;}
             return {category:kind,passage};
           }),
