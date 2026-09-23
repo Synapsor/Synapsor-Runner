@@ -8726,6 +8726,10 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           action: semanticActionAuthorityDraft?.digest ?? null }),
         authority: semanticActionAuthorityDraft, countingDomain,
         clarifications: authoringConversation?.turns.filter(turn => turn.kind === "clarification") ?? [],
+        ...(resumeSelected && activeResume ? { savedReviewEpisode: { job: activeResume.job_intent,
+          subject: semanticActionAuthorityDraft
+            ? `disabled Action ${semanticActionAuthorityDraft.authority.name} with Read ${context.candidate.pack.name}`
+            : `Read candidate ${context.candidate.pack.name}` } } : {}),
         assertCurrent: async permit => {
           assertRunning();
           if (activeResume) await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, undefined, { permit });
@@ -10793,6 +10797,9 @@ export async function reviewSavedBoundaryPolicy(input: {
       authorityDigest: canonicalJsonDigest({ read: readDigest, action: authority?.digest ?? null }), countingDomain: domain,
       clarifications: resume.conversation.filter(turn => turn.kind === "clarification"), assertCurrent,
       progress: input.progress, state, requireCountingChoice: true, subjectLocation:authority?.state === "active" ? "active" : "draft",
+      savedReviewEpisode: { job: resume.job_intent,
+        subject: authority ? `${authority.state === "active" ? "active published" : "disabled candidate"} Action ${authority.authority.name} with Read ${context.candidate.pack.name}`
+          : `Read-only candidate ${context.candidate.pack.name}` },
       onValidated: async (result, permit) => {
         if (!policyReviewReadiness(source, result.report, result.sources).ready) return;
         const next = updateBoundaryPolicyReview(resume, { pending: null, completion: { request,

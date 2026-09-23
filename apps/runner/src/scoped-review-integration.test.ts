@@ -3,6 +3,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { createServer } from 'node:http';
+import { PassThrough } from 'node:stream';
+import type { ReadStream, WriteStream } from 'node:tty';
 import { describe, expect, it, vi } from 'vitest';
 import { canonicalJsonDigest } from '@synapsor-runner/protocol';
 import { collectCoverageFeedback, parsePolicyCoverage, reviewPolicyCoverage } from './authoring-policy-coverage.js';
@@ -14,6 +16,7 @@ import { configuredCountingLimits } from './authoring-counting-requirements.js';
 import { createModelAuthoringConversation } from './model-authoring-conversation.js';
 import { secureAskJsonRequest } from './model-ask.js';
 import { ensurePreparedPolicyCoverage } from './authoring-prepared-policy-review.js';
+import { createBoundaryReviewInteractiveSession } from './boundary-cli-picker.js';
 import { authoringDestination, loadPolicySources, savePolicySources } from './authoring-policy-source.js';
 import { policyReadinessItems, policyReviewReadiness } from './authoring-review-readiness.js';
 import * as receiptConfiguration from './authoring-receipt-configuration.js';
@@ -219,7 +222,106 @@ async function prepared(replies: (f: any) => Reply[] = correctedReplies) {
   return { root, f, t, input };
 }
 
+function localTerminal() {
+  const input = new PassThrough() as PassThrough & { isTTY: boolean; isRaw: boolean; setRawMode(value: boolean): void };
+  input.isTTY = true; input.isRaw = false; input.setRawMode = value => { input.isRaw = value; };
+  const output = new PassThrough() as PassThrough & WriteStream;
+  Object.assign(output, { isTTY: true, columns: 100, rows: 30 });
+  let screen = ''; output.on('data', chunk => { screen += chunk.toString(); });
+  return { input, output, session: createBoundaryReviewInteractiveSession(input as unknown as ReadStream, output), screen: () => screen };
+}
+
 describe('latest scoped report through real HTTP/SSE and coordinated persistence', () => {
+  it('requires saved-review episode consent even when historical episodes have a different context', async () => {
+    const x = await prepared();
+    try {
+      x.f.sources.coverage_episodes = [{ id: '00000000-0000-4000-8000-000000000001', context: canonicalJsonDigest('prior context'),
+        started_at: '2026-09-22T00:00:00.000Z', submissions: [{ number: 1, reserved_at: '2026-09-22T00:00:00.000Z' }] }];
+      await savePolicySources(x.root, x.f.sources);
+      const before = structuredClone(await loadPolicySources(x.root, x.f.sources.id));
+      const terminal = localTerminal();
+      const review = ensurePreparedPolicyCoverage({ ...x.input,
+        operatorSession: { ...x.input.operatorSession, confirm: terminal.session.confirm },
+        savedReviewEpisode: { job: 'saved review', subject: 'active published Action', },
+      } as any);
+      await vi.waitFor(() => expect(terminal.screen()).toContain('Run a new bounded model review?'));
+      expect(terminal.screen()).toContain('Selected model: openrouter[openai/gpt-5.6-terra]');
+      expect(terminal.screen()).toContain('three model response submissions');
+      expect(terminal.screen()).toContain('[y/N]');
+      terminal.input.emit('keypress', '\r', { name: 'return', sequence: '\r' });
+      await expect(review).rejects.toThrow('POLICY_COVERAGE_EPISODE_PENDING');
+      expect(x.t.requests).toHaveLength(0);
+      expect(await loadPolicySources(x.root, x.f.sources.id)).toEqual(before);
+    } finally { vi.restoreAllMocks(); await fs.rm(x.root, { recursive: true, force: true }); }
+  });
+
+  it.each(['no', 'escape', 'eof', 'ctrl-c'] as const)('%s cancels a different-context saved episode before reservation or send', async mode => {
+    const x = await prepared();
+    try {
+      x.f.sources.coverage_episodes = [{ id: '00000000-0000-4000-8000-000000000002', context: canonicalJsonDigest('older episode'),
+        started_at: '2026-09-22T00:00:00.000Z', submissions: [] }];
+      await savePolicySources(x.root, x.f.sources);
+      const before = structuredClone(await loadPolicySources(x.root, x.f.sources.id)), terminal = localTerminal();
+      const review = ensurePreparedPolicyCoverage({ ...x.input,
+        operatorSession: { ...x.input.operatorSession, confirm: terminal.session.confirm },
+        savedReviewEpisode: { job: 'saved review', subject: 'active published Action' },
+      });
+      await vi.waitFor(() => expect(terminal.screen()).toContain('Run a new bounded model review?'));
+      if (mode === 'eof') terminal.input.end();
+      else terminal.input.emit('keypress', mode === 'escape' ? '\u001b' : mode === 'ctrl-c' ? '\u0003' : 'n',
+        { name: mode === 'escape' ? 'escape' : mode === 'ctrl-c' ? 'c' : 'n', sequence: mode === 'escape' ? '\u001b' : mode === 'ctrl-c' ? '\u0003' : 'n', ctrl: mode === 'ctrl-c' });
+      await expect(review).rejects.toThrow('POLICY_COVERAGE_EPISODE_PENDING');
+      expect(x.t.requests).toHaveLength(0);
+      expect(await loadPolicySources(x.root, x.f.sources.id)).toEqual(before);
+    } finally { vi.restoreAllMocks(); await fs.rm(x.root, { recursive: true, force: true }); }
+  });
+
+  it('a single explicit saved-review Yes precedes the local transport and covers eligible corrections', async () => {
+    const x = await prepared(), terminal = localTerminal();
+    try {
+      const before = (await loadPolicySources(x.root, x.f.sources.id)).coverage_episodes?.length ?? 0;
+      const review = ensurePreparedPolicyCoverage({ ...x.input,
+        operatorSession: { ...x.input.operatorSession, confirm: terminal.session.confirm },
+        savedReviewEpisode: { job: 'saved review', subject: 'active published Action' },
+      });
+      await vi.waitFor(() => expect(terminal.screen()).toContain('Run a new bounded model review?'));
+      expect(x.t.requests).toHaveLength(0);
+      terminal.input.emit('keypress', 'y', { name: 'y', sequence: 'y' });
+      expect((await review).activity).toBe('provider');
+      expect(x.t.requests).toHaveLength(2);
+      const saved = await loadPolicySources(x.root, x.f.sources.id);
+      expect(saved.coverage_episodes).toHaveLength(before + 1);
+      expect(saved.coverage_episodes!.at(-1)!.submissions).toHaveLength(2);
+      expect(terminal.screen().match(/Run a new bounded model review\?/gu)).toHaveLength(1);
+      x.t.session.conversation.policySources = saved;
+      const reused = await ensurePreparedPolicyCoverage({ ...x.input, sources: saved, state: {}, force: false,
+        savedReviewEpisode: { job: 'saved review', subject: 'active published Action' } });
+      expect(reused.activity).toBe('validated_reuse');
+      expect(x.t.requests).toHaveLength(2);
+    } finally { vi.restoreAllMocks(); await fs.rm(x.root, { recursive: true, force: true }); }
+  });
+
+  it.each(['target', 'provider', 'source'] as const)('%s drift while awaiting Yes cannot allocate or send', async mode => {
+    const x = await prepared();
+    try {
+      const before = structuredClone(await loadPolicySources(x.root, x.f.sources.id));
+      const review = ensurePreparedPolicyCoverage({ ...x.input,
+        savedReviewEpisode: { job: 'saved review', subject: 'active published Action' },
+        operatorSession: { ...x.input.operatorSession, confirm: async () => {
+          if (mode === 'target') x.f.draft.actions[0].discovery.title = 'changed target';
+          if (mode === 'provider') x.t.session.model = 'different-model';
+          if (mode === 'source') await savePolicySources(x.root, { ...x.f.sources, operator_messages: [...x.f.sources.operator_messages, 'concurrent operator decision'] });
+          return true;
+        } },
+      });
+      await expect(review).rejects.toThrow(mode === 'source' ? 'POLICY_SOURCE_CHANGED' : 'POLICY_COVERAGE_CONTEXT_CHANGED');
+      expect(x.t.requests).toHaveLength(0);
+      const after = await loadPolicySources(x.root, x.f.sources.id);
+      expect(after.coverage_episodes).toEqual(before.coverage_episodes);
+      if (mode !== 'source') expect(after).toEqual(before);
+    } finally { vi.restoreAllMocks(); await fs.rm(x.root, { recursive: true, force: true }); }
+  });
+
   it.each(['openai', 'openrouter'] as const)('%s streams actual scope to DERIVED reply, strictly saves, reloads and rechecks', async provider => {
     const x = await prepared(), wire: any[] = [], events: any[] = [], replies: any[] = [];
     const server = createServer(async (request, response) => {

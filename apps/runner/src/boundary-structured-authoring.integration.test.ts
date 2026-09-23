@@ -24,7 +24,7 @@ afterEach(async () => {
 });
 
 describe("public structured Boundary authoring integration", () => {
-  it.each(["complete", "competing_save", "declined_ownership", "local_pending", "local_confirmed"] as const)("reviews a saved Action through publication without manufacturing a draft (%s)", async mode => {
+  it.each(["complete", "competing_save", "declined_ownership", "declined_episode", "local_pending", "local_confirmed"] as const)("reviews a saved Action through publication without manufacturing a draft (%s)", async mode => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-published-review-")); roots.push(root);
     vi.stubEnv("TEST_READ_URL", "postgresql://fixture.invalid/not-used");
     vi.stubEnv("OPENAI_API_KEY", "local-transport-fixture");
@@ -62,7 +62,7 @@ describe("public structured Boundary authoring integration", () => {
       const current = await loadPolicySources(root, sources.id), conversation = createModelAuthoringConversation(); conversation.policySources = current;
       return reviewSavedBoundaryPolicy({projectRoot: root, resume: reopened.value, sources: current, request: "Review attached rules",
         selectCurrentContext: true, schemaInspector: inspect,
-        session: {confirm: async () => true, chooseResource: async () => undefined, editFieldTiers: async () => undefined,
+        session: {confirm: async () => mode !== "declined_episode", chooseResource: async () => undefined, editFieldTiers: async () => undefined,
           promptText: async () => undefined, chooseOption: async () => mode === "declined_ownership" ? "back" : "assign",
           rememberDetails: (_title, lines) => { notices.push(...lines); }},
         modelSession: {provider: "openai", model: "fixture", conversation, dependencies: {requestJson: async () => {
@@ -75,7 +75,7 @@ describe("public structured Boundary authoring integration", () => {
         }}}});
     };
     const first = await review();
-    if(mode === "competing_save" || mode === "declined_ownership") {
+    if(mode === "competing_save" || mode === "declined_ownership" || mode === "declined_episode") {
       expect(first).toMatchObject({tone: "warning"});
       const state = await readBoundaryAuthoringResumeState(root, binding);
       expect(state.status === "ready" && state.value.pending_policy_review).toBeTruthy();
@@ -83,6 +83,11 @@ describe("public structured Boundary authoring integration", () => {
       const source = await loadPolicySources(root, sources.id);
       expect(source.application_assignments ?? []).toHaveLength(0);
       if(mode === "competing_save") expect(first.lines.join("\n")).toContain("POLICY_REVIEW_SUBJECT_CHANGED");
+      if(mode === "declined_episode") {
+        expect(first.lines.join("\n")).toContain("POLICY_COVERAGE_EPISODE_PENDING");
+        expect(calls).toBe(0);
+        expect(source.coverage_episodes ?? []).toHaveLength(0);
+      }
       expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
       return;
     }

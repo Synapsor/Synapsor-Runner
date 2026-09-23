@@ -37,13 +37,16 @@ export async function ensurePreparedPolicyCoverage(input: {
   state: PreparedPolicyReviewState;
   force?: boolean;
   subjectLocation?: "active" | "draft";
+  /** Saved Review/Resume only. Initial guided authoring has its own authorization. */
+  savedReviewEpisode?: { job: string; subject: string };
   requireCountingChoice?: boolean;
   onValidated?: (result: { report: PolicyCoverage; key: string; sources: PolicySourceSession; activity: "provider" | "validated_reuse" }, permit: ProjectAuthorityMutationPermit) => Promise<void>;
 }) {
   const { sources, state } = input;
   const source = activePolicySource(sources);
   if (!source) throw new Error("POLICY_REVIEW_SOURCE_UNAVAILABLE: Select a complete saved source before reviewing this job.");
-  if (!sources.approvals.some(a => a.digest === source.digest && a.destination === authoringDestination(input.modelSession))) {
+  const selectedDestination = authoringDestination(input.modelSession);
+  if (!sources.approvals.some(a => a.digest === source.digest && a.destination === selectedDestination)) {
     throw new Error("POLICY_REVIEW_SOURCE_CONSENT_REQUIRED: Review transfer of this exact source to the selected model before continuing.");
   }
   let expectedSource = await policySourceSavedDigest(input.projectRoot, sources.id);
@@ -52,6 +55,8 @@ export async function ensurePreparedPolicyCoverage(input: {
   }
   const assertCurrent = async (permit?: ProjectAuthorityMutationPermit) => {
     await input.assertCurrent(permit);
+    if (authoringDestination(input.modelSession) !== selectedDestination)
+      throw new Error("POLICY_COVERAGE_CONTEXT_CHANGED: The selected model or destination changed during review. Reopen current Review; no stale response was saved.");
     if (await policySourceSavedDigest(input.projectRoot, sources.id) !== expectedSource) {
       throw new Error("POLICY_SOURCE_CHANGED: The selected source or its decisions changed during review. Reopen the current saved review; no stale result was saved.");
     }
@@ -103,7 +108,6 @@ export async function ensurePreparedPolicyCoverage(input: {
   if (!input.force && state.attemptKey === key && !reused) {
     return { source, key, draftRecord, report: undefined, activity: state.activity };
   }
-  state.attemptKey = key;
   let episode: CoverageReviewEpisode;
   const saveEpisode = async (update: (e: CoverageReviewEpisode) => void) => {
     await coordinated(async permit => {
@@ -120,10 +124,23 @@ export async function ensurePreparedPolicyCoverage(input: {
   };
   const produce = async () => {
     const prior = sources.coverage_episodes?.filter(e=>e.context===key).at(-1);
-    if (prior && !await input.operatorSession.confirm("Start a new bounded review episode?", {
-      defaultValue: false,
-      context: [`The previous episode reserved ${prior.submissions.length} response submissions. Its evidence and unresolved review remain saved. A new episode is separately recorded; it is not an uninterrupted retry or a business edit.`],
-    })) throw new Error("POLICY_COVERAGE_EPISODE_PENDING: Prior attempts are preserved. Review remains pending; no structural retries were replenished.");
+    if (input.savedReviewEpisode || prior) {
+      const context = input.savedReviewEpisode ? [
+        `Saved job: ${input.savedReviewEpisode.job}`,
+        `Review subject: ${input.savedReviewEpisode.subject}`,
+        `Selected model: ${input.modelSession.provider}[${input.modelSession.model}]`,
+        "Maximum: three model response submissions, including up to two eligible structural corrections, in this episode.",
+        "No current validated coverage is reusable for this prepared review. A new provider-backed review is needed; provider charges may apply.",
+        "This review does not publish rules, authorize execution or change source rows.",
+        ...(prior ? [`A prior episode for this exact context reserved ${prior.submissions.length} submissions; its history remains saved.`]
+          : sources.coverage_episodes?.length ? ["Earlier episodes for other contexts remain saved; none authorizes this new episode."] : []),
+      ] : [`The previous episode reserved ${prior!.submissions.length} response submissions. Its evidence and unresolved review remain saved. A new episode is separately recorded; it is not an uninterrupted retry or a business edit.`];
+      if (!await input.operatorSession.confirm("Run a new bounded model review?", { defaultValue: false, context }))
+        throw new Error("POLICY_COVERAGE_EPISODE_PENDING: A new provider-backed review was declined. Prior attempts and unresolved review remain saved; no model submission was reserved.");
+      await assertCurrent();
+      if (canonicalJsonDigest(input.currentDraft()) !== preparedDraftDigest)
+        throw new Error("POLICY_COVERAGE_CONTEXT_CHANGED: The reviewed target or selected model changed while awaiting consent. Reopen current Review; no provider call was started.");
+    }
     if ((sources.coverage_episodes?.length ?? 0) >= 120) throw new Error("POLICY_COVERAGE_EPISODE_HISTORY_FULL: Prior attempts are preserved; no provider call was started.");
     episode = {id:randomUUID(), context:key, started_at:new Date().toISOString(),submissions:[]};
     await coordinated(async permit=>{
@@ -132,6 +149,7 @@ export async function ensurePreparedPolicyCoverage(input: {
       await savePolicySources(input.projectRoot,staged,{expectedDigest:expectedSource,permit});
       expectedSource=canonicalJsonDigest(staged); Object.assign(sources,staged);
     });
+    state.attemptKey = key;
     return reviewPolicyCoverage({session:input.modelSession,source,draft:draftRecord,
       ...(sources.coverage?.source_digest===source.digest?{previousReport:sources.coverage}:{}),
       episode:{beforeSubmission:async number=>saveEpisode(e=>{
