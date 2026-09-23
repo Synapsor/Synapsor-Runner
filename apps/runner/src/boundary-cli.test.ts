@@ -16791,7 +16791,7 @@ describe("saved review operation dispatch and persistence", () => {
           ...(mode !== "context-auto" ? { supersedes_pending_job_revision: exact } : {}) } });
       await writeBoundaryAuthoringResumeState(root, resume, { expectedRevisionDigest: null });
       const authorityBefore = canonicalJsonDigest(authority), readBefore = canonicalJsonDigest(context.candidate);
-      const menus: string[] = [], notices: string[][] = []; let choices = 0, confirmations = 0, providerCalls = 0, plannerCalls = 0;
+      const menus: string[] = [], notices: string[][] = []; let choices = 0, confirmations = 0, episodeConfirmations = 0, providerCalls = 0, plannerCalls = 0;
       let choiceSaveInterleaved = false;
       const competingNote = "Retain this independently saved owner decision.";
       // The completed competing write is scheduled at the outside-lock provider
@@ -16834,7 +16834,15 @@ describe("saved review operation dispatch and persistence", () => {
           if (title === "REVIEW COUNTED AUTOMATIC APPROVALS") { choices++; return "boundary"; }
           throw new Error(`Unexpected review-only menu: ${title}`);
         },
-        confirm: async title => {
+        confirm: async (title, options) => {
+          if (title === "Run a new bounded model review?") {
+            episodeConfirmations++;
+            expect(options?.defaultValue).toBe(false);
+            expect(options?.context?.join("\n")).toContain("Selected model: openai[");
+            expect(options?.context?.join("\n")).toContain("three model response submissions");
+            expect(options?.context?.join("\n")).toContain("does not publish rules");
+            return true;
+          }
           if (title === "Review this explicitly selected current context instead of the prior pending revision?") {
             expect(restarted).toBe(false); confirmations++;
             if (mode === "context-race") {
@@ -16934,6 +16942,7 @@ describe("saved review operation dispatch and persistence", () => {
       const loaded = await readBoundaryAuthoringResumeState(root, binding); expect(loaded.status).toBe("ready"); if (loaded.status !== "ready") throw new Error("resume missing");
       resume = loaded.value;
       const stored = await loadPolicySources(root, source.id);
+      expect(episodeConfirmations).toBe(providerCalls > 0 ? 1 : 0);
       expect(canonicalJsonDigest(await readActionRuleAuthorityDraft(root, authority.authority.name))).toBe(authorityBefore);
       expect(canonicalJsonDigest((await loadBoundaryReviewContext(root)).candidate)).toBe(readBefore);
       expect(noEdit).not.toHaveBeenCalled();
@@ -17012,6 +17021,7 @@ describe("saved review operation dispatch and persistence", () => {
         expect(after.value.completed_policy_reviews, JSON.stringify({notices: notices.filter(n => n[0]?.includes("complete") || n.some(l => l.includes("CHANGED") || l.includes("not the current"))), menus})).toHaveLength(2);
         expect(after.value.completed_policy_reviews?.[1]?.activity).toBe("validated_reuse");
         expect(providerCalls).toBe(calls); expect(choices).toBe(counting ? 2 : 0); expect(ownershipReviews).toBe(1);
+        expect(episodeConfirmations).toBe(1);
       }
       expect(plannerCalls).toBe(["no-change", "typed-review", "redundant-source", "maintenance", "maintenance-missing", "maintenance-source-race", "model-resume", "fallback-review", "captured-contract"].includes(mode) ? 1 : 0);
     } finally { await fixture.dispose(); }
