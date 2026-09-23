@@ -1,5 +1,7 @@
 import { scopedDisclosureStoreDigest } from "./authoring-scoped-disclosure.js";
 import { localScopedDisclosureReview } from "./authoring-scoped-disclosure-operation.js";
+import { localSourceTransactionReview } from "./authoring-source-transaction-operation.js";
+import { currentSourceTransactionReview, sourceTransactionReviewNeeded } from "./authoring-source-transaction-review.js";
 import { resolveAuthoringReviewSubject } from "./authoring-review-subject.js";
 import { actionRuleEffectLines } from "@synapsor-runner/action-rules";
 import { actionRuleDisclosureReconciliation, actionRuleEditDifferenceLines } from "./action-rule-disclosure-review.js";
@@ -4498,11 +4500,24 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       ]);
     }
   };
+  // The model conversation is populated only after this menu. Read the saved
+  // source session itself so a confirmed interpretation remains publicly
+  // revisitable after restart, before provider selection or egress.
+  let savedTransactionDecisionAvailable = false;
+  if (availableResume && !revalidateSavedJob && availableResume.policy_source_session) {
+    try {
+      const savedSources = await loadPolicySources(input.projectRoot, availableResume.policy_source_session);
+      savedTransactionDecisionAvailable = Boolean(savedSources.source_transaction_reviews?.length);
+    } catch { /* The ordinary saved Review reports an unavailable source. */ }
+  }
   const conversationalJobChoices = [
     ...(availableResume && !revalidateSavedJob ? [{ value: "review_rules", label: "Review attached rules and unresolved decisions",
       detail: "Recheck the exact saved candidate and current attachment; keep business edits separate." },
       {value:"review_disclosure",label:"Review source-required disclosure meaning (no model)",
-        detail:"Register an exact source-to-field requirement or inspect its owner decision. No access change."}] : []),
+        detail:"Register an exact source-to-field requirement or inspect its owner decision. No access change."},
+      ...(savedTransactionDecisionAvailable ? [{value:"review_transaction",
+        label:"Revisit source transaction meaning (no model)",
+        detail:"Revise or withdraw the current attributed interpretation without changing Action authority."}] : [])] : []),
     ...(availableResume
       ? [{
           value: "resume",
@@ -4544,6 +4559,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       detail: "Import exact plan JSON, question-intent JSON, or a saved analysis.",
     },
   ];
+  let savedReviewPreselection: SavedPolicyReviewPreselection | undefined;
   let selectedPolicyReview = input.initialPolicyReview === true;
   let selectCurrentReviewContext = input.initialPolicyReview === true;
   let sourceReviewOutcome: BoundaryAssistOutcome | undefined;
@@ -4552,10 +4568,13 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       return boundaryAssistResult({ tone: "warning", title: "Saved review context is unavailable.",
         lines: ["Restore or revalidate this job's saved source, candidate and model permission before review. No edit was started."] });
     }
+    const preselectedReview = savedReviewPreselection;
+    savedReviewPreselection = undefined;
     const notice = await reviewSavedBoundaryPolicy({ projectRoot: input.projectRoot, session: input.session,
       resume: activeResume, sources: authoringConversation.policySources,
       modelSession: boundaryAuthoringModelSession({ ...selectedResumeModel, conversation: authoringConversation }, input.authoringChat),
-      request, confirmedReviewRequest, selectCurrentContext: selectCurrentReviewContext, schemaInspector: input.schemaInspector, progress: runWithProgress, assertRunning });
+      request, confirmedReviewRequest, selectCurrentContext: selectCurrentReviewContext,
+      preselectedReview, schemaInspector: input.schemaInspector, progress: runWithProgress, assertRunning });
     await input.authoringChat?.streamCheckpoint(notice.title, notice.lines, notice.tone === "warning" ? "warning" : "normal");
     return { ...boundaryAssistResult(notice, false, false, true), navigation: "pause" as const };
   };
@@ -4682,16 +4701,27 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       },
     );
     if (selected === undefined) return boundaryAssistResult(boundaryAssistBackNotice());
-    if (availableResume && !revalidateSavedJob && (selected === "review_disclosure" || selected === "review_rules")) {
+    if (availableResume && !revalidateSavedJob && (selected === "review_disclosure" || selected === "review_rules" || selected === "review_transaction")) {
       const sources = availableResume.policy_source_session ? await loadPolicySources(input.projectRoot, availableResume.policy_source_session) : undefined;
       const pendingMeaning = sources?.scoped_disclosure_reviews?.length && [...new Map(sources.scoped_disclosure_reviews.map(r=>[r.id,r])).values()]
         .some(r=>r.fields.some(f=>f.decision!=='confirmed_non_sensitive'));
-      if (sources && (selected === "review_disclosure" || pendingMeaning)) {
+      if (sources && (selected === "review_disclosure" || selected === "review_rules" && pendingMeaning)) {
         const notice = await reviewSavedBoundaryPolicy({projectRoot:input.projectRoot,session:input.session,
           resume:availableResume,sources,request:"Review attached rules and unresolved decisions",selectCurrentContext:true,
           localDisclosure:selected === "review_disclosure" ? "register_or_status" : "status",schemaInspector:input.schemaInspector,assertRunning});
         await input.authoringChat?.streamCheckpoint(notice.title,notice.lines,notice.tone === "warning" ? "warning" : "normal");
         return {...boundaryAssistResult(notice,false,false,true),navigation:"pause" as const};
+      }
+      if (sources && (selected === "review_rules" || selected === "review_transaction")) {
+        const notice = await reviewSavedBoundaryPolicy({projectRoot:input.projectRoot,session:input.session,
+          resume:availableResume,sources,request:"Review attached rules and unresolved decisions",selectCurrentContext:true,
+          localTransactionOnly:true,revisitTransaction:selected === "review_transaction",
+          schemaInspector:input.schemaInspector,assertRunning});
+        if (selected === "review_transaction" || notice.localTransaction !== 'continue') {
+          await input.authoringChat?.streamCheckpoint(notice.title,notice.lines,notice.tone === "warning" ? "warning" : "normal");
+          return {...boundaryAssistResult(notice,false,false,true),navigation:"pause" as const};
+        }
+        savedReviewPreselection = notice.reviewSelection;
       }
     }
     if (selected === "advanced") {
@@ -10635,11 +10665,28 @@ type ModelReadBoundaryExposureRevisionInput = {
   ) => void;
 };
 
+/** Ephemeral selection for one CLI operation. It never enters saved state or
+ * substitutes for the source, Read, Action and resume checks at continuation. */
+type SavedPolicyReviewPreselection = {
+  resume_revision_digest: string;
+  sources_digest: string;
+  source_session: string;
+  source_digest: string;
+  read_digest: string;
+  selected: Awaited<ReturnType<typeof resolveAuthoringReviewSubject>>;
+  request: BoundaryPolicyReviewRequest;
+};
+
 /** Review the exact saved candidate without entering any draft/edit/activation path. */
 export async function reviewSavedBoundaryPolicy(input: {
   projectRoot: string; session: BoundaryReviewInteractiveSession;
   modelSession?: ActionModelSuggestionSession;
   localDisclosure?: "register_or_status" | "status";
+  localTransactionOnly?: boolean;
+  /** Explicit model-free revisit; ordinary Review never repeatedly asks an
+   * already confirmed source-meaning question. */
+  revisitTransaction?: boolean;
+  preselectedReview?: SavedPolicyReviewPreselection;
   resume: BoundaryAuthoringResumeState;
   sources: PolicySourceSession;
   request: string;
@@ -10650,13 +10697,22 @@ export async function reviewSavedBoundaryPolicy(input: {
   schemaInspector?: typeof inspectDatabase;
   progress?: <T>(label: string, operation: () => Promise<T>) => Promise<T>;
   assertRunning?: () => void;
-}): Promise<BoundaryAccessNotice> {
+}): Promise<BoundaryAccessNotice & {localTransaction?: 'continue' | 'handled';reviewSelection?: SavedPolicyReviewPreselection}> {
   let resume = input.resume;
   const context = await loadBoundaryReviewContext(input.projectRoot);
   const source = activePolicySource(input.sources);
   if (!source || resume.policy_source_session !== input.sources.id) throw new Error("POLICY_REVIEW_SOURCE_UNAVAILABLE: Select the saved job's complete attached source before review.");
+  if (await policySourceSavedDigest(input.projectRoot,input.sources.id)!==canonicalJsonDigest(input.sources))
+    throw new Error('POLICY_SOURCE_CHANGED: The saved policy source or decision changed after local review selection. Reopen the exact current review.');
   const readDigest = explorationBoundaryCandidateDigest(context.candidate);
-  const selected = await resolveAuthoringReviewSubject({ projectRoot: input.projectRoot, resume,
+  const preselected=input.preselectedReview;
+  if (preselected && (preselected.resume_revision_digest!==resume.revision_digest
+    || preselected.sources_digest!==canonicalJsonDigest(input.sources)
+    || preselected.source_session!==input.sources.id || preselected.source_digest!==source.digest
+    || preselected.read_digest!==readDigest))
+    throw new Error('POLICY_REVIEW_CONTEXT_CHANGED: The selected source, Read or saved job changed after local inspection. Reopen the exact current review.');
+  if (preselected) await preselected.selected.assertCurrent();
+  const selected = preselected?.selected ?? await resolveAuthoringReviewSubject({ projectRoot: input.projectRoot, resume,
     context: { source_session: input.sources.id, source_digest: source.digest as `sha256:${string}`,
       read_name: context.candidate.pack.name, read_digest: readDigest },
     session: input.session, selectCurrentContext: input.selectCurrentContext });
@@ -10676,7 +10732,7 @@ export async function reviewSavedBoundaryPolicy(input: {
     `Attached source: ${source.name} v${source.version} · ${source.digest} · ${source.bytes} bytes / ${source.lines} lines (complete)`,
     "Operation: review this exact saved subject. Rules, active authority, execution and application history stay unchanged."];
   input.session.rememberDetails?.("REVIEW ATTACHED RULES AND UNRESOLVED DECISIONS", display);
-  if (changedContext) {
+  if (changedContext && !preselected) {
     if ((prior!.prior_contexts?.length ?? 0) >= 16) throw new Error("POLICY_REVIEW_CONTEXT_HISTORY_FULL: Prior failed contexts are preserved. No new review was started.");
     const accepted = await input.session.confirm("Review this explicitly selected current context instead of the prior pending revision?", { defaultValue: false,
       context: [...display, `Prior source: ${prior!.source_digest}; Read: ${prior!.read_digest}; Action: ${prior!.action_digest ?? "none"}.`,
@@ -10688,7 +10744,7 @@ export async function reviewSavedBoundaryPolicy(input: {
     throw new Error("BOUNDARY_AUTHORING_RESUME_CHANGED: The confirmed review request no longer matches the saved item.");
   }
   let supersedes = (!changedContext ? prior?.supersedes_pending_job_revision : undefined) ?? input.confirmedReviewRequest;
-  if (!prior && resume.pending_job_revision && !supersedes) {
+  if (!preselected && !prior && resume.pending_job_revision && !supersedes) {
     const choice = await input.session.chooseOption?.("REVIEW OR UNFINISHED EDIT?", [
       { value: "keep", label: "Review this candidate; retain the separate unfinished edit" },
       { value: "review", label: "This saved request was review-only", detail: "After a successful business review, retain this request in review history and finish only its mistaken edit item." },
@@ -10697,7 +10753,7 @@ export async function reviewSavedBoundaryPolicy(input: {
     if (!choice || choice === "pause") return boundaryAssistBackNotice("Review paused. The unfinished request remains saved.");
     if (choice === "review") supersedes = resume.pending_job_revision;
   }
-  const request: BoundaryPolicyReviewRequest = prior && !changedContext ? { ...prior,
+  const request: BoundaryPolicyReviewRequest = preselected?.request ?? (prior && !changedContext ? { ...prior,
     ...(selected.subject ? { action_subject: selected.subject.identity } : {}) } : { operation: "review_rules", request: input.request,
     source_session: input.sources.id, source_digest: source.digest as `sha256:${string}`, read_digest: readDigest,
     ...(authority ? { action_name: authority.authority.name, action_digest: authority.digest, action_subject: selected.subject!.identity } : {}),
@@ -10705,14 +10761,22 @@ export async function reviewSavedBoundaryPolicy(input: {
     ...(changedContext ? { prior_contexts: [...(prior!.prior_contexts ?? []), { source_session: prior!.source_session,
       source_digest: prior!.source_digest, read_digest: prior!.read_digest,
       ...(prior!.action_name ? { action_name: prior!.action_name, action_digest: prior!.action_digest } : {}),
-      ...(prior!.action_subject ? { action_subject: prior!.action_subject } : {}) }] } : {}) };
+      ...(prior!.action_subject ? { action_subject: prior!.action_subject } : {}) }] } : {}) });
+  const reviewSelection: SavedPolicyReviewPreselection = {resume_revision_digest:resume.revision_digest,
+    sources_digest:canonicalJsonDigest(input.sources),source_session:input.sources.id,
+    source_digest:source.digest,read_digest:readDigest,selected,request};
   const assertCurrent = async (permit?: ProjectAuthorityMutationPermit) => {
     input.assertRunning?.();
     await assertBoundaryAuthoringResumeCurrent(input.projectRoot, resume, undefined, { permit });
     await reloadReadReviewForModelRevision(input.projectRoot, context);
     await selected.assertCurrent();
+    if (await policySourceSavedDigest(input.projectRoot,input.sources.id)!==canonicalJsonDigest(input.sources))
+      throw new Error('POLICY_SOURCE_CHANGED: The saved policy source or decision changed during review. No stale review was saved.');
   };
-  if (!prior || changedContext) {
+  // The model-free transaction preflight may simply return control to the
+  // ordinary Review path. It must not advance the resume revision first and
+  // make that same operator selection stale on its immediate continuation.
+  if (!input.localTransactionOnly && (!prior || changedContext)) {
     await withProjectAuthorityMutation(input.projectRoot, async permit => {
       await assertCurrent(permit);
       const next = updateBoundaryPolicyReview(resume, { pending: request });
@@ -10743,9 +10807,47 @@ export async function reviewSavedBoundaryPolicy(input: {
       actions: [], authority, source: sourceInspection, reviewedVersionFields: boundaryAuthoringVersionReviews(resume),
       policySources: input.sources, countingDomain: domain, executionReview, receiptConfiguration,
       ...((input.localDisclosure || input.sources.scoped_disclosure_reviews?.length) ? {reviewStoreDigest:selectedStore} : {}),
+      transactionStoreDigest:selectedStore,
       authoringSession: { provider: input.modelSession?.provider ?? resume.model.provider, model: input.modelSession?.model ?? resume.model.name },
       operatorClarifications: resume.conversation.filter(turn => turn.kind === "clarification"
         && input.sources.operator_messages?.includes(turn.answer)).map(turn => ({ question: turn.question, answer: turn.answer })) });
+    const transactionDraft=currentDraft();
+    const transactionNeeded=sourceTransactionReviewNeeded(transactionDraft) || Boolean(input.sources.source_transaction_reviews?.length);
+    if(transactionNeeded && (input.revisitTransaction || !currentSourceTransactionReview(source,transactionDraft,input.sources))) {
+      const result=await localSourceTransactionReview({projectRoot:input.projectRoot,sources:input.sources,session:input.session,
+        actor:localInteractiveActor(),revisitCurrent:input.revisitTransaction,currentDraft,assertCurrent,
+        coordinated:async operation=>{
+          const currentInspection=await inspectPolicyReviewSource(context.lock,input.schemaInspector);
+          if(schemaFingerprintForInspection(currentInspection.inspection)!==schemaFingerprintForInspection(sourceInspection.inspection)
+            || rolePostureFingerprint(currentInspection.inspection)!==rolePostureFingerprint(sourceInspection.inspection))
+            throw new Error('SOURCE_TRANSACTION_METADATA_CHANGED: Reopen the exact current reader review; no decision was saved.');
+          const check=async(permit:ProjectAuthorityMutationPermit)=>{
+            await assertCurrent(permit);
+            const currentReceipt=await authoringReceiptConfiguration(input.projectRoot,authority?.authority.rules.map(r=>r.rule.source)??[],process.env);
+            if(canonicalJsonDigest(currentReceipt)!==canonicalJsonDigest(receiptConfiguration))
+              throw new Error('SOURCE_TRANSACTION_CONFIGURATION_CHANGED: Reopen current Review; no stale interpretation was saved.');
+            await operation(permit);
+          };
+          if(domain && authority) await withCountingOutcomeDomain(input.projectRoot,authority,async(current,permit)=>{
+            if(canonicalJsonDigest(current)!==canonicalJsonDigest(domain))
+              throw new Error('POLICY_COUNTING_DOMAIN_CHANGED: No stale source interpretation was saved.');
+            await check(permit);
+          });
+          else await withProjectAuthorityMutation(input.projectRoot,check);
+        }});
+      return {tone:'warning',title:result.state==='confirmed'?'Source transaction interpretation recorded.'
+        :result.state==='capability_unavailable'?'Source transaction capability is unavailable.'
+        :result.state==='deferred'||result.state==='conflicting'?'Source transaction interpretation needs clarification.'
+        :'Source transaction interpretation remains pending.',
+        lines:[...display,result.summary,'No model request, publication, execution or source write occurred.'],
+        footer:result.state==='confirmed'?'Choose Review attached rules and unresolved decisions again to continue against this exact saved source.'
+          :result.state==='capability_unavailable'?'Review the exact disabled Action and its complete effect/receipt mapping before another model-backed review.'
+          :'The saved review remains pending. Reopen this local decision when current source meaning can be established.',
+        localTransaction:'handled'};
+    }
+    if(input.localTransactionOnly) return {tone:'success',title:'Local source transaction review is current.',
+      lines:[...display,'No new source-meaning decision is required. Continuing with ordinary saved Review.'],
+      footer:'Current source meaning and implementation capability remain separate.',localTransaction:'continue',reviewSelection};
     if(input.localDisclosure){
       let register=false;
       if(input.localDisclosure === "register_or_status") {

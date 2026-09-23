@@ -4,17 +4,17 @@ import {describe,it,expect} from 'vitest';
 import {parsePolicyCoverage,collectCoverageFeedback} from './authoring-policy-coverage.js';
 const captured=JSON.parse(await fs.readFile(new URL('./test-fixtures/source-phase-review.json',import.meta.url),'utf8'));
 function fixture(key:'A'|'B'){return structuredClone(captured[key]);}
-function parse(f:any,args=f.arguments){return parsePolicyCoverage(args,f.source,f.draft,f.operator_messages);}
+function parse(f:any,args=f.arguments){return parsePolicyCoverage(args,f.source,f.draft,f.operator_messages,f.sources);}
 describe('complete saved review source and phases',()=>{
  it('retains both exact A refusals and identifies the missing source range',()=>{
   const f=fixture('A');expect(()=>parse(f)).toThrow('OBLIGATION_OBSERVATION_UNESTABLISHED');
   expect(()=>parse(f,f.replacement)).toThrow('Unaccounted source lines: 22');
-  const feedback=collectCoverageFeedback(f.replacement,f.source,f.draft,f.operator_messages);
+  const feedback=collectCoverageFeedback(f.replacement,f.source,f.draft,f.operator_messages,undefined,f.sources);
   expect(feedback.findings).toContainEqual(expect.objectContaining({code:'COVERAGE_SOURCE_LINES_MISSING',missing_ranges:[{start:22,end:22}]}));
  });
  it('batches independently checkable source omission and receipt packaging without accepting either',()=>{
   const f=fixture('A');f.arguments.passages=f.arguments.passages.filter((p:any)=>p.start!==22);
-  const feedback=collectCoverageFeedback(f.arguments,f.source,f.draft,f.operator_messages);
+  const feedback=collectCoverageFeedback(f.arguments,f.source,f.draft,f.operator_messages,undefined,f.sources);
   expect(feedback.findings.map(f=>f.code)).toEqual(expect.arrayContaining(['OBLIGATION_OBSERVATION_UNESTABLISHED','COVERAGE_SOURCE_LINES_MISSING']));
   expect(feedback.complete_validation).toBe(false);
  });
@@ -57,7 +57,7 @@ function transport(f:any,submissions:any[],provider:'openai'|'openrouter'='openr
   return {status:200,body:provider==='openai'?{output:[{type:'function_call',call_id:'local',name:'runner__review_policy_coverage',arguments:JSON.stringify(args)}]}:{choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[{id:'local',type:'function',function:{name:'runner__review_policy_coverage',arguments:JSON.stringify(args)}}]}}]}};
  });
  const session={provider,model,apiKey:'local-transport-only',conversation,dependencies:{requestJson}};
- return {session,requests,run:()=>reviewPolicyCoverage({source:f.source,draft:f.draft,session})};
+ return {session,requests,run:()=>reviewPolicyCoverage({source:f.source,draft:f.draft,session,sourceSession:f.sources})};
 }
 function question(r:any){return (r.input??r.messages).filter((m:any)=>m.role==='user').map((m:any)=>m.content).join('\n');}
 describe('full replacement composed A review',()=>{
@@ -66,7 +66,7 @@ describe('full replacement composed A review',()=>{
   await expect(t.run()).rejects.toThrow('COVERAGE_SCOPED_CORRECTION_REFUSED');
   expect(t.requests).toHaveLength(1);
   expect(question(t.requests[0])).toContain('"response_contract":"complete_replacement"');
-  expect(collectCoverageFeedback(f.replacement,f.source,f.draft,f.operator_messages).findings)
+  expect(collectCoverageFeedback(f.replacement,f.source,f.draft,f.operator_messages,undefined,f.sources).findings)
     .toContainEqual(expect.objectContaining({code:'COVERAGE_SOURCE_LINES_MISSING'}));
   // A separately labelled complete DERIVED first submission still validates;
   // it is not an accepted correction to the historical omitted-source report.
@@ -98,11 +98,11 @@ describe('source completeness and residual controls',()=>{
   const f=fixture('A'),args=correctedA(f);
   args.passages=args.passages.filter((p:any)=>!(p.start<=line&&p.end>=line));
   expect(()=>parse(f,args)).toThrow('Unaccounted source lines:');
-  expect(collectCoverageFeedback(args,f.source,f.draft,f.operator_messages).findings[0]).toMatchObject({code:'COVERAGE_SOURCE_LINES_MISSING'});
+  expect(collectCoverageFeedback(args,f.source,f.draft,f.operator_messages,undefined,f.sources).findings[0]).toMatchObject({code:'COVERAGE_SOURCE_LINES_MISSING'});
  });
  it('malformed ranges leave completeness unevaluated rather than inventing missing claims',()=>{
   const f=fixture('A');f.arguments.passages[0].start='private-untrusted-value';
-  const report=collectCoverageFeedback(f.arguments,f.source,f.draft,f.operator_messages);
+  const report=collectCoverageFeedback(f.arguments,f.source,f.draft,f.operator_messages,undefined,f.sources);
   expect(report.unevaluated).toContain('source-range completeness (invalid passage ranges)');
   expect(report.findings.some(x=>x.code==='COVERAGE_SOURCE_LINES_MISSING')).toBe(false);
   expect(JSON.stringify(report)).not.toContain('private-untrusted-value');
@@ -110,7 +110,7 @@ describe('source completeness and residual controls',()=>{
  it('bounds a fragmented missing-range report and explicitly labels omitted ranges',()=>{
   const f=fixture('A');f.source.text=Array.from({length:100},(_,i)=>`Requirement ${i+1}`).join('\n');f.source.lines=100;
   const args={passages:Array.from({length:50},(_,i)=>({start:i*2+1,end:i*2+1,disposition:'background',interpretation:'Synthetic range only.',draft_paths:[]}))};
-  const feedback=collectCoverageFeedback(args,f.source,f.draft,f.operator_messages);
+  const feedback=collectCoverageFeedback(args,f.source,f.draft,f.operator_messages,undefined,f.sources);
   expect(feedback.findings[0]?.missing_ranges).toHaveLength(16);expect(feedback.findings[0]?.omitted_range_count).toBe(34);
   expect(feedback.limited).toBe(true);expect(Buffer.byteLength(JSON.stringify(feedback))).toBeLessThanOrEqual(8192);
  });
@@ -124,7 +124,7 @@ describe('source completeness and residual controls',()=>{
   const f=fixture('A'),good=correctedA(f);
   good.passages.push({start:26,end:26,disposition:'implemented',responsibility:'runner',interpretation:'The edited revision executed and its result was independently observed.',draft_paths:[RECEIPT]});
   expect(()=>parse(f,good)).toThrow('OBLIGATION_OBSERVATION_UNESTABLISHED');
-  expect(collectCoverageFeedback(good,f.source,f.draft,f.operator_messages).findings.at(-1)).toMatchObject({structural:false});
+  expect(collectCoverageFeedback(good,f.source,f.draft,f.operator_messages,undefined,f.sources).findings.at(-1)).toMatchObject({structural:false});
  });
  it('a corrected receipt claim cannot hide a wrong maximum or privacy comparison',()=>{
   for(const kind of ['maximum','privacy']) {
@@ -167,7 +167,7 @@ describe('exact B complete review with separately proven receipt Read exclusion'
   expect(proof).toMatchObject({excluded:true,scope:'selected_read_graph',resource_count:4,destination_count:1});
   expect(JSON.stringify(proof)).not.toContain('synapsor_writeback_receipts');
   expect(()=>parse(f)).toThrow('COVERAGE_RECEIPT_REFERENCE_OVERBROAD');
-  const finding=collectCoverageFeedback(f.arguments,f.source,f.draft,f.operator_messages).findings;
+  const finding=collectCoverageFeedback(f.arguments,f.source,f.draft,f.operator_messages,undefined,f.sources).findings;
   expect(finding).toEqual([expect.objectContaining({code:'COVERAGE_RECEIPT_REFERENCE_OVERBROAD',structural:true,component:'/passages/25'})]);
   expect(finding[0]!.repair).toContain(READ_EXCLUSION);
   const report=parse(f,correctedB(f));
@@ -175,7 +175,7 @@ describe('exact B complete review with separately proven receipt Read exclusion'
   expect(report.passages[28]!.obligation_assessment).toMatchObject({family:'independent_source_readback',verified:false,state:'pending'});
   expect(report.passages.some(p=>p.obligation_assessment?.family==='receipt_setup')).toBe(true);
  });
- it.each(['openai','openrouter'] as const)('%s keeps B pending when its historical candidate phase cannot prove receipt coupling',async provider=>{
+ it.each(['openai','openrouter'] as const)('%s keeps B pending locally before another model opinion when source meaning is unconfirmed',async provider=>{
   const f=preparedB(),root=await fs.mkdtemp(path.join(os.tmpdir(),'source-phase-B-'));
   const t=transport(f,[f.arguments,correctedB(f)],provider),before=structuredClone(f.sources.coverage_episodes);
   const originalCoverage=structuredClone(f.sources.coverage),originalAssignments=structuredClone(f.sources.application_assignments);
@@ -184,16 +184,13 @@ describe('exact B complete review with separately proven receipt Read exclusion'
    await savePolicySources(root,f.sources);
    const input={projectRoot:root,sources:f.sources,modelSession:t.session,operatorSession:{chooseOption:async()=> 'assign',confirm:async()=>true} as any,
     currentDraft:()=>f.draft,authorityDigest:f.sources.coverage_authority_digest,clarifications:[],assertCurrent:async()=>{},state:{}};
-   await expect(ensurePreparedPolicyCoverage(input)).rejects.toThrow('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
-   expect(t.requests).toHaveLength(2);
-   expect(question(t.requests[1])).toContain('COVERAGE_RECEIPT_REFERENCE_OVERBROAD');expect(question(t.requests[1])).toContain(READ_EXCLUSION);
-   expect(question(t.requests[1])).toContain('No operation-bound historical receipts');
+   await expect(ensurePreparedPolicyCoverage(input)).rejects.toThrow('SOURCE_TRANSACTION_REVIEW_PENDING');
+   expect(t.requests).toHaveLength(0);
    const saved=await loadPolicySources(root,f.sources.id);
    expect(saved.coverage).toEqual(originalCoverage);
    expect(saved.coverage_episodes?.slice(0,before.length)).toEqual(before);
    expect(saved.application_assignments).toEqual(originalAssignments);
-   expect(saved.coverage_episodes?.at(-1)?.submissions.at(-1)?.validated).toBe(false);
-   expect(saved.coverage_episodes?.at(-1)?.submissions.at(-1)?.diagnostic).toContain('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
+   expect(saved.coverage_episodes).toEqual(before);
    if(process.env.SYNAPSOR_TEST_EVIDENCE_DIR) await fs.writeFile(path.join(process.env.SYNAPSOR_TEST_EVIDENCE_DIR,`B-${provider}-composed.json`),JSON.stringify({classification:'DERIVED local transport; historical phase missing current candidate; refused without BUSINESS completion',requests:t.requests,coverage:saved.coverage,latest_episode:saved.coverage_episodes?.at(-1)},null,2));
   }finally{vi.restoreAllMocks();await fs.rm(root,{recursive:true,force:true});}
  });
@@ -243,7 +240,7 @@ describe('exact B complete review with separately proven receipt Read exclusion'
 describe('saved replacement freshness and cleanup',()=>{
  it.each(['read','receipt','source','draft'])('a %s change between responses refuses reuse/correction of the old context',async change=>{
   const f=preparedB(),t=transport(f,[f.arguments,correctedB(f)]);
-  await expect(reviewPolicyCoverage({source:f.source,draft:f.draft,session:t.session,episode:{beforeSubmission:async()=>{},afterSubmission:async()=>{
+  await expect(reviewPolicyCoverage({source:f.source,draft:f.draft,session:t.session,sourceSession:f.sources,episode:{beforeSubmission:async()=>{},afterSubmission:async()=>{
    if(change==='read')f.draft.read.pack.resources.reverse();
    if(change==='receipt')f.draft.runner_evidence.runtime_contract.receipt_configuration.digest=canonicalJsonDigest('changed');
    if(change==='source')f.source.digest=canonicalJsonDigest('changed');
@@ -252,7 +249,7 @@ describe('saved replacement freshness and cleanup',()=>{
   expect(t.requests).toHaveLength(1);
  });
  it.each(['configuration','competing_save'])('a %s after production saves no new coverage or ownership',async failure=>{
-  const f=preparedB(),root=await fs.mkdtemp(path.join(os.tmpdir(),'source-phase-failure-')),t=transport(f,[correctedB(f)]);
+  const f=fixture('A'),root=await fs.mkdtemp(path.join(os.tmpdir(),'source-phase-failure-')),t=transport(f,[correctedA(f)]);
   const mock=vi.spyOn(receiptConfiguration,'authoringReceiptConfiguration').mockResolvedValue(f.draft.runner_evidence.runtime_contract.receipt_configuration);
   try {
    await savePolicySources(root,f.sources);

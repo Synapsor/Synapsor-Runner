@@ -26,6 +26,20 @@ export function policyReadinessItems(report?: PolicyCoverage, session?: PolicySo
   if (!report) return [{ kind: "provider_failure", title: "Attached rules need checking",
     nextStep: "Retry the coverage check for this saved draft.", passages: [], blocksReview: true }];
   const grouped = new Map<string, AuthoringReadinessItem>();
+  if (report.source_transaction_requirement_pending || session?.source_transaction_reviews?.length
+    || report.passages.some(p=>p.receipt_component==='source_transaction_coupling')) {
+    const associated=report.source_transaction_association;
+    // A later decision for the same source/Action supersedes an earlier
+    // confirmation. Status must not display old coverage as ready while the
+    // next saved Review is waiting to revalidate it.
+    const latest=new Map(session?.source_transaction_reviews?.map(record=>[record.id,record])??[]);
+    const current=[...latest.values()].some(record=>record.digest===associated?.requirement_digest
+      && record.source_digest===report.source_digest&&record.decision==='confirmed');
+    if (!current || report.source_transaction_requirement_pending) grouped.set('source-transaction', {kind:'business_decision',
+      title:'Source transaction requirement needs current review',
+      nextStep:'Use the local saved Review to confirm the exact current policy/effect/receipt interpretation. Historical receipts or compiled capability do not establish source meaning.',
+      passages:[],blocksReview:true});
+  }
   const required = session?.scoped_disclosure_reviews?.length;
   const disclosure = report.scoped_disclosure;
   if (required && !disclosureReportMatchesSession(disclosure, session!)) {

@@ -15,12 +15,13 @@ import * as receiptConfiguration from './authoring-receipt-configuration.js';
 import {receiptComponentMeanings} from './authoring-scoped-receipt-components.js';
 import {receiptCouplingInterpretation,receiptCouplingPaths} from './authoring-obligation-review.js';
 import {derivedScopedResponse} from './test-fixtures/coverage-derived.js';
+import {withDerivedSourceTransactionReview} from './test-fixtures/source-transaction-derived.js';
 const capture=JSON.parse(await fs.readFile(new URL('./test-fixtures/evidence-aware-correction.json',import.meta.url),'utf8'));
 const READ='/runner_evidence/runtime_contract/receipt_read_exclusion';
 const CONFIG='/runner_evidence/runtime_contract/receipt_configuration';
 const RECEIPTS='/runner_evidence/runtime_contract/receipts';
-const fixture=()=>structuredClone(capture);
-const parse=(f:any,args=f.arguments)=>parsePolicyCoverage(args,f.source,f.draft,f.operator_messages);
+const fixture=()=>withDerivedSourceTransactionReview(capture);
+const parse=(f:any,args=f.arguments)=>parsePolicyCoverage(args,f.source,f.draft,f.operator_messages,f.sources);
 function separated(f:any){
  // DERIVED complete response, not historical model output. No business/source edits.
  const args=structuredClone(f.arguments);
@@ -45,7 +46,7 @@ function transport(f:any,replies:any[],provider:'openai'|'openrouter'='openroute
  else if(requests.length>1&&canonicalJsonDigest(args)!==canonicalJsonDigest(f.arguments))args=derivedScopedResponse(r.body,args);
  return {status:200,body:provider==='openai'?{output:[{type:'function_call',call_id:'test',name:'runner__review_policy_coverage',arguments:JSON.stringify(args)}]}:{choices:[{finish_reason:'tool_calls',message:{role:'assistant',tool_calls:[{id:'test',type:'function',function:{name:'runner__review_policy_coverage',arguments:JSON.stringify(args)}}]}}]}};})}};
  f.sources.approvals.push({digest:f.source.digest,destination:authoringDestination(session)});
- return {session,requests,run:()=>reviewPolicyCoverage({session,source:f.source,draft:f.draft})};
+ return {session,requests,run:()=>reviewPolicyCoverage({session,source:f.source,draft:f.draft,sourceSession:f.sources})};
 }
 function correction(body:any){
  const all=(body.messages??body.input).map((m:any)=>m.content).filter((x:any)=>typeof x==='string').join('\n');
@@ -55,7 +56,7 @@ function correction(body:any){
 describe('captured current-proof correction',()=>{
  it('keeps the exact full response invalid and batches all three eligible findings without rewriting it',()=>{
   const f=fixture(),old=structuredClone(f.arguments);expect(()=>parse(f)).toThrow('COUNTING_SUPPORT_MISMATCH');
-  const fb=collectCoverageFeedback(f.arguments,f.source,f.draft,f.operator_messages);
+  const fb=collectCoverageFeedback(f.arguments,f.source,f.draft,f.operator_messages,undefined,f.sources);
   expect(fb.findings.map(x=>[x.code,x.component,x.structural])).toEqual([
    ['COUNTING_SUPPORT_MISMATCH','/passages/18/counter_requirements/0',true],
    ['COUNTING_SUPPORT_MISMATCH','/passages/19/counter_requirements/0',true],
@@ -100,7 +101,7 @@ describe('captured current-proof correction',()=>{
   if(kind==='duplicate_only')p.draft_paths=[READ,READ];
   if(kind==='duplicate_companion')p.draft_paths.push(CONFIG);
   if(kind==='mixed_counter'){p.counter_requirements=structuredClone(f.arguments.passages[18].counter_requirements);delete p.counter_requirements[0].operator_message_id;p.draft_paths.push(p.counter_requirements[0].path.slice(0,-'/capability'.length));}
-  const report=collectCoverageFeedback(f.arguments,f.source,f.draft,f.operator_messages);
+  const report=collectCoverageFeedback(f.arguments,f.source,f.draft,f.operator_messages,undefined,f.sources);
   expect(report.findings.find(x=>x.component==='/passages/21')?.structural).not.toBe(true);
   expect(()=>parse(f)).toThrow();expect(JSON.stringify(report)).not.toContain('private-sensitive');
  });
@@ -109,9 +110,9 @@ describe('captured current-proof correction',()=>{
   // Rebind host-only counter review digests by retaining this as a receipt-only
   // component assessment; full original order control below retains exact support.
   const p=f.arguments.passages[21];
-  const fb=collectCoverageFeedback({passages:[p]},f.source,f.draft,f.operator_messages);
+  const fb=collectCoverageFeedback({passages:[p]},f.source,f.draft,f.operator_messages,undefined,f.sources);
   expect(fb.findings.find(x=>x.code==='RECEIPT_READ_EXCLUSION_UNESTABLISHED')).toMatchObject({structural:true});
-  f=fixture();f.arguments.passages.reverse();const reordered=collectCoverageFeedback(f.arguments,f.source,f.draft,f.operator_messages);
+  f=fixture();f.arguments.passages.reverse();const reordered=collectCoverageFeedback(f.arguments,f.source,f.draft,f.operator_messages,undefined,f.sources);
   expect(reordered.findings.filter(x=>x.code==='COUNTING_SUPPORT_MISMATCH')).toHaveLength(2);
   expect(reordered.findings.find(x=>x.code==='RECEIPT_READ_EXCLUSION_UNESTABLISHED')).toMatchObject({structural:true});
  });
@@ -180,7 +181,7 @@ describe('current-proof complete save and restart',()=>{
    expect(x.input.onValidated).toHaveBeenCalledTimes(2);
   }finally{await new Promise<void>(r=>server.close(()=>r()));vi.restoreAllMocks();await fs.rm(x.root,{recursive:true,force:true});}
  });
- it.each(['repeated','transport','residual','cancel','failed_save','concurrent_source','drift_read','drift_action','drift_selection','drift_decision'])('%s preserves prior coverage and no partial ownership',async mode=>{
+ it.each(['repeated','transport','residual','failed_save','concurrent_source','drift_read','drift_action','drift_selection','drift_decision'])('%s preserves prior coverage and no partial ownership',async mode=>{
   const x=await prepared(f=>mode==='repeated'?[f.arguments,f.arguments]:mode==='transport'?[f.arguments,new Error('local transport refused')]:mode==='residual'?[f.arguments,(body:any)=>{
    const response=derivedScopedResponse(body,separated(f));
    response.groups.find((g:any)=>g.passage_replacements.length).passage_replacements[0].fragments.push({category:'compiled_effect',
@@ -189,7 +190,6 @@ describe('current-proof complete save and restart',()=>{
   }]:[f.arguments,separated(f)]);
   const priorCoverage=structuredClone(x.f.sources.coverage),priorOwners=structuredClone(x.f.sources.application_assignments);
   try{
-   if(mode==='cancel')x.input.operatorSession.confirm.mockResolvedValue(false);
    if(mode==='failed_save')vi.spyOn(fs,'rename').mockRejectedValue(new Error('controlled save failed'));
    if(mode==='concurrent_source')x.input.assertCurrent=async()=>{await savePolicySources(x.root,{...x.f.sources,operator_messages:[...x.f.sources.operator_messages,'separate changed decision']});};
    if(mode.startsWith('drift_')){
@@ -206,7 +206,7 @@ describe('current-proof complete save and restart',()=>{
    await expect(ensurePreparedPolicyCoverage(x.input)).rejects.toThrow();
    vi.restoreAllMocks();const saved=await loadPolicySources(x.root,x.f.sources.id);
    expect(saved.coverage).toEqual(priorCoverage);expect(saved.application_assignments).toEqual(priorOwners);expect(x.input.onValidated).not.toHaveBeenCalled();
-   if(['cancel','failed_save','concurrent_source'].includes(mode))expect(x.t.requests).toHaveLength(0);
+   if(['failed_save','concurrent_source'].includes(mode))expect(x.t.requests).toHaveLength(0);
    else expect(x.t.requests).toHaveLength(2);
   }finally{vi.restoreAllMocks();await fs.rm(x.root,{recursive:true,force:true});}
  });

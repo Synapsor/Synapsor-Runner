@@ -16,13 +16,24 @@ import * as receiptConfiguration from './authoring-receipt-configuration.js';
 import {receiptCouplingInterpretation,receiptCouplingPaths,repairableReceiptCouplingRepresentation} from './authoring-obligation-review.js';
 import {receiptComponentMeanings,validateScopedReceiptComponents} from './authoring-scoped-receipt-components.js';
 import {createCoverageRepairScope,assembleScopedCoverageReplacement} from './authoring-scoped-correction.js';
+import {makeSourceTransactionReview,sourceTransactionMappings,sourceTransactionPreparedContext} from './authoring-source-transaction-review.js';
 const capture=JSON.parse(await fs.readFile(new URL('./test-fixtures/receipt-correction-chain.json',import.meta.url),'utf8'));
 const READ='/runner_evidence/runtime_contract/receipt_read_exclusion';
 const CONFIG='/runner_evidence/runtime_contract/receipt_configuration';
 const RECEIPTS='/runner_evidence/runtime_contract/receipts';
-const fixture=()=>structuredClone(capture);
+// DERIVED current operator interpretation for component/transport regressions.
+// The authentic captured fixture remains unchanged and has no such record.
+const fixture=()=>{
+ const f=structuredClone(capture),store=canonicalJsonDigest('DERIVED test project binding');
+ const mapping=sourceTransactionMappings(f.draft)[0]!;
+ const record=makeSourceTransactionReview({source:f.source,session:f.sources.id,store,start:18,end:18,
+  mapping,actor:'derived-test-operator',decision:'confirmed'});
+ f.sources.source_transaction_reviews=[record];
+ f.draft.runner_evidence.source_transaction_requirement=sourceTransactionPreparedContext(f.sources,store,f.source.digest);
+ return f;
+};
 const EFFECT='/runner_evidence/actions/energy_ops.finalize_settlement_cycle/effect';
-const parse=(f:any,args=f.arguments)=>parsePolicyCoverage(args,f.source,f.draft,f.operator_messages);
+const parse=(f:any,args=f.arguments)=>parsePolicyCoverage(args,f.source,f.draft,f.operator_messages,f.sources);
 function separated(f:any){
  // DERIVED complete candidate, not a historical model reply. Same policy/draft.
  // The former effect + selection positive did not prove their transaction
@@ -83,7 +94,7 @@ function transport(f:any,replies:any[],provider:'openai'|'openrouter'='openroute
  if(requests.length>1&&canonicalJsonDigest(args)!==canonicalJsonDigest(f.arguments))args=derivedScopedResponse(r.body,args);
  return {status:200,body:provider==='openai'?{output:[{type:'function_call',call_id:'test',name:'runner__review_policy_coverage',arguments:JSON.stringify(args)}]}:{choices:[{finish_reason:'tool_calls',message:{role:'assistant',tool_calls:[{id:'test',type:'function',function:{name:'runner__review_policy_coverage',arguments:JSON.stringify(args)}}]}}]}};})}};
  f.sources.approvals.push({digest:f.source.digest,destination:authoringDestination(session)});
- return {session,requests,run:()=>reviewPolicyCoverage({session,source:f.source,draft:f.draft})};
+ return {session,requests,run:()=>reviewPolicyCoverage({session,source:f.source,draft:f.draft,sourceSession:f.sources})};
 }
 function correction(body:any){
  const all=(body.messages??body.input).map((m:any)=>m.content).filter((x:any)=>typeof x==='string').join('\n');
@@ -94,7 +105,7 @@ describe('complete captured configuration correction chain',()=>{
  it.each(['openai','openrouter'] as const)('%s nominates only a host-proven omitted coupling shape and validates the whole scoped replacement',async provider=>{
   const f=fixture(),valid=separated(f),invalid=omittedCouplingShape(f,valid);f.arguments=invalid;
   expect(()=>parse(f)).toThrow('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
-  const feedback=collectCoverageFeedback(invalid,f.source,f.draft,f.operator_messages);
+  const feedback=collectCoverageFeedback(invalid,f.source,f.draft,f.operator_messages,undefined,f.sources);
   expect(feedback.findings.map(x=>[x.code,x.component,x.structural])).toEqual([
    ['OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED',`/passages/${invalid.passages.findIndex((p:any)=>p.receipt_component==='source_transaction_coupling')}`,true]]);
   const t=transport(f,[invalid,valid],provider);await t.run();expect(t.requests).toHaveLength(2);
@@ -106,7 +117,8 @@ describe('complete captured configuration correction chain',()=>{
   expect(parse(f,valid).passages.find(p=>p.receipt_coupling)).toMatchObject({receipt_coupling:{origin:'HOST-RESOLVED',effect_count:2,observed:false}});
   expect(f.arguments).toEqual(invalid);
  });
- it.each(['mode','source','revision','transaction','companion','receipt_path','stronger_prose','mixed_fields'] as const)(
+ it.each(['mode','source','revision','transaction','companion','receipt_path','stronger_prose',
+  'effect_already_done','writer_ready','denied_transaction','mixed_fields'] as const)(
   'does not nominate %s as a structural coupling repair without the exact current proof',kind=>{
    const f=fixture(),args=omittedCouplingShape(f),p=args.passages.find((p:any)=>p.receipt_component==='source_transaction_coupling');
    const contract=f.draft.runner_evidence.runtime_contract,host=f.draft.runner_evidence.actions[f.draft.actions[0].outcome];
@@ -117,13 +129,36 @@ describe('complete captured configuration correction chain',()=>{
    if(kind==='companion')host.effect.atomic_updates=[];
    if(kind==='receipt_path')p.draft_paths.pop();
    if(kind==='stronger_prose')p.interpretation+=' The writer is already provisioned.';
+   if(kind==='effect_already_done')p.interpretation='The cycle and register updates, with their source_db receipt, are already committed in the source database.';
+   if(kind==='writer_ready')p.interpretation='The dedicated writer is ready and can already execute this Action.';
+   if(kind==='denied_transaction')p.interpretation='The business effects and receipt do not commit in one source transaction.';
    if(kind==='mixed_fields')p.field_checks=[{resource:'private',field:'unavailable',expectation:'private'}];
-   expect(repairableReceiptCouplingRepresentation(p,f.source,f.draft)).toBe(false);
-   const coupling=collectCoverageFeedback(args,f.source,f.draft,f.operator_messages).findings.find(x=>x.code==='OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
+   expect(repairableReceiptCouplingRepresentation(p,f.source,f.draft,f.sources)).toBe(false);
+   const coupling=collectCoverageFeedback(args,f.source,f.draft,f.operator_messages,undefined,f.sources).findings.find(x=>x.code==='OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
    if(kind==='mixed_fields')expect(coupling).toBeUndefined(); // The earlier private-field prerequisite refuses first.
    else expect(coupling).toMatchObject({structural:false});
    expect(()=>parse(f,args)).toThrow();
   });
+ it('nominates the authentic B capability-only paraphrase by typed scope and current proof, without accepting its prose',()=>{
+  const f=fixture(),args=omittedCouplingShape(f),p=args.passages.find((p:any)=>p.receipt_component==='source_transaction_coupling');
+  p.interpretation='The compiled direct-SQL capability couples both listed business effects and the required source_db receipt in one source transaction: all commit together or roll back. This is capability only, not provisioning, execution, a performed receipt, or independent readback.';
+  expect(repairableReceiptCouplingRepresentation(p,f.source,f.draft,f.sources)).toBe(true);
+  expect(()=>parse(f,args)).toThrow('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
+  expect(collectCoverageFeedback(args,f.source,f.draft,f.operator_messages,undefined,f.sources).findings)
+    .toContainEqual(expect.objectContaining({code:'OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED',structural:true}));
+ });
+ it('does not use the bounded two-effect paraphrase for a three-effect source requirement',()=>{
+  const f=fixture(),args=omittedCouplingShape(f),p=args.passages.find((entry:any)=>entry.receipt_component==='source_transaction_coupling');
+  const third=structuredClone(f.draft.actions[0].effect.atomic_updates[0]);
+  third.target_resource='energy_ops.adjustment_registers';third.target_binding='adjustment';
+  f.draft.actions[0].effect.atomic_updates.push(third);
+  const store=f.sources.source_transaction_reviews[0].store_digest;
+  f.sources.source_transaction_reviews=[makeSourceTransactionReview({source:f.source,session:f.sources.id,store,
+    start:18,end:18,mapping:sourceTransactionMappings(f.draft)[0]!,actor:'derived-test-operator',decision:'confirmed'})];
+  f.draft.runner_evidence.source_transaction_requirement=sourceTransactionPreparedContext(f.sources,store,f.source.digest);
+  p.interpretation='The compiled direct-SQL capability couples both listed business effects and the required source_db receipt in one source transaction: all commit together or roll back. This is capability only, not provisioning, execution, a performed receipt, or independent readback.';
+  expect(repairableReceiptCouplingRepresentation(p,f.source,f.draft,f.sources)).toBe(false);
+ });
  it('the actual producer refuses a scoped replacement that drops the challenged transaction conjunction',async()=>{
   const f=fixture(),valid=separated(f),invalid=omittedCouplingShape(f,valid);
   const deleted=structuredClone(valid);
@@ -138,12 +173,12 @@ describe('complete captured configuration correction chain',()=>{
   // The scoped producer nominates this required span even though other
   // configuration, privacy and setup components still cover its source line.
   expect(scope.targets[0].source_ranges).toEqual([{start:18,end:18}]);
-  expect(()=>parse(f,deleted)).not.toThrow(); // Parser alone has no repair-scope obligation.
+  expect(()=>parse(f,deleted)).toThrow('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED'); // The registered requirement survives omission even outside repair scope.
  });
  it('retains full original invalidity and batches the exact two counter problems plus eligible configuration grouping',()=>{
   const f=fixture(),before=structuredClone(f.arguments);expect(f.arguments.passages).toHaveLength(35);
   expect(()=>parse(f)).toThrow('COUNTING_SUPPORT_MISMATCH');
-  const report=collectCoverageFeedback(f.arguments,f.source,f.draft,f.operator_messages);
+  const report=collectCoverageFeedback(f.arguments,f.source,f.draft,f.operator_messages,undefined,f.sources);
   expect(report.findings.map(x=>[x.code,x.component,x.structural])).toEqual([
    ['COUNTING_SUPPORT_MISMATCH','/passages/21/counter_requirements/0',true],
    ['COUNTING_SUPPORT_MISMATCH','/passages/22/counter_requirements/0',true],
@@ -161,7 +196,7 @@ describe('complete captured configuration correction chain',()=>{
  it.each(['openai','openrouter'] as const)('%s serializes the scoped correction for the exact historical tentative parent',async provider=>{
   const f=fixture(),t=transport(f,[f.arguments,separated(f)],provider);
   const context={source:f.source,draft:f.draft,messages:f.operator_messages};
-  const nominated=createCoverageRepairScope(f.arguments,collectCoverageFeedback(f.arguments,f.source,f.draft,f.operator_messages),context);
+  const nominated=createCoverageRepairScope(f.arguments,collectCoverageFeedback(f.arguments,f.source,f.draft,f.operator_messages,undefined,f.sources),context);
   const derived=derivedScopedResponse({messages:[{content:'Host repair scope (identities and exact references, not authority): '+JSON.stringify(nominated)}]},separated(f));
   expect(derived.representation).toBe('replacement_only_v2');
   expect(derived.groups[0].passage_replacements).toEqual([]);
@@ -173,7 +208,7 @@ describe('complete captured configuration correction chain',()=>{
    const located=assembled.retained.find(r=>r.parent_index===protectedMember.parent_index)!;
    expect(JSON.stringify(assembled.assembled.passages[located.assembled_index])).toBe(JSON.stringify(f.arguments.passages[protectedMember.parent_index]));
   }
-  validateScopedReceiptComponents(assembled.assembled,assembled.categories,nominated,f.source,f.draft);
+  validateScopedReceiptComponents(assembled.assembled,assembled.categories,nominated,f.source,f.draft,f.sources);
   await t.run();expect(t.requests).toHaveLength(2);
   const fb=correction(t.requests[1]);expect(fb.findings).toHaveLength(3);
   expect(fb.findings.every((x:any)=>x.structural)).toBe(true);
@@ -208,7 +243,7 @@ describe('complete captured configuration correction chain',()=>{
   if(kind==='setup_missing')c.deployment_prerequisites.runner_execution_setup.outcomes=[];
   if(kind==='setup_duplicate')c.deployment_prerequisites.runner_execution_setup.outcomes.push(structuredClone(c.deployment_prerequisites.runner_execution_setup.outcomes[0]));
   if(kind==='setup_mode')c.deployment_prerequisites.runner_execution_setup.outcomes[0].configured_mode='proposal_only';
-  const report=collectCoverageFeedback({passages:[p]},f.source,f.draft,f.operator_messages);
+  const report=collectCoverageFeedback({passages:[p]},f.source,f.draft,f.operator_messages,undefined,f.sources);
   const relevant=report.findings.filter(x=>x.component==='/passages/0');
   if(kind==='overview')expect(relevant).toHaveLength(0); // existing accepted narrow selection + overview; pending duty remains separate
   else if(['effect','triple','reordered'].includes(kind))expect(relevant).toEqual([expect.objectContaining({code:'OBLIGATION_CONFIGURATION_COMPONENT_MIXED',structural:true})]);
@@ -232,10 +267,10 @@ describe('complete captured configuration correction chain',()=>{
  });
  it('equivalent passage/pointer order and renamed identifiers preserve receipt disposition',()=>{
   const f=fixture();f.arguments.passages.reverse();for(const p of f.arguments.passages)p.draft_paths.reverse();
-  expect(collectCoverageFeedback(f.arguments,f.source,f.draft,f.operator_messages).findings.map(x=>x.code).sort()).toEqual(['COUNTING_SUPPORT_MISMATCH','COUNTING_SUPPORT_MISMATCH','OBLIGATION_CONFIGURATION_COMPONENT_MIXED'].sort());
+  expect(collectCoverageFeedback(f.arguments,f.source,f.draft,f.operator_messages,undefined,f.sources).findings.map(x=>x.code).sort()).toEqual(['COUNTING_SUPPORT_MISMATCH','COUNTING_SUPPORT_MISMATCH','OBLIGATION_CONFIGURATION_COMPONENT_MIXED'].sort());
   const g=JSON.parse(JSON.stringify(f).split('energy_ops.finalize_settlement_cycle').join('tenant.complete_cycle'));
   const p=g.arguments.passages.find((x:any)=>x.draft_paths.includes(CONFIG)&&x.draft_paths.includes(RECEIPTS));
-  expect(collectCoverageFeedback({passages:[p]},g.source,g.draft,g.operator_messages).findings.find(x=>x.code==='OBLIGATION_CONFIGURATION_COMPONENT_MIXED')).toMatchObject({structural:true});
+  expect(collectCoverageFeedback({passages:[p]},g.source,g.draft,g.operator_messages,undefined,g.sources).findings.find(x=>x.code==='OBLIGATION_CONFIGURATION_COMPONENT_MIXED')).toMatchObject({structural:true});
  });
  it.each(['source_requirement_unestablished','selection_unavailable','mode_mismatch','component_not_isolatable','responsibility_mismatch','reference_overbroad','current_selection_mixed_component'] as const)('maps typed configuration reason %s exhaustively; identical plain text stays conservative',reason=>{
   const e=new CoverageReceiptConfigurationError(reason),finding=coverageFinding(e,'/passages/0',{});
@@ -247,7 +282,7 @@ describe('complete captured configuration correction chain',()=>{
    const f=fixture(),args=structuredClone(f.arguments);for(const p of args.passages)for(const c of p.counter_requirements??[])delete c.operator_message_id;
    args.passages[25].draft_paths=roots;args.passages[25].responsibility=responsibility;
    if(responsibility===undefined)delete args.passages[25].responsibility;
-   const report=collectCoverageFeedback(args,f.source,f.draft,f.operator_messages);
+   const report=collectCoverageFeedback(args,f.source,f.draft,f.operator_messages,undefined,f.sources);
    expect(report.findings.find(x=>x.component==='/passages/25')).toMatchObject({code:'OBLIGATION_CONFIGURATION_COMPONENT_MIXED',structural:false});
    expect(()=>parse(f,args)).toThrow('OBLIGATION_CONFIGURATION_COMPONENT_MIXED');
   }
@@ -256,7 +291,7 @@ describe('complete captured configuration correction chain',()=>{
   for(const roots of [[reference],[reference,EFFECT]]){
    const f=fixture(),args=structuredClone(f.arguments);for(const p of args.passages)for(const c of p.counter_requirements??[])delete c.operator_message_id;
    args.passages[25].draft_paths=roots;
-   const report=collectCoverageFeedback(args,f.source,f.draft,f.operator_messages);
+   const report=collectCoverageFeedback(args,f.source,f.draft,f.operator_messages,undefined,f.sources);
    expect(report.findings.find(x=>x.component==='/passages/25')).toMatchObject({code:'OBLIGATION_CONFIGURATION_REFERENCE_OVERBROAD',structural:false});
    expect(()=>parse(f,args)).toThrow('OBLIGATION_CONFIGURATION_REFERENCE_OVERBROAD');
   }
@@ -272,7 +307,7 @@ describe('complete captured configuration correction chain',()=>{
   if(kind==='stale'){
    const saved=parse(f,args);args.passages=saved.passages;const p=args.passages.find((p:any)=>p.obligation_assessment);p.obligation_assessment.dependencies_digest=canonicalJsonDigest('stale');
   }
-  const report=collectCoverageFeedback(args,f.source,f.draft,f.operator_messages);
+  const report=collectCoverageFeedback(args,f.source,f.draft,f.operator_messages,undefined,f.sources);
   const code=kind==='readback'?'OBLIGATION_READBACK_UNESTABLISHED':kind==='setup'?'OBLIGATION_SETUP_UNESTABLISHED':'OBLIGATION_EVIDENCE_STALE';
   expect(report.findings.find(x=>x.code===code)).toMatchObject({structural:false});expect(()=>parse(f,args)).toThrow();
  });
@@ -334,7 +369,7 @@ describe('current-proof complete save and restart',()=>{
   const x=await prepared(f=>mode==='repeated'?[f.arguments,f.arguments]:mode==='transport'?[f.arguments,new Error('local transport refused')]:mode==='residual'?[f.arguments,{passages:[...separated(f).passages,{start:18,end:18,disposition:'implemented',responsibility:'runner',interpretation:'Invented observation',draft_paths:[RECEIPTS]}]}]:[f.arguments,separated(f)]);
   const priorCoverage=structuredClone(x.f.sources.coverage),priorOwners=structuredClone(x.f.sources.application_assignments);
   try{
-   if(mode==='cancel')x.input.operatorSession.confirm.mockResolvedValue(false);
+   if(mode==='cancel') {x.input.operatorSession.confirm.mockResolvedValue(false);Object.assign(x.input,{savedReviewEpisode:{job:'saved review',subject:'current Action'}});}
    if(mode==='failed_save')vi.spyOn(fs,'rename').mockRejectedValue(new Error('controlled save failed'));
    if(mode==='concurrent_source')x.input.assertCurrent=async()=>{await savePolicySources(x.root,{...x.f.sources,operator_messages:[...x.f.sources.operator_messages,'separate changed decision']});};
    if(mode.startsWith('drift_')){

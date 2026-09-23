@@ -15,7 +15,7 @@ import { createModelAuthoringConversation } from './model-authoring-conversation
 const captures = JSON.parse(await fs.readFile(new URL('./test-fixtures/receipt-review-association.json', import.meta.url),'utf8'));
 const CONFIG='/runner_evidence/runtime_contract/receipt_configuration';
 function fixture(c:'A'|'B') { return structuredClone(captures[c]); }
-function parse(f:any,args=f.arguments) { return parsePolicyCoverage(args,f.source,f.draft,f.sources.operator_messages); }
+function parse(f:any,args=f.arguments) { return parsePolicyCoverage(args,f.source,f.draft,f.sources.operator_messages,f.sources); }
 function receipt(report:any) { return report.passages.find((p:any)=>p.obligation_assessment?.family==='receipt_setup'); }
 function correctedA(f:any) {
  const args=structuredClone(f.arguments), p=args.passages[14];
@@ -32,7 +32,7 @@ function correctedA(f:any) {
 describe('receipt review association through exact final complete captures',()=>{
  it('keeps original A invalid while delivering a precise structural finding; B acquires only its pending association',()=>{
   const a=fixture('A');expect(()=>parse(a)).toThrow('OBLIGATION_OBSERVATION_UNESTABLISHED');
-  const feedback=collectCoverageFeedback(a.arguments,a.source,a.draft,a.sources.operator_messages);
+  const feedback=collectCoverageFeedback(a.arguments,a.source,a.draft,a.sources.operator_messages,undefined,a.sources);
   expect(feedback.findings).toEqual([expect.objectContaining({code:'OBLIGATION_OBSERVATION_UNESTABLISHED',component:'/passages/14',structural:true})]);
   expect(feedback.unevaluated).toContain('/passages/14');
   const b=fixture('B'), report=parse(b), pending=receipt(report);
@@ -41,14 +41,15 @@ describe('receipt review association through exact final complete captures',()=>
   expect(pending.obligation_assessment).toMatchObject({origin:'HOST-RESOLVED',requirement:'source_db',state:'pending',verified:false,association:{kind:'reviewed_receipt_configuration',submitted_path:CONFIG}});
   expect(deferredReviewObligation(pending)?.family).toBe('receipt_setup');
   expect(policyReviewReadiness(b.source,report,b.sources).summary.join(' ')).toContain('Receipt requirement: source_db.');
-  expect(policyReviewReadiness(b.source,report,b.sources).items?.filter(i=>i.blocksReview).map(i=>i.title)).toEqual([]);
+  expect(policyReviewReadiness(b.source,report,b.sources).items?.filter(i=>i.blocksReview).map(i=>i.title))
+    .toEqual(['Source transaction requirement needs current review']);
  });
  it.each(['draft','compiled','reordered'] as const)('keeps equivalent %s capability roots in the same strict correction class',root=>{
   const f=fixture('A');
   if(root!=='draft')f.arguments.passages[14].draft_paths[0]='/runner_evidence/actions/release.clear_assessment/effect';
   if(root==='reordered')f.arguments.passages[14].draft_paths.reverse();
   expect(()=>parse(f)).toThrow('OBLIGATION_OBSERVATION_UNESTABLISHED');
-  expect(collectCoverageFeedback(f.arguments,f.source,f.draft,f.sources.operator_messages).findings).toEqual([expect.objectContaining({code:'OBLIGATION_OBSERVATION_UNESTABLISHED',structural:true})]);
+  expect(collectCoverageFeedback(f.arguments,f.source,f.draft,f.sources.operator_messages,undefined,f.sources).findings).toEqual([expect.objectContaining({code:'OBLIGATION_OBSERVATION_UNESTABLISHED',structural:true})]);
  });
  it.each(['A','B'] as const)('save/reload and exact recheck retain %s pending setup; competing save installs no partial review',async c=>{
   const f=fixture(c),root=await fs.mkdtemp(path.join(os.tmpdir(),'receipt-association-'));
@@ -144,7 +145,7 @@ describe('receipt review association through exact final complete captures',()=>
     {choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[{id:'capture',type:'function',function:{name:'runner__review_policy_coverage',arguments:JSON.stringify(args)}}]}}]}};
   }}};
   f.sources.approvals.push({digest:f.source.digest,destination:authoringDestination(session)});
-  const report=await reviewPolicyCoverage({session,source:f.source,draft:f.draft});expect(requests).toHaveLength(2);
+  const report=await reviewPolicyCoverage({session,source:f.source,draft:f.draft,sourceSession:f.sources});expect(requests).toHaveLength(2);
   const wire=JSON.stringify(requests[1]);expect(wire).toContain('OBLIGATION_OBSERVATION_UNESTABLISHED');expect(wire).toContain('Separate the compiled capability claim');expect(wire).toContain('Do not change source policy, program, receipt mode');
   expect(receipt(report).obligation_assessment.verified).toBe(false);
   const effect=report.passages.find(p=>p.start===26&&p.end===26&&p.disposition==='implemented'
@@ -172,12 +173,12 @@ describe('receipt review association through exact final complete captures',()=>
    const session={provider,model:provider==='openrouter'?'openai/gpt-5.6-terra':'gpt-5.6-terra',apiKey:'synthetic',conversation,dependencies:{
     requestJson:(r:any)=>secureAskJsonRequest({...r,headers:{},endpoint:new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/test`),scope:'custom_loopback'}),onStream:(e:any)=>events.push(e)}};
    f.sources.approvals.push({digest:f.source.digest,destination:authoringDestination(session)});
-   const report=await reviewPolicyCoverage({session,source:f.source,draft:f.draft});expect(wire).toHaveLength(2);
+   const report=await reviewPolicyCoverage({session,source:f.source,draft:f.draft,sourceSession:f.sources});expect(wire).toHaveLength(2);
    const correction=JSON.stringify(wire[1]);expect(correction).toContain('Separate the compiled capability claim');expect(correction).toContain('OBLIGATION_OBSERVATION_UNESTABLISHED');
    expect(correction).not.toContain('opaque-test-continuation');expect(JSON.stringify(events)).not.toContain('opaque-test-continuation');
    expect(receipt(report).obligation_assessment.verified).toBe(false);
    incomplete=true;let submitted=0;
-   await expect(reviewPolicyCoverage({session,source:f.source,draft:f.draft,episode:{beforeSubmission:async()=>{},afterSubmission:async()=>{submitted++;}}})).rejects.toMatchObject({code:provider==='openai'?'ASK_PROVIDER_RESPONSE_INVALID':'ASK_PROVIDER_RESPONSE_INCOMPLETE'});
+   await expect(reviewPolicyCoverage({session,source:f.source,draft:f.draft,sourceSession:f.sources,episode:{beforeSubmission:async()=>{},afterSubmission:async()=>{submitted++;}}})).rejects.toMatchObject({code:provider==='openai'?'ASK_PROVIDER_RESPONSE_INVALID':'ASK_PROVIDER_RESPONSE_INCOMPLETE'});
    expect(submitted).toBe(0);
   }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));}
  });
@@ -187,7 +188,7 @@ describe('receipt review association through exact final complete captures',()=>
   const omitted=structuredClone(f.arguments);for(const p of omitted.passages)if(p.draft_paths.length===1&&p.draft_paths[0]===CONFIG){p.disposition='background';p.draft_paths=[];delete p.responsibility;delete p.issue_kind;}
   const session={provider:'openai' as const,model:'gpt-5.6-terra',apiKey:'synthetic',conversation,dependencies:{requestJson:async()=>({status:200,body:{output:[{type:'function_call',call_id:'omitted',name:'runner__review_policy_coverage',arguments:JSON.stringify(omitted)}]}})}};
   f.sources.approvals.push({digest:f.source.digest,destination:authoringDestination(session)});
-  const report=await reviewPolicyCoverage({session,source:f.source,draft:f.draft,previousReport:f.sources.coverage});
+  const report=await reviewPolicyCoverage({session,source:f.source,draft:f.draft,sourceSession:f.sources,previousReport:f.sources.coverage});
   if(missing){expect(receipt(report)).toBeUndefined();expect(report.passages.some(p=>p.draft_paths.length===1&&p.draft_paths[0]===CONFIG&&p.disposition==='needs_decision')).toBe(true);expect(policyReviewReadiness(f.source,report,f.sources).ready).toBe(false);}
   else expect(receipt(report).obligation_assessment).toMatchObject({requirement:'source_db',state:'pending',verified:false});
  });

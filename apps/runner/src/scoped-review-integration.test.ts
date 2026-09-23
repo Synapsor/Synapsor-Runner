@@ -20,19 +20,30 @@ import { createBoundaryReviewInteractiveSession } from './boundary-cli-picker.js
 import { authoringDestination, loadPolicySources, savePolicySources } from './authoring-policy-source.js';
 import { policyReadinessItems, policyReviewReadiness } from './authoring-review-readiness.js';
 import * as receiptConfiguration from './authoring-receipt-configuration.js';
+import {makeSourceTransactionReview,sourceTransactionMappings,sourceTransactionPreparedContext} from './authoring-source-transaction-review.js';
 
 // Authentic latest paid 31/37 reports and their own prepared context. Every
 // synthetic repair below is labelled DERIVED; neither historical reply is fixed.
 const captured = JSON.parse(await fs.readFile(new URL('./test-fixtures/scoped-review-correction.json', import.meta.url), 'utf8'));
-const fixture = (): any => structuredClone(captured);
+// DERIVED operator interpretation for existing scoped-correction regressions.
+// Historical provider replies and the original captured fixture stay intact.
+const fixture = (): any => {
+  const f=structuredClone(captured),store=canonicalJsonDigest('DERIVED test project binding');
+  const mapping=sourceTransactionMappings(f.draft)[0]!;
+  const record=makeSourceTransactionReview({source:f.source,session:f.sources.id,store,start:18,end:18,
+    mapping,actor:'derived-test-operator',decision:'confirmed'});
+  f.sources.source_transaction_reviews=[record];
+  f.draft.runner_evidence.source_transaction_requirement=sourceTransactionPreparedContext(f.sources,store,f.source.digest);
+  return f;
+};
 const CONFIG = '/runner_evidence/runtime_contract/receipt_configuration';
 const EXCLUSION = '/runner_evidence/runtime_contract/receipt_read_exclusion';
 const RECEIPTS = '/runner_evidence/runtime_contract/receipts';
 const rawDigest = (value: unknown) => `sha256:${createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
 const context = (f: any) => ({ source: f.source, draft: f.draft, messages: f.operator_messages });
-const parse = (f: any, args: Record<string, unknown>) => parsePolicyCoverage(args, f.source, f.draft, f.operator_messages);
+const parse = (f: any, args: Record<string, unknown>) => parsePolicyCoverage(args, f.source, f.draft, f.operator_messages,f.sources);
 function scopeFor(f: any): CoverageRepairScope {
-  return createCoverageRepairScope(f.arguments, collectCoverageFeedback(f.arguments, f.source, f.draft, f.operator_messages), context(f));
+  return createCoverageRepairScope(f.arguments, collectCoverageFeedback(f.arguments, f.source, f.draft, f.operator_messages,undefined,f.sources), context(f));
 }
 function requestScope(body: any): CoverageRepairScope {
   const marker = 'Host repair scope (identities and exact references, not authority): ';
@@ -60,7 +71,7 @@ function derivedReplacement(f: any, scope: CoverageRepairScope): any {
 function derivedAssembly(f: any) {
   const scope = scopeFor(f), replacement = derivedReplacement(f, scope);
   const result = assembleScopedCoverageReplacement(scope, f.arguments, replacement, context(f));
-  validateScopedReceiptComponents(result.assembled, result.categories, scope, f.source, f.draft);
+  validateScopedReceiptComponents(result.assembled, result.categories, scope, f.source, f.draft,f.sources);
   return { scope, replacement, ...result };
 }
 type Reply = any | ((body: any, number: number) => any);
@@ -80,7 +91,7 @@ function transport(f: any, replies: Reply[], provider: 'openai' | 'openrouter' =
           function: { name: 'runner__review_policy_coverage', arguments: JSON.stringify(args) } }] } }] } };
     }) } };
   f.sources.approvals.push({ digest: f.source.digest, destination: authoringDestination(session) });
-  return { session, requests, run: () => reviewPolicyCoverage({ session, source: f.source, draft: f.draft }) };
+  return { session, requests, run: () => reviewPolicyCoverage({ session, source: f.source, draft: f.draft,sourceSession:f.sources }) };
 }
 const correctedReplies = (f: any): Reply[] => [f.arguments, (body: any) => derivedReplacement(f, requestScope(body))];
 
@@ -90,8 +101,8 @@ describe('latest actual report and host-scoped DERIVED lineage', () => {
     expect(f.arguments.passages).toHaveLength(31); expect(f.actual_correction.passages).toHaveLength(37);
     expect(f.arguments.passages[21].counter_requirements.every((p: any) => !Object.hasOwn(p, 'operator_message_id'))).toBe(true);
     expect(() => parse(f, f.arguments)).toThrow(); expect(() => parse(f, f.actual_correction)).toThrow();
-    const first = collectCoverageFeedback(f.arguments, f.source, f.draft, f.operator_messages);
-    const second = collectCoverageFeedback(f.actual_correction, f.source, f.draft, f.operator_messages);
+    const first = collectCoverageFeedback(f.arguments, f.source, f.draft, f.operator_messages,undefined,f.sources);
+    const second = collectCoverageFeedback(f.actual_correction, f.source, f.draft, f.operator_messages,undefined,f.sources);
     expect(first.findings).toHaveLength(1); expect(first.findings[0]).toMatchObject({ component: '/passages/24', structural: true });
     expect(second.findings.filter(finding => finding.code === 'COUNTING_SUPPORT_MISMATCH')).toHaveLength(2);
     expect(second.findings.some(finding => finding.code === 'OBLIGATION_OBSERVATION_UNESTABLISHED')).toBe(true);
@@ -196,6 +207,13 @@ describe('latest actual report and host-scoped DERIVED lineage', () => {
 
   it('renamed Action identity preserves the complete proof and scoped transport', async () => {
     const f = JSON.parse(JSON.stringify(fixture()).replaceAll('energy_ops.finalize_settlement_cycle', 'cooperative.close_period'));
+    // DERIVED renamed source/effect association needs a new attributable
+    // decision identity; changing text inside an old digest is not reuse.
+    const store=f.draft.runner_evidence.source_transaction_requirement.store_digest;
+    const record=makeSourceTransactionReview({source:f.source,session:f.sources.id,store,start:18,end:18,
+      mapping:sourceTransactionMappings(f.draft)[0]!,actor:'derived-test-operator',decision:'confirmed'});
+    f.sources.source_transaction_reviews=[record];
+    f.draft.runner_evidence.source_transaction_requirement=sourceTransactionPreparedContext(f.sources,store,f.source.digest);
     // This separate synthetic renamed control must rebind its retained explicit
     // counting decisions to the mechanically renamed configuration. It is not
     // the authentic positive lineage above or a new owner answer.
@@ -368,7 +386,7 @@ describe('latest scoped report through real HTTP/SSE and coordinated persistence
         classification: 'DERIVED local HTTP/SSE scoped replacement over authentic latest 31-passage parent; zero provider calls',
         parent_passages: 31, requested_parent_indices: tentative.scope.targets.flatMap((target: any) => target.members.map((member: any) => member.parent_index)),
         outside_digest: tentative.scope.outside_digest, requests: wire, replies, tentative,
-        complete_findings: collectCoverageFeedback(tentative.assembled, x.f.source, x.f.draft, x.f.operator_messages),
+        complete_findings: collectCoverageFeedback(tentative.assembled, x.f.source, x.f.draft, x.f.operator_messages,undefined,x.f.sources),
         saved_coverage: saved.coverage, readiness: policyReviewReadiness(x.f.source, saved.coverage, saved),
       }, null, 2));
     } finally { await new Promise<void>(resolve => server.close(() => resolve())); vi.restoreAllMocks(); await fs.rm(x.root, { recursive: true, force: true }); }

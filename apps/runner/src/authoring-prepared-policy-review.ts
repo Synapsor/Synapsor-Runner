@@ -1,4 +1,6 @@
 import { scopedDisclosureInventory } from "./authoring-scoped-disclosure.js";
+import { currentSourceTransactionReview, sourceTransactionReviewNeeded } from './authoring-source-transaction-review.js';
+import { assertRequiredReceiptCoupling, receiptCouplingInterpretation, receiptCouplingPaths } from './authoring-obligation-review.js';
 import { randomUUID } from "node:crypto";
 import type { CoverageReviewEpisode } from "./authoring-policy-source.js";
 import { reviewClientDutyOwnership } from "./authoring-client-duties.js";
@@ -73,6 +75,14 @@ export async function ensurePreparedPolicyCoverage(input: {
   };
   await assertCurrent();
   let draftRecord = input.currentDraft();
+  const transactionRequirement=currentSourceTransactionReview(source,draftRecord,sources);
+  if ((sourceTransactionReviewNeeded(draftRecord) || sources.source_transaction_reviews?.length)
+    && !transactionRequirement)
+    throw new Error('SOURCE_TRANSACTION_REVIEW_PENDING: Review the exact current source transaction requirement locally before a model-backed review. No source meaning was inferred from receipt mode or compiled effects.');
+  if (transactionRequirement) assertRequiredReceiptCoupling([{start:transactionRequirement.start,end:transactionRequirement.end,
+    disposition:'implemented',responsibility:'runner',issue_kind:'coverage_link',receipt_component:'source_transaction_coupling',
+    interpretation:receiptCouplingInterpretation(transactionRequirement.action.outcome),
+    draft_paths:receiptCouplingPaths(transactionRequirement.action.outcome)}],source,draftRecord,[],sources);
   // Unknown owner facts do not become a request for another model opinion.
   // Local inspection/deferral is available before provider consent/selection.
   if (scopedDisclosureInventory(source, draftRecord).items.some(f => f.state !== "confirmed_non_sensitive"))
@@ -102,7 +112,7 @@ export async function ensurePreparedPolicyCoverage(input: {
     || state.attemptKey === undefined && sources.coverage_context_digest === key && sources.coverage)) {
     try {
       reused = parsePolicyCoverage({ passages: (state.report?.key === key ? state.report.report : sources.coverage!).passages },
-        source, draftRecord, sources.operator_messages ?? []);
+        source, draftRecord, sources.operator_messages ?? [],sources);
     } catch { /* Revalidate incompatible evidence; never treat a ready flag as proof. */ }
   }
   if (!input.force && state.attemptKey === key && !reused) {
@@ -150,7 +160,7 @@ export async function ensurePreparedPolicyCoverage(input: {
       expectedSource=canonicalJsonDigest(staged); Object.assign(sources,staged);
     });
     state.attemptKey = key;
-    return reviewPolicyCoverage({session:input.modelSession,source,draft:draftRecord,
+    return reviewPolicyCoverage({session:input.modelSession,source,draft:draftRecord,sourceSession:sources,
       ...(sources.coverage?.source_digest===source.digest?{previousReport:sources.coverage}:{}),
       episode:{beforeSubmission:async number=>saveEpisode(e=>{
         if(number!==e.submissions.length+1 || number>3) throw new Error("POLICY_COVERAGE_EPISODE_EXHAUSTED");

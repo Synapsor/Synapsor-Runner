@@ -34,7 +34,7 @@ export function readPrivacyReview(input: {
     // Coverage from another source, Action revision or Read revision cannot resolve this warning.
     if (report.source_digest === source.digest && report.draft_digest === canonicalJsonDigest(draft)
       && explorationBoundaryCandidateDigest(draft.read) === digest) {
-      try { checked = parsePolicyCoverage({ passages: report.passages }, source, draft, input.session?.operator_messages?.join("\n") ?? ""); }
+      try { checked = parsePolicyCoverage({ passages: report.passages }, source, draft, input.session?.operator_messages?.join("\n") ?? "",input.session); }
       catch { /* Keep advisory evidence, but do not claim a checked business meaning. */ }
     }
   }

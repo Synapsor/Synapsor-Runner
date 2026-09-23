@@ -1,4 +1,5 @@
 import { SOURCE_RECEIPT_CONTRACT, ATOMIC_EFFECT_TRANSACTION } from "./authoring-receipt-contract.js";
+import {sourceTransactionPreparedContext} from './authoring-source-transaction-review.js';
 import { actionSubjectCompatibility } from "./action-subject-compatibility.js";
 import { receiptReadExclusion, reviewEvidencePhases } from "./authoring-receipt-read-evidence.js";
 import { policyCountingInterpretations } from "./authoring-counting-review.js";
@@ -99,6 +100,7 @@ function inspectedReadScopes(read: ExplorationBoundaryDraft, source?: PolicySour
 export function policyCoverageDraft(input: {
   client?: string;
   reviewStoreDigest?: string;
+  transactionStoreDigest?: string;
   read: ExplorationBoundaryDraft;
   decisions: Array<{ decision: string; confirmed: boolean }>;
   actions: CompiledActionRuleModelDraftV1[];
@@ -312,6 +314,8 @@ export function policyCoverageDraft(input: {
         read_digest: readDigest, store_digest: input.reviewStoreDigest ?? input.countingDomain?.store_binding_digest ?? null,
         reviews: input.policySources?.scoped_disclosure_reviews ?? [],
       }} : {}),
+      ...(input.policySources ? {source_transaction_requirement: sourceTransactionPreparedContext(input.policySources,
+        input.transactionStoreDigest ?? input.countingDomain?.store_binding_digest ?? null,policySource?.digest)} : {}),
       ...(sourceConstraints ? { source_constraints: sourceConstraints } : {}),
       ...(excludedFields && Object.keys(excludedFields).length ? { excluded_field_access: {
         selected_read_digest: canonicalJsonDigest(input.read), selected_actions_digest: canonicalJsonDigest(actions.map(action => action.draft)),

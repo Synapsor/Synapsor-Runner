@@ -1,4 +1,5 @@
-import type { PolicyPassage, PolicyTextSnapshot } from './authoring-policy-source.js';
+import type { PolicyPassage, PolicyTextSnapshot, PolicySourceSession } from './authoring-policy-source.js';
+import { currentSourceTransactionReview } from './authoring-source-transaction-review.js';
 import { isDeferredSourceReadback, isDeferredPolicyDeployment } from './authoring-policy-source.js';
 import { assessReceiptCouplingCapability, assessReviewObligation, receiptSelectionComponent, receiptCouplingInterpretation } from './authoring-obligation-review.js';
 import type { CoverageRepairCategory, CoverageRepairScope } from './authoring-scoped-correction.js';
@@ -28,7 +29,7 @@ export function constrainReceiptComponentSchema(schema:any,draft:unknown):void {
   }
 }
 export function validateScopedReceiptComponents(assembled:{passages:any[]},categories:Array<{index:number;category:CoverageRepairCategory;target_id:string}>,
-  scope:CoverageRepairScope,source:PolicyTextSnapshot,draft:unknown):void {
+  scope:CoverageRepairScope,source:PolicyTextSnapshot,draft:unknown,session?:PolicySourceSession):void {
   const meanings=receiptComponentMeanings(draft);
   const fail=()=>{throw new CoverageScopedCorrectionError('A receipt component has no exact applicable category proof or adds claims outside its narrow meaning.');};
   for(const {index,category,target_id} of categories){
@@ -45,7 +46,12 @@ export function validateScopedReceiptComponents(assembled:{passages:any[]},categ
         ||p.source_counter_obligation!==undefined||p.operator_override!==undefined||p.operator_clarification!==undefined
         ||Object.hasOwn(p,'operator_message_id'))fail();
     }
-    if(category==='source_transaction_coupling') {if(!assessReceiptCouplingCapability(p,source,draft))fail();}
+    if(category==='source_transaction_coupling') {
+      const requirement=currentSourceTransactionReview(source,draft,session);
+      if(!requirement||requirement.start!==p.start||requirement.end!==p.end
+        ||!assessReceiptCouplingCapability(p,source,draft)?.outcome
+        ||assessReceiptCouplingCapability(p,source,draft)?.outcome!==requirement.action.outcome)fail();
+    }
     else if(p.receipt_component!==undefined)fail();
     if(category==='receipt_configuration'&&!receiptSelectionComponent(p,source,draft))fail();
     if(category==='receipt_read_exclusion'&&(p.draft_paths.length!==1||p.draft_paths[0]!==ROOT+'/receipt_read_exclusion'))fail();

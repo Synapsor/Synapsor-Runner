@@ -4,6 +4,8 @@ import { canonicalJsonDigest } from '@synapsor-runner/protocol';
 import { assessReceiptCouplingCapability, assessReviewObligation, assertRequiredReceiptCoupling,
   receiptCouplingInterpretation, receiptCouplingPaths } from './authoring-obligation-review.js';
 import type { PolicyPassage } from './authoring-policy-source.js';
+import {policyTextSnapshot} from './authoring-policy-source.js';
+import { makeSourceTransactionReview,sourceTransactionMappings,sourceTransactionPreparedContext } from './authoring-source-transaction-review.js';
 
 // DERIVED components over retained authentic prepared evidence. These are not
 // paid replies, performed receipts, or a replacement for the new 31-passage
@@ -11,12 +13,20 @@ import type { PolicyPassage } from './authoring-policy-source.js';
 const captured = JSON.parse(await fs.readFile(new URL('./test-fixtures/receipt-correction-chain.json', import.meta.url), 'utf8'));
 function fixture() {
   const f = structuredClone(captured), outcome = f.draft.actions[0].outcome;
+  const store=canonicalJsonDigest('DERIVED test project binding');
+  const mapping=sourceTransactionMappings(f.draft)[0]!;
+  const record=makeSourceTransactionReview({source:f.source,session:f.sources.id,store,start:18,end:18,
+    mapping,actor:'derived-test-operator',decision:'confirmed'});
+  f.sources.source_transaction_reviews=[record];
+  f.draft.runner_evidence.source_transaction_requirement=sourceTransactionPreparedContext(f.sources,store,f.source.digest);
   const p: PolicyPassage = { start: 18, end: 18, disposition: 'implemented', responsibility: 'runner',
     issue_kind: 'coverage_link', receipt_component: 'source_transaction_coupling',
     interpretation: receiptCouplingInterpretation(outcome), draft_paths: receiptCouplingPaths(outcome) };
   return { ...f, p, outcome, host: f.draft.runner_evidence.actions[outcome], contract: f.draft.runner_evidence.runtime_contract };
 }
 const assess = (f: ReturnType<typeof fixture>) => assessReceiptCouplingCapability(f.p, f.source, f.draft);
+const required=(f:ReturnType<typeof fixture>,passages:PolicyPassage[],spans:Pick<PolicyPassage,'start'|'end'>[]=[])=>
+  assertRequiredReceiptCoupling(passages,f.source,f.draft,spans,f.sources);
 
 describe('typed source transaction coupling capability', () => {
   it('binds both existing business effects and source receipt without inventing observations or altering context', () => {
@@ -28,7 +38,7 @@ describe('typed source transaction coupling capability', () => {
     expect(proof!.dependencies_digest).toMatch(/^sha256:[a-f0-9]{64}$/u);
     expect(assessReviewObligation(f.p, f.source, f.draft)).toBeUndefined();
     expect(canonicalJsonDigest(f.draft)).toBe(before);
-    expect(() => assertRequiredReceiptCoupling([f.p], f.source, f.draft, [{ start: 18, end: 18 }])).not.toThrow();
+    expect(() => required(f,[f.p], [{ start: 18, end: 18 }])).not.toThrow();
   });
 
   it.each(['prose_receipt', 'prose_readback', 'prose_provisioning', 'next_step', 'topic', 'wrong_responsibility', 'omitted_responsibility',
@@ -38,7 +48,7 @@ describe('typed source transaction coupling capability', () => {
     'missing_raw_companion', 'both_companions_removed', 'duplicate_companion', 'companion_target', 'companion_binding', 'companion_set', 'companion_field',
     'primary_field', 'primary_operation', 'primary_target', 'version', 'nullable_version', 'binding_resource', 'binding_source', 'foreign_source',
     'mode', 'selection_missing', 'selection_stale', 'destination', 'read', 'reader_source', 'reader_engine', 'candidate',
-    'action_mode', 'setup_outcome', 'setup_missing', 'setup_duplicate', 'setup_mode', 'setup_unsupported', 'source_snapshot', 'requirement'] as const)(
+    'action_mode', 'setup_outcome', 'setup_missing', 'setup_duplicate', 'setup_mode', 'setup_unsupported', 'source_snapshot'] as const)(
     'refuses %s instead of inferring a source-atomic conclusion', kind => {
       const f = fixture(), p = f.p as any, c = f.contract, raw = f.draft.actions[0].effect, effect = f.host.effect;
       switch (kind) {
@@ -100,10 +110,18 @@ describe('typed source transaction coupling capability', () => {
         case 'setup_mode': c.deployment_prerequisites.runner_execution_setup.outcomes[0].configured_mode = 'proposal_only'; break;
         case 'setup_unsupported': c.deployment_prerequisites.runner_execution_setup.supported = false; break;
         case 'source_snapshot': delete c.authoring_lifecycle.current_policy_snapshot; break;
-        case 'requirement': f.source.text = f.source.text.replace('source_db receipt', 'different receipt'); break;
       }
       expect(() => assess(f)).toThrow('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
     });
+
+  it('does not let a changed source borrow the old operator requirement even when compiled capability remains',()=>{
+    const f=fixture();
+    const changed=policyTextSnapshot(Buffer.from(f.source.text.replace('source_db receipt','different receipt'),'utf8'),f.source.name,f.source.version);
+    f.source=changed;
+    f.contract.authoring_lifecycle.current_policy_snapshot.digest=changed.digest;
+    expect(assess(f)).toMatchObject({origin:'HOST-RESOLVED',phase:'compiled_capability'});
+    expect(()=>required(f,[f.p])).toThrow('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
+  });
 
   it('recomputes its binding instead of trusting a prior positive digest', () => {
     const f = fixture(), first = assess(f)!;
@@ -147,24 +165,24 @@ describe('typed source transaction coupling capability', () => {
     const f = fixture(), effect: PolicyPassage = { ...f.p, draft_paths: [f.p.draft_paths[0]!], interpretation: 'The compiled effects are supported.' };
     delete effect.receipt_component;
     const selection = { ...effect, draft_paths: ['/runner_evidence/runtime_contract/receipt_configuration'], interpretation: 'The selected mode is source_db.' };
-    expect(() => assertRequiredReceiptCoupling([effect, selection], f.source, f.draft)).toThrow('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
-    expect(() => assertRequiredReceiptCoupling([selection], f.source, f.draft, [{ start: 18, end: 18 }])).toThrow('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
-    expect(() => assertRequiredReceiptCoupling([effect, selection, f.p], f.source, f.draft)).not.toThrow();
+    expect(() => required(f,[effect, selection])).toThrow('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
+    expect(() => required(f,[selection], [{ start: 18, end: 18 }])).toThrow('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
+    expect(() => required(f,[effect, selection, f.p])).not.toThrow();
   });
   it('does not invent transaction meaning from a mode-only configuration comparison', () => {
     const f = fixture(), selection: PolicyPassage = { ...f.p, draft_paths: ['/runner_evidence/runtime_contract/receipt_configuration'], interpretation: 'The selected mode is source_db.' };
     delete selection.receipt_component;
-    expect(() => assertRequiredReceiptCoupling([selection], f.source, f.draft)).not.toThrow();
+    expect(() => required(f,[selection])).toThrow('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
   });
   it('rejects duplicate coupling proof even when topics or reference ordering differ', () => {
     const f = fixture(), duplicate = { ...f.p, topic: 'Another capability heading', draft_paths: [...f.p.draft_paths].reverse() };
-    expect(() => assertRequiredReceiptCoupling([f.p, structuredClone(f.p)], f.source, f.draft)).toThrow('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
-    expect(() => assertRequiredReceiptCoupling([f.p, duplicate], f.source, f.draft)).toThrow('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
+    expect(() => required(f,[f.p, structuredClone(f.p)])).toThrow('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
+    expect(() => required(f,[f.p, duplicate])).toThrow('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
   });
   it('requires the exact nominated source range rather than a broader overlapping proof', () => {
     const f = fixture(); f.p.start = 17;
     expect(assess(f)).toBeDefined();
-    expect(() => assertRequiredReceiptCoupling([f.p], f.source, f.draft, [{ start: 18, end: 18 }])).toThrow('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
+    expect(() => required(f,[f.p], [{ start: 18, end: 18 }])).toThrow('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
   });
   it('leaves the existing runner_ledger comparison and setup duty on their ordinary path', () => {
     const f = fixture();
@@ -175,7 +193,7 @@ describe('typed source transaction coupling capability', () => {
     const selection: PolicyPassage = { ...f.p, draft_paths: ['/runner_evidence/runtime_contract/receipt_configuration'], interpretation: 'The selected mode matches the source-required runner_ledger mode.' };
     delete selection.receipt_component;
     expect(() => assessReviewObligation(selection, f.source, f.draft)).not.toThrow();
-    expect(() => assertRequiredReceiptCoupling([selection], f.source, f.draft)).not.toThrow();
+    expect(() => required(f,[selection])).not.toThrow(); // A Runner-ledger selection is not a source_db coupling claim.
     expect(() => assess(f)).toThrow('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
   });
 });

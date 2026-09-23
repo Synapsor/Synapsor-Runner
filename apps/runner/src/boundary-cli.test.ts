@@ -50,6 +50,7 @@ import {
   loadBoundaryReviewContext,
   prepareModelReadBoundaryExposureRevision,
   promptBoundaryMappingModel,
+  reviewSavedBoundaryPolicy,
 } from "./boundary-commands.js";
 import {
   createSavedBoundary,
@@ -16725,6 +16726,46 @@ function stripAnsi(value: string): string {
 }
 
 describe("saved review operation dispatch and persistence", () => {
+  it('refuses an intervening saved-source decision before carrying a local review selection into a pending request',async()=>{
+    const fixture=await staleSemanticRevalidationFixture();
+    const {root,inspection}=fixture;
+    try {
+      const initial=await loadBoundaryReviewContext(root);
+      await saveBoundaryReviewProgress(root,createBoundaryReviewProgress({draft:initial.draft,candidate:initial.candidate,
+        confirmedDecisions:initial.candidate.unresolved_decisions,actor:'test-reviewer',reason:'Existing disabled Read review',revision:1}));
+      const context=await loadBoundaryReviewContext(root);
+      const binding={boundary_name:context.candidate.pack.name,
+        generation_lock_fingerprint:context.bundle.authority.generation_lock_fingerprint,
+        schema_fingerprint:context.bundle.authority.schema_fingerprint,
+        role_posture_fingerprint:context.bundle.authority.role_posture_fingerprint};
+      const authority=(await readActionRuleAuthorityDraft(root,'reviewed_staging_rules'))!;
+      const sources=newPolicySourceSession();
+      sources.snapshots=[policyTextSnapshot(Buffer.from('Keep the saved reviewed visit follow-up.','utf8'),'current-rules.txt')];
+      sources.active=1;
+      sources.approvals=[{digest:sources.snapshots[0]!.digest,
+        destination:authoringDestination({provider:'openai',model:'gpt-test'})}];
+      await savePolicySources(root,sources);
+      const resume=buildBoundaryAuthoringResumeState({binding,stage:'authority_review',
+        jobIntent:'Maintain the reviewed visit job.',provider:'openai',model:'gpt-test',
+        policySourceSession:sources.id,action:{intent:'Keep the visit job.',outcome:authority.reviews[0]!.outcome,
+          strategy:'rule_derived'}});
+      await writeBoundaryAuthoringResumeState(root,resume,{expectedRevisionDigest:null});
+      const session={...fixture.session,chooseOption:vi.fn(async()=>{throw new Error('Unexpected selection');})};
+      const base={projectRoot:root,session,resume,sources,request:'Review attached rules and unresolved decisions',
+        selectCurrentContext:true,schemaInspector:async()=>inspection};
+      const local=await reviewSavedBoundaryPolicy({...base,localTransactionOnly:true});
+      expect(local.localTransaction).toBe('continue');
+      expect(local.reviewSelection).toBeDefined();
+      const changed=await loadPolicySources(root,sources.id);
+      changed.operator_messages=['A separately saved source decision.'];
+      await savePolicySources(root,changed,{expectedDigest:canonicalJsonDigest(sources)});
+      await expect(reviewSavedBoundaryPolicy({...base,preselectedReview:local.reviewSelection})).rejects.toThrow('POLICY_SOURCE_CHANGED');
+      const after=await readBoundaryAuthoringResumeState(root,binding);
+      expect(after.status).toBe('ready');
+      if(after.status==='ready')expect(after.value.pending_policy_review).toBeUndefined();
+      expect((await loadPolicySources(root,sources.id)).operator_messages).toEqual(changed.operator_messages);
+    } finally {await fixture.dispose();}
+  });
   it.each(["context-renew", "context-decline", "context-auto", "context-race", "menu", "no-change", "typed-review", "redundant-source", "unknown", "declined", "choice-save-race", "source-race", "resume-race", "unrelated-edit", "provider-refusal", "semantic-question", "genuine-noop", "maintenance", "maintenance-missing", "maintenance-source-race", "model-review", "model-resume", "model-review-edit", "model-cancel", "model-declined", "fallback-review", "fallback-edit", "fallback-pause", "captured-contract", "receipt", "receipt-source-race", "client-declined", "client-source-race"])("reviews without entering editors: %s", async mode => {
     const receipt = mode.startsWith("receipt");
     const maintenance = mode.startsWith("maintenance"), changingModel = mode.startsWith("model-");

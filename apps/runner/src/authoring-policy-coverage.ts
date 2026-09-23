@@ -2,6 +2,7 @@ import {createCoverageRepairScope, assembleScopedCoverageReplacement, scopeToolS
 import {constrainReceiptComponentSchema, validateScopedReceiptComponents, receiptComponentMeanings} from "./authoring-scoped-receipt-components.js";
 import { CoverageReceiptDutyError } from './authoring-coverage-feedback.js';
 import { scopedDisclosureInventory } from "./authoring-scoped-disclosure.js";
+import { currentSourceTransactionReview, sourceTransactionReviewNeeded } from './authoring-source-transaction-review.js';
 import { receiptConfigurationComponentOnly } from "./authoring-policy-source.js";
 import { CoverageSourceLinesError, missingReviewSourceLines, reviewSourceInventory } from "./authoring-source-coverage.js";
 import { CoverageComponentError, CoverageComponentsError, CoverageCurrentDescriptionError, recordCoverageFeedbackParent, recordCoverageFindingSubject, recordCheckedCoveragePassage, coverageFinding, MAX_COVERAGE_FINDINGS, MAX_COVERAGE_FEEDBACK_BYTES, MAX_COVERAGE_SUBMISSIONS, permitsSecondCoverageCorrection, permitsSecondScopedCoverageCorrection, type CoverageFeedback } from "./authoring-coverage-feedback.js";
@@ -16,7 +17,7 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { AskError, askToolSurfaceDigest, resolveAskProviderConfiguration, runAskProviderTurn, type AskToolDefinition, type AskToolGateway } from "./model-ask.js";
 import type { ModelAuthoringNarrationSession } from "./model-authoring-narration.js";
 import { modelAuthoringHistory } from "./model-authoring-conversation.js";
-import { activePolicySource, isDeferredPolicyDeployment, isDeferredSourceReadback, isDeferredSourceCounterMaintenance, policyTextLines, validApplicationObligations, type PolicyTextSnapshot, type PolicyCoverage, type PolicyPassage, type CoverageReviewEpisode } from "./authoring-policy-source.js";
+import { activePolicySource, isDeferredPolicyDeployment, isDeferredSourceReadback, isDeferredSourceCounterMaintenance, policyTextLines, validApplicationObligations, type PolicyTextSnapshot, type PolicyCoverage, type PolicyPassage, type CoverageReviewEpisode, type PolicySourceSession } from "./authoring-policy-source.js";
 export type { PolicyCoverage, PolicyPassage } from "./authoring-policy-source.js";
 import type { ReviewSection } from "./read-boundary-review-types.js";
 import { redactCliErrorMessage } from "./cli-logging.js";
@@ -552,7 +553,7 @@ function parseCoveragePassage(raw: unknown, index: number, source: PolicyTextSna
 /** Diagnostic-only traversal of the very same passage validator. A failed
  * passage is never returned, saved, or treated as proof of its remaining checks. */
 export function collectCoverageFeedback(args: Record<string, unknown>, source: PolicyTextSnapshot, draft: unknown,
-  operatorHistory: string | readonly string[], originalError?: unknown): CoverageFeedback {
+  operatorHistory: string | readonly string[], originalError?: unknown, sourceSession?: PolicySourceSession): CoverageFeedback {
   const result: CoverageFeedback = { context: canonicalJsonDigest({source: source.digest, draft, messages: operatorHistory}),
     findings: [], limited: false, unevaluated: [], complete_validation: false };
   recordCoverageFeedbackParent(result,args);
@@ -574,10 +575,10 @@ export function collectCoverageFeedback(args: Record<string, unknown>, source: P
     if (f.code === "OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED") {
       const match = /^\/passages\/(\d+)$/u.exec(f.component);
       const entry = match && (args.passages as PolicyPassage[])[Number(match[1])];
-      if (entry && repairableReceiptCouplingRepresentation(entry, source, draft)) {
+      if (entry && repairableReceiptCouplingRepresentation(entry, source, draft,sourceSession)) {
         f.structural = true;
-        f.reason = "The current host evidence establishes the exact compiled source-transaction capability, but this submitted component omits its required typed association or outcome-specific canonical meaning. The submitted review remains invalid.";
-        f.repair = "Within the exact host-nominated source region, correct this isolated source_transaction_coupling component to implemented/runner/coverage_link with the supplied outcome-specific canonical capability interpretation and the exact effect, execution and receipts roots. Preserve the other receipt selection, Read exclusion, setup and observation duties independently. This is a compiled capability, not provisioning, execution authorization, a performed receipt or readback. The complete assembled report and current evidence are revalidated; do not change the policy, Action, receipt mode or source.";
+        f.reason = "A current operator-reviewed source requirement and independently checked compiled capability support this exact typed component, but its submitted representation is invalid. The submitted narration is not proof and no part of this review was accepted.";
+        f.repair = "Replace only this host-nominated source_transaction_coupling component with implemented/runner/coverage_link, the supplied outcome-specific canonical capability wording, and the exact effect, execution and receipts roots. The source requirement is the separate saved operator record; this component states only current compiled capability. Preserve receipt selection, Read exclusion, setup and observation duties independently. It proves neither provisioning, execution permission, a performed receipt nor readback. The whole assembled report is revalidated; do not change policy, Action, receipt mode or source.";
       }
     }
     if (f.code === "COUNTING_SUPPORT_MISMATCH" && error instanceof CoverageComponentError) {
@@ -644,7 +645,8 @@ export function collectCoverageFeedback(args: Record<string, unknown>, source: P
   return result;
 }
 
-export function parsePolicyCoverage(args: Record<string, unknown>, source: PolicyTextSnapshot, draft: unknown, operatorHistory: string | readonly string[]): PolicyCoverage {
+export function parsePolicyCoverage(args: Record<string, unknown>, source: PolicyTextSnapshot, draft: unknown,
+  operatorHistory: string | readonly string[], sourceSession?: PolicySourceSession): PolicyCoverage {
   const unsupportedKeys = Object.keys(args).filter((key) => key !== "passages");
   if (unsupportedKeys.length) throw new Error(`Coverage tool accepts only passages; unexpected top-level keys: ${unsupportedKeys.slice(0, 8).map((key) => key.replace(/[^a-zA-Z0-9_.-]/gu, "_").slice(0, 64)).join(", ")}. Put every interpretation inside its passage; Runner binds source and draft digests.`);
   if (!Array.isArray(args.passages)) throw new Error(`Coverage passages must be an array; received ${args.passages === null ? "null" : typeof args.passages}. Return the complete structured passages array.`);
@@ -743,7 +745,11 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
   // inventory/pending components added above must never fill an omitted line.
   const missing = missingReviewSourceLines(source, args.passages)!;
   if (missing.length) throw new CoverageSourceLinesError(source.digest, missing);
-  assertRequiredReceiptCoupling(passages, source, draft);
+  assertRequiredReceiptCoupling(passages, source, draft,[],sourceSession);
+  const reviewedTransaction=currentSourceTransactionReview(source,draft,sourceSession);
+  const capability=reviewedTransaction && passages.find(p=>p.receipt_coupling?.outcome===reviewedTransaction.action.outcome
+    && p.receipt_coupling.source_range.start===reviewedTransaction.start
+    && p.receipt_coupling.source_range.end===reviewedTransaction.end)?.receipt_coupling;
   // Configuration evidence proves only the selected mode. Preserve its submitted
   // passage and an isolated, still-pending duty rather than calling a receipt done.
   for (const passage of [...passages]) {
@@ -754,11 +760,17 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
   }
   const inventory = configuredCountingLimits(draft);
   return { scoped_disclosure: scopedDisclosureInventory(source, draft), source_digest: source.digest, draft_digest: canonicalJsonDigest(draft), passages, client_duties: clientDutyInventory(draft),
+    ...((sourceTransactionReviewNeeded(draft) || sourceSession?.source_transaction_reviews?.length) && !(reviewedTransaction && capability)
+      ? {source_transaction_requirement_pending:true as const} : {}),
+    ...(reviewedTransaction && capability ? {source_transaction_association:{origin:'HOST-REVIEW-ASSOCIATION' as const,
+      requirement_digest:reviewedTransaction.digest,capability_dependencies_digest:capability.dependencies_digest,
+      outcome:capability.outcome,source_digest:source.digest,decision:'operator_confirmed_unverified' as const,phase:'business_review' as const}} : {}),
     counting_inventory: { version: 1, digest: canonicalJsonDigest(inventory.map(({ path, digest }) => ({ path, digest }))), paths: inventory.map(i => i.path) } };
 }
 
 export async function reviewPolicyCoverage(input: {
   session: ModelAuthoringNarrationSession; source: PolicyTextSnapshot; draft: unknown; env?: NodeJS.ProcessEnv;
+  sourceSession?: PolicySourceSession;
   previousReport?: PolicyCoverage;
   episode?: { beforeSubmission: (number: number) => Promise<void>;
     afterSubmission: (number: number, feedback: CoverageFeedback | undefined, accepted: boolean, tentative?: NonNullable<CoverageReviewEpisode["submissions"][number]["tentative"]>) => Promise<void> };
@@ -830,12 +842,12 @@ export async function reviewPolicyCoverage(input: {
             {source:input.source,draft:input.draft,messages:operatorMessages});
           candidate = lastAssembly.assembled;
           submissionEvidence.assembled = structuredClone(candidate);
-          validateScopedReceiptComponents(lastAssembly.assembled,lastAssembly.categories,repairScope,input.source,input.draft);
+          validateScopedReceiptComponents(lastAssembly.assembled,lastAssembly.categories,repairScope,input.source,input.draft,input.sourceSession);
           assertRequiredReceiptCoupling(lastAssembly.assembled.passages as PolicyPassage[],input.source,input.draft,
-            repairScope.targets.filter(t=>t.receipt_region).flatMap(t=>t.source_ranges));
+            repairScope.targets.filter(t=>t.receipt_region).flatMap(t=>t.source_ranges),input.sourceSession);
         } else lastAssembly = undefined;
         tentativeReport = structuredClone(candidate);
-        report = parsePolicyCoverage(candidate, input.source, input.draft, operatorMessages);
+        report = parsePolicyCoverage(candidate, input.source, input.draft, operatorMessages,input.sourceSession);
         if (input.previousReport?.source_digest === input.source.digest) {
           // A new response cannot complete a previously pending duty by omission.
           // Reparse retained components against current evidence before saving.
@@ -845,17 +857,17 @@ export async function reviewPolicyCoverage(input: {
               const path = p.obligation_assessment?.path ?? (receiptConfigurationComponentOnly(p) ? "/runner_evidence/runtime_contract/receipts" : p.source_counter_obligation?.path ?? p.draft_paths[0]);
               return next.obligation_assessment?.family === family && next.obligation_assessment.path === path;
             }));
-          const validatedPrior = prior.length ? parsePolicyCoverage({ passages: [...report.passages, ...prior] }, input.source, input.draft, operatorMessages).passages.slice(report.passages.length) : [];
+          const validatedPrior = prior.length ? parsePolicyCoverage({ passages: [...report.passages, ...prior] }, input.source, input.draft, operatorMessages,input.sourceSession).passages.slice(report.passages.length) : [];
           const retained = validatedPrior.filter(p => (deferredReviewObligation(p) || receiptConfigurationComponentOnly(p))
             && !report!.passages.some(next => next.obligation_assessment?.family === (p.obligation_assessment?.family ?? "receipt_setup")
               && next.obligation_assessment.path === (p.obligation_assessment?.path ?? "/runner_evidence/runtime_contract/receipts")));
-          if (retained.length) report = parsePolicyCoverage({ passages: [...report.passages, ...retained] }, input.source, input.draft, operatorMessages);
+          if (retained.length) report = parsePolicyCoverage({ passages: [...report.passages, ...retained] }, input.source, input.draft, operatorMessages,input.sourceSession);
         }
         return { ok: true, value: { recorded: true, semantic_completeness_proven: false, authority_granted: false } };
       } catch (error) {
         report = undefined;
         tentativeReport = structuredClone(candidate);
-        feedback = collectCoverageFeedback(candidate, input.source, input.draft, operatorMessages, error);
+        feedback = collectCoverageFeedback(candidate, input.source, input.draft, operatorMessages, error,input.sourceSession);
         // A rejected envelope/category is not permission to regenerate the whole report.
         if (error instanceof CoverageScopedCorrectionError) feedback = {
           context: contextIdentity, findings: [{code:error.code,component:"/",identity:canonicalJsonDigest({context:contextIdentity,kind:"scope_refusal"}),
@@ -991,7 +1003,7 @@ export async function reviewPolicyCoverage(input: {
         skipRunnerQuestionContext: true, requiredInitialToolName: TOOL, completeAfterRequiredTool: true,
       }).catch((error: unknown) => {
         if (attempt === 0 && error instanceof AskError && error.code === "ASK_REQUIRED_TOOL_NOT_CALLED") {
-          feedback = collectCoverageFeedback({}, input.source,input.draft,operatorMessages);
+          feedback = collectCoverageFeedback({}, input.source,input.draft,operatorMessages,undefined,input.sourceSession);
           issue = JSON.stringify(feedback);
           return;
         }

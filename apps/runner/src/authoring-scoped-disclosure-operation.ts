@@ -50,7 +50,7 @@ export async function localScopedDisclosureReview(input:{projectRoot:string;sour
   let report;
   let validationFailure:string|undefined;
   if(input.sources.coverage?.source_digest===source.digest){
-    try {report=parsePolicyCoverage({passages:input.sources.coverage.passages},source,draft,input.sources.operator_messages??[]);}
+    try {report=parsePolicyCoverage({passages:input.sources.coverage.passages},source,draft,input.sources.operator_messages??[],input.sources);}
     catch {validationFailure='The retained full review requires current validation; a local classification cannot repair or waive another claim.';}
   }
   // Whole strict revalidation is required even for a provider-free old report.

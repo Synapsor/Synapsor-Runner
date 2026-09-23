@@ -1,6 +1,7 @@
 import { SOURCE_RECEIPT_CONTRACT, ATOMIC_EFFECT_TRANSACTION } from "./authoring-receipt-contract.js";
+import { currentSourceTransactionReview, sourceTransactionMappings, sourceTransactionReviewNeeded } from './authoring-source-transaction-review.js';
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { isDeferredSourceCounterMaintenance, isDeferredSourceReadback, receiptSetupComponentOnly as receiptOnly, receiptConfigurationComponentOnly, type ReviewObligationAssessment, type PolicyPassage, type PolicyTextSnapshot, type ReceiptCouplingAssessment } from "./authoring-policy-source.js";
+import { isDeferredSourceCounterMaintenance, isDeferredSourceReadback, receiptSetupComponentOnly as receiptOnly, receiptConfigurationComponentOnly, type ReviewObligationAssessment, type PolicyPassage, type PolicyTextSnapshot, type ReceiptCouplingAssessment, type PolicySourceSession } from "./authoring-policy-source.js";
 import { CoverageReceiptObservationError, CoverageReceiptReadContextError, CoverageReceiptReadExclusionError, CoverageReceiptConfigurationError, type ReceiptConfigurationFindingReason } from "./authoring-coverage-feedback.js";
 export { deferredReviewObligation } from "./authoring-policy-source.js";
 
@@ -170,11 +171,12 @@ export function receiptCouplingPaths(outcome: string): string[] {
 export function receiptCouplingInterpretation(outcome: string): string {
   return `The compiled ${outcome} direct-SQL capability couples every listed business effect and its required source_db receipt in one source transaction: they commit together or roll back. This establishes capability only. Provisioning, execution authorization, a performed receipt and independent source readback remain separately unverified.`;
 }
-/** Feedback eligibility only. The submitted passage remains invalid. A narrow
- * omission of the typed host claim or outcome name may be corrected only when
- * the unchanged assessor establishes the complete current capability after
- * those representation fields are supplied. No arbitrary prose is promoted. */
-export function repairableReceiptCouplingRepresentation(p: PolicyPassage, source: PolicyTextSnapshot, draft: unknown): boolean {
+/** Feedback eligibility only. The submitted passage remains invalid. Exact
+ * typed component/paths plus independent current requirement and capability
+ * permit a narrow replacement; rejected narration supplies neither proof nor
+ * an accepted claim. The replacement is validated from scratch. */
+export function repairableReceiptCouplingRepresentation(p: PolicyPassage, source: PolicyTextSnapshot, draft: unknown,
+  session?: PolicySourceSession): boolean {
   if (p.receipt_component !== 'source_transaction_coupling' || p.disposition !== 'implemented'
     || p.responsibility !== undefined && p.responsibility !== 'runner'
     || p.issue_kind !== undefined && p.issue_kind !== 'coverage_link'
@@ -185,9 +187,23 @@ export function repairableReceiptCouplingRepresentation(p: PolicyPassage, source
   const matches = actions.filter((action: any) => typeof action?.outcome === 'string'
     && sameSet(p.draft_paths, receiptCouplingPaths(action.outcome)));
   if (matches.length !== 1) return false;
+  const requirement=currentSourceTransactionReview(source,draft,session);
+  if (!requirement || requirement.start!==p.start || requirement.end!==p.end
+    || requirement.action.outcome!==matches[0].outcome) return false;
+  const currentMapping=sourceTransactionMappings(draft).find(mapping=>canonicalJsonDigest(mapping)===canonicalJsonDigest({
+    action:requirement.action,required_effects:requirement.required_effects,
+    required_receipt:requirement.required_receipt,relation:requirement.relation}));
+  if (!currentMapping) return false;
   const canonical = receiptCouplingInterpretation(matches[0].outcome);
+  // A retry is allowed only for the finite capability-only serialization
+  // shapes already emitted in this component family. Arbitrary narration can
+  // assert a conflict or performed effect and must remain a substantive stop;
+  // it is never rewritten into the host's approved sentence by guessing at
+  // English meaning. These forms decide correction eligibility, not proof.
   const omittedOutcome = canonical.replace(`The compiled ${matches[0].outcome} direct-SQL`, 'The compiled direct-SQL');
-  if (p.interpretation !== canonical && p.interpretation !== omittedOutcome) return false;
+  const boundedParaphrase = 'The compiled direct-SQL capability couples both listed business effects and the required source_db receipt in one source transaction: all commit together or roll back. This is capability only, not provisioning, execution, a performed receipt, or independent readback.';
+  if (![canonical, omittedOutcome, ...(currentMapping.required_effects.length === 2 ? [boundedParaphrase] : [])]
+    .includes(p.interpretation)) return false;
   if (p.responsibility === 'runner' && p.issue_kind === 'coverage_link' && p.interpretation === canonical) return false;
   try {
     return assessReceiptCouplingCapability({ ...p, responsibility: 'runner', issue_kind: 'coverage_link',
@@ -213,7 +229,8 @@ export function assessReceiptCouplingCapability(p: PolicyPassage, source: Policy
     || (p as PolicyPassage & { operator_message_id?: unknown }).operator_message_id !== undefined) {
     return couplingFailure('The typed coupling component must contain only the Runner capability claim.');
   }
-  if (receiptRequirement(source, p) !== 'source_db') return couplingFailure('The exact source_db requirement is not established for this source range.');
+  if (receiptRequirement(source,p)==='runner_ledger')
+    return couplingFailure('The cited source explicitly requires Runner-ledger receipts, not this source_db transaction association.');
   const problem = receiptSelectionProblem(source, draft, 'source_db');
   if (problem) return couplingFailure(`The exact current source receipt selection is unavailable (${problem}).`);
   const configuration = at(draft, CONFIGURATION_PATH), read = at(draft, '/read');
@@ -308,21 +325,41 @@ export function assessReceiptCouplingCapability(p: PolicyPassage, source: Policy
  * explicit source_db span must retain a positive coupling component. A pure
  * configuration comparison continues to establish selection only. */
 export function assertRequiredReceiptCoupling(passages: readonly PolicyPassage[], source: PolicyTextSnapshot, draft: unknown,
-  requiredSpans: readonly Pick<PolicyPassage, 'start' | 'end'>[] = []): void {
+  requiredSpans: readonly Pick<PolicyPassage, 'start' | 'end'>[] = [], session?: PolicySourceSession): void {
+  const needed=sourceTransactionReviewNeeded(draft);
+  const requirement=currentSourceTransactionReview(source,draft,session);
+  if (!requirement && passages.some(p=>p.receipt_component==='source_transaction_coupling'))
+    couplingFailure('The current source transaction meaning needs an explicit applicable operator review. Receipt mode and compiled capability cannot supply it.');
+  if ((needed || session?.source_transaction_reviews?.length) && !requirement) {
+    // A report about other concerns may remain a pending review artifact. It
+    // cannot become BUSINESS-ready: no association is emitted and readiness
+    // requires the current operator record independently of provider prose.
+    return;
+  }
+  if (requirement && receiptRequirement(source,requirement)==='runner_ledger')
+    couplingFailure('The current source range explicitly specifies Runner-ledger receipts; an operator record cannot waive this conflicting requirement.');
+  if (requirement && !sourceTransactionMappings(draft).some(mapping =>
+    canonicalJsonDigest(mapping) === canonicalJsonDigest({action:requirement.action,
+      required_effects:requirement.required_effects,required_receipt:requirement.required_receipt,relation:requirement.relation})))
+    couplingFailure('The current complete Action effect and receipt mapping does not implement the retained source requirement.');
   const proofs = passages.flatMap(p => {
     const proof = assessReceiptCouplingCapability(p, source, draft);
     return proof ? [proof] : [];
   });
+  if (requirement && proofs.some(proof => proof.outcome !== requirement.action.outcome
+    || proof.source_range.start !== requirement.start || proof.source_range.end !== requirement.end))
+    couplingFailure('A coupling component refers to a different Action or source range than the current operator-reviewed requirement.');
   const identities = proofs.map(proof => canonicalJsonDigest({ range: proof.source_range, outcome: proof.outcome }));
   if (new Set(identities).size !== identities.length) {
     couplingFailure('The same source-range/outcome coupling component cannot be duplicated or renamed to manufacture proof.');
   }
   const roots = receiptCapabilityRoots(draft);
-  const required = [...requiredSpans, ...passages.filter(p => p.disposition === 'implemented' && p.responsibility === 'runner'
+  const required = [...(requirement ? [{start:requirement.start,end:requirement.end}] : []),
+    ...requiredSpans.filter(span=>receiptRequirement(source,span)==='source_db'), ...passages.filter(p => p.disposition === 'implemented' && p.responsibility === 'runner'
     && receiptRequirement(source, p) === 'source_db' && p.draft_paths.some(path => roots.includes(path)))];
   for (const span of required) {
-    if (receiptRequirement(source, span) !== 'source_db') continue;
-    if (!proofs.some(proof => proof.source_range.start === span.start && proof.source_range.end === span.end)) {
+    if (!proofs.some(proof => proof.source_range.start === span.start && proof.source_range.end === span.end
+      && (!requirement || proof.outcome===requirement.action.outcome))) {
       couplingFailure('The required source transaction conjunction remains unestablished; separate effect and receipt-selection claims cannot replace it.');
     }
   }
