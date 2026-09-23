@@ -1,9 +1,38 @@
 import { describe, expect, it } from "vitest";
 import { z } from "zod";
-import { mcpToolInputJsonSchema, portableDiscoveryInputJsonSchema } from "./tool-schema-publication.js";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
+import { mcpToolInputJsonSchema, portableDiscoveryInputJsonSchema, publishToolInputContracts } from "./tool-schema-publication.js";
 import { semanticActionCatalogSchema, semanticActionCatalogJsonSchema } from "./semantic-action-schema.js";
 
 describe("portable discovery declarations", () => {
+  it('refuses a late incompatible tools/list replacement instead of dropping the tool', async()=>{
+    const server=new McpServer({name:'publication-conformance',version:'1'},{capabilities:{tools:{}}});
+    const canonical=z.object({resource:z.string()}).strict();
+    publishToolInputContracts(server,name=>name==='app.describe_data'
+      ? {...mcpToolInputJsonSchema(canonical),properties:{resource:{$ref:'https://untrusted.example/schema'}}}
+      : undefined);
+    server.registerTool('app.describe_data',{description:'Metadata',inputSchema:canonical},async()=>({content:[{type:'text',text:'unused'}]}));
+    const client=new Client({name:'publication-check',version:'1'}),[a,b]=InMemoryTransport.createLinkedPair();
+    try{await server.connect(b);await client.connect(a);
+      await expect(client.listTools()).rejects.toThrow('MCP_TOOL_DECLARATION_INVALID');
+    }finally{await client.close();await server.close()}
+  });
+  it('refuses late root composition even when the root still looks like a closed object', async()=>{
+    const server=new McpServer({name:'root-composition-check',version:'1'},{capabilities:{tools:{}}});
+    const canonical=z.object({resource:z.string()}).strict();
+    publishToolInputContracts(server,name=>name==='app.describe_data'
+      ? {...mcpToolInputJsonSchema(canonical),anyOf:[
+        {type:'object',additionalProperties:false,properties:{resource:{type:'string'}}},
+        {type:'object',additionalProperties:false,properties:{resource:{type:'integer'}}},
+      ]} : undefined);
+    server.registerTool('app.describe_data',{description:'Metadata',inputSchema:canonical},async()=>({content:[{type:'text',text:'unused'}]}));
+    const client=new Client({name:'root-composition-client',version:'1'}),[a,b]=InMemoryTransport.createLinkedPair();
+    try{await server.connect(b);await client.connect(a);
+      await expect(client.listTools()).rejects.toThrow('root_composition_not_portable');
+    }finally{await client.close();await server.close()}
+  });
   it("projects canonical fields without changing the canonical operation validator", () => {
     const before = mcpToolInputJsonSchema(semanticActionCatalogSchema);
     const declaration = semanticActionCatalogJsonSchema();

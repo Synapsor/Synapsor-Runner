@@ -9,6 +9,7 @@ import { newPolicySourceSession, policyTextSnapshot, authoringDestination, type 
 import { parsePolicyCoverage, policyCoverageSummary, reviewPolicyCoverage, isMechanicalApprovalCounterPassage, isReadOnlyPolicyPassage, referencesReadPolicy, actionablePolicyRequirements, prioritizePolicyRepairs } from "./authoring-policy-coverage.js";
 import { policyReadinessItems, policyReviewReadiness } from "./authoring-review-readiness.js";
 import { AskError, type AskProviderDependencies } from "./model-ask.js";
+import { coverageToolDeclarationIssue } from "./authoring-coverage-tool-profile.js";
 import { DEFAULT_REVIEWED_EXPLORATION_BUDGETS, type ExplorationBoundaryDraft } from "./auto-boundary.js";
 import { policyCoverageDraft, policyCoverageActionTargets } from "./authoring-policy-evidence.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -304,6 +305,33 @@ describe("private Action field policy evidence", () => {
     expect(requests[0]).toContain(privatePath);
     expect(requests[0]).toContain("verification-only fields");
     expect(requests[1]).not.toContain("Previous untrusted coverage submission");
+    expect(draft).toEqual(before);
+  });
+
+  it('emits a portable scoped declaration through the actual OpenRouter chat encoder without relaxing private-field validation', async () => {
+    const input=fixture(),draft=policyCoverageDraft(input),before=structuredClone(draft);
+    const sourceCopy=source, model='openai/gpt-5.6-terra';
+    const conversation=createModelAuthoringConversation();conversation.policySources=newPolicySourceSession();
+    conversation.policySources.snapshots=[sourceCopy];conversation.policySources.active=sourceCopy.version;
+    conversation.policySources.approvals=[{digest:sourceCopy.digest,destination:authoringDestination({provider:'openrouter',model})}];
+    const requests:Record<string,unknown>[]=[];
+    const invalid={...passage,draft_paths:[absentReadPath]};
+    const result=await reviewPolicyCoverage({source:sourceCopy,draft,env:{OPENROUTER_API_KEY:'test-key'},
+      session:{provider:'openrouter',model,conversation,dependencies:{requestJson:async request=>{
+        requests.push(structuredClone(request.body));
+        const replacement=derivedScopedResponse(request.body,{passages:[requests.length===1?invalid:{...passage,draft_paths:[privatePath]}]});
+        return {status:200,body:{choices:[{message:{role:'assistant',tool_calls:[{id:`coverage_${requests.length}`,
+          type:'function',function:{name:'runner__review_policy_coverage',arguments:JSON.stringify(replacement)}}]},finish_reason:'tool_calls'}]}};
+      }}},
+    });
+    expect(result.passages[0]!.disposition).toBe('implemented');
+    expect(requests).toHaveLength(2);
+    expect(coverageToolDeclarationIssue(requests[0]!,131072)).toBeUndefined();
+    expect(coverageToolDeclarationIssue(requests[1]!,131072)).toBeUndefined();
+    const correction=(requests[1]!.tools as any[])[0].function.parameters;
+    expect(JSON.stringify(correction)).not.toMatch(/"(?:oneOf|anyOf|allOf|not|const|\$ref)"/u);
+    expect(correction.properties.groups.minItems).toBe(1);
+    expect(JSON.stringify(correction)).toContain(privatePath);
     expect(draft).toEqual(before);
   });
 });

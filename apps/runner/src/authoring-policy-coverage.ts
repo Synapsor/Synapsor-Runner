@@ -1,4 +1,4 @@
-import {createCoverageRepairScope, assembleScopedCoverageReplacement, scopeToolSchema, CoverageScopedCorrectionError, type CoverageRepairScope} from "./authoring-scoped-correction.js";
+import {createCoverageRepairScope, assembleScopedCoverageReplacement, scopeToolSchema, portableScopeToolSchema, CoverageScopedCorrectionError, type CoverageRepairScope} from "./authoring-scoped-correction.js";
 import {constrainReceiptComponentSchema, validateScopedReceiptComponents, receiptComponentMeanings} from "./authoring-scoped-receipt-components.js";
 import { CoverageReceiptDutyError } from './authoring-coverage-feedback.js';
 import { scopedDisclosureInventory } from "./authoring-scoped-disclosure.js";
@@ -761,11 +761,14 @@ export async function reviewPolicyCoverage(input: {
   // not indexes that could mean something different after history changes.
   const operatorMessages = [...(input.session.conversation?.policySources?.operator_messages ?? [])];
   const inventory = reviewSourceInventory(input.source);
+  const ordinaryReferences = coverageReferences(input.draft);
   const fullTools: AskToolDefinition[] = [{ name: TOOL, description: "Record a COMPLETE REPLACEMENT untrusted review against the exact disabled draft and source inventory. Every nonblank line needs a disposition, including headings and definitions. Overlapping ranges may separate claims; rejected reports are never merged or partially saved. Does not change or activate authority.",
     input_schema: { type: "object", additionalProperties: false, required: ["passages"], properties: { passages: { type: "array", maxItems: 120,
       items: { type: "object", additionalProperties: false, required: ["start", "end", "disposition", "interpretation", "draft_paths"], properties: {
         start: { type: "integer", minimum: 1, maximum: inventory.line_count }, end: { type: "integer", minimum: 1, maximum: inventory.line_count }, disposition: { type: "string", enum: [...DISPOSITIONS] },
-        interpretation: { type: "string", maxLength: 800 }, draft_paths: { type: "array", items: { type: "string", enum: coverageReferences(input.draft) } }, operator_override: { type: "string" },
+        interpretation: { type: "string", maxLength: 800 }, draft_paths: ordinaryReferences.length
+          ? { type: "array", items: { type: "string", enum: ordinaryReferences } }
+          : { type: "array", maxItems: 0, items: { type: "string" } }, operator_override: { type: "string" },
         ...(operatorMessages.length ? { operator_message_id: { type: "integer", minimum: 1, maximum: operatorMessages.length,
           description: "Exact indexed operator evidence. For disposition=overridden Runner saves its original text as the override. A reference on another disposition is saved as its exact supporting clarification only: it does not waive any requirement or replace validation. Prefer this ID without a redundant operator_override quote. A pause or deferred action is not an override." } } : {}),
         topic: { type: "string", maxLength: 90, description: "Short business requirement, e.g. Three automatic approvals per customer account. Not technical reasoning or a JSON pointer." },
@@ -893,7 +896,7 @@ export async function reviewPolicyCoverage(input: {
       if (attempt && feedback) {
         try {
           repairScope = createCoverageRepairScope(tentativeReport, feedback,
-            {source:input.source,draft:input.draft,messages:operatorMessages}, {ordinaryReferences:coverageReferences(input.draft)});
+            {source:input.source,draft:input.draft,messages:operatorMessages}, {ordinaryReferences});
         } catch (error) {
           if (error instanceof CoverageScopedCorrectionError) { issue = error.message; break; }
           throw error;
@@ -901,7 +904,7 @@ export async function reviewPolicyCoverage(input: {
         const passageSchema = (fullTools[0]!.input_schema as any).properties.passages.items;
         const schema = scopeToolSchema(repairScope, passageSchema);
         constrainReceiptComponentSchema(schema,input.draft);
-        tools = [{name:TOOL,description:"Replace ONLY the host-nominated region of the exact unaccepted tentative parent. Outside records remain unchanged but unaccepted. Runner assembles and validates the complete review; this grants no authority.",input_schema:schema}];
+        tools = [{name:TOOL,description:"Replace ONLY the host-nominated region of the exact unaccepted tentative parent. Outside records remain unchanged but unaccepted. Runner assembles and validates the complete review; this grants no authority.",input_schema:portableScopeToolSchema(repairScope,passageSchema,schema)}];
         authorityDigest = askToolSurfaceDigest(tools);
         feedbackHistory.push(feedback);
       }

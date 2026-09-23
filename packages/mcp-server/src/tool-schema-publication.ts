@@ -2,6 +2,7 @@ import type { z } from "zod";
 import { zodToJsonSchema } from "zod-to-json-schema";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { ListToolsRequestSchema, type Tool } from "@modelcontextprotocol/sdk/types.js";
+import { outgoingToolSchemaIssue } from "@synapsor-runner/protocol";
 
 export function mcpToolInputJsonSchema(schema: z.ZodTypeAny): Tool["inputSchema"] {
   return { ...zodToJsonSchema(schema, { $refStrategy: "none" }), type: "object" } as Tool["inputSchema"];
@@ -71,7 +72,10 @@ export function publishToolInputContracts(
       if (!("tools" in result) || !Array.isArray(result.tools)) return result;
       return { ...result, tools: result.tools.map((tool: Tool) => {
         const replacement = inputSchema(tool.name);
-        return replacement ? { ...tool, inputSchema: replacement } : tool;
+        const emitted = replacement ? { ...tool, inputSchema: replacement } : tool;
+        const issue = outgoingToolSchemaIssue(emitted.inputSchema, "mcp_portable", 131_072);
+        if (issue) throw new Error(`MCP_TOOL_DECLARATION_INVALID: ${tool.name} tools/list mcp_portable ${issue.path} ${issue.code}; no incomplete tools/list was published.`);
+        return emitted;
       }) };
     });
   };

@@ -1,10 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { createHash } from 'node:crypto';
+import { mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { canonicalJsonDigest } from '@synapsor-runner/protocol';
 import Ajv from 'ajv';
 import { collectCoverageFeedback, parsePolicyCoverage } from './authoring-policy-coverage.js';
 import { recordCoverageFeedbackParent } from './authoring-coverage-feedback.js';
-import { createCoverageRepairScope, assembleScopedCoverageReplacement, scopeToolSchema,
+import { MAX_COVERAGE_SUBMISSIONS } from './authoring-coverage-feedback.js';
+import { coverageToolDeclarationIssue } from './authoring-coverage-tool-profile.js';
+import { createCoverageRepairScope, assembleScopedCoverageReplacement, scopeToolSchema, portableScopeToolSchema,
   type CoverageRepairCategory, type CoverageRepairContext } from './authoring-scoped-correction.js';
 
 const root = '/runner_evidence/runtime_contract';
@@ -388,6 +392,46 @@ describe('host-scoped unaccepted coverage assembly', () => {
     expect(validate(changed)).toBe(false);
     expect(validate({...f.payload,passages:[]})).toBe(false);
     expect(passageSchema.properties.draft_paths).toEqual({type:'array',items:{type:'string'}});
+  });
+  it('publishes a bounded portable scoped declaration while leaving target/category correlations to the unchanged host', () => {
+    expect(MAX_COVERAGE_SUBMISSIONS).toBe(3); // A new stage needs an explicit conformance case.
+    const f=fixture();
+    const passageSchema={type:'object',additionalProperties:false,required:['start','end','disposition','interpretation','draft_paths'],properties:{
+      start:{type:'integer'},end:{type:'integer'},disposition:{type:'string'},interpretation:{type:'string'},responsibility:{type:'string'},draft_paths:{type:'array',items:{type:'string'}},
+    }};
+    const strict=scopeToolSchema(f.scope,passageSchema);
+    const portable=portableScopeToolSchema(f.scope,passageSchema,strict);
+    const validate=new (Ajv as unknown as {new(options:unknown):any})({strict:false}).compile(portable);
+    expect(validate(f.payload),JSON.stringify(validate.errors)).toBe(true);
+    expect(JSON.stringify(portable)).not.toMatch(/"(?:oneOf|anyOf|allOf|not|const|\$ref)"/u);
+    const responses={tools:[{type:'function',name:'runner__review_policy_coverage',parameters:portable}]};
+    const openrouter={tools:[{type:'function',function:{name:'runner__review_policy_coverage',parameters:portable}}]};
+    expect(coverageToolDeclarationIssue(responses,131072)).toBeUndefined();
+    expect(coverageToolDeclarationIssue(openrouter,131072)).toBeUndefined();
+    const outside=structuredClone(f.payload);outside.groups[0]!.replacements[0]!.passage.draft_paths=['/outside'];
+    expect(validate(outside)).toBe(false);
+    const overlap=structuredClone(f.payload);overlap.groups[0]!.replacements[0]!.category='setup';
+    expect(validate(overlap)).toBe(true); // Deliberate wire superset; exact host refuses it.
+    expect(()=>f.assemble(overlap)).toThrow('COVERAGE_SCOPED_CORRECTION_REFUSED');
+    const extra=structuredClone(f.payload) as any;extra.groups[0].replacements[0].passage.unknown='unreviewed';
+    expect(validate(extra)).toBe(false);
+    expect(()=>f.assemble(extra)).toThrow('COVERAGE_SCOPED_CORRECTION_REFUSED');
+    if(process.env.SYNAPSOR_TEST_EVIDENCE_DIR){
+      mkdirSync(process.env.SYNAPSOR_TEST_EVIDENCE_DIR,{recursive:true});
+      const authoringEmitters=readdirSync(import.meta.dirname).filter(name=>name.endsWith('.ts')&&!name.endsWith('.test.ts')
+        &&readFileSync(join(import.meta.dirname,name),'utf8').includes('runAskProviderTurn(')).sort();
+      writeFileSync(join(process.env.SYNAPSOR_TEST_EVIDENCE_DIR,'outgoing-authoring-contract-report.json'),JSON.stringify({
+        operation:'runner__review_policy_coverage',canonical_definition:'reviewPolicyCoverage fullTools and scopeToolSchema',
+        emitting_function:'reviewPolicyCoverage -> runAskProviderTurn -> openAiRequestBody',
+        adapters:['OpenAI Responses','OpenRouter Chat Completions'],mode:'nonstrict function tool, forced tool choice',
+        stages:[{stage:'initial',profile:'openai_non_strict_function',case:'authoring-policy-coverage.test.ts actual encoded request'},
+          {stage:'first_scoped_correction',profile:'openai_non_strict_function',schema_sha256:hash(portable),case:'single and multiple nominated groups'},
+          {stage:'second_scoped_correction',profile:'openai_non_strict_function',schema_sha256:hash(portable),case:'same builder; admission still conditional on host progress gate'}],
+        deliberate_wire_superset:['category-to-target pairing remains in canonical scope assembler','whole assembled review validation remains host-only'],
+        other_structured_authoring_emitters_encountered_unchecked:authoringEmitters.filter(name=>name!=='authoring-policy-coverage.ts'),
+        unchecked:['real provider schema admission','model completion','rare eligible second-correction live journey'],
+      },null,2)+'\n',{mode:0o600});
+    }
   });
   it('admits exact read-only dependencies through their own unique schema alternative', () => {
     const f=fixture(), companion={start:2,end:2,disposition:'background',interpretation:'Original dependency wording.',draft_paths:[]};

@@ -2,6 +2,7 @@ import { createServer } from "node:http";
 import dns from "node:dns/promises";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { coverageToolDeclarationIssue } from './authoring-coverage-tool-profile.js';
 import {
   AskError,
   askToolSurfaceDigest,
@@ -8770,6 +8771,46 @@ describe("Workbench BYOM Ask", () => {
         message: expect.not.stringContaining(`provider-secret-body-${status}`),
       });
     }
+  });
+
+  it('refuses an incompatible encoded coverage declaration before any provider request', async () => {
+    const reviewTools: AskToolDefinition[]=[{name:'runner.review_policy_coverage',description:'Review coverage',
+      input_schema:{type:'object',additionalProperties:false,required:['passages'],properties:{
+        passages:{oneOf:[{type:'array',items:{type:'string'}},{type:'array',items:{type:'integer'}}]},
+      }}}];
+    const authorityDigest=askToolSurfaceDigest(reviewTools);
+    const configuration=resolveAskProviderConfiguration({provider:'openai_compatible',model:'fixture',base_url:'http://127.0.0.1:11434/v1',
+      authority_digest:authorityDigest,egress_acknowledged:true},{},new Date());
+    const requestJson=vi.fn();
+    await expect(runAskProviderTurn({configuration,question:'Review the saved coverage.',history:[],tools:reviewTools,
+      gateway:{mode:'authoring',listTools:()=>reviewTools,callTool:async()=>({ok:true,value:{}}),close:async()=>undefined},
+      authorityDigest,signal:new AbortController().signal,conversationalAuthoring:true,
+      requiredInitialToolName:'runner.review_policy_coverage',completeAfterRequiredTool:true,
+      dependencies:{requestJson}})).rejects.toMatchObject({code:'ASK_PROVIDER_TOOL_SCHEMA_UNSUPPORTED',
+      message:expect.stringContaining('initial BUSINESS review under the openai_non_strict_function profile')});
+    expect(requestJson).not.toHaveBeenCalled();
+    expect(coverageToolDeclarationIssue({model:'fixture'},131072,true)).toBe('review_tool_missing@/tools');
+    const valid={type:'function',name:'runner__review_policy_coverage',parameters:{type:'object',additionalProperties:false,
+      properties:{passages:{type:'array',items:{type:'string'}}},required:['passages']}};
+    expect(coverageToolDeclarationIssue({tools:[valid,valid]},131072,true)).toBe('review_tool_missing_or_duplicated@/tools');
+  });
+
+  it('distinguishes a provider function-parameter rejection from an invalid generated review without revealing metadata', async () => {
+    const privateDetail='private-schema-value-never-surface';
+    const server=createServer((_request,response)=>{
+      response.statusCode=400;response.setHeader('content-type','application/json');
+      response.end(JSON.stringify({error:{message:'Provider rejected a tool.',metadata:{raw:JSON.stringify({error:{
+        code:'invalid_function_parameters',param:'tools[0].parameters',message:privateDetail,
+      }})}}}));
+    });
+    servers.push(server);
+    await new Promise<void>(resolve=>server.listen(0,'127.0.0.1',resolve));
+    const port=(server.address() as AddressInfo).port;
+    const result=secureAskJsonRequest({endpoint:new URL(`http://127.0.0.1:${port}/chat`),scope:'custom_loopback',
+      headers:{},body:{model:'fixture',messages:[]},signal:new AbortController().signal});
+    await expect(result).rejects.toMatchObject({code:'ASK_PROVIDER_TOOL_SCHEMA_REJECTED',
+      message:expect.stringContaining('request-format refusal')});
+    await expect(result).rejects.toMatchObject({message:expect.not.stringContaining(privateDetail)});
   });
 
   it("refuses metadata and other non-public remote destinations before connecting", async () => {

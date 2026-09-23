@@ -14,6 +14,7 @@ import {
 import type { AskIntentCheckMode } from "./ask-intent-preferences.js";
 import { askPlanSyntaxRepair, matchesAskPlanSyntaxRepair, type AskPlanSyntaxRepair } from "./ask-plan-recovery.js";
 import { isFixedOpenRouterModel, OPENROUTER_CHAT_ENDPOINT } from "./hosted-provider-settings.js";
+import { coverageToolDeclarationIssue } from "./authoring-coverage-tool-profile.js";
 
 const DEFAULT_REMOTE_TIMEOUT_SECONDS = 30;
 const DEFAULT_LOOPBACK_TIMEOUT_SECONDS = 120;
@@ -1210,7 +1211,7 @@ async function runOpenAiCompatibleTurn(input: {
       headers: input.configuration.apiKey
         ? { authorization: `Bearer ${input.configuration.apiKey}` }
         : {},
-      body: openAiRequestBody({
+      body: checkedOpenAiRequestBody({
         configuration: input.configuration,
         messages,
         providerTools,
@@ -2457,7 +2458,7 @@ async function requestOpenAiFinalAnswer(input: {
     headers: input.configuration.apiKey
       ? { authorization: `Bearer ${input.configuration.apiKey}` }
       : {},
-    body: openAiRequestBody({
+    body: checkedOpenAiRequestBody({
       configuration: input.configuration,
       messages: [
         ...input.messages,
@@ -4612,6 +4613,21 @@ function openAiRequestBody(input: {
       : {}),
     max_output_tokens: input.maxOutputTokens,
   };
+}
+
+function checkedOpenAiRequestBody(input: Parameters<typeof openAiRequestBody>[0]): Record<string, unknown> {
+  const body = openAiRequestBody(input);
+  const reviewTool = input.providerTools.find(tool => tool.providerName === 'runner__review_policy_coverage');
+  const issue = coverageToolDeclarationIssue(body, MAX_TOOL_SCHEMA_BYTES, Boolean(reviewTool));
+  if (issue) {
+    const reviewProperties = isRecord(reviewTool?.definition.input_schema)
+      && isRecord(reviewTool.definition.input_schema.properties) ? reviewTool.definition.input_schema.properties : {};
+    const stage = Object.hasOwn(reviewProperties, 'groups') ? 'scoped correction'
+      : Object.hasOwn(reviewProperties, 'passages') ? 'initial BUSINESS review' : 'review';
+    throw new AskError("ASK_PROVIDER_TOOL_SCHEMA_UNSUPPORTED",
+      `Runner cannot send runner__review_policy_coverage ${stage} under the openai_non_strict_function profile (${issue}). The saved review remains pending; no business change occurred. This is a request-format problem, not a new owner-policy question.`, 409);
+  }
+  return body;
 }
 
 function openAiResponsesInput(
@@ -6802,6 +6818,10 @@ function safeProviderError(error: unknown, aborted: boolean): AskError {
 }
 
 function providerHttpError(status: number, responseBody = ""): AskError {
+  if (status === 400 && providerToolSchemaRejected(responseBody)) {
+    return new AskError("ASK_PROVIDER_TOOL_SCHEMA_REJECTED",
+      "The selected provider rejected Runner's function-tool declaration before model generation. The saved review remains pending; no business change occurred. This request-format refusal is not an invalid model reply; a reviewed declaration is needed before another paid attempt.", 502);
+  }
   if (status === 402) {
     return new AskError("ASK_PROVIDER_CREDIT_REQUIRED", "The provider requires account credit. Check its billing settings; Runner has not changed providers or authority.", 502);
   }
@@ -6838,6 +6858,19 @@ function providerHttpError(status: number, responseBody = ""): AskError {
     `The provider returned HTTP ${status}.${detail ? ` Provider detail: ${detail}` : ""}${responsesGuidance}`,
     502,
   );
+}
+
+function providerToolSchemaRejected(responseBody: string): boolean {
+  if (!responseBody || responseBody.length > MAX_PROVIDER_RESPONSE_BYTES) return false;
+  try {
+    const outer: unknown = JSON.parse(responseBody);
+    if (!isRecord(outer) || !isRecord(outer.error)) return false;
+    const raw = isRecord(outer.error.metadata) ? outer.error.metadata.raw : undefined;
+    const nested: unknown = typeof raw === 'string' && raw.length <= MAX_PROVIDER_RESPONSE_BYTES ? JSON.parse(raw) : outer;
+    if (!isRecord(nested) || !isRecord(nested.error)) return false;
+    return nested.error.code === 'invalid_function_parameters'
+      && typeof nested.error.param === 'string' && /^tools\[\d+\]\.parameters$/u.test(nested.error.param);
+  } catch { return false; }
 }
 
 function providerErrorDetail(responseBody: string): string | undefined {

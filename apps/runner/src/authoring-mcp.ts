@@ -8,7 +8,6 @@ import {
   semanticActionInputSchema,
   semanticActionCatalogJsonSchema,
   publishToolInputContracts,
-  mcpToolInputJsonSchema,
   portableDiscoveryInputJsonSchema,
   McpRuntimeError,
   type SemanticActionRuntime,
@@ -256,7 +255,7 @@ export function createScopedExploreMcpServer(
     : name === SCOPED_EXPLORE_DESCRIBE_TOOL
       ? portableDiscoveryInputJsonSchema(policyManagement ? z.union([readCatalogInput, policyManagementToolInputSchema(name)]) : readCatalogInput)
     : name === SCOPED_EXPLORE_QUERY_TOOL
-      ? mcpToolInputJsonSchema(policyManagement ? z.union([exploreInput, policyManagementToolInputSchema(name)]) : exploreInput)
+      ? portableDiscoveryInputJsonSchema(policyManagement ? z.union([exploreInput, policyManagementToolInputSchema(name)]) : exploreInput)
       : undefined);
   const settingsHint = policyManagement ? " For your own agent settings, use policy_view: agent_rules instead of source-data arguments; app.explore_data section summary provides its current typed control reference." : "";
   if (options.semanticActions || policyManagement) {

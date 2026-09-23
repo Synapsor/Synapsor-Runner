@@ -6,6 +6,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { createServer } from "node:net";
 import { fileURLToPath } from "node:url";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { outgoingToolSchemaIssue } from "../packages/protocol/dist/index.js";
 import { StreamableHTTPClientTransport } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
 import { Pool } from "pg";
 import { ProposalStore } from "../packages/proposal-store/dist/index.js";
@@ -812,6 +813,10 @@ async function verifyOllamaAgentOverProductionHttp(input) {
   await handle.client.connect(handle.transport);
   try {
     const listed = await handle.client.listTools();
+    for (const tool of listed.tools) {
+      const issue = outgoingToolSchemaIssue(tool.inputSchema, "mcp_portable", 131_072);
+      assert(!issue, `Emitted production MCP declaration is incompatible: ${tool.name} ${issue?.path} ${issue?.code}`);
+    }
     const tools = listed.tools.map((tool) => ({
       name: tool.name,
       title: tool.title,
@@ -1536,6 +1541,10 @@ async function verifySingleOrganizationProductionExplore(input) {
     clients.push(alice.client);
     await alice.client.connect(alice.transport);
     const tools = await alice.client.listTools();
+    for (const tool of tools.tools) {
+      const issue = outgoingToolSchemaIssue(tool.inputSchema, "mcp_portable", 131_072);
+      assert(!issue, `Emitted installed MCP declaration is incompatible: ${tool.name} ${issue?.path} ${issue?.code}`);
+    }
     assert(tools.tools.map((tool) => tool.name).join(",") === "app.describe_data,app.explore_data",
       "Single-organization MCP exposed more than the two reviewed Explore tools.", tools.tools);
     const summary = resultPayload(await alice.client.callTool({

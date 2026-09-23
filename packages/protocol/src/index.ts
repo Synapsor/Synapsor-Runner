@@ -4,6 +4,7 @@ export {
   canonicalJsonDigest,
   canonicalJsonStringify,
 } from "./canonical-json.js";
+export { outgoingToolSchemaIssue, type OutgoingToolProfile, type OutgoingToolIssue } from "./outgoing-tool-contract.js";
 import {
   canonicalJsonDigest,
 } from "./canonical-json.js";

@@ -473,3 +473,109 @@ export function scopeToolSchema(scope: CoverageRepairScope, passageSchema: Recor
     },
   } };
 }
+
+/** The finite provider declaration for the existing scoped operation. The
+ * exact target/category/retained-record correlations in scopeToolSchema use
+ * composition and literal-object constraints that are not portable across the
+ * selected function-tool route. This closed typed superset preserves the
+ * expressible bounds; assembleScopedCoverageReplacement and the complete
+ * review parser still enforce every correlation before persistence. */
+export function portableScopeToolSchema(scope: CoverageRepairScope, passageSchema: Record<string, unknown>,
+  constrainedSchema: Record<string, unknown>): Record<string, unknown> {
+  checkScope(scope);
+  if (!scope.targets.length || !record(passageSchema.properties) || !Array.isArray(passageSchema.required)
+    || passageSchema.type !== 'object' || passageSchema.additionalProperties !== false) {
+    fail('A bounded, closed passage declaration is unavailable for the scoped provider request.');
+  }
+  const parent = scopeParents.get(scope);
+  if (!parent) fail('The exact immediate parent is unavailable for the scoped provider request.');
+  const groups = record(constrainedSchema.properties) && record(constrainedSchema.properties.groups)
+    && record(constrainedSchema.properties.groups.items) ? constrainedSchema.properties.groups.items.oneOf : undefined;
+  if (!Array.isArray(groups) || groups.length !== scope.targets.length) fail('The exact constrained correction variants are unavailable.');
+  const categoryMeanings: Record<string,string[]> = {};
+  for (const [index, variant] of groups.entries()) {
+    if (!record(variant) || !record(variant.properties) || !record(variant.properties.target_id)
+      || variant.properties.target_id.const !== scope.targets[index]!.target_id
+      || !record(variant.properties.replacements) || !record(variant.properties.replacements.items)
+      || !Array.isArray(variant.properties.replacements.items.oneOf)) {
+      fail('The constrained correction variants no longer match the nominated targets.');
+    }
+    for (const alternative of variant.properties.replacements.items.oneOf) {
+      if (!record(alternative) || !record(alternative.properties) || !record(alternative.properties.category)
+        || !record(alternative.properties.passage) || Object.hasOwn(alternative.properties.passage,'const')) continue;
+      const category = alternative.properties.category.const;
+      const meaning = record(alternative.properties.passage.properties)
+        && record(alternative.properties.passage.properties.interpretation)
+        ? alternative.properties.passage.properties.interpretation.enum : undefined;
+      if (typeof category === 'string' && Array.isArray(meaning) && meaning.every(item=>typeof item==='string')) {
+        categoryMeanings[category] = [...new Set([...(categoryMeanings[category]??[]),...meaning])];
+      }
+    }
+  }
+  const categories = new Set<CoverageRepairCategory>();
+  const references = new Set<string>();
+  let firstLine = Infinity, lastLine = 0;
+  for (const target of scope.targets) {
+    if (!target.source_ranges.length) fail('A target has no bounded source range.');
+    for (const range of target.source_ranges) {
+      firstLine = Math.min(firstLine, range.start);
+      lastLine = Math.max(lastLine, range.end);
+    }
+    for (const category of COVERAGE_REPAIR_CATEGORIES) {
+      if ((category === 'ordinary') === target.receipt_region) continue;
+      categories.add(category);
+      for (const path of target.allowed_references[category]) references.add(path);
+    }
+    // Read-only overlap dependencies must remain representable even if their
+    // exact references are not editable in this category.
+    for (const retained of target.required_retained) {
+      const passage = parent.passages[retained.parent_index];
+      if (!passage || rawDigest(passage) !== retained.raw_digest) fail('A retained parent dependency changed.');
+      for (const path of Array.isArray(passage.draft_paths) ? passage.draft_paths : []) if (typeof path === 'string') references.add(path);
+      for (const key of ['counter_requirements', 'evidence_checks'] as const) {
+        for (const child of Array.isArray(passage[key]) ? passage[key] : []) {
+          if (record(child) && typeof child.path === 'string') references.add(child.path);
+        }
+      }
+      if (record(passage.source_counter_obligation) && typeof passage.source_counter_obligation.path === 'string') {
+        references.add(passage.source_counter_obligation.path);
+      }
+    }
+  }
+  if (!Number.isSafeInteger(firstLine) || !Number.isSafeInteger(lastLine) || firstLine < 1 || lastLine < firstLine
+    || !categories.size) fail('A finite scoped provider declaration cannot be constructed.');
+  const paths = [...references].sort();
+  const properties = structuredClone(passageSchema.properties);
+  properties.start = {type:'integer',minimum:firstLine,maximum:lastLine};
+  properties.end = structuredClone(properties.start);
+  properties.draft_paths = paths.length
+    ? {type:'array',maxItems:32,items:{type:'string',enum:paths}}
+    : {type:'array',maxItems:0,items:{type:'string'}};
+  for (const key of ['counter_requirements', 'evidence_checks', 'source_counter_obligation'] as const) {
+    const property = properties[key];
+    const child = key === 'source_counter_obligation' ? property : record(property) ? property.items : undefined;
+    if (!record(child) || !record(child.properties) || !record(child.properties.path)) continue;
+    child.properties.path = paths.length
+      ? {...child.properties.path,type:'string',enum:paths}
+      : {type:'string',maxLength:0};
+  }
+  const passage = {...structuredClone(passageSchema),properties};
+  return {type:'object',additionalProperties:false,required:['scope_digest','parent_digest','context','groups'],properties:{
+    scope_digest:{type:'string',enum:[scope.scope_digest]},
+    parent_digest:{type:'string',enum:[scope.parent_digest]},
+    context:{type:'string',enum:[scope.context]},
+    groups:{type:'array',minItems:scope.targets.length,maxItems:scope.targets.length,items:{
+      type:'object',additionalProperties:false,required:['target_id','replacements'],properties:{
+        target_id:{type:'string',enum:scope.targets.map(target=>target.target_id)},
+        replacements:{type:'array',minItems:1,maxItems:MAX_PASSAGES,
+          description:'Use the category that matches this exact target. Repeat each read-only overlap dependency unchanged. The host enforces target/category/reference correlation, exact retained records and complete review.',
+          items:{type:'object',additionalProperties:false,required:['category','passage'],properties:{
+            category:{type:'string',enum:[...categories],
+              description:`Category-specific fixed interpretations, when applicable: ${JSON.stringify(categoryMeanings)}. The host checks exact target, category and proof.`},
+            passage,
+          }},
+        },
+      },
+    }},
+  }};
+}
