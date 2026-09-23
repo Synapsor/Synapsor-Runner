@@ -29,7 +29,7 @@ export type CoverageRepairTarget = {
   allowed_references: Record<CoverageRepairCategory, string[]>;
 };
 export type CoverageRepairScope = {
-  version: 1;
+  version: 2;
   disposition: 'unaccepted_tentative';
   context: string;
   source_digest: string;
@@ -56,6 +56,7 @@ const MAX_PASSAGES = 120;
 const MAX_ARGUMENT_BYTES = 128 * 1024;
 const trustedScopes = new WeakSet<CoverageRepairScope>();
 const scopeParents = new WeakMap<CoverageRepairScope, RawReport>();
+type EditableComponent = { path: string; parent_index: number; kind: 'passage' | 'counter_child'; child_index?: number };
 function fail(reason: string): never { throw new CoverageScopedCorrectionError(reason); }
 const record = (value: unknown): value is Record<string, unknown> => value !== null && typeof value === 'object' && !Array.isArray(value);
 function exactKeys(value: unknown, keys: readonly string[], required: readonly string[], what: string): asserts value is Record<string, unknown> {
@@ -260,7 +261,8 @@ export function createCoverageRepairScope(parent: unknown, feedback: CoverageFee
     const receipt = findings.some(f => receiptCodes.has(f.code)) || challenged.some(p => Array.isArray(p.draft_paths)
       && p.draft_paths.some(path => typeof path === 'string' && [...receiptPaths].some(base => path === base || path.startsWith(`${base}/`))));
     const sourceRanges = [{ start: Math.min(...passages.map(p => p.start)), end: Math.max(...passages.map(p => p.end)) }];
-    const allowedReferences = references(passages, findings, context, options, receipt);
+    const allowedReferences = references(indices.filter(index => located.some(item => item.index === index))
+      .map(index => raw.passages[index]!), findings, context, options, receipt);
     if (!receipt && !allowedReferences.ordinary.length && passages.some(p => !['background', 'overridden'].includes(p.disposition as string))) {
       fail('No exact current reference can safely repair this ordinary source group; the finding needs a separately established evidence association.');
     }
@@ -273,7 +275,8 @@ export function createCoverageRepairScope(parent: unknown, feedback: CoverageFee
       findings, allowed_references: allowedReferences });
   }
   targets.sort((a,b) => a.members[0]!.parent_index - b.members[0]!.parent_index);
-  const base = { version: 1 as const, disposition: 'unaccepted_tentative' as const, context: identity,
+  for (const target of targets) editableComponents(target);
+  const base = { version: 2 as const, disposition: 'unaccepted_tentative' as const, context: identity,
     source_digest: context.source.digest, source_identity: canonicalJsonDigest(context.source), draft_digest: canonicalJsonDigest(context.draft),
     parent_digest: parentDigest, outside_digest: rawDigest(raw.passages.filter((_, index) => !covered.has(index))), targets };
   const scope = freeze({ ...base, scope_digest: canonicalJsonDigest(base) });
@@ -286,12 +289,32 @@ function checkScope(scope: CoverageRepairScope): void {
   const { scope_digest, ...base } = scope;
   if (canonicalJsonDigest(base) !== scope_digest) fail('The host repair scope changed.');
 }
+/** Coordinates come from current host findings, never from a returned model
+ * position. A counter child may not be promoted into a paragraph edit. */
+function editableComponents(target: CoverageRepairTarget): EditableComponent[] {
+  const result: EditableComponent[] = [];
+  for (const member of target.members) {
+    const findings = target.findings.filter(f => f.component === member.path || f.component.startsWith(`${member.path}/`));
+    if (!findings.length) continue;
+    const counter = findings.map(f => /^\/passages\/(\d+)\/counter_requirements\/(\d+)$/u.exec(f.component));
+    if (counter.some(Boolean)) {
+      if (counter.some(match => !match || Number(match[1]) !== member.parent_index)) {
+        fail('Overlapping passage and counter-child edits cannot be nominated together.');
+      }
+      result.push(...counter.map(match => ({path: `${member.path}/counter_requirements/${match![2]}`,
+        parent_index: member.parent_index, kind: 'counter_child' as const, child_index: Number(match![2])})));
+    } else result.push({path: member.path, parent_index: member.parent_index, kind: 'passage'});
+  }
+  if (!result.length || new Set(result.map(item => item.path)).size !== result.length) fail('A repair region has no distinct editable component.');
+  return result;
+}
 const passageKeys = ['start', 'end', 'disposition', 'interpretation', 'draft_paths', 'operator_override', 'operator_message_id',
   'operator_clarification', 'topic', 'responsibility', 'issue_kind', 'next_step', 'evidence_checks', 'counter_requirements',
   'field_checks', 'application_obligations', 'deployment_prerequisite', 'source_counter_obligation', 'receipt_component'];
-function replacementPassage(value: unknown, category: CoverageRepairCategory, target: CoverageRepairTarget, source: PolicyTextSnapshot): RawPassage {
+function replacementPassage(value: unknown, category: CoverageRepairCategory, target: CoverageRepairTarget,
+  member: CoverageRepairTarget['members'][number], source: PolicyTextSnapshot): RawPassage {
   exactKeys(value, passageKeys, ['start', 'end', 'disposition', 'interpretation', 'draft_paths'], 'Replacement passage');
-  if (!range(value, policyTextLines(source.text).length) || !target.source_ranges.some(span => value.start >= span.start && value.end <= span.end)) {
+  if (!range(value, policyTextLines(source.text).length) || value.start < member.start || value.end > member.end) {
     fail('A replacement addresses source lines outside its nominated region.');
   }
   if (!Array.isArray(value.draft_paths) || value.draft_paths.length > 32 || value.draft_paths.some(path => typeof path !== 'string'
@@ -322,9 +345,17 @@ function replacementPassage(value: unknown, category: CoverageRepairCategory, ta
   }
   return value;
 }
-/** Deterministic raw projection: unwrap category/passages, splice each entire
- * nominated overlap closure once at its first parent position, retain every
- * outside record in order. No prose, evidence or accepted meaning is added. */
+function replacementCounter(value: unknown, original: unknown, draft: unknown): Record<string, unknown> {
+  exactKeys(value, ['path', 'current_capability', 'required_capability', 'operator_message_id', 'operator_clarification'],
+    ['path', 'current_capability', 'required_capability'], 'Replacement counter child');
+  if (!record(original) || typeof original.path !== 'string' || value.path !== original.path
+    || !pointerExists(draft,original.path)) {
+    fail('A counter child cannot change its exact nominated current reference.');
+  }
+  return value;
+}
+/** Deterministic projection from editable components only. Every other raw
+ * parent record, including overlap dependencies, is copied by the host. */
 export function assembleScopedCoverageReplacement(scope: CoverageRepairScope, parent: unknown, payload: unknown, context: CoverageRepairContext) {
   checkScope(scope);
   const raw = parentReport(parent, context.source);
@@ -334,78 +365,121 @@ export function assembleScopedCoverageReplacement(scope: CoverageRepairScope, pa
   }
   if (rawDigest(raw) !== scope.parent_digest) fail('The replacement does not use the exact immediate parent.');
   jsonValue(payload, 'Scoped replacement');
-  exactKeys(payload, ['scope_digest', 'parent_digest', 'context', 'groups'], ['scope_digest', 'parent_digest', 'context', 'groups'], 'Scoped replacement envelope');
-  if (payload.scope_digest !== scope.scope_digest || payload.parent_digest !== scope.parent_digest || payload.context !== scope.context) {
+  exactKeys(payload, ['representation', 'scope_digest', 'parent_digest', 'context', 'groups'],
+    ['representation', 'scope_digest', 'parent_digest', 'context', 'groups'], 'Scoped replacement envelope');
+  if (payload.representation !== 'replacement_only_v2' || payload.scope_digest !== scope.scope_digest
+    || payload.parent_digest !== scope.parent_digest || payload.context !== scope.context) {
     fail('The replacement names a different scope, parent or context.');
   }
   if (!Array.isArray(payload.groups) || payload.groups.length !== scope.targets.length) fail('Every nominated group must be supplied exactly once.');
-  const replacements = new Map<string, Array<{ category: CoverageRepairCategory; passage: RawPassage }>>();
+  type Fragment = {category: CoverageRepairCategory; passage: RawPassage};
+  const passageEdits = new Map<string, Fragment[]>();
+  const counterEdits = new Map<string, Record<string, unknown>>();
+  const groupsSeen = new Set<string>();
+  const overrideDecision=(passage:RawPassage)=>Object.fromEntries(['operator_override','operator_message_id','operator_clarification']
+    .filter(key=>Object.hasOwn(passage,key)).map(key=>[key,passage[key]]));
   for (const group of payload.groups) {
-    exactKeys(group, ['target_id', 'replacements'], ['target_id', 'replacements'], 'Replacement group');
+    exactKeys(group, ['target_id', 'passage_replacements', 'counter_replacements'],
+      ['target_id', 'passage_replacements', 'counter_replacements'], 'Replacement group');
     const target = scope.targets.find(target => target.target_id === group.target_id);
-    if (!target || replacements.has(target.target_id)) fail('A replacement group is unrequested or duplicated.');
-    if (!Array.isArray(group.replacements) || !group.replacements.length || group.replacements.length > MAX_PASSAGES) fail('A replacement group cannot be empty or exceed the passage ceiling.');
-    const entries = group.replacements.map(entry => {
-      exactKeys(entry, ['category', 'passage'], ['category', 'passage'], 'Replacement component');
-      const category = entry.category as CoverageRepairCategory;
-      if (!COVERAGE_REPAIR_CATEGORIES.includes(category) || (category === 'ordinary') === target.receipt_region) {
-        fail('Receipt regions require explicit receipt/effect categories; ordinary is available only for non-receipt regions.');
+    if (!target || groupsSeen.has(target.target_id)) fail('A replacement group is unrequested or duplicated.');
+    groupsSeen.add(target.target_id);
+    const editable = editableComponents(target);
+    const expectedPassages = editable.filter(item => item.kind === 'passage');
+    const expectedCounters = editable.filter(item => item.kind === 'counter_child');
+    if (!Array.isArray(group.passage_replacements) || group.passage_replacements.length !== expectedPassages.length
+      || !Array.isArray(group.counter_replacements) || group.counter_replacements.length !== expectedCounters.length) {
+      fail('Every exact editable component must be supplied once; read-only dependencies are host-retained.');
+    }
+    for (const edit of group.passage_replacements) {
+      exactKeys(edit, ['member_path', 'fragments'], ['member_path', 'fragments'], 'Passage edit');
+      const nominated = expectedPassages.find(item => item.path === edit.member_path);
+      if (!nominated || passageEdits.has(nominated.path)) fail('A passage edit is protected, foreign or duplicated.');
+      const member = target.members.find(item => item.parent_index === nominated.parent_index)!;
+      if (!Array.isArray(edit.fragments) || !edit.fragments.length || edit.fragments.length > MAX_PASSAGES) fail('A nominated passage needs bounded replacement fragments.');
+      const fragments: Fragment[] = edit.fragments.map((entry:unknown) => {
+        exactKeys(entry, ['category', 'passage'], ['category', 'passage'], 'Replacement component');
+        const category = entry.category as CoverageRepairCategory;
+        if (!COVERAGE_REPAIR_CATEGORIES.includes(category) || (category === 'ordinary') === target.receipt_region) {
+          fail('Receipt regions require explicit receipt/effect categories; ordinary is available only for non-receipt regions.');
+        }
+        return {category, passage: replacementPassage(entry.passage, category, target, member, context.source)};
+      });
+      if (new Set(fragments.map(entry => rawDigest(entry.passage))).size !== fragments.length) fail('A passage edit repeats the same raw component.');
+      const prior = raw.passages[member.parent_index]!;
+      for (const entry of fragments) if (['background', 'overridden'].includes(entry.passage.disposition as string)
+        && !(rawDigest(prior) === rawDigest(entry.passage)
+          || entry.passage.disposition === 'overridden' && prior.disposition === 'overridden'
+            && prior.start === entry.passage.start && prior.end === entry.passage.end
+            && Object.keys(overrideDecision(prior)).length > 0
+            && rawDigest(overrideDecision(prior)) === rawDigest(overrideDecision(entry.passage)))) {
+        fail('A replacement cannot create a background or overridden reclassification; only exact existing records may retain those dispositions.');
       }
-      return { category, passage: replacementPassage(entry.passage, category, target, context.source) };
-    });
-    if (new Set(entries.map(entry => rawDigest(entry.passage))).size !== entries.length) fail('A replacement group repeats the same raw component.');
-    for (const retained of target.required_retained) if (entries.filter(entry => rawDigest(entry.passage) === retained.raw_digest).length !== 1) {
-      fail('Every unchallenged overlap dependency must be retained exactly once with its complete original raw fields; omission or a weaker duty is not a repair.');
-    }
-    for (const required of target.field_requirements) for (let line=required.start;line<=required.end;line++) {
-      if(!entries.some(({passage})=>passage.start<=line&&passage.end>=line&&Array.isArray(passage.field_checks)
-        &&passage.field_checks.some(check=>record(check)&&check.resource===required.resource&&check.field===required.field&&check.expectation===required.expectation))) {
-        fail('A replacement removes a nominated field requirement or its original source association.');
+      for (let line=member.start;line<=member.end;line++) {
+        const covering=fragments.filter(entry=>entry.passage.start<=line&&line<=entry.passage.end);
+        if (!covering.length) fail('A replacement deletes part of its nominated source requirement.');
+        if (!['background','overridden'].includes(prior.disposition as string)
+          && !covering.some(entry=>!['background','overridden'].includes(entry.passage.disposition as string))) {
+          fail('A substantive parent requirement cannot become only background or overridden.');
+        }
       }
+      passageEdits.set(nominated.path,fragments);
     }
-    const overrideDecision=(passage:RawPassage)=>Object.fromEntries(['operator_override','operator_message_id','operator_clarification']
-      .filter(key=>Object.hasOwn(passage,key)).map(key=>[key,passage[key]]));
-    for (const entry of entries) if (['background', 'overridden'].includes(entry.passage.disposition as string)
-      && !target.members.some(member => {
-        const prior=raw.passages[member.parent_index]!;
-        return rawDigest(prior) === rawDigest(entry.passage)
-          || entry.passage.disposition==='overridden'&&prior.disposition==='overridden'
-            &&prior.start===entry.passage.start&&prior.end===entry.passage.end
-            &&Object.keys(overrideDecision(prior)).length>0
-            &&rawDigest(overrideDecision(prior))===rawDigest(overrideDecision(entry.passage));
-      })) {
-      fail('A replacement cannot create a background or overridden reclassification; only exact existing records may retain those dispositions.');
+    for (const edit of group.counter_replacements) {
+      exactKeys(edit, ['component_path','counter_requirement'], ['component_path','counter_requirement'], 'Counter-child edit');
+      const nominated=expectedCounters.find(item=>item.path===edit.component_path);
+      if (!nominated || counterEdits.has(nominated.path)) fail('A counter-child edit is protected, foreign or duplicated.');
+      const original=(raw.passages[nominated.parent_index]!.counter_requirements as unknown[])[nominated.child_index!]!;
+      counterEdits.set(nominated.path,replacementCounter(edit.counter_requirement,original,context.draft));
     }
-    for (const member of target.members) for (let line = member.start; line <= member.end; line++) {
-      const covering = entries.filter(entry => entry.passage.start <= line && line <= entry.passage.end);
-      if (!covering.length) fail('A replacement deletes part of its nominated source requirement.');
-      if (!['background', 'overridden'].includes(raw.passages[member.parent_index]!.disposition as string)
-        && !covering.some(entry => !['background', 'overridden'].includes(entry.passage.disposition as string))) {
-        fail('A substantive parent requirement cannot become only background or overridden.');
-      }
-    }
-    replacements.set(target.target_id, entries);
   }
   const passages: RawPassage[] = [], mapping: CoverageRepairMapping[] = [];
   const categories: Array<{ index: number; category: CoverageRepairCategory; target_id: string }> = [];
   const retained: Array<{ parent_index: number; assembled_index: number; raw_digest: string }> = [];
+  const members = new Map(scope.targets.flatMap(target => target.members.map(member => [member.parent_index,{target,member}] as const)));
+  const byTarget = new Map(scope.targets.map(target => [target.target_id,{target_id:target.target_id,
+    parent_indices:target.members.map(member=>member.parent_index),assembled_indices:[] as number[],source_ranges:structuredClone(target.source_ranges)}]));
   for (const [index, passage] of raw.passages.entries()) {
-    const target = scope.targets.find(target => target.members.some(member => member.parent_index === index));
-    if (!target) { retained.push({parent_index: index, assembled_index: passages.length, raw_digest: rawDigest(passage)}); passages.push(structuredClone(passage)); continue; }
-    if (index !== target.members[0]!.parent_index) continue;
-    const assembledIndices: number[] = [];
-    for (const entry of replacements.get(target.target_id)!) {
-      assembledIndices.push(passages.length); categories.push({ index: passages.length, category: entry.category, target_id: target.target_id });
-      passages.push(structuredClone(entry.passage));
+    const located=members.get(index);
+    if (!located) { retained.push({parent_index:index,assembled_index:passages.length,raw_digest:rawDigest(passage)}); passages.push(structuredClone(passage)); continue; }
+    const {target,member}=located, tracked=byTarget.get(target.target_id)!;
+    const fragments=passageEdits.get(member.path);
+    if (fragments) {
+      for (const entry of fragments) {
+        tracked.assembled_indices.push(passages.length);
+        categories.push({index:passages.length,category:entry.category,target_id:target.target_id});
+        passages.push(structuredClone(entry.passage));
+      }
+      continue;
     }
-    mapping.push({ target_id: target.target_id, parent_indices: target.members.map(member => member.parent_index),
-      assembled_indices: assembledIndices, source_ranges: structuredClone(target.source_ranges) });
+    const childEdits=editableComponents(target).filter(item=>item.parent_index===index&&item.kind==='counter_child');
+    if (childEdits.length) {
+      const reconstructed=structuredClone(passage);
+      const children=reconstructed.counter_requirements as unknown[];
+      for (const edit of childEdits) children[edit.child_index!]=structuredClone(counterEdits.get(edit.path)!);
+      tracked.assembled_indices.push(passages.length); passages.push(reconstructed);
+      continue;
+    }
+    if (!target.required_retained.some(item=>item.parent_index===index&&item.raw_digest===rawDigest(passage))) {
+      fail('A protected overlap dependency changed in the exact parent.');
+    }
+    tracked.assembled_indices.push(passages.length);
+    retained.push({parent_index:index,assembled_index:passages.length,raw_digest:rawDigest(passage)});
+    passages.push(structuredClone(passage));
+  }
+  mapping.push(...scope.targets.map(target=>byTarget.get(target.target_id)!));
+  for (const target of scope.targets) for (const required of target.field_requirements) for (let line=required.start;line<=required.end;line++) {
+    if(!byTarget.get(target.target_id)!.assembled_indices.some(index=>{
+      const passage=passages[index]!;
+      return passage.start<=line&&passage.end>=line&&Array.isArray(passage.field_checks)
+        &&passage.field_checks.some(check=>record(check)&&check.resource===required.resource&&check.field===required.field&&check.expectation===required.expectation);
+    })) fail('A replacement removes a nominated field requirement or its original source association.');
   }
   if (passages.length > MAX_PASSAGES) fail('The complete assembled report exceeds the existing 120-passage ceiling.');
   const assembled = { passages };
   jsonValue(assembled, 'Complete assembled report');
   if (missingReviewSourceLines(context.source, passages)?.length) fail('The complete assembled report omits source lines.');
-  const outsideDigest = rawDigest(retained.map(item => passages[item.assembled_index]));
+  const outsideDigest = rawDigest(retained.filter(item=>!members.has(item.parent_index)).map(item=>passages[item.assembled_index]));
   if (outsideDigest !== scope.outside_digest) fail('An outside raw record changed during assembly.');
   return { assembled, categories, mapping, retained,
     audit: { disposition: 'unaccepted_tentative' as const, raw_parent: structuredClone(raw), raw_replacement: structuredClone(payload),
@@ -417,166 +491,196 @@ export function assembleScopedCoverageReplacement(scope: CoverageRepairScope, pa
  * independently enforce the boundary. A category enum is never evidence. */
 export function scopeToolSchema(scope: CoverageRepairScope, passageSchema: Record<string, unknown>): Record<string, unknown> {
   checkScope(scope);
-  const retainedCategory=(target:CoverageRepairTarget,p:RawPassage):CoverageRepairCategory=>{
-    if(!target.receipt_region)return 'ordinary';
-    if(p.receipt_component==='source_transaction_coupling')return 'source_transaction_coupling';
-    if(p.responsibility==='deployment'||p.deployment_prerequisite!==undefined)return 'setup';
-    if(Array.isArray(p.application_obligations)&&p.application_obligations.includes('independent_source_readback'))return 'independent_readback';
-    const paths=Array.isArray(p.draft_paths)?p.draft_paths:[];
-    if(paths.includes(`${root}/receipt_read_exclusion`))return 'receipt_read_exclusion';
-    if(paths.includes(`${root}/receipt_configuration`))return 'receipt_configuration';
-    if(paths.includes(`${root}/receipts`))return 'receipt_observation';
-    return 'compiled_effect';
-  };
-  return { type: 'object', additionalProperties: false, required: ['scope_digest', 'parent_digest', 'context', 'groups'], properties: {
-    scope_digest: {type: 'string', const: scope.scope_digest}, parent_digest: {type: 'string', const: scope.parent_digest},
-    context: {type: 'string', const: scope.context}, groups: { type: 'array', minItems: scope.targets.length, maxItems: scope.targets.length,
-      items: { oneOf: scope.targets.map(target => ({ type: 'object', additionalProperties: false, required: ['target_id', 'replacements'], properties: {
-        target_id: {type: 'string', const: target.target_id}, replacements: { type: 'array', minItems: 1, maxItems: MAX_PASSAGES,
-          description: `Retain each read-only dependency from immediate-parent passage indices ${JSON.stringify(target.required_retained.map(member=>member.parent_index))} exactly once, with all raw fields unchanged. Only members with findings may be edited. Every retained dependency remains tentative and is revalidated.`,
-          items: { oneOf: COVERAGE_REPAIR_CATEGORIES.filter(category => category === 'ordinary' ? !target.receipt_region : target.receipt_region)
-            .map(category => {
-              const properties = structuredClone(record(passageSchema.properties) ? passageSchema.properties : {});
-              properties.start = {type: 'integer', minimum: target.source_ranges[0]!.start, maximum: target.source_ranges[0]!.end};
-              properties.end = structuredClone(properties.start);
-              properties.draft_paths = target.allowed_references[category].length
-                ? {type: 'array', maxItems: 32, items: {type: 'string', enum: target.allowed_references[category]}}
-                : {type: 'array', maxItems: 0, items: {type: 'string'}};
-              for (const key of ['counter_requirements', 'evidence_checks', 'source_counter_obligation']) {
-                const property = properties[key];
-                const child = key === 'source_counter_obligation' ? property : record(property) ? property.items : undefined;
-                if (!record(child) || !record(child.properties) || !record(child.properties.path)) continue;
-                const existing = child.properties.path.enum;
-                const permitted = target.allowed_references[category].filter(path => !Array.isArray(existing) || existing.includes(path));
-                if (!permitted.length) delete properties[key];
-                else child.properties.path = { ...child.properties.path, type: 'string', enum: permitted };
-              }
-              if(record(properties.field_checks)) {
-                const checks=target.field_requirements.map(({resource,field,expectation})=>({resource,field,expectation}));
-                if(!checks.length)delete properties.field_checks;
-                else properties.field_checks={...properties.field_checks,items:{enum:checks}};
-              }
-              if (category === 'source_transaction_coupling') properties.receipt_component = {type: 'string', const: category};
-              else delete properties.receipt_component;
-              return { type: 'object', additionalProperties: false, required: ['category', 'passage'], properties: {
-                category: {type: 'string', const: category}, passage: { ...structuredClone(passageSchema), properties,
-                  ...(target.required_retained.length ? {not:{enum:target.required_retained.map(member=>structuredClone(scopeParents.get(scope)!.passages[member.parent_index]!))}} : {}),
-                  ...(category === 'source_transaction_coupling' ? {required: [...new Set([...(Array.isArray(passageSchema.required) ? passageSchema.required : []), 'receipt_component'])]} : {}) },
-              } };
-            }).concat(target.required_retained.map(member=>{
-              const passage=structuredClone(scopeParents.get(scope)!.passages[member.parent_index]!);
-              return {type:'object',additionalProperties:false,required:['category','passage'],properties:{
-                category:{type:'string',const:retainedCategory(target,passage)},passage:{const:passage},
-              }};
-            }) as any) },
-        },
-      } })) },
-    },
-  } };
+  const parent=scopeParents.get(scope);
+  if (!parent) fail('The exact immediate parent is unavailable for the scoped provider request.');
+  const counterSchema=record(passageSchema.properties) && record(passageSchema.properties.counter_requirements)
+    ? passageSchema.properties.counter_requirements.items : undefined;
+  const groupVariants=scope.targets.map(target=>{
+    const editable=editableComponents(target);
+    const passageTargets=editable.filter(item=>item.kind==='passage');
+    const counterTargets=editable.filter(item=>item.kind==='counter_child');
+    const fragmentVariants=COVERAGE_REPAIR_CATEGORIES.filter(category=>(category==='ordinary')!==target.receipt_region)
+      .map(category=>{
+        const properties=structuredClone(record(passageSchema.properties)?passageSchema.properties:{});
+        properties.start={type:'integer',minimum:target.source_ranges[0]!.start,maximum:target.source_ranges[0]!.end};
+        properties.end=structuredClone(properties.start);
+        properties.draft_paths=target.allowed_references[category].length
+          ? {type:'array',maxItems:32,items:{type:'string',enum:target.allowed_references[category]}}
+          : {type:'array',maxItems:0,items:{type:'string'}};
+        for(const key of ['counter_requirements','evidence_checks','source_counter_obligation']){
+          const property=properties[key];
+          const child=key==='source_counter_obligation'?property:record(property)?property.items:undefined;
+          if(!record(child)||!record(child.properties)||!record(child.properties.path))continue;
+          const existing=child.properties.path.enum;
+          const permitted=target.allowed_references[category].filter(path=>!Array.isArray(existing)||existing.includes(path));
+          if(!permitted.length)delete properties[key];
+          else child.properties.path={...child.properties.path,type:'string',enum:permitted};
+        }
+        if(record(properties.field_checks)){
+          const checks=target.field_requirements.map(({resource,field,expectation})=>({resource,field,expectation}));
+          if(!checks.length)delete properties.field_checks;
+          else properties.field_checks={...properties.field_checks,items:{enum:checks}};
+        }
+        if(category==='source_transaction_coupling')properties.receipt_component={type:'string',const:category};
+        else delete properties.receipt_component;
+        return {type:'object',additionalProperties:false,required:['category','passage'],properties:{
+          category:{type:'string',const:category},passage:{...structuredClone(passageSchema),properties,
+            ...(category==='source_transaction_coupling'
+              ? {required:[...new Set([...(Array.isArray(passageSchema.required)?passageSchema.required:[]),'receipt_component'])]} : {})},
+        }};
+      });
+    const passageVariants=passageTargets.map(item=>{
+      const member=target.members.find(member=>member.parent_index===item.parent_index)!;
+      return {type:'object',additionalProperties:false,required:['member_path','fragments'],properties:{
+        member_path:{type:'string',const:item.path},fragments:{type:'array',minItems:1,maxItems:MAX_PASSAGES,
+          items:{oneOf:fragmentVariants.map(variant=>{
+            const copy=structuredClone(variant);
+            copy.properties.passage.properties.start={type:'integer',minimum:member.start,maximum:member.end};
+            copy.properties.passage.properties.end=structuredClone(copy.properties.passage.properties.start);
+            return copy;
+          })}},
+      }};
+    });
+    const counterVariants=counterTargets.map(item=>{
+      if(!record(counterSchema))fail('A typed counter-child declaration is unavailable.');
+      const original=(parent.passages[item.parent_index]!.counter_requirements as unknown[])[item.child_index!];
+      if(!record(original)||typeof original.path!=='string')fail('A nominated counter child is unavailable in the immediate parent.');
+      const copy=structuredClone(counterSchema);
+      if(!record(copy.properties)||!record(copy.properties.path))fail('The counter-child declaration has no typed reference.');
+      copy.properties.path={...copy.properties.path,type:'string',const:original.path};
+      return {type:'object',additionalProperties:false,required:['component_path','counter_requirement'],properties:{
+        component_path:{type:'string',const:item.path},counter_requirement:copy,
+      }};
+    });
+    return {type:'object',additionalProperties:false,required:['target_id','passage_replacements','counter_replacements'],properties:{
+      target_id:{type:'string',const:target.target_id},
+      passage_replacements:{type:'array',minItems:passageTargets.length,maxItems:passageTargets.length,
+        items:passageVariants.length?{oneOf:passageVariants}:false},
+      counter_replacements:{type:'array',minItems:counterTargets.length,maxItems:counterTargets.length,
+        items:counterVariants.length?{oneOf:counterVariants}:false},
+    }};
+  });
+  return {type:'object',additionalProperties:false,
+    required:['representation','scope_digest','parent_digest','context','groups'],properties:{
+      representation:{type:'string',const:'replacement_only_v2'},
+      scope_digest:{type:'string',const:scope.scope_digest},parent_digest:{type:'string',const:scope.parent_digest},
+      context:{type:'string',const:scope.context},groups:{type:'array',minItems:scope.targets.length,maxItems:scope.targets.length,
+        items:{oneOf:groupVariants}},
+    }};
 }
 
-/** The finite provider declaration for the existing scoped operation. The
- * exact target/category/retained-record correlations in scopeToolSchema use
- * composition and literal-object constraints that are not portable across the
- * selected function-tool route. This closed typed superset preserves the
- * expressible bounds; assembleScopedCoverageReplacement and the complete
- * review parser still enforce every correlation before persistence. */
+/** A closed typed structural superset for the selected nonstrict function-tool
+ * route. Exact target/member/category correlations remain host-enforced. */
 export function portableScopeToolSchema(scope: CoverageRepairScope, passageSchema: Record<string, unknown>,
   constrainedSchema: Record<string, unknown>): Record<string, unknown> {
   checkScope(scope);
-  if (!scope.targets.length || !record(passageSchema.properties) || !Array.isArray(passageSchema.required)
-    || passageSchema.type !== 'object' || passageSchema.additionalProperties !== false) {
+  if(!scope.targets.length||!record(passageSchema.properties)||!Array.isArray(passageSchema.required)
+    ||passageSchema.type!=='object'||passageSchema.additionalProperties!==false){
     fail('A bounded, closed passage declaration is unavailable for the scoped provider request.');
   }
-  const parent = scopeParents.get(scope);
-  if (!parent) fail('The exact immediate parent is unavailable for the scoped provider request.');
-  const groups = record(constrainedSchema.properties) && record(constrainedSchema.properties.groups)
-    && record(constrainedSchema.properties.groups.items) ? constrainedSchema.properties.groups.items.oneOf : undefined;
-  if (!Array.isArray(groups) || groups.length !== scope.targets.length) fail('The exact constrained correction variants are unavailable.');
-  const categoryMeanings: Record<string,string[]> = {};
-  for (const [index, variant] of groups.entries()) {
-    if (!record(variant) || !record(variant.properties) || !record(variant.properties.target_id)
-      || variant.properties.target_id.const !== scope.targets[index]!.target_id
-      || !record(variant.properties.replacements) || !record(variant.properties.replacements.items)
-      || !Array.isArray(variant.properties.replacements.items.oneOf)) {
+  const parent=scopeParents.get(scope);
+  if(!parent)fail('The exact immediate parent is unavailable for the scoped provider request.');
+  const groups=record(constrainedSchema.properties)&&record(constrainedSchema.properties.groups)
+    &&record(constrainedSchema.properties.groups.items)?constrainedSchema.properties.groups.items.oneOf:undefined;
+  if(!Array.isArray(groups)||groups.length!==scope.targets.length)fail('The exact constrained correction variants are unavailable.');
+  const categoryMeanings:Record<string,string[]>={};
+  for(const [index,variant] of groups.entries()){
+    if(!record(variant)||!record(variant.properties)||!record(variant.properties.target_id)
+      ||variant.properties.target_id.const!==scope.targets[index]!.target_id
+      ||!record(variant.properties.passage_replacements)
+      ||(editableComponents(scope.targets[index]!).some(item=>item.kind==='passage')
+        &&(!record(variant.properties.passage_replacements.items)||!Array.isArray(variant.properties.passage_replacements.items.oneOf)))){
       fail('The constrained correction variants no longer match the nominated targets.');
     }
-    for (const alternative of variant.properties.replacements.items.oneOf) {
-      if (!record(alternative) || !record(alternative.properties) || !record(alternative.properties.category)
-        || !record(alternative.properties.passage) || Object.hasOwn(alternative.properties.passage,'const')) continue;
-      const category = alternative.properties.category.const;
-      const meaning = record(alternative.properties.passage.properties)
-        && record(alternative.properties.passage.properties.interpretation)
-        ? alternative.properties.passage.properties.interpretation.enum : undefined;
-      if (typeof category === 'string' && Array.isArray(meaning) && meaning.every(item=>typeof item==='string')) {
-        categoryMeanings[category] = [...new Set([...(categoryMeanings[category]??[]),...meaning])];
-      }
-    }
-  }
-  const categories = new Set<CoverageRepairCategory>();
-  const references = new Set<string>();
-  let firstLine = Infinity, lastLine = 0;
-  for (const target of scope.targets) {
-    if (!target.source_ranges.length) fail('A target has no bounded source range.');
-    for (const range of target.source_ranges) {
-      firstLine = Math.min(firstLine, range.start);
-      lastLine = Math.max(lastLine, range.end);
-    }
-    for (const category of COVERAGE_REPAIR_CATEGORIES) {
-      if ((category === 'ordinary') === target.receipt_region) continue;
-      categories.add(category);
-      for (const path of target.allowed_references[category]) references.add(path);
-    }
-    // Read-only overlap dependencies must remain representable even if their
-    // exact references are not editable in this category.
-    for (const retained of target.required_retained) {
-      const passage = parent.passages[retained.parent_index];
-      if (!passage || rawDigest(passage) !== retained.raw_digest) fail('A retained parent dependency changed.');
-      for (const path of Array.isArray(passage.draft_paths) ? passage.draft_paths : []) if (typeof path === 'string') references.add(path);
-      for (const key of ['counter_requirements', 'evidence_checks'] as const) {
-        for (const child of Array.isArray(passage[key]) ? passage[key] : []) {
-          if (record(child) && typeof child.path === 'string') references.add(child.path);
+    const passageVariants=record(variant.properties.passage_replacements.items)
+      &&Array.isArray(variant.properties.passage_replacements.items.oneOf)
+      ?variant.properties.passage_replacements.items.oneOf:[];
+    for(const passageVariant of passageVariants){
+      const fragments=record(passageVariant)&&record(passageVariant.properties)
+        &&record(passageVariant.properties.fragments)&&record(passageVariant.properties.fragments.items)
+        ?passageVariant.properties.fragments.items.oneOf:undefined;
+      if(!Array.isArray(fragments))continue;
+      for(const alternative of fragments){
+        if(!record(alternative)||!record(alternative.properties)||!record(alternative.properties.category)
+          ||!record(alternative.properties.passage))continue;
+        const category=alternative.properties.category.const;
+        const meaning=record(alternative.properties.passage.properties)
+          &&record(alternative.properties.passage.properties.interpretation)
+          ?alternative.properties.passage.properties.interpretation.enum:undefined;
+        if(typeof category==='string'&&Array.isArray(meaning)&&meaning.every(item=>typeof item==='string')){
+          categoryMeanings[category]=[...new Set([...(categoryMeanings[category]??[]),...meaning])];
         }
       }
-      if (record(passage.source_counter_obligation) && typeof passage.source_counter_obligation.path === 'string') {
-        references.add(passage.source_counter_obligation.path);
-      }
     }
   }
-  if (!Number.isSafeInteger(firstLine) || !Number.isSafeInteger(lastLine) || firstLine < 1 || lastLine < firstLine
-    || !categories.size) fail('A finite scoped provider declaration cannot be constructed.');
-  const paths = [...references].sort();
-  const properties = structuredClone(passageSchema.properties);
-  properties.start = {type:'integer',minimum:firstLine,maximum:lastLine};
-  properties.end = structuredClone(properties.start);
-  properties.draft_paths = paths.length
-    ? {type:'array',maxItems:32,items:{type:'string',enum:paths}}
-    : {type:'array',maxItems:0,items:{type:'string'}};
-  for (const key of ['counter_requirements', 'evidence_checks', 'source_counter_obligation'] as const) {
-    const property = properties[key];
-    const child = key === 'source_counter_obligation' ? property : record(property) ? property.items : undefined;
-    if (!record(child) || !record(child.properties) || !record(child.properties.path)) continue;
-    child.properties.path = paths.length
-      ? {...child.properties.path,type:'string',enum:paths}
-      : {type:'string',maxLength:0};
+  const categories=new Set<CoverageRepairCategory>(),references=new Set<string>();
+  const passagePaths:string[]=[],counterPaths:string[]=[],counterReferences:string[]=[];
+  let firstLine=Infinity,lastLine=0,maxPassages=0,maxCounters=0;
+  for(const target of scope.targets){
+    const editable=editableComponents(target);
+    const passages=editable.filter(item=>item.kind==='passage'),counters=editable.filter(item=>item.kind==='counter_child');
+    maxPassages=Math.max(maxPassages,passages.length);maxCounters=Math.max(maxCounters,counters.length);
+    passagePaths.push(...passages.map(item=>item.path));counterPaths.push(...counters.map(item=>item.path));
+    for(const item of counters){
+      const original=(parent.passages[item.parent_index]!.counter_requirements as unknown[])[item.child_index!];
+      if(!record(original)||typeof original.path!=='string')fail('A nominated counter child is unavailable.');
+      counterReferences.push(original.path);
+    }
+    for(const item of passages){
+      const member=target.members.find(member=>member.parent_index===item.parent_index)!;
+      firstLine=Math.min(firstLine,member.start);lastLine=Math.max(lastLine,member.end);
+    }
+    for(const category of COVERAGE_REPAIR_CATEGORIES){
+      if((category==='ordinary')===target.receipt_region)continue;
+      categories.add(category);
+      for(const path of target.allowed_references[category])references.add(path);
+    }
   }
-  const passage = {...structuredClone(passageSchema),properties};
-  return {type:'object',additionalProperties:false,required:['scope_digest','parent_digest','context','groups'],properties:{
-    scope_digest:{type:'string',enum:[scope.scope_digest]},
-    parent_digest:{type:'string',enum:[scope.parent_digest]},
-    context:{type:'string',enum:[scope.context]},
-    groups:{type:'array',minItems:scope.targets.length,maxItems:scope.targets.length,items:{
-      type:'object',additionalProperties:false,required:['target_id','replacements'],properties:{
-        target_id:{type:'string',enum:scope.targets.map(target=>target.target_id)},
-        replacements:{type:'array',minItems:1,maxItems:MAX_PASSAGES,
-          description:'Use the category that matches this exact target. Repeat each read-only overlap dependency unchanged. The host enforces target/category/reference correlation, exact retained records and complete review.',
-          items:{type:'object',additionalProperties:false,required:['category','passage'],properties:{
-            category:{type:'string',enum:[...categories],
-              description:`Category-specific fixed interpretations, when applicable: ${JSON.stringify(categoryMeanings)}. The host checks exact target, category and proof.`},
-            passage,
-          }},
+  if(!passagePaths.length&&!counterPaths.length||!categories.size)fail('A finite scoped provider declaration cannot be constructed.');
+  const paths=[...references].sort();
+  const properties=structuredClone(passageSchema.properties);
+  if(passagePaths.length){
+    properties.start={type:'integer',minimum:firstLine,maximum:lastLine};properties.end=structuredClone(properties.start);
+  }
+  properties.draft_paths=paths.length?{type:'array',maxItems:32,items:{type:'string',enum:paths}}
+    :{type:'array',maxItems:0,items:{type:'string'}};
+  for(const key of ['counter_requirements','evidence_checks','source_counter_obligation'] as const){
+    const property=properties[key];
+    const child=key==='source_counter_obligation'?property:record(property)?property.items:undefined;
+    if(!record(child)||!record(child.properties)||!record(child.properties.path))continue;
+    child.properties.path=paths.length?{...child.properties.path,type:'string',enum:paths}:{type:'string',maxLength:0};
+  }
+  const counterProperty=passageSchema.properties.counter_requirements;
+  const counterSchema=record(counterProperty)&&record(counterProperty.items)?structuredClone(counterProperty.items):undefined;
+  if(counterPaths.length&&(!record(counterSchema)||!record(counterSchema.properties)||!record(counterSchema.properties.path))){
+    fail('A typed counter-child declaration is unavailable for the scoped provider request.');
+  }
+  if(counterSchema&&record(counterSchema.properties))counterSchema.properties.path=counterReferences.length
+    ?{type:'string',enum:[...new Set(counterReferences)].sort()}:{type:'string',maxLength:0};
+  const passage={...structuredClone(passageSchema),properties};
+  return {type:'object',additionalProperties:false,
+    required:['representation','scope_digest','parent_digest','context','groups'],properties:{
+      representation:{type:'string',enum:['replacement_only_v2']},scope_digest:{type:'string',enum:[scope.scope_digest]},
+      parent_digest:{type:'string',enum:[scope.parent_digest]},context:{type:'string',enum:[scope.context]},
+      groups:{type:'array',minItems:scope.targets.length,maxItems:scope.targets.length,items:{
+        type:'object',additionalProperties:false,required:['target_id','passage_replacements','counter_replacements'],properties:{
+          target_id:{type:'string',enum:scope.targets.map(target=>target.target_id)},
+          passage_replacements:{type:'array',minItems:0,maxItems:maxPassages,
+            description:'Only exact host-nominated editable parent passages. Never echo read-only overlap dependencies.',
+            items:{type:'object',additionalProperties:false,required:['member_path','fragments'],properties:{
+              member_path:passagePaths.length?{type:'string',enum:passagePaths}:{type:'string',maxLength:0},fragments:{type:'array',minItems:1,maxItems:MAX_PASSAGES,
+                items:{type:'object',additionalProperties:false,required:['category','passage'],properties:{
+                  category:{type:'string',enum:[...categories],description:`Fixed category meanings when applicable: ${JSON.stringify(categoryMeanings)}. The host checks exact target, category and proof.`},
+                  passage,
+                }}},
+            }}},
+          counter_replacements:{type:'array',minItems:0,maxItems:maxCounters,
+            description:'Only exact nominated counter children. Runner retains the enclosing passage and every sibling.',
+            items:{type:'object',additionalProperties:false,required:['component_path','counter_requirement'],properties:{
+              component_path:counterPaths.length?{type:'string',enum:counterPaths}:{type:'string',maxLength:0},
+              counter_requirement:counterSchema??{type:'object',additionalProperties:false,maxProperties:0},
+            }}},
         },
-      },
-    }},
-  }};
+      }},
+    }};
 }

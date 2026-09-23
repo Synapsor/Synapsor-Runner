@@ -1,4 +1,5 @@
 import fs from 'node:fs/promises';
+import {createHash} from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import {createServer} from 'node:http';
@@ -51,13 +52,28 @@ function scopeFromWire(body:any){
 // serialized host request. Immutable historical replies remain unchanged.
 function derivedScopedResponse(body:any,candidate:any){
  const scope=scopeFromWire(body);if(!scope)return candidate;
- return {scope_digest:scope.scope_digest,parent_digest:scope.parent_digest,context:scope.context,
-  groups:scope.targets.map((target:any)=>({target_id:target.target_id,replacements:candidate.passages
-   .filter((p:any)=>target.source_ranges.some((r:any)=>p.start>=r.start&&p.end<=r.end))
-   .map((passage:any)=>({category:!target.receipt_region?'ordinary':passage.receipt_component==='source_transaction_coupling'?'source_transaction_coupling'
-    :passage.disposition==='needs_decision'&&passage.responsibility==='deployment'?'setup'
-    :passage.draft_paths.includes(READ)?'receipt_read_exclusion':passage.draft_paths.includes(CONFIG)?'receipt_configuration'
-    :passage.draft_paths.includes(RECEIPTS)?'receipt_observation':'compiled_effect',passage}))}))};
+ const category=(passage:any,target:any)=>!target.receipt_region?'ordinary':passage.receipt_component==='source_transaction_coupling'?'source_transaction_coupling'
+  :passage.disposition==='needs_decision'&&passage.responsibility==='deployment'?'setup'
+  :passage.draft_paths.includes(READ)?'receipt_read_exclusion':passage.draft_paths.includes(CONFIG)?'receipt_configuration'
+  :passage.draft_paths.includes(RECEIPTS)?'receipt_observation':'compiled_effect';
+ return {representation:'replacement_only_v2',scope_digest:scope.scope_digest,parent_digest:scope.parent_digest,context:scope.context,
+  groups:scope.targets.map((target:any)=>({target_id:target.target_id,
+   passage_replacements:target.members.filter((member:any)=>target.findings.some((f:any)=>f.component===member.path
+    || f.component.startsWith(member.path+'/draft_paths/') || f.component.startsWith(member.path+'/evidence_checks/'))).map((member:any)=>({
+    member_path:member.path,fragments:candidate.passages
+     .filter((p:any)=>p.start>=member.start&&p.end<=member.end
+      &&!target.required_retained.some((r:any)=>r.raw_digest===`sha256:${createHash('sha256').update(JSON.stringify(p)).digest('hex')}`))
+     .map((passage:any)=>({category:category(passage,target),passage})),
+   })),
+   counter_replacements:target.findings.filter((f:any)=>/\/counter_requirements\/\d+$/u.test(f.component)).map((f:any)=>{
+    const parentIndex=Number(/^\/passages\/(\d+)/u.exec(f.component)![1]);
+    const original=scope.targets.flatMap((t:any)=>t.members).find((m:any)=>m.parent_index===parentIndex);
+    const path=(candidate.passages[parentIndex]?.counter_requirements??[])[0]?.path;
+    const passage=candidate.passages.find((p:any)=>p.start===original.start&&p.end===original.end
+      &&p.counter_requirements?.some((check:any)=>check.path===path));
+    return {component_path:f.component,counter_requirement:passage?.counter_requirements?.[Number(f.component.split('/').at(-1))]};
+   }),
+  }))};
 }
 function transport(f:any,replies:any[],provider:'openai'|'openrouter'='openrouter'){
  const conversation=createModelAuthoringConversation();conversation.policySources=f.sources;
@@ -147,7 +163,16 @@ describe('complete captured configuration correction chain',()=>{
   const context={source:f.source,draft:f.draft,messages:f.operator_messages};
   const nominated=createCoverageRepairScope(f.arguments,collectCoverageFeedback(f.arguments,f.source,f.draft,f.operator_messages),context);
   const derived=derivedScopedResponse({messages:[{content:'Host repair scope (identities and exact references, not authority): '+JSON.stringify(nominated)}]},separated(f));
+  expect(derived.representation).toBe('replacement_only_v2');
+  expect(derived.groups[0].passage_replacements).toEqual([]);
+  expect(derived.groups[0].counter_replacements).toHaveLength(2);
+  expect(derived.groups[1].counter_replacements).toEqual([]);
+  expect(derived.groups[1].passage_replacements).toHaveLength(1);
   const assembled=assembleScopedCoverageReplacement(nominated,f.arguments,derived,context);
+  for(const target of nominated.targets)for(const protectedMember of target.required_retained){
+   const located=assembled.retained.find(r=>r.parent_index===protectedMember.parent_index)!;
+   expect(JSON.stringify(assembled.assembled.passages[located.assembled_index])).toBe(JSON.stringify(f.arguments.passages[protectedMember.parent_index]));
+  }
   validateScopedReceiptComponents(assembled.assembled,assembled.categories,nominated,f.source,f.draft);
   await t.run();expect(t.requests).toHaveLength(2);
   const fb=correction(t.requests[1]);expect(fb.findings).toHaveLength(3);

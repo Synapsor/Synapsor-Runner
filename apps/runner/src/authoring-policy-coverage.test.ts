@@ -294,7 +294,7 @@ describe("private Action field policy evidence", () => {
         // Submit the invalid pointer through the real host parser, rather than
         // letting the DERIVED fixture adapter refuse before serialization.
         if (requests.length > 1 && resultKind === "still invalid")
-          derived.groups[0].replacements[0].passage.draft_paths = [absentReadPath];
+          derived.groups[0].passage_replacements[0].fragments[0].passage.draft_paths = [absentReadPath];
         return { status: 200, body: { output: [{ type: "function_call", call_id: `private_${requests.length}`,
           name: "runner__review_policy_coverage", arguments: JSON.stringify(derived) }] } };
       } } },
@@ -564,7 +564,7 @@ describe("application obligation correction diagnostics", () => {
     expect(requests[0]).toContain("never null or []");
     expect(requests[1]).toContain("/passages/1");
     expect(requests[1]).toContain("disposition");
-    expect(requests[1]).toContain("exact host-scoped replacement DATA");
+    expect(requests[1]).toContain("replacement_only_v2 DATA");
     expect(requests[1]).toContain("fully validated assembled report");
     expect({ draft, conversation }).toEqual(before);
   });

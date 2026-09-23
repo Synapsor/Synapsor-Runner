@@ -47,20 +47,15 @@ function derivedReplacement(f: any, scope: CoverageRepairScope): any {
     category, passage: { start: 18, end: 18, disposition: 'implemented', responsibility: 'runner', issue_kind: 'coverage_link',
       interpretation: meanings[category]![0], draft_paths },
   });
-  return { scope_digest: scope.scope_digest, parent_digest: scope.parent_digest, context: scope.context,
-    groups: scope.targets.map(target => ({ target_id: target.target_id, replacements: [
+  return { representation:'replacement_only_v2', scope_digest: scope.scope_digest, parent_digest: scope.parent_digest, context: scope.context,
+    groups: scope.targets.map(target => ({ target_id: target.target_id, passage_replacements:[{member_path:target.findings[0]!.component,fragments:[
       passage('compiled_effect', [receiptCouplingPaths(outcome)[0]!]),
       passage('receipt_configuration', [CONFIG]),
       { category: 'source_transaction_coupling', passage: { start: 18, end: 18, disposition: 'implemented', responsibility: 'runner',
         issue_kind: 'coverage_link', receipt_component: 'source_transaction_coupling',
         interpretation: receiptCouplingInterpretation(outcome), draft_paths: receiptCouplingPaths(outcome) } },
       passage('receipt_read_exclusion', [EXCLUSION]),
-      // Dependency closure includes the two existing line-18 pending setup
-      // passages. Preserve their complete text/fields, not weaker new duties.
-      ...target.members.filter(member => member.parent_index !== 24).map(member => ({
-        category: 'setup', passage: structuredClone(f.arguments.passages[member.parent_index]),
-      })),
-    ] })) };
+    ]}],counter_replacements:[] })) };
 }
 function derivedAssembly(f: any) {
   const scope = scopeFor(f), replacement = derivedReplacement(f, scope);
@@ -109,9 +104,10 @@ describe('latest actual report and host-scoped DERIVED lineage', () => {
     expect(result.scope.targets).toHaveLength(1);
     expect(result.scope.targets[0]!.members.map(m => m.parent_index)).toEqual([24, 25, 26]);
     expect(result.scope.targets[0]!.source_ranges).toEqual([{ start: 18, end: 18 }]);
-    expect(result.assembled.passages).toHaveLength(34); expect(result.retained).toHaveLength(28);
+    expect(result.assembled.passages).toHaveLength(34); expect(result.retained).toHaveLength(30);
     for (const entry of result.retained) expect(JSON.stringify(result.assembled.passages[entry.assembled_index])).toBe(JSON.stringify(f.arguments.passages[entry.parent_index]));
-    expect(rawDigest(result.retained.map(entry => result.assembled.passages[entry.assembled_index]))).toBe(result.scope.outside_digest);
+    expect(rawDigest(result.retained.filter(entry=>![25,26].includes(entry.parent_index))
+      .map(entry => result.assembled.passages[entry.assembled_index]))).toBe(result.scope.outside_digest);
     expect(result.assembled.passages.slice(28, 30)).toEqual(f.arguments.passages.slice(25, 27));
     expect(result.assembled.passages[21]!.counter_requirements).toEqual(f.arguments.passages[21].counter_requirements);
     expect(report.counting_inventory?.paths).toHaveLength(2);
@@ -130,7 +126,7 @@ describe('latest actual report and host-scoped DERIVED lineage', () => {
     expect(scope.parent_digest).toBe(rawDigest(f.arguments)); expect(scope.targets[0]!.members.map(m => m.parent_index)).toEqual([24, 25, 26]);
     const tool = t.requests[1].tools.find((entry: any) => (entry.name ?? entry.function?.name) === 'runner__review_policy_coverage');
     const schema = tool.parameters ?? tool.function.parameters;
-    expect(schema.additionalProperties).toBe(false); expect(Object.keys(schema.properties).sort()).toEqual(['context', 'groups', 'parent_digest', 'scope_digest']);
+    expect(schema.additionalProperties).toBe(false); expect(Object.keys(schema.properties).sort()).toEqual(['context', 'groups', 'parent_digest', 'representation', 'scope_digest']);
     expect(report.passages).toHaveLength(34); expect(report.counting_inventory?.paths).toHaveLength(2);
   });
 
@@ -143,8 +139,8 @@ describe('latest actual report and host-scoped DERIVED lineage', () => {
   it.each(['counter_record', 'counter_field', 'extra_path', 'outside_field', 'outside_target', 'missing_target', 'duplicate_target', 'wrong_parent', 'wrong_scope', 'wrong_context', 'wrong_span', 'empty_group'])(
     'refuses %s in the actual correction producer', async mode => {
       const f = fixture(), t = transport(f, [f.arguments, (body: any) => {
-        const replacement = derivedReplacement(f, requestScope(body)), group = replacement.groups[0], component = group.replacements[0];
-        if (mode === 'counter_record') group.replacements.push({ category: 'compiled_effect', passage: { ...f.arguments.passages[21], operator_message_id: 2 } });
+        const replacement = derivedReplacement(f, requestScope(body)), group = replacement.groups[0], component = group.passage_replacements[0].fragments[0];
+        if (mode === 'counter_record') group.passage_replacements.push({member_path:'/passages/21',fragments:[{ category: 'compiled_effect', passage: { ...f.arguments.passages[21], operator_message_id: 2 } }]});
         if (mode === 'counter_field') component.passage.counter_requirements = structuredClone(f.actual_correction.passages.find((p: any) => p.counter_requirements).counter_requirements);
         if (mode === 'extra_path') component.passage.draft_paths.push('/actions/0/approval');
         if (mode === 'outside_field') replacement.passages = [f.arguments.passages[21]];
@@ -155,7 +151,7 @@ describe('latest actual report and host-scoped DERIVED lineage', () => {
         if (mode === 'wrong_scope') replacement.scope_digest = canonicalJsonDigest('wrong');
         if (mode === 'wrong_context') replacement.context = canonicalJsonDigest('another store');
         if (mode === 'wrong_span') component.passage.start = component.passage.end = 15;
-        if (mode === 'empty_group') group.replacements = [];
+        if (mode === 'empty_group') group.passage_replacements = [];
         return replacement;
       }]);
       await expect(t.run()).rejects.toThrow('COVERAGE_SCOPED_CORRECTION_REFUSED'); expect(t.requests).toHaveLength(2);
@@ -164,18 +160,19 @@ describe('latest actual report and host-scoped DERIVED lineage', () => {
   it.each(['category', 'no_coupling', 'split_reordered_unresolved', 'false_receipt', 'false_readback', 'setup_observed', 'omitted_setup', 'weakened_setup', 'duplicated_setup', 'reclassified_setup', 'wrong_role', 'missing_role', 'child_root', 'duplicate_root'])(
     'rejects %s without certifying individually plausible fragments', async mode => {
       const f = fixture(), t = transport(f, [f.arguments, (body: any) => {
-        const replacement = derivedReplacement(f, requestScope(body)), entries = replacement.groups[0].replacements;
+        const replacement = derivedReplacement(f, requestScope(body)), group = replacement.groups[0], entries = group.passage_replacements[0].fragments;
         const coupling = entries.find((entry: any) => entry.category === 'source_transaction_coupling');
         if (mode === 'category') entries[1].category = 'compiled_effect';
-        if (mode === 'no_coupling') replacement.groups[0].replacements = entries.filter((entry: any) => entry !== coupling);
-        if (mode === 'split_reordered_unresolved') replacement.groups[0].replacements = [...entries.filter((entry: any) => entry !== coupling), structuredClone(entries[0])].reverse();
+        if (mode === 'no_coupling') group.passage_replacements[0].fragments = entries.filter((entry: any) => entry !== coupling);
+        if (mode === 'split_reordered_unresolved') group.passage_replacements[0].fragments = [...entries.filter((entry: any) => entry !== coupling), structuredClone(entries[0])].reverse();
         if (mode === 'false_receipt') coupling.passage.interpretation += ' The receipt was observed.';
         if (mode === 'false_readback') entries[1].passage.interpretation += ' Independent source readback verified completion.';
-        if (mode === 'setup_observed') entries.at(-1).passage.disposition = 'implemented';
-        if (mode === 'omitted_setup') replacement.groups[0].replacements = entries.filter((entry: any) => entry.category !== 'setup');
-        if (mode === 'weakened_setup') entries.at(-1).passage.interpretation = 'Writer setup is optional and already provisioned.';
-        if (mode === 'duplicated_setup') entries.push(structuredClone(entries.at(-1)));
-        if (mode === 'reclassified_setup') { entries.at(-1).passage.disposition = 'background'; entries.at(-1).passage.draft_paths = []; }
+        const protectedEdit=()=>group.passage_replacements.push({member_path:'/passages/25',fragments:[{category:'setup',passage:structuredClone(f.arguments.passages[25])}]});
+        if (mode === 'setup_observed') { protectedEdit();group.passage_replacements.at(-1).fragments[0].passage.disposition = 'implemented'; }
+        if (mode === 'omitted_setup') group.read_only_context = [];
+        if (mode === 'weakened_setup') { protectedEdit();group.passage_replacements.at(-1).fragments[0].passage.interpretation = 'Writer setup is optional and already provisioned.'; }
+        if (mode === 'duplicated_setup') { protectedEdit();group.passage_replacements.push(structuredClone(group.passage_replacements.at(-1))); }
+        if (mode === 'reclassified_setup') { protectedEdit();group.passage_replacements.at(-1).fragments[0].passage.disposition = 'background'; }
         if (mode === 'wrong_role') coupling.passage.responsibility = 'deployment';
         if (mode === 'missing_role') delete coupling.passage.responsibility;
         if (mode === 'child_root') coupling.passage.draft_paths[0] += '/transaction';

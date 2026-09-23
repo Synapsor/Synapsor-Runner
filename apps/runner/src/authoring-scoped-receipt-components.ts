@@ -1,4 +1,3 @@
-import { createHash } from 'node:crypto';
 import type { PolicyPassage, PolicyTextSnapshot } from './authoring-policy-source.js';
 import { isDeferredSourceReadback, isDeferredPolicyDeployment } from './authoring-policy-source.js';
 import { assessReceiptCouplingCapability, assessReviewObligation, receiptSelectionComponent, receiptCouplingInterpretation } from './authoring-obligation-review.js';
@@ -18,8 +17,8 @@ export function receiptComponentMeanings(draft: any): Partial<Record<CoverageRep
 }
 export function constrainReceiptComponentSchema(schema:any,draft:unknown):void {
   const meanings=receiptComponentMeanings(draft);
-  for(const target of schema.properties.groups.items.oneOf) for(const alternative of target.properties.replacements.items.oneOf) {
-    if(Object.hasOwn(alternative.properties.passage,'const'))continue;
+  for(const target of schema.properties.groups.items.oneOf) for(const edit of target.properties.passage_replacements.items?.oneOf??[])
+    for(const alternative of edit.properties.fragments.items.oneOf) {
     const category=alternative.properties.category.const as CoverageRepairCategory;
     if(meanings[category]?.length) {
       alternative.properties.passage.properties.interpretation={type:'string',enum:meanings[category]};
@@ -34,12 +33,10 @@ export function validateScopedReceiptComponents(assembled:{passages:any[]},categ
   const fail=()=>{throw new CoverageScopedCorrectionError('A receipt component has no exact applicable category proof or adds claims outside its narrow meaning.');};
   for(const {index,category,target_id} of categories){
     if(category==='ordinary')continue;
+    if(!scope.targets.some(target=>target.target_id===target_id))fail();
     const p=assembled.passages[index] as PolicyPassage;
-    // A read-only overlap dependency is repeated byte-for-byte from this exact
-    // parent. New canonical generation wording cannot rewrite it. Its ordinary
-    // parser/proof checks still run in the complete assembled report below.
-    const digest=`sha256:${createHash('sha256').update(JSON.stringify(p)).digest('hex')}`;
-    if(scope.targets.find(t=>t.target_id===target_id)?.required_retained.some(r=>r.raw_digest===digest))continue;
+    // Host-retained overlap dependencies have no generated category. Even an
+    // identical provider fragment must pass this narrow component validator.
     if(meanings[category]) {
       if(!meanings[category]!.includes(p.interpretation)||p.next_step!==undefined||p.topic!==undefined
         ||p.disposition!=='implemented'||p.responsibility!=='runner'||p.issue_kind!=='coverage_link'

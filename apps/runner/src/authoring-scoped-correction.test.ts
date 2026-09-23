@@ -15,6 +15,10 @@ const root = '/runner_evidence/runtime_contract';
 const effect = '/runner_evidence/actions/example.action/effect';
 const execution = '/runner_evidence/actions/example.action/execution';
 const hash = (value: unknown) => `sha256:${createHash('sha256').update(JSON.stringify(value)).digest('hex')}`;
+const passageGroup=(scope:{targets:Array<{target_id:string}>},parentIndex:number,fragments:any[],targetIndex=0)=>({
+  target_id:scope.targets[targetIndex]!.target_id,
+  passage_replacements:[{member_path:`/passages/${parentIndex}`,fragments}],counter_replacements:[],
+});
 function fixture() {
   const text = 'Heading\nThe transaction and receipt requirement.\nUnrelated comparison.\nFooter';
   const context: CoverageRepairContext = {
@@ -37,12 +41,12 @@ function fixture() {
   const feedback = collectCoverageFeedback(parent, context.source, context.draft, context.messages);
   const scope = createCoverageRepairScope(parent, feedback, context);
   const passage = (interpretation: string, draft_paths: string[]) => ({start: 2, end: 2, disposition: 'implemented', responsibility: 'runner', interpretation, draft_paths});
-  const payload = {scope_digest: scope.scope_digest, parent_digest: scope.parent_digest, context: scope.context,
-    groups: [{target_id: scope.targets[0]!.target_id, replacements: [
+  const payload = {representation:'replacement_only_v2',scope_digest: scope.scope_digest, parent_digest: scope.parent_digest, context: scope.context,
+    groups: [passageGroup(scope,1,[
       {category: 'compiled_effect' as CoverageRepairCategory, passage: passage('Compiled effect.', [effect, execution])},
       {category: 'receipt_configuration' as CoverageRepairCategory, passage: passage('Receipt selection.', [`${root}/receipt_configuration`])},
       {category: 'receipt_read_exclusion' as CoverageRepairCategory, passage: passage('Read exclusion.', [`${root}/receipt_read_exclusion`])},
-    ]}]};
+    ])]};
   const assemble = (replacement: unknown = payload, immediateParent: unknown = parent, current = context) => assembleScopedCoverageReplacement(scope, immediateParent, replacement, current);
   return {context, parent, feedback, scope, payload, assemble};
 }
@@ -86,9 +90,14 @@ describe('host-scoped unaccepted coverage assembly', () => {
     const feedback=collectCoverageFeedback(f.parent,f.context.source,f.context.draft,f.context.messages);
     const scope=createCoverageRepairScope(f.parent,feedback,f.context);
     expect(scope.targets[0]!.receipt_region).toBe(false);
-    expect(scope.targets[0]!.allowed_references.ordinary).toEqual([effect,`${root}/receipts`]);
+    expect(scope.targets[0]!.allowed_references.ordinary).toEqual([effect]); // protected-only reference stays read-only
+    const passageSchema={type:'object',additionalProperties:false,required:['start','end','disposition','interpretation','draft_paths'],properties:{
+      start:{type:'integer'},end:{type:'integer'},disposition:{type:'string'},interpretation:{type:'string'},draft_paths:{type:'array',items:{type:'string'}},
+    }};
+    const portable=portableScopeToolSchema(scope,passageSchema,scopeToolSchema(scope,passageSchema));
+    expect(JSON.stringify(portable)).not.toContain(`${root}/receipts`);
   });
-  it.each(['omit','weaken','duplicate'] as const)('rejects %s of an unchallenged overlap dependency even when source coverage remains', mode => {
+  it.each(['rewrite','duplicate','foreign'] as const)('host-retains an overlap dependency and rejects %s output addressing it', mode => {
     const f=fixture();
     const companion={start:2,end:2,disposition:'background',interpretation:'The complete original dependency condition.',draft_paths:[]};
     f.parent.passages.push(companion);
@@ -97,11 +106,13 @@ describe('host-scoped unaccepted coverage assembly', () => {
     expect(scope.targets[0]!.required_retained).toEqual([{parent_index:4,raw_digest:hash(companion)}]);
     const payload:any={...f.payload,scope_digest:scope.scope_digest,parent_digest:scope.parent_digest,
       groups:[{...structuredClone(f.payload.groups[0]),target_id:scope.targets[0]!.target_id}]};
-    if(mode==='weaken')payload.groups[0].replacements.push({category:'setup',passage:{...companion,interpretation:'Weaker dependency.'}});
-    if(mode==='duplicate')payload.groups[0].replacements.push(...[1,2].map(()=>({category:'setup',passage:companion})));
+    const assembled=assembleScopedCoverageReplacement(scope,f.parent,payload,f.context);
+    expect(assembled.assembled.passages).toContainEqual(companion);
+    expect(assembled.retained.some(r=>r.parent_index===4&&r.raw_digest===hash(companion))).toBe(true);
+    if(mode==='rewrite')payload.groups[0].passage_replacements.push({member_path:'/passages/4',fragments:[{category:'setup',passage:{...companion,interpretation:'Weaker dependency.'}}]});
+    if(mode==='duplicate')payload.groups[0].passage_replacements.push(structuredClone(payload.groups[0].passage_replacements[0]!));
+    if(mode==='foreign')payload.groups[0].passage_replacements[0]!.member_path='/passages/99';
     expect(()=>assembleScopedCoverageReplacement(scope,f.parent,payload,f.context)).toThrow('COVERAGE_SCOPED_CORRECTION_REFUSED');
-    payload.groups[0].replacements=f.payload.groups[0]!.replacements.concat([{category:'setup',passage:companion}] as any);
-    expect(assembleScopedCoverageReplacement(scope,f.parent,payload,f.context).assembled.passages).toContainEqual(companion);
   });
   it('refuses a broad source citation that would pull the entire unrelated report into one repair', () => {
     const f=fixture(); f.parent.passages[1]!.start=1;f.parent.passages[1]!.end=4;
@@ -122,7 +133,7 @@ describe('host-scoped unaccepted coverage assembly', () => {
     const scope = createCoverageRepairScope(f.parent, feedback, f.context, {ordinaryReferences: [effect]});
     expect(scope.targets).toHaveLength(2);
     const payload = {...f.payload,scope_digest:scope.scope_digest,parent_digest:scope.parent_digest,groups:[
-      {target_id:scope.targets[1]!.target_id,replacements:[{category:'ordinary',passage:{start:4,end:4,disposition:'implemented',interpretation:'Effect.',draft_paths:[effect]}}]},
+      passageGroup(scope,3,[{category:'ordinary',passage:{start:4,end:4,disposition:'implemented',interpretation:'Effect.',draft_paths:[effect]}}],1),
       {...f.payload.groups[0],target_id:scope.targets[0]!.target_id},
     ]};
     const result = assembleScopedCoverageReplacement(scope,f.parent,payload,f.context);
@@ -149,7 +160,7 @@ describe('host-scoped unaccepted coverage assembly', () => {
     expect(()=>f.assemble(f.payload,sameValuesDifferentMemberOrder)).toThrow('exact immediate parent');
   });
   it.each(['top','group','component','passage','child'] as const)('rejects unknown %s fields instead of dropping them', location => {
-    const f=fixture(), payload:any=structuredClone(f.payload), group=payload.groups[0], entry=group.replacements[0];
+    const f=fixture(), payload:any=structuredClone(f.payload), group=payload.groups[0], entry=group.passage_replacements[0]!.fragments[0];
     if(location==='top') payload.passages=f.parent.passages;
     if(location==='group') group.path='/passages/2';
     if(location==='component') entry.status='approved';
@@ -162,7 +173,7 @@ describe('host-scoped unaccepted coverage assembly', () => {
     if(mode==='missing') payload.groups=[];
     if(mode==='duplicate') payload.groups.push(payload.groups[0]!);
     if(mode==='unrequested') payload.groups[0]!.target_id='/passages/2';
-    if(mode==='empty') payload.groups[0]!.replacements=[];
+    if(mode==='empty') payload.groups[0]!.passage_replacements[0]!.fragments=[];
     expect(()=>f.assemble(payload)).toThrow('COVERAGE_SCOPED_CORRECTION_REFUSED');
   });
   it('rejects duplicate target IDs even when the group count is correct', () => {
@@ -173,7 +184,7 @@ describe('host-scoped unaccepted coverage assembly', () => {
     expect(()=>assembleScopedCoverageReplacement(scope,f.parent,{...f.payload,scope_digest:scope.scope_digest,parent_digest:scope.parent_digest,groups:[group,group]},f.context)).toThrow('unrequested or duplicated');
   });
   it.each(['range','reference','child_reference','ordinary','category','typed_category'] as const)('rejects out-of-scope %s', mode => {
-    const f=fixture(), payload:any=structuredClone(f.payload), entry=payload.groups[0].replacements[0];
+    const f=fixture(), payload:any=structuredClone(f.payload), entry=payload.groups[0].passage_replacements[0]!.fragments[0];
     if(mode==='range') entry.passage.end=3;
     if(mode==='reference') entry.passage.draft_paths=['/runner_evidence/actions/unselected.action/effect'];
     if(mode==='child_reference') entry.passage.evidence_checks=[{path:'/outside',equals:true}];
@@ -184,27 +195,30 @@ describe('host-scoped unaccepted coverage assembly', () => {
   });
   it('retains source coverage and forbids deleting substantive residuals through reclassification', () => {
     const f=fixture(), payload=structuredClone(f.payload);
-    for(const entry of payload.groups[0]!.replacements) entry.passage.disposition='background';
+    for(const entry of payload.groups[0]!.passage_replacements[0]!.fragments) entry.passage.disposition='background';
     expect(()=>f.assemble(payload)).toThrow('background or overridden');
-    payload.groups[0]!.replacements[0]!.passage.disposition='implemented';
+    payload.groups[0]!.passage_replacements[0]!.fragments[0]!.passage.disposition='implemented';
     expect(()=>f.assemble(payload)).toThrow('background or overridden');
   });
   it('permits repairing an existing override only with the same source range and exact owner decision', () => {
     const f=fixture();f.context.messages=['An authentic threshold-only override.'];
     f.parent.passages[1]!.draft_paths=['/not_present',effect];f.parent.passages[1]!.disposition='overridden';f.parent.passages[1]!.operator_message_id=1;
     const scope=createCoverageRepairScope(f.parent,collectCoverageFeedback(f.parent,f.context.source,f.context.draft,f.context.messages),f.context);
-    const payload={scope_digest:scope.scope_digest,parent_digest:scope.parent_digest,context:scope.context,
-      groups:[{target_id:scope.targets[0]!.target_id,replacements:[{category:'ordinary',passage:{...f.parent.passages[1]!,draft_paths:[effect]}}]}]};
+    const payload={...f.payload,scope_digest:scope.scope_digest,parent_digest:scope.parent_digest,context:scope.context,
+      groups:[passageGroup(scope,1,[{category:'ordinary',passage:{...f.parent.passages[1]!,draft_paths:[effect]}}])]};
     expect(assembleScopedCoverageReplacement(scope,f.parent,payload,f.context).assembled.passages[1]!.operator_message_id).toBe(1);
-    Object.assign(payload.groups[0]!.replacements[0]!.passage,{operator_message_id:2});
+    Object.assign(payload.groups[0]!.passage_replacements[0]!.fragments[0]!.passage,{operator_message_id:2});
     expect(()=>assembleScopedCoverageReplacement(scope,f.parent,payload,f.context)).toThrow('background or overridden');
   });
   it('rejects deletion of a line even when another untouched record covers the rest of the source', () => {
     const f=fixture(); f.parent.passages[1]!.end=3; f.parent.passages[2]!.draft_paths=['/also_missing'];
     const feedback=collectCoverageFeedback(f.parent,f.context.source,f.context.draft,f.context.messages);
     const scope=createCoverageRepairScope(f.parent,feedback,f.context);
+    const group={...f.payload.groups[0],target_id:scope.targets[0]!.target_id,
+      passage_replacements:[...f.payload.groups[0]!.passage_replacements,
+        {member_path:'/passages/2',fragments:[{category:'ordinary',passage:{start:3,end:3,disposition:'implemented',interpretation:'Separate line.',draft_paths:[effect]}}]}]};
     expect(()=>assembleScopedCoverageReplacement(scope,f.parent,{...f.payload,scope_digest:scope.scope_digest,parent_digest:scope.parent_digest,
-      groups:[{...f.payload.groups[0],target_id:scope.targets[0]!.target_id}]},f.context)).toThrow('deletes part');
+      groups:[group]},f.context)).toThrow('deletes part');
   });
   it.each(['global','limited','nonstructural','badidentity','wrongcontext','missingchild','duplicate'] as const)('refuses ambiguous or ineligible %s finding scopes', mode => {
     const f=fixture(), feedback=structuredClone(f.feedback);
@@ -238,8 +252,8 @@ describe('host-scoped unaccepted coverage assembly', () => {
     const scope=createCoverageRepairScope(f.parent,feedback,f.context,{ordinaryReferences:[effect,execution,outside]});
     expect(scope.targets[0]!.receipt_region).toBe(false);
     expect(scope.targets[0]!.allowed_references.ordinary).toEqual([effect]);
-    const payload={scope_digest:scope.scope_digest,parent_digest:scope.parent_digest,context:scope.context,
-      groups:[{target_id:scope.targets[0]!.target_id,replacements:[{category:'ordinary',passage:{start:2,end:2,disposition:'implemented',interpretation:'Other effect.',draft_paths:[outside]}}]}]};
+    const payload={...f.payload,scope_digest:scope.scope_digest,parent_digest:scope.parent_digest,context:scope.context,
+      groups:[passageGroup(scope,1,[{category:'ordinary',passage:{start:2,end:2,disposition:'implemented',interpretation:'Other effect.',draft_paths:[outside]}}])]};
     expect(()=>assembleScopedCoverageReplacement(scope,f.parent,payload,f.context)).toThrow('outside its nominated category');
   });
   it('refuses an ordinary missing-reference repair when no current evidence is safely associated', () => {
@@ -281,10 +295,10 @@ describe('host-scoped unaccepted coverage assembly', () => {
     expect(scope.targets[0]!.allowed_references.ordinary).toContain(current);
     expect(scope.targets[0]!.allowed_references.ordinary).toContain(`${effect}/operation`);
     expect(scope.targets[0]!.allowed_references.ordinary).not.toContain(foreign);
-    const payload={scope_digest:scope.scope_digest,parent_digest:scope.parent_digest,context:scope.context,
-      groups:[{target_id:scope.targets[0]!.target_id,replacements:[{category:'ordinary',passage:{
+    const payload={...f.payload,scope_digest:scope.scope_digest,parent_digest:scope.parent_digest,context:scope.context,
+      groups:[passageGroup(scope,1,[{category:'ordinary',passage:{
         start:2,end:2,disposition:'implemented',interpretation:'Current maintenance.',draft_paths:[foreign],
-      }}]}]};
+      }}])]};
     expect(()=>assembleScopedCoverageReplacement(scope,f.parent,payload,f.context)).toThrow('outside its nominated category');
   });
   it('rejects foreign and absent receipt references even when passed through host options', () => {
@@ -339,8 +353,8 @@ describe('host-scoped unaccepted coverage assembly', () => {
     if(mode==='omit')delete repaired.field_checks;
     if(mode==='unrelated')repaired.field_checks[0].field='other_field';
     if(mode==='reclassify')repaired.field_checks[0].expectation='business_visible';
-    const payload={scope_digest:scope.scope_digest,parent_digest:scope.parent_digest,context:scope.context,
-      groups:[{target_id:scope.targets[0]!.target_id,replacements:[{category:'ordinary',passage:repaired}]}]};
+    const payload={...f.payload,scope_digest:scope.scope_digest,parent_digest:scope.parent_digest,context:scope.context,
+      groups:[passageGroup(scope,1,[{category:'ordinary',passage:repaired}])]};
     expect(()=>assembleScopedCoverageReplacement(scope,f.parent,payload,f.context)).toThrow('COVERAGE_SCOPED_CORRECTION_REFUSED');
   });
   it('retains each nominated typed field requirement across an explicit source-range split', () => {
@@ -348,10 +362,10 @@ describe('host-scoped unaccepted coverage assembly', () => {
     const check={resource:'table',field:'private_field',expectation:'private'};
     f.parent.passages[1]!.draft_paths=['/not_present',effect];f.parent.passages[1]!.field_checks=[check];
     const scope=createCoverageRepairScope(f.parent,collectCoverageFeedback(f.parent,f.context.source,f.context.draft,f.context.messages),f.context);
-    const payload={scope_digest:scope.scope_digest,parent_digest:scope.parent_digest,context:scope.context,
-      groups:[{target_id:scope.targets[0]!.target_id,replacements:[2,3].map(line=>({category:'ordinary',passage:{...f.parent.passages[1],start:line,end:line,draft_paths:[effect]}}))}]};
+    const payload={...f.payload,scope_digest:scope.scope_digest,parent_digest:scope.parent_digest,context:scope.context,
+      groups:[passageGroup(scope,1,[2,3].map(line=>({category:'ordinary',passage:{...f.parent.passages[1],start:line,end:line,draft_paths:[effect]}})))]};
     expect(assembleScopedCoverageReplacement(scope,f.parent,payload,f.context).assembled.passages.filter(p=>p.field_checks)).toHaveLength(2);
-    delete (payload.groups[0]!.replacements[1]!.passage as Record<string,unknown>).field_checks;
+    delete (payload.groups[0]!.passage_replacements[0]!.fragments[1]!.passage as Record<string,unknown>).field_checks;
     expect(()=>assembleScopedCoverageReplacement(scope,f.parent,payload,f.context)).toThrow('original source association');
   });
   it('retains existing outside counter citation absence byte-for-byte during a receipt repair', () => {
@@ -370,15 +384,15 @@ describe('host-scoped unaccepted coverage assembly', () => {
   });
   it('applies the existing passage and byte ceilings to complete assembly, including retained outside records', () => {
     const f=fixture(), payload=structuredClone(f.payload);
-    payload.groups[0]!.replacements=Array.from({length:118},(_,i)=>({...payload.groups[0]!.replacements[0]!,passage:{...payload.groups[0]!.replacements[0]!.passage,interpretation:`Component ${i}`}}));
+    payload.groups[0]!.passage_replacements[0]!.fragments=Array.from({length:118},(_,i)=>({...payload.groups[0]!.passage_replacements[0]!.fragments[0]!,passage:{...payload.groups[0]!.passage_replacements[0]!.fragments[0]!.passage,interpretation:`Component ${i}`}}));
     expect(()=>f.assemble(payload)).toThrow('120-passage');
-    const oversized:any=structuredClone(f.payload);oversized.groups[0].replacements[0].passage.interpretation='x'.repeat(128*1024);
+    const oversized:any=structuredClone(f.payload);oversized.groups[0].passage_replacements[0]!.fragments[0].passage.interpretation='x'.repeat(128*1024);
     expect(()=>f.assemble(oversized)).toThrow('argument bound');
   });
   it('does not treat a category label or assembly as validated evidence', () => {
     const f=fixture(), result=f.assemble();
     expect(()=>parsePolicyCoverage(result.assembled,f.context.source,f.context.draft,f.context.messages)).toThrow();
-    expect(result.categories).toEqual(f.payload.groups[0]!.replacements.map((entry,i)=>({index:i+1,category:entry.category,target_id:f.scope.targets[0]!.target_id})));
+    expect(result.categories).toEqual(f.payload.groups[0]!.passage_replacements[0]!.fragments.map((entry,i)=>({index:i+1,category:entry.category,target_id:f.scope.targets[0]!.target_id})));
   });
   it('emits a closed schema with exact target/context and category references, and rejects unsolicited paths', () => {
     const f=fixture();
@@ -388,7 +402,7 @@ describe('host-scoped unaccepted coverage assembly', () => {
     const schema=scopeToolSchema(f.scope,passageSchema);
     const validate=new (Ajv as unknown as {new(options:unknown):any})({strict:false}).compile(schema);
     expect(validate(f.payload),JSON.stringify(validate.errors)).toBe(true);
-    const changed=structuredClone(f.payload);changed.groups[0]!.replacements[0]!.passage.draft_paths=['/outside'];
+    const changed=structuredClone(f.payload);changed.groups[0]!.passage_replacements[0]!.fragments[0]!.passage.draft_paths=['/outside'];
     expect(validate(changed)).toBe(false);
     expect(validate({...f.payload,passages:[]})).toBe(false);
     expect(passageSchema.properties.draft_paths).toEqual({type:'array',items:{type:'string'}});
@@ -408,12 +422,12 @@ describe('host-scoped unaccepted coverage assembly', () => {
     const openrouter={tools:[{type:'function',function:{name:'runner__review_policy_coverage',parameters:portable}}]};
     expect(coverageToolDeclarationIssue(responses,131072)).toBeUndefined();
     expect(coverageToolDeclarationIssue(openrouter,131072)).toBeUndefined();
-    const outside=structuredClone(f.payload);outside.groups[0]!.replacements[0]!.passage.draft_paths=['/outside'];
+    const outside=structuredClone(f.payload);outside.groups[0]!.passage_replacements[0]!.fragments[0]!.passage.draft_paths=['/outside'];
     expect(validate(outside)).toBe(false);
-    const overlap=structuredClone(f.payload);overlap.groups[0]!.replacements[0]!.category='setup';
+    const overlap=structuredClone(f.payload);overlap.groups[0]!.passage_replacements[0]!.fragments[0]!.category='setup';
     expect(validate(overlap)).toBe(true); // Deliberate wire superset; exact host refuses it.
     expect(()=>f.assemble(overlap)).toThrow('COVERAGE_SCOPED_CORRECTION_REFUSED');
-    const extra=structuredClone(f.payload) as any;extra.groups[0].replacements[0].passage.unknown='unreviewed';
+    const extra=structuredClone(f.payload) as any;extra.groups[0].passage_replacements[0]!.fragments[0].passage.unknown='unreviewed';
     expect(validate(extra)).toBe(false);
     expect(()=>f.assemble(extra)).toThrow('COVERAGE_SCOPED_CORRECTION_REFUSED');
     if(process.env.SYNAPSOR_TEST_EVIDENCE_DIR){
@@ -427,23 +441,28 @@ describe('host-scoped unaccepted coverage assembly', () => {
         stages:[{stage:'initial',profile:'openai_non_strict_function',case:'authoring-policy-coverage.test.ts actual encoded request'},
           {stage:'first_scoped_correction',profile:'openai_non_strict_function',schema_sha256:hash(portable),case:'single and multiple nominated groups'},
           {stage:'second_scoped_correction',profile:'openai_non_strict_function',schema_sha256:hash(portable),case:'same builder; admission still conditional on host progress gate'}],
-        deliberate_wire_superset:['category-to-target pairing remains in canonical scope assembler','whole assembled review validation remains host-only'],
+        deliberate_wire_superset:['category-to-target and edit-anchor pairing remain in canonical scope assembler',
+          'per-target passage/counter array membership remains host-only','whole assembled review validation remains host-only'],
         other_structured_authoring_emitters_encountered_unchecked:authoringEmitters.filter(name=>name!=='authoring-policy-coverage.ts'),
         unchecked:['real provider schema admission','model completion','rare eligible second-correction live journey'],
       },null,2)+'\n',{mode:0o600});
     }
   });
-  it('admits exact read-only dependencies through their own unique schema alternative', () => {
+  it('does not publish a protected overlap dependency as a writable schema alternative', () => {
     const f=fixture(), companion={start:2,end:2,disposition:'background',interpretation:'Original dependency wording.',draft_paths:[]};
     f.parent.passages.push(companion);
     const scope=createCoverageRepairScope(f.parent,collectCoverageFeedback(f.parent,f.context.source,f.context.draft,f.context.messages),f.context);
     const schema:any=scopeToolSchema(scope,{type:'object',additionalProperties:false,required:['start','end','disposition','interpretation','draft_paths'],properties:{
       start:{type:'integer'},end:{type:'integer'},disposition:{type:'string'},interpretation:{type:'string'},responsibility:{type:'string'},draft_paths:{type:'array',items:{type:'string'}},
     }});
-    expect(schema.properties.groups.items.oneOf[0].properties.replacements.items.oneOf.at(-1).properties.passage).toEqual({const:companion});
+    expect(JSON.stringify(schema)).not.toContain('Original dependency wording.');
     const payload={...f.payload,scope_digest:scope.scope_digest,parent_digest:scope.parent_digest,
-      groups:[{target_id:scope.targets[0]!.target_id,replacements:[...f.payload.groups[0]!.replacements,{category:'compiled_effect',passage:companion}]}]};
+      groups:[passageGroup(scope,1,f.payload.groups[0]!.passage_replacements[0]!.fragments)]};
     const validate=new (Ajv as unknown as {new(options:unknown):any})({strict:false}).compile(schema);
     expect(validate(payload),JSON.stringify(validate.errors)).toBe(true);
+    expect(assembleScopedCoverageReplacement(scope,f.parent,payload,f.context).assembled.passages).toContainEqual(companion);
+    payload.groups[0]!.passage_replacements.push({member_path:'/passages/4',fragments:[{category:'compiled_effect',passage:companion}]});
+    expect(validate(payload)).toBe(false);
+    expect(()=>assembleScopedCoverageReplacement(scope,f.parent,payload,f.context)).toThrow('COVERAGE_SCOPED_CORRECTION_REFUSED');
   });
 });
