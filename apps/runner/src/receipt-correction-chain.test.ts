@@ -12,7 +12,7 @@ import {savePolicySources,loadPolicySources,authoringDestination} from './author
 import {policyReadinessItems,policyReviewReadiness} from './authoring-review-readiness.js';
 import {CoverageReceiptConfigurationError,CoverageReceiptDutyError,coverageFinding} from './authoring-coverage-feedback.js';
 import * as receiptConfiguration from './authoring-receipt-configuration.js';
-import {receiptCouplingInterpretation,receiptCouplingPaths} from './authoring-obligation-review.js';
+import {receiptCouplingInterpretation,receiptCouplingPaths,repairableReceiptCouplingRepresentation} from './authoring-obligation-review.js';
 import {receiptComponentMeanings,validateScopedReceiptComponents} from './authoring-scoped-receipt-components.js';
 import {createCoverageRepairScope,assembleScopedCoverageReplacement} from './authoring-scoped-correction.js';
 const capture=JSON.parse(await fs.readFile(new URL('./test-fixtures/receipt-correction-chain.json',import.meta.url),'utf8'));
@@ -34,6 +34,12 @@ function separated(f:any){
   {start:p.start,end:p.end,disposition:'implemented',responsibility:'runner',issue_kind:'coverage_link',receipt_component:'source_transaction_coupling',interpretation:receiptCouplingInterpretation(outcome),draft_paths:receiptCouplingPaths(outcome)},
   {start:p.start,end:p.end,disposition:'implemented',responsibility:'runner',issue_kind:'coverage_link',interpretation:meanings.receipt_configuration![0],draft_paths:[CONFIG]},
   {start:p.start,end:p.end,topic:'Receipt setup and production',disposition:'needs_decision',responsibility:'deployment',issue_kind:'missing_configuration',interpretation:'Keep the required source-atomic receipt guarantee. Applicable writer/provisioning review, execution permission and a performed receipt require their own evidence; no new receipt is observed here.',draft_paths:[CONFIG]});
+ return args;
+}
+function omittedCouplingShape(f:any, valid=separated(f)){
+ const args=structuredClone(valid), p=args.passages.find((p:any)=>p.receipt_component==='source_transaction_coupling');
+ delete p.responsibility;delete p.issue_kind;
+ p.interpretation=p.interpretation.replace(`The compiled ${f.draft.actions[0].outcome} direct-SQL`,'The compiled direct-SQL');
  return args;
 }
 function scopeFromWire(body:any){
@@ -69,6 +75,55 @@ function correction(body:any){
  return JSON.parse(all.split('\n').find((s:string)=>s.startsWith(marker))!.slice(marker.length));
 }
 describe('complete captured configuration correction chain',()=>{
+ it.each(['openai','openrouter'] as const)('%s nominates only a host-proven omitted coupling shape and validates the whole scoped replacement',async provider=>{
+  const f=fixture(),valid=separated(f),invalid=omittedCouplingShape(f,valid);f.arguments=invalid;
+  expect(()=>parse(f)).toThrow('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
+  const feedback=collectCoverageFeedback(invalid,f.source,f.draft,f.operator_messages);
+  expect(feedback.findings.map(x=>[x.code,x.component,x.structural])).toEqual([
+   ['OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED',`/passages/${invalid.passages.findIndex((p:any)=>p.receipt_component==='source_transaction_coupling')}`,true]]);
+  const t=transport(f,[invalid,valid],provider);await t.run();expect(t.requests).toHaveLength(2);
+  const sent=correction(t.requests[1]);expect(sent.findings).toHaveLength(1);
+  expect(sent.findings[0].repair).toContain('outcome-specific canonical capability');
+  const scope=scopeFromWire(t.requests[1]);expect(scope.targets).toHaveLength(1);
+  expect(scope.targets[0].receipt_region).toBe(true);
+  expect(scope.targets[0].allowed_references.source_transaction_coupling).toEqual(expect.arrayContaining(receiptCouplingPaths(f.draft.actions[0].outcome)));
+  expect(parse(f,valid).passages.find(p=>p.receipt_coupling)).toMatchObject({receipt_coupling:{origin:'HOST-RESOLVED',effect_count:2,observed:false}});
+  expect(f.arguments).toEqual(invalid);
+ });
+ it.each(['mode','source','revision','transaction','companion','receipt_path','stronger_prose','mixed_fields'] as const)(
+  'does not nominate %s as a structural coupling repair without the exact current proof',kind=>{
+   const f=fixture(),args=omittedCouplingShape(f),p=args.passages.find((p:any)=>p.receipt_component==='source_transaction_coupling');
+   const contract=f.draft.runner_evidence.runtime_contract,host=f.draft.runner_evidence.actions[f.draft.actions[0].outcome];
+   if(kind==='mode')contract.receipt_configuration.modes[0].authority='runner_ledger';
+   if(kind==='source')f.source.digest=canonicalJsonDigest('other source');
+   if(kind==='revision')contract.review_evidence_phases.candidate_action_digest=canonicalJsonDigest('other Action');
+   if(kind==='transaction')host.effect.transaction='Independent updates, not one transaction';
+   if(kind==='companion')host.effect.atomic_updates=[];
+   if(kind==='receipt_path')p.draft_paths.pop();
+   if(kind==='stronger_prose')p.interpretation+=' The writer is already provisioned.';
+   if(kind==='mixed_fields')p.field_checks=[{resource:'private',field:'unavailable',expectation:'private'}];
+   expect(repairableReceiptCouplingRepresentation(p,f.source,f.draft)).toBe(false);
+   const coupling=collectCoverageFeedback(args,f.source,f.draft,f.operator_messages).findings.find(x=>x.code==='OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
+   if(kind==='mixed_fields')expect(coupling).toBeUndefined(); // The earlier private-field prerequisite refuses first.
+   else expect(coupling).toMatchObject({structural:false});
+   expect(()=>parse(f,args)).toThrow();
+  });
+ it('the actual producer refuses a scoped replacement that drops the challenged transaction conjunction',async()=>{
+  const f=fixture(),valid=separated(f),invalid=omittedCouplingShape(f,valid);
+  const deleted=structuredClone(valid);
+  deleted.passages=deleted.passages.filter((p:any)=>p.receipt_component!=='source_transaction_coupling');
+  f.arguments=invalid;
+  const t=transport(f,[invalid,deleted]);
+  let refusal='';try{await t.run();}catch(error){refusal=(error as Error).message;}
+  expect(refusal).toContain('POLICY_COVERAGE_INVALID');
+  expect(refusal).toContain('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
+  expect(t.requests).toHaveLength(2);
+  const scope=scopeFromWire(t.requests[1]);expect(scope.targets[0].receipt_region).toBe(true);
+  // The scoped producer nominates this required span even though other
+  // configuration, privacy and setup components still cover its source line.
+  expect(scope.targets[0].source_ranges).toEqual([{start:18,end:18}]);
+  expect(()=>parse(f,deleted)).not.toThrow(); // Parser alone has no repair-scope obligation.
+ });
  it('retains full original invalidity and batches the exact two counter problems plus eligible configuration grouping',()=>{
   const f=fixture(),before=structuredClone(f.arguments);expect(f.arguments.passages).toHaveLength(35);
   expect(()=>parse(f)).toThrow('COUNTING_SUPPORT_MISMATCH');

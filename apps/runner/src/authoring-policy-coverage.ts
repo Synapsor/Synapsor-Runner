@@ -6,7 +6,7 @@ import { receiptConfigurationComponentOnly } from "./authoring-policy-source.js"
 import { CoverageSourceLinesError, missingReviewSourceLines, reviewSourceInventory } from "./authoring-source-coverage.js";
 import { CoverageComponentError, CoverageComponentsError, CoverageCurrentDescriptionError, recordCoverageFeedbackParent, recordCoverageFindingSubject, recordCheckedCoveragePassage, coverageFinding, MAX_COVERAGE_FINDINGS, MAX_COVERAGE_FEEDBACK_BYTES, MAX_COVERAGE_SUBMISSIONS, permitsSecondCoverageCorrection, permitsSecondScopedCoverageCorrection, type CoverageFeedback } from "./authoring-coverage-feedback.js";
 import { clientDutyInventory } from "./authoring-client-duties.js";
-import { assessReviewObligation, assessReceiptCouplingCapability, assertRequiredReceiptCoupling, receiptCouplingInterpretation, deferredReviewObligation, receiptSelectionComponent } from "./authoring-obligation-review.js";
+import { assessReviewObligation, assessReceiptCouplingCapability, assertRequiredReceiptCoupling, receiptCouplingInterpretation, repairableReceiptCouplingRepresentation, deferredReviewObligation, receiptSelectionComponent } from "./authoring-obligation-review.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { associateCountingRequirements, countingSourceRequirements, configuredCountingLimits } from "./authoring-counting-requirements.js";
 import { associateCountingComponents, resolveCountingComparison } from "./authoring-counting-review.js";
@@ -571,6 +571,15 @@ export function collectCoverageFeedback(args: Record<string, unknown>, source: P
     if (f.code === "COVERAGE_SOURCE_LINES_MISSING") f.passage_identity = canonicalJsonDigest({ source: source.digest });
     // No submitted strings are included. This optional structural alternative
     // must itself pass the existing requirement validator in the SAME context.
+    if (f.code === "OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED") {
+      const match = /^\/passages\/(\d+)$/u.exec(f.component);
+      const entry = match && (args.passages as PolicyPassage[])[Number(match[1])];
+      if (entry && repairableReceiptCouplingRepresentation(entry, source, draft)) {
+        f.structural = true;
+        f.reason = "The current host evidence establishes the exact compiled source-transaction capability, but this submitted component omits its required typed association or outcome-specific canonical meaning. The submitted review remains invalid.";
+        f.repair = "Within the exact host-nominated source region, correct this isolated source_transaction_coupling component to implemented/runner/coverage_link with the supplied outcome-specific canonical capability interpretation and the exact effect, execution and receipts roots. Preserve the other receipt selection, Read exclusion, setup and observation duties independently. This is a compiled capability, not provisioning, execution authorization, a performed receipt or readback. The complete assembled report and current evidence are revalidated; do not change the policy, Action, receipt mode or source.";
+      }
+    }
     if (f.code === "COUNTING_SUPPORT_MISMATCH" && error instanceof CoverageComponentError) {
       const match = /^\/passages\/(\d+)\/counter_requirements\/(\d+)$/u.exec(error.component);
       const entry = match && (args.passages as PolicyPassage[])[Number(match[1])];

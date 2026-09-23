@@ -106,7 +106,8 @@ const root = '/runner_evidence/runtime_contract';
 const receiptPaths = new Set([`${root}/receipt_configuration`, `${root}/receipt_read_exclusion`, `${root}/receipts`,
   `${root}/application_obligations/independent_source_readback`]);
 const receiptCodes = new Set(['RECEIPT_READ_EXCLUSION_UNESTABLISHED', 'COVERAGE_RECEIPT_REFERENCE_OVERBROAD',
-  'OBLIGATION_CONFIGURATION_COMPONENT_MIXED', 'OBLIGATION_OBSERVATION_UNESTABLISHED']);
+  'OBLIGATION_CONFIGURATION_COMPONENT_MIXED', 'OBLIGATION_OBSERVATION_UNESTABLISHED',
+  'OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED']);
 function pointerExists(draft: unknown, pointer: string): boolean {
   if (!pointer.startsWith('/') || pointer.length > 500 || /~(?:[^01]|$)/u.test(pointer)) return false;
   let value = draft;

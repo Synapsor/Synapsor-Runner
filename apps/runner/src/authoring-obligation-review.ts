@@ -170,6 +170,30 @@ export function receiptCouplingPaths(outcome: string): string[] {
 export function receiptCouplingInterpretation(outcome: string): string {
   return `The compiled ${outcome} direct-SQL capability couples every listed business effect and its required source_db receipt in one source transaction: they commit together or roll back. This establishes capability only. Provisioning, execution authorization, a performed receipt and independent source readback remain separately unverified.`;
 }
+/** Feedback eligibility only. The submitted passage remains invalid. A narrow
+ * omission of the typed host claim or outcome name may be corrected only when
+ * the unchanged assessor establishes the complete current capability after
+ * those representation fields are supplied. No arbitrary prose is promoted. */
+export function repairableReceiptCouplingRepresentation(p: PolicyPassage, source: PolicyTextSnapshot, draft: unknown): boolean {
+  if (p.receipt_component !== 'source_transaction_coupling' || p.disposition !== 'implemented'
+    || p.responsibility !== undefined && p.responsibility !== 'runner'
+    || p.issue_kind !== undefined && p.issue_kind !== 'coverage_link'
+    || Object.keys(p).some(key => !['start', 'end', 'disposition', 'interpretation', 'draft_paths',
+      'receipt_component', 'responsibility', 'issue_kind'].includes(key))) return false;
+  const actions = at(draft, '/actions');
+  if (!Array.isArray(actions)) return false;
+  const matches = actions.filter((action: any) => typeof action?.outcome === 'string'
+    && sameSet(p.draft_paths, receiptCouplingPaths(action.outcome)));
+  if (matches.length !== 1) return false;
+  const canonical = receiptCouplingInterpretation(matches[0].outcome);
+  const omittedOutcome = canonical.replace(`The compiled ${matches[0].outcome} direct-SQL`, 'The compiled direct-SQL');
+  if (p.interpretation !== canonical && p.interpretation !== omittedOutcome) return false;
+  if (p.responsibility === 'runner' && p.issue_kind === 'coverage_link' && p.interpretation === canonical) return false;
+  try {
+    return assessReceiptCouplingCapability({ ...p, responsibility: 'runner', issue_kind: 'coverage_link',
+      interpretation: canonical }, source, draft)?.origin === 'HOST-RESOLVED';
+  } catch { return false; }
+}
 function couplingFailure(reason: string): never {
   throw new Error(`OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED: ${reason} Capability, current selection, setup and observation remain distinct.`);
 }
