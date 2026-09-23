@@ -1,6 +1,6 @@
 # Reviewed source transaction requirement — implementer record
 
-Status: source gates complete; immutable installation and independent installed outcome pending. This record will be completed after delivery.
+Status: historical pre-freeze implementation record. The frozen and independent outcome is in [FINAL-REPORT.md](./FINAL-REPORT.md).
 
 The authentic published-B response remains invalid at `/passages/21`. Its exact two-effect and `source_db` capability references do not establish that the attached source requires the effects and receipt in the same source transaction. The prior mode-only predicate and an abandoned English-token detector cannot establish that source meaning safely. The original response and stopped episode remain intact.
 
