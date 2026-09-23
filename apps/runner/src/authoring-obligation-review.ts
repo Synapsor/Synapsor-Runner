@@ -195,15 +195,12 @@ export function repairableReceiptCouplingRepresentation(p: PolicyPassage, source
     required_receipt:requirement.required_receipt,relation:requirement.relation}));
   if (!currentMapping) return false;
   const canonical = receiptCouplingInterpretation(matches[0].outcome);
-  // A retry is allowed only for the finite capability-only serialization
-  // shapes already emitted in this component family. Arbitrary narration can
-  // assert a conflict or performed effect and must remain a substantive stop;
-  // it is never rewritten into the host's approved sentence by guessing at
-  // English meaning. These forms decide correction eligibility, not proof.
-  const omittedOutcome = canonical.replace(`The compiled ${matches[0].outcome} direct-SQL`, 'The compiled direct-SQL');
-  const boundedParaphrase = 'The compiled direct-SQL capability couples both listed business effects and the required source_db receipt in one source transaction: all commit together or roll back. This is capability only, not provisioning, execution, a performed receipt, or independent readback.';
-  if (![canonical, omittedOutcome, ...(currentMapping.required_effects.length === 2 ? [boundedParaphrase] : [])]
-    .includes(p.interpretation)) return false;
+  // The single typed component is replaced in full; its submitted narration
+  // stays in invalid episode history, not in the assembled replacement or as
+  // evidence. English variants cannot decide correction eligibility. Extra
+  // typed claims and sibling passages remain outside this isolation boundary.
+  if (typeof p.interpretation !== 'string' || !p.interpretation.trim()
+    || p.interpretation.length > 2_000) return false;
   if (p.responsibility === 'runner' && p.issue_kind === 'coverage_link' && p.interpretation === canonical) return false;
   try {
     return assessReceiptCouplingCapability({ ...p, responsibility: 'runner', issue_kind: 'coverage_link',

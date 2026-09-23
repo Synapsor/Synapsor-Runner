@@ -9,7 +9,7 @@ import {collectCoverageFeedback,parsePolicyCoverage,reviewPolicyCoverage} from '
 import {createModelAuthoringConversation} from './model-authoring-conversation.js';
 import {secureAskJsonRequest} from './model-ask.js';
 import {ensurePreparedPolicyCoverage} from './authoring-prepared-policy-review.js';
-import {savePolicySources,loadPolicySources,authoringDestination} from './authoring-policy-source.js';
+import {savePolicySources,loadPolicySources,authoringDestination,policyTextSnapshot} from './authoring-policy-source.js';
 import {policyReadinessItems,policyReviewReadiness} from './authoring-review-readiness.js';
 import {CoverageReceiptConfigurationError,CoverageReceiptDutyError,coverageFinding} from './authoring-coverage-feedback.js';
 import * as receiptConfiguration from './authoring-receipt-configuration.js';
@@ -52,6 +52,11 @@ function omittedCouplingShape(f:any, valid=separated(f)){
  const args=structuredClone(valid), p=args.passages.find((p:any)=>p.receipt_component==='source_transaction_coupling');
  delete p.responsibility;delete p.issue_kind;
  p.interpretation=p.interpretation.replace(`The compiled ${f.draft.actions[0].outcome} direct-SQL`,'The compiled direct-SQL');
+ return args;
+}
+function engineQualifiedCouplingShape(f:any, valid=separated(f)){
+ const args=omittedCouplingShape(f,valid),p=args.passages.find((entry:any)=>entry.receipt_component==='source_transaction_coupling');
+ p.interpretation='The compiled direct-SQL capability couples both listed business effects and the required source_db receipt in one PostgreSQL source transaction: they commit together or roll back. This is capability, not provisioning, execution, a performed receipt, or readback.';
  return args;
 }
 function scopeFromWire(body:any){
@@ -117,8 +122,7 @@ describe('complete captured configuration correction chain',()=>{
   expect(parse(f,valid).passages.find(p=>p.receipt_coupling)).toMatchObject({receipt_coupling:{origin:'HOST-RESOLVED',effect_count:2,observed:false}});
   expect(f.arguments).toEqual(invalid);
  });
- it.each(['mode','source','revision','transaction','companion','receipt_path','stronger_prose',
-  'effect_already_done','writer_ready','denied_transaction','mixed_fields'] as const)(
+ it.each(['mode','source','revision','transaction','companion','receipt_path','mixed_fields'] as const)(
   'does not nominate %s as a structural coupling repair without the exact current proof',kind=>{
    const f=fixture(),args=omittedCouplingShape(f),p=args.passages.find((p:any)=>p.receipt_component==='source_transaction_coupling');
    const contract=f.draft.runner_evidence.runtime_contract,host=f.draft.runner_evidence.actions[f.draft.actions[0].outcome];
@@ -128,10 +132,6 @@ describe('complete captured configuration correction chain',()=>{
    if(kind==='transaction')host.effect.transaction='Independent updates, not one transaction';
    if(kind==='companion')host.effect.atomic_updates=[];
    if(kind==='receipt_path')p.draft_paths.pop();
-   if(kind==='stronger_prose')p.interpretation+=' The writer is already provisioned.';
-   if(kind==='effect_already_done')p.interpretation='The cycle and register updates, with their source_db receipt, are already committed in the source database.';
-   if(kind==='writer_ready')p.interpretation='The dedicated writer is ready and can already execute this Action.';
-   if(kind==='denied_transaction')p.interpretation='The business effects and receipt do not commit in one source transaction.';
    if(kind==='mixed_fields')p.field_checks=[{resource:'private',field:'unavailable',expectation:'private'}];
    expect(repairableReceiptCouplingRepresentation(p,f.source,f.draft,f.sources)).toBe(false);
    const coupling=collectCoverageFeedback(args,f.source,f.draft,f.operator_messages,undefined,f.sources).findings.find(x=>x.code==='OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
@@ -139,6 +139,33 @@ describe('complete captured configuration correction chain',()=>{
    else expect(coupling).toMatchObject({structural:false});
    expect(()=>parse(f,args)).toThrow();
   });
+ it.each(['harmless_punctuation','effect_already_done','writer_ready','denied_transaction'] as const)(
+  'nominates the whole unaccepted typed component for %s without accepting its narration',kind=>{
+   const f=fixture(),args=engineQualifiedCouplingShape(f),p=args.passages.find((entry:any)=>entry.receipt_component==='source_transaction_coupling');
+   if(kind==='harmless_punctuation')p.interpretation=p.interpretation.replace('transaction: they','transaction; they');
+   if(kind==='effect_already_done')p.interpretation='The effects and receipt are already committed in the source database.';
+   if(kind==='writer_ready')p.interpretation='The writer is already provisioned and ready to execute.';
+   if(kind==='denied_transaction')p.interpretation='The business effects and receipt do not commit in one source transaction.';
+   expect(()=>parse(f,args)).toThrow('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
+   expect(repairableReceiptCouplingRepresentation(p,f.source,f.draft,f.sources)).toBe(true);
+   expect(collectCoverageFeedback(args,f.source,f.draft,f.operator_messages,undefined,f.sources).findings)
+    .toContainEqual(expect.objectContaining({code:'OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED',structural:true}));
+   const accepted=parse(f,separated(f));
+   expect(accepted.passages.find(entry=>entry.receipt_component==='source_transaction_coupling')?.interpretation)
+    .toBe(receiptCouplingInterpretation(f.draft.actions[0].outcome));
+  });
+ it('a replacement that repeats a false performed-receipt claim stops after one scoped correction',async()=>{
+  const f=fixture(),valid=separated(f),invalid=engineQualifiedCouplingShape(f,valid),repeated=structuredClone(valid);
+  repeated.passages.find((p:any)=>p.receipt_component==='source_transaction_coupling').interpretation=
+   'The source_db receipt was performed and independently read back.';
+  f.arguments=invalid;
+  const t=transport(f,[invalid,repeated,valid]);
+  await expect(t.run()).rejects.toThrow('POLICY_COVERAGE_INVALID');
+  expect(t.requests).toHaveLength(2);
+  expect(correction(t.requests[1]).findings).toContainEqual(expect.objectContaining({
+   code:'OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED',structural:true}));
+  expect(()=>parse(f,repeated)).toThrow('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
+ });
  it('nominates the authentic B capability-only paraphrase by typed scope and current proof, without accepting its prose',()=>{
   const f=fixture(),args=omittedCouplingShape(f),p=args.passages.find((p:any)=>p.receipt_component==='source_transaction_coupling');
   p.interpretation='The compiled direct-SQL capability couples both listed business effects and the required source_db receipt in one source transaction: all commit together or roll back. This is capability only, not provisioning, execution, a performed receipt, or independent readback.';
@@ -147,7 +174,30 @@ describe('complete captured configuration correction chain',()=>{
   expect(collectCoverageFeedback(args,f.source,f.draft,f.operator_messages,undefined,f.sources).findings)
     .toContainEqual(expect.objectContaining({code:'OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED',structural:true}));
  });
- it('does not use the bounded two-effect paraphrase for a three-effect source requirement',()=>{
+ it.each(['openai','openrouter'] as const)('%s sends a bounded correction for the latest engine-qualified capability-only serialization',async provider=>{
+  const f=fixture(),valid=separated(f),invalid=engineQualifiedCouplingShape(f,valid);
+  f.arguments=invalid;
+  expect(()=>parse(f)).toThrow('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');
+  const feedback=collectCoverageFeedback(invalid,f.source,f.draft,f.operator_messages,undefined,f.sources);
+  expect(feedback.findings).toContainEqual(expect.objectContaining({
+    code:'OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED',structural:true}));
+  const t=transport(f,[invalid,valid],provider);
+  await t.run();
+  expect(t.requests).toHaveLength(2);
+  const sent=correction(t.requests[1]);
+  expect(sent.findings).toContainEqual(expect.objectContaining({
+    code:'OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED',structural:true}));
+  const scope=scopeFromWire(t.requests[1]);
+  expect(scope.targets).toHaveLength(1);
+  expect(scope.targets[0].required_retained.length).toBeGreaterThan(0);
+  expect(scope.targets[0].required_retained).toHaveLength(scope.targets[0].members.length-1);
+  expect(scope.targets[0].required_retained.every((member:any)=>
+    `sha256:${createHash('sha256').update(JSON.stringify(invalid.passages[member.parent_index])).digest('hex')}`===member.raw_digest)).toBe(true);
+  expect(scope.targets[0].source_ranges).toEqual([{start:18,end:18}]);
+  expect(parse(f,valid).passages.some(p=>p.receipt_coupling?.origin==='HOST-RESOLVED')).toBe(true);
+  expect(f.arguments).toEqual(invalid);
+ });
+ it('does not nominate a changed three-effect requirement without matching compiled capability',()=>{
   const f=fixture(),args=omittedCouplingShape(f),p=args.passages.find((entry:any)=>entry.receipt_component==='source_transaction_coupling');
   const third=structuredClone(f.draft.actions[0].effect.atomic_updates[0]);
   third.target_resource='energy_ops.adjustment_registers';third.target_binding='adjustment';
@@ -158,6 +208,30 @@ describe('complete captured configuration correction chain',()=>{
   f.draft.runner_evidence.source_transaction_requirement=sourceTransactionPreparedContext(f.sources,store,f.source.digest);
   p.interpretation='The compiled direct-SQL capability couples both listed business effects and the required source_db receipt in one source transaction: all commit together or roll back. This is capability only, not provisioning, execution, a performed receipt, or independent readback.';
   expect(repairableReceiptCouplingRepresentation(p,f.source,f.draft,f.sources)).toBe(false);
+ });
+ it('uses the current source and renamed Action binding, not a fixture outcome or passage index',()=>{
+  const original=fixture();
+  const f=JSON.parse(JSON.stringify(original).replaceAll('energy_ops.finalize_settlement_cycle','tenant.complete_cycle'));
+  f.source=policyTextSnapshot(Buffer.from(f.source.text+'\nA later unrelated clause remains pending.','utf8'),
+   f.source.name,f.source.version);
+  f.draft.runner_evidence.runtime_contract.authoring_lifecycle.current_policy_snapshot.digest=f.source.digest;
+  const phase=f.draft.runner_evidence.runtime_contract.review_evidence_phases;
+  phase.candidate_action_digest=canonicalJsonDigest(f.draft.actions);
+  f.draft.runner_evidence.runtime_contract.saved_execution_review.action_digest=phase.candidate_action_digest;
+  if(phase.candidate_action_binding_digest)phase.candidate_action_binding_digest=canonicalJsonDigest({
+   candidate_action_digest:phase.candidate_action_digest,actions:f.draft.actions});
+  const store=f.sources.source_transaction_reviews[0].store_digest;
+  f.sources.source_transaction_reviews=[makeSourceTransactionReview({source:f.source,session:f.sources.id,store,
+   start:18,end:18,mapping:sourceTransactionMappings(f.draft)[0]!,actor:'derived-test-operator',decision:'confirmed'})];
+  f.draft.runner_evidence.source_transaction_requirement=sourceTransactionPreparedContext(f.sources,store,f.source.digest);
+  const args=engineQualifiedCouplingShape(f);
+  const coupling=args.passages.find((p:any)=>p.receipt_component==='source_transaction_coupling');
+  args.passages.unshift({start:1,end:1,disposition:'needs_decision',interpretation:'Unrelated pending clause.',draft_paths:[]});
+  expect(coupling.draft_paths).toEqual(expect.arrayContaining(receiptCouplingPaths('tenant.complete_cycle')));
+  expect(repairableReceiptCouplingRepresentation(coupling,f.source,f.draft,f.sources)).toBe(true);
+  expect(collectCoverageFeedback(args,f.source,f.draft,f.operator_messages,undefined,f.sources).findings)
+   .toContainEqual(expect.objectContaining({code:'OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED',
+    component:`/passages/${args.passages.indexOf(coupling)}`,structural:true}));
  });
  it('the actual producer refuses a scoped replacement that drops the challenged transaction conjunction',async()=>{
   const f=fixture(),valid=separated(f),invalid=omittedCouplingShape(f,valid);
@@ -254,6 +328,19 @@ describe('complete captured configuration correction chain',()=>{
   const f=fixture();f.arguments.passages.push({start:18,end:18,disposition:'implemented',responsibility:'runner',interpretation:'An actual source receipt proves independent readback.',draft_paths:[RECEIPTS]});
   const t=transport(f,[f.arguments,separated(f)]);await expect(t.run()).rejects.toThrow('POLICY_COVERAGE_INVALID');expect(t.requests).toHaveLength(1);
  });
+ it('a separate false observation stays terminal beside an eligible coupling component',async()=>{
+  const f=fixture(),valid=separated(f),invalid=engineQualifiedCouplingShape(f,valid);
+  invalid.passages.push({start:18,end:18,disposition:'implemented',responsibility:'runner',
+   interpretation:'An actual source receipt proves independent readback.',draft_paths:[RECEIPTS]});
+  f.arguments=invalid;
+  const feedback=collectCoverageFeedback(invalid,f.source,f.draft,f.operator_messages,undefined,f.sources);
+  expect(feedback.findings.some(finding=>finding.code==='OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED'
+   && finding.structural)).toBe(true);
+  expect(feedback.findings.some(finding=>!finding.structural)).toBe(true);
+  const t=transport(f,[invalid,valid]);
+  await expect(t.run()).rejects.toThrow('POLICY_COVERAGE_INVALID');
+  expect(t.requests).toHaveLength(1);
+ });
  it.each(['no_support','wrong_support','heading','condition','duty','false_scalar','false_observation'])('full replacement retains %s blocking',kind=>{
   const f=fixture(),args=separated(f);
   if(kind==='no_support')f.draft.runner_evidence.counting_decisions=[];
@@ -324,6 +411,54 @@ describe('current-proof complete save and restart',()=>{
    currentDraft:()=>f.draft,authorityDigest:f.sources.coverage_authority_digest,clarifications:[],assertCurrent:async()=>{},state:{},onValidated:vi.fn()};
   return {root,f,t,input};
  }
+ it('engine-qualified invalid parent receives one scoped correction, saves complete BUSINESS review, and reuses it',async()=>{
+  const x=await prepared(f=>[engineQualifiedCouplingShape(f),separated(f)]);
+  try{
+   const result=await ensurePreparedPolicyCoverage(x.input);
+   expect(result.activity).toBe('provider');
+   expect(x.t.requests).toHaveLength(2);
+   const sent=correction(x.t.requests[1]);
+   expect(sent.findings.map((finding:any)=>[finding.code,finding.component,finding.structural])).toEqual([
+    ['OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED',
+      `/passages/${engineQualifiedCouplingShape(x.f).passages.findIndex((p:any)=>p.receipt_component==='source_transaction_coupling')}`,true]]);
+   const saved=await loadPolicySources(x.root,x.f.sources.id);
+   expect(saved.coverage_episodes?.at(-1)?.submissions.map(s=>s.validated)).toEqual([false,true]);
+   expect(saved.coverage_episodes?.at(-1)?.submissions[0]?.tentative?.raw_response)
+    .toEqual(engineQualifiedCouplingShape(x.f));
+   expect(saved.coverage_episodes?.at(-1)?.submissions[1]?.tentative?.raw_parent)
+    .toEqual(engineQualifiedCouplingShape(x.f));
+   expect(policyReviewReadiness(x.f.source,saved.coverage!,saved).ready).toBe(true);
+   expect(saved.coverage?.source_transaction_association?.decision).toBe('operator_confirmed_unverified');
+   expect(saved.coverage?.passages.some(p=>p.receipt_coupling?.observed===false)).toBe(true);
+   expect(saved.coverage?.passages.filter(p=>p.obligation_assessment).every(p=>p.obligation_assessment?.verified===false)).toBe(true);
+   x.t.session.conversation.policySources=saved;
+   const recheck=await ensurePreparedPolicyCoverage({...x.input,sources:saved,state:{}});
+   expect(recheck.activity).toBe('validated_reuse');
+   expect(x.t.requests).toHaveLength(2);
+  }finally{vi.restoreAllMocks();await fs.rm(x.root,{recursive:true,force:true});}
+ });
+ it('a repeated false receipt assertion remains in invalid history and cannot spend a second correction',async()=>{
+  const x=await prepared(f=>{
+   const valid=separated(f),initial=engineQualifiedCouplingShape(f,valid),repeated=structuredClone(valid);
+   initial.passages.find((p:any)=>p.receipt_component==='source_transaction_coupling').interpretation=
+    'A source receipt has already been written and independently read back.';
+   repeated.passages.find((p:any)=>p.receipt_component==='source_transaction_coupling').interpretation=
+    'The source_db receipt was performed and independently read back.';
+   return [initial,repeated,valid];
+  });
+  const original=structuredClone(x.f.sources.coverage),ownership=structuredClone(x.f.sources.application_assignments);
+  try{
+   await expect(ensurePreparedPolicyCoverage(x.input)).rejects.toThrow('POLICY_COVERAGE_INVALID');
+   expect(x.t.requests).toHaveLength(2);
+   const saved=await loadPolicySources(x.root,x.f.sources.id);
+   expect(saved.coverage).toEqual(original);
+   expect(saved.application_assignments).toEqual(ownership);
+   const attempts=saved.coverage_episodes?.at(-1)?.submissions;
+   expect(attempts?.map(s=>s.validated)).toEqual([false,false]);
+   expect(JSON.stringify(attempts?.[0]?.tentative?.raw_response)).toContain('already been written and independently read back');
+   expect(JSON.stringify(attempts?.[1]?.tentative?.raw_response)).toContain('performed and independently read back');
+  }finally{vi.restoreAllMocks();await fs.rm(x.root,{recursive:true,force:true});}
+ });
  it.each(['openai','openrouter'] as const)('%s loopback SSE drives preparation, scoped correction, full persistence and unchanged reuse',async provider=>{
   const x=await prepared(f=>[f.arguments,separated(f)]),wire:any[]=[],stream:any[]=[],previous=structuredClone(x.f.sources.coverage_episodes);
   const server=createServer(async(req,res)=>{
