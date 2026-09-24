@@ -31,10 +31,10 @@ function fixture(wording = wordings[0]!) {
   const state = structuredClone(saved.policy_sources);state.snapshots=[source];state.active=source.version;state.approvals=state.approvals.map((a:any)=>({...a,digest:source.digest}));delete state.coverage;
   return { d, r, source, state };
 }
-async function produce(f: ReturnType<typeof fixture>, r = f.r) {
+async function produce(f: ReturnType<typeof fixture>, r = f.r, requests?: unknown[]) {
   const conversation = createModelAuthoringConversation();conversation.policySources=f.state;
   return reviewPolicyCoverage({ source:f.source,draft:f.d,env:{OPENAI_API_KEY:"captured-only"},session:{provider:"openai",model:"gpt-5.6-terra",conversation,
-    dependencies:{requestJson:async()=>({status:200,body:{output:[{type:"function_call",name:"runner__review_policy_coverage",call_id:"unchanged-capture",arguments:JSON.stringify(r)}]}})}} });
+    dependencies:{requestJson:async request=>{requests?.push(structuredClone(request.body));return {status:200,body:{output:[{type:"function_call",name:"runner__review_policy_coverage",call_id:"unchanged-capture",arguments:JSON.stringify(r)}]}};}}} });
 }
 async function record(f: ReturnType<typeof fixture>, report: ReturnType<typeof parsePolicyCoverage>) {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),"positive-counting-"));
@@ -140,7 +140,11 @@ describe("actual post-removal recheck provenance",()=>{
   it.each([0,1])("keeps capture %s unchanged and points to the exact existing decision, not a new owner question",async index=>{
     const f={d:structuredClone(restart.draft),r:structuredClone(restart.replies[index]),source:restart.source,state:structuredClone(restart.policy_sources)};
     const before=JSON.stringify(f.r);
-    await expect(produce(f)).rejects.toThrow("supports this comparison without an OPTIONAL counter-specific citation");expect(JSON.stringify(f.r)).toBe(before);
+    const requests:unknown[]=[];
+    await expect(produce(f,f.r,requests)).rejects.toThrow("POLICY_COVERAGE_INVALID");
+    expect(requests).toHaveLength(2);
+    expect(JSON.stringify(requests[1])).toContain("supports this comparison without an OPTIONAL counter-specific citation");
+    expect(JSON.stringify(f.r)).toBe(before);
     // Derived structural-only correction. The real installed confirmation must
     // come from the provider; this is not claimed as a completed public run.
     for(const c of counter(f.r).counter_requirements)c.operator_message_id=8;

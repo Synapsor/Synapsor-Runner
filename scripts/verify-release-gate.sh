@@ -43,6 +43,7 @@ run corepack pnpm --dir "$ROOT" exec vitest run \
   apps/runner/src/outgoing-contract-conformance.test.ts \
   apps/runner/src/authoring-scoped-correction.test.ts \
   apps/runner/src/authoring-policy-coverage.test.ts \
+  apps/runner/src/authoring-review-resolution.test.ts \
   packages/config/src/index.test.ts \
   packages/schema-inspector/src/index.test.ts \
   packages/postgres/src/index.test.ts \

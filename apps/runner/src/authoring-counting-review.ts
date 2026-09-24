@@ -1,4 +1,5 @@
 import { associateCountingRequirements, countingSourceRequirements } from "./authoring-counting-requirements.js";
+import { CoverageCounterSupportError } from './authoring-coverage-feedback.js';
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { PolicyPassage, PolicyTextSnapshot, PolicySourceSession } from "./authoring-policy-source.js";
 import type { CountingOutcomeDomain, CountingComparisonResolution, CountingComponentResolution, CountingInterpretation } from "./authoring-policy-source.js";
@@ -61,7 +62,11 @@ export function associateCountingComponents(passage: PolicyPassage, source: Poli
   for (const check of passage.counter_requirements ?? []) {
     if (check.current_capability === check.required_capability) continue;
     const label = check.path.replace(/[^a-zA-Z0-9_./~:-]/gu, "_").slice(0, 500);
-    const fail = (code: string, detail: string): never => { throw new Error(`Counting component ${label}: ${code}. ${detail} Correct this comparison's evidence structure; keep the saved program and settled policy decision unchanged.`); };
+    const fail = (code: string, detail: string): never => {
+      if(code==='COUNTING_SUPPORT_MISMATCH')throw new CoverageCounterSupportError('interpretation_mismatch',
+        `Counting component ${label}: ${detail} Correct this comparison's evidence structure; keep the saved program and settled policy decision unchanged.`);
+      throw new Error(`Counting component ${label}: ${code}. ${detail} Correct this comparison's evidence structure; keep the saved program and settled policy decision unchanged.`);
+    };
     const root = check.path.replace(/\/\d+\/history_selector\/capability$/u, "");
     if (!passage.draft_paths.some(pointer => pointer.startsWith(root) && (check.path === pointer || check.path.startsWith(`${pointer}/`)))) {
       fail("COUNTING_REFERENCE_OVERBROAD", "Reference this counter's exact automatic_limits root or history_selector/capability path; broad approval context cannot establish it");

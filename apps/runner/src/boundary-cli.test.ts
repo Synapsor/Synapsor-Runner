@@ -8011,7 +8011,7 @@ describe("boundary operator-plane CLI", () => {
           return;
         }
         if (coverageFailure) {
-          expect(sourceReviews.flat().join("\n")).toContain("COVERAGE_TEST_PROVIDER_UNAVAILABLE");
+          expect(sourceReviews.flat().join("\n")).toContain("REVIEW_DIAGNOSTIC_ONLY");
           expect(sourceReviews.flat().join("\n")).toContain("Viewing this record makes no model request");
           expect(coverageRequests).toHaveLength(1);
           expect(rulesMenuVisits).toBe(2);
@@ -8862,7 +8862,7 @@ describe("boundary operator-plane CLI", () => {
           if (posture === "policy_target_explained_failure" || posture === "policy_target_counter_clarified_failure") {
             expect(confirmAction).not.toHaveBeenCalled();
             expect(chat.rememberDetails).toHaveBeenCalledWith("RULES COVERAGE UNAVAILABLE",
-              expect.arrayContaining([expect.stringContaining("POLICY_TEST_CLARIFICATION_RECHECK_UNAVAILABLE")]));
+              expect.arrayContaining([expect.stringContaining("REVIEW_DIAGNOSTIC_ONLY")]));
           }
           const state = JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
           expect(state.conversation).toContainEqual(expect.objectContaining({ answer: clarifiedNoChange, kind: "clarification" }));
@@ -8891,7 +8891,7 @@ describe("boundary operator-plane CLI", () => {
         if (recovery) {
           expect(menus).toBe(4);
           expect(details.flat().join("\n")).toContain("history_selector");
-          expect(details.flat().join("\n")).toContain("POLICY_TEST_PROVIDER_UNAVAILABLE");
+          expect(details.flat().join("\n")).toContain("REVIEW_DIAGNOSTIC_ONLY");
           expect(chat.readOperator).not.toHaveBeenCalled();
           expect(revise).not.toHaveBeenCalled();
           expect(confirmAction).not.toHaveBeenCalled();

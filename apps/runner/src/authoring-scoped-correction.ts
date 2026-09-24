@@ -108,7 +108,7 @@ const receiptPaths = new Set([`${root}/receipt_configuration`, `${root}/receipt_
   `${root}/application_obligations/independent_source_readback`]);
 const receiptCodes = new Set(['RECEIPT_READ_EXCLUSION_UNESTABLISHED', 'COVERAGE_RECEIPT_REFERENCE_OVERBROAD',
   'OBLIGATION_CONFIGURATION_COMPONENT_MIXED', 'OBLIGATION_OBSERVATION_UNESTABLISHED',
-  'OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED']);
+  'OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED', 'SOURCE_TRANSACTION_ASSOCIATION_INVALID']);
 function pointerExists(draft: unknown, pointer: string): boolean {
   if (!pointer.startsWith('/') || pointer.length > 500 || /~(?:[^01]|$)/u.test(pointer)) return false;
   let value = draft;

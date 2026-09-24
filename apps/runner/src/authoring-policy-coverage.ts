@@ -3,9 +3,11 @@ import {constrainReceiptComponentSchema, validateScopedReceiptComponents, receip
 import { CoverageReceiptDutyError } from './authoring-coverage-feedback.js';
 import { scopedDisclosureInventory } from "./authoring-scoped-disclosure.js";
 import { currentSourceTransactionReview, sourceTransactionReviewNeeded } from './authoring-source-transaction-review.js';
+import { sourceTransactionScopeQuestions, SourceTransactionScopeError } from './authoring-source-transaction-scope.js';
+import { assertRegisteredReviewFinding, planCoverageResolution, planReviewPrerequisite, ReviewResolutionError } from './authoring-review-resolution.js';
 import { receiptConfigurationComponentOnly } from "./authoring-policy-source.js";
 import { CoverageSourceLinesError, missingReviewSourceLines, reviewSourceInventory } from "./authoring-source-coverage.js";
-import { CoverageComponentError, CoverageComponentsError, CoverageCurrentDescriptionError, recordCoverageFeedbackParent, recordCoverageFindingSubject, recordCheckedCoveragePassage, coverageFinding, MAX_COVERAGE_FINDINGS, MAX_COVERAGE_FEEDBACK_BYTES, MAX_COVERAGE_SUBMISSIONS, permitsSecondCoverageCorrection, permitsSecondScopedCoverageCorrection, type CoverageFeedback } from "./authoring-coverage-feedback.js";
+import { CoverageComponentError, CoverageComponentsError, CoverageCounterSupportError, CoverageCurrentDescriptionError, recordCoverageFeedbackParent, recordCoverageFindingSubject, recordCheckedCoveragePassage, coverageFinding, MAX_COVERAGE_FINDINGS, MAX_COVERAGE_FEEDBACK_BYTES, MAX_COVERAGE_SUBMISSIONS, permitsSecondCoverageCorrection, permitsSecondScopedCoverageCorrection, type CoverageFeedback } from "./authoring-coverage-feedback.js";
 import { clientDutyInventory } from "./authoring-client-duties.js";
 import { assessReviewObligation, assessReceiptCouplingCapability, assertRequiredReceiptCoupling, receiptCouplingInterpretation, repairableReceiptCouplingRepresentation, deferredReviewObligation, receiptSelectionComponent } from "./authoring-obligation-review.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
@@ -467,12 +469,12 @@ function parseCoveragePassage(raw: unknown, index: number, source: PolicyTextSna
       if (rawCheck.operator_message_id !== undefined) {
         const id = rawCheck.operator_message_id;
         if (typeof operatorHistory === "string" || typeof id !== "number" || !Number.isSafeInteger(id) || id < 1 || id > messages.length) {
-          throw new Error("COUNTING_SUPPORT_MISMATCH: Counter operator_message_id must select one existing indexed message; do not change the policy.");
+          throw new CoverageCounterSupportError('unknown_message','Counter operator_message_id must select one existing indexed message; do not change the policy.');
         }
-        if (support !== undefined && support !== messages[id - 1]) throw new Error("COUNTING_SUPPORT_MISMATCH: Counter quote and indexed support disagree.");
+        if (support !== undefined && support !== messages[id - 1]) throw new CoverageCounterSupportError('quote_disagrees','Counter quote and indexed support disagree.');
         support = messages[id - 1];
       }
-      if (support !== undefined && !messages.includes(support)) throw new Error("COUNTING_SUPPORT_MISMATCH: Counter support must be one exact recorded operator message.");
+      if (support !== undefined && !messages.includes(support)) throw new CoverageCounterSupportError('unrecorded_quote','Counter support must be one exact recorded operator message.');
       return { path: check.path, current_capability: check.current_capability, required_capability: check.required_capability,
         ...(support !== undefined ? { operator_clarification: support } : {}) };
     });
@@ -573,15 +575,20 @@ export function collectCoverageFeedback(args: Record<string, unknown>, source: P
     // No submitted strings are included. This optional structural alternative
     // must itself pass the existing requirement validator in the SAME context.
     if (f.code === "OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED") {
+      f.typed_reason='coupling.unavailable';
       const match = /^\/passages\/(\d+)$/u.exec(f.component);
       const entry = match && (args.passages as PolicyPassage[])[Number(match[1])];
       if (entry && repairableReceiptCouplingRepresentation(entry, source, draft,sourceSession)) {
+        f.typed_reason='coupling.representation';
         f.structural = true;
         f.reason = "A current operator-reviewed source requirement and independently checked compiled capability support this exact typed component, but its submitted representation is invalid. The submitted narration is not proof and no part of this review was accepted.";
         f.repair = "Replace only this host-nominated source_transaction_coupling component with implemented/runner/coverage_link, the supplied outcome-specific canonical capability wording, and the exact effect, execution and receipts roots. The source requirement is the separate saved operator record; this component states only current compiled capability. Preserve receipt selection, Read exclusion, setup and observation duties independently. It proves neither provisioning, execution permission, a performed receipt nor readback. The whole assembled report is revalidated; do not change policy, Action, receipt mode or source.";
       }
     }
     if (f.code === "COUNTING_SUPPORT_MISMATCH" && error instanceof CoverageComponentError) {
+      // An explicit wrong citation is repairable only when the independent
+      // source/host comparison still supplies the required positive basis.
+      f.structural=false;
       const match = /^\/passages\/(\d+)\/counter_requirements\/(\d+)$/u.exec(error.component);
       const entry = match && (args.passages as PolicyPassage[])[Number(match[1])];
       const check = entry && entry.counter_requirements?.[Number(match![2])];
@@ -590,11 +597,15 @@ export function collectCoverageFeedback(args: Record<string, unknown>, source: P
           const {operator_clarification: _quote, operator_message_id: _id, ...comparison} = check as typeof check & {operator_message_id?: unknown};
           const bindings = associateCountingRequirements({...entry, counter_requirements:[comparison]}, requirements);
           if (bindings.length === 1 && bindings[0]!.state === "established") {
+            f.structural=true;
             f.repair += " The current host/source association supports this comparison without an OPTIONAL counter-specific citation: omit operator_message_id/operator_clarification on this counter, retain its path and actual/required capability values, and keep the paragraph citation separate. This removes no counting claim or proof obligation.";
           }
         } catch { /* No supported alternative is advertised. */ }
       }
     }
+    assertRegisteredReviewFinding(f);
+    if(result.findings.some(previous=>previous.code===f.code&&previous.component===f.component
+      &&previous.typed_reason===f.typed_reason))return true;
     if (result.findings.length >= MAX_COVERAGE_FINDINGS || Buffer.byteLength(JSON.stringify({...result,findings:[...result.findings,f]})) > MAX_COVERAGE_FEEDBACK_BYTES - 1_024) {
       result.limited = true; return false;
     }
@@ -640,8 +651,34 @@ export function collectCoverageFeedback(args: Record<string, unknown>, source: P
       result.unevaluated.push(component);
     }
   }
-  if (!result.findings.length && originalError) add(originalError,"/", "whole_report");
+  let scopeQuestions:ReturnType<typeof sourceTransactionScopeQuestions>|undefined;
+  if(sourceSession)try{scopeQuestions=sourceTransactionScopeQuestions(source,draft,sourceSession);}
+  catch{result.unevaluated.push('current source-transaction scope assessment');}
+  for(const question of scopeQuestions??[])if(question.current?.decision==='deferred'||!question.current){
+    if(!add(new SourceTransactionScopeError('unknown'),
+      `/source_transaction_scope/${canonicalJsonDigest(question.action).slice(7,23)}`,
+      {start:question.requirement.start,end:question.requirement.end}))break;
+  }
+  // The strict parser may bundle several located child errors. Do not turn
+  // its wrapper message into a new untyped root finding: retain each real
+  // child, deduplicating those already checked independently above.
+  const originalErrors=originalError instanceof CoverageComponentsError?originalError.errors
+    :originalError?[originalError]:[];
+  for(const original of originalErrors){
+    const located=original instanceof CoverageComponentError
+      ? /^\/passages\/(\d+)(?:\/|$)/u.exec(original.component) : null;
+    const index=located?Number(located[1]):-1,raw=args.passages[index];
+    const originalFinding=coverageFinding(original,original instanceof CoverageComponentError?original.component:'/',
+      index>=0?{start:raw?.start??null,end:raw?.end??null}:"whole_report");
+    if(result.findings.some(f=>f.code===originalFinding.code
+      &&(f.component===originalFinding.component||!(original instanceof CoverageComponentError))))continue;
+    if(original instanceof CoverageComponentError&&index>=0&&raw&&Number.isSafeInteger(raw.start)&&Number.isSafeInteger(raw.end))
+      add(original,`/passages/${index}`,{start:raw.start,end:raw.end,
+        component:original.component.replace(/^\/passages\/\d+/u,'passage')});
+    else add(original,"/", "whole_report");
+  }
   result.unevaluated.push("whole-report acceptance, retained obligations and persistence");
+  planCoverageResolution(result);
   return result;
 }
 
@@ -781,6 +818,10 @@ export async function reviewPolicyCoverage(input: {
   // Bind references to this request's operator evidence, then persist quotes,
   // not indexes that could mean something different after history changes.
   const operatorMessages = [...(input.session.conversation?.policySources?.operator_messages ?? [])];
+  const scopeDecisions=input.sourceSession?sourceTransactionScopeQuestions(input.source,input.draft,input.sourceSession)
+    .map(question=>({source_range:[question.requirement.start,question.requirement.end],
+      reviewed_outcome:question.requirement.action.outcome,additional_outcome:question.action.outcome,
+      decision:question.current?.decision??'pending',assurance:'attributed_source_interpretation_only'})):[];
   const inventory = reviewSourceInventory(input.source);
   const ordinaryReferences = coverageReferences(input.draft);
   const fullTools: AskToolDefinition[] = [{ name: TOOL, description: "Record a COMPLETE REPLACEMENT untrusted review against the exact disabled draft and source inventory. Every nonblank line needs a disposition, including headings and definitions. Overlapping ranges may separate claims; rejected reports are never merged or partially saved. Does not change or activate authority.",
@@ -909,8 +950,9 @@ export async function reviewPolicyCoverage(input: {
   try {
     for (let attempt = 0; attempt < MAX_COVERAGE_SUBMISSIONS; attempt++) {
       if (canonicalJsonDigest({source:input.source.digest,draft:input.draft,messages:input.session.conversation?.policySources?.operator_messages ?? []}) !== contextIdentity)
-        throw new Error("POLICY_COVERAGE_CONTEXT_CHANGED: Reopen current Review; no stale correction was sent.");
-      if (attempt && (!feedback || !feedback.findings.length || !feedback.findings.every(f=>f.structural)
+        throw new ReviewResolutionError('POLICY_COVERAGE_CONTEXT_CHANGED',planReviewPrerequisite('currentness',null,contextIdentity),
+          'Reopen current Review; no stale correction was sent.');
+      if (attempt && (!feedback || planCoverageResolution(feedback).recommended!=='scoped_correction'
         || attempt === 2 && !(lastAssembly
           ? permitsSecondScopedCoverageCorrection(feedbackHistory, feedback, lastAssembly.mapping)
           : permitsSecondCoverageCorrection(feedbackHistory, feedback)))) break;
@@ -919,7 +961,18 @@ export async function reviewPolicyCoverage(input: {
           repairScope = createCoverageRepairScope(tentativeReport, feedback,
             {source:input.source,draft:input.draft,messages:operatorMessages}, {ordinaryReferences});
         } catch (error) {
-          if (error instanceof CoverageScopedCorrectionError) { issue = error.message; break; }
+          if (error instanceof CoverageScopedCorrectionError) {
+            feedbackHistory.push(feedback);
+            feedback={context:contextIdentity,findings:[{
+              code:error.code,component:'/',typed_reason:'scoped_correction.unavailable',
+              identity:canonicalJsonDigest({context:contextIdentity,kind:'scope_unavailable'}),
+              component_identity:canonicalJsonDigest({context:contextIdentity,kind:'scope_unavailable'}),
+              structural:false,reason:'The current unaccepted report has no supported exact replacement scope.',
+              repair:'Keep the review pending. Inspect the exact source and prerequisite; no broader regeneration or partial acceptance was substituted.'}],
+              limited:false,unevaluated:['complete review and persistence'],complete_validation:false};
+            issue=JSON.stringify({previous_unaccepted_findings:feedbackHistory.at(-1)?.findings??[],final_refusal:feedback});
+            break;
+          }
           throw error;
         }
         const passageSchema = (fullTools[0]!.input_schema as any).properties.passages.items;
@@ -930,7 +983,8 @@ export async function reviewPolicyCoverage(input: {
         feedbackHistory.push(feedback);
       }
       if (canonicalJsonDigest({source:input.source.digest,draft:input.draft,messages:input.session.conversation?.policySources?.operator_messages ?? []}) !== contextIdentity)
-        throw new Error("POLICY_COVERAGE_CONTEXT_CHANGED: Reopen current Review; no stale correction was sent.");
+        throw new ReviewResolutionError('POLICY_COVERAGE_CONTEXT_CHANGED',planReviewPrerequisite('currentness',null,contextIdentity),
+          'Reopen current Review; no stale correction was sent.');
       await input.episode?.beforeSubmission(attempt + 1);
       report = undefined; feedback = undefined; submissionEvidence = undefined;
       await runAskProviderTurn({ configuration: {...configuration,authority_digest:authorityDigest}, authorityDigest, gateway, tools, signal: new AbortController().signal,
@@ -939,6 +993,7 @@ export async function reviewPolicyCoverage(input: {
           `Fixed source inventory for this episode: ${JSON.stringify(repairScope ? {...inventory,response_contract:"scoped_generation_complete_validation"} : inventory)}`,
           "Every nonblank source line must be accounted for in the complete assembled report. Headings and definitions may contain requirements; background never covers omitted children. During scoped correction output only the nominated editable components. Runner retains all read-only overlap and outside records from the exact parent; they remain tentative and are revalidated, never silently certified.",
           `Current draft (JSON pointer root): ${JSON.stringify(input.draft)}`,
+          ...(scopeDecisions.length?[`Current attributed outcome-scope decisions for registered source-transaction questions (not capability, setup or observation): ${JSON.stringify(scopeDecisions)}. An absent or pending answer is not a negative. A does_not_apply answer excludes only this clause/outcome association and preserves independent receipt duties.`]:[]),
           `Exact narrow receipt component meanings (capability is not observation): ${JSON.stringify(receiptComponentMeanings(input.draft))}`,
           `Host counting requirement states (unknown is not boundary-wide; source and explicit review establish meaning): ${JSON.stringify(countingSourceRequirements(input.source, input.draft, operatorMessages))}`,
           `Exact coverage references (select, do not invent paths): ${JSON.stringify(coverageReferences(input.draft))}`,
@@ -1012,7 +1067,11 @@ export async function reviewPolicyCoverage(input: {
       await input.episode?.afterSubmission(attempt + 1, feedback, !!report, submissionEvidence);
       if (report) return report;
     }
-    throw new Error(`POLICY_COVERAGE_INVALID: ${issue}`);
+    const finalFeedback=feedback??{context:contextIdentity,findings:[],limited:false,
+      unevaluated:['provider response and complete validation'],complete_validation:false as const};
+    const finalCodes=[...new Set([...(feedbackHistory.at(-1)?.findings??[]),...finalFeedback.findings].map(f=>f.code))];
+    throw new ReviewResolutionError('POLICY_COVERAGE_INVALID',planCoverageResolution(finalFeedback),
+      `The complete review remains invalid (${finalCodes.slice(0,8).join(', ')||'response unavailable'}). Its original findings and final refusal remain with the saved episode.`);
   } finally { await gateway.close(); }
 }
 

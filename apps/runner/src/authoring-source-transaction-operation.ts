@@ -5,6 +5,8 @@ import { activePolicySource, loadPolicySources, policySourceSavedDigest, savePol
 import { assessReceiptCouplingCapability, receiptCouplingInterpretation, receiptCouplingPaths } from './authoring-obligation-review.js';
 import { currentSourceTransactionReview, makeSourceTransactionReview, sourceTransactionContext,
   sourceTransactionMappings,sourceTransactionPreparedContext,sourceTransactionReviewIdentity } from './authoring-source-transaction-review.js';
+import { makeSourceTransactionScopeReview, sourceTransactionScopeQuestions,
+  type SourceTransactionScopeQuestion } from './authoring-source-transaction-scope.js';
 import type { ProjectAuthorityMutationPermit } from './project-authority-mutation.js';
 
 /** The existing saved-source CAS and authority coordination make the local
@@ -123,4 +125,79 @@ export async function localSourceTransactionReview(input: {
   });
   Object.assign(input.sources,staged);
   return {state:decision,changed:true,summary:`Saved new attributed ${decision} source interpretation ${record.digest}. This is not implementation or observed receipt evidence.`};
+}
+
+/** Resolve only a host-identified, current source-range/outcome question. A
+ * provider claim can nominate the question, never answer it. */
+export async function localSourceTransactionScopeReview(input: {
+  projectRoot:string; sources:PolicySourceSession; session:BoundaryReviewInteractiveSession; actor:string;
+  question:SourceTransactionScopeQuestion; currentDraft:()=>unknown;
+  assertCurrent:(permit?:ProjectAuthorityMutationPermit)=>Promise<void>;
+  coordinated:(operation:(permit:ProjectAuthorityMutationPermit)=>Promise<void>)=>Promise<void>;
+}) {
+  const source=activePolicySource(input.sources);
+  if(!source)throw new Error('SOURCE_TRANSACTION_SCOPE_SOURCE_UNAVAILABLE: Reopen the current complete policy.');
+  let expected=await policySourceSavedDigest(input.projectRoot,input.sources.id);
+  if(canonicalJsonDigest(await loadPolicySources(input.projectRoot,input.sources.id))!==canonicalJsonDigest(input.sources))
+    throw new Error('POLICY_SOURCE_CHANGED: Reopen current source and decisions before reviewing scope.');
+  const assertCurrent=async(permit?:ProjectAuthorityMutationPermit)=>{
+    await input.assertCurrent(permit);
+    if(await policySourceSavedDigest(input.projectRoot,input.sources.id)!==expected)
+      throw new Error('POLICY_SOURCE_CHANGED: A competing source or decision was saved. No scope decision was overwritten.');
+  };
+  await assertCurrent();
+  const draft=input.currentDraft(),questions=sourceTransactionScopeQuestions(source,draft,input.sources);
+  const question=questions.find(entry=>entry.requirement.digest===input.question.requirement.digest
+    && entry.action.outcome===input.question.action.outcome
+    && entry.action_binding_digest===input.question.action_binding_digest);
+  if(!question)throw new Error('SOURCE_TRANSACTION_SCOPE_CONTEXT_CHANGED: This Action/source pairing is no longer current.');
+  if(question.current?.decision==='applies'||question.current?.decision==='does_not_apply')
+    return {state:question.current.decision,changed:false,summary:'The current attributed scope decision remains recorded; implementation and receipt evidence are checked separately.'};
+  const action=(draft as any).actions?.find((entry:any)=>entry?.name===question.action.name&&entry?.outcome===question.action.outcome);
+  const effects=[action?.effect,...(action?.effect?.atomic_updates??[])].filter(Boolean);
+  const runtime=(draft as any).runner_evidence?.runtime_contract;
+  const configuredReceipt=runtime?.receipt_configuration;
+  const reviewedIntent=configuredReceipt?.reviewed_intent?.outcomes?.find((entry:any)=>entry?.outcome===question.action.outcome);
+  const compiled=(draft as any).runner_evidence?.actions?.[question.action.outcome]?.effect;
+  const compiledEffects=[compiled,...(compiled?.atomic_updates??[])];
+  const fullPolicy=source.text.split(/\r\n|\r|\n/u).map((line,index)=>`${index+1}: ${line}`);
+  const excerpt=source.text.split(/\r\n|\r|\n/u).slice(question.requirement.start-1,question.requirement.end).join('\n');
+  const details=[`Current attached policy: ${source.name} v${source.version} (${source.digest}).`,
+    `Exact source lines ${question.requirement.start}-${question.requirement.end}: ${excerpt}`,
+    `Previously confirmed for ${question.requirement.action.outcome}: ${question.requirement.required_effects.length} exact business effects plus its source_db receipt. This record does not exclude other outcomes.`,
+    `New disabled outcome: ${question.action.name} · ${question.action.outcome}; source ${question.action.source}.`,
+    ...effects.map((effect:any,index:number)=>`${index?'Companion':'Primary'} update: ${effect.target_resource}; fields ${(effect.allowed_fields??[]).map((field:any)=>field.name).join(', ')||'unavailable'}; assignment ${JSON.stringify(effect.set??{}).slice(0,600)}; maintained version ${compiledEffects[index]?.version_advance?.column??'unavailable'} (${compiledEffects[index]?.version_advance?.strategy??'unavailable'}).`),
+    `Configured source receipt authority: ${configuredReceipt?.modes?.find((entry:any)=>entry?.source===question.action.source)?.authority??'unavailable'}; configured destination binding ${configuredReceipt?.source_receipt_destinations?.find((entry:any)=>entry?.source===question.action.source)?.relation_digest??'unavailable'}.`,
+    `Outcome-specific reviewed receipt intent: ${reviewedIntent?.status??configuredReceipt?.reviewed_intent?.status??'unavailable'}; mode ${reviewedIntent?.mode??'not current'}; selection_current ${reviewedIntent?.selection_current===true}. Setup, execution authorization, observation and readback remain separate.`,
+    'Does this exact source requirement apply to this outcome’s own effect and receipt? An answer records source meaning only and cannot rewrite the original effect count, publish a rule or prove a receipt.',
+    ...(effects.length!==question.requirement.required_effects.length
+      ?[`The existing clause was confirmed for ${question.requirement.required_effects.length} business effects; this outcome has ${effects.length}. If it applies, the complete required shape still needs an independently supported implementation or a separate policy change.`]:[])];
+  input.session.rememberDetails?.('SOURCE TRANSACTION OUTCOME SCOPE',[...fullPolicy,...details]);
+  const choice=await input.session.chooseOption?.('SOURCE TRANSACTION SCOPE FOR THIS OUTCOME',[
+    {value:'pending',label:'Keep pending — no scope answer yet'},
+    {value:'applies',label:'This exact clause applies to this outcome'},
+    {value:'does_not_apply',label:'This clause does not apply to this outcome'},
+  ],{initialValue:'pending',reviewOnly:true,displayContext:true,context:details});
+  if(!choice||choice==='pending')return {state:'pending' as const,changed:false,
+    summary:`Scope for ${question.action.outcome} remains pending; active rules are unchanged. Reopen this local decision before another provider-backed review.`};
+  if(choice!=='applies'&&choice!=='does_not_apply')throw new Error('SOURCE_TRANSACTION_SCOPE_DECISION_INVALID: No scope answer was saved.');
+  if(!await input.session.confirm('Save this exact outcome-scope interpretation?',{defaultValue:false,context:details}))
+    return {state:'pending' as const,changed:false,summary:'No scope answer was saved; active rules are unchanged.'};
+  await assertCurrent();
+  if(canonicalJsonDigest(input.currentDraft())!==canonicalJsonDigest(draft))
+    throw new Error('SOURCE_TRANSACTION_SCOPE_CONTEXT_CHANGED: Action or receipt context changed while awaiting confirmation.');
+  const record=makeSourceTransactionScopeReview({source,session:input.sources.id,store:question.store_digest,
+    requirement:question.requirement,action:question.action,action_binding_digest:question.action_binding_digest,
+    decision:choice,actor:input.actor,previous:question.current});
+  const staged=structuredClone(input.sources);
+  staged.source_transaction_scope_reviews=[...(staged.source_transaction_scope_reviews??[]),record];
+  await input.coordinated(async permit=>{
+    await assertCurrent(permit);
+    if(canonicalJsonDigest(input.currentDraft())!==canonicalJsonDigest(draft))
+      throw new Error('SOURCE_TRANSACTION_SCOPE_CONTEXT_CHANGED: No stale scope answer was saved.');
+    await savePolicySources(input.projectRoot,staged,{expectedDigest:expected,permit});
+    expected=canonicalJsonDigest(staged);
+  });
+  Object.assign(input.sources,staged);
+  return {state:choice,changed:true,summary:`Saved attributed ${choice} scope decision for ${question.action.outcome}; active rules remain unchanged. Start a new bounded review only after its current capability and pending duties are checked.`};
 }

@@ -1,14 +1,16 @@
 import { scopedDisclosureStoreDigest } from "./authoring-scoped-disclosure.js";
 import { localScopedDisclosureReview } from "./authoring-scoped-disclosure-operation.js";
-import { localSourceTransactionReview } from "./authoring-source-transaction-operation.js";
+import { localSourceTransactionReview, localSourceTransactionScopeReview } from "./authoring-source-transaction-operation.js";
 import { currentSourceTransactionReview, sourceTransactionReviewNeeded } from "./authoring-source-transaction-review.js";
-import { resolveAuthoringReviewSubject } from "./authoring-review-subject.js";
+import { sourceTransactionScopeQuestions } from "./authoring-source-transaction-scope.js";
+import { AuthoringReviewSubjectError, resolveAuthoringReviewSubject } from "./authoring-review-subject.js";
 import { actionRuleEffectLines } from "@synapsor-runner/action-rules";
 import { actionRuleDisclosureReconciliation, actionRuleEditDifferenceLines } from "./action-rule-disclosure-review.js";
 import { readActivationImpact, readActivationImpactLines } from "./read-activation-impact.js";
 import { authoringReceiptConfiguration } from "./authoring-receipt-configuration.js";
 import type { PolicySourceSession } from "./authoring-policy-source.js";
 import { ensurePreparedPolicyCoverage, type PreparedPolicyReviewState } from "./authoring-prepared-policy-review.js";
+import { operatorReviewResolution, planReviewPrerequisite, ReviewResolutionError, unknownReviewResolution } from './authoring-review-resolution.js';
 import { reviewUnestablishedCounting } from "./authoring-counting-decision-review.js";
 import { reviewHistorySelectorChange } from "./action-history-selector-review.js";
 import { withCountingOutcomeDomain, type CountingOutcomeDomain } from "./authoring-counting-domain.js";
@@ -309,7 +311,7 @@ import { automaticApprovalBusinessSummary } from "./authoring-business-review.js
 import { authoringClientChoices, authoringClientLabel, authoringClientSetupFacts, isAuthoringClientPlan, type AuthoringClientPlan } from "./authoring-client-plan.js";
 import { renderReviewFacts } from "./review-facts.js";
 import { renderRunnerResultPanel } from "./runner-result-panel.js";
-import { newPolicySourceSession, loadPolicySources, activePolicySource, authoringDestination, savePolicySources, policySourceSavedDigest, bindPolicyCoverage, recordReadInterpretation, confirmedReadFieldMeanings } from "./authoring-policy-source.js";
+import { newPolicySourceSession, loadPolicySources, activePolicySource, authoringDestination, savePolicySources, policySourceSavedDigest, bindPolicyCoverage, recordReadInterpretation, confirmedReadFieldMeanings, PolicySourceChangedError } from "./authoring-policy-source.js";
 import { BoundaryJobPlanningError, planningDiagnosticLines, saveBoundaryJobPlanningDiagnostic } from "./boundary-job-diagnostics.js";
 import { installPolicySourceCommands } from "./authoring-policy-source-ui.js";
 import { reviewPolicyCoverage, parsePolicyCoverage, policyCoverageSection, policyCoverageSummary, unresolvedPolicyPassages, isMechanicalApprovalCounterPassage, isReadOnlyPolicyPassage, referencesReadPolicy, actionablePolicyRequirements, prioritizePolicyRepairs, type PolicyCoverage } from "./authoring-policy-coverage.js";
@@ -8773,11 +8775,21 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       assertRunning(error);
       policyAttemptKey = state.attemptKey;
       policyReport = undefined;
-      policyFailure = redactCliErrorMessage(error instanceof Error ? error.message : String(error));
+      const resolved=error instanceof ReviewResolutionError?error:error instanceof PolicySourceChangedError||error instanceof AuthoringReviewSubjectError
+        ?new ReviewResolutionError(error.code,planReviewPrerequisite('currentness',null,null),
+          'A competing source or review changed during save. Reopen current Review; no stale result was saved.')
+        :unknownReviewResolution();
+      const publicPlan=operatorReviewResolution(resolved.plan);
+      policyFailure = redactCliErrorMessage(resolved.message);
       input.authoringChat.rememberDetails("RULES COVERAGE UNAVAILABLE", [policyFailure,
+        `Next supported step: ${publicPlan.recommended??'inspect the saved review'}.`,
         "The draft and source snapshot remain saved. No rule was dropped and no authority was activated."]);
-      input.authoringChat.checkpoint("Rules check needs a retry", [policyFailure,
-        "The reviewed draft is saved. Continue with the model retries this check; exact details work without the provider."], "warning");
+      input.authoringChat.checkpoint("Rules check remains pending", [policyFailure,
+        publicPlan.recommended==='scoped_correction'
+          ? "A bounded correction may be available within the existing review episode; the complete replacement must validate."
+          : publicPlan.recommended==='source_transaction_scope_review'
+            ? "Use the exact local source-outcome scope decision. Another model opinion cannot establish owner meaning."
+            : "Inspect the saved review and its actual prerequisite before starting another model episode."], "warning");
       return { source, key: state.attemptKey ?? "", draftRecord: currentPolicyCoverageDraft(), report: undefined };
     }
   };
@@ -10703,7 +10715,7 @@ export async function reviewSavedBoundaryPolicy(input: {
   const source = activePolicySource(input.sources);
   if (!source || resume.policy_source_session !== input.sources.id) throw new Error("POLICY_REVIEW_SOURCE_UNAVAILABLE: Select the saved job's complete attached source before review.");
   if (await policySourceSavedDigest(input.projectRoot,input.sources.id)!==canonicalJsonDigest(input.sources))
-    throw new Error('POLICY_SOURCE_CHANGED: The saved policy source or decision changed after local review selection. Reopen the exact current review.');
+    throw new PolicySourceChangedError();
   const readDigest = explorationBoundaryCandidateDigest(context.candidate);
   const preselected=input.preselectedReview;
   if (preselected && (preselected.resume_revision_digest!==resume.revision_digest
@@ -10771,7 +10783,7 @@ export async function reviewSavedBoundaryPolicy(input: {
     await reloadReadReviewForModelRevision(input.projectRoot, context);
     await selected.assertCurrent();
     if (await policySourceSavedDigest(input.projectRoot,input.sources.id)!==canonicalJsonDigest(input.sources))
-      throw new Error('POLICY_SOURCE_CHANGED: The saved policy source or decision changed during review. No stale review was saved.');
+      throw new PolicySourceChangedError();
   };
   // The model-free transaction preflight may simply return control to the
   // ordinary Review path. It must not advance the resume revision first and
@@ -10814,6 +10826,10 @@ export async function reviewSavedBoundaryPolicy(input: {
     const transactionDraft=currentDraft();
     const transactionNeeded=sourceTransactionReviewNeeded(transactionDraft) || Boolean(input.sources.source_transaction_reviews?.length);
     if(transactionNeeded && (input.revisitTransaction || !currentSourceTransactionReview(source,transactionDraft,input.sources))) {
+      const resolution=planReviewPrerequisite('source_transaction_review',authority?.authority.name??null,
+        canonicalJsonDigest({source:source.digest,draft:transactionDraft}));
+      if(resolution.recommended!=='source_transaction_review')throw new ReviewResolutionError(
+        'SOURCE_TRANSACTION_REVIEW_PENDING',resolution,'The registered local source review is unavailable; saved work remains pending.');
       const result=await localSourceTransactionReview({projectRoot:input.projectRoot,sources:input.sources,session:input.session,
         actor:localInteractiveActor(),revisitCurrent:input.revisitTransaction,currentDraft,assertCurrent,
         coordinated:async operation=>{
@@ -10844,6 +10860,40 @@ export async function reviewSavedBoundaryPolicy(input: {
           :result.state==='capability_unavailable'?'Review the exact disabled Action and its complete effect/receipt mapping before another model-backed review.'
           :'The saved review remains pending. Reopen this local decision when current source meaning can be established.',
         localTransaction:'handled'};
+    }
+    const scopeQuestion=sourceTransactionScopeQuestions(source,transactionDraft,input.sources)
+      .find(question=>!question.current||question.current.decision==='deferred');
+    if(scopeQuestion){
+      const resolution=planReviewPrerequisite('source_transaction_scope',scopeQuestion.action.outcome,
+        canonicalJsonDigest({source:source.digest,action:scopeQuestion.action,binding:scopeQuestion.action_binding_digest,
+          requirement:scopeQuestion.requirement.digest}));
+      if(resolution.recommended!=='source_transaction_scope_review')throw new ReviewResolutionError(
+        'SOURCE_TRANSACTION_SCOPE_REVIEW_PENDING',resolution,'The registered local scope review is unavailable; saved work remains pending.');
+      const result=await localSourceTransactionScopeReview({projectRoot:input.projectRoot,sources:input.sources,
+        session:input.session,actor:localInteractiveActor(),question:scopeQuestion,currentDraft,assertCurrent,
+        coordinated:async operation=>{
+          const currentInspection=await inspectPolicyReviewSource(context.lock,input.schemaInspector);
+          if(schemaFingerprintForInspection(currentInspection.inspection)!==schemaFingerprintForInspection(sourceInspection.inspection)
+            ||rolePostureFingerprint(currentInspection.inspection)!==rolePostureFingerprint(sourceInspection.inspection))
+            throw new Error('SOURCE_TRANSACTION_METADATA_CHANGED: Reopen current reader review; no scope answer was saved.');
+          const check=async(permit:ProjectAuthorityMutationPermit)=>{
+            await assertCurrent(permit);
+            const currentReceipt=await authoringReceiptConfiguration(input.projectRoot,authority?.authority.rules.map(r=>r.rule.source)??[],process.env);
+            if(canonicalJsonDigest(currentReceipt)!==canonicalJsonDigest(receiptConfiguration))
+              throw new Error('SOURCE_TRANSACTION_CONFIGURATION_CHANGED: Reopen current Review; no stale scope answer was saved.');
+            await operation(permit);
+          };
+          if(domain&&authority)await withCountingOutcomeDomain(input.projectRoot,authority,async(current,permit)=>{
+            if(canonicalJsonDigest(current)!==canonicalJsonDigest(domain))
+              throw new Error('POLICY_COUNTING_DOMAIN_CHANGED: No stale scope answer was saved.');
+            await check(permit);
+          });
+          else await withProjectAuthorityMutation(input.projectRoot,check);
+        }});
+      return {tone:'warning',title:result.changed?'Source transaction outcome scope recorded.':'Source transaction outcome scope remains pending.',
+        lines:[...display,result.summary,'The disabled Action and active rules remain unchanged; no model request or source write occurred.'],
+        footer:result.changed?'Choose Review attached rules and unresolved decisions again to check the complete current candidate.'
+          :'Reopen this exact local outcome-scope decision when source-owner meaning is available.',localTransaction:'handled'};
     }
     if(input.localTransactionOnly) return {tone:'success',title:'Local source transaction review is current.',
       lines:[...display,'No new source-meaning decision is required. Continuing with ordinary saved Review.'],
@@ -10925,9 +10975,19 @@ export async function reviewSavedBoundaryPolicy(input: {
         : "Resume Review attached rules and unresolved decisions. Any necessary rule change is a separate Edit operation; no rule changed here." };
   } catch (error) {
     input.assertRunning?.();
+    const resolved=error instanceof ReviewResolutionError?error:error instanceof PolicySourceChangedError||error instanceof AuthoringReviewSubjectError
+      ?new ReviewResolutionError(error.code,planReviewPrerequisite('currentness',null,null),
+        'A competing source or review changed during save. Reopen current Review; no stale result was saved.')
+      :unknownReviewResolution();
+    const publicPlan=operatorReviewResolution(resolved.plan);
     return { tone: "warning", title: "Saved business review did not complete.",
-      lines: [redactCliErrorMessage(error instanceof Error ? error.message : String(error)), "The unfinished review and any separate edit remain saved. No rule or authority changed."],
-      footer: "Resume Review attached rules and unresolved decisions to continue from current saved evidence." };
+      lines: [redactCliErrorMessage(resolved.message),
+        ...(publicPlan.subject?[`Review subject: ${publicPlan.subject}.`]:[]),
+        `Next supported step: ${publicPlan.recommended??'inspect the saved review before another attempt'}.`,
+        "The unfinished review and any separate edit remain saved. No rule or authority changed."],
+      footer: publicPlan.recommended==='source_transaction_scope_review'
+        ? 'Resume Review attached rules to open the exact local outcome-scope decision; another model opinion cannot answer it.'
+        : 'Resume Review attached rules and unresolved decisions from current saved evidence; no automatic retry was started.' };
   }
 }
 

@@ -1,6 +1,7 @@
 import { canonicalJsonDigest } from '@synapsor-runner/protocol';
 import { createHash } from 'node:crypto';
 import { CoverageSourceLinesError } from './authoring-source-coverage.js';
+import { SourceTransactionScopeError } from './authoring-source-transaction-scope.js';
 
 /** Only host-authored text and fixed response coordinates leave this boundary. */
 export class CoverageComponentError extends Error {
@@ -17,6 +18,13 @@ export class CoverageCurrentDescriptionError extends Error {
   readonly code = 'COUNTING_CURRENT_DESCRIPTION_MISMATCH';
   constructor(readonly evidence: { path: string; actual: string | null; submitted: string | null | { withheld: true } }) {
     super('COUNTING_CURRENT_DESCRIPTION_MISMATCH: The submitted current selector does not describe the prepared configuration.');
+  }
+}
+/** The counter citation is separate from paragraph support. Its submitted
+ * reference is never accepted as an owner decision by this diagnostic. */
+export class CoverageCounterSupportError extends Error {
+  constructor(readonly reason:'unknown_message'|'quote_disagrees'|'unrecorded_quote'|'interpretation_mismatch',detail:string) {
+    super(`COUNTING_SUPPORT_MISMATCH: ${detail}`);
   }
 }
 /** Eligibility is established by the obligation validator's typed current
@@ -84,8 +92,21 @@ export class CoverageReceiptDutyError extends Error {
 export class CoverageReceiptReadContextError extends Error {
   constructor() { super('COVERAGE_RECEIPT_REFERENCE_OVERBROAD: The receipt guarantee overview is not evidence for the separate Read-exclusion claim.'); }
 }
+/** Reasons originate with coverage findings. The resolution planner consumes
+ * this type without making finding production depend on the planner. */
+export type ReviewResolutionReason =
+  | `scope.${SourceTransactionScopeError['reason']}`
+  | `counter_support.${CoverageCounterSupportError['reason']}`
+  | `receipt_duty.${CoverageReceiptDutyError['reason']}`
+  | `receipt_exclusion.${CoverageReceiptReadExclusionError['reason']}`
+  | `receipt_configuration.${ReceiptConfigurationFindingReason}`
+  | 'counter.current_description' | 'coupling.representation' | 'coupling.unavailable'
+  | 'scoped_correction.unavailable'
+  | 'receipt_observation.structural' | 'receipt_observation.unavailable'
+  | 'source_lines.missing' | 'receipt_read_context.overbroad';
 export type CoverageFinding = {
   code: string; component: string; identity: string; component_identity: string; passage_identity?: string; reason: string; repair: string; structural: boolean;
+  typed_reason?: ReviewResolutionReason;
   current_evidence?: CoverageCurrentDescriptionError['evidence'];
   source_digest?: string; missing_ranges?: Array<{ start: number; end: number }>; omitted_range_count?: number;
 };
@@ -117,8 +138,25 @@ export const MAX_COVERAGE_SUBMISSIONS = 3;
 export function coverageFinding(error: unknown, component: string, identityBasis: unknown): CoverageFinding {
   if (error instanceof CoverageComponentError) component = error.component;
   const cause = error instanceof CoverageComponentError ? error.cause : error;
+  if(cause instanceof SourceTransactionScopeError) {
+    const excluded=cause.reason==='excluded';
+    const code=excluded?'SOURCE_TRANSACTION_ASSOCIATION_INVALID':cause.reason==='capability'
+      ?'SOURCE_TRANSACTION_SCOPE_CAPABILITY_MISMATCH':'SOURCE_TRANSACTION_SCOPE_UNESTABLISHED';
+    return {code,component,typed_reason:`scope.${cause.reason}`,component_identity:canonicalJsonDigest(identityBasis),
+      identity:canonicalJsonDigest({component:identityBasis,code}),structural:excluded,
+      reason:excluded
+        ?'A current attributed scope decision excludes this source requirement for the nominated Action. The submitted association is invalid; no part of the report was accepted.'
+        :cause.reason==='capability'
+          ?'Current source applicability does not establish the complete exact effect and receipt capability for this Action.'
+          :'The existing source interpretation does not establish whether this requirement applies to the nominated Action. An owner decision remains pending.',
+      repair:excluded
+        ?'Replace only this nominated passage with a compiled_effect component using its exact supplied capability meaning and current effect or execution root; do not retain a source_transaction_coupling claim for this excluded association. Retain the original reviewed coupling and every separate receipt-selection, privacy, approval, version, setup, observation and readback duty. The complete assembled report will be validated; do not delete the passage or change the business rules.'
+        :cause.reason==='capability'
+          ?'Keep BUSINESS review pending. Inspect the complete current effect group and receipt contract; an interpretation cannot make an unsupported transaction possible.'
+          :'Keep BUSINESS review pending and use the local source-transaction scope review for this exact Action and source excerpt. Do not ask another model opinion to decide owner meaning.'};
+  }
   if (cause instanceof CoverageReceiptConfigurationError) return {
-    ...receiptConfigurationFindings[cause.reason], component, component_identity: canonicalJsonDigest(identityBasis),
+    ...receiptConfigurationFindings[cause.reason], component,typed_reason:`receipt_configuration.${cause.reason}`, component_identity: canonicalJsonDigest(identityBasis),
     identity: canonicalJsonDigest({ component: identityBasis, code: cause.code, reason: cause.reason }),
   };
   if (cause instanceof CoverageReceiptDutyError) {
@@ -128,12 +166,12 @@ export function coverageFinding(error: unknown, component: string, identityBasis
       evidence_stale: {code: 'OBLIGATION_EVIDENCE_STALE', reason: 'The saved obligation no longer matches its exact current source and phase evidence.'},
     } satisfies Record<CoverageReceiptDutyError['reason'], {code:string;reason:string}>;
     const finding = descriptions[cause.reason];
-    return {...finding, component, component_identity: canonicalJsonDigest(identityBasis),
+    return {...finding, component, typed_reason:`receipt_duty.${cause.reason}`,component_identity: canonicalJsonDigest(identityBasis),
       identity: canonicalJsonDigest({component: identityBasis, code:finding.code}), structural:false,
       repair: 'Keep the requirement unresolved and revalidate its actual source, component and current phase evidence. A selected mode or compiled capability is not deployment verification, a performed receipt or independent readback. Do not invent an observation, assign away a business requirement or request another favorable opinion.'};
   }
   if (cause instanceof CoverageReceiptReadExclusionError) return {
-    code: cause.code, component, component_identity: canonicalJsonDigest(identityBasis),
+    code: cause.code, component,typed_reason:`receipt_exclusion.${cause.reason}`, component_identity: canonicalJsonDigest(identityBasis),
     identity: canonicalJsonDigest({component: identityBasis, code: cause.code}),
     structural: cause.reason === 'current_proof_mixed_component',
     reason: cause.reason === 'current_proof_mixed_component'
@@ -144,13 +182,13 @@ export function coverageFinding(error: unknown, component: string, identityBasis
       : 'Keep the unsupported requirement unresolved and revalidate its actual evidence. Do not infer exclusion from missing names, substitute a nearby receipt overview or request another opinion to invent proof. The complete report still requires independent support for every residual claim.',
   };
   if (cause instanceof CoverageReceiptReadContextError) return {
-    code: 'COVERAGE_RECEIPT_REFERENCE_OVERBROAD', component, component_identity: canonicalJsonDigest(identityBasis),
+    code: 'COVERAGE_RECEIPT_REFERENCE_OVERBROAD', component,typed_reason:'receipt_read_context.overbroad', component_identity: canonicalJsonDigest(identityBasis),
     identity: canonicalJsonDigest({component: identityBasis, code: 'COVERAGE_RECEIPT_REFERENCE_OVERBROAD'}), structural: true,
     reason: 'This receipt overview/Read combination mixes evidence kinds. The current host context has a separate narrow configured-destination Read-exclusion record; it supplies no observation proof.',
     repair: 'If the claim is exclusion of configured receipt storage from the selected Read, isolate it using only /runner_evidence/runtime_contract/receipt_read_exclusion and its exact excluded value. Keep the source range and every other claim. This evidence proves neither provisioning, database-wide privacy, execution, a performed receipt nor independent readback. Keep those duties separate and unverified where applicable. A broader privacy or observation claim remains unresolved. Use only the host-nominated replacement region; the complete assembled report must account for the entire source inventory; do not change policy or configuration.',
   };
   if (cause instanceof CoverageSourceLinesError) return {
-    code: 'COVERAGE_SOURCE_LINES_MISSING', component,
+    code: 'COVERAGE_SOURCE_LINES_MISSING', component,typed_reason:'source_lines.missing',
     component_identity: canonicalJsonDigest({source: cause.source_digest, ranges: cause.missing_ranges}),
     identity: canonicalJsonDigest({code: 'COVERAGE_SOURCE_LINES_MISSING', source: cause.source_digest, ranges: cause.missing_ranges}),
     structural: true, source_digest: cause.source_digest, missing_ranges: cause.missing_ranges, omitted_range_count: cause.omitted_range_count,
@@ -158,7 +196,7 @@ export function coverageFinding(error: unknown, component: string, identityBasis
     repair: 'Read each missing range in the exact consented source inventory and give it its own supported disposition in the COMPLETE REPLACEMENT report. Preserve every other requirement and unresolved claim. Headings and definitions are not automatically background; overlapping ranges may represent separate claims. Nothing from a rejected response is accepted or silently retained. Check the entire inventory when omitted_range_count is nonzero.',
   };
   if (cause instanceof CoverageReceiptObservationError) return {
-    code: cause.code, component, component_identity: canonicalJsonDigest(identityBasis),
+    code: cause.code, component,typed_reason:cause.structural?'receipt_observation.structural':'receipt_observation.unavailable', component_identity: canonicalJsonDigest(identityBasis),
     identity: canonicalJsonDigest({component: identityBasis, code: cause.code}), structural: cause.structural,
     reason: 'A supported execution capability or reviewed receipt selection does not establish provisioned execution, an observed receipt or independent readback.',
     repair: cause.structural
@@ -166,7 +204,7 @@ export function coverageFinding(error: unknown, component: string, identityBasis
       : 'Keep the observation unestablished and the review unresolved. Required meaning, applicable configuration, deployment permission and performed receipts/readback need their own evidence; another opinion cannot supply it. Do not change the receipt guarantee or mark unperformed work verified.',
   };
   if (cause instanceof CoverageCurrentDescriptionError) return {
-    code: cause.code, component, component_identity: canonicalJsonDigest(identityBasis),
+    code: cause.code, component,typed_reason:'counter.current_description', component_identity: canonicalJsonDigest(identityBasis),
     identity: canonicalJsonDigest({component: identityBasis, code: cause.code}), structural: true,
     current_evidence: cause.evidence,
     reason: 'The submitted current_capability misdescribes the exact configuration supplied in this review context; this does not establish that configuration changed.',
@@ -251,7 +289,11 @@ export function coverageFinding(error: unknown, component: string, identityBasis
     reason = 'The application-obligation record does not match the supported isolated duty structure.';
     repair = 'Use the exact named application contract, responsibility=application and a pending disposition. Keep field/privacy, counter and Runner claims separately validated; assignment remains unverified. Use the host-nominated correction scope; complete assembled coverage must validate.';
   }
-  return {code,component,component_identity:canonicalJsonDigest(identityBasis),identity:canonicalJsonDigest({component:identityBasis,code}),reason,repair,structural};
+  if(cause instanceof CoverageCounterSupportError) {
+    code='COUNTING_SUPPORT_MISMATCH'; structural=true;
+  }
+  return {code,component,component_identity:canonicalJsonDigest(identityBasis),identity:canonicalJsonDigest({component:identityBasis,code}),reason,repair,structural,
+    ...(cause instanceof CoverageCounterSupportError?{typed_reason:`counter_support.${cause.reason}` as const}:{})};
 }
 
 /** A code change alone is not progress. Every old failed component must now

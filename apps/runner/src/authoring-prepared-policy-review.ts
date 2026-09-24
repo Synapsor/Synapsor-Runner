@@ -1,6 +1,11 @@
 import { scopedDisclosureInventory } from "./authoring-scoped-disclosure.js";
 import { currentSourceTransactionReview, sourceTransactionReviewNeeded } from './authoring-source-transaction-review.js';
+import { sourceTransactionScopeQuestions } from './authoring-source-transaction-scope.js';
 import { assertRequiredReceiptCoupling, receiptCouplingInterpretation, receiptCouplingPaths } from './authoring-obligation-review.js';
+import { planReviewPrerequisite, ReviewResolutionError, type ReviewPrerequisiteReason } from './authoring-review-resolution.js';
+import { CoverageComponentError, coverageFinding } from './authoring-coverage-feedback.js';
+import { SourceTransactionScopeError } from './authoring-source-transaction-scope.js';
+import { planCoverageResolution } from './authoring-review-resolution.js';
 import { randomUUID } from "node:crypto";
 import type { CoverageReviewEpisode } from "./authoring-policy-source.js";
 import { reviewClientDutyOwnership } from "./authoring-client-duties.js";
@@ -22,6 +27,9 @@ export type PreparedPolicyReviewState = {
   attemptKey?: string;
   report?: { key: string; report: PolicyCoverage };
   activity?: "provider" | "validated_reuse";
+};
+const pending=(reason:ReviewPrerequisiteReason,code:string,message:string,subject:string|null=null,context:string|null=null):never=>{
+  throw new ReviewResolutionError(code,planReviewPrerequisite(reason,subject,context),message);
 };
 
 export async function ensurePreparedPolicyCoverage(input: {
@@ -46,28 +54,30 @@ export async function ensurePreparedPolicyCoverage(input: {
 }) {
   const { sources, state } = input;
   const source = activePolicySource(sources);
-  if (!source) throw new Error("POLICY_REVIEW_SOURCE_UNAVAILABLE: Select a complete saved source before reviewing this job.");
+  if (!source) throw new ReviewResolutionError('POLICY_REVIEW_SOURCE_UNAVAILABLE',
+    planReviewPrerequisite('currentness',null,null),'Select a complete saved source before reviewing this job.');
   const selectedDestination = authoringDestination(input.modelSession);
   if (!sources.approvals.some(a => a.digest === source.digest && a.destination === selectedDestination)) {
-    throw new Error("POLICY_REVIEW_SOURCE_CONSENT_REQUIRED: Review transfer of this exact source to the selected model before continuing.");
+    pending('source_consent','POLICY_REVIEW_SOURCE_CONSENT_REQUIRED','Review transfer of this exact source to the selected model before continuing.');
   }
   let expectedSource = await policySourceSavedDigest(input.projectRoot, sources.id);
   if (canonicalJsonDigest(await loadPolicySources(input.projectRoot, sources.id)) !== canonicalJsonDigest(sources)) {
-    throw new Error("POLICY_SOURCE_CHANGED: The in-memory source is not the current saved source. Reopen its review before continuing.");
+    pending('currentness','POLICY_SOURCE_CHANGED','The in-memory source is not the current saved source. Reopen its review before continuing.');
   }
   const assertCurrent = async (permit?: ProjectAuthorityMutationPermit) => {
     await input.assertCurrent(permit);
     if (authoringDestination(input.modelSession) !== selectedDestination)
-      throw new Error("POLICY_COVERAGE_CONTEXT_CHANGED: The selected model or destination changed during review. Reopen current Review; no stale response was saved.");
+      pending('currentness','POLICY_COVERAGE_CONTEXT_CHANGED','The selected model or destination changed during review. Reopen current Review; no stale response was saved.');
     if (await policySourceSavedDigest(input.projectRoot, sources.id) !== expectedSource) {
-      throw new Error("POLICY_SOURCE_CHANGED: The selected source or its decisions changed during review. Reopen the current saved review; no stale result was saved.");
+      pending('currentness','POLICY_SOURCE_CHANGED','The selected source or its decisions changed during review. Reopen the current saved review; no stale result was saved.');
     }
   };
   const coordinated = async (operation: (permit: ProjectAuthorityMutationPermit) => Promise<void>) => {
     if (input.countingDomain && input.authority) {
       await withCountingOutcomeDomain(input.projectRoot, input.authority, async (current, permit) => {
         if (canonicalJsonDigest(current) !== canonicalJsonDigest(input.countingDomain)) {
-          throw new Error("POLICY_COUNTING_DOMAIN_CHANGED: Current authority or retained history changed during review. Recheck the saved rules; no selector changed.");
+          pending('currentness','POLICY_COUNTING_DOMAIN_CHANGED',
+            'Current authority or retained history changed during review. Recheck the saved rules; no selector changed.');
         }
         await operation(permit);
       });
@@ -78,18 +88,43 @@ export async function ensurePreparedPolicyCoverage(input: {
   const transactionRequirement=currentSourceTransactionReview(source,draftRecord,sources);
   if ((sourceTransactionReviewNeeded(draftRecord) || sources.source_transaction_reviews?.length)
     && !transactionRequirement)
-    throw new Error('SOURCE_TRANSACTION_REVIEW_PENDING: Review the exact current source transaction requirement locally before a model-backed review. No source meaning was inferred from receipt mode or compiled effects.');
-  if (transactionRequirement) assertRequiredReceiptCoupling([{start:transactionRequirement.start,end:transactionRequirement.end,
-    disposition:'implemented',responsibility:'runner',issue_kind:'coverage_link',receipt_component:'source_transaction_coupling',
-    interpretation:receiptCouplingInterpretation(transactionRequirement.action.outcome),
-    draft_paths:receiptCouplingPaths(transactionRequirement.action.outcome)}],source,draftRecord,[],sources);
+    pending('source_transaction_review','SOURCE_TRANSACTION_REVIEW_PENDING',
+      'Review the exact current source transaction requirement locally before a model-backed review. No source meaning was inferred from receipt mode or compiled effects.');
+  const scopeQuestions=sourceTransactionScopeQuestions(source,draftRecord,sources);
+  const unresolvedScope=scopeQuestions.find(question=>!question.current||question.current.decision==='deferred');
+  if(unresolvedScope)pending('source_transaction_scope','SOURCE_TRANSACTION_SCOPE_REVIEW_PENDING',
+    'Review the exact source requirement for this outcome locally before another model-backed review. The saved candidate and active rules are unchanged.',
+    unresolvedScope.action.outcome,canonicalJsonDigest({source:source.digest,action:unresolvedScope.action,
+      binding:unresolvedScope.action_binding_digest,requirement:unresolvedScope.requirement.digest}));
+  if (transactionRequirement) try{ assertRequiredReceiptCoupling([
+    {start:transactionRequirement.start,end:transactionRequirement.end,
+      disposition:'implemented',responsibility:'runner',issue_kind:'coverage_link',receipt_component:'source_transaction_coupling',
+      interpretation:receiptCouplingInterpretation(transactionRequirement.action.outcome),
+      draft_paths:receiptCouplingPaths(transactionRequirement.action.outcome)},
+    ...scopeQuestions.filter(question=>question.current?.decision==='applies').map(question=>({
+      start:question.requirement.start,end:question.requirement.end,
+      disposition:'implemented' as const,responsibility:'runner' as const,issue_kind:'coverage_link' as const,
+      receipt_component:'source_transaction_coupling' as const,
+      interpretation:receiptCouplingInterpretation(question.action.outcome),
+      draft_paths:receiptCouplingPaths(question.action.outcome)}))],source,draftRecord,[],sources); }
+  catch(error){
+    const cause=error instanceof CoverageComponentError?error.cause:error;
+    if(!(cause instanceof SourceTransactionScopeError))throw error;
+    const finding=coverageFinding(error,'/',{source:source.digest,draft:canonicalJsonDigest(draftRecord)});
+    throw new ReviewResolutionError(finding.code,planCoverageResolution({
+      context:canonicalJsonDigest({source:source.digest,draft:draftRecord}),findings:[finding],limited:false,
+      unevaluated:['model review and whole-report persistence'],complete_validation:false}),
+      finding.reason);
+  }
   // Unknown owner facts do not become a request for another model opinion.
   // Local inspection/deferral is available before provider consent/selection.
   if (scopedDisclosureInventory(source, draftRecord).items.some(f => f.state !== "confirmed_non_sensitive"))
-    throw new Error("SCOPED_DISCLOSURE_REVIEW_PENDING: The source-required classification remains pending. Open the local source-required disclosure review; no provider call was made.");
+    pending('scoped_disclosure','SCOPED_DISCLOSURE_REVIEW_PENDING',
+      'The source-required classification remains pending. Open the local source-required disclosure review; no provider call was made.');
   const decisions = await reviewUnestablishedCounting({ source, draft: draftRecord,
     messages: sources.operator_messages ?? [], session: input.operatorSession, assertCurrent });
-  if (decisions === undefined && input.requireCountingChoice) throw new Error("POLICY_COUNTING_REVIEW_PENDING: The counting choice remains unresolved. Resume Review attached rules; no business rule changed.");
+  if (decisions === undefined && input.requireCountingChoice) pending('counting_review','POLICY_COUNTING_REVIEW_PENDING',
+    'The counting choice remains unresolved. Resume Review attached rules; no business rule changed.');
   if (decisions?.length) {
     const staged = structuredClone(sources);
     staged.counting_decisions = [...(staged.counting_decisions ?? []).filter(d => !decisions.some(n => n.path === d.path)), ...decisions];
@@ -106,7 +141,8 @@ export async function ensurePreparedPolicyCoverage(input: {
   }
   const preparedDraftDigest = canonicalJsonDigest(draftRecord);
   const key = canonicalJsonDigest({ source: source.digest, draft: draftRecord, messages: sources.operator_messages ?? [],
-    clarifications: input.clarifications, interpretations: sources.read_interpretations ?? [] });
+    clarifications: input.clarifications, interpretations: sources.read_interpretations ?? [],
+    source_transaction_scope_reviews:sources.source_transaction_scope_reviews?.map(record=>record.digest)??[] });
   let reused: PolicyCoverage | undefined;
   if (!input.force && (state.attemptKey === key && state.report?.key === key
     || state.attemptKey === undefined && sources.coverage_context_digest === key && sources.coverage)) {
@@ -123,7 +159,7 @@ export async function ensurePreparedPolicyCoverage(input: {
     await coordinated(async permit => {
       await assertCurrent(permit);
       if (canonicalJsonDigest(input.currentDraft()) !== preparedDraftDigest)
-        throw new Error("POLICY_COVERAGE_CONTEXT_CHANGED: Reopen current Review; no stale correction was sent.");
+        pending('currentness','POLICY_COVERAGE_CONTEXT_CHANGED','Reopen current Review; no stale correction was sent.');
       const staged = structuredClone(sources);
       const current = staged.coverage_episodes!.find(e => e.id === episode.id)!;
       update(current);
@@ -146,12 +182,15 @@ export async function ensurePreparedPolicyCoverage(input: {
           : sources.coverage_episodes?.length ? ["Earlier episodes for other contexts remain saved; none authorizes this new episode."] : []),
       ] : [`The previous episode reserved ${prior!.submissions.length} response submissions. Its evidence and unresolved review remain saved. A new episode is separately recorded; it is not an uninterrupted retry or a business edit.`];
       if (!await input.operatorSession.confirm("Run a new bounded model review?", { defaultValue: false, context }))
-        throw new Error("POLICY_COVERAGE_EPISODE_PENDING: A new provider-backed review was declined. Prior attempts and unresolved review remain saved; no model submission was reserved.");
+        pending('episode_declined','POLICY_COVERAGE_EPISODE_PENDING',
+          'A new provider-backed review was declined. Prior attempts and unresolved review remain saved; no model submission was reserved.');
       await assertCurrent();
       if (canonicalJsonDigest(input.currentDraft()) !== preparedDraftDigest)
-        throw new Error("POLICY_COVERAGE_CONTEXT_CHANGED: The reviewed target or selected model changed while awaiting consent. Reopen current Review; no provider call was started.");
+        pending('currentness','POLICY_COVERAGE_CONTEXT_CHANGED',
+          'The reviewed target or selected model changed while awaiting consent. Reopen current Review; no provider call was started.');
     }
-    if ((sources.coverage_episodes?.length ?? 0) >= 120) throw new Error("POLICY_COVERAGE_EPISODE_HISTORY_FULL: Prior attempts are preserved; no provider call was started.");
+    if ((sources.coverage_episodes?.length ?? 0) >= 120) pending('history_full','POLICY_COVERAGE_EPISODE_HISTORY_FULL',
+      'Prior attempts are preserved; no provider call was started.');
     episode = {id:randomUUID(), context:key, started_at:new Date().toISOString(),submissions:[]};
     await coordinated(async permit=>{
       await assertCurrent(permit);
@@ -163,7 +202,8 @@ export async function ensurePreparedPolicyCoverage(input: {
     return reviewPolicyCoverage({session:input.modelSession,source,draft:draftRecord,sourceSession:sources,
       ...(sources.coverage?.source_digest===source.digest?{previousReport:sources.coverage}:{}),
       episode:{beforeSubmission:async number=>saveEpisode(e=>{
-        if(number!==e.submissions.length+1 || number>3) throw new Error("POLICY_COVERAGE_EPISODE_EXHAUSTED");
+        if(number!==e.submissions.length+1 || number>3) pending('episode_exhausted','POLICY_COVERAGE_EPISODE_EXHAUSTED',
+          'The bounded episode has no remaining submissions. Prior attempts remain saved.');
         e.submissions.push({number,reserved_at:new Date().toISOString()});
       }),afterSubmission:async(number,feedback,accepted,tentative)=>saveEpisode(e=>{
         const submission=e.submissions[number-1]!;
@@ -179,7 +219,8 @@ export async function ensurePreparedPolicyCoverage(input: {
   const assignments = await reviewClientDutyOwnership({ report, sources: staged, session: input.operatorSession, assertCurrent });
   if (assignments.length) {
     if ((staged.application_assignments?.length ?? 0) + assignments.length > 120)
-      throw new Error("POLICY_CLIENT_ASSIGNMENT_HISTORY_FULL: Existing ownership history is preserved. No new acceptance was saved.");
+      pending('history_full','POLICY_CLIENT_ASSIGNMENT_HISTORY_FULL',
+        'Existing ownership history is preserved. No new acceptance was saved.');
     staged.application_assignments = [...(staged.application_assignments ?? []), ...assignments];
   }
   // Reuse has the same source/authority/history serialization as a new review.
@@ -187,12 +228,14 @@ export async function ensurePreparedPolicyCoverage(input: {
   await coordinated(async permit => {
     await assertCurrent(permit);
     if (canonicalJsonDigest(input.currentDraft()) !== preparedDraftDigest) {
-      throw new Error("POLICY_CLIENT_CONTRACT_CHANGED: The prepared candidate or client contract changed during review. Reopen current Review; no stale ownership was saved.");
+      pending('currentness','POLICY_CLIENT_CONTRACT_CHANGED',
+        'The prepared candidate or client contract changed during review. Reopen current Review; no stale ownership was saved.');
     }
     const capturedConfiguration = draftRecord.runner_evidence.runtime_contract.receipt_configuration;
     if (capturedConfiguration && canonicalJsonDigest(capturedConfiguration) !== canonicalJsonDigest(await authoringReceiptConfiguration(
       input.projectRoot, input.authority?.authority.rules.map(r => r.rule.source) ?? []))) {
-      throw new Error("OBLIGATION_CONFIGURATION_CHANGED: Receipt configuration changed during review. Reopen current Review; no stale result was saved.");
+      pending('currentness','OBLIGATION_CONFIGURATION_CHANGED',
+        'Receipt configuration changed during review. Reopen current Review; no stale result was saved.');
     }
     if (canonicalJsonDigest(staged) !== canonicalJsonDigest(sources)) {
       await savePolicySources(input.projectRoot, staged, { expectedDigest: expectedSource, permit });

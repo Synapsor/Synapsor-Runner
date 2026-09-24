@@ -17,6 +17,7 @@ import {receiptCouplingInterpretation,receiptCouplingPaths,repairableReceiptCoup
 import {receiptComponentMeanings,validateScopedReceiptComponents} from './authoring-scoped-receipt-components.js';
 import {createCoverageRepairScope,assembleScopedCoverageReplacement} from './authoring-scoped-correction.js';
 import {makeSourceTransactionReview,sourceTransactionMappings,sourceTransactionPreparedContext} from './authoring-source-transaction-review.js';
+import {makeSourceTransactionScopeReview,sourceTransactionScopeQuestions} from './authoring-source-transaction-scope.js';
 const capture=JSON.parse(await fs.readFile(new URL('./test-fixtures/receipt-correction-chain.json',import.meta.url),'utf8'));
 const READ='/runner_evidence/runtime_contract/receipt_read_exclusion';
 const CONFIG='/runner_evidence/runtime_contract/receipt_configuration';
@@ -107,6 +108,49 @@ function correction(body:any){
  return JSON.parse(all.split('\n').find((s:string)=>s.startsWith(marker))!.slice(marker.length));
 }
 describe('complete captured configuration correction chain',()=>{
+ it.each(['openai','openrouter'] as const)('%s corrects only a negatively reviewed second-outcome association under the real replacement producer',async provider=>{
+  const f=fixture(),first=f.draft.actions[0],second=structuredClone(first);
+  second.name='energy_ops.separate_follow_up';second.outcome=second.name;
+  f.draft.actions.push(second);
+  const host=structuredClone(f.draft.runner_evidence.actions[first.outcome]);host.outcome=second.outcome;
+  f.draft.runner_evidence.actions[second.outcome]=host;
+  const setup=f.draft.runner_evidence.runtime_contract.deployment_prerequisites.runner_execution_setup;
+  setup.outcomes.push({...setup.outcomes[0],outcome:second.outcome});
+  const valid=separated(f),replacement={start:18,end:18,disposition:'implemented',responsibility:'runner',
+    issue_kind:'coverage_link',interpretation:receiptComponentMeanings(f.draft).compiled_effect![0],
+    draft_paths:[receiptCouplingPaths(second.outcome)[0]]};
+  valid.passages.push(replacement);
+  const invalid=structuredClone(valid);
+  invalid.passages[invalid.passages.length-1]={...replacement,receipt_component:'source_transaction_coupling',
+    interpretation:receiptCouplingInterpretation(second.outcome),draft_paths:receiptCouplingPaths(second.outcome)};
+  f.sources.coverage_episodes=[{id:'11111111-1111-4111-8111-111111111111',context:canonicalJsonDigest('derived prior'),
+    started_at:new Date().toISOString(),submissions:[{number:1,reserved_at:new Date().toISOString(),
+      completed_at:new Date().toISOString(),validated:false,tentative:{status:'unaccepted_generation',
+        context:canonicalJsonDigest('derived prior'),raw_response:invalid}}]}];
+  const question=sourceTransactionScopeQuestions(f.source,f.draft,f.sources)[0]!;
+  expect(question.action.outcome).toBe(second.outcome);
+  const decision=makeSourceTransactionScopeReview({source:f.source,session:f.sources.id,store:question.store_digest,
+    requirement:question.requirement,action:question.action,action_binding_digest:question.action_binding_digest,
+    actor:'derived-test-operator',decision:'does_not_apply'});
+  f.sources.source_transaction_scope_reviews=[decision];
+  expect(()=>parse(f,invalid)).toThrow('SOURCE_TRANSACTION_ASSOCIATION_INVALID');
+  expect(()=>parse(f,valid)).not.toThrow();
+  let originalError:unknown;
+  try{parse(f,invalid);}catch(error){originalError=error;}
+  const finding=collectCoverageFeedback(invalid,f.source,f.draft,f.operator_messages,originalError,f.sources).findings;
+  expect(finding).toContainEqual(expect.objectContaining({code:'SOURCE_TRANSACTION_ASSOCIATION_INVALID',
+    component:`/passages/${invalid.passages.length-1}`,structural:true}));
+  f.arguments=invalid;
+  const t=transport(f,[invalid,valid],provider);await t.run();
+  expect(t.requests).toHaveLength(2);
+  const sent=correction(t.requests[1]);
+  expect(sent.findings).toContainEqual(expect.objectContaining({code:'SOURCE_TRANSACTION_ASSOCIATION_INVALID',structural:true}));
+  const scope=scopeFromWire(t.requests[1]);
+  expect(scope.targets).toHaveLength(1);
+  expect(scope.targets[0].receipt_region).toBe(true);
+  expect(scope.targets[0].required_retained.length).toBeGreaterThan(0);
+  expect(f.arguments).toEqual(invalid);
+ });
  it.each(['openai','openrouter'] as const)('%s nominates only a host-proven omitted coupling shape and validates the whole scoped replacement',async provider=>{
   const f=fixture(),valid=separated(f),invalid=omittedCouplingShape(f,valid);f.arguments=invalid;
   expect(()=>parse(f)).toThrow('OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED');

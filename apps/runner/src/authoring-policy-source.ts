@@ -1,5 +1,6 @@
 import { assertScopedDisclosureReviews, type ScopedDisclosureReview, type ScopedDisclosureInventory } from "./authoring-scoped-disclosure-records.js";
 import { assertSourceTransactionReviews, type SourceTransactionReview } from "./authoring-source-transaction-review.js";
+import { assertSourceTransactionScopeReviews, type SourceTransactionScopeReview } from "./authoring-source-transaction-scope.js";
 import fs from "node:fs/promises";
 import { constants } from "node:fs";
 import path from "node:path";
@@ -7,6 +8,13 @@ import { createHash, randomUUID } from "node:crypto";
 import type { AskHistoryTurn } from "./model-ask.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
+
+/** The coordinated save detected a competing source/decision revision. This
+ * reason is kept typed for saved Review/Resume diagnostics. */
+export class PolicySourceChangedError extends Error {
+  readonly code='POLICY_SOURCE_CHANGED';
+  constructor(){super('POLICY_SOURCE_CHANGED: The attached policy or its review changed while this check was running. Reopen the saved job; no newer decision or pending work was overwritten.');}
+}
 
 export type ClientDuty = "customer_selection" | "status_presentation";
 export type ClientDutyInventory = {
@@ -230,6 +238,8 @@ export type PolicySourceSession = {
   scoped_disclosure_reviews?: ScopedDisclosureReview[];
   /** Attributed source meaning, separate from compiled transaction capability. */
   source_transaction_reviews?: SourceTransactionReview[];
+  /** Outcome-specific applicability answers within the saved source session. */
+  source_transaction_scope_reviews?: SourceTransactionScopeReview[];
   coverage_episodes?: CoverageReviewEpisode[];
   coverage_context_digest?: string;
   coverage_authority_digest?: string;
@@ -391,6 +401,7 @@ export async function savePolicySources(root: string, session: PolicySourceSessi
     const file = sourcePath(root, session.id), temporary = `${file}.${randomUUID()}.tmp`;
     assertScopedDisclosureReviews(session.scoped_disclosure_reviews);
     assertSourceTransactionReviews(session.source_transaction_reviews);
+    assertSourceTransactionScopeReviews(session.source_transaction_scope_reviews);
     // Once represented, omission by an older writer cannot delete a source
     // requirement. Explicit removal of the source uses removePolicySources.
     try {
@@ -403,11 +414,15 @@ export async function savePolicySources(root: string, session: PolicySourceSessi
       assertSourceTransactionReviews(priorTransactions);
       if (priorTransactions.some((r,i)=>r.digest!==session.source_transaction_reviews?.[i]?.digest))
         throw new Error("SOURCE_TRANSACTION_HISTORY_CHANGED: Existing source interpretations must be retained; no review was overwritten.");
+      const priorScopes=existing.source_transaction_scope_reviews??[];
+      assertSourceTransactionScopeReviews(priorScopes);
+      if (priorScopes.some((r,i)=>r.digest!==session.source_transaction_scope_reviews?.[i]?.digest))
+        throw new Error("SOURCE_TRANSACTION_SCOPE_HISTORY_CHANGED: Existing scope decisions must be retained; no review was overwritten.");
     } catch(error) { if((error as NodeJS.ErrnoException).code!=="ENOENT")throw error; }
     const serialized = JSON.stringify(session);
     if (Buffer.byteLength(serialized) > 2 * 1024 * 1024) throw new Error("Saved policy sources exceed the supported size. The previous snapshot remains unchanged; remove older sources explicitly before adding more context.");
     if (options?.expectedDigest !== undefined && await policySourceSavedDigest(root, session.id) !== options.expectedDigest) {
-      throw new Error("POLICY_SOURCE_CHANGED: The attached policy or its review changed while this check was running. Reopen the saved job; no newer decision or pending work was overwritten.");
+      throw new PolicySourceChangedError();
     }
     await fs.mkdir(path.dirname(file), { recursive: true, mode: 0o700 });
     await fs.chmod(path.dirname(file), 0o700);
@@ -450,6 +465,7 @@ export async function loadPolicySources(root: string, id: string): Promise<Polic
   }
   assertScopedDisclosureReviews(value.scoped_disclosure_reviews);
   assertSourceTransactionReviews(value.source_transaction_reviews);
+  assertSourceTransactionScopeReviews(value.source_transaction_scope_reviews);
   if (value.counting_decisions && (!Array.isArray(value.counting_decisions) || value.counting_decisions.length > 120
     || value.counting_decisions.some(d => !d || d.origin !== "OPERATOR-COUNTING-REVIEW"
       || !value.snapshots.some(s => s.digest === d.source_digest) || typeof d.path !== "string"
@@ -526,7 +542,7 @@ function validStoredCoverage(report: PolicyCoverage, sources: PolicyTextSnapshot
 
 export async function removePolicySources(root: string, session: PolicySourceSession): Promise<void> {
   await fs.unlink(sourcePath(root, session.id)).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
-  session.snapshots = []; session.approvals = []; delete session.active; delete session.operator_messages; delete session.coverage; delete session.coverage_authority_digest; delete session.application_assignments; delete session.read_interpretations; delete session.counting_decisions; delete session.scoped_disclosure_reviews; delete session.source_transaction_reviews;
+  session.snapshots = []; session.approvals = []; delete session.active; delete session.operator_messages; delete session.coverage; delete session.coverage_authority_digest; delete session.application_assignments; delete session.read_interpretations; delete session.counting_decisions; delete session.scoped_disclosure_reviews; delete session.source_transaction_reviews; delete session.source_transaction_scope_reviews;
 }
 
 export type CountingDecision = {

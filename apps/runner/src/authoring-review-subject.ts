@@ -4,7 +4,11 @@ import type { BoundaryAuthoringResumeState, BoundaryPolicyReviewContext } from "
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 
 type Context = { source_session: string; source_digest: `sha256:${string}`; read_name: string; read_digest: `sha256:${string}` };
-const failure = (code: string, message: string): never => { throw new Error(`${code}: ${message}`); };
+type ReviewSubjectErrorCode = "POLICY_REVIEW_CANDIDATE_CHANGED" | "POLICY_REVIEW_CANDIDATE_UNAVAILABLE" | "POLICY_REVIEW_SUBJECT_CHANGED";
+export class AuthoringReviewSubjectError extends Error {
+  constructor(readonly code: ReviewSubjectErrorCode, message: string) { super(`${code}: ${message}`); }
+}
+const failure = (code: ReviewSubjectErrorCode, message: string): never => { throw new AuthoringReviewSubjectError(code, message); };
 const sameContext = (record: BoundaryPolicyReviewContext, context: Context) => record.source_session === context.source_session
   && record.source_digest === context.source_digest && record.read_digest === context.read_digest;
 const sameAction = (subject: ActionRuleReviewSubject, record: BoundaryPolicyReviewContext) => subject.authority.authority.name === record.action_name

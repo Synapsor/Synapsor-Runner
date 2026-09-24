@@ -1,8 +1,9 @@
 import { SOURCE_RECEIPT_CONTRACT, ATOMIC_EFFECT_TRANSACTION } from "./authoring-receipt-contract.js";
 import { currentSourceTransactionReview, sourceTransactionMappings, sourceTransactionReviewNeeded } from './authoring-source-transaction-review.js';
+import { currentSourceTransactionScopeReview, sourceTransactionScopeQuestions, SourceTransactionScopeError } from './authoring-source-transaction-scope.js';
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { isDeferredSourceCounterMaintenance, isDeferredSourceReadback, receiptSetupComponentOnly as receiptOnly, receiptConfigurationComponentOnly, type ReviewObligationAssessment, type PolicyPassage, type PolicyTextSnapshot, type ReceiptCouplingAssessment, type PolicySourceSession } from "./authoring-policy-source.js";
-import { CoverageReceiptObservationError, CoverageReceiptReadContextError, CoverageReceiptReadExclusionError, CoverageReceiptConfigurationError, type ReceiptConfigurationFindingReason } from "./authoring-coverage-feedback.js";
+import { CoverageComponentError, CoverageReceiptObservationError, CoverageReceiptReadContextError, CoverageReceiptReadExclusionError, CoverageReceiptConfigurationError, type ReceiptConfigurationFindingReason } from "./authoring-coverage-feedback.js";
 export { deferredReviewObligation } from "./authoring-policy-source.js";
 
 export const RECEIPT_PATH = "/runner_evidence/runtime_contract/receipts";
@@ -339,14 +340,38 @@ export function assertRequiredReceiptCoupling(passages: readonly PolicyPassage[]
     canonicalJsonDigest(mapping) === canonicalJsonDigest({action:requirement.action,
       required_effects:requirement.required_effects,required_receipt:requirement.required_receipt,relation:requirement.relation})))
     couplingFailure('The current complete Action effect and receipt mapping does not implement the retained source requirement.');
-  const proofs = passages.flatMap(p => {
+  const proofs = passages.flatMap((p,index) => {
     const proof = assessReceiptCouplingCapability(p, source, draft);
-    return proof ? [proof] : [];
+    return proof ? [{proof,index}] : [];
   });
-  if (requirement && proofs.some(proof => proof.outcome !== requirement.action.outcome
-    || proof.source_range.start !== requirement.start || proof.source_range.end !== requirement.end))
-    couplingFailure('A coupling component refers to a different Action or source range than the current operator-reviewed requirement.');
-  const identities = proofs.map(proof => canonicalJsonDigest({ range: proof.source_range, outcome: proof.outcome }));
+  const questions=requirement && session ? sourceTransactionScopeQuestions(source,draft,session) : [];
+  if (requirement) for(const {proof,index} of proofs) {
+    if(proof.source_range.start!==requirement.start||proof.source_range.end!==requirement.end)
+      couplingFailure('A coupling component refers to a different Action or source range than the current operator-reviewed requirement.');
+    if(proof.outcome===requirement.action.outcome)continue;
+    const action=(at(draft,'/actions')??[]).find((entry:any)=>entry?.outcome===proof.outcome);
+    const scoped=action&&session?currentSourceTransactionScopeReview(source,draft,session,requirement,
+      {name:action.name,outcome:action.outcome,source:requirement.action.source}):undefined;
+    if(scoped?.decision==='does_not_apply')throw new CoverageComponentError(`/passages/${index}`,new SourceTransactionScopeError('excluded'));
+    if(scoped?.decision!=='applies')throw new CoverageComponentError(`/passages/${index}`,new SourceTransactionScopeError('unknown'));
+    const mapping=sourceTransactionMappings(draft).find(entry=>entry.action.name===action.name&&entry.action.outcome===action.outcome);
+    // The owner reviewed particular business conjuncts, not just their count.
+    // A second Action can claim the same source clause only when its complete
+    // ordered assignments and source receipt relationship implement that
+    // exact requirement. Its own Action identity remains separately bound by
+    // the attributed scope decision above.
+    if(!mapping||canonicalJsonDigest({effects:mapping.required_effects,receipt:mapping.required_receipt,relation:mapping.relation})
+      !==canonicalJsonDigest({effects:requirement.required_effects,receipt:requirement.required_receipt,relation:requirement.relation})
+      ||proof.effect_count!==mapping.required_effects.length)
+      throw new CoverageComponentError(`/passages/${index}`,new SourceTransactionScopeError('capability'));
+  }
+  for(const question of questions) {
+    if(!question.current||question.current.decision==='deferred')throw new SourceTransactionScopeError('unknown');
+    if(question.current.decision==='applies'&&!proofs.some(({proof})=>proof.outcome===question.action.outcome
+      && proof.source_range.start===requirement!.start&&proof.source_range.end===requirement!.end))
+      throw new SourceTransactionScopeError('capability');
+  }
+  const identities = proofs.map(({proof}) => canonicalJsonDigest({ range: proof.source_range, outcome: proof.outcome }));
   if (new Set(identities).size !== identities.length) {
     couplingFailure('The same source-range/outcome coupling component cannot be duplicated or renamed to manufacture proof.');
   }
@@ -355,7 +380,7 @@ export function assertRequiredReceiptCoupling(passages: readonly PolicyPassage[]
     ...requiredSpans.filter(span=>receiptRequirement(source,span)==='source_db'), ...passages.filter(p => p.disposition === 'implemented' && p.responsibility === 'runner'
     && receiptRequirement(source, p) === 'source_db' && p.draft_paths.some(path => roots.includes(path)))];
   for (const span of required) {
-    if (!proofs.some(proof => proof.source_range.start === span.start && proof.source_range.end === span.end
+    if (!proofs.some(({proof}) => proof.source_range.start === span.start && proof.source_range.end === span.end
       && (!requirement || proof.outcome===requirement.action.outcome))) {
       couplingFailure('The required source transaction conjunction remains unestablished; separate effect and receipt-selection claims cannot replace it.');
     }

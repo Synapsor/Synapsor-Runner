@@ -60,6 +60,15 @@ describe('faithful current counter description, exact NEW-SB-A capture',()=>{
     });
     expect(report.unevaluated).toContain('/passages/9');expect(f).toEqual(before);
   });
+  it('retains located parser findings without inventing an untyped root blocker',()=>{
+    const f=fixture();let original:unknown;
+    try{parsePolicyCoverage(f.response,f.source,f.draft,f.sources.operator_messages);}catch(error){original=error;}
+    expect(original).toBeDefined();
+    const report=collectCoverageFeedback(f.response,f.source,f.draft,f.sources.operator_messages,original);
+    expect(report.findings.map(finding=>finding.code)).toEqual([
+      'COUNTING_CURRENT_DESCRIPTION_MISMATCH','COUNTING_CURRENT_DESCRIPTION_MISMATCH']);
+    expect(report.findings.every(finding=>finding.typed_reason==='counter.current_description')).toBe(true);
+  });
   it.each(['openai','openrouter'] as const)('%s sends exact-capture feedback, then preserves the separately exposed source-association refusal',async provider=>{
     const f=fixture(),t=transport(f,[f.response,f.corrected],provider);
     await expect(t.run()).rejects.toThrow('COUNTING_REQUIREMENT_AMBIGUOUS');
