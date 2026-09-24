@@ -220,6 +220,7 @@ describe("guided execution recovery", () => {
     expect(confirmation[1]?.context).toEqual(expect.arrayContaining([
       expect.stringContaining("Worker config:"), expect.stringContaining("Check only: synapsor-runner worker check"),
       expect.stringContaining("Start work separately:"), expect.stringContaining("A check grants no execution permission"),
+      expect.stringContaining("Recovery prerequisites:"),
     ]));
     expect(JSON.stringify(confirmation)).not.toMatch(/private-reader|private-chosen|postgres:\/\//);
     expect(input.session.chooseOption).toHaveBeenCalledWith("Execution needs a deployment fix", expect.any(Array),

@@ -24,7 +24,7 @@ import { buildDerivedChangeSet } from "../../../packages/mcp-server/src/proposal
 import { canonicalJsonDigest, parseWritebackJob } from "@synapsor-runner/protocol";
 import { toExecutionReceipt } from "./writeback-domain.js";
 
-async function blocked(store: ProposalStore, proof = false) {
+async function blocked(store: ProposalStore, proof = false, requiredRoles = ["recovery_operator"]) {
   await store.controlPolicies.initialize();
   await store.controlPolicies.importDeployment({ deployment_id: "closure", project_id: "closure_project", migration_digest: canonicalJsonDigest("closure"), revisions: [], active: [], event: { event_id: "closure_import", actor: "fixture_owner", occurred_at: new Date().toISOString(), receipt: {} } });
   const f = atomicFixture("postgres"), id = "wrp_closure_baseline";
@@ -52,7 +52,7 @@ async function blocked(store: ProposalStore, proof = false) {
     error_code: "SEMANTIC_AUTHORITY_STALE", completed_at: new Date().toISOString() }, false);
   store.recordExecutionReceipt(receipt, proof ? { producer: "synapsor.postgres.source_db.rollback.v1", outcome: "rollback_acknowledged",
     job_digest: canonicalJsonDigest(job), source_binding_digest: canonicalJsonDigest("fixture-source"), observed_at: observed,
-    required_roles: ["recovery_operator"], execution_config_digest: canonicalJsonDigest("fixture-config"), writer_reference: "FIXTURE_WRITER",
+    required_roles: requiredRoles, execution_config_digest: canonicalJsonDigest("fixture-config"), writer_reference: "FIXTURE_WRITER",
     receipt_namespace: { schema: "atomic_test", table: "synapsor_writeback_receipts" } } : undefined);
   store.blockWorkerItem({ proposalId: id, workerId: "fixture_worker", leaseId: item.lease_id!, errorCode: "SEMANTIC_AUTHORITY_STALE" });
   return { proposal, job, receipt, change, item, fixture: f };
@@ -102,6 +102,20 @@ describe("producer-attested blocked closure (derived store evidence, signed oper
     const s = new ProposalStore(); try {
       const f = await blocked(s);
       expect(s.assessBlockedWorkerClosure(f.proposal.proposal_id)).toMatchObject({ status: "unavailable", code: "BLOCKED_CLOSURE_PRODUCER_EVIDENCE_MISSING" });
+    } finally { s.close(); }
+  });
+  it("keeps an empty historical recovery-role snapshot ineligible after a later actor is configured", async () => {
+    const s = new ProposalStore(); try {
+      const f = await blocked(s, true, []), before = snapshot(s);
+      // This later signed actor has the role that a new producer could record.
+      // It cannot change the earlier producer's empty signed role snapshot.
+      const laterActor = await operator(f.proposal, "worker_discard", "later setup");
+      expect(laterActor.verified).toBe(true);
+      expect(laterActor.roles).toContain("recovery_operator");
+      expect(s.assessBlockedWorkerClosure(f.proposal.proposal_id)).toMatchObject({
+        status: "unavailable", code: "BLOCKED_CLOSURE_CONTROL_ROLE_UNAVAILABLE",
+      });
+      expect(snapshot(s)).toEqual(before);
     } finally { s.close(); }
   });
   it("previews without mutation; closes once, survives restart, preserves failed bytes, approval, job and old replay", async () => {

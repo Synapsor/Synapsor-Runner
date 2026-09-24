@@ -13,6 +13,24 @@ synapsor worker close-blocked <proposal_id> --config ./synapsor.actions.runner.j
 
 Preview is read-only. Confirmation defaults to cancel. `--json` uses the same assessment as the human preview. An acknowledged repeat must use the original assessment and reason; it returns the existing result without another event. Keep the private signing key outside client configuration and version control. Use the existing [signed operator configuration](runner-config-reference.md#operator-identity) and separate execution review before running work. Closure requires a verified operator with an apply role recorded for the failed attempt, plus its cancellation control role when one was recorded. A worker identity or local development identity alone is insufficient.
 
+The prospective `worker check` identity assessment makes no source write or
+closure decision. JWT verification can fetch the configured public JWKS; an
+authenticated apply-role actor still does not establish a failed item's
+separate cancellation control role or its rollback evidence.
+
+Execution setup and `worker check --supervised --capability <outcome>` report
+prospective recovery prerequisites separately from worker launch readiness.
+No configured `operator_identity.apply_roles` warns that a future eligible
+failure may lack an authenticated closure route. A configured role without a
+currently authenticated matching signed/JWT actor is **unverified**; a role
+string, `dev_env` identity or key filename is not enough. A successful actor
+check establishes only that prerequisite for the selected configuration. The
+failed item's rollback, source and receipt evidence are assessed later. The
+check grants no business or recovery authority and cannot change a historical
+failure's recorded roles. Configure authenticated operators through the
+existing [operator-identity configuration](runner-config-reference.md#operator-identity)
+before future operations; there is no automatic role-provisioning command.
+
 The first supported class is a single terminal PostgreSQL semantic v5 `source_db` attempt, with an explicitly qualified precreated receipt table and a canonical failed `SEMANTIC_AUTHORITY_STALE` receipt. New workers record acknowledged whole-source rollback evidence at the authoritative transaction boundary, bound to the exact job, source destination, receipt namespace, store, lease and approval history. The source receipt lookup must also succeed and show no conflicting receipt. It is supplementary evidence: absence, zero affected rows and an error code cannot establish historical rollback by themselves.
 
 Existing failed items without that producer record remain unsupported; upgrading does not create evidence retroactively. Multiple attempts, uncertain commit/rollback, live leases, outstanding admissions, contradictory or uninspectable receipts, missing operator roles, delegated execution, MySQL and other receipt modes remain on the existing inspection/reconciliation route. There is no force option. Current business rows need not equal the failed attempt's original facts.

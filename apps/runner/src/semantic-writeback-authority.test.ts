@@ -188,6 +188,7 @@ describe.skipIf(!process.env.SYNAPSOR_TEST_POSTGRES_URL)("connected semantic wor
     const snapshot = f.snapshot(), rows = await f.rows();
     const launch = await assessWorkerLaunch({ config: f.config, configPath: f.configPath });
     expect(launch.inputs.map(x => x.reference)).toEqual(["TEST_WORKER_TENANT", "TEST_WORKER_PRINCIPAL", "SYNAPSOR_DATABASE_WRITE_URL"]);
+    expect(launch.recovery_prerequisites).toBe("roles_missing");
     expect(launch.receipt).toMatchObject({ mode: "runner_ledger", selection: "unverified", live_verification: "not_performed" });
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     try {
@@ -195,6 +196,7 @@ describe.skipIf(!process.env.SYNAPSOR_TEST_POSTGRES_URL)("connected semantic wor
       expect(JSON.parse(spy.mock.calls.map(([x]) => String(x)).join(""))).toEqual(launch);
     } finally { spy.mockRestore(); }
     const text = workerLaunchLines(launch).join("\n");
+    expect(text).toContain("Future eligible blocked attempts may have no authenticated closure route");
     expect(text).toContain("worker check --supervised");
     expect(text).toContain("--capability 'billing.pause_notifications'");
     expect(text).not.toMatch(/acct_1|customer_1|postgres:\/\//);
@@ -214,7 +216,9 @@ describe.skipIf(!process.env.SYNAPSOR_TEST_POSTGRES_URL)("connected semantic wor
     expect(selected.issues).toEqual([]);
     expect(selected.inputs.map(x => x.reference)).toEqual(["RENAMED_ORGANIZATION", "RENAMED_OPERATOR", "SYNAPSOR_DATABASE_WRITE_URL"]);
     expect(JSON.stringify(selected)).not.toMatch(/private-org|private-person|UNSELECTED_WRITER/);
-    expect((await assessWorkerLaunch({ config, configPath: f.configPath })).coverage).toBe("per_item_only");
+    const ambiguous = await assessWorkerLaunch({ config, configPath: f.configPath });
+    expect(ambiguous.coverage).toBe("per_item_only");
+    expect(ambiguous.recovery_prerequisites).toBe("unassessed");
     expect(f.snapshot()).toEqual(snapshot);
     // Configuration-only resolver control, not a claimed execution under this changed config.
   }), 30_000);

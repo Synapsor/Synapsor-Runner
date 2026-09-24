@@ -10,6 +10,7 @@ import { resolveLocalTestRuntimeEnvironment } from "./local-test-runtime-identit
 import { inspectSemanticReceiptSetup } from "./semantic-receipt-setup.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import { shellQuote } from "./cli-format.js";
+import { hasVerifiedRecoveryControlActor } from "./operator-identity.js";
 
 export type WorkerLaunchAssessment = {
   config_path: string;
@@ -22,6 +23,8 @@ export type WorkerLaunchAssessment = {
   execution_binding: "current" | "stale" | "unverified";
   receipt: { mode: string; selected_mode: string | null; matches_execution_configuration: boolean | null; selection: "current" | "stale" | "unverified"; live_verification: "not_performed" };
   coverage: "selected_semantic_outcome" | "per_item_only";
+  /** Advisory for future failed attempts; never changes launch or item eligibility. */
+  recovery_prerequisites?: "unassessed" | "roles_missing" | "actor_unverified" | "actor_verified";
 };
 
 function safeCode(error: unknown): string {
@@ -33,7 +36,8 @@ function safeReference(value: string): string {
   return /^[A-Za-z_][A-Za-z0-9_]{0,127}$/.test(value) ? value : "<invalid configuration reference>";
 }
 
-/** Local inputs only. No queue, lease, writer connection, diagnostic probe or effect.
+/** Read-only launch assessment. JWT identity verification may fetch configured
+ * public JWKS. No queue, lease, writer connection, diagnostic probe or effect.
  * Observe the resolver's actual environment lookups instead of duplicating its
  * tenant/principal defaults, organization rules or optional-actor semantics. */
 export async function assessWorkerLaunch(input: {
@@ -42,7 +46,8 @@ export async function assessWorkerLaunch(input: {
   const { config } = input;
   const result: WorkerLaunchAssessment = { config_path: path.resolve(input.configPath), scope: input.capability ?? "all configured outcomes",
     local_identity: "environment_or_other_trusted_provider", inputs: [], issues: [], execution_enabled: config.supervised_worker?.enabled === true, execution_binding: "unverified",
-    receipt: { mode: "unverified", selected_mode: null, matches_execution_configuration: null, selection: "unverified", live_verification: "not_performed" }, coverage: "per_item_only" };
+    receipt: { mode: "unverified", selected_mode: null, matches_execution_configuration: null, selection: "unverified", live_verification: "not_performed" }, coverage: "per_item_only",
+    recovery_prerequisites: "unassessed" };
   const projectRoot = semanticActionProjectRoot(config, input.configPath);
   let env = input.env ?? process.env;
   let supplied: Record<string, string> | undefined;
@@ -65,6 +70,9 @@ export async function assessWorkerLaunch(input: {
   if (!("outcome" in policy)) return result;
   result.scope = policy.outcome;
   result.coverage = "selected_semantic_outcome";
+  result.recovery_prerequisites = !config.operator_identity?.apply_roles?.length ? "roles_missing"
+    : await hasVerifiedRecoveryControlActor({ config: config.operator_identity, configPath: input.configPath, env })
+      ? "actor_verified" : "actor_unverified";
   const record = (name: string, purpose: "context" | "writer") => {
     const reference = safeReference(name);
     if (!result.inputs.some(x => x.reference === reference && x.purpose === purpose)) {
@@ -123,10 +131,26 @@ export function workerLaunchLines(result: WorkerLaunchAssessment): string[] {
       : `Trusted launch context: ${result.local_identity}.`,
     ...result.inputs.map(x => `${x.purpose} reference ${x.reference}: ${x.present ? "present" : "missing"}${x.source === "reviewed_local_identity" ? " (reviewed local identity)" : ""}.`),
     `Receipts configured: ${result.receipt.mode}; selected: ${result.receipt.selected_mode ?? "unverified"} (${result.receipt.selection}); matches execution: ${result.receipt.matches_execution_configuration === null ? "unverified" : result.receipt.matches_execution_configuration ? "yes" : "no"}. Live verification not performed by this check.`,
+    ...recoveryPrerequisiteLines(result.recovery_prerequisites ?? "unassessed"),
     ...(result.issues.length ? [`Launch prerequisites refused: ${result.issues.join(", ")}. Restore the reviewed inputs, then check again.`] : []),
-    ...(result.coverage === "per_item_only" ? ["Per-item prerequisites remain unassessed. Select one semantic outcome with --capability for its local launch check."] : []),
+    ...(result.coverage === "per_item_only" ? ["Per-item prerequisites remain unassessed. Select one semantic outcome with --capability for its launch check."] : []),
     `Check only: ${cliCommandName()} worker check ${options}`,
     `Start work separately: ${cliCommandName()} worker run ${options} --yes`,
     "A check grants no execution permission. Current authority, identity, writer, facts, scope, version, lease and receipt checks still run for every item.",
   ];
+}
+
+function recoveryPrerequisiteLines(state: NonNullable<WorkerLaunchAssessment["recovery_prerequisites"]>): string[] {
+  if (state === "roles_missing") return [
+    "Recovery prerequisites: no operator_identity.apply_roles are configured for this outcome. Future eligible blocked attempts may have no authenticated closure route; execution readiness is separate.",
+    "Review signed/JWT operator identity and apply-role configuration before future work. This does not change any historical failed item.",
+  ];
+  if (state === "actor_unverified") return [
+    "Recovery prerequisites: apply roles are configured, but no matching current control actor was authenticated by this check. Closure readiness is unverified.",
+    "Check the existing signed/JWT operator setup (signed references: SYNAPSOR_OPERATOR_ID and SYNAPSOR_OPERATOR_PRIVATE_KEY_PATH; values hidden). A role name, dev_env identity or key filename is not authentication.",
+  ];
+  if (state === "actor_verified") return [
+    "Recovery prerequisites: a matching control actor authenticated for the selected configuration. This grants no closure authority; eligibility is checked for each failed item, and rollback, source outcome and receipt evidence remain unverified here.",
+  ];
+  return ["Recovery prerequisites: unassessed for this scope. Select exactly one semantic outcome to check; do not combine credentials across outcomes."];
 }

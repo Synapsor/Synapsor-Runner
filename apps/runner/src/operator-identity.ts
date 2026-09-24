@@ -82,21 +82,7 @@ export async function resolveOperatorIdentity(input: ResolveOperatorIdentityInpu
 
   if (config.provider === "jwt_oidc") {
     const token = await operatorToken(config, env, input.tokenInput ?? process.stdin, input.token);
-    const configDir = path.dirname(path.resolve(input.configPath ?? "synapsor.runner.json"));
-    const verifier = createJwtVerifier({
-      provider: "jwt_asymmetric",
-      algorithms: config.algorithms,
-      jwks_url_env: config.jwks_url_env,
-      public_key_env: config.public_key_env,
-      public_key_path: config.public_key_path,
-      issuer: config.issuer,
-      audience: config.audience,
-      clock_skew_seconds: config.clock_skew_seconds,
-      jwks_cache_seconds: config.jwks_cache_seconds,
-      jwks_cooldown_seconds: config.jwks_cooldown_seconds,
-      fetch_timeout_ms: config.fetch_timeout_ms,
-      max_response_bytes: config.max_response_bytes,
-    }, env, { baseDir: configDir });
+    const verifier = configuredJwtVerifier(config, env, input.configPath);
     const verified = await verifier(token);
     const subject = safeIdentityClaim(verified.payload[config.subject_claim ?? "sub"]);
     if (!subject) throw new Error("verified operator JWT is missing a safe subject claim");
@@ -158,6 +144,48 @@ export async function resolveOperatorIdentity(input: ResolveOperatorIdentityInpu
     signature,
   };
   return { ...core, integrity_hash: sha256(stableJson(core)) };
+}
+
+/** Read-only credential check for prospective recovery setup. It creates no
+ * operator decision and grants no authority over any existing worker item. */
+export async function hasVerifiedRecoveryControlActor(input: {
+  config: OperatorIdentityConfig | undefined; configPath: string; env?: NodeJS.ProcessEnv;
+}): Promise<boolean> {
+  const { config } = input;
+  const roles = config?.apply_roles ?? [];
+  if (!config || !roles.length || config.provider === "dev_env") return false;
+  const env = input.env ?? process.env;
+  try {
+    if (config.provider === "signed_key") {
+      const subject = env.SYNAPSOR_OPERATOR_ID?.trim();
+      const privatePath = env.SYNAPSOR_OPERATOR_PRIVATE_KEY_PATH?.trim();
+      const operator = subject && config.operators?.[subject];
+      if (!operator || !privatePath || !roles.some(role => operator.roles.includes(role))) return false;
+      const publicPath = path.resolve(path.dirname(path.resolve(input.configPath)), operator.public_key_path);
+      const [publicKey, privateKey] = await Promise.all([fs.readFile(publicPath), fs.readFile(path.resolve(privatePath))]);
+      const challenge = crypto.randomBytes(32);
+      return crypto.verify("sha256", challenge, publicKey, crypto.sign("sha256", challenge, privateKey));
+    }
+    // A check must not consume an interactive token from stdin or claim that
+    // a token's mere presence establishes an authenticated control actor.
+    if (config.token_stdin === true) return false;
+    const token = await operatorToken(config, env, process.stdin);
+    const verified = await configuredJwtVerifier(config, env, input.configPath)(token);
+    const subject = safeIdentityClaim(verified.payload[config.subject_claim ?? "sub"]);
+    const tokenRoles = rolesFromClaim(verified.payload[config.roles_claim ?? "roles"]);
+    const secretEnv = config.attestation_secret_env ?? "SYNAPSOR_OPERATOR_ATTESTATION_SECRET";
+    return Boolean(subject && roles.some(role => tokenRoles.includes(role)) && Buffer.byteLength(env[secretEnv] ?? "") >= 32);
+  } catch { return false; }
+}
+
+function configuredJwtVerifier(config: OperatorIdentityConfig, env: NodeJS.ProcessEnv, configPath?: string) {
+  return createJwtVerifier({
+    provider: "jwt_asymmetric", algorithms: config.algorithms, jwks_url_env: config.jwks_url_env,
+    public_key_env: config.public_key_env, public_key_path: config.public_key_path,
+    issuer: config.issuer, audience: config.audience, clock_skew_seconds: config.clock_skew_seconds,
+    jwks_cache_seconds: config.jwks_cache_seconds, jwks_cooldown_seconds: config.jwks_cooldown_seconds,
+    fetch_timeout_ms: config.fetch_timeout_ms, max_response_bytes: config.max_response_bytes,
+  }, env, { baseDir: path.dirname(path.resolve(configPath ?? "synapsor.runner.json")) });
 }
 
 export function verifyJwtOperatorProof(proof: OperatorIdentityProof, attestationSecret: string): boolean {

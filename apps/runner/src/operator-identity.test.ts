@@ -6,7 +6,7 @@ import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { SignJWT, exportSPKI, generateKeyPair } from "jose";
 import type { StoredProposal } from "@synapsor-runner/proposal-store";
-import { resolveOperatorIdentity, verifyJwtOperatorProof, verifySignedOperatorProof } from "./operator-identity.js";
+import { hasVerifiedRecoveryControlActor, resolveOperatorIdentity, verifyJwtOperatorProof, verifySignedOperatorProof } from "./operator-identity.js";
 
 const proposal = {
   proposal_id: "wrp_identity",
@@ -28,6 +28,32 @@ const proposal = {
 } as unknown as StoredProposal;
 
 describe("operator identity", () => {
+  it("checks a prospective signed recovery actor without creating an operator decision", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-recovery-role-"));
+    try {
+      const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+      const other = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+      const publicPath = path.join(root, "operator.pub.pem"), privatePath = path.join(root, "operator.pem");
+      const wrongPath = path.join(root, "wrong.pem"), configPath = path.join(root, "synapsor.runner.json");
+      await fs.writeFile(publicPath, publicKey.export({ type: "spki", format: "pem" }));
+      await fs.writeFile(privatePath, privateKey.export({ type: "pkcs8", format: "pem" }), { mode: 0o600 });
+      await fs.writeFile(wrongPath, other.privateKey.export({ type: "pkcs8", format: "pem" }), { mode: 0o600 });
+      const config = { provider: "signed_key" as const, apply_roles: ["recovery_operator"],
+        operators: { alice: { public_key_path: "./operator.pub.pem", roles: ["recovery_operator"] },
+          bob: { public_key_path: "./operator.pub.pem", roles: ["business_reviewer"] } } };
+      const check = (env: NodeJS.ProcessEnv, selected = config) => hasVerifiedRecoveryControlActor({ config: selected, configPath, env });
+      expect(await check({ SYNAPSOR_OPERATOR_ID: "alice", SYNAPSOR_OPERATOR_PRIVATE_KEY_PATH: privatePath })).toBe(true);
+      expect(await check({ SYNAPSOR_OPERATOR_ID: "bob", SYNAPSOR_OPERATOR_PRIVATE_KEY_PATH: privatePath })).toBe(false);
+      expect(await check({ SYNAPSOR_OPERATOR_ID: "alice", SYNAPSOR_OPERATOR_PRIVATE_KEY_PATH: wrongPath })).toBe(false);
+      expect(await check({ SYNAPSOR_OPERATOR_ID: "alice" })).toBe(false);
+      expect(await check({ SYNAPSOR_OPERATOR_ID: "alice", SYNAPSOR_OPERATOR_PRIVATE_KEY_PATH: privatePath },
+        { ...config, apply_roles: ["different_role"] })).toBe(false);
+      expect(await hasVerifiedRecoveryControlActor({ config: { provider: "dev_env", apply_roles: ["recovery_operator"] },
+        configPath, env: { SYNAPSOR_OPERATOR_ROLES: "recovery_operator" } })).toBe(false);
+      expect((await fs.readdir(root)).sort()).toEqual(["operator.pem", "operator.pub.pem", "wrong.pem"]);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
   it("signs and independently verifies an operator decision", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-operator-key-"));
     const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
@@ -132,6 +158,15 @@ describe("operator identity", () => {
     expect(verifyJwtOperatorProof(proof, attestationSecret)).toBe(true);
     expect(verifyJwtOperatorProof({ ...proof, roles: ["fleet_manager"] }, attestationSecret)).toBe(false);
     expect(JSON.stringify(proof)).not.toContain(token);
+
+    const recoveryConfig = { ...config, apply_roles: ["fleet_manager"] };
+    expect(await hasVerifiedRecoveryControlActor({ config: recoveryConfig, configPath: "synapsor.runner.json", env })).toBe(true);
+    expect(await hasVerifiedRecoveryControlActor({ config: { ...recoveryConfig, apply_roles: ["finance_lead"] },
+      configPath: "synapsor.runner.json", env })).toBe(false);
+    expect(await hasVerifiedRecoveryControlActor({ config: recoveryConfig, configPath: "synapsor.runner.json",
+      env: { ...env, TEST_ATTESTATION_SECRET: "" } })).toBe(false);
+    expect(await hasVerifiedRecoveryControlActor({ config: { ...recoveryConfig, token_env: undefined, token_stdin: true },
+      configPath: "synapsor.runner.json", env })).toBe(false);
 
     const stdinProof = await resolveOperatorIdentity({
       config: { ...config, token_env: undefined, token_stdin: true },
