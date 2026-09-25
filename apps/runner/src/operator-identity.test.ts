@@ -6,7 +6,7 @@ import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { SignJWT, exportSPKI, generateKeyPair } from "jose";
 import type { StoredProposal } from "@synapsor-runner/proposal-store";
-import { hasVerifiedRecoveryControlActor, operatorPublicKeyFingerprint, resolveOperatorIdentity,
+import { hasVerifiedRecoveryControlActor, operatorPublicKeyFingerprint, resolveOperatorIdentity, signedOperatorKeyAlgorithm,
   verifyJwtOperatorProof, verifySignedOperatorProof } from "./operator-identity.js";
 
 const proposal = {
@@ -98,6 +98,37 @@ describe("operator identity", () => {
     await expect(resolveOperatorIdentity({ config: pinnedConfig, configPath, proposal, action: "approve",
       identity: "alice", privateKeyPath: privatePath, requiredRole: "fleet_manager" }))
       .rejects.toMatchObject({ code: "OPERATOR_PUBLIC_KEY_CHANGED" });
+  });
+
+  it("signs and verifies Ed25519 decisions while keeping RSA's existing proof format", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-ed25519-operator-"));
+    try {
+      const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
+      const publicPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+      const publicPath = path.join(root, "reviewer.pub.pem"), privatePath = path.join(root, "reviewer.pem");
+      await fs.writeFile(publicPath, publicPem, { mode: 0o600 });
+      await fs.writeFile(privatePath, privateKey.export({ type: "pkcs8", format: "pem" }), { mode: 0o600 });
+      const config = { provider: "signed_key" as const, apply_roles: ["fleet_manager"], operators: { reviewer: {
+        public_key_path: "./reviewer.pub.pem", roles: ["fleet_manager"], outcomes: ["fleet.propose_repair"],
+        public_key_fingerprint: operatorPublicKeyFingerprint(publicPem),
+      } } };
+      const configPath = path.join(root, "synapsor.runner.json");
+      expect(signedOperatorKeyAlgorithm(publicPem)).toBe("ed25519");
+      const proof = await resolveOperatorIdentity({ config, configPath, proposal, action: "approve",
+        identity: "reviewer", privateKeyPath: privatePath, requiredRole: "fleet_manager" });
+      expect(proof.algorithm).toBe("ed25519");
+      expect(verifySignedOperatorProof(proof, publicPem)).toBe(true);
+      expect(verifySignedOperatorProof({ ...proof, algorithm: "SHA256" }, publicPem)).toBe(false);
+      expect(verifySignedOperatorProof(proof, crypto.generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" }).toString())).toBe(false);
+      expect(await hasVerifiedRecoveryControlActor({ config, configPath,
+        env: { SYNAPSOR_OPERATOR_ID: "reviewer", SYNAPSOR_OPERATOR_PRIVATE_KEY_PATH: privatePath } })).toBe(true);
+      expect(await hasVerifiedRecoveryControlActor({ config, configPath,
+        env: { SYNAPSOR_OPERATOR_ID: "reviewer", SYNAPSOR_OPERATOR_PRIVATE_KEY_PATH: path.join(root, "missing.pem") } })).toBe(false);
+      const rsa = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+      expect(signedOperatorKeyAlgorithm(rsa.publicKey.export({ type: "spki", format: "pem" }))).toBe("SHA256");
+      expect(() => signedOperatorKeyAlgorithm(crypto.generateKeyPairSync("ec", { namedCurve: "prime256v1" }).publicKey
+        .export({ type: "spki", format: "pem" }))).toThrow("OPERATOR_SIGNING_KEY_UNSUPPORTED");
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
 
   it("confines a shared approval role to the reviewed Action outcome", async () => {

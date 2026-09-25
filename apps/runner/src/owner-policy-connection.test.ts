@@ -1,13 +1,14 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { spawn, spawnSync } from "node:child_process";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { Pool } from "pg";
 import { describe, expect, it, vi } from "vitest";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { policyManagementParentSchema, resolveRuntimeConfig, type RuntimeConfig } from "@synapsor-runner/mcp-server";
-import type { ControlPolicyRevision } from "@synapsor-runner/proposal-store";
+import { ProposalStore, type ControlPolicyRevision } from "@synapsor-runner/proposal-store";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import { ownerPolicyTestFixture } from "../../../packages/mcp-server/src/owner-policy-test-fixture.js";
 import { validateOwnerPolicyParent } from "../../../packages/mcp-server/src/owner-policy-compiler.js";
@@ -23,7 +24,7 @@ import { inspectMcpToolBoundary, mcpConfigure, readLocalExploreRuntimeConfig, re
 import { ownerPolicyCommand } from "./owner-policy-commands.js";
 import { prepareOwnerConnectionReview } from "./owner-policy-connection.js";
 import { prepareApproverPolicyConfiguration } from "./approver-policy-configuration.js";
-import { operatorPublicKeyFingerprint } from "./operator-identity.js";
+import { operatorPublicKeyFingerprint, verifySignedOperatorProof } from "./operator-identity.js";
 import type { OwnerPolicyReviewIo } from "./owner-policy-review-ui.js";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 
@@ -158,6 +159,31 @@ function ui(answers: string[]) {
   return { io, output, details };
 }
 
+function shellQuote(value: string): string { return `'${value.replaceAll("'", `'\\''`)}'`; }
+
+async function installedApproverCli(args: string[], env: NodeJS.ProcessEnv, confirm: boolean) {
+  const command = [path.resolve("bin/synapsor-runner"), ...args].map(shellQuote).join(" ");
+  const child = spawn("script", ["-qefc", command, "/dev/null"], {
+    cwd: path.resolve("."), env: { PATH: process.env.PATH, HOME: env.HOME, NO_COLOR: "1", TERM: "xterm",
+      COLUMNS: "100", LINES: "30", ...env }, stdio: ["pipe", "pipe", "pipe"],
+  });
+  let output = "", answered = false;
+  child.stdout.on("data", (chunk: Buffer) => {
+    output += chunk.toString();
+    if (confirm && !answered && output.includes("Leave unchanged")) {
+      answered = true;
+      child.stdin.write("\u001b[A\u001b[A\r"); // Move from default cancel to explicit confirm.
+    }
+  });
+  child.stderr.on("data", (chunk: Buffer) => { output += chunk.toString(); });
+  const status = await new Promise<number | null>((resolve, reject) => {
+    const timeout = setTimeout(() => { child.kill(); reject(new Error(`installed policy approver timed out: ${output}`)); }, 20_000);
+    child.once("error", (error) => { clearTimeout(timeout); reject(error); });
+    child.once("close", (code) => { clearTimeout(timeout); resolve(code); });
+  });
+  return { status, output, answered };
+}
+
 async function reviewerIdentity(root: string) {
   const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048,
     publicKeyEncoding: { type: "spki", format: "pem" }, privateKeyEncoding: { type: "pkcs8", format: "pem" } });
@@ -200,6 +226,29 @@ for (const backend of ["sqlite", "postgres"] as const) describe.skipIf(backend =
         .rejects.toMatchObject({ code: "POLICY_APPROVER_APPLY_SIGNER_CHANGED" });
       expect(await f.state()).toEqual(before);
     }, { initialApplySigner: true });
+  });
+
+  it("accepts an Ed25519 reviewer key and refuses unsupported EC keys before saving", async () => {
+    await withFixture(backend, async (f) => {
+      const keyFile = path.join(f.root, "reviewer.pub.pem");
+      const identity = await reviewerIdentity(f.root);
+      const before = await f.state(), configBefore = await fs.readFile(f.configPath, "utf8");
+      await fs.writeFile(keyFile, generateKeyPairSync("ec", { namedCurve: "prime256v1" }).publicKey
+        .export({ type: "spki", format: "pem" }), { mode: 0o600 });
+      await expect(prepareApproverPolicyConfiguration({ ...f.input, identity }))
+        .rejects.toMatchObject({ code: "POLICY_APPROVER_KEY_UNSUPPORTED" });
+      expect(await f.state()).toEqual(before);
+      expect(await fs.readFile(f.configPath, "utf8")).toBe(configBefore);
+
+      await fs.writeFile(keyFile, generateKeyPairSync("ed25519").publicKey
+        .export({ type: "spki", format: "pem" }), { mode: 0o600 });
+      const prepared = await prepareApproverPolicyConfiguration({ ...f.input, identity });
+      f.reviews.push(prepared as never);
+      await prepared.confirm(prepared.review.digest);
+      expect((await readRuntimeConfig(f.configPath, { env: f.env, storePath: f.storePath }))
+        .operator_identity?.operators?.reviewer_one?.public_key_fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/u);
+      expect((await f.state()).epoch).toBe(before.epoch + 1);
+    });
   });
 
   it("refuses a changed pinned recovery key even when the proposed roster omits its fingerprint", async () => {
@@ -299,6 +348,80 @@ for (const backend of ["sqlite", "postgres"] as const) describe.skipIf(backend =
       expect((await readRuntimeConfig(f.configPath, { env: f.env, storePath: f.storePath })).supervised_worker?.enabled).toBe(false);
     });
   });
+
+  for (const keyType of ["rsa", "ed25519"] as const) it.skipIf(backend === "postgres")(
+    `installed CLI enrolls and verifies one ${keyType} signed approval`, async () => {
+      await withFixture(backend, async (f) => {
+        const keys = keyType === "rsa" ? generateKeyPairSync("rsa", { modulusLength: 2048 })
+          : generateKeyPairSync("ed25519");
+        const publicPem = keys.publicKey.export({ type: "spki", format: "pem" }).toString();
+        const privatePath = path.join(f.root, "reviewer.pem");
+        await fs.writeFile(path.join(f.root, "reviewer.pub.pem"), publicPem, { mode: 0o600 });
+        await fs.writeFile(privatePath, keys.privateKey.export({ type: "pkcs8", format: "pem" }), { mode: 0o600 });
+        const identity = await reviewerIdentity(f.root);
+        // reviewerIdentity supplies the mandate; keep the selected key under that exact path.
+        await fs.writeFile(path.join(f.root, "reviewer.pub.pem"), publicPem, { mode: 0o600 });
+        const rosterPath = path.join(f.root, "approver-roster.json");
+        await fs.writeFile(rosterPath, JSON.stringify({ operator_identity: identity }), { mode: 0o600 });
+        const before = await f.state();
+        const enrolled = await installedApproverCli(["policy", "approver", "--config", f.configPath,
+          "--store", f.storePath, "--input", rosterPath], { ...f.env, HOME: f.root }, true);
+        expect(enrolled.status, enrolled.output).toBe(0);
+        expect(enrolled.answered).toBe(true);
+        expect(enrolled.output).toMatch(/Approver configuration\s+reviewed and saved/u);
+        expect((await f.state()).epoch).toBe(before.epoch + 1);
+
+        const proposalId = `wrp_installed_${keyType}`;
+        const store = new ProposalStore(f.storePath);
+        store.createProposal({
+          schema_version: "synapsor.change-set.v1", proposal_id: proposalId, proposal_version: 1,
+          action: "inventory.adjust", mode: "review_required", principal: { id: "maya", source: "trusted_session" },
+          scope: { tenant_id: "acme", business_object: "inventory.requests", object_id: "req-1" },
+          source: { kind: "external_postgres", source_id: "local_postgres", schema: "inventory", table: "requests",
+            primary_key: { column: "id", value: "req-1" } },
+          before: { quantity: 1, version: 1 }, patch: { quantity: 2, version: 2 }, after: { quantity: 2, version: 2 },
+          guards: { tenant: { column: "tenant_id", value: "acme" }, allowed_columns: ["quantity", "version"],
+            expected_version: { column: "version", value: 1 } },
+          evidence: { bundle_id: "ev_installed", query_fingerprint: "sha256:evidence", items: [] },
+          approval: { status: "pending", required_role: "action_reviewer" },
+          writeback: { status: "not_applied", mode: "trusted_worker_required" },
+          source_database_mutated: false, integrity: { proposal_hash: "sha256:proposal" },
+          created_at: "2026-09-25T00:00:00.000Z",
+        } as Parameters<typeof store.createProposal>[0]);
+        store.close();
+        const approved = spawnSync(path.resolve("bin/synapsor-runner"), ["proposals", "approve", proposalId,
+          "--yes", "--config", f.configPath, "--store", f.storePath,
+          "--identity", "reviewer_one", "--identity-key", privatePath, "--reason", "Reviewed current evidence"], {
+          cwd: path.resolve("."), encoding: "utf8", timeout: 20_000,
+          env: { PATH: process.env.PATH, HOME: f.root, NO_COLOR: "1", ...f.env },
+        });
+        expect(approved.error).toBeUndefined();
+        expect(approved.status, approved.stderr).toBe(0);
+        const checked = new ProposalStore(f.storePath);
+        try {
+          const approvals = checked.approvals(proposalId);
+          expect(approvals).toHaveLength(1);
+          expect(approvals[0]?.identity?.algorithm).toBe(keyType === "ed25519" ? "ed25519" : "SHA256");
+          expect(verifySignedOperatorProof(approvals[0]!.identity!, publicPem)).toBe(true);
+        } finally { checked.close(); }
+      });
+    }, 45_000);
+
+  it.skipIf(backend === "postgres")("installed CLI rejects unsupported approver keys before saving", async () => {
+    await withFixture(backend, async (f) => {
+      const identity = await reviewerIdentity(f.root), rosterPath = path.join(f.root, "approver-roster.json");
+      await fs.writeFile(path.join(f.root, "reviewer.pub.pem"), generateKeyPairSync("ec", { namedCurve: "prime256v1" })
+        .publicKey.export({ type: "spki", format: "pem" }), { mode: 0o600 });
+      await fs.writeFile(rosterPath, JSON.stringify({ operator_identity: identity }), { mode: 0o600 });
+      const before = await f.state(), beforeConfig = await fs.readFile(f.configPath, "utf8");
+      const refused = await installedApproverCli(["policy", "approver", "--config", f.configPath,
+        "--store", f.storePath, "--input", rosterPath], { ...f.env, HOME: f.root }, false);
+      expect(refused.status).toBe(1);
+      expect(refused.output).toContain("POLICY_APPROVER_KEY_UNSUPPORTED");
+      expect(await f.state()).toEqual(before);
+      expect(await fs.readFile(f.configPath, "utf8")).toBe(beforeConfig);
+    });
+  }, 45_000);
 
   it("refuses a new role outside the active approval mandate", async () => {
     await withFixture(backend, async (f) => {

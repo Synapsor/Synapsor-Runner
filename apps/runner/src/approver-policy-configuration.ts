@@ -12,7 +12,7 @@ import { OPERATOR_APPROVER_IDENTITY_KEY, OPERATOR_EXECUTION_POLICY_KEY, OPERATOR
 import { publishPolicyConfiguration, recoverPolicyConfiguration } from "./control-policy-config-publication.js";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 import { createActiveActionRuleAuthorityLoader } from "./action-rule-authority.js";
-import { operatorPublicKeyFingerprint } from "./operator-identity.js";
+import { operatorPublicKeyFingerprint, signedOperatorKeyAlgorithm } from "./operator-identity.js";
 
 type Identity = NonNullable<RuntimeConfig["operator_identity"]>;
 type Input = { projectRoot: string; configPath: string; identity?: unknown; previousConfigPath?: string;
@@ -76,7 +76,10 @@ async function fingerprints(identity: Identity, configPath: string, projectRoot:
     const file = path.resolve(path.dirname(configPath), operator.public_key_path);
     if (!within(projectRoot, file)) fail("POLICY_APPROVER_KEY_OUTSIDE_PROJECT", "Select project-owned public verification material.");
     await ownedFile(file);
-    const fingerprint = operatorPublicKeyFingerprint(await fs.readFile(file));
+    const publicKey = await fs.readFile(file);
+    try { signedOperatorKeyAlgorithm(publicKey); }
+    catch { fail("POLICY_APPROVER_KEY_UNSUPPORTED", "Only Ed25519 and RSA public keys can be enrolled for signed approval."); }
+    const fingerprint = operatorPublicKeyFingerprint(publicKey);
     if (operator.public_key_fingerprint && operator.public_key_fingerprint !== fingerprint) {
       fail("POLICY_APPROVER_KEY_CHANGED", "The proposed fingerprint does not match its public verification material.");
     }

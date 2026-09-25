@@ -134,11 +134,16 @@ export async function resolveOperatorIdentity(input: ResolveOperatorIdentityInpu
     fs.readFile(resolvedPrivateKeyPath, "utf8"),
   ]);
   assertOperatorPublicKeyFingerprint(operator, publicKey);
+  const algorithm = signedOperatorKeyAlgorithm(publicKey);
+  const privateKeyObject = crypto.createPrivateKey(privateKey);
+  if (privateKeyObject.asymmetricKeyType !== (algorithm === "ed25519" ? "ed25519" : "rsa")) {
+    throw new Error(`private key does not match the reviewed public key type for operator ${subject}`);
+  }
   const decision = operatorDecision(input, subject);
   const canonical = stableJson(decision);
   const decisionHash = sha256(canonical);
-  const signature = crypto.sign("sha256", Buffer.from(canonical), privateKey).toString("base64url");
-  if (!crypto.verify("sha256", Buffer.from(canonical), publicKey, Buffer.from(signature, "base64url"))) {
+  const signature = crypto.sign(signedKeyDigest(algorithm), Buffer.from(canonical), privateKeyObject).toString("base64url");
+  if (!crypto.verify(signedKeyDigest(algorithm), Buffer.from(canonical), publicKey, Buffer.from(signature, "base64url"))) {
     throw new Error(`private key does not match the reviewed public key for operator ${subject}`);
   }
   const core = {
@@ -147,7 +152,7 @@ export async function resolveOperatorIdentity(input: ResolveOperatorIdentityInpu
     subject,
     roles: [...new Set(operator.roles)].sort(),
     key_id: subject,
-    algorithm: "SHA256",
+    algorithm,
     decision,
     decision_hash: decisionHash,
     signature,
@@ -173,8 +178,12 @@ export async function hasVerifiedRecoveryControlActor(input: {
       const publicPath = path.resolve(path.dirname(path.resolve(input.configPath)), operator.public_key_path);
       const [publicKey, privateKey] = await Promise.all([fs.readFile(publicPath), fs.readFile(path.resolve(privatePath))]);
       assertOperatorPublicKeyFingerprint(operator, publicKey);
+      const algorithm = signedOperatorKeyAlgorithm(publicKey);
+      const privateKeyObject = crypto.createPrivateKey(privateKey);
+      if (privateKeyObject.asymmetricKeyType !== (algorithm === "ed25519" ? "ed25519" : "rsa")) return false;
       const challenge = crypto.randomBytes(32);
-      return crypto.verify("sha256", challenge, publicKey, crypto.sign("sha256", challenge, privateKey));
+      return crypto.verify(signedKeyDigest(algorithm), challenge, publicKey,
+        crypto.sign(signedKeyDigest(algorithm), challenge, privateKeyObject));
     }
     // A check must not consume an interactive token from stdin or claim that
     // a token's mere presence establishes an authenticated control actor.
@@ -217,7 +226,25 @@ export function verifySignedOperatorProof(proof: OperatorIdentityProof, publicKe
   if (proof.decision_hash !== sha256(canonical)) return false;
   const { integrity_hash: _integrity, ...core } = proof;
   if (proof.integrity_hash !== sha256(stableJson(core))) return false;
-  return crypto.verify("sha256", Buffer.from(canonical), publicKey, Buffer.from(proof.signature, "base64url"));
+  try {
+    const algorithm = signedOperatorKeyAlgorithm(publicKey);
+    return proof.algorithm === algorithm && crypto.verify(signedKeyDigest(algorithm), Buffer.from(canonical), publicKey,
+      Buffer.from(proof.signature, "base64url"));
+  } catch { return false; }
+}
+
+/** The signed-key decision format supports exactly these two key families.
+ * RSA keeps its existing SHA256 proof label; Ed25519 uses the required null digest. */
+export function signedOperatorKeyAlgorithm(publicKey: string | Buffer): "SHA256" | "ed25519" {
+  const type = crypto.createPublicKey(publicKey).asymmetricKeyType;
+  if (type === "rsa") return "SHA256";
+  if (type === "ed25519") return "ed25519";
+  throw Object.assign(new Error("OPERATOR_SIGNING_KEY_UNSUPPORTED: signed approver keys must be Ed25519 or RSA."),
+    { code: "OPERATOR_SIGNING_KEY_UNSUPPORTED" });
+}
+
+function signedKeyDigest(algorithm: "SHA256" | "ed25519"): "sha256" | null {
+  return algorithm === "ed25519" ? null : "sha256";
 }
 
 export function operatorPublicKeyFingerprint(publicKey: string | Buffer): string {
