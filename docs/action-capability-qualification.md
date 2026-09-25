@@ -1,5 +1,11 @@
 # Action Capability Qualification
 
+## Scoped APPLY signer and known-case B continuation — 2026-09-25
+
+Product/tests `d5d33351d6dfc251ad97f27bcdd5dfeac7b0d93a` implements exact-outcome, reviewed signed APPLY enrollment and selected nonmutating worker readiness while preserving legacy/dev deployments with no `operator_identity`. The complete final-source suite, types, selected PostgreSQL and ten offline/package checks passed; the independent tester passed the frozen installed readiness contract. The [bounded result](qualification-evidence/known-case-b-lifecycle-20260925/SCOPED-APPLY-READINESS-AND-L2-L4-RESULT.md) records exact artifact and evidence.
+
+The independent tester completed one fresh known-case B follow-up request with signed human approval after original proof expiry, one finite scoped-APPLY worker, the exact one-row effect and matching source/control receipts (**L2 PASS**). It then removed only the follow-up Action through public review; runtime discovery/refusal reflected that removal (**L3 removal/current discovery PASS**). No unstarted old follow-up work existed to test its refusal (**NOT ESTABLISHED**). A later original-finalization native turn first received `SEMANTIC_ACTION_NOT_ELIGIBLE` for one current subject, then queued a distinct second subject before the operator could stop. The second item was left untouched; original-finalization effect continuity is **NOT ESTABLISHED**, L4 restart is **NOT RUN**, and the native one-request probe failed its stop boundary. Full source stayed unchanged during that turn. The original Stage B remains **ATTEMPTED / NOT PASSED**; A remains owner-deferred. Neither the second queue's approval nor a CLI exit is an applied effect.
+
 ## Local verification continuation — 2026-09-12
 
 **Stage A is NOT PASSED; Stage B is NOT STARTED.** Product remains `a2b6b5f`,
