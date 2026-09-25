@@ -33,6 +33,7 @@ import {
 import {
   createSemanticActionVerifier,
   evaluateSemanticActionEligibility,
+  reverifySemanticProposal,
 } from "./runtime.js";
 import type {
   ActionRuleCatalogV1,
@@ -1692,6 +1693,30 @@ describe("semantic Action eligibility and transaction re-verification", () => {
       effect_digest: decision.semantic_authority.effect.effect_digest,
       dependency_set_digest: decision.semantic_authority.proof.dependency_set_digest,
     });
+  });
+
+  it("uses SELECT-only facts for delayed approval but retains writer row locks and exact effect checks", async () => {
+    const { fixture, registry, job } = await eligibleFieldServiceRuntime();
+    const seen: ActionRuleFactQueryV1[] = [];
+    const loader = fieldServiceRuntimeAdapter(fixture);
+    const factLoader = { engine: loader.engine, async load(query: ActionRuleFactQueryV1) {
+      seen.push(query);
+      return loader.load(query);
+    } };
+    const checkedAt = "2026-09-02T20:02:00.000Z";
+    const snapshot = await reverifySemanticProposal({ registry, job, factLoader, checkedAt });
+    expect(snapshot).toMatchObject({ status: "reverified", effect_digest: job.semantic_authority.effect.effect_digest });
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((query) => query.lock === "none")).toBe(true);
+    seen.length = 0;
+    const writer = createSemanticActionVerifier({ registry, clock: () => checkedAt });
+    expect(await writer({ job, factLoader })).toMatchObject({ status: "reverified",
+      effect_digest: snapshot.effect_digest, dependency_set_digest: snapshot.dependency_set_digest });
+    expect(seen.length).toBeGreaterThan(0);
+    expect(seen.every((query) => query.lock === "for_update")).toBe(true);
+    fixture.facts.bindings.offer!.rows[0]!.status = "released";
+    await expect(reverifySemanticProposal({ registry, job, factLoader, checkedAt }))
+      .rejects.toMatchObject({ code: "ACTION_RULE_AUTHORITY_STALE" });
   });
 
   it("refuses an eligibility proof at its exact expiry instant", async () => {

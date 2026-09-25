@@ -55,9 +55,9 @@ describe.skipIf(process.env.SYNAPSOR_TEST_COMPLETE_COLLECTIONS_LIVE !== "1")("ow
       TRUNCATE collections.holds, collections.customers;
       INSERT INTO collections.customers VALUES ('c1','t1','p1','active',1), ('c2','t1','p2','active',1), ('c3','t2','p1','active',1);`);
   });
-  async function begin(pool = writer) {
+  async function begin(pool = writer, readOnly = false) {
     const client = await pool.connect();
-    await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
+    await client.query(`BEGIN ISOLATION LEVEL READ COMMITTED${readOnly ? " READ ONLY" : ""}`);
     await client.query("SET LOCAL lock_timeout = '3s'");
     await bindPostgresActionRuleScope(client, scope);
     return client;
@@ -110,12 +110,24 @@ describe.skipIf(process.env.SYNAPSOR_TEST_COMPLETE_COLLECTIONS_LIVE !== "1")("ow
     } finally { await admin.query("DROP TABLE collections.uuid_holds, collections.uuid_customers"); }
   });
   it("accepts an empty collection through the SELECT-only reader without provisioning a writer", async () => {
-    const client = await begin(reader);
+    const client = await begin(reader, true);
     try {
       const loaded = await load(client, "proposal_snapshot");
       expect(evaluateActionRule({ compiled, facts: loaded.facts, proposal_id: "p1" }).result).toBe("eligible");
       expect(loaded.queries.every(query => query.lock === "none")).toBe(true);
     } finally { await finish(client); }
+  });
+  it("refuses transaction locks inside a read-only session while the writer retains them", async () => {
+    const readOnlyWriter = await begin(writer, true);
+    try {
+      await expect(load(readOnlyWriter, "transaction_reverify"))
+        .rejects.toMatchObject({ code: "25006" });
+    } finally { await finish(readOnlyWriter); }
+    const writableWriter = await begin(writer);
+    try {
+      const loaded = await load(writableWriter, "transaction_reverify");
+      expect(loaded.queries.every((query) => query.lock === "for_update")).toBe(true);
+    } finally { await finish(writableWriter); }
   });
   it.each(["insert", "reactivate", "delete", "retarget", "policy_change"] as const)("blocks a concurrent %s until the verification transaction ends", async operation => {
     if (operation === "reactivate" || operation === "delete") await admin.query("INSERT INTO collections.holds VALUES ('h1','t1','p1','c1','released')");

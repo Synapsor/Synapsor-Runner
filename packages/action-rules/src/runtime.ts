@@ -348,15 +348,15 @@ export function createSemanticActionVerifier(input: {
     } else if (Date.parse(job.semantic_authority.proof.valid_until) <= Date.parse(checkedAt)) {
       throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "The semantic proposal proof has expired.");
     }
-    const verified = await reverifySemanticOperation({ registry, job, factLoader, checkedAt });
+    const verified = await reverifySemanticOperation({ registry, job, factLoader, checkedAt, mode: "transaction_reverify" });
     await input.check_delegation?.({ job, activated: verified.activated, evaluation: verified.evaluation,
       facts: verified.facts, inputs: verified.inputs, checked_at: checkedAt });
     return verified.result;
   };
 }
 
-/** Approval-time and source-transaction checks use this same fact/effect
- * comparison. The caller handles the distinct temporal and authority gates. */
+/** Approval-time checks compare the same exact facts/effect as the writer,
+ * but use a reader's snapshot. The writer locks and rechecks in its own source transaction. */
 export async function reverifySemanticProposal(input: {
   registry: RuntimeActionRuleRegistryV1;
   job: SemanticReverificationSubject;
@@ -367,7 +367,7 @@ export async function reverifySemanticProposal(input: {
     throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "Delegated delayed work is unsupported.");
   }
   const checkedAt = canonicalTimestamp(input.checkedAt, "Proposal reverification time");
-  return (await reverifySemanticOperation({ ...input, checkedAt })).result;
+  return (await reverifySemanticOperation({ ...input, checkedAt, mode: "proposal_snapshot" })).result;
 }
 
 async function reverifySemanticOperation(input: {
@@ -375,6 +375,7 @@ async function reverifySemanticOperation(input: {
   job: SemanticReverificationSubject;
   factLoader: ActionRuleFactLoaderAdapterV1;
   checkedAt: string;
+  mode: "proposal_snapshot" | "transaction_reverify";
 }): Promise<{
   result: SemanticActionReverificationV1;
   activated: ActivatedActionRuleV1;
@@ -391,7 +392,7 @@ async function reverifySemanticOperation(input: {
   }
   const loaded = await loadActionRuleFacts({ compiled: activated.compiled,
     subjects: subjectIdentitiesFromJob(job), trusted: trustedFactsFromJob(job, checkedAt),
-    adapter: factLoader, mode: "transaction_reverify" });
+    adapter: factLoader, mode: input.mode });
   const evaluation = evaluateActionRule({ compiled: activated.compiled, facts: loaded.facts,
     proposal_id: job.proposal_id, inputs });
   const proof = job.semantic_authority.proof;
