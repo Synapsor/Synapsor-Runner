@@ -345,6 +345,25 @@ function replacementPassage(value: unknown, category: CoverageRepairCategory, ta
   }
   return value;
 }
+/** The host has already established these labels for this exact current
+ * coupling-representation finding. They are not provider evidence. Preserve an
+ * explicit conflicting provider value as a refusal, and keep the raw reply in
+ * the episode audit beside the assembled, host-completed passage. */
+function hostSuppliedCouplingFields(passage: RawPassage, category: CoverageRepairCategory,
+  target: CoverageRepairTarget, memberPath: string): {passage: RawPassage; fields: string[]} {
+  if (category !== 'source_transaction_coupling' || !target.findings.some(f =>
+    f.component === memberPath && f.code === 'OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED'
+      && f.typed_reason === 'coupling.representation')) return {passage,fields:[]};
+  const supplied: string[] = [];
+  const completed = {...passage};
+  for (const [key,expected] of [['responsibility','runner'],['issue_kind','coverage_link'],
+    ['receipt_component','source_transaction_coupling']] as const) {
+    if (Object.hasOwn(completed,key)) {
+      if (completed[key] !== expected) fail(`The ${key} on the nominated coupling component conflicts with the host-established value.`);
+    } else { completed[key] = expected; supplied.push(key); }
+  }
+  return {passage:completed,fields:supplied};
+}
 function replacementCounter(value: unknown, original: unknown, draft: unknown): Record<string, unknown> {
   exactKeys(value, ['path', 'current_capability', 'required_capability', 'operator_message_id', 'operator_clarification'],
     ['path', 'current_capability', 'required_capability'], 'Replacement counter child');
@@ -376,6 +395,7 @@ export function assembleScopedCoverageReplacement(scope: CoverageRepairScope, pa
   const passageEdits = new Map<string, Fragment[]>();
   const counterEdits = new Map<string, Record<string, unknown>>();
   const groupsSeen = new Set<string>();
+  const hostSuppliedFields: Array<{member_path:string;fields:string[]}> = [];
   const overrideDecision=(passage:RawPassage)=>Object.fromEntries(['operator_override','operator_message_id','operator_clarification']
     .filter(key=>Object.hasOwn(passage,key)).map(key=>[key,passage[key]]));
   for (const group of payload.groups) {
@@ -403,7 +423,10 @@ export function assembleScopedCoverageReplacement(scope: CoverageRepairScope, pa
         if (!COVERAGE_REPAIR_CATEGORIES.includes(category) || (category === 'ordinary') === target.receipt_region) {
           fail('Receipt regions require explicit receipt/effect categories; ordinary is available only for non-receipt regions.');
         }
-        return {category, passage: replacementPassage(entry.passage, category, target, member, context.source)};
+        const rawPassage=replacementPassage(entry.passage, category, target, member, context.source);
+        const completed=hostSuppliedCouplingFields(rawPassage,category,target,member.path);
+        if(completed.fields.length)hostSuppliedFields.push({member_path:member.path,fields:completed.fields});
+        return {category, passage:completed.passage};
       });
       if (new Set(fragments.map(entry => rawDigest(entry.passage))).size !== fragments.length) fail('A passage edit repeats the same raw component.');
       const prior = raw.passages[member.parent_index]!;
@@ -483,6 +506,7 @@ export function assembleScopedCoverageReplacement(scope: CoverageRepairScope, pa
   if (outsideDigest !== scope.outside_digest) fail('An outside raw record changed during assembly.');
   return { assembled, categories, mapping, retained,
     audit: { disposition: 'unaccepted_tentative' as const, raw_parent: structuredClone(raw), raw_replacement: structuredClone(payload),
+      host_supplied_fields:hostSuppliedFields,
       scope: structuredClone(scope), assembled: structuredClone(assembled), parent_digest: scope.parent_digest,
       replacement_digest: rawDigest(payload), assembled_digest: rawDigest(assembled), outside_digest: outsideDigest } };
 }
@@ -664,7 +688,11 @@ export function portableScopeToolSchema(scope: CoverageRepairScope, passageSchem
       parent_digest:{type:'string',enum:[scope.parent_digest]},context:{type:'string',enum:[scope.context]},
       groups:{type:'array',minItems:scope.targets.length,maxItems:scope.targets.length,items:{
         type:'object',additionalProperties:false,required:['target_id','passage_replacements','counter_replacements'],properties:{
-          target_id:{type:'string',enum:scope.targets.map(target=>target.target_id)},
+          target_id:{type:'string',enum:scope.targets.map(target=>target.target_id),
+            description:scope.targets.flatMap(target=>target.members.filter(member=>target.findings.some(f=>
+              f.component===member.path&&f.code==='OBLIGATION_SOURCE_TRANSACTION_COUPLING_UNESTABLISHED'
+                && f.typed_reason==='coupling.representation')).map(member=>
+              `For exact target ${target.target_id} member ${member.path}, Runner supplies responsibility=runner, issue_kind=coverage_link and receipt_component=source_transaction_coupling on a source_transaction_coupling fragment when omitted. Explicit conflicting values are refused; all other fields and complete validation remain model-submitted and strictly checked.`)).join(' ')},
           passage_replacements:{type:'array',minItems:0,maxItems:maxPassages,
             description:'Only exact host-nominated editable parent passages. Never echo read-only overlap dependencies.',
             items:{type:'object',additionalProperties:false,required:['member_path','fragments'],properties:{

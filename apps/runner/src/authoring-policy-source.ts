@@ -224,7 +224,9 @@ export type CoverageReviewEpisode = {
     validated?: boolean; diagnostic?: string;
     /** Untrusted generation evidence only; never reusable coverage/ownership. */
     tentative?: { status: "unaccepted_generation"; context: string; raw_response: unknown;
-      raw_parent?: unknown; scope?: unknown; assembled?: unknown } }>;
+      raw_parent?: unknown; scope?: unknown; assembled?: unknown;
+      /** Exact host-derived fields inserted into an assembled correction, never model claims. */
+      host_supplied_fields?: Array<{member_path:string;fields:string[]}> } }>;
 };
 export type PolicySourceSession = {
   id: string;

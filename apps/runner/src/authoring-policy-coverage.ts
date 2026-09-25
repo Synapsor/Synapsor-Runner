@@ -883,6 +883,8 @@ export async function reviewPolicyCoverage(input: {
             {source:input.source,draft:input.draft,messages:operatorMessages});
           candidate = lastAssembly.assembled;
           submissionEvidence.assembled = structuredClone(candidate);
+          if(lastAssembly.audit.host_supplied_fields.length)
+            submissionEvidence.host_supplied_fields=structuredClone(lastAssembly.audit.host_supplied_fields);
           validateScopedReceiptComponents(lastAssembly.assembled,lastAssembly.categories,repairScope,input.source,input.draft,input.sourceSession);
           assertRequiredReceiptCoupling(lastAssembly.assembled.passages as PolicyPassage[],input.source,input.draft,
             repairScope.targets.filter(t=>t.receipt_region).flatMap(t=>t.source_ranges),input.sourceSession);

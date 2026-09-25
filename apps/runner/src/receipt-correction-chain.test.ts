@@ -67,9 +67,11 @@ function scopeFromWire(body:any){
 }
 // DERIVED local producer: construct only the groups nominated by the actual
 // serialized host request. Immutable historical replies remain unchanged.
-function derivedScopedResponse(body:any,candidate:any){
+function derivedScopedResponse(body:any,candidate:any,f:any){
  const scope=scopeFromWire(body);if(!scope)return candidate;
- const category=(passage:any,target:any)=>!target.receipt_region?'ordinary':passage.receipt_component==='source_transaction_coupling'?'source_transaction_coupling'
+ const category=(passage:any,target:any)=>!target.receipt_region?'ordinary':passage.receipt_component==='source_transaction_coupling'
+  ||(passage.receipt_component===undefined&&passage.interpretation===receiptCouplingInterpretation(f.draft.actions[0].outcome)
+   &&JSON.stringify(passage.draft_paths)===JSON.stringify(receiptCouplingPaths(f.draft.actions[0].outcome)))?'source_transaction_coupling'
   :passage.disposition==='needs_decision'&&passage.responsibility==='deployment'?'setup'
   :passage.draft_paths.includes(READ)?'receipt_read_exclusion':passage.draft_paths.includes(CONFIG)?'receipt_configuration'
   :passage.draft_paths.includes(RECEIPTS)?'receipt_observation':'compiled_effect';
@@ -97,7 +99,7 @@ function transport(f:any,replies:any[],provider:'openai'|'openrouter'='openroute
  const requests:any[]=[];
  const session={provider,model:provider==='openai'?'gpt-5.6-terra':'openai/gpt-5.6-terra',apiKey:'local-only',conversation,
  dependencies:{requestJson:vi.fn(async(r:any)=>{requests.push(structuredClone(r.body));let args=replies[requests.length-1];if(args instanceof Error)throw args;if(!args)throw new Error('No response permitted');
- if(requests.length>1&&canonicalJsonDigest(args)!==canonicalJsonDigest(f.arguments))args=derivedScopedResponse(r.body,args);
+ if(requests.length>1&&canonicalJsonDigest(args)!==canonicalJsonDigest(f.arguments))args=derivedScopedResponse(r.body,args,f);
  return {status:200,body:provider==='openai'?{output:[{type:'function_call',call_id:'test',name:'runner__review_policy_coverage',arguments:JSON.stringify(args)}]}:{choices:[{finish_reason:'tool_calls',message:{role:'assistant',tool_calls:[{id:'test',type:'function',function:{name:'runner__review_policy_coverage',arguments:JSON.stringify(args)}}]}}]}};})}};
  f.sources.approvals.push({digest:f.source.digest,destination:authoringDestination(session)});
  return {session,requests,run:()=>reviewPolicyCoverage({session,source:f.source,draft:f.draft,sourceSession:f.sources})};
@@ -315,7 +317,7 @@ describe('complete captured configuration correction chain',()=>{
   const f=fixture(),t=transport(f,[f.arguments,separated(f)],provider);
   const context={source:f.source,draft:f.draft,messages:f.operator_messages};
   const nominated=createCoverageRepairScope(f.arguments,collectCoverageFeedback(f.arguments,f.source,f.draft,f.operator_messages,undefined,f.sources),context);
-  const derived=derivedScopedResponse({messages:[{content:'Host repair scope (identities and exact references, not authority): '+JSON.stringify(nominated)}]},separated(f));
+  const derived=derivedScopedResponse({messages:[{content:'Host repair scope (identities and exact references, not authority): '+JSON.stringify(nominated)}]},separated(f),f);
   expect(derived.representation).toBe('replacement_only_v2');
   expect(derived.groups[0].passage_replacements).toEqual([]);
   expect(derived.groups[0].counter_replacements).toHaveLength(2);
@@ -481,6 +483,71 @@ describe('current-proof complete save and restart',()=>{
    expect(x.t.requests).toHaveLength(2);
   }finally{vi.restoreAllMocks();await fs.rm(x.root,{recursive:true,force:true});}
  });
+ it.each(['both','all','responsibility','issue_kind','receipt_component'] as const)('host supplies %s omitted typed fields only for the nominated run60 coupling representation',async omitted=>{
+  const x=await prepared(f=>{
+   const corrected=separated(f),coupling=corrected.passages.find((p:any)=>p.receipt_component==='source_transaction_coupling');
+   // DERIVED only: the paid run60 correction used this exact canonical meaning
+   // and exact references but omitted these two host-determined fields.
+   if(omitted==='both'||omitted==='all'||omitted==='responsibility')delete coupling.responsibility;
+   if(omitted==='both'||omitted==='all'||omitted==='issue_kind')delete coupling.issue_kind;
+   if(omitted==='all'||omitted==='receipt_component')delete coupling.receipt_component;
+   return [engineQualifiedCouplingShape(f),corrected];
+  });
+  try{
+   const result=await ensurePreparedPolicyCoverage(x.input);
+   expect(result.activity).toBe('provider');
+   expect(x.t.requests).toHaveLength(2);
+   const outgoing=x.t.requests[1].tools[0].function.parameters;
+   expect(outgoing.properties.groups.items.properties.target_id.description)
+    .toContain('Runner supplies responsibility=runner, issue_kind=coverage_link and receipt_component=source_transaction_coupling');
+   const saved=await loadPolicySources(x.root,x.f.sources.id);
+   expect(saved.coverage_episodes?.at(-1)?.submissions.map(s=>s.validated)).toEqual([false,true]);
+   const correction=saved.coverage_episodes?.at(-1)?.submissions[1]?.tentative;
+   const raw=(correction?.raw_response as any).groups[0].passage_replacements[0].fragments[0].passage;
+   if(omitted==='both'||omitted==='all'||omitted==='responsibility')expect(raw).not.toHaveProperty('responsibility');
+   if(omitted==='both'||omitted==='all'||omitted==='issue_kind')expect(raw).not.toHaveProperty('issue_kind');
+   if(omitted==='all'||omitted==='receipt_component')expect(raw).not.toHaveProperty('receipt_component');
+   expect(correction?.host_supplied_fields).toEqual([{member_path:`/passages/${engineQualifiedCouplingShape(x.f).passages.findIndex((p:any)=>p.receipt_component==='source_transaction_coupling')}`,
+    fields:omitted==='both'?['responsibility','issue_kind']:omitted==='all'
+     ?['responsibility','issue_kind','receipt_component']:[omitted]}]);
+   expect((correction?.assembled as any)?.passages.find((p:any)=>p.receipt_component==='source_transaction_coupling'))
+    .toMatchObject({responsibility:'runner',issue_kind:'coverage_link',receipt_component:'source_transaction_coupling'});
+   expect(saved.coverage?.passages.find(p=>p.receipt_component==='source_transaction_coupling'))
+    .toMatchObject({responsibility:'runner',issue_kind:'coverage_link',receipt_component:'source_transaction_coupling'});
+   expect(policyReviewReadiness(x.f.source,saved.coverage!,saved).ready).toBe(true);
+  }finally{vi.restoreAllMocks();await fs.rm(x.root,{recursive:true,force:true});}
+ });
+ it.each([['responsibility','operator'],['issue_kind','business_choice'],
+  ['receipt_component','other'],['receipt_component',null]] as const)('refuses explicitly wrong %s on the nominated coupling fragment',async(key,value)=>{
+  const x=await prepared(f=>{
+   const corrected=separated(f),coupling=corrected.passages.find((p:any)=>p.receipt_component==='source_transaction_coupling');
+   coupling[key]=value;
+   return [engineQualifiedCouplingShape(f),corrected];
+  });
+  const original=structuredClone(x.f.sources.coverage);
+  try{
+   await expect(ensurePreparedPolicyCoverage(x.input)).rejects.toThrow('COVERAGE_SCOPED_CORRECTION_REFUSED');
+   const saved=await loadPolicySources(x.root,x.f.sources.id);
+   expect(saved.coverage_episodes?.at(-1)?.submissions.map(s=>s.validated)).toEqual([false,false]);
+   expect(saved.coverage).toEqual(original);
+  }finally{vi.restoreAllMocks();await fs.rm(x.root,{recursive:true,force:true});}
+ });
+ it('does not supply fields for a separate receipt setup fragment',async()=>{
+  const x=await prepared(f=>{
+   const corrected=separated(f),setup=corrected.passages.find((p:any)=>p.receipt_component===undefined
+    &&p.disposition==='needs_decision'&&p.draft_paths.includes(CONFIG));
+   delete setup.responsibility;delete setup.issue_kind;
+   return [engineQualifiedCouplingShape(f),corrected];
+  });
+  const original=structuredClone(x.f.sources.coverage);
+  try{
+   await expect(ensurePreparedPolicyCoverage(x.input)).rejects.toThrow('POLICY_COVERAGE_INVALID');
+   const saved=await loadPolicySources(x.root,x.f.sources.id);
+   expect(saved.coverage_episodes?.at(-1)?.submissions.map(s=>s.validated)).toEqual([false,false]);
+   expect(saved.coverage).toEqual(original);
+   expect(saved.coverage_episodes?.at(-1)?.submissions[1]?.tentative?.host_supplied_fields).toBeUndefined();
+  }finally{vi.restoreAllMocks();await fs.rm(x.root,{recursive:true,force:true});}
+ });
  it('a repeated false receipt assertion remains in invalid history and cannot spend a second correction',async()=>{
   const x=await prepared(f=>{
    const valid=separated(f),initial=engineQualifiedCouplingShape(f,valid),repeated=structuredClone(valid);
@@ -507,7 +574,7 @@ describe('current-proof complete save and restart',()=>{
   const x=await prepared(f=>[f.arguments,separated(f)]),wire:any[]=[],stream:any[]=[],previous=structuredClone(x.f.sources.coverage_episodes);
   const server=createServer(async(req,res)=>{
    const chunks:Buffer[]=[];for await(const c of req)chunks.push(Buffer.from(c));wire.push(JSON.parse(Buffer.concat(chunks).toString()));
-   const args=wire.length===1?x.f.arguments:derivedScopedResponse(wire.at(-1),separated(x.f));res.setHeader('content-type','text/event-stream');
+   const args=wire.length===1?x.f.arguments:derivedScopedResponse(wire.at(-1),separated(x.f),x.f);res.setHeader('content-type','text/event-stream');
    if(provider==='openai'){
     res.write(`data: ${JSON.stringify({type:'response.output_item.added',item:{type:'function_call',name:'runner__review_policy_coverage'}})}\n\n`);
     res.end(`data: ${JSON.stringify({type:'response.completed',response:{status:'completed',output:[{type:'function_call',call_id:'local',name:'runner__review_policy_coverage',arguments:JSON.stringify(args)}]}})}\n\n`);
