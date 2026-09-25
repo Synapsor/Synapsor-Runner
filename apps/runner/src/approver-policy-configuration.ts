@@ -80,7 +80,7 @@ async function fingerprints(identity: Identity, configPath: string, projectRoot:
     try { signedOperatorKeyAlgorithm(publicKey); }
     catch (error) {
       if ((error as { code?: string }).code === "OPERATOR_SIGNING_KEY_UNUSABLE") {
-        fail("POLICY_APPROVER_KEY_UNUSABLE", "The RSA public key is too small for SHA-256 signed approval (at least 62 modulus bytes required).");
+        fail("POLICY_APPROVER_KEY_UNUSABLE", "RSA approver public keys must be at least 2048 bits.");
       }
       fail("POLICY_APPROVER_KEY_UNSUPPORTED", "Only Ed25519 and RSA public keys can be enrolled for signed approval.");
     }

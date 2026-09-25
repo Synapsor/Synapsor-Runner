@@ -269,16 +269,16 @@ for (const backend of ["sqlite", "postgres"] as const) describe.skipIf(backend =
     });
   });
 
-  it("refuses importable RSA keys too small for SHA-256 signing while admitting the first usable size", async () => {
+  it("refuses a 2047-bit RSA approver key and admits a 2048-bit key", async () => {
     await withFixture(backend, async (f) => {
       const identity = await reviewerIdentity(f.root), keyFile = path.join(f.root, "reviewer.pub.pem");
       const before = await f.state(), beforeConfig = await fs.readFile(f.configPath, "utf8");
-      await fs.writeFile(keyFile, rsaPublicPemAtBits(488), { mode: 0o600 });
+      await fs.writeFile(keyFile, rsaPublicPemAtBits(2047), { mode: 0o600 });
       await expect(prepareApproverPolicyConfiguration({ ...f.input, identity }))
         .rejects.toMatchObject({ code: "POLICY_APPROVER_KEY_UNUSABLE" });
       expect(await f.state()).toEqual(before);
       expect(await fs.readFile(f.configPath, "utf8")).toBe(beforeConfig);
-      await fs.writeFile(keyFile, rsaPublicPemAtBits(489), { mode: 0o600 });
+      await fs.writeFile(keyFile, rsaPublicPemAtBits(2048), { mode: 0o600 });
       const prepared = await prepareApproverPolicyConfiguration({ ...f.input, identity });
       try { expect(prepared.review.roster[0]?.public_key_fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/u); }
       finally { await prepared.close(); }
@@ -455,7 +455,7 @@ for (const backend of ["sqlite", "postgres"] as const) describe.skipIf(backend =
       expect(refused.output).toContain("POLICY_APPROVER_KEY_UNSUPPORTED");
       expect(await f.state()).toEqual(before);
       expect(await fs.readFile(f.configPath, "utf8")).toBe(beforeConfig);
-      await fs.writeFile(path.join(f.root, "reviewer.pub.pem"), rsaPublicPemAtBits(488), { mode: 0o600 });
+      await fs.writeFile(path.join(f.root, "reviewer.pub.pem"), rsaPublicPemAtBits(2047), { mode: 0o600 });
       const tooSmall = await installedApproverCli(["policy", "approver", "--config", f.configPath,
         "--store", f.storePath, "--input", rosterPath], { ...f.env, HOME: f.root }, false);
       expect(tooSmall.status).toBe(1);

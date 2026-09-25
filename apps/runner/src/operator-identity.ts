@@ -239,11 +239,10 @@ export function signedOperatorKeyAlgorithm(publicKey: string | Buffer): "SHA256"
   const key = crypto.createPublicKey(publicKey);
   const type = key.asymmetricKeyType;
   if (type === "rsa") {
-    // SHA-256's PKCS#1 v1.5 DigestInfo needs 51 bytes plus 11 encoding bytes.
-    // Node can import a smaller RSA public key even though signing will fail.
+    // Enrollment requires the owner's 2048-bit RSA minimum, beyond mere importability.
     const modulusBits = key.asymmetricKeyDetails?.modulusLength;
-    if (!modulusBits || Math.ceil(modulusBits / 8) < 62) {
-      throw Object.assign(new Error("OPERATOR_SIGNING_KEY_UNUSABLE: RSA modulus is too small for SHA-256 signed approval."),
+    if (!modulusBits || modulusBits < 2048) {
+      throw Object.assign(new Error("OPERATOR_SIGNING_KEY_UNUSABLE: RSA approver keys must be at least 2048 bits."),
         { code: "OPERATOR_SIGNING_KEY_UNUSABLE" });
     }
     return "SHA256";
