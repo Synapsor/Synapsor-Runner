@@ -606,7 +606,7 @@ export async function policyCommand(args: string[]): Promise<number> {
     const { ownerPolicyChat } = await import("./owner-policy-chat.js");
     return ownerPolicyChat(args.slice(1));
   }
-  if (args[0] === "storage" || args[0] === "delegation" || args[0] === "connection") {
+  if (args[0] === "storage" || args[0] === "delegation" || args[0] === "connection" || args[0] === "approver") {
     const { ownerPolicyCommand } = await import("./owner-policy-commands.js");
     return ownerPolicyCommand(args);
   }
