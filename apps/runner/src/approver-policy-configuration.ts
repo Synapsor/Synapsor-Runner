@@ -78,7 +78,12 @@ async function fingerprints(identity: Identity, configPath: string, projectRoot:
     await ownedFile(file);
     const publicKey = await fs.readFile(file);
     try { signedOperatorKeyAlgorithm(publicKey); }
-    catch { fail("POLICY_APPROVER_KEY_UNSUPPORTED", "Only Ed25519 and RSA public keys can be enrolled for signed approval."); }
+    catch (error) {
+      if ((error as { code?: string }).code === "OPERATOR_SIGNING_KEY_UNUSABLE") {
+        fail("POLICY_APPROVER_KEY_UNUSABLE", "The RSA public key is too small for SHA-256 signed approval (at least 62 modulus bytes required).");
+      }
+      fail("POLICY_APPROVER_KEY_UNSUPPORTED", "Only Ed25519 and RSA public keys can be enrolled for signed approval.");
+    }
     const fingerprint = operatorPublicKeyFingerprint(publicKey);
     if (operator.public_key_fingerprint && operator.public_key_fingerprint !== fingerprint) {
       fail("POLICY_APPROVER_KEY_CHANGED", "The proposed fingerprint does not match its public verification material.");

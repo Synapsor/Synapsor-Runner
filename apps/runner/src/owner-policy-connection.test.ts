@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
-import { generateKeyPairSync, randomUUID } from "node:crypto";
+import { createPublicKey, generateKeyPairSync, generatePrimeSync, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { Pool } from "pg";
 import { describe, expect, it, vi } from "vitest";
@@ -161,6 +161,24 @@ function ui(answers: string[]) {
 
 function shellQuote(value: string): string { return `'${value.replaceAll("'", `'\\''`)}'`; }
 
+function rsaPublicPemAtBits(bits: number): string {
+  const exponent = 65537n;
+  const gcd = (left: bigint, right: bigint): bigint => {
+    while (right) [left, right] = [right, left % right];
+    return left;
+  };
+  let modulus: bigint, p: bigint, q: bigint;
+  do {
+    p = generatePrimeSync(Math.ceil(bits / 2), { bigint: true });
+    q = generatePrimeSync(Math.floor(bits / 2), { bigint: true });
+    modulus = p * q;
+  } while (modulus.toString(2).length !== bits || gcd(exponent, (p - 1n) * (q - 1n)) !== 1n);
+  let hex = modulus.toString(16);
+  if (hex.length % 2) hex = `0${hex}`;
+  return createPublicKey({ key: { kty: "RSA", n: Buffer.from(hex, "hex").toString("base64url"), e: "AQAB" },
+    format: "jwk" }).export({ type: "spki", format: "pem" }).toString();
+}
+
 async function installedApproverCli(args: string[], env: NodeJS.ProcessEnv, confirm: boolean) {
   const command = [path.resolve("bin/synapsor-runner"), ...args].map(shellQuote).join(" ");
   const child = spawn("script", ["-qefc", command, "/dev/null"], {
@@ -248,6 +266,23 @@ for (const backend of ["sqlite", "postgres"] as const) describe.skipIf(backend =
       expect((await readRuntimeConfig(f.configPath, { env: f.env, storePath: f.storePath }))
         .operator_identity?.operators?.reviewer_one?.public_key_fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/u);
       expect((await f.state()).epoch).toBe(before.epoch + 1);
+    });
+  });
+
+  it("refuses importable RSA keys too small for SHA-256 signing while admitting the first usable size", async () => {
+    await withFixture(backend, async (f) => {
+      const identity = await reviewerIdentity(f.root), keyFile = path.join(f.root, "reviewer.pub.pem");
+      const before = await f.state(), beforeConfig = await fs.readFile(f.configPath, "utf8");
+      await fs.writeFile(keyFile, rsaPublicPemAtBits(488), { mode: 0o600 });
+      await expect(prepareApproverPolicyConfiguration({ ...f.input, identity }))
+        .rejects.toMatchObject({ code: "POLICY_APPROVER_KEY_UNUSABLE" });
+      expect(await f.state()).toEqual(before);
+      expect(await fs.readFile(f.configPath, "utf8")).toBe(beforeConfig);
+      await fs.writeFile(keyFile, rsaPublicPemAtBits(489), { mode: 0o600 });
+      const prepared = await prepareApproverPolicyConfiguration({ ...f.input, identity });
+      try { expect(prepared.review.roster[0]?.public_key_fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/u); }
+      finally { await prepared.close(); }
+      expect(await f.state()).toEqual(before);
     });
   });
 
@@ -418,6 +453,13 @@ for (const backend of ["sqlite", "postgres"] as const) describe.skipIf(backend =
         "--store", f.storePath, "--input", rosterPath], { ...f.env, HOME: f.root }, false);
       expect(refused.status).toBe(1);
       expect(refused.output).toContain("POLICY_APPROVER_KEY_UNSUPPORTED");
+      expect(await f.state()).toEqual(before);
+      expect(await fs.readFile(f.configPath, "utf8")).toBe(beforeConfig);
+      await fs.writeFile(path.join(f.root, "reviewer.pub.pem"), rsaPublicPemAtBits(488), { mode: 0o600 });
+      const tooSmall = await installedApproverCli(["policy", "approver", "--config", f.configPath,
+        "--store", f.storePath, "--input", rosterPath], { ...f.env, HOME: f.root }, false);
+      expect(tooSmall.status).toBe(1);
+      expect(tooSmall.output).toContain("POLICY_APPROVER_KEY_UNUSABLE");
       expect(await f.state()).toEqual(before);
       expect(await fs.readFile(f.configPath, "utf8")).toBe(beforeConfig);
     });

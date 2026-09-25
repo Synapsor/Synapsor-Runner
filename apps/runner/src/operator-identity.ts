@@ -236,8 +236,18 @@ export function verifySignedOperatorProof(proof: OperatorIdentityProof, publicKe
 /** The signed-key decision format supports exactly these two key families.
  * RSA keeps its existing SHA256 proof label; Ed25519 uses the required null digest. */
 export function signedOperatorKeyAlgorithm(publicKey: string | Buffer): "SHA256" | "ed25519" {
-  const type = crypto.createPublicKey(publicKey).asymmetricKeyType;
-  if (type === "rsa") return "SHA256";
+  const key = crypto.createPublicKey(publicKey);
+  const type = key.asymmetricKeyType;
+  if (type === "rsa") {
+    // SHA-256's PKCS#1 v1.5 DigestInfo needs 51 bytes plus 11 encoding bytes.
+    // Node can import a smaller RSA public key even though signing will fail.
+    const modulusBits = key.asymmetricKeyDetails?.modulusLength;
+    if (!modulusBits || Math.ceil(modulusBits / 8) < 62) {
+      throw Object.assign(new Error("OPERATOR_SIGNING_KEY_UNUSABLE: RSA modulus is too small for SHA-256 signed approval."),
+        { code: "OPERATOR_SIGNING_KEY_UNUSABLE" });
+    }
+    return "SHA256";
+  }
   if (type === "ed25519") return "ed25519";
   throw Object.assign(new Error("OPERATOR_SIGNING_KEY_UNSUPPORTED: signed approver keys must be Ed25519 or RSA."),
     { code: "OPERATOR_SIGNING_KEY_UNSUPPORTED" });
