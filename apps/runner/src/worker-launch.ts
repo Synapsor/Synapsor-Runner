@@ -10,7 +10,7 @@ import { resolveLocalTestRuntimeEnvironment } from "./local-test-runtime-identit
 import { inspectSemanticReceiptSetup } from "./semantic-receipt-setup.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import { shellQuote } from "./cli-format.js";
-import { hasVerifiedRecoveryControlActor } from "./operator-identity.js";
+import { hasVerifiedRecoveryControlActor, resolveAuthorizedOperatorIdentity } from "./operator-identity.js";
 
 export type WorkerLaunchAssessment = {
   config_path: string;
@@ -23,6 +23,8 @@ export type WorkerLaunchAssessment = {
   execution_binding: "current" | "stale" | "unverified";
   receipt: { mode: string; selected_mode: string | null; matches_execution_configuration: boolean | null; selection: "current" | "stale" | "unverified"; live_verification: "not_performed" };
   coverage: "selected_semantic_outcome" | "per_item_only";
+  apply_identity: { state: "unassessed" | "legacy_dev" | "not_supplied" | "authentication_failed" | "not_authorized" | "ready";
+    code?: string; verified: boolean };
   /** Advisory for future failed attempts; never changes launch or item eligibility. */
   recovery_prerequisites?: "unassessed" | "roles_missing" | "actor_unverified" | "actor_verified";
 };
@@ -42,12 +44,13 @@ function safeReference(value: string): string {
  * tenant/principal defaults, organization rules or optional-actor semantics. */
 export async function assessWorkerLaunch(input: {
   config: RuntimeConfig; configPath: string; capability?: string; env?: NodeJS.ProcessEnv;
+  identity?: string; privateKeyPath?: string;
 }): Promise<WorkerLaunchAssessment> {
   const { config } = input;
   const result: WorkerLaunchAssessment = { config_path: path.resolve(input.configPath), scope: input.capability ?? "all configured outcomes",
     local_identity: "environment_or_other_trusted_provider", inputs: [], issues: [], execution_enabled: config.supervised_worker?.enabled === true, execution_binding: "unverified",
     receipt: { mode: "unverified", selected_mode: null, matches_execution_configuration: null, selection: "unverified", live_verification: "not_performed" }, coverage: "per_item_only",
-    recovery_prerequisites: "unassessed" };
+    recovery_prerequisites: "unassessed", apply_identity: { state: "unassessed", verified: false } };
   const projectRoot = semanticActionProjectRoot(config, input.configPath);
   let env = input.env ?? process.env;
   let supplied: Record<string, string> | undefined;
@@ -70,6 +73,7 @@ export async function assessWorkerLaunch(input: {
   if (!("outcome" in policy)) return result;
   result.scope = policy.outcome;
   result.coverage = "selected_semantic_outcome";
+  if (!result.execution_enabled) result.issues.push("SUPERVISED_EXECUTION_DISABLED");
   result.recovery_prerequisites = !config.operator_identity?.apply_roles?.length ? "roles_missing"
     : await hasVerifiedRecoveryControlActor({ config: config.operator_identity, configPath: input.configPath, env })
       ? "actor_verified" : "actor_unverified";
@@ -83,6 +87,25 @@ export async function assessWorkerLaunch(input: {
     const active = await loadActiveActionRuleAuthority(projectRoot, { outcome: policy.outcome });
     const rule = resolveActivatedActionRule(active.registry, policy.outcome);
     result.execution_binding = policy.action_boundary_digest === rule.action_boundary_digest ? "current" : "stale";
+    if (result.execution_binding === "stale") result.issues.push("SUPERVISED_EXECUTION_BINDING_STALE");
+    try {
+      // An absent operator_identity retains the existing local dev identity
+      // contract. Signed deployments still require their reviewed signer.
+      const identity = await resolveAuthorizedOperatorIdentity({ config: config.operator_identity,
+        configPath: input.configPath, env, identity: input.identity, privateKeyPath: input.privateKeyPath,
+        proposal: { proposal_id: "worker_launch_preflight", proposal_version: 1,
+          proposal_hash: canonicalJsonDigest({ outcome: rule.compiled.outcome, action_boundary_digest: rule.action_boundary_digest }),
+          action: rule.compiled.outcome }, action: "apply" });
+      result.apply_identity = { state: identity.provider === "dev_env" ? "legacy_dev" : "ready", verified: identity.verified };
+    } catch (error) {
+      const code = safeCode(error);
+      const state = code === "OPERATOR_IDENTITY_MISSING" || code === "OPERATOR_PRIVATE_KEY_MISSING"
+        ? "not_supplied" : code === "OPERATOR_SCOPED_APPLY_NOT_AUTHORIZED" || code === "OPERATOR_OUTCOME_NOT_AUTHORIZED"
+          || code === "OPERATOR_APPLY_ROLE_MISSING" ? "not_authorized" : "authentication_failed";
+      const safe = code === "ENOENT" || code === "EACCES" ? "OPERATOR_PRIVATE_KEY_UNAVAILABLE" : code;
+      result.apply_identity = { state, code: safe, verified: false };
+      result.issues.push(safe);
+    }
     try {
       const observed = new Proxy(env, { get(target, key) {
         if (typeof key === "string") record(key, "context");
@@ -131,12 +154,13 @@ export function workerLaunchLines(result: WorkerLaunchAssessment): string[] {
       : `Trusted launch context: ${result.local_identity}.`,
     ...result.inputs.map(x => `${x.purpose} reference ${x.reference}: ${x.present ? "present" : "missing"}${x.source === "reviewed_local_identity" ? " (reviewed local identity)" : ""}.`),
     `Receipts configured: ${result.receipt.mode}; selected: ${result.receipt.selected_mode ?? "unverified"} (${result.receipt.selection}); matches execution: ${result.receipt.matches_execution_configuration === null ? "unverified" : result.receipt.matches_execution_configuration ? "yes" : "no"}. Live verification not performed by this check.`,
+    `Apply identity: ${result.apply_identity.state}${result.apply_identity.code ? ` (${result.apply_identity.code})` : ""}; ${result.apply_identity.verified ? "verified" : "not verified"}. This is a nonmutating current-input assessment, not a cached execution permit.`,
     ...recoveryPrerequisiteLines(result.recovery_prerequisites ?? "unassessed"),
     ...(result.issues.length ? [`Launch prerequisites refused: ${result.issues.join(", ")}. Restore the reviewed inputs, then check again.`] : []),
     ...(result.coverage === "per_item_only" ? ["Per-item prerequisites remain unassessed. Select one semantic outcome with --capability for its launch check."] : []),
     `Check only: ${cliCommandName()} worker check ${options}`,
     `Start work separately: ${cliCommandName()} worker run ${options} --yes`,
-    "A check grants no execution permission. Current authority, identity, writer, facts, scope, version, lease and receipt checks still run for every item.",
+    "A check grants no execution permission and does not connect to the writer. Current authority, identity, writer, facts, scope, version, lease and receipt checks still run for every item.",
   ];
 }
 

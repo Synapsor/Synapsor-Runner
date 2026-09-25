@@ -334,6 +334,7 @@ SQLite ledger immutable compliance storage.
   ${cmd} policy delegation --config ./synapsor.runner.json --name <parent-name> --input ./owner-delegation.json
   ${cmd} policy connection --config ./synapsor.runner.json [--input ./owner-connection.json] [--previous-config ./previous-runner.json]
   ${cmd} policy approver --config ./synapsor.actions.runner.json --input ./approver-roster.json [--previous-config ./previous-actions-runner.json]
+  ${cmd} policy apply-operator --config ./synapsor.actions.runner.json --input ./scoped-apply-roster.json [--previous-config ./previous-actions-runner.json]
   ${cmd} policy recommend --contract ./synapsor.contract.json --config ./synapsor.runner.json --tenant <tenant> --capability <name> --policy <name> --store ./.synapsor/local.db
   ${cmd} policy recommendations list --tenant <tenant> --store ./.synapsor/local.db [--capability <name>] [--policy <name>] [--status pending_review|approved|rejected|exported]
   ${cmd} policy recommendations show <ptr_id> --tenant <tenant> --store ./.synapsor/local.db

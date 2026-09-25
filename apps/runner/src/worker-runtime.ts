@@ -34,7 +34,7 @@ import { optionalArg, positional, positiveIntOption, runtimeStoreBridgeFlag, wai
 import { confirmDangerousAction, openLocalStoreAt, operatorIdentityForDecision, optionalRuntimeConfig, readRuntimeConfig, requireLocalProposal, resolveProposalIdFromStore, resolvedRuntimeStorePath, runnerConfigPath } from "./cli-project.js";
 import { runnerProcessStartedAt } from "./cli-runtime.js";
 import { applyProposal } from "./guarded-apply.js";
-import { resolveOperatorIdentity, type OperatorIdentityConfig } from "./operator-identity.js";
+import { resolveAuthorizedOperatorIdentity, resolveOperatorIdentity, type OperatorIdentityConfig } from "./operator-identity.js";
 import { argsWithRuntimeStoreBridge, assertGovernedLocalRuntimeStore, assertNoRuntimeStoreForLocalMutation, runtimeStoreBridgeRequired, sharedPostgresLedgerMirrorRequested, withSharedPostgresLedgerMirror, withSharedPostgresRuntimeStoreBridge, withSharedPostgresRuntimeStoreReadBridge, withoutSharedPostgresLedgerMirror } from "./store-shared.js";
 import { assertSemanticSupervisedWriterPosture, assertSupervisedWriterPosture, currentSupervisedApprovalPolicy, workerControlAllowsPolicy, workerControlOperatorDecisionAction, workerPolicyError } from "./worker-policy.js";
 import { findProposalCapability, loadSemanticProposalAuthority, loadSemanticRuntimeAuthority, semanticActionProjectRoot } from "./writeback-execution.js";
@@ -60,7 +60,8 @@ export async function workerCommand(args: string[]): Promise<number> {
     await assertGovernedLocalRuntimeStore({ args: rest, config, configPath,
       storePath: resolvedRuntimeStorePath(rest, configPath, config.storage?.sqlite_path), readOnly: true });
     resolveSupervisedWorkerIdentity(config, optionalArg(rest, "--worker-id") ?? process.env.SYNAPSOR_RUNNER_ID, optionalArg(rest, "--capability"));
-    const assessment = await assessWorkerLaunch({ config, configPath, capability: optionalArg(rest, "--capability") });
+    const assessment = await assessWorkerLaunch({ config, configPath, capability: optionalArg(rest, "--capability"),
+      identity: optionalArg(rest, "--identity"), privateKeyPath: optionalArg(rest, "--identity-key") });
     process.stdout.write(rest.includes("--json") ? `${JSON.stringify(assessment, null, 2)}\n` : `${workerLaunchLines(assessment).join("\n")}\n`);
     return assessment.issues.length || assessment.coverage === "per_item_only" ? 2 : 0;
   }
@@ -692,7 +693,7 @@ export async function claimSupervisedWorkerItem(
   store: ProposalStore,
   config: RuntimeConfig,
   configPath: string,
-  input: { workerId: string; capability?: string; tenant?: string },
+  input: { workerId: string; capability?: string; tenant?: string; identity?: string; privateKeyPath?: string },
 ): Promise<{
   item: WorkerQueueItem;
   policy: RuntimeSupervisedWorkerPolicy;
@@ -738,6 +739,12 @@ export async function claimSupervisedWorkerItem(
             || a.created_at.localeCompare(b.created_at))[0];
         if (!next) continue;
         const pending = next ? store.getProposal(next.proposal_id) : undefined;
+        if (pending) {
+          await resolveAuthorizedOperatorIdentity({ config: config.operator_identity, configPath,
+            proposal: { proposal_id: pending.proposal_id, proposal_version: pending.proposal_version,
+              proposal_hash: pending.proposal_hash, action: pending.action },
+            action: "apply", identity: input.identity, privateKeyPath: input.privateKeyPath });
+        }
         if (pending?.change_set.schema_version === "synapsor.change-set.v4" && pending.change_set.delayed_work) {
           if (next.status !== "queued" || next.attempts !== 0) {
             store.reconcileDelayedPriorAttempt(pending.proposal_id);
@@ -771,7 +778,9 @@ export async function claimSupervisedWorkerItem(
           ...(requiredDelayedValidation ? { requiredDelayedValidation } : {}),
         });
         if (item) return { item, policy: eligibility.policy };
-      } catch {
+      } catch (error) {
+        const code = safeOperationalErrorCode(error);
+        if (code.startsWith("OPERATOR_") || code.startsWith("APPLY_IDENTITY_")) throw error;
         continue;
       }
       continue;
@@ -868,9 +877,18 @@ async function workerRun(args: string[]): Promise<number> {
     await assertGovernedLocalRuntimeStore({ args, config, configPath, storePath, readOnly: true });
   }
   if (supervised) {
-    const launch = await assessWorkerLaunch({ config, configPath, capability });
+    const launch = await assessWorkerLaunch({ config, configPath, capability,
+      identity: optionalArg(args, "--identity"), privateKeyPath: optionalArg(args, "--identity-key") });
     if (launch.issues.length) throw workerPolicyError(launch.issues[0]!,
       `${workerLaunchLines(launch).join("\n")}\nNo work was enqueued, leased or attempted by this invocation.`);
+    if (launch.coverage === "per_item_only") {
+      for (const policy of supervisedWorkerPolicies(config).filter((item) => "outcome" in item)) {
+        const exact = await assessWorkerLaunch({ config, configPath, capability: supervisedWorkerPolicyName(policy),
+          identity: optionalArg(args, "--identity"), privateKeyPath: optionalArg(args, "--identity-key") });
+        if (exact.issues.length) throw workerPolicyError(exact.issues[0]!,
+          `${workerLaunchLines(exact).join("\n")}\nSelect a permitted outcome or restore this worker identity. No work was enqueued, leased or attempted.`);
+      }
+    }
   }
   // Pin the startup identity across shared-store bridge batches as well.
   const boundArgs = optionalArg(args, "--worker-id") === undefined ? [...args, "--worker-id", workerId] : args;
@@ -942,6 +960,16 @@ async function workerRun(args: string[]): Promise<number> {
       };
       const queueConfig = supervised ? await currentExecutionConfig() : config;
       if (supervised && !queueConfig.supervised_worker?.enabled) return 0;
+      if (supervised) {
+        for (const policy of supervisedWorkerPolicies(queueConfig).filter((item) => "outcome" in item
+          && (!capability || supervisedWorkerPolicyName(item) === capability))) {
+          const exact = await assessWorkerLaunch({ config: queueConfig, configPath,
+            capability: supervisedWorkerPolicyName(policy), identity: optionalArg(args, "--identity"),
+            privateKeyPath: optionalArg(args, "--identity-key") });
+          if (exact.issues.length) throw workerPolicyError(exact.issues[0]!,
+            "Selected apply identity or launch prerequisites changed before enqueue. No new work was claimed.");
+        }
+      }
       const store = new ProposalStore(storePath);
       let item;
       let supervisedPolicy: RuntimeSupervisedWorkerPolicy | undefined;
@@ -955,6 +983,7 @@ async function workerRun(args: string[]): Promise<number> {
             workerId,
             capability,
             tenant,
+            identity: optionalArg(args, "--identity"), privateKeyPath: optionalArg(args, "--identity-key"),
           });
           item = claimed?.item;
           supervisedPolicy = claimed?.policy;
@@ -1129,6 +1158,7 @@ function finishWorkerFailure(
         proposal_id: item.proposal_id,
         worker_id: workerId,
         error_code: errorCode,
+        stage: identityFailureCodes.has(errorCode) ? "operator_identity" : "execution",
         recovery: workerFailureRecovery(errorCode),
         attempt: item.attempts,
       });
@@ -1178,6 +1208,9 @@ export function workerFailureRecovery(code: string | null | undefined, state?: W
     return "Reconcile the exact proposal's dispatch record, durable receipt and source outcome with a verified operator. Do not retry or requeue; completion is not proven.";
   }
   if (state === "discarded") return "Closed/discarded work will not retry. Its original failed outcome and approval remain recorded; any fresh request needs current authority and its own approval.";
+  if (code && identityFailureCodes.has(code)) {
+    return "Inspect this exact request, receipt and source outcome. For future unstarted work, review the signed apply operator through policy apply-operator, then separately review execution and run worker check. This code does not prove no effect or authorize retry or closure.";
+  }
   if (state === "blocked") {
     return "Inspect this proposal and its receipts. Preview worker close-blocked: only producer-proven no-effect work can close. Unknown outcomes require reconciliation. Prior approvals remain counted.";
   }
@@ -1223,11 +1256,21 @@ export function isRetryableWritebackCode(code: string, mode: WorkerQueueItem["ex
 
 function workerErrorCode(error: unknown): string {
   const safe = safeOperationalErrorCode(error);
+  if (safe.startsWith("OPERATOR_") && !identityFailureCodes.has(safe)) return "WORKER_EXECUTION_ERROR";
   if (safe !== "COMMAND_REJECTED") return safe;
   const message = error instanceof Error ? error.message : "";
   if (/timeout/i.test(message)) return "HANDLER_TIMEOUT";
   return "WORKER_EXECUTION_ERROR";
 }
+
+const identityFailureCodes = new Set([
+  "OPERATOR_IDENTITY_MISSING", "OPERATOR_IDENTITY_NOT_ENROLLED",
+  "OPERATOR_PRIVATE_KEY_MISSING", "OPERATOR_PRIVATE_KEY_MISMATCH", "OPERATOR_PRIVATE_KEY_INVALID",
+  "OPERATOR_SIGNING_MATERIAL_UNAVAILABLE", "OPERATOR_PRIVATE_KEY_UNAVAILABLE",
+  "OPERATOR_PUBLIC_KEY_CHANGED", "OPERATOR_SCOPED_APPLY_NOT_AUTHORIZED", "OPERATOR_OUTCOME_NOT_AUTHORIZED",
+  "OPERATOR_APPLY_ROLE_MISSING", "OPERATOR_AUTHORITY_KIND_MISSING", "OPERATOR_AUTHORITY_KIND_INVALID",
+  "OPERATOR_LEGACY_AUTHORITY_INVALID", "OPERATOR_ROSTER_VERSION_INVALID",
+]);
 
 
 export function formatPrometheusMetrics(rows: OperationalMetricRow[]): string {

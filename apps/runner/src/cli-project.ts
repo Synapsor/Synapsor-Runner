@@ -15,7 +15,7 @@ import { fileExists, readJsonFileWithLocation } from "./cli-files.js";
 import { shellQuote } from "./cli-format.js";
 import { envValue, firstDatabaseUrlPositional, isDatabaseUrl, optionalArg } from "./cli-options.js";
 import { TrustedOperatorDecisionOverride } from "./operator-authority.js";
-import { resolveOperatorIdentity, type OperatorIdentityConfig } from "./operator-identity.js";
+import { resolveAuthorizedOperatorIdentity, type OperatorIdentityConfig } from "./operator-identity.js";
 import { type SynapsorProjectResolution } from "./project-resolution.js";
 import { readOperatorExecutionConfig } from "./control-policy-execution.js";
 import { withProjectRuntimeAdmission } from "./project-runtime-admission.js";
@@ -173,7 +173,7 @@ export async function operatorIdentityForDecision(input: {
 }) {
   const applyAuthorityAction = ["apply", "reconcile", "worker_requeue", "worker_discard", "worker_cancel"].includes(input.action);
   const requiredRole = applyAuthorityAction ? undefined : input.proposal.change_set.approval.required_role;
-  const identity = await resolveOperatorIdentity({
+  const identity = await resolveAuthorizedOperatorIdentity({
     config: input.config?.operator_identity as OperatorIdentityConfig | undefined,
     configPath: input.configPath,
     proposal: input.proposal,
@@ -185,10 +185,6 @@ export async function operatorIdentityForDecision(input: {
     token: input.decision?.identityToken,
     requiredRole,
   });
-  const applyRoles = input.config?.operator_identity?.apply_roles ?? [];
-  if (applyAuthorityAction && applyRoles.length > 0 && !applyRoles.some((role) => identity.roles.includes(role))) {
-    throw new Error(`operator ${identity.subject} lacks an apply role; requires one of: ${applyRoles.join(", ")}`);
-  }
   return identity;
 }
 

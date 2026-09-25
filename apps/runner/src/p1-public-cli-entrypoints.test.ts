@@ -32,6 +32,13 @@ describe("P1 public commands through the executable CLI entry point", () => {
     expect(result.stderr).toContain("POLICY_APPROVER_INTERACTIVE_ADMIN_REQUIRED");
   });
 
+  it("routes policy apply-operator to its interactive administration boundary", () => {
+    const result = publicCli(["policy", "apply-operator"]);
+    expect(result.error).toBeUndefined();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain("POLICY_APPROVER_INTERACTIVE_ADMIN_REQUIRED");
+  });
+
   it("routes delayed cancellation and refuses a non-exact local request", () => {
     const result = publicCli(["worker", "cancel", "latest", "--local-installation-operator",
       "--reason", "A reviewed local reason"]);

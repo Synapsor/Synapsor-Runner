@@ -42,12 +42,12 @@ const GRADUATED_TRUST_CRITERION_KEYS = new Set([
   "maximum_threshold_increase", "absolute_ceiling",
 ]);
 const OPERATOR_IDENTITY_KEYS = new Set([
-  "provider", "actor_env", "roles_env", "apply_roles", "operators", "token_env", "token_file_env", "token_stdin", "roles_claim",
+  "provider", "actor_env", "roles_env", "apply_roles", "roster_version", "operators", "token_env", "token_file_env", "token_stdin", "roles_claim",
   "subject_claim", "attestation_secret_env", "algorithms", "jwks_url_env", "public_key_env", "public_key_path",
   "issuer", "audience", "clock_skew_seconds", "jwks_cache_seconds", "jwks_cooldown_seconds", "fetch_timeout_ms",
   "max_response_bytes",
 ]);
-const OPERATOR_KEYS = new Set(["public_key_path", "public_key_fingerprint", "roles", "outcomes"]);
+const OPERATOR_KEYS = new Set(["public_key_path", "public_key_fingerprint", "roles", "outcomes", "authority_kind", "apply_outcomes"]);
 const SESSION_AUTH_KEYS = new Set([
   "provider", "secret_env", "previous_secret_env", "algorithms", "jwks_url_env", "public_key_env", "public_key_path",
   "issuer", "audience", "tenant_claim", "principal_claim", "clock_skew_seconds", "jwks_cache_seconds",
@@ -348,8 +348,8 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
 
   const strict = input.strict !== false;
   if (strict) checkUnknownKeys(input, TOP_LEVEL_KEYS, "$", errors);
-  if (input.version !== 1) {
-    errors.push({ path: "$.version", code: "UNSUPPORTED_CONFIG_VERSION", message: "Runner config version must be 1." });
+  if (input.version !== 1 && input.version !== 2) {
+    errors.push({ path: "$.version", code: "UNSUPPORTED_CONFIG_VERSION", message: "Runner config version must be 1 or 2." });
   }
   if (input.result_format !== undefined && input.result_format !== 1 && input.result_format !== 2) {
     errors.push({ path: "$.result_format", code: "INVALID_RESULT_FORMAT", message: "result_format must be 1 or 2." });
@@ -370,7 +370,7 @@ export function validateRunnerCapabilityConfig(input: unknown): ConfigValidation
   validateTrustedContext(input.trusted_context, input.contexts, input.capabilities, input.mode, strict, errors, warnings, hasContracts);
   validateExecutors(input.executors, input.mode, strict, errors);
   validatePolicies(input.policies, strict, errors);
-  validateOperatorIdentity(input.operator_identity, strict, errors);
+  validateOperatorIdentity(input.operator_identity, input.version, strict, errors);
   validateSessionAuth(input.session_auth, input.trusted_context, input.contexts, strict, errors);
   validateHttpSecurity(input.http_security, input.session_auth, input.trusted_context, input.contexts, strict, errors, warnings);
   validateProductionExplore(input.production_explore, input, strict, errors);
@@ -2352,8 +2352,12 @@ function validateApprovalPolicyLimit(value: unknown, path: string, strict: boole
   if (value.kind === "count" && value.field !== undefined) errors.push({ path: `${path}.field`, code: "APPROVAL_POLICY_COUNT_FIELD_FORBIDDEN", message: "count limits must not declare a field." });
 }
 
-function validateOperatorIdentity(value: unknown, strict: boolean, errors: ConfigIssue[]): void {
-  if (value === undefined) return;
+function validateOperatorIdentity(value: unknown, version: unknown, strict: boolean, errors: ConfigIssue[]): void {
+  if (value === undefined) {
+    if (version === 2) errors.push({ path: "$.operator_identity", code: "SCOPED_APPLY_ROSTER_REQUIRED",
+      message: "version 2 requires an explicit signed-key roster." });
+    return;
+  }
   if (!isRecord(value)) {
     errors.push({ path: "$.operator_identity", code: "OPERATOR_IDENTITY_NOT_OBJECT", message: "operator_identity must be an object." });
     return;
@@ -2369,6 +2373,20 @@ function validateOperatorIdentity(value: unknown, strict: boolean, errors: Confi
   }
   if (value.apply_roles !== undefined && (!Array.isArray(value.apply_roles) || value.apply_roles.length === 0 || value.apply_roles.some((role) => !isSafeName(role)))) {
     errors.push({ path: "$.operator_identity.apply_roles", code: "INVALID_OPERATOR_APPLY_ROLES", message: "apply_roles must contain one or more safe role names." });
+  }
+  if (version === 2 && (value.provider !== "signed_key" || value.roster_version !== 2)) {
+    errors.push({ path: "$.operator_identity.roster_version", code: "SCOPED_APPLY_ROSTER_REQUIRED",
+      message: "version 2 requires an explicit signed-key roster_version 2." });
+  }
+  if (version === 1 && value.roster_version !== undefined) {
+    errors.push({ path: "$.operator_identity.roster_version", code: "SCOPED_APPLY_VERSION_REQUIRED",
+      message: "a versioned roster requires config version 2." });
+  }
+  if (value.provider !== "signed_key" && isRecord(value.operators)
+    && Object.values(value.operators).some((operator) => isRecord(operator)
+      && (operator.authority_kind !== undefined || operator.apply_outcomes !== undefined))) {
+    errors.push({ path: "$.operator_identity.operators", code: "SCOPED_APPLY_SIGNED_KEY_REQUIRED",
+      message: "scoped apply signer entries require signed_key identity." });
   }
   if (value.provider === "signed_key") {
     if (!isRecord(value.operators) || Object.keys(value.operators).length === 0) {
@@ -2388,8 +2406,32 @@ function validateOperatorIdentity(value: unknown, strict: boolean, errors: Confi
         || !/^sha256:[a-f0-9]{64}$/u.test(operator.public_key_fingerprint))) {
         errors.push({ path: `${path}.public_key_fingerprint`, code: "OPERATOR_PUBLIC_KEY_FINGERPRINT_INVALID", message: "public_key_fingerprint must be a SHA-256 digest." });
       }
-      if (!Array.isArray(operator.roles) || operator.roles.length === 0 || operator.roles.some((role) => !isSafeName(role))) {
-        errors.push({ path: `${path}.roles`, code: "OPERATOR_ROLES_REQUIRED", message: "operator roles must contain one or more safe role names." });
+      const scoped = operator.authority_kind === "scoped_apply";
+      if (version === 2 && operator.authority_kind !== "legacy" && !scoped) {
+        errors.push({ path: `${path}.authority_kind`, code: "OPERATOR_AUTHORITY_KIND_REQUIRED",
+          message: "every version 2 signer must declare legacy or scoped_apply authority." });
+      }
+      if (version === 1 && (operator.authority_kind !== undefined || operator.apply_outcomes !== undefined)) {
+        errors.push({ path: `${path}.authority_kind`, code: "SCOPED_APPLY_VERSION_REQUIRED",
+          message: "versioned signer authority requires config version 2." });
+      }
+      if (!Array.isArray(operator.roles) || (scoped ? operator.roles.length !== 0 : operator.roles.length === 0)
+        || operator.roles.some((role) => !isSafeName(role))) {
+        errors.push({ path: `${path}.roles`, code: "OPERATOR_ROLES_INVALID", message: scoped
+          ? "scoped apply operators must have no legacy roles" : "legacy operator roles must contain one or more safe role names." });
+      }
+      if (scoped) {
+        if (operator.outcomes !== undefined) errors.push({ path: `${path}.outcomes`, code: "SCOPED_APPLY_LEGACY_MIXED",
+          message: "scoped apply cannot be combined with legacy approval outcomes." });
+        if (!Array.isArray(operator.apply_outcomes)
+          || operator.apply_outcomes.some((outcome) => !isSafeName(outcome))
+          || new Set(operator.apply_outcomes).size !== operator.apply_outcomes.length) {
+          errors.push({ path: `${path}.apply_outcomes`, code: "SCOPED_APPLY_AUTHORIZATION_INVALID",
+            message: "scoped apply requires a closed exact outcome list; an empty list explicitly revokes apply." });
+        }
+      } else if (operator.apply_outcomes !== undefined) {
+        errors.push({ path: `${path}.apply_outcomes`, code: "SCOPED_APPLY_LEGACY_MIXED",
+          message: "legacy signers cannot carry a scoped apply list." });
       }
       if (operator.outcomes !== undefined && (!Array.isArray(operator.outcomes) || operator.outcomes.length === 0
         || operator.outcomes.some((outcome) => !isSafeName(outcome)))) {

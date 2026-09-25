@@ -6,8 +6,9 @@ import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { SignJWT, exportSPKI, generateKeyPair } from "jose";
 import type { StoredProposal } from "@synapsor-runner/proposal-store";
-import { hasVerifiedRecoveryControlActor, operatorPublicKeyFingerprint, resolveOperatorIdentity, signedOperatorKeyAlgorithm,
+import { hasVerifiedRecoveryControlActor, operatorPublicKeyFingerprint, resolveAuthorizedOperatorIdentity, resolveOperatorIdentity, signedOperatorKeyAlgorithm,
   verifyJwtOperatorProof, verifySignedOperatorProof } from "./operator-identity.js";
+import { applyAuthorizationLogMetadata } from "./guarded-apply.js";
 
 const proposal = {
   proposal_id: "wrp_identity",
@@ -29,6 +30,58 @@ const proposal = {
 } as unknown as StoredProposal;
 
 describe("operator identity", () => {
+  it("attributes a scoped APPLY audit to its exact grant rather than a legacy global role", () => {
+    const config = {
+      operator_identity: {
+        provider: "signed_key",
+        apply_roles: ["recovery_operator"],
+        operators: { worker: { authority_kind: "scoped_apply" }, control: { authority_kind: "legacy" } },
+      },
+    } as unknown as Parameters<typeof applyAuthorizationLogMetadata>[0];
+    expect(applyAuthorizationLogMetadata(config, "worker")).toEqual({ authority_kind: "scoped_apply" });
+    expect(applyAuthorizationLogMetadata(config, "control")).toEqual({ required_role: "recovery_operator" });
+  });
+
+  it("keeps tagged scoped APPLY distinct from approval, recovery and unscoped legacy fallback", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-scoped-apply-"));
+    try {
+      const { publicKey, privateKey } = crypto.generateKeyPairSync("ed25519");
+      const publicPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+      const publicPath = path.join(root, "worker.pub.pem"), privatePath = path.join(root, "worker.pem");
+      await fs.writeFile(publicPath, publicPem, { mode: 0o600 });
+      await fs.writeFile(privatePath, privateKey.export({ type: "pkcs8", format: "pem" }), { mode: 0o600 });
+      const config = { provider: "signed_key" as const, roster_version: 2 as const,
+        apply_roles: ["recovery_operator"], operators: { worker: {
+          public_key_path: "./worker.pub.pem", public_key_fingerprint: operatorPublicKeyFingerprint(publicPem),
+          roles: [], authority_kind: "scoped_apply" as const,
+          apply_outcomes: ["fleet.propose_repair", "fleet.close_repair"],
+        } } };
+      const base = { config, configPath: path.join(root, "runner.json"), proposal,
+        identity: "worker", privateKeyPath: privatePath };
+      const proof = await resolveAuthorizedOperatorIdentity({ ...base, action: "apply" });
+      expect(proof.verified).toBe(true);
+      expect(verifySignedOperatorProof(proof, publicPem)).toBe(true);
+      expect((await resolveAuthorizedOperatorIdentity({ ...base, action: "apply",
+        proposal: { ...proposal, action: "fleet.close_repair" } })).verified).toBe(true);
+      for (const action of ["approve", "reject", "reconcile", "worker_requeue", "worker_discard", "worker_cancel"] as const) {
+        await expect(resolveAuthorizedOperatorIdentity({ ...base, action })).rejects.toMatchObject({ code: "OPERATOR_SCOPED_APPLY_NOT_AUTHORIZED" });
+      }
+      await expect(resolveAuthorizedOperatorIdentity({ ...base, action: "apply",
+        proposal: { ...proposal, action: "fleet.unrelated" } })).rejects.toMatchObject({ code: "OPERATOR_SCOPED_APPLY_NOT_AUTHORIZED" });
+      const revoked = structuredClone(config);
+      revoked.operators.worker.apply_outcomes = [];
+      await expect(resolveAuthorizedOperatorIdentity({ ...base, config: revoked, action: "apply" }))
+        .rejects.toMatchObject({ code: "OPERATOR_SCOPED_APPLY_NOT_AUTHORIZED" });
+      const stripped = structuredClone(config);
+      delete (stripped.operators.worker as { authority_kind?: string }).authority_kind;
+      await expect(resolveAuthorizedOperatorIdentity({ ...base, config: stripped, action: "apply" }))
+        .rejects.toMatchObject({ code: "OPERATOR_AUTHORITY_KIND_MISSING" });
+      await expect(resolveAuthorizedOperatorIdentity({ ...base, action: "apply", privateKeyPath: path.join(root, "missing.pem") }))
+        .rejects.toMatchObject({ code: "OPERATOR_SIGNING_MATERIAL_UNAVAILABLE" });
+      expect(await hasVerifiedRecoveryControlActor({ config, configPath: base.configPath,
+        env: { SYNAPSOR_OPERATOR_ID: "worker", SYNAPSOR_OPERATOR_PRIVATE_KEY_PATH: privatePath } })).toBe(false);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
   it("checks a prospective signed recovery actor without creating an operator decision", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-recovery-role-"));
     try {

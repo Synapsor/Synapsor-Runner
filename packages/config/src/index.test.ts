@@ -1448,6 +1448,40 @@ describe("runner capability config validation", () => {
     expect(validateRunnerCapabilityConfig(config).ok).toBe(true);
   });
 
+  it("requires a tagged v2 signed roster for scoped apply and refuses stripped or mixed grants", () => {
+    const config = mutableConfig();
+    config.version = 2;
+    config.operator_identity = { provider: "signed_key", roster_version: 2, operators: {
+      reviewer: { public_key_path: "./reviewer.pub.pem", roles: ["reviewer"], outcomes: ["fleet.propose_repair"], authority_kind: "legacy" },
+      worker: { public_key_path: "./worker.pub.pem", roles: [], authority_kind: "scoped_apply",
+        apply_outcomes: ["fleet.propose_repair", "fleet.close_repair"] },
+    } };
+    expect(validateRunnerCapabilityConfig(config).ok).toBe(true);
+    const worker = config.operator_identity.operators!.worker!;
+    worker.apply_outcomes = [];
+    expect(validateRunnerCapabilityConfig(config).ok).toBe(true); // explicit revocation
+    delete worker.apply_outcomes;
+    expect(validateRunnerCapabilityConfig(config).errors.map(e => e.code)).toContain("SCOPED_APPLY_AUTHORIZATION_INVALID");
+    worker.apply_outcomes = ["fleet.propose_repair"];
+    delete worker.authority_kind;
+    expect(validateRunnerCapabilityConfig(config).errors.map(e => e.code)).toContain("OPERATOR_AUTHORITY_KIND_REQUIRED");
+    worker.authority_kind = "scoped_apply";
+    worker.outcomes = ["fleet.propose_repair"];
+    expect(validateRunnerCapabilityConfig(config).errors.map(e => e.code)).toContain("SCOPED_APPLY_LEGACY_MIXED");
+    delete worker.outcomes;
+    worker.apply_outcomes = ["fleet.propose_repair", "fleet.propose_repair"];
+    expect(validateRunnerCapabilityConfig(config).errors.map(e => e.code)).toContain("SCOPED_APPLY_AUTHORIZATION_INVALID");
+    worker.apply_outcomes = ["fleet.propose_repair"];
+    config.version = 1;
+    config.strict = false;
+    expect(validateRunnerCapabilityConfig(config).errors.map(e => e.code)).toContain("SCOPED_APPLY_VERSION_REQUIRED");
+    config.version = 2;
+    config.operator_identity.provider = "dev_env";
+    expect(validateRunnerCapabilityConfig(config).errors.map(e => e.code)).toContain("SCOPED_APPLY_ROSTER_REQUIRED");
+    config.operator_identity.provider = "signed_key";
+    expect(validateRunnerCapabilityConfig(config).ok).toBe(true);
+  });
+
   it("keeps WRITEBACK NONE distinct from broken direct writeback", () => {
     const config = mutableConfig();
     delete config.sources.app_postgres.write_url_env;

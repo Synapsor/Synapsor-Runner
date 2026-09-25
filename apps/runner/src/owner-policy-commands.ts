@@ -25,6 +25,7 @@ export async function ownerPolicyCommand(args: string[], dependencies: {
   const [mode, ...rest] = args;
   if (mode === "connection") return ownerConnectionCommand(rest, dependencies);
   if (mode === "approver") return approverConfigurationCommand(rest, dependencies);
+  if (mode === "apply-operator") return approverConfigurationCommand(rest, dependencies, "scoped_apply");
   if (mode !== "storage" && mode !== "delegation") throw new Error("policy requires storage or delegation for owner-rule setup.");
   assertKnownOptions(rest, new Set(["--config", "--project-root", "--store", "--input", "--name"]), `policy ${mode}`);
   const configPath = runnerConfigPath(rest);
@@ -111,8 +112,10 @@ export async function ownerPolicyCommand(args: string[], dependencies: {
   } finally { terminal?.close(); }
 }
 
-async function approverConfigurationCommand(args: string[], dependencies: { io?: OwnerPolicyReviewIo; env?: NodeJS.ProcessEnv }): Promise<number> {
-  assertKnownOptions(args, new Set(["--config", "--project-root", "--store", "--input", "--previous-config"]), "policy approver");
+async function approverConfigurationCommand(args: string[], dependencies: { io?: OwnerPolicyReviewIo; env?: NodeJS.ProcessEnv },
+  mode: "approver" | "scoped_apply" = "approver"): Promise<number> {
+  assertKnownOptions(args, new Set(["--config", "--project-root", "--store", "--input", "--previous-config"]),
+    mode === "approver" ? "policy approver" : "policy apply-operator");
   // This is the existing local deployment-operator management boundary, not
   // an agent, reviewer, or noninteractive development-identity decision.
   if (!dependencies.io && (!process.stdin.isTTY || !process.stdout.isTTY)) {
@@ -135,27 +138,42 @@ async function approverConfigurationCommand(args: string[], dependencies: { io?:
     }
     identity = (document as { operator_identity: unknown }).operator_identity;
   }
-  const { prepareApproverPolicyConfiguration } = await import("./approver-policy-configuration.js");
-  const prepared = await prepareApproverPolicyConfiguration({ projectRoot, configPath, identity,
+  const { prepareApproverPolicyConfiguration, prepareScopedApplyPolicyConfiguration } = await import("./approver-policy-configuration.js");
+  const prepared = await (mode === "approver" ? prepareApproverPolicyConfiguration : prepareScopedApplyPolicyConfiguration)({ projectRoot, configPath, identity,
     previousConfigPath: optionalArg(args, "--previous-config"), storePath: optionalArg(args, "--store"), env: dependencies.env });
   const terminal = dependencies.io ? undefined : createTerminalAnalyticsShellIo({ slashCommands: false });
   const io = dependencies.io ?? terminal!;
   const write = (lines: string[]) => io.write(lines.flatMap((line) => wrapStyledTerminalLine(safeTerminalText(line), terminalContentWidth(io.columns()))).join("\n") + "\n");
   try {
     const review = prepared.review;
-    write(["Review scoped verified approver configuration",
+    write([mode === "approver" ? "Review scoped verified approver configuration" : "Review scoped APPLY operator configuration",
       "Authority for this first-use transition: the interactive local deployment-operator account owns this project and its control-store process. This is local administration, not a cryptographically verified reviewer or dev identity.",
       `Existing deployment revision: ${review.epoch}; exact operation: ${review.digest}`,
       ...(review.recovery ? ["The prior execution binding was proven from the supplied previous configuration."] : []),
-      ...review.roster.map((item) => `${item.subject}: roles ${item.roles.join(", ")}; outcomes ${item.outcomes.join(", ")}; public key ${item.public_key_fingerprint}`),
+      ...review.roster.map((item) => `${item.subject}: ${item.authority_kind === "scoped_apply"
+        ? `APPLY only for ${item.apply_outcomes?.join(", ") || "none (revoked)"}; no approval or recovery/control permission`
+        : `legacy roles ${item.roles.join(", ")}; approval outcomes ${item.outcomes.join(", ")}`}; public key ${item.public_key_fingerprint}`),
+      ...review.changed_signers.map((change) => `${change.subject}: ${change.before
+        ? `${change.before.authority_kind} [${change.before.outcomes.join(", ")}]`
+        : "not enrolled"} → ${change.after
+        ? `${change.after.authority_kind} [${change.after.outcomes.join(", ")}]`
+        : "removed"}; key ${change.before?.public_key_fingerprint ?? "none"} → ${change.after?.public_key_fingerprint ?? "none"}`),
+      ...(mode === "scoped_apply" ? [
+        `Deployment/project scope: ${review.project_root}`,
+        "This signer cannot approve/reject, enroll keys, manage policy/execution or perform recovery/control actions.",
+        "Only the current published Action outcomes listed above can be granted; all proposal, approval, source and receipt checks still apply.",
+      ] : []),
       ...review.role_scopes.map((item) => `${item.outcome}: approval role ${item.required_role}`),
       `Affected execution outcomes: ${review.affected_outcomes.join(", ") || "none"}`,
       "Saving this revision disables affected supervised execution. Review writer, receipt and Action prerequisites separately before enabling it again.",
       "Historical proposals, approvals and queues retain their original bindings. This does not run or publish a business Action."]);
-    if (!await confirm(io, "Save this exact approver revision and leave execution disabled", review)) return 0;
+    if (!await confirm(io, mode === "approver"
+      ? "Save this exact approver revision and leave execution disabled"
+      : "Save this exact scoped APPLY grant and leave execution disabled", review)) return 0;
     await prepared.confirm(review.digest);
-    write(["Approver configuration reviewed and saved; execution remains disabled.",
-      "Next: use Action review to verify writer and receipt posture, then separately authorize execution under the new identity binding."]);
+    write([mode === "approver" ? "Approver configuration reviewed and saved; execution remains disabled."
+      : "Scoped APPLY operator reviewed and saved; execution remains disabled.",
+      "Next: use Action review to verify writer, receipt and worker identity posture, then separately authorize execution under the new identity binding."]);
     return 0;
   } finally { terminal?.close(); await prepared.close(); }
 }

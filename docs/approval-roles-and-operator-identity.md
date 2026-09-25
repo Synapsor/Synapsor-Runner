@@ -62,11 +62,41 @@ a tool argument.
 8. Runner stores the verified identity metadata and an attested decision proof.
    It never stores the bearer token.
 9. Apply is a second operator decision. A fresh verified identity must satisfy
-   `operator_identity.apply_roles`; approval does not imply commit authority.
+   the reviewed legacy `operator_identity.apply_roles` gate or its exact
+   version 2 scoped-apply grant; approval does not imply commit authority.
 
 At apply time Runner also verifies the stored approval proof against the exact
 proposal. A changed proposal ID, version, hash, role, subject, decision, or
 attestation fails before source mutation.
+
+## Reviewed signed APPLY operator for exact Actions
+
+A local installation operator can enroll one signed APPLY operator with
+`policy apply-operator --config ./synapsor.runner.json --input ./scoped-apply-roster.json`.
+This is a separate, default-No management review. Saving the roster disables
+supervised execution; the writer, receipt and execution posture must be
+reviewed again before a worker can run. Enrollment grants no approval,
+recovery, policy-management, or source effect by itself.
+
+The input file contains only `operator_identity`. For a version 2 signed
+roster, the runtime config also has top-level `"version": 2`; every signer
+has an explicit `authority_kind`. Existing signers retain
+`"authority_kind": "legacy"` and their exact previous roles, outcomes and
+public keys. The new signer uses `"authority_kind": "scoped_apply"`,
+`"roles": []`, and exact published Action names in `apply_outcomes`.
+An empty `apply_outcomes` list revokes its APPLY authority. It cannot fall
+back to the legacy `apply_roles` grant. Runner rejects a version 2 signer
+whose kind is missing, and older readers reject the version 2 config rather
+than silently treating the scoped signer as legacy. Ed25519 and RSA keys of
+at least 2048 bits are supported.
+
+Before dispatch, `worker check --supervised --capability <exact outcome>`
+assesses the selected signer and key through the same identity resolver used
+for APPLY. It is nonmutating and grants no execution authority. The worker
+rechecks current identity and the exact proposal before claiming work, then
+the normal approval, source, version, idempotency and receipt guards still
+apply. A missing or mismatched identity is a setup refusal, not proof that a
+historical execution had no effect.
 
 ## Development-Only Identity
 

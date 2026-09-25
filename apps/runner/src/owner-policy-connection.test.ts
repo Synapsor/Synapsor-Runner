@@ -22,9 +22,10 @@ import { migrateProjectControlPolicies, openProjectControlPolicies, type Control
 import { readRuntimeConfig } from "./cli-project.js";
 import { inspectMcpToolBoundary, mcpConfigure, readLocalExploreRuntimeConfig, readMcpLaunchConfig } from "./mcp-runtime.js";
 import { ownerPolicyCommand } from "./owner-policy-commands.js";
+import { assessWorkerLaunch } from "./worker-launch.js";
 import { prepareOwnerConnectionReview } from "./owner-policy-connection.js";
-import { prepareApproverPolicyConfiguration } from "./approver-policy-configuration.js";
-import { operatorPublicKeyFingerprint, verifySignedOperatorProof } from "./operator-identity.js";
+import { prepareApproverPolicyConfiguration, prepareScopedApplyPolicyConfiguration } from "./approver-policy-configuration.js";
+import { operatorPublicKeyFingerprint, resolveAuthorizedOperatorIdentity, verifySignedOperatorProof } from "./operator-identity.js";
 import type { OwnerPolicyReviewIo } from "./owner-policy-review-ui.js";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 
@@ -188,9 +189,9 @@ async function installedApproverCli(args: string[], env: NodeJS.ProcessEnv, conf
   let output = "", answered = false;
   child.stdout.on("data", (chunk: Buffer) => {
     output += chunk.toString();
-    if (confirm && !answered && output.includes("Leave unchanged")) {
+    if (!answered && output.includes("Leave unchanged")) {
       answered = true;
-      child.stdin.write("\u001b[A\u001b[A\r"); // Move from default cancel to explicit confirm.
+      child.stdin.write(confirm ? "\u001b[A\u001b[A\r" : "\r"); // Explicit Yes or default-No Enter.
     }
   });
   child.stderr.on("data", (chunk: Buffer) => { output += chunk.toString(); });
@@ -211,6 +212,115 @@ async function reviewerIdentity(root: string) {
 }
 
 for (const backend of ["sqlite", "postgres"] as const) describe.skipIf(backend === "postgres" && !postgresUrl)(`${backend} scoped approver transition`, () => {
+  it("reviews one exact APPLY signer while preserving the legacy control signer", async () => {
+    await withFixture(backend, async (f) => {
+      const keys = generateKeyPairSync("ed25519"), privatePath = path.join(f.root, "scoped.pem");
+      await fs.writeFile(path.join(f.root, "scoped.pub.pem"), keys.publicKey.export({ type: "spki", format: "pem" }), { mode: 0o600 });
+      await fs.writeFile(privatePath, keys.privateKey.export({ type: "pkcs8", format: "pem" }), { mode: 0o600 });
+      const identity = { provider: "signed_key" as const, roster_version: 2 as const, apply_roles: ["recovery_operator"],
+        operators: { recovery_operator: { public_key_path: "./recovery.pub.pem", roles: ["recovery_operator"], authority_kind: "legacy" as const },
+          scoped_worker: { public_key_path: "./scoped.pub.pem", roles: [], authority_kind: "scoped_apply" as const,
+            apply_outcomes: ["inventory.adjust"] } } };
+      const before = await f.state();
+      const unrelated = structuredClone(identity) as typeof identity & { actor_env?: string };
+      unrelated.actor_env = "UNRELATED_ACTOR";
+      await expect(prepareScopedApplyPolicyConfiguration({ ...f.input, identity: unrelated })).rejects.toMatchObject({
+        code: "POLICY_SCOPED_APPLY_UNRELATED_CHANGE",
+      });
+      expect(await f.state()).toEqual(before);
+      const prepared = await prepareScopedApplyPolicyConfiguration({ ...f.input, identity });
+      f.reviews.push(prepared as never);
+      expect(prepared.review.changed_signers).toEqual(expect.arrayContaining([
+        expect.objectContaining({ subject: "scoped_worker", after: expect.objectContaining({ authority_kind: "scoped_apply", outcomes: ["inventory.adjust"] }) }),
+      ]));
+      await prepared.confirm(prepared.review.digest);
+      const current = await readRuntimeConfig(f.configPath, { env: f.env, storePath: f.storePath });
+      expect(current.version).toBe(2);
+      expect(current.operator_identity?.operators?.recovery_operator?.authority_kind).toBe("legacy");
+      expect(current.operator_identity?.operators?.scoped_worker?.apply_outcomes).toEqual(["inventory.adjust"]);
+      expect(current.supervised_worker?.enabled).toBe(false);
+      const disabledLaunch = await assessWorkerLaunch({ config: current, configPath: f.configPath,
+        capability: "inventory.adjust", env: { ...f.env, SYNAPSOR_OPERATOR_ID: "scoped_worker",
+          SYNAPSOR_OPERATOR_PRIVATE_KEY_PATH: privatePath } });
+      expect(disabledLaunch.coverage).toBe("selected_semantic_outcome");
+      expect(disabledLaunch.issues).toContain("SUPERVISED_EXECUTION_DISABLED");
+      const unrelatedApproverEdit = structuredClone(current.operator_identity!);
+      delete unrelatedApproverEdit.operators!.scoped_worker;
+      await expect(prepareApproverPolicyConfiguration({ ...f.input, identity: unrelatedApproverEdit }))
+        .rejects.toMatchObject({ code: "POLICY_SCOPED_APPLY_CHANGE_OUT_OF_SCOPE" });
+      const proof = await resolveAuthorizedOperatorIdentity({ config: current.operator_identity, configPath: f.configPath,
+        proposal: { proposal_id: "p1", proposal_version: 1, proposal_hash: "sha256:p1", action: "inventory.adjust" },
+        action: "apply", identity: "scoped_worker", privateKeyPath: privatePath });
+      expect(proof.verified).toBe(true);
+      await expect(resolveAuthorizedOperatorIdentity({ config: current.operator_identity, configPath: f.configPath,
+        proposal: { proposal_id: "p2", proposal_version: 1, proposal_hash: "sha256:p2", action: "inventory.other" },
+        action: "apply", identity: "scoped_worker", privateKeyPath: privatePath })).rejects.toMatchObject({
+        code: "OPERATOR_SCOPED_APPLY_NOT_AUTHORIZED",
+      });
+      const revoked = structuredClone(current.operator_identity!);
+      revoked.operators!.scoped_worker!.apply_outcomes = [];
+      const revokeReview = await prepareScopedApplyPolicyConfiguration({ ...f.input, identity: revoked });
+      f.reviews.push(revokeReview as never);
+      await revokeReview.confirm(revokeReview.review.digest);
+      const afterRevoke = await readRuntimeConfig(f.configPath, { env: f.env, storePath: f.storePath });
+      await expect(resolveAuthorizedOperatorIdentity({ config: afterRevoke.operator_identity, configPath: f.configPath,
+        proposal: { proposal_id: "p1", proposal_version: 1, proposal_hash: "sha256:p1", action: "inventory.adjust" },
+        action: "apply", identity: "scoped_worker", privateKeyPath: privatePath })).rejects.toMatchObject({
+        code: "OPERATOR_SCOPED_APPLY_NOT_AUTHORIZED",
+      });
+    }, { initialApplySigner: true });
+  });
+
+  it.skipIf(backend === "postgres")("installed CLI defaults No and explicitly enrolls one scoped APPLY signer", async () => {
+    await withFixture(backend, async (f) => {
+      const keys = generateKeyPairSync("ed25519");
+      await fs.writeFile(path.join(f.root, "scoped.pub.pem"), keys.publicKey.export({ type: "spki", format: "pem" }), { mode: 0o600 });
+      const roster = { operator_identity: { provider: "signed_key", roster_version: 2, apply_roles: ["recovery_operator"],
+        operators: { recovery_operator: { public_key_path: "./recovery.pub.pem", roles: ["recovery_operator"], authority_kind: "legacy" },
+          scoped_worker: { public_key_path: "./scoped.pub.pem", roles: [], authority_kind: "scoped_apply",
+            apply_outcomes: ["inventory.adjust"] } } } };
+      const rosterPath = path.join(f.root, "scoped-roster.json");
+      await fs.writeFile(rosterPath, JSON.stringify(roster), { mode: 0o600 });
+      const before = await f.state(), beforeConfig = await fs.readFile(f.configPath, "utf8");
+      const cancelled = await installedApproverCli(["policy", "apply-operator", "--config", f.configPath,
+        "--store", f.storePath, "--input", rosterPath], { ...f.env, HOME: f.root }, false);
+      expect(cancelled.status, cancelled.output).toBe(0);
+      expect(cancelled.output).toContain("Leave unchanged");
+      expect(await f.state()).toEqual(before);
+      expect(await fs.readFile(f.configPath, "utf8")).toBe(beforeConfig);
+      const enrolled = await installedApproverCli(["policy", "apply-operator", "--config", f.configPath,
+        "--store", f.storePath, "--input", rosterPath], { ...f.env, HOME: f.root }, true);
+      expect(enrolled.status, enrolled.output).toBe(0);
+      expect(enrolled.output).toMatch(/Scoped APPLY operator\s+reviewed and saved/u);
+      expect((await readRuntimeConfig(f.configPath, { env: f.env, storePath: f.storePath })).operator_identity?.roster_version).toBe(2);
+    }, { initialApplySigner: true });
+  }, 45_000);
+
+  it("retains the reviewed approver when adding a different scoped APPLY signer", async () => {
+    await withFixture(backend, async (f) => {
+      const reviewer = await reviewerIdentity(f.root);
+      const first = await prepareApproverPolicyConfiguration({ ...f.input, identity: reviewer });
+      f.reviews.push(first as never);
+      await first.confirm(first.review.digest);
+      const current = await readRuntimeConfig(f.configPath, { env: f.env, storePath: f.storePath });
+      const original = structuredClone(current.operator_identity!.operators!.reviewer_one!);
+      const keys = generateKeyPairSync("ed25519");
+      await fs.writeFile(path.join(f.root, "worker.pub.pem"), keys.publicKey.export({ type: "spki", format: "pem" }), { mode: 0o600 });
+      const identity = { ...current.operator_identity!, roster_version: 2 as const, operators: {
+        ...current.operator_identity!.operators!, reviewer_one: { ...original, authority_kind: "legacy" as const },
+        apply_worker: { public_key_path: "./worker.pub.pem", roles: [], authority_kind: "scoped_apply" as const,
+          apply_outcomes: ["inventory.adjust"] },
+      } };
+      const second = await prepareScopedApplyPolicyConfiguration({ ...f.input, identity });
+      f.reviews.push(second as never);
+      await second.confirm(second.review.digest);
+      const after = await readRuntimeConfig(f.configPath, { env: f.env, storePath: f.storePath });
+      expect(after.operator_identity?.operators?.reviewer_one).toEqual({ ...original, authority_kind: "legacy" });
+      expect(after.operator_identity?.operators?.apply_worker).toMatchObject({ roles: [], apply_outcomes: ["inventory.adjust"] });
+      expect(after.supervised_worker?.enabled).toBe(false);
+    });
+  }, 20_000);
+
   it("adds an exact approval reviewer while retaining the existing signed recovery operator", async () => {
     await withFixture(backend, async (f) => {
       const reviewer = await reviewerIdentity(f.root);

@@ -7,6 +7,7 @@ const base: WorkerLaunchAssessment = {
   execution_binding: "current", receipt: { mode: "source_db", selected_mode: "source_db",
     matches_execution_configuration: true, selection: "current", live_verification: "not_performed" },
   coverage: "selected_semantic_outcome",
+  apply_identity: { state: "unassessed", verified: false },
 };
 
 describe("prospective recovery readiness presentation", () => {

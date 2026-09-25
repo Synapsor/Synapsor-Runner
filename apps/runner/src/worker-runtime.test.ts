@@ -213,6 +213,7 @@ describe("supervised worker current execution policy", () => {
       inputs: [], issues: [], execution_enabled: true, execution_binding: "current",
       receipt: { mode: "runner_ledger", selected_mode: null, matches_execution_configuration: null,
         selection: "unverified", live_verification: "not_performed" },
+      apply_identity: { state: "unassessed", verified: false },
     });
     const config: RuntimeConfig = { version: 1, mode: "review", capabilities: [],
       trusted_context: { provider: "environment" },

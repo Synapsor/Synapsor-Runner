@@ -362,7 +362,7 @@ export type RuntimeActionRulesConfig = {
 export type RuntimeActionBoundaryReference = RuntimeActionBoundaryV1;
 
 export type RuntimeConfig = {
-  version: 1;
+  version: 1 | 2;
   mode: RunnerMode;
   result_format?: ResultFormat;
   model_output?: {
@@ -379,7 +379,9 @@ export type RuntimeConfig = {
     actor_env?: string;
     roles_env?: string;
     apply_roles?: string[];
-    operators?: Record<string, { public_key_path: string; public_key_fingerprint?: string; roles: string[]; outcomes?: string[] }>;
+    roster_version?: 2;
+    operators?: Record<string, { public_key_path: string; public_key_fingerprint?: string; roles: string[]; outcomes?: string[];
+      authority_kind?: "legacy" | "scoped_apply"; apply_outcomes?: string[] }>;
     token_env?: string;
     token_file_env?: string;
     token_stdin?: boolean;

@@ -108,6 +108,10 @@ describe.skipIf(!process.env.SYNAPSOR_TEST_POSTGRES_URL)("connected semantic wor
       }
       const authority = await loadActiveActionRuleAuthority(f.root);
       const config = semanticWorkerConfig(f.config, authority.registry.rules[0]!.action_boundary_digest);
+      // These pre-existing worker/context cases exercise the legacy local-dev
+      // identity path; the scoped signed-key contract has separate controls.
+      config.operator_identity = { provider: "dev_env", apply_roles: ["fixture_apply"] };
+      vi.stubEnv("SYNAPSOR_OPERATOR_ROLES", "fixture_apply");
       config.supervised_worker!.outcomes![0]!.worker_identity = "semantic_action_worker";
       expect(config.contexts).toBeUndefined();
       expect(authority.registry.rules[0]!.compiled.context).toBe("trusted_context");
@@ -190,7 +194,7 @@ describe.skipIf(!process.env.SYNAPSOR_TEST_POSTGRES_URL)("connected semantic wor
     const snapshot = f.snapshot(), rows = await f.rows();
     const launch = await assessWorkerLaunch({ config: f.config, configPath: f.configPath });
     expect(launch.inputs.map(x => x.reference)).toEqual(["TEST_WORKER_TENANT", "TEST_WORKER_PRINCIPAL", "SYNAPSOR_DATABASE_WRITE_URL"]);
-    expect(launch.recovery_prerequisites).toBe("roles_missing");
+    expect(launch.recovery_prerequisites).toBe("actor_unverified");
     expect(launch.receipt).toMatchObject({ mode: "runner_ledger", selection: "unverified", live_verification: "not_performed" });
     const spy = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
     try {
@@ -198,7 +202,7 @@ describe.skipIf(!process.env.SYNAPSOR_TEST_POSTGRES_URL)("connected semantic wor
       expect(JSON.parse(spy.mock.calls.map(([x]) => String(x)).join(""))).toEqual(launch);
     } finally { spy.mockRestore(); }
     const text = workerLaunchLines(launch).join("\n");
-    expect(text).toContain("Future eligible blocked attempts may have no authenticated closure route");
+    expect(text).toContain("Closure readiness is unverified");
     expect(text).toContain("worker check --supervised");
     expect(text).toContain("--capability 'billing.pause_notifications'");
     expect(text).not.toMatch(/acct_1|customer_1|postgres:\/\//);
@@ -639,6 +643,8 @@ describe("semantic writeback authority orchestration", () => {
     const authority = await loadActiveActionRuleAuthority(fixture.root);
     const activated = authority.registry.rules[0]!;
     const config = semanticWorkerConfig(fixture.config, activated.action_boundary_digest);
+    config.operator_identity = { provider: "dev_env", apply_roles: ["fixture_apply"] };
+    vi.stubEnv("SYNAPSOR_OPERATOR_ROLES", "fixture_apply");
     await fs.writeFile(fixture.configPath, `${JSON.stringify(config, null, 2)}\n`, "utf8");
     const store = new ProposalStore(fixture.storePath);
     try {
@@ -671,6 +677,23 @@ describe("semantic writeback authority orchestration", () => {
     } finally {
       store.close();
     }
+  });
+
+  it("keeps the legacy dev identity path available before claiming approved semantic work", async () => {
+    const fixture = await writebackFixture();
+    const authority = await loadActiveActionRuleAuthority(fixture.root);
+    const config = semanticWorkerConfig(fixture.config, authority.registry.rules[0]!.action_boundary_digest);
+    expect(config.operator_identity).toBeUndefined();
+    const store = new ProposalStore(fixture.storePath);
+    try {
+      await enqueueApprovedForSupervisedWorker(store, config, fixture.configPath, {});
+      expect(store.getWorkerQueueItem(fixture.job.proposal_id)).toMatchObject({ status: "queued", attempts: 0 });
+      expect(await claimSupervisedWorkerItem(store, config, fixture.configPath, {
+        workerId: "semantic_worker",
+      })).toMatchObject({ item: { proposal_id: fixture.job.proposal_id, status: "leased" } });
+      expect(store.getWorkerQueueItem(fixture.job.proposal_id)).toMatchObject({ status: "leased", attempts: 1 });
+      expect(store.receipts(fixture.job.proposal_id)).toEqual([]);
+    } finally { store.close(); }
   });
 
   it("retains automatic approval history but never dispatches old unstarted work after a lower-limit replacement", async () => {

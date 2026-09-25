@@ -22,6 +22,18 @@ import { argsWithRuntimeStoreBridge, assertGovernedLocalRuntimeStore, assertLoca
 import { assertSemanticSupervisedWriterPosture, assertSupervisedPolicyApprovalCurrent, assertSupervisedWriterPosture, supervisedWorkerEligibilityCode, workerControlAllowsPolicy, workerPolicyError } from "./worker-policy.js";
 import { applyCommandHandlerProposal, applyHttpHandlerProposal, applySqlJob, executorConfig, findProposalCapability, formatApplyResult, formatHandlerApplyResult, loadSemanticProposalAuthority, loadSemanticRuntimeAuthority, logProposalWritebackOutcome, proposalExecutorName, semanticApprovalCapability, verifyStoredApprovalAuthority } from "./writeback-execution.js";
 
+/** Operator-only audit metadata must name the authority actually used. A
+ * scoped signer never satisfies the legacy global apply-role list. */
+export function applyAuthorizationLogMetadata(config: RuntimeConfig, subject: string): {
+  authority_kind?: "scoped_apply"; required_role?: string;
+} {
+  if (config.operator_identity?.provider === "signed_key"
+    && config.operator_identity.operators?.[subject]?.authority_kind === "scoped_apply") {
+    return { authority_kind: "scoped_apply" };
+  }
+  return { required_role: config.operator_identity?.apply_roles?.join(",") || undefined };
+}
+
 
 export async function authorizeConfiguredJobApply(
   args: string[],
@@ -50,7 +62,7 @@ export async function authorizeConfiguredJobApply(
       subject: identity.subject,
       identity_provider: identity.provider,
       identity_verified: identity.verified,
-      required_role: config.operator_identity.apply_roles?.join(",") || undefined,
+      ...applyAuthorizationLogMetadata(config, identity.subject),
     });
   } finally {
     store.close();
@@ -272,7 +284,7 @@ async function applyAdmittedProposal(args: string[], proposalId: string,
       subject: identity.subject,
       identity_provider: identity.provider,
       identity_verified: identity.verified,
-      required_role: config.operator_identity?.apply_roles?.join(",") || undefined,
+      ...applyAuthorizationLogMetadata(config, identity.subject),
     });
     const proposalScope = proposal.change_set.guards.principal_scope;
     if (capability.target.principal_scope_key) {

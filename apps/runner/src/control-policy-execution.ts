@@ -108,6 +108,6 @@ export async function readOperatorExecutionConfig(input: {
 function fail(code: string): never {
   throw Object.assign(new Error(`${code}: reviewed execution or approver identity is unavailable; no execution is authorized.`
     + (code === "POLICY_EXECUTION_BINDING_CHANGED"
-      ? " If only owner sign-in settings changed, use policy connection; if scoped approver identity changed, use policy approver and separately re-review execution. Other changes require their own review; do not edit policy-store hashes."
+      ? " If only owner sign-in settings changed, use policy connection; if scoped approver identity changed, use policy approver; if an exact APPLY signer changed, use policy apply-operator. Separately re-review execution afterward. Other changes require their own review; do not edit policy-store hashes."
       : "")), { code });
 }

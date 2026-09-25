@@ -10,11 +10,14 @@ export type OperatorIdentityConfig = {
   actor_env?: string;
   roles_env?: string;
   apply_roles?: string[];
+  roster_version?: 2;
   operators?: Record<string, {
     public_key_path: string;
     public_key_fingerprint?: string;
     roles: string[];
     outcomes?: string[];
+    authority_kind?: "legacy" | "scoped_apply";
+    apply_outcomes?: string[];
   }>;
   token_env?: string;
   token_file_env?: string;
@@ -55,6 +58,21 @@ export type ResolveOperatorIdentityInput = {
   token?: string;
   tokenInput?: Readable;
 };
+
+/** The same nonmutating identity/operation check used by actual decisions and
+ * worker preflight. It signs an ephemeral decision but writes no ledger entry. */
+export async function resolveAuthorizedOperatorIdentity(input: ResolveOperatorIdentityInput): Promise<OperatorIdentityProof> {
+  const identity = await resolveOperatorIdentity(input);
+  const scoped = input.config?.provider === "signed_key"
+    && input.config.operators?.[identity.subject]?.authority_kind === "scoped_apply";
+  const legacyControlAction = ["apply", "reconcile", "worker_requeue", "worker_discard", "worker_cancel"].includes(input.action);
+  const applyRoles = input.config?.apply_roles ?? [];
+  if (legacyControlAction && !scoped && applyRoles.length > 0 && !applyRoles.some((role) => identity.roles.includes(role))) {
+    throw Object.assign(new Error("OPERATOR_APPLY_ROLE_MISSING: the signed identity lacks the reviewed operation role."),
+      { code: "OPERATOR_APPLY_ROLE_MISSING" });
+  }
+  return identity;
+}
 
 export async function resolveOperatorIdentity(input: ResolveOperatorIdentityInput): Promise<OperatorIdentityProof> {
   const env = input.env ?? process.env;
@@ -115,36 +133,72 @@ export async function resolveOperatorIdentity(input: ResolveOperatorIdentityInpu
   }
 
   const subject = input.identity?.trim() || env.SYNAPSOR_OPERATOR_ID?.trim();
-  if (!subject) throw new Error("signed operator identity requires --identity <operator> or SYNAPSOR_OPERATOR_ID");
+  if (!subject) throw Object.assign(new Error("OPERATOR_IDENTITY_MISSING: signed operator identity requires --identity <operator> or SYNAPSOR_OPERATOR_ID"),
+    { code: "OPERATOR_IDENTITY_MISSING" });
   const operator = config.operators?.[subject];
-  if (!operator) throw new Error(`operator ${subject} is not present in operator_identity.operators`);
-  assertRole(subject, operator.roles, input.requiredRole);
-  if (operator.outcomes && (!["approve", "reject"].includes(input.action)
+  if (!operator) throw Object.assign(new Error("OPERATOR_IDENTITY_NOT_ENROLLED: signed operator is not present in the reviewed roster"),
+    { code: "OPERATOR_IDENTITY_NOT_ENROLLED" });
+  if (config.roster_version === 2 && !operator.authority_kind) {
+    throw Object.assign(new Error("OPERATOR_AUTHORITY_KIND_MISSING: the reviewed signed roster is incomplete."),
+      { code: "OPERATOR_AUTHORITY_KIND_MISSING" });
+  }
+  if (config.roster_version !== 2 && (operator.authority_kind !== undefined || operator.apply_outcomes !== undefined)) {
+    throw Object.assign(new Error("OPERATOR_ROSTER_VERSION_INVALID: versioned signer authority is not active."),
+      { code: "OPERATOR_ROSTER_VERSION_INVALID" });
+  }
+  if (operator.authority_kind === "scoped_apply") {
+    if (operator.roles.length || operator.outcomes !== undefined || !Array.isArray(operator.apply_outcomes)
+      || input.action !== "apply" || !operator.apply_outcomes.includes(input.proposal.action ?? "")) {
+      throw Object.assign(new Error("OPERATOR_SCOPED_APPLY_NOT_AUTHORIZED: this signed identity cannot perform the requested decision."),
+        { code: "OPERATOR_SCOPED_APPLY_NOT_AUTHORIZED" });
+    }
+  } else if (operator.authority_kind !== undefined && operator.authority_kind !== "legacy") {
+    throw Object.assign(new Error("OPERATOR_AUTHORITY_KIND_INVALID: the signed roster has an unknown authority variant."),
+      { code: "OPERATOR_AUTHORITY_KIND_INVALID" });
+  } else if (operator.authority_kind === "legacy" && (!operator.roles.length || operator.apply_outcomes !== undefined)) {
+    throw Object.assign(new Error("OPERATOR_LEGACY_AUTHORITY_INVALID: the reviewed signed roster is incomplete."),
+      { code: "OPERATOR_LEGACY_AUTHORITY_INVALID" });
+  } else if (operator.outcomes && (!["approve", "reject"].includes(input.action)
     || !operator.outcomes.includes(input.proposal.action ?? ""))) {
     throw Object.assign(new Error(`OPERATOR_OUTCOME_NOT_AUTHORIZED: ${subject} is not assigned to this operation's outcome`),
       { code: "OPERATOR_OUTCOME_NOT_AUTHORIZED" });
   }
+  assertRole(subject, operator.roles, input.requiredRole);
   const privateKeyPath = input.privateKeyPath?.trim() || env.SYNAPSOR_OPERATOR_PRIVATE_KEY_PATH?.trim();
-  if (!privateKeyPath) throw new Error("signed operator identity requires --identity-key <private-key.pem> or SYNAPSOR_OPERATOR_PRIVATE_KEY_PATH");
+  if (!privateKeyPath) throw Object.assign(new Error("OPERATOR_PRIVATE_KEY_MISSING: signed operator identity requires --identity-key <private-key.pem> or SYNAPSOR_OPERATOR_PRIVATE_KEY_PATH"),
+    { code: "OPERATOR_PRIVATE_KEY_MISSING" });
   const configDir = path.dirname(path.resolve(input.configPath ?? "synapsor.runner.json"));
   const publicKeyPath = path.resolve(configDir, operator.public_key_path);
   const resolvedPrivateKeyPath = path.resolve(privateKeyPath);
-  const [publicKey, privateKey] = await Promise.all([
-    fs.readFile(publicKeyPath, "utf8"),
-    fs.readFile(resolvedPrivateKeyPath, "utf8"),
-  ]);
+  let publicKey: string, privateKey: string;
+  try {
+    [publicKey, privateKey] = await Promise.all([
+      fs.readFile(publicKeyPath, "utf8"),
+      fs.readFile(resolvedPrivateKeyPath, "utf8"),
+    ]);
+  } catch {
+    throw Object.assign(new Error("OPERATOR_SIGNING_MATERIAL_UNAVAILABLE: reviewed signing material is unavailable."),
+      { code: "OPERATOR_SIGNING_MATERIAL_UNAVAILABLE" });
+  }
   assertOperatorPublicKeyFingerprint(operator, publicKey);
   const algorithm = signedOperatorKeyAlgorithm(publicKey);
-  const privateKeyObject = crypto.createPrivateKey(privateKey);
+  let privateKeyObject: crypto.KeyObject;
+  try { privateKeyObject = crypto.createPrivateKey(privateKey); }
+  catch {
+    throw Object.assign(new Error("OPERATOR_PRIVATE_KEY_INVALID: supplied signing material is not a usable private key."),
+      { code: "OPERATOR_PRIVATE_KEY_INVALID" });
+  }
   if (privateKeyObject.asymmetricKeyType !== (algorithm === "ed25519" ? "ed25519" : "rsa")) {
-    throw new Error(`private key does not match the reviewed public key type for operator ${subject}`);
+    throw Object.assign(new Error("OPERATOR_PRIVATE_KEY_MISMATCH: private key type does not match the reviewed public key"),
+      { code: "OPERATOR_PRIVATE_KEY_MISMATCH" });
   }
   const decision = operatorDecision(input, subject);
   const canonical = stableJson(decision);
   const decisionHash = sha256(canonical);
   const signature = crypto.sign(signedKeyDigest(algorithm), Buffer.from(canonical), privateKeyObject).toString("base64url");
   if (!crypto.verify(signedKeyDigest(algorithm), Buffer.from(canonical), publicKey, Buffer.from(signature, "base64url"))) {
-    throw new Error(`private key does not match the reviewed public key for operator ${subject}`);
+    throw Object.assign(new Error("OPERATOR_PRIVATE_KEY_MISMATCH: private key does not match the reviewed public key"),
+      { code: "OPERATOR_PRIVATE_KEY_MISMATCH" });
   }
   const core = {
     provider: "signed_key" as const,
