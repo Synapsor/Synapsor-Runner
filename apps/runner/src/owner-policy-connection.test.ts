@@ -23,6 +23,7 @@ import { inspectMcpToolBoundary, mcpConfigure, readLocalExploreRuntimeConfig, re
 import { ownerPolicyCommand } from "./owner-policy-commands.js";
 import { prepareOwnerConnectionReview } from "./owner-policy-connection.js";
 import { prepareApproverPolicyConfiguration } from "./approver-policy-configuration.js";
+import { operatorPublicKeyFingerprint } from "./operator-identity.js";
 import type { OwnerPolicyReviewIo } from "./owner-policy-review-ui.js";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 
@@ -74,7 +75,7 @@ function parentRevision(content: unknown): ControlPolicyRevision {
 }
 function event() { return { event_id: randomUUID(), actor: "connection-test-operator", occurred_at: new Date().toISOString(), receipt: { operation: "fixture_parent_change" } }; }
 
-async function withFixture(backend: Backend, run: (f: Awaited<ReturnType<typeof setup>>) => Promise<void>, options: { execution?: boolean; initialOwners?: boolean } = {}) {
+async function withFixture(backend: Backend, run: (f: Awaited<ReturnType<typeof setup>>) => Promise<void>, options: { execution?: boolean; initialOwners?: boolean; initialApplySigner?: boolean; initialApplySignerPinned?: boolean } = {}) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-owner-connection-"));
   const schema = `owner_connection_${randomUUID().replaceAll("-", "")}`;
   const admin = backend === "postgres" ? new Pool({ connectionString: postgresUrl, connectionTimeoutMillis: 3000 }) : undefined;
@@ -87,7 +88,7 @@ async function withFixture(backend: Backend, run: (f: Awaited<ReturnType<typeof 
   }
 }
 
-async function setup(root: string, schema: string, backend: Backend, options: { execution?: boolean; initialOwners?: boolean }) {
+async function setup(root: string, schema: string, backend: Backend, options: { execution?: boolean; initialOwners?: boolean; initialApplySigner?: boolean; initialApplySignerPinned?: boolean }) {
   const f = ownerPolicyTestFixture(), read = reviewedRead(root);
   const draft = buildActionRuleAuthorityDraft({ name: "inventory_actions", action_boundary_name: "inventory_changes",
     catalog: { schema_version: "synapsor.action-rule-catalog.v1", generation_lock_fingerprint: f.compiled.generation_lock_fingerprint,
@@ -104,10 +105,20 @@ async function setup(root: string, schema: string, backend: Backend, options: { 
   const actionDraft = encodeOperatorAuthority({ type: "action", authority: draft });
   const selection = encodeOperatorAuthority({ type: "read_selection", selected_name: read.active.pack.name });
   const storePath = path.join(root, "control.db"), configPath = path.join(root, "synapsor.runner.json");
+  let applySignerFingerprint: string | undefined;
+  if (options.initialApplySigner) {
+    const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048,
+      publicKeyEncoding: { type: "spki", format: "pem" }, privateKeyEncoding: { type: "pkcs8", format: "pem" } });
+    await fs.writeFile(path.join(root, "recovery.pub.pem"), publicKey, { mode: 0o600 });
+    if (options.initialApplySignerPinned) applySignerFingerprint = operatorPublicKeyFingerprint(publicKey);
+  }
   const config: RuntimeConfig = { version: 1, mode: "review", capabilities: [], trusted_context: { provider: "environment" },
     sources: { local_postgres: { engine: "postgres", read_only: false, read_url_env: "READER_URL", write_url_env: "WRITER_URL", receipts: { authority: "runner_ledger" } } },
     action_rules: { project_root: root, ...(options.initialOwners ? ownerConnections() : {}) },
     storage: backend === "postgres" ? { shared_postgres: { mode: "runtime_store", schema, url_env: "OWNER_CONNECTION_PG_URL" } } : { sqlite_path: storePath },
+    ...(options.initialApplySigner ? { operator_identity: { provider: "signed_key", apply_roles: ["recovery_operator"],
+      operators: { recovery_operator: { public_key_path: "./recovery.pub.pem", roles: ["recovery_operator"],
+        ...(applySignerFingerprint ? { public_key_fingerprint: applySignerFingerprint } : {}) } } } } : {}),
     ...(options.execution === false ? {} : { supervised_worker: { enabled: true, profile: "staging", capabilities: [], outcomes: [{
       outcome: f.compiled.outcome, action_boundary_digest: draft.authority.action_boundary.digest, mode: "supervised_worker", concurrency: 1,
       queue_limit: 20, lease_seconds: 60, max_attempts: 3, proposal_ttl_seconds: 300, rate_limit: { executions: 10, window_seconds: 60 }, write_url_env: "WRITER_URL" }] } }),
@@ -156,6 +167,58 @@ async function reviewerIdentity(root: string) {
 }
 
 for (const backend of ["sqlite", "postgres"] as const) describe.skipIf(backend === "postgres" && !postgresUrl)(`${backend} scoped approver transition`, () => {
+  it("adds an exact approval reviewer while retaining the existing signed recovery operator", async () => {
+    await withFixture(backend, async (f) => {
+      const reviewer = await reviewerIdentity(f.root);
+      const identity = { ...reviewer, apply_roles: ["recovery_operator"], operators: {
+        recovery_operator: { public_key_path: "./recovery.pub.pem", roles: ["recovery_operator"] },
+        ...reviewer.operators,
+      } };
+      const before = await f.state();
+      const prepared = await prepareApproverPolicyConfiguration({ ...f.input, identity });
+      f.reviews.push(prepared as never);
+      expect(prepared.review.roster).toEqual(expect.arrayContaining([
+        expect.objectContaining({ subject: "recovery_operator", roles: ["recovery_operator"], outcomes: [] }),
+        expect.objectContaining({ subject: "reviewer_one", roles: ["action_reviewer"], outcomes: ["inventory.adjust"] }),
+      ]));
+      expect(await f.state()).toEqual(before);
+      await prepared.confirm(prepared.review.digest);
+      const saved = await readRuntimeConfig(f.configPath, { env: f.env, storePath: f.storePath });
+      expect(saved.operator_identity?.operators?.recovery_operator).toMatchObject(identity.operators.recovery_operator);
+      expect(saved.operator_identity?.operators?.reviewer_one).toMatchObject(identity.operators.reviewer_one);
+      expect(saved.supervised_worker?.enabled).toBe(false);
+      expect((await f.state()).epoch).toBe(before.epoch + 1);
+    }, { initialApplySigner: true });
+  });
+
+  it("refuses to replace an existing apply signer during approver enrollment", async () => {
+    await withFixture(backend, async (f) => {
+      const reviewer = await reviewerIdentity(f.root);
+      const identity = { ...reviewer, apply_roles: ["recovery_operator"] };
+      const before = await f.state();
+      await expect(prepareApproverPolicyConfiguration({ ...f.input, identity }))
+        .rejects.toMatchObject({ code: "POLICY_APPROVER_APPLY_SIGNER_CHANGED" });
+      expect(await f.state()).toEqual(before);
+    }, { initialApplySigner: true });
+  });
+
+  it("refuses a changed pinned recovery key even when the proposed roster omits its fingerprint", async () => {
+    await withFixture(backend, async (f) => {
+      const reviewer = await reviewerIdentity(f.root);
+      const identity = { ...reviewer, apply_roles: ["recovery_operator"], operators: {
+        recovery_operator: { public_key_path: "./recovery.pub.pem", roles: ["recovery_operator"] },
+        ...reviewer.operators,
+      } };
+      const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048,
+        publicKeyEncoding: { type: "spki", format: "pem" }, privateKeyEncoding: { type: "pkcs8", format: "pem" } });
+      await fs.writeFile(path.join(f.root, "recovery.pub.pem"), publicKey, { mode: 0o600 });
+      const before = await f.state();
+      await expect(prepareApproverPolicyConfiguration({ ...f.input, identity }))
+        .rejects.toMatchObject({ code: "POLICY_APPROVER_APPLY_SIGNER_CHANGED" });
+      expect(await f.state()).toEqual(before);
+    }, { initialApplySigner: true, initialApplySignerPinned: true });
+  });
+
   it("reviews a new key, keeps execution disabled, retains old authority and requires separate enable review", async () => {
     await withFixture(backend, async (f) => {
       const identity = await reviewerIdentity(f.root), before = await f.state();

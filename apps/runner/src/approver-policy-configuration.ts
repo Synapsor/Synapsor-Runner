@@ -150,7 +150,23 @@ export async function prepareApproverPolicyConfiguration(input: Input) {
     const roleScopes = active.registry.approval_classes.flatMap((approval) => approval.rules.map((rule) => ({
       outcome: rule.outcome, required_role: approval.required_role,
     }))).sort((a, b) => a.outcome.localeCompare(b.outcome));
+    const priorOperators = beforeConfig.operator_identity?.operators ?? {};
+    const applyRoles = new Set(beforeConfig.operator_identity?.apply_roles ?? []);
+    const existingApplySigner = (subject: string) => {
+      const prior = priorOperators[subject], next = resolvedNext.operator_identity?.operators?.[subject];
+      if (!prior || !prior.roles.length || (prior.outcomes ?? []).length ||
+        !prior.roles.every((role) => applyRoles.has(role))) return false;
+      if (!next || next.public_key_path !== prior.public_key_path ||
+        canonicalJsonDigest(next.roles) !== canonicalJsonDigest(prior.roles) ||
+        canonicalJsonDigest(next.outcomes ?? []) !== canonicalJsonDigest(prior.outcomes ?? []) ||
+        (prior.public_key_fingerprint !== undefined && prior.public_key_fingerprint !== next.public_key_fingerprint)) {
+        fail("POLICY_APPROVER_APPLY_SIGNER_CHANGED", "An existing apply or recovery signer must remain unchanged in this approver-only transition.");
+      }
+      return true;
+    };
+    for (const subject of Object.keys(priorOperators)) existingApplySigner(subject);
     for (const item of roster) {
+      if (existingApplySigner(item.subject)) continue;
       if (!item.outcomes.length || item.roles.some((role) => !item.outcomes.some((outcome) =>
         roleScopes.some((scope) => scope.outcome === outcome && scope.required_role === role)))
         || item.outcomes.some((outcome) => !item.roles.some((role) =>
