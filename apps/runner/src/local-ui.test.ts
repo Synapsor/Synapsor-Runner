@@ -6,6 +6,7 @@ import {
   ProposalStore,
   attentionDecisionSubject,
   type OperatorIdentityProof,
+  type WorkerQueueItem,
 } from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest, protocolVersions } from "@synapsor-runner/protocol";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
@@ -24,6 +25,7 @@ import {
   readBoundaryReviewProgress,
   saveBoundaryReviewProgress,
   startLocalUiServer,
+  workbenchWorkerCancelOffered,
 } from "./local-ui.js";
 import { ExploreTrustedScopeError } from "./explore-trusted-scope.js";
 import { compileSafeActionDraft } from "./safe-action.js";
@@ -36,6 +38,23 @@ import {
   READ_WORKLOAD_SET_VERSION,
   analyzeReadWorkloadSet,
 } from "./read-workload-assist.js";
+
+describe("Workbench cancellation affordance", () => {
+  it("does not offer a queue-control action through an approval-only key", () => {
+    const queue = { proposal_id: "p1", status: "queued", cancellation_control_role: null } as unknown as WorkerQueueItem;
+    const reviewerOnly = { operator_identity: { provider: "signed_key", operators: {
+      reviewer: { roles: ["action_reviewer"], outcomes: ["inventory.adjust"] },
+    } } };
+    expect(workbenchWorkerCancelOffered(queue, reviewerOnly)).toBe(false);
+    expect(workbenchWorkerCancelOffered({ ...queue, cancellation_control_role: "worker_controller" }, reviewerOnly)).toBe(false);
+    const separatelyAuthorized = { operator_identity: { provider: "signed_key", operators: {
+      reviewer: { roles: ["action_reviewer"], outcomes: ["inventory.adjust"] },
+      controller: { roles: ["worker_controller"] },
+    } } };
+    expect(workbenchWorkerCancelOffered({ ...queue, cancellation_control_role: "worker_controller" }, separatelyAuthorized)).toBe(true);
+    expect(workbenchWorkerCancelOffered({ ...queue, status: "held" }, separatelyAuthorized)).toBe(false);
+  });
+});
 
 const changeSet = {
   schema_version: "synapsor.change-set.v2",

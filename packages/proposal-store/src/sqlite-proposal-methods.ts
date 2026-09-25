@@ -1,10 +1,13 @@
+import { randomUUID } from "node:crypto";
 import {
   enforcePrivacyBudgets,
   parseChangeSet,
   parseFreshnessProof,
+  delayedValidationV1Schema,
   PrivacyBoundaryError,
   protocolVersions,
   type FreshnessProofV1,
+  type DelayedValidationV1,
 } from "@synapsor-runner/protocol";
 import {
   type LocalProposalState,
@@ -48,6 +51,7 @@ import {
   assertProposalIdentity,
   assertWritebackAllowed,
   assertNoSecretMaterial,
+  semanticApprovalSetDigest,
   proposalScopeIndex,
 } from "./proposal-integrity.js";
 import {
@@ -476,7 +480,115 @@ export const proposalStoreProposalsMethods: ProposalStoreProposalMethods & ThisT
         }
       });
       return proof;
-    },
+  },
+
+  beginDelayedValidation(proposalId: string, phase: "approval" | "dispatch"): string {
+    return this.transaction(() => {
+      const proposal = this.requireProposal(proposalId);
+      if (proposal.change_set.schema_version !== protocolVersions.changeSetV4 || !proposal.change_set.delayed_work) {
+        throw new ProposalStoreError("DELAYED_WORK_UNSUPPORTED", "this proposal has no reviewed delayed-work mode");
+      }
+      if (phase === "approval" ? proposal.state !== "pending_review"
+        : !["approved", "pending_worker"].includes(proposal.state)) {
+        throw new ProposalStoreError("DELAYED_VALIDATION_PHASE_INVALID", "the current proposal state cannot begin this validation phase");
+      }
+      const work = proposal.change_set.delayed_work;
+      const nowMs = Date.now(), requestMs = Date.parse(work.requested_at);
+      if (nowMs >= requestMs + work.absolute_request_age_seconds * 1_000
+        || phase === "approval" && nowMs >= requestMs + work.approval_wait_seconds * 1_000) {
+        throw new ProposalStoreError("DELAYED_VALIDATION_EXPIRED", "the original request waiting window has ended");
+      }
+      const prior = this.events(proposalId).filter((event) => event.kind === "delayed_semantic_validation_started");
+      if (prior.length >= work.max_validation_attempts) {
+        throw new ProposalStoreError("DELAYED_VALIDATION_ATTEMPTS_EXHAUSTED", "the reviewed validation-attempt bound has been reached");
+      }
+      const attemptDigest = randomUUID();
+      this.appendEvent(proposalId, "delayed_semantic_validation_started", "runner", {
+        attempt_digest: attemptDigest, phase, proposal_hash: proposal.proposal_hash,
+        proposal_version: proposal.proposal_version,
+      });
+      return attemptDigest;
+    });
+  },
+
+  recordDelayedValidationFailure(proposalId: string, attemptDigest: string, safeCode: string): void {
+    if (!/^(?:DELAYED_WORK|DELAYED_VALIDATION)_[A-Z0-9_]+$/.test(safeCode)) {
+      throw new ProposalStoreError("DELAYED_VALIDATION_FAILURE_CODE_INVALID", "only a safe delayed-work refusal can be recorded");
+    }
+    this.transaction(() => {
+      this.requireProposal(proposalId);
+      const prior = this.events(proposalId);
+      const started = prior.find((event) => event.kind === "delayed_semantic_validation_started"
+        && event.payload.attempt_digest === attemptDigest);
+      if (!started || prior.some((event) => (event.kind === "delayed_semantic_validation"
+        || event.kind === "delayed_semantic_validation_failed") && event.payload.attempt_digest === attemptDigest)) {
+        throw new ProposalStoreError("DELAYED_VALIDATION_ATTEMPT_MISSING", "a failed validation must close one original bounded attempt");
+      }
+      this.appendEvent(proposalId, "delayed_semantic_validation_failed", "runner", {
+        attempt_digest: attemptDigest, phase: started.payload.phase, safe_code: safeCode,
+      });
+    });
+  },
+
+  recordDelayedValidation(input: unknown, attemptDigest: string): DelayedValidationV1 {
+    const record = delayedValidationV1Schema.parse(input);
+    return this.transaction(() => {
+      const proposal = this.requireProposal(record.proposal_id);
+      const attempt = this.events(record.proposal_id).find((event) => event.kind === "delayed_semantic_validation_started"
+        && event.payload.attempt_digest === attemptDigest);
+      if (!attempt || attempt.payload.phase !== record.phase
+        || attempt.payload.proposal_hash !== record.proposal_hash
+        || attempt.payload.proposal_version !== record.proposal_version
+        || this.events(record.proposal_id).some((event) => event.kind === "delayed_semantic_validation"
+          && event.payload.attempt_digest === attemptDigest
+          || event.kind === "delayed_semantic_validation_failed" && event.payload.attempt_digest === attemptDigest)) {
+        throw new ProposalStoreError("DELAYED_VALIDATION_ATTEMPT_MISSING", "validation must complete one original bounded attempt");
+      }
+      if (proposal.change_set.schema_version !== protocolVersions.changeSetV4 || !proposal.change_set.delayed_work
+        || proposal.proposal_hash !== record.proposal_hash || proposal.proposal_version !== record.proposal_version
+        || proposal.change_set.semantic_authority.proof.proof_digest !== record.original_proof_digest
+        || proposal.change_set.semantic_authority.proof.dependency_set_digest !== record.dependency_set_digest
+        || proposal.change_set.semantic_authority.effect.effect_digest !== record.effect_digest
+        || proposal.change_set.delayed_work.execution_policy_digest !== record.execution_policy_digest) {
+        throw new ProposalStoreError("DELAYED_VALIDATION_BINDING_MISMATCH", "fresh validation differs from the original exact request");
+      }
+      const work = proposal.change_set.delayed_work;
+      const requestMs = Date.parse(work.requested_at), checkedMs = Date.parse(record.checked_at);
+      const nowMs = Date.now();
+      const approved = this.approvals(record.proposal_id).filter((entry) => entry.status === "approved");
+      const mandateUntil = record.phase === "dispatch" && approved.length
+        ? Math.min(...approved.map((entry) => Date.parse(entry.created_at) + work.approval_validity_seconds * 1_000))
+        : Infinity;
+      if (checkedMs < requestMs || checkedMs > nowMs || nowMs >= Date.parse(record.valid_until)
+        || Date.parse(record.valid_until) > checkedMs + (Date.parse(proposal.change_set.semantic_authority.proof.valid_until)
+          - Date.parse(proposal.change_set.semantic_authority.proof.verified_at))
+        || nowMs >= requestMs + work.absolute_request_age_seconds * 1_000
+        || Date.parse(record.valid_until) > requestMs + work.absolute_request_age_seconds * 1_000
+        || Date.parse(record.valid_until) > mandateUntil
+        || (record.phase === "approval" && (proposal.state !== "pending_review"
+          || nowMs >= requestMs + work.approval_wait_seconds * 1_000
+          || Date.parse(record.valid_until) > requestMs + work.approval_wait_seconds * 1_000))
+        || (record.phase === "dispatch" && !["approved", "pending_worker"].includes(proposal.state))) {
+        throw new ProposalStoreError("DELAYED_VALIDATION_EXPIRED", "the current request, decision or validation window has ended");
+      }
+      if (record.phase === "dispatch" && semanticApprovalSetDigest(proposal, this.approvals(record.proposal_id)) !== record.approval_set_digest) {
+        throw new ProposalStoreError("DELAYED_VALIDATION_APPROVAL_CHANGED", "recorded approval does not match the validated dispatch");
+      }
+      this.appendEvent(record.proposal_id, "delayed_semantic_validation", "runner", { record, attempt_digest: attemptDigest });
+      return record;
+    });
+  },
+
+  latestDelayedValidation(proposalId: string, phase: "approval" | "dispatch"): DelayedValidationV1 | undefined {
+    this.requireProposal(proposalId);
+    const events = this.events(proposalId).filter((event) => event.kind === "delayed_semantic_validation");
+    for (const event of events.reverse()) {
+      const parsed = delayedValidationV1Schema.safeParse(event.payload.record);
+      if (!parsed.success) throw new ProposalStoreError("DELAYED_VALIDATION_INTEGRITY", "stored delayed validation failed integrity checks");
+      if (parsed.data.phase === phase) return parsed.data;
+    }
+    return undefined;
+  },
   
   latestFreshnessProof(proposalId: string): FreshnessProofV1 | undefined {
       this.requireProposal(proposalId);
@@ -528,6 +640,7 @@ export const proposalStoreProposalsMethods: ProposalStoreProposalMethods & ThisT
         identity?: OperatorIdentityProof;
         require_verified_identity?: boolean;
         freshness_proof_digest?: string;
+        delayed_validation_digest?: string;
       },
     ): StoredProposal {
       const proposal = this.requireProposal(proposalId);
@@ -542,6 +655,23 @@ export const proposalStoreProposalsMethods: ProposalStoreProposalMethods & ThisT
         const current = this.requireProposal(proposalId);
         if (current.state !== "pending_review") {
           throw new ProposalStoreError("PROPOSAL_NOT_PENDING_REVIEW", `proposal ${proposalId} is ${current.state}`);
+        }
+        if (current.change_set.schema_version === protocolVersions.changeSetV4 && current.change_set.delayed_work) {
+          const validation = this.latestDelayedValidation(proposalId, "approval");
+          const work = current.change_set.delayed_work;
+          const nowMs = Date.parse(now), requestMs = Date.parse(work.requested_at);
+          if (!validation || validation.validation_digest !== options.delayed_validation_digest
+            || validation.proposal_hash !== current.proposal_hash
+            || validation.proposal_version !== current.proposal_version
+            || validation.original_proof_digest !== current.change_set.semantic_authority.proof.proof_digest
+            || validation.execution_policy_digest !== work.execution_policy_digest
+            || validation.dependency_set_digest !== current.change_set.semantic_authority.proof.dependency_set_digest
+            || validation.effect_digest !== current.change_set.semantic_authority.effect.effect_digest
+            || nowMs >= Date.parse(validation.valid_until)
+            || nowMs >= requestMs + work.approval_wait_seconds * 1_000
+            || nowMs >= requestMs + work.absolute_request_age_seconds * 1_000) {
+            throw new ProposalStoreError("DELAYED_VALIDATION_REQUIRED", "the exact human decision needs fresh current verification before it can be recorded");
+          }
         }
         const existing = this.db.prepare(`
           SELECT status FROM approvals WHERE proposal_id = ? AND approver = ? ORDER BY approval_id DESC LIMIT 1
@@ -580,6 +710,7 @@ export const proposalStoreProposalsMethods: ProposalStoreProposalMethods & ThisT
           reason: options.reason ?? null,
           identity: publicIdentitySummary(options.identity),
           freshness_proof_digest: options.freshness_proof_digest ?? null,
+          delayed_validation_digest: options.delayed_validation_digest ?? null,
           approvals: progress.approved,
           required_approvals: progress.required,
           remaining_approvals: progress.remaining,

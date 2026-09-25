@@ -59,7 +59,7 @@ export function actionRevisionImpactLines(impact?: Impact): string[] {
     : "Existing requests: not checked. Inspect the request queue before replacing rules if work may be in progress.",
   "Earlier requests and approvals are not rewritten. No request is rejected or cancelled by this review.",
   ...(impact?.unqueued ? [`${impact.unqueued} awaiting review or approved without a worker queue item. To retire one before re-submitting, review its details, then use ${cliCommandName()} proposals reject <reference> --reason "<reviewed reason>" --yes --config ./${SEMANTIC_ACTION_RUNTIME_CONFIG}.`] : []),
-  ...(impact?.queued ? [`${impact.queued} queued or waiting to retry. To stop one before its next lease, use ${cliCommandName()} worker cancel <reference> --yes --config ./${SEMANTIC_ACTION_RUNTIME_CONFIG}.`] : []),
+  ...(impact?.queued ? [`${impact.queued} queued or waiting to retry. If a separately authorized worker-control actor is configured, that actor may use ${cliCommandName()} worker cancel <reference> --yes --config ./${SEMANTIC_ACTION_RUNTIME_CONFIG} before the next lease. This preview does not establish that actor.`] : []),
   ...(impact?.other_queue_state ? [`${impact.other_queue_state} with dispatched, terminal, uncertain or inconsistent queue state; inspect request details and receipts before choosing a recovery.`] : []),
   ...(impact?.queue_unknown ? [`For ${impact.queue_unknown} requests, queue state could not be established; inspect request details and receipts before choosing a recovery.`] : []),
   "Any later decision rechecks the request state and required operator authorization; the snapshot is not permission to act.",

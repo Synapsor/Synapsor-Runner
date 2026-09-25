@@ -1,6 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import readline from "node:readline/promises";
 import { randomBytes } from "node:crypto";
 import { Pool } from "pg";
 import {
@@ -14,7 +15,7 @@ import {
   buildDerivedChangeSet,
   type RuntimeConfig,
 } from "@synapsor-runner/mcp-server";
-import { ProposalStore } from "@synapsor-runner/proposal-store";
+import { ProposalStore, localDelayedCancelPreviewDigest } from "@synapsor-runner/proposal-store";
 import { createPostgresActionRuleFactLoader } from "@synapsor-runner/postgres";
 import {
   canonicalJsonDigest,
@@ -53,6 +54,7 @@ import {
 import { assessWorkerLaunch, workerLaunchLines } from "./worker-launch.js";
 import { saveLocalTestRuntimeIdentity } from "./local-test-runtime-identity.js";
 import { assessSemanticSupervisedWriterPosture } from "./worker-policy.js";
+import { resolveOperatorIdentity } from "./operator-identity.js";
 
 const roots: string[] = [];
 const generationLock = `sha256:${"a".repeat(64)}` as const;
@@ -267,6 +269,272 @@ describe.skipIf(!process.env.SYNAPSOR_TEST_POSTGRES_URL)("connected semantic wor
 });
 
 describe("semantic writeback authority orchestration", () => {
+  it("refuses local cancellation when a delayed queue may have started execution", async () => {
+    const fixture = await writebackFixture({ delayedStoreControl: true });
+    const store = new ProposalStore(fixture.storePath);
+    try {
+      const proposal = store.getProposal(fixture.job.proposal_id)!;
+      const digest = fixture.job.semantic_authority.proof.action_boundary_digest as `sha256:${string}`;
+      store.enqueueWorkerProposal({ proposal_id: proposal.proposal_id,
+        execution_mode: "supervised_worker", contract_digest: digest,
+        cancellation_control_role: null, max_attempts: 1 });
+      // DERIVED uncertain recovered-queue control: an attempt count may not be
+      // reset merely because no receipt is currently visible.
+      store.db.prepare("UPDATE worker_queue SET status = 'held', attempts = 1 WHERE proposal_id = ?")
+        .run(proposal.proposal_id);
+      const before = {
+        proposal: store.getProposal(proposal.proposal_id),
+        queue: store.getWorkerQueueItem(proposal.proposal_id),
+        approvals: store.approvals(proposal.proposal_id),
+        events: store.events(proposal.proposal_id),
+      };
+      const actor = "local-installation-operator:fixture";
+      const reason = "Operator requested cancellation";
+      const identity = await resolveOperatorIdentity({ config: { provider: "dev_env" },
+        proposal, action: "worker_cancel", actor, reason, env: {} });
+      expect(() => store.cancelWorkerItem({ proposalId: proposal.proposal_id, actor, identity,
+        local_installation_operator_reason: reason,
+        expected_local_preview_digest: localDelayedCancelPreviewDigest({
+          proposal: before.proposal!, queue: before.queue!, approvals: before.approvals,
+        }),
+      })).toThrowError(expect.objectContaining({ code: "DELAYED_WORK_CANCEL_RECONCILIATION_REQUIRED" }));
+      expect({
+        proposal: store.getProposal(proposal.proposal_id),
+        queue: store.getWorkerQueueItem(proposal.proposal_id),
+        approvals: store.approvals(proposal.proposal_id),
+        events: store.events(proposal.proposal_id),
+      }).toEqual(before);
+      const lines = vi.spyOn(process.stdout, "write").mockImplementation(() => true);
+      try {
+        expect(await workerCommand(["status", "--config", fixture.configPath,
+          "--store", fixture.storePath])).toBe(0);
+        expect(lines.mock.calls.map(([value]) => String(value)).join("")).not.toContain("--local-installation-operator");
+      } finally { lines.mockRestore(); }
+    } finally { store.close(); }
+  });
+
+  it("accepts one explicit local-operator confirmation for a held, unattempted delayed request", async () => {
+    const fixture = await writebackFixture({ delayedStoreControl: true });
+    await fs.chmod(fixture.root, 0o700);
+    await fs.chmod(fixture.configPath, 0o600);
+    await fs.chmod(fixture.storePath, 0o600);
+    const id = fixture.job.proposal_id;
+    const store = new ProposalStore(fixture.storePath);
+    const proposal = store.getProposal(id)!;
+    const digest = fixture.job.semantic_authority.proof.action_boundary_digest as `sha256:${string}`;
+    store.enqueueWorkerProposal({ proposal_id: id, execution_mode: "supervised_worker",
+      contract_digest: digest, cancellation_control_role: null, max_attempts: 1 });
+    store.holdQueuedDelayedWork(id, "DELAYED_WORK_REQUEST_EXPIRED");
+    const approvals = store.approvals(id);
+    const originalCreatedAt = proposal.created_at;
+    store.close();
+    const priorTty = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    Object.defineProperty(process.stdin, "isTTY", { configurable: true, value: true });
+    const question = vi.fn().mockResolvedValue("yes");
+    const prompt = vi.spyOn(readline, "createInterface").mockReturnValue({
+      question, close: vi.fn(),
+    } as unknown as ReturnType<typeof readline.createInterface>);
+    try {
+      expect(await workerCommand(["cancel", id, "--local-installation-operator",
+        "--reason", "Operator withdrew this held request", "--config", fixture.configPath,
+        "--store", fixture.storePath])).toBe(0);
+      expect(question).toHaveBeenCalledOnce();
+      expect(String(question.mock.calls[0]?.[0])).toContain("Default: No");
+    } finally {
+      prompt.mockRestore();
+      if (priorTty) Object.defineProperty(process.stdin, "isTTY", priorTty);
+      else Reflect.deleteProperty(process.stdin, "isTTY");
+    }
+    const after = new ProposalStore(fixture.storePath);
+    try {
+      expect(after.getWorkerQueueItem(id)).toMatchObject({ status: "cancelled", attempts: 0 });
+      expect(after.getProposal(id)).toMatchObject({ state: "canceled", created_at: originalCreatedAt });
+      expect(after.approvals(id)).toEqual(approvals);
+      expect(after.receipts(id)).toEqual([]);
+    } finally { after.close(); }
+  });
+
+  it("requires exact, interactive local-operator cancellation instead of treating --yes as consent", async () => {
+    const fixture = await writebackFixture({ delayedStoreControl: true });
+    const id = fixture.job.proposal_id;
+    await fs.chmod(fixture.root, 0o700);
+    await fs.chmod(fixture.configPath, 0o600);
+    await fs.chmod(fixture.storePath, 0o600);
+    const beforeStore = new ProposalStore(fixture.storePath);
+    const before = { proposal: beforeStore.getProposal(id), queue: beforeStore.getWorkerQueueItem(id),
+      approvals: beforeStore.approvals(id), events: beforeStore.events(id) };
+    beforeStore.close();
+    const args = ["cancel", id, "--local-installation-operator", "--reason", "Operator withdrew request",
+      "--config", fixture.configPath, "--store", fixture.storePath];
+    await expect(workerCommand([...args, "--yes"])).rejects.toThrow(/LOCAL_DELAYED_CANCEL_INTERACTIVE_CONFIRMATION_REQUIRED/);
+    await expect(workerCommand(["cancel", "latest", ...args.slice(2)])).rejects.toThrow(/LOCAL_DELAYED_CANCEL_EXACT_REQUEST_REQUIRED/);
+    if (!process.stdin.isTTY) {
+      await expect(workerCommand(args)).rejects.toThrow(/interactive confirmation is unavailable/);
+    }
+    const store = new ProposalStore(fixture.storePath);
+    try {
+      expect({ proposal: store.getProposal(id), queue: store.getWorkerQueueItem(id),
+        approvals: store.approvals(id), events: store.events(id) }).toEqual(before);
+    } finally { store.close(); }
+  });
+
+  it("locally cancels only new pending or held delayed requests, retaining approval and proof history", async () => {
+    const fixture = await writebackFixture({ delayedStoreControl: true });
+    const original = new ProposalStore(fixture.storePath);
+    const originalProposal = original.getProposal(fixture.job.proposal_id)!;
+    const pending = new ProposalStore();
+    try {
+      const actor = "local-installation-operator:fixture";
+      const reason = "Operator withdrew this held request";
+      const identityFor = (proposal: typeof originalProposal) => resolveOperatorIdentity({
+        config: { provider: "dev_env" }, proposal, action: "worker_cancel",
+        actor, reason, env: {},
+      });
+      const pendingProposal = pending.createProposal(originalProposal.change_set);
+      const pendingIdentity = await identityFor(pendingProposal);
+      const pendingCreatedAt = pendingProposal.created_at;
+      const pendingPreview = localDelayedCancelPreviewDigest({ proposal: pendingProposal, queue: null,
+        approvals: pending.approvals(pendingProposal.proposal_id) });
+      expect(pending.cancelPendingDelayedRequest({
+        proposalId: pendingProposal.proposal_id, actor, identity: pendingIdentity, reason,
+        expected_local_preview_digest: pendingPreview,
+      })).toMatchObject({ state: "canceled", created_at: pendingCreatedAt });
+      expect(pending.approvals(pendingProposal.proposal_id)).toEqual([]);
+      expect(pending.receipts(pendingProposal.proposal_id)).toEqual([]);
+      expect(pending.events(pendingProposal.proposal_id).at(-1)).toMatchObject({
+        kind: "delayed_request_canceled", actor,
+        payload: { authority: "local_installation_operator", reason, source_database_changed: false,
+          identity: { verified: false, provider: "dev_env" } },
+      });
+      expect(() => pending.cancelPendingDelayedRequest({
+        proposalId: pendingProposal.proposal_id, actor, identity: pendingIdentity, reason,
+        expected_local_preview_digest: pendingPreview,
+      })).toThrowError(expect.objectContaining({ code: "LOCAL_DELAYED_CANCEL_REQUEST_CHANGED" }));
+
+      // DERIVED multi-reviewer state from the authentic v4 request: one real
+      // store approval is retained, with the second still outstanding.
+      const partial = new ProposalStore();
+      try {
+        const derived = structuredClone(originalProposal.change_set);
+        derived.approval.required_approvals = 2;
+        const { integrity: _priorIntegrity, ...core } = derived;
+        derived.integrity.proposal_hash = canonicalJsonDigest(core);
+        const partialProposal = partial.createProposal(derived);
+        if (partialProposal.change_set.schema_version !== "synapsor.change-set.v4"
+          || !partialProposal.change_set.delayed_work) throw new Error("expected delayed v4 request");
+        const validationAttempt = partial.beginDelayedValidation(partialProposal.proposal_id, "approval");
+        const checkedAt = new Date().toISOString();
+        const unsignedValidation = {
+          schema_version: "synapsor.delayed-validation.v1" as const,
+          phase: "approval" as const,
+          proposal_id: partialProposal.proposal_id,
+          proposal_hash: partialProposal.proposal_hash as `sha256:${string}`,
+          proposal_version: partialProposal.proposal_version,
+          original_proof_digest: partialProposal.change_set.semantic_authority.proof.proof_digest,
+          execution_policy_digest: partialProposal.change_set.delayed_work.execution_policy_digest,
+          checked_at: checkedAt, valid_until: new Date(Date.parse(checkedAt) + 30_000).toISOString(),
+          dependency_set_digest: partialProposal.change_set.semantic_authority.proof.dependency_set_digest,
+          effect_digest: partialProposal.change_set.semantic_authority.effect.effect_digest,
+        };
+        const validation = partial.recordDelayedValidation({
+          ...unsignedValidation, validation_digest: canonicalJsonDigest(unsignedValidation),
+        }, validationAttempt);
+        partial.approveProposal(partialProposal.proposal_id, {
+          approver: "first_reviewer", proposal_hash: partialProposal.proposal_hash,
+          proposal_version: partialProposal.proposal_version,
+          delayed_validation_digest: validation.validation_digest,
+        });
+        expect(partial.getProposal(partialProposal.proposal_id)?.state).toBe("pending_review");
+        const partialApprovals = partial.approvals(partialProposal.proposal_id);
+        expect(partialApprovals).toHaveLength(1);
+        const partialIdentity = await identityFor(partialProposal);
+        const partialPreview = localDelayedCancelPreviewDigest({
+          proposal: partial.getProposal(partialProposal.proposal_id)!,
+          queue: null, approvals: partialApprovals,
+        });
+        expect(partial.cancelPendingDelayedRequest({
+          proposalId: partialProposal.proposal_id, actor, identity: partialIdentity,
+          reason, expected_local_preview_digest: partialPreview,
+        })).toMatchObject({ state: "canceled" });
+        expect(partial.approvals(partialProposal.proposal_id)).toEqual(partialApprovals);
+        expect(partial.receipts(partialProposal.proposal_id)).toEqual([]);
+      } finally { partial.close(); }
+
+      const digest = fixture.job.semantic_authority.proof.action_boundary_digest as `sha256:${string}`;
+      original.enqueueWorkerProposal({ proposal_id: originalProposal.proposal_id,
+        execution_mode: "supervised_worker", contract_digest: digest,
+        cancellation_control_role: null, max_attempts: 1 });
+      original.holdQueuedDelayedWork(originalProposal.proposal_id, "DELAYED_WORK_REQUEST_EXPIRED");
+      const beforeApprovals = original.approvals(originalProposal.proposal_id);
+      const heldIdentity = await identityFor(originalProposal);
+      const heldPreview = localDelayedCancelPreviewDigest({ proposal: originalProposal,
+        queue: original.getWorkerQueueItem(originalProposal.proposal_id) ?? null, approvals: beforeApprovals });
+      expect(() => original.cancelWorkerItem({ proposalId: originalProposal.proposal_id,
+        actor, identity: heldIdentity, local_installation_operator_reason: reason,
+        expected_local_preview_digest: pendingPreview })).toThrowError(expect.objectContaining({
+        code: "LOCAL_DELAYED_CANCEL_REQUEST_CHANGED",
+      }));
+      expect(original.getWorkerQueueItem(originalProposal.proposal_id)?.status).toBe("held");
+      expect(original.cancelWorkerItem({ proposalId: originalProposal.proposal_id,
+        actor, identity: heldIdentity, local_installation_operator_reason: reason,
+        expected_local_preview_digest: heldPreview })).toMatchObject({
+        status: "cancelled", attempts: 0,
+      });
+      expect(original.approvals(originalProposal.proposal_id)).toEqual(beforeApprovals);
+      expect(original.receipts(originalProposal.proposal_id)).toEqual([]);
+      expect(original.events(originalProposal.proposal_id).at(-1)).toMatchObject({
+        kind: "writeback_canceled", actor,
+        payload: { authority: "local_installation_operator", reason, source_database_changed: false },
+      });
+    } finally { original.close(); pending.close(); }
+  });
+
+  it("counts even incomplete delayed validations without changing the original approval or job", async () => {
+    // Store-level synthetic control. Installed source-backed delayed approval is
+    // exercised separately; these deliberately incomplete attempts model a
+    // failed reader check or process stop before a successful validation event.
+    const fixture = await writebackFixture({ delayedStoreControl: true });
+    const store = new ProposalStore(fixture.storePath);
+    try {
+      const proposal = store.getProposal(fixture.job.proposal_id)!;
+      expect(proposal.change_set.schema_version).toBe("synapsor.change-set.v4");
+      expect(fixture.job.delayed_work).toEqual(proposal.change_set.schema_version === "synapsor.change-set.v4"
+        ? proposal.change_set.delayed_work : undefined);
+      const originalApproval = store.approvals(proposal.proposal_id);
+      expect(originalApproval).toHaveLength(1);
+      expect(store.latestDelayedValidation(proposal.proposal_id, "approval")).toBeDefined();
+      const attempts = [store.beginDelayedValidation(proposal.proposal_id, "dispatch"),
+        store.beginDelayedValidation(proposal.proposal_id, "dispatch"),
+        store.beginDelayedValidation(proposal.proposal_id, "dispatch")];
+      expect(new Set(attempts).size).toBe(3);
+      const { validation_digest: _oldDigest, ...oldValidation } = store.latestDelayedValidation(proposal.proposal_id, "approval")!;
+      const altered = { ...oldValidation, phase: "dispatch" as const,
+        approval_set_digest: proposal.proposal_hash as `sha256:${string}`,
+        effect_digest: canonicalJsonDigest({ unrelated_effect: true }) };
+      expect(() => store.recordDelayedValidation({ ...altered,
+        validation_digest: canonicalJsonDigest(altered) }, attempts[0]!))
+        .toThrowError(expect.objectContaining({ code: "DELAYED_VALIDATION_BINDING_MISMATCH" }));
+      store.recordDelayedValidationFailure(proposal.proposal_id, attempts[0]!, "DELAYED_WORK_EXACT_OPERATION_CHANGED");
+      expect(() => store.recordDelayedValidationFailure(proposal.proposal_id, attempts[0]!, "DELAYED_WORK_EXACT_OPERATION_CHANGED"))
+        .toThrowError(expect.objectContaining({ code: "DELAYED_VALIDATION_ATTEMPT_MISSING" }));
+      expect(() => store.beginDelayedValidation(proposal.proposal_id, "dispatch"))
+        .toThrowError(expect.objectContaining({ code: "DELAYED_VALIDATION_ATTEMPTS_EXHAUSTED" }));
+      const digest = fixture.job.semantic_authority.proof.action_boundary_digest as `sha256:${string}`;
+      store.enqueueWorkerProposal({ proposal_id: proposal.proposal_id,
+        execution_mode: "supervised_worker", contract_digest: digest, max_attempts: 1 });
+      // A synthetic lost-acknowledgement state must be inspectable and must
+      // never silently acquire a second source transaction.
+      store.db.prepare("UPDATE worker_queue SET status = 'retry_wait', attempts = 1 WHERE proposal_id = ?")
+        .run(proposal.proposal_id);
+      expect(store.reconcileDelayedPriorAttempt(proposal.proposal_id)).toMatchObject({
+        status: "reconciliation_required", attempts: 1,
+        last_error_code: "DELAYED_WORK_PRIOR_ATTEMPT_UNKNOWN",
+      });
+      expect(store.approvals(proposal.proposal_id)).toEqual(originalApproval);
+      expect(store.receipts(proposal.proposal_id)).toEqual([]);
+    } finally { store.close(); }
+  });
+
   it("resolves a real approved v5 job to its outcome writer without changing the compiled source", async () => {
     const fixture = await writebackFixture();
     const authority = await loadActiveActionRuleAuthority(fixture.root);
@@ -636,6 +904,7 @@ function semanticWorkerConfig(
 
 async function writebackFixture(options: {
   automaticApproval?: boolean;
+  delayedStoreControl?: boolean;
   requiredApprovals?: number;
   schema?: string;
   environmentContext?: boolean;
@@ -742,6 +1011,9 @@ async function writebackFixture(options: {
     createdAt: verifiedAt,
     evidenceBundleId: "ev_pause_pref_1",
     queryFingerprint: canonicalJsonDigest({ query: "pref_1" }),
+    ...(options.delayedStoreControl ? { delayedWork: { execution_policy_digest: canonicalJsonDigest({ reviewed: "delayed_store_control" }),
+      approval_wait_seconds: 1_800, approval_validity_seconds: 1_200,
+      absolute_request_age_seconds: 3_600, max_validation_attempts: 4 } } : {}),
   });
   const storePath = path.join(root, ".synapsor", "local.db");
   const store = new ProposalStore(storePath);
@@ -762,10 +1034,27 @@ async function writebackFixture(options: {
         now: verifiedAt,
       });
     } else {
+      let delayedValidationDigest: string | undefined;
+      if (options.delayedStoreControl && proposal.change_set.schema_version === "synapsor.change-set.v4") {
+        const attempt = store.beginDelayedValidation(proposal.proposal_id, "approval");
+        const now = new Date().toISOString();
+        const unsigned = { schema_version: "synapsor.delayed-validation.v1" as const,
+          phase: "approval" as const, proposal_id: proposal.proposal_id,
+          proposal_hash: proposal.proposal_hash as `sha256:${string}`,
+          proposal_version: proposal.proposal_version,
+          original_proof_digest: proposal.change_set.semantic_authority.proof.proof_digest,
+          execution_policy_digest: proposal.change_set.delayed_work!.execution_policy_digest,
+          checked_at: now, valid_until: new Date(Date.parse(now) + 30_000).toISOString(),
+          dependency_set_digest: proposal.change_set.semantic_authority.proof.dependency_set_digest,
+          effect_digest: proposal.change_set.semantic_authority.effect.effect_digest };
+        delayedValidationDigest = store.recordDelayedValidation({ ...unsigned,
+          validation_digest: canonicalJsonDigest(unsigned) }, attempt).validation_digest;
+      }
       store.approveProposal(proposal.proposal_id, {
         approver: "action_reviewer",
         proposal_hash: proposal.proposal_hash,
         proposal_version: proposal.proposal_version,
+        ...(delayedValidationDigest ? { delayed_validation_digest: delayedValidationDigest } : {}),
       });
     }
     job = parseWritebackJob(store.createWritebackJobFromProposal(proposal.proposal_id));

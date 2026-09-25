@@ -7,6 +7,7 @@ import {
   type ChangeSet,
   type ExecutionReceipt,
   type FreshnessProofV1,
+  type DelayedValidationV1,
   type WritebackJob,
   type WritebackJobV1,
   type WritebackJobV2,
@@ -126,6 +127,10 @@ export interface ProposalStoreProposalMethods {
   getStoredReplayForProposal(proposalId: string): ProposalReplayRecord | undefined;
   proposalIdForEvidence(evidenceBundleId: string): string | undefined;
   recordFreshnessProof(input: unknown): FreshnessProofV1;
+  beginDelayedValidation(proposalId: string, phase: "approval" | "dispatch"): string;
+  recordDelayedValidationFailure(proposalId: string, attemptDigest: string, safeCode: string): void;
+  recordDelayedValidation(input: unknown, attemptDigest: string): DelayedValidationV1;
+  latestDelayedValidation(proposalId: string, phase: "approval" | "dispatch"): DelayedValidationV1 | undefined;
   latestFreshnessProof(proposalId: string): FreshnessProofV1 | undefined;
   recordFreshnessApprovalBlocked(
       proposalId: string,
@@ -141,6 +146,7 @@ export interface ProposalStoreProposalMethods {
         identity?: OperatorIdentityProof;
         require_verified_identity?: boolean;
         freshness_proof_digest?: string;
+        delayed_validation_digest?: string;
       },
     ): StoredProposal;
   approveProposalByPolicy(
@@ -238,6 +244,7 @@ export interface ProposalStoreWorkerMethods {
     }): WorkerQueueItem[];
   claimWorkerItem(options: {
       workerId: string;
+      proposalId?: string;
       leaseSeconds?: number;
       executionMode?: WorkerExecutionMode;
       capability?: string;
@@ -249,6 +256,7 @@ export interface ProposalStoreWorkerMethods {
         windowSeconds: number;
       };
       proposalTtlSeconds?: number;
+      requiredDelayedValidation?: { proposalId: string; validationDigest: string };
       policyExecution?: WorkerPolicyExecutionLimits;
       now?: string;
     }): WorkerQueueItem | undefined;
@@ -312,9 +320,21 @@ export interface ProposalStoreWorkerMethods {
       actor: string;
       identity?: OperatorIdentityProof;
       require_verified_identity?: boolean;
+      local_installation_operator_reason?: string;
+      expected_local_preview_digest?: `sha256:${string}`;
       now?: string;
     }): WorkerQueueItem;
+  cancelPendingDelayedRequest(options: {
+      proposalId: string;
+      actor: string;
+      identity: OperatorIdentityProof;
+      reason: string;
+      expected_local_preview_digest?: `sha256:${string}`;
+      now?: string;
+    }): StoredProposal;
   listWorkerQueue(status?: WorkerQueueStatus): WorkerQueueItem[];
+  holdQueuedDelayedWork(proposalId: string, safeCode: string, now?: string): WorkerQueueItem;
+  reconcileDelayedPriorAttempt(proposalId: string, now?: string): WorkerQueueItem;
   getWorkerQueueItem(proposalId: string): WorkerQueueItem | undefined;
   requeueDeadLetter(options: {
       proposalId: string;

@@ -6,7 +6,8 @@ import { Readable } from "node:stream";
 import { describe, expect, it } from "vitest";
 import { SignJWT, exportSPKI, generateKeyPair } from "jose";
 import type { StoredProposal } from "@synapsor-runner/proposal-store";
-import { hasVerifiedRecoveryControlActor, resolveOperatorIdentity, verifyJwtOperatorProof, verifySignedOperatorProof } from "./operator-identity.js";
+import { hasVerifiedRecoveryControlActor, operatorPublicKeyFingerprint, resolveOperatorIdentity,
+  verifyJwtOperatorProof, verifySignedOperatorProof } from "./operator-identity.js";
 
 const proposal = {
   proposal_id: "wrp_identity",
@@ -88,6 +89,37 @@ describe("operator identity", () => {
     });
     expect(verifySignedOperatorProof(proof, publicPem)).toBe(true);
     expect(verifySignedOperatorProof({ ...proof, decision: { ...proof.decision, proposal_id: "wrp_tampered" } }, publicPem)).toBe(false);
+    const pinnedConfig = { provider: "signed_key" as const,
+      operators: { alice: { public_key_path: "./operator.pub.pem", public_key_fingerprint: operatorPublicKeyFingerprint(publicPem),
+        roles: ["fleet_manager"] } } };
+    expect((await resolveOperatorIdentity({ config: pinnedConfig, configPath, proposal, action: "approve",
+      identity: "alice", privateKeyPath: privatePath, requiredRole: "fleet_manager" })).verified).toBe(true);
+    await fs.writeFile(publicPath, crypto.generateKeyPairSync("rsa", { modulusLength: 2048 }).publicKey.export({ type: "spki", format: "pem" }));
+    await expect(resolveOperatorIdentity({ config: pinnedConfig, configPath, proposal, action: "approve",
+      identity: "alice", privateKeyPath: privatePath, requiredRole: "fleet_manager" }))
+      .rejects.toMatchObject({ code: "OPERATOR_PUBLIC_KEY_CHANGED" });
+  });
+
+  it("confines a shared approval role to the reviewed Action outcome", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-outcome-key-"));
+    try {
+      const { publicKey, privateKey } = crypto.generateKeyPairSync("rsa", { modulusLength: 2048 });
+      const publicPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+      const publicPath = path.join(root, "reviewer.pub.pem"), privatePath = path.join(root, "reviewer.pem");
+      await fs.writeFile(publicPath, publicPem, { mode: 0o600 });
+      await fs.writeFile(privatePath, privateKey.export({ type: "pkcs8", format: "pem" }), { mode: 0o600 });
+      const config = { provider: "signed_key" as const, operators: { alice: {
+        public_key_path: "./reviewer.pub.pem", public_key_fingerprint: operatorPublicKeyFingerprint(publicPem),
+        roles: ["fleet_manager"], outcomes: ["fleet.propose_repair"],
+      } } };
+      const decision = { config, configPath: path.join(root, "synapsor.runner.json"),
+        action: "approve" as const, identity: "alice", privateKeyPath: privatePath, requiredRole: "fleet_manager" };
+      expect((await resolveOperatorIdentity({ ...decision, proposal })).verified).toBe(true);
+      await expect(resolveOperatorIdentity({ ...decision, proposal: { ...proposal, action: "fleet.close_repair" } }))
+        .rejects.toMatchObject({ code: "OPERATOR_OUTCOME_NOT_AUTHORIZED" });
+      await expect(resolveOperatorIdentity({ ...decision, proposal, action: "worker_cancel" }))
+        .rejects.toMatchObject({ code: "OPERATOR_OUTCOME_NOT_AUTHORIZED" });
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
 
   it("enforces trusted roles and keeps explicit env identity marked as unverified dev mode", async () => {

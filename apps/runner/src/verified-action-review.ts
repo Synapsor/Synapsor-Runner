@@ -2,7 +2,7 @@ import { actionRuleEffectLines, actionRuleEffectInventory } from "@synapsor-runn
 import { actionSubjectCompatibility } from "./action-subject-compatibility.js";
 import process from "node:process";
 import { assessWorkerLaunch, workerLaunchLines } from "./worker-launch.js";
-import type { RuntimeConfig } from "@synapsor-runner/mcp-server";
+import type { RuntimeConfig, RuntimeSupervisedWorkerOutcomePolicy } from "@synapsor-runner/mcp-server";
 import path from "node:path";
 import { reviewSemanticReceiptSetup } from "./semantic-receipt-setup.js";
 import { inspectDatabase } from "@synapsor-runner/schema-inspector";
@@ -651,6 +651,7 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
     writeUrlEnv = writeUrlAnswer.trim() || writeUrlEnv;
   }
   if (!writeUrlEnv) return undefined;
+  let delayedWork: NonNullable<RuntimeSupervisedWorkerOutcomePolicy["delayed_work"]> | undefined = defaults?.delayed_work;
   let profile: "development" | "staging" | "production";
   let preview: Awaited<ReturnType<typeof previewSemanticSupervisedExecution>>;
   try {
@@ -660,12 +661,73 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
       outcome: input.outcome,
       profile,
       writeUrlEnv,
+      ...(delayedWork ? { delayedWork } : {}),
       ...(workerIdentity === undefined ? {} : { workerIdentity }),
       ...(input.env ? { env: input.env } : {}),
       ...(input.inspectDatabaseFn ? { inspect: input.inspectDatabaseFn } : {}),
     });
     await verifySemanticExecutionReadPosture({ projectRoot: input.projectRoot, outcome: input.outcome,
       activeReads: input.activeReads, env: input.env, inspect: input.inspectDatabaseFn });
+    // Offer P1 only after the ordinary writer/receipt preview establishes the
+    // required source-db posture. Existing Runner-ledger and unsupported
+    // execution reviews keep their prior UI and cannot opt into delayed work.
+    if (input.session.chooseOption && preview.receipts.authority === "source_db"
+      && preview.receipts.provisioning === "precreated") {
+    if (input.session.chooseOption) {
+      const delayedChoice = await input.session.chooseOption("Permit delayed approval and dispatch for NEW requests?", [
+        ...(defaults?.delayed_work ? [{ value: "keep", label: "Keep the reviewed delayed-work limits", detail: "Recheck the exact saved bounds; this does not renew old requests." }] : []),
+        { value: "no", label: "No — retain short proof lifetime", detail: "Current requests and previously saved work keep their existing expiration behavior." },
+        { value: "yes", label: "Yes — reverify the exact operation", detail: "Set finite request-anchored approval, mandate and absolute deadlines; Runner checks current facts again before an effect." },
+      ], { initialValue: defaults?.delayed_work ? "keep" : "no", displayContext: true, context: [`Outcome: ${input.outcome}. This choice is part of separately reviewed execution policy, not a change to the Action fact-proof TTL.`,
+        ...(defaults?.delayed_work ? [`Saved bounds: wait ${defaults.delayed_work.approval_wait_seconds}s, approval ${defaults.delayed_work.approval_validity_seconds}s, absolute ${defaults.delayed_work.absolute_request_age_seconds}s, checks ${defaults.delayed_work.max_validation_attempts}.`] : [])] });
+      if (!delayedChoice) return undefined;
+      if (delayedChoice === "no") delayedWork = undefined;
+      if (delayedChoice === "yes") {
+        const boundedSeconds = async (label: string, maximum = 2_592_000): Promise<number | undefined> => {
+          const answer = await input.session.promptText(`${label} (seconds; 60–${maximum})`, {
+            context: ["Enter an explicit finite value. The original request time never moves; Enter or cancel leaves execution unchanged."],
+          });
+          if (answer === undefined) return undefined;
+          const value = Number(answer.trim());
+          if (!Number.isSafeInteger(value) || value < 60 || value > maximum) {
+            throw new Error(`DELAYED_WORK_BOUND_INVALID: ${label} must be a finite integer from 60 through ${maximum}.`);
+          }
+          return value;
+        };
+        const approvalWait = await boundedSeconds("Approval waiting limit");
+        if (approvalWait === undefined) return undefined;
+        const approvalValidity = await boundedSeconds("Approval validity after the decision");
+        if (approvalValidity === undefined) return undefined;
+        const absoluteAge = await boundedSeconds("Absolute age of the original request");
+        if (absoluteAge === undefined) return undefined;
+        const attemptsText = await input.session.promptText("Maximum fresh-validation attempts (2–20)", {
+          context: ["This caps fact checks separately from approvals and worker execution attempts."],
+        });
+        if (attemptsText === undefined) return undefined;
+        const attempts = Number(attemptsText.trim());
+        if (!Number.isSafeInteger(attempts) || attempts < 2 || attempts > 20 || approvalWait > absoluteAge) {
+          throw new Error("DELAYED_WORK_BOUND_INVALID: enter 2–20 attempts and an approval wait no longer than absolute request age.");
+        }
+        delayedWork = { mode: "reverify_exact_operation", approval_wait_seconds: approvalWait,
+          approval_validity_seconds: approvalValidity, absolute_request_age_seconds: absoluteAge,
+          max_validation_attempts: attempts };
+      }
+    }
+      // The choice is a reviewed change to the exact execution candidate.
+      // Recompute the preview, posture and confirmation whenever it differs
+      // from the initial saved default; no prior inspection is authorization.
+      if (JSON.stringify(delayedWork ?? null) !== JSON.stringify(defaults?.delayed_work ?? null)) {
+        preview = await previewSemanticSupervisedExecution({
+          projectRoot: input.projectRoot, outcome: input.outcome, profile, writeUrlEnv,
+          ...(delayedWork ? { delayedWork } : {}),
+          ...(workerIdentity === undefined ? {} : { workerIdentity }),
+          ...(input.env ? { env: input.env } : {}),
+          ...(input.inspectDatabaseFn ? { inspect: input.inspectDatabaseFn } : {}),
+        });
+        await verifySemanticExecutionReadPosture({ projectRoot: input.projectRoot, outcome: input.outcome,
+          activeReads: input.activeReads, env: input.env, inspect: input.inspectDatabaseFn });
+      }
+    }
   } catch (error) {
     const problem = executionSetupProblem(error);
     return { tone: "danger", title: problem.publication_state ? "Execution save needs recovery." : "Execution was not enabled.", lines: [problem.summary], problem,
@@ -686,6 +748,10 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
         `Writer role: ${preview.writer_role}; worker: ${workerIdentity ?? "not pinned"}.`,
         `Receipts: ${preview.receipts.authority === "source_db" ? `source_db, ${preview.receipts.schema}.${preview.receipts.table}` : "runner_ledger"}.`,
         `Worker bounds: concurrency ${preview.policy.concurrency}; queue ${preview.policy.queue_limit}; attempts ${preview.policy.max_attempts}; rate ${preview.policy.rate_limit.executions}/${preview.policy.rate_limit.window_seconds}s.`,
+        ...(preview.policy.delayed_work ? [
+          `Delayed new requests: approval wait ${preview.policy.delayed_work.approval_wait_seconds}s; approval validity ${preview.policy.delayed_work.approval_validity_seconds}s; absolute age ${preview.policy.delayed_work.absolute_request_age_seconds}s; fresh validations at most ${preview.policy.delayed_work.max_validation_attempts}.`,
+          `Worker proposal age ${preview.policy.proposal_ttl_seconds}s is retained when previously reviewed; absolute request age ${preview.policy.delayed_work.absolute_request_age_seconds}s cannot exceed it. The earlier deadline wins. Source proof TTL is unchanged.`,
+        ] : []),
         "Enables an operator-run worker for approved proposals. No proposal executes here.",
         "Model approval, apply and patch selection remain unavailable.",
       ],
@@ -698,6 +764,7 @@ async function reviewSemanticSupervisedExecutionAttempt(input: Parameters<typeof
       outcome: input.outcome,
       profile,
       writeUrlEnv,
+      ...(delayedWork ? { delayedWork } : {}),
       ...(workerIdentity === undefined ? {} : { workerIdentity }),
       expectedActionBoundaryDigest: preview.action_boundary_digest,
       expectedConfigDigest: preview.current_config_digest,

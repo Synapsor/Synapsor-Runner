@@ -102,6 +102,15 @@ export function approvalBoundary(proposal: StoredProposal): string {
 
 export function proposalNextCommands(proposal: StoredProposal, proposalRef: string, storeSuffix: string): string[] {
   if (proposal.state === "pending_review") {
+    const change = proposal.change_set;
+    if (change.schema_version === "synapsor.change-set.v4" && change.delayed_work
+      && Date.now() >= Date.parse(change.delayed_work.requested_at)
+        + Math.min(change.delayed_work.approval_wait_seconds, change.delayed_work.absolute_request_age_seconds) * 1_000) {
+      return [
+        `${cliCommandName()} proposals reject ${proposalRef} --reason "<reviewed reason>" --yes${storeSuffix}`,
+        `${cliCommandName()} replay show ${proposalRef === "latest" ? "latest" : `--proposal ${proposal.proposal_id}`}${storeSuffix}`,
+      ];
+    }
     return [
       `${cliCommandName()} proposals approve ${proposalRef} --yes${storeSuffix}`,
       `${cliCommandName()} replay show ${proposalRef === "latest" ? "latest" : `--proposal ${proposal.proposal_id}`}${storeSuffix}`,

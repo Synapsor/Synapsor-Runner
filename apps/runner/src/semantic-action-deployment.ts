@@ -370,6 +370,7 @@ export async function previewSemanticSupervisedExecution(input: {
   configPath?: string;
   writeUrlEnv?: string;
   workerIdentity?: string;
+  delayedWork?: NonNullable<RuntimeSupervisedWorkerOutcomePolicy["delayed_work"]>;
   env?: NodeJS.ProcessEnv;
   inspect?: typeof inspectDatabase;
 }): Promise<SemanticSupervisedExecutionPreview> {
@@ -420,6 +421,10 @@ export async function previewSemanticSupervisedExecution(input: {
   }
   const receiptSetup = await inspectSemanticReceiptSetup({ projectRoot, configPath, outcome: input.outcome, env });
   const receipts = receiptSetup?.epoch !== undefined ? selectedSemanticReceipts(receiptSetup, writeUrlEnv) : undefined;
+  if (input.delayedWork && (source.engine !== "postgres"
+    || receipts?.authority !== "source_db" || receipts.provisioning !== "precreated")) {
+    throw new Error("DELAYED_WORK_UNSUPPORTED: delayed execution requires PostgreSQL and an exact reviewed precreated source receipt.");
+  }
   const fingerprint = rolePostureFingerprint(inspection);
   const nextConfig = semanticSupervisedExecutionConfig({
     sourceConfig: currentConfig,
@@ -430,6 +435,7 @@ export async function previewSemanticSupervisedExecution(input: {
     writeUrlEnv,
     writerPostureFingerprint: fingerprint,
     ...(input.workerIdentity ? { workerIdentity: input.workerIdentity } : {}),
+    ...(input.delayedWork ? { delayedWork: input.delayedWork } : {}),
   });
   const policy = semanticWorkerOutcomePolicy(nextConfig, input.outcome);
   const assessment = assessSemanticSupervisedWriterPosture(
@@ -511,6 +517,7 @@ export async function enableSemanticSupervisedExecution(input: {
   configPath?: string;
   writeUrlEnv?: string;
   workerIdentity?: string;
+  delayedWork?: NonNullable<RuntimeSupervisedWorkerOutcomePolicy["delayed_work"]>;
   env?: NodeJS.ProcessEnv;
   inspect?: typeof inspectDatabase;
 }): Promise<SemanticSupervisedExecutionPreview> {
@@ -536,9 +543,11 @@ export async function enableSemanticSupervisedExecution(input: {
 }
 
 export function semanticExecutionConfirmation(
-  preview: Pick<SemanticSupervisedExecutionPreview, "outcome" | "action_boundary_digest" | "writer_posture_fingerprint">,
+  preview: Pick<SemanticSupervisedExecutionPreview, "outcome" | "action_boundary_digest" | "writer_posture_fingerprint"> &
+    { policy?: Pick<RuntimeSupervisedWorkerOutcomePolicy, "delayed_work"> },
 ): string {
-  return `ENABLE SUPERVISED ${preview.outcome} ${preview.action_boundary_digest} ${preview.writer_posture_fingerprint}`;
+  return `ENABLE SUPERVISED ${preview.outcome} ${preview.action_boundary_digest} ${preview.writer_posture_fingerprint}`
+    + (preview.policy?.delayed_work ? ` ${canonicalJsonDigest(preview.policy.delayed_work)}` : "");
 }
 
 /** Metadata-only readiness check after writer repair, before guided execution consent. */
@@ -595,7 +604,8 @@ export async function readSemanticSupervisedExecutionState(input: {
  * must still match this runtime binding; every use requires a fresh review. */
 export async function readSemanticExecutionReviewDefaults(input: {
   projectRoot: string; outcome: string; env?: NodeJS.ProcessEnv;
-}): Promise<{ write_url_env: string; worker_identity?: string } | undefined> {
+}): Promise<{ write_url_env: string; worker_identity?: string;
+  delayed_work?: NonNullable<RuntimeSupervisedWorkerOutcomePolicy["delayed_work"]> } | undefined> {
   const projectRoot = path.resolve(input.projectRoot);
   const configPath = path.join(projectRoot, SEMANTIC_ACTION_RUNTIME_CONFIG);
   if (await readOptionalText(configPath) === undefined) return undefined;
@@ -627,7 +637,8 @@ export async function readSemanticExecutionReviewDefaults(input: {
       throw new Error("SEMANTIC_ACTION_CONFIG_CHANGED: saved execution changed while choosing review defaults; reopen execution review.");
     }
     return selected ? { write_url_env: environmentName(selected.write_url_env),
-      ...(selected.worker_identity === undefined ? {} : { worker_identity: safeWorkerIdentity(selected.worker_identity) }) } : undefined;
+      ...(selected.worker_identity === undefined ? {} : { worker_identity: safeWorkerIdentity(selected.worker_identity) }),
+      ...(selected.delayed_work ? { delayed_work: structuredClone(selected.delayed_work) } : {}) } : undefined;
   } finally { await binding?.close(); }
 }
 
@@ -785,6 +796,7 @@ export function semanticSupervisedExecutionConfig(input: {
   writeUrlEnv: string;
   writerPostureFingerprint: `sha256:${string}`;
   workerIdentity?: string;
+  delayedWork?: NonNullable<RuntimeSupervisedWorkerOutcomePolicy["delayed_work"]>;
   receipts?: SemanticReceiptMode;
 }): Record<string, unknown> {
   const config = structuredClone(input.sourceConfig);
@@ -828,6 +840,15 @@ export function semanticSupervisedExecutionConfig(input: {
     );
   }
   const capabilities = Array.isArray(existing?.capabilities) ? existing.capabilities : [];
+  const priorPolicy = Array.isArray(existing?.outcomes)
+    ? existing.outcomes.find((entry) => isRecord(entry) && entry.outcome === input.outcome
+      && entry.action_boundary_digest === input.activation.authority.action_boundary.digest)
+    : undefined;
+  const proposalTtlSeconds = isRecord(priorPolicy) && Number.isSafeInteger(priorPolicy.proposal_ttl_seconds)
+    ? Number(priorPolicy.proposal_ttl_seconds) : DEFAULT_SEMANTIC_WORKER_LIMITS.proposal_ttl_seconds;
+  if (input.delayedWork && input.delayedWork.absolute_request_age_seconds > proposalTtlSeconds) {
+    throw new Error("DELAYED_WORK_EXCEEDS_WORKER_AGE: the requested absolute age exceeds the already reviewed worker proposal age; review that bound separately before enabling delayed work.");
+  }
   // This is a review candidate only. Stale bundle bindings never carry forward;
   // the old governed revision remains history after explicit publication.
   const outcomes = Array.isArray(existing?.outcomes)
@@ -840,10 +861,12 @@ export function semanticSupervisedExecutionConfig(input: {
     action_boundary_digest: input.activation.authority.action_boundary.digest,
     mode: "supervised_worker",
     ...DEFAULT_SEMANTIC_WORKER_LIMITS,
+    ...(input.delayedWork ? { proposal_ttl_seconds: proposalTtlSeconds, max_attempts: 1 } : {}),
     write_url_env: environmentName(input.writeUrlEnv),
     require_least_privilege_writer: true,
     writer_posture_fingerprint: input.writerPostureFingerprint,
     ...(input.workerIdentity ? { worker_identity: safeWorkerIdentity(input.workerIdentity) } : {}),
+    ...(input.delayedWork ? { delayed_work: structuredClone(input.delayedWork) } : {}),
   };
   config.supervised_worker = {
     ...(existing ?? {}),

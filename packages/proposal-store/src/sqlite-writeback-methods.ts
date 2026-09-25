@@ -557,6 +557,7 @@ export const proposalStoreWritebackMethods: ProposalStoreWritebackMethods & Prop
           ...(changeSet.guards.version_advance ? { version_advance: changeSet.guards.version_advance } : {}),
           ...(changeSet.guards.deduplication ? { deduplication: changeSet.guards.deduplication } : {}),
           semantic_authority: changeSet.semantic_authority,
+          ...(changeSet.delayed_work ? { delayed_work: changeSet.delayed_work } : {}),
           idempotency_key: `semantic:${proposal.proposal_id}`,
           lease,
         } : {

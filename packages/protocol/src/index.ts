@@ -10,6 +10,8 @@ import {
 } from "./canonical-json.js";
 export {
   changeSetV4Schema,
+  delayedSemanticWorkV1Schema,
+  delayedValidationV1Schema,
   delegationProofV1Schema,
   eligibilityProofDigest,
   eligibilityProofV1Schema,
@@ -28,6 +30,8 @@ export {
   semanticVerificationResultSchema,
   writebackJobV5Schema,
   type ChangeSetV4,
+  type DelayedSemanticWorkV1,
+  type DelayedValidationV1,
   type DelegationProofV1,
   type EligibilityProofV1,
   type ExecutionReceiptV5,

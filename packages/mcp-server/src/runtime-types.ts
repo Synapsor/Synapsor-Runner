@@ -191,6 +191,14 @@ export type RuntimeSupervisedWorkerCapabilityPolicy = RuntimeSupervisedWorkerPol
 export type RuntimeSupervisedWorkerOutcomePolicy = RuntimeSupervisedWorkerPolicyBase & {
   outcome: string;
   action_boundary_digest: `sha256:${string}`;
+  /** Explicitly reviewed request-anchored delayed verification, only for new PG semantic work. */
+  delayed_work?: {
+    mode: "reverify_exact_operation";
+    approval_wait_seconds: number;
+    approval_validity_seconds: number;
+    absolute_request_age_seconds: number;
+    max_validation_attempts: number;
+  };
 };
 
 export type RuntimeSupervisedWorkerPolicy =
@@ -371,7 +379,7 @@ export type RuntimeConfig = {
     actor_env?: string;
     roles_env?: string;
     apply_roles?: string[];
-    operators?: Record<string, { public_key_path: string; roles: string[] }>;
+    operators?: Record<string, { public_key_path: string; public_key_fingerprint?: string; roles: string[]; outcomes?: string[] }>;
     token_env?: string;
     token_file_env?: string;
     token_stdin?: boolean;

@@ -276,6 +276,7 @@ async function readResolvedRuntimeConfig(normalized: RuntimeConfig, configPath: 
   const resolved = (await readOperatorExecutionConfig({
     projectRoot: normalized.action_rules?.project_root ?? normalized.production_explore?.project_root ?? directory,
     config: normalized,
+    configPath,
     env: options.env,
     storePath: options.storePath ?? path.resolve(directory, normalized.storage?.sqlite_path ?? ".synapsor/local.db"),
   })).config;
@@ -399,7 +400,7 @@ async function waitForReferenceDemoDatabase(): Promise<void> {
 export async function confirmDangerousAction(args: string[], question: string): Promise<void> {
   if (args.includes("--yes")) return;
   if (!process.stdin.isTTY) {
-    throw new Error("approval/rejection requires --yes in noninteractive mode");
+    throw new Error("interactive confirmation is unavailable; this operation cannot proceed without its required confirmation");
   }
   const rl = readline.createInterface({ input: process.stdin, output: process.stderr });
   try {

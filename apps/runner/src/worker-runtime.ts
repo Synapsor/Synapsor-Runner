@@ -13,6 +13,7 @@ import {
 } from "@synapsor-runner/mcp-server";
 import {
   ProposalStore,
+  localDelayedCancelPreviewDigest,
   workerControlDecisionSubject,
   type OperationalMetricRow,
   type StoredProposal,
@@ -21,9 +22,12 @@ import {
   type WorkerQueueItem
 } from "@synapsor-runner/proposal-store";
 import process from "node:process";
+import os from "node:os";
+import { readFile } from "node:fs/promises";
 import { recordUnhealthySupervisionSinkAttention, requiredAttentionSinksHealthy, resolveHealthySupervisionSinkAttention, updateSupervisedProposalExpiryAttention, updateSupervisedWorkerBacklogAttention, workbenchAttentionPath } from "./attention-domain.js";
 import { usage } from "./cli-help.js";
 import { operationalLog, safeOperationalErrorCode } from "./cli-logging.js";
+import { safeDelayedValidationCode } from "./delayed-semantic-work.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import { shellQuote } from "./cli-format.js";
 import { optionalArg, positional, positiveIntOption, runtimeStoreBridgeFlag, waitFor } from "./cli-options.js";
@@ -36,8 +40,11 @@ import { assertSemanticSupervisedWriterPosture, assertSupervisedWriterPosture, c
 import { findProposalCapability, loadSemanticProposalAuthority, loadSemanticRuntimeAuthority, semanticActionProjectRoot } from "./writeback-execution.js";
 import { assessWorkerLaunch, workerLaunchLines } from "./worker-launch.js";
 import { executionBindingDigest } from "./control-policy-execution.js";
+import { recordCurrentDelayedSemanticValidation } from "./delayed-semantic-validation.js";
 import { withLocalTestRuntimeIdentity } from "./local-test-runtime-identity.js";
 import { workerCancellationRequiredRole } from "./worker-cancellation-authority.js";
+import { assertLocalInstallationOperator } from "./approver-policy-configuration.js";
+import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 
 
 export async function workerCommand(args: string[]): Promise<number> {
@@ -112,6 +119,7 @@ async function workerStatus(args: string[]): Promise<number> {
       dead_letters: items.filter((item) => item.status === "dead_letter").length,
       reconciliation_required: items.filter((item) => item.status === "reconciliation_required").length,
       blocked: items.filter((item) => item.status === "blocked").length,
+      held: items.filter((item) => item.status === "held").length,
       oldest_queued_at: items
         .filter((item) => item.status === "queued" || item.status === "retry_wait")
         .map((item) => item.created_at)
@@ -127,7 +135,7 @@ async function workerStatus(args: string[]): Promise<number> {
       process.stdout.write(`Supervised execution: ${control.mode} (control revision ${control.revision})\n`);
       process.stdout.write("Worker health: unknown. Queue state and lease counts do not prove that a worker process is running.\n");
       process.stdout.write(
-        `Queue: ${summary.queue_depth} waiting · ${summary.active_leases} leased · ${summary.blocked} blocked · ${summary.retry_wait} retry scheduled · ${summary.dead_letters} dead letter · ${summary.reconciliation_required} reconciliation\n`,
+        `Queue: ${summary.queue_depth} waiting · ${summary.active_leases} leased · ${summary.held} held before dispatch · ${summary.blocked} blocked · ${summary.retry_wait} retry scheduled · ${summary.dead_letters} dead letter · ${summary.reconciliation_required} reconciliation\n`,
       );
       process.stdout.write(`Scope: ${status ?? "all states"}; ${items.length} matching, showing ${page.length} from offset ${offset}. Separate reads; not an atomic snapshot.\n`);
       if (items.length === 0) process.stdout.write(status === "dead_letter" ? "No dead-letter items.\n" : status ? "No items match this status.\n" : "Worker queue is empty.\n");
@@ -145,6 +153,12 @@ async function workerStatus(args: string[]): Promise<number> {
         }
         const recovery = workerFailureRecovery(item.last_error_code, item.status);
         if (recovery) process.stdout.write(`  Next: ${recovery}\n`);
+        if (item.status === "held") {
+          const heldProposal = store.getProposal(item.proposal_id);
+          if (heldProposal && localDelayedCancelStatusPossible(store, heldProposal, item)) {
+            process.stdout.write(`  Next: inspect this exact new delayed request. An owning local installation operator may request terminal cancellation with ${cliCommandName()} worker cancel ${shellQuote(item.proposal_id)} --local-installation-operator --reason <reason> --config ${shellQuote(configPath)}; it requires default-No confirmation and final store/authority checks. Any possible attempt requires receipt reconciliation. No retry is scheduled.\n`);
+          } else process.stdout.write("  Next: inspect this held item and its receipts. This status does not establish local cancellation eligibility or a retry schedule.\n");
+        }
         if (item.status === "blocked" || item.status === "reconciliation_required") {
           process.stdout.write(`  Inspect: ${cliCommandName()} worker dead-letter show ${shellQuote(item.proposal_id)} --config ${shellQuote(configPath)}\n`);
         }
@@ -209,8 +223,8 @@ export function workerQueueAuthorityHumanLines(assessment: WorkerQueueAuthorityA
   if (assessment.state === "blocked_by_changed_rules") {
     return [
       "Blocked: the rules changed before this request started.",
-      `Next: ${cliCommandName()} worker cancel ${proposalId} --yes --config ${shellQuote(configPath)}`,
-      "Then read again and submit a fresh request under the current rules.",
+      `Inspect the exact request. Cancellation, if available to a separately authorized control actor, uses ${cliCommandName()} worker cancel ${proposalId} --yes --config ${shellQuote(configPath)}. This status does not establish that such an actor is configured.`,
+      "Only after this active request is lawfully resolved, read again and submit a fresh request under the current rules.",
       "Warning: do not cancel leased, dispatched, or reconciliation-required work; inspect its receipt instead.",
     ];
   }
@@ -332,9 +346,37 @@ async function workerControlMutation(
 }
 
 
+function localDelayedCancelStatusPossible(store: ProposalStore, proposal: StoredProposal, item: WorkerQueueItem): boolean {
+  return proposal.change_set.schema_version === "synapsor.change-set.v4"
+    && proposal.change_set.delayed_work !== undefined
+    && (item.status === "queued" || item.status === "held")
+    && item.cancellation_control_role === null && item.attempts === 0
+    && !item.lease_id && !item.lease_owner && !item.lease_expires_at
+    && store.receipts(item.proposal_id).length === 0
+    && store.listWritebackIntents({ proposal_id: item.proposal_id }).length === 0
+    && !store.events(item.proposal_id).some(event =>
+      event.kind === "writeback_worker_claimed" || event.kind.startsWith("writeback_intent_")
+      || event.kind === "writeback_reconciliation_required");
+}
+
 async function workerCancel(args: string[]): Promise<number> {
-  if (!args.includes("--yes")) throw new Error("worker cancel requires --yes");
+  const localOperator = args.includes("--local-installation-operator");
+  if (localOperator && args.includes("--yes")) {
+    throw new Error("LOCAL_DELAYED_CANCEL_INTERACTIVE_CONFIRMATION_REQUIRED: --yes cannot authorize local installation-operator cancellation");
+  }
+  if (localOperator && (optionalArg(args, "--actor") || optionalArg(args, "--identity")
+    || optionalArg(args, "--identity-key"))) {
+    throw new Error("LOCAL_DELAYED_CANCEL_IDENTITY_OVERRIDE_FORBIDDEN: the local installation operator is derived from the owning OS account");
+  }
+  if (!localOperator && !args.includes("--yes")) throw new Error("worker cancel requires --yes");
+  const localReason = optionalArg(args, "--reason")?.trim();
+  if (localOperator && (!localReason || localReason.length < 8 || localReason.length > 500)) {
+    throw new Error("LOCAL_DELAYED_CANCEL_REASON_REQUIRED: supply an 8–500 character reason");
+  }
   const proposalReference = positional(args, 0) ?? "latest";
+  if (localOperator && proposalReference === "latest") {
+    throw new Error("LOCAL_DELAYED_CANCEL_EXACT_REQUEST_REQUIRED: supply the exact proposal ID");
+  }
   const configPath = runnerConfigPath(args);
   const config = await readRuntimeConfig(configPath);
   if (runtimeStoreBridgeRequired(args, config)) {
@@ -354,36 +396,94 @@ async function workerCancel(args: string[]): Promise<number> {
     const proposalId = resolveProposalIdFromStore(proposalReference, store);
     const proposal = requireLocalProposal(store, proposalId);
     const queue = store.getWorkerQueueItem(proposalId);
-    if (!queue) throw new Error(`worker queue item not found for ${proposalId}`);
+    const localPreviewDigest = localOperator ? localDelayedCancelPreviewDigest({
+      proposal, queue: queue ?? null, approvals: store.approvals(proposalId),
+    }) : undefined;
+    if (!queue && !localOperator) throw new Error(`worker queue item not found for ${proposalId}`);
     const policy = supervisedWorkerPolicies(config).find((candidate) =>
       supervisedWorkerPolicyName(candidate) === proposal.action
-      && supervisedWorkerPolicyDigest(candidate) === queue.contract_digest);
-    await confirmDangerousAction(args, `Cancel queued proposal ${proposalId} before worker lease?`);
+      && supervisedWorkerPolicyDigest(candidate) === (queue?.contract_digest
+        ?? (proposal.change_set.schema_version === "synapsor.change-set.v4"
+          ? proposal.change_set.semantic_authority.proof.action_boundary_digest : undefined)));
+    if (localOperator) {
+      if ((queue && queue.cancellation_control_role !== null)
+        || (!queue && supervisedWorkerPolicies(config).some(candidate =>
+          supervisedWorkerPolicyName(candidate) === proposal.action && !!candidate.control_role))
+        || proposal.change_set.schema_version !== "synapsor.change-set.v4" || !proposal.change_set.delayed_work) {
+        throw new Error("LOCAL_DELAYED_CANCEL_UNAVAILABLE: this is not a new delayed request assigned to the local installation operator");
+      }
+      await assertLocalInstallationOperator({
+        projectRoot: semanticActionProjectRoot(config, configPath) ?? "",
+        configPath,
+        ...(config.storage?.shared_postgres?.mode === "runtime_store" ? {} : { storePath }),
+      });
+    }
+    const reviewedConfig = localOperator ? await readFile(configPath) : undefined;
+    await confirmDangerousAction(localOperator ? [] : args,
+      localOperator
+        ? `As the local installation operator, terminally cancel new delayed proposal ${proposalId} (${queue?.status ?? proposal.state}) for reason ${localReason}? This cannot approve, requeue or change source data. Any possible execution attempt requires receipt reconciliation. Default: No.`
+        : `Cancel unleased proposal ${proposalId} (${queue!.status}) before any source dispatch?`);
+    const finishCancellation = async (): Promise<number> => {
+    if (localOperator) {
+      if (JSON.stringify(await readRuntimeConfig(configPath)) !== JSON.stringify(config)) {
+        throw new Error("LOCAL_DELAYED_CANCEL_AUTHORITY_CHANGED: the reviewed control policy changed during confirmation; inspect it and choose again");
+      }
+      if (!(await readFile(configPath)).equals(reviewedConfig!)) {
+        throw new Error("LOCAL_DELAYED_CANCEL_CONFIGURATION_CHANGED: the installation changed during confirmation; inspect it and choose again");
+      }
+      if (JSON.stringify(store.getProposal(proposalId)) !== JSON.stringify(proposal)
+        || JSON.stringify(store.getWorkerQueueItem(proposalId)) !== JSON.stringify(queue)
+        || localDelayedCancelPreviewDigest({
+          proposal: store.getProposal(proposalId)!, queue: store.getWorkerQueueItem(proposalId) ?? null,
+          approvals: store.approvals(proposalId),
+        }) !== localPreviewDigest) {
+        throw new Error("LOCAL_DELAYED_CANCEL_REQUEST_CHANGED: the request or queue changed during confirmation; inspect it and choose again");
+      }
+      await assertGovernedLocalRuntimeStore({ args, config, configPath, storePath, store });
+      await assertLocalInstallationOperator({
+        projectRoot: semanticActionProjectRoot(config, configPath) ?? "",
+        configPath,
+        ...(config.storage?.shared_postgres?.mode === "runtime_store" ? {} : { storePath }),
+      });
+    }
     const identity = await resolveOperatorIdentity({
-      config: config.operator_identity as OperatorIdentityConfig | undefined,
+      config: localOperator ? { provider: "dev_env" } : config.operator_identity as OperatorIdentityConfig | undefined,
       configPath,
       proposal,
       action: "worker_cancel",
-      reason: optionalArg(args, "--reason"),
-      actor: optionalArg(args, "--actor"),
+      reason: localOperator ? localReason : optionalArg(args, "--reason"),
+      actor: localOperator ? `local-installation-operator:${os.userInfo().username}` : optionalArg(args, "--actor"),
       identity: optionalArg(args, "--identity"),
       privateKeyPath: optionalArg(args, "--identity-key"),
-      requiredRole: workerCancellationRequiredRole({
-        queue,
+      env: localOperator ? {} : undefined,
+      requiredRole: localOperator ? undefined : workerCancellationRequiredRole({
+        queue: queue!,
         exactCurrentPolicy: policy,
         production: config.supervised_worker?.profile === "production",
       }),
     });
-    const cancelled = store.cancelWorkerItem({
+    const cancelled = !queue && localOperator ? store.cancelPendingDelayedRequest({
       proposalId,
       actor: identity.subject,
       identity,
-      require_verified_identity: config.supervised_worker?.profile === "production",
+      reason: localReason!,
+      expected_local_preview_digest: localPreviewDigest,
+    }) : store.cancelWorkerItem({
+      proposalId,
+      actor: identity.subject,
+      identity,
+      require_verified_identity: !localOperator && config.supervised_worker?.profile === "production",
+      ...(localOperator ? { local_installation_operator_reason: localReason } : {}),
+      ...(localOperator ? { expected_local_preview_digest: localPreviewDigest } : {}),
     });
     process.stdout.write(args.includes("--json")
-      ? `${JSON.stringify({ worker_queue: cancelled, source_database_changed: false }, null, 2)}\n`
-      : `Cancelled queued proposal ${proposalId}. Source database changed: no.\n`);
+      ? `${JSON.stringify({ [queue ? "worker_queue" : "proposal"]: cancelled, source_database_changed: false }, null, 2)}\n`
+      : `Cancelled delayed proposal ${proposalId}. Source database changed: no.\n`);
     return 0;
+    };
+    return await (localOperator
+      ? withProjectAuthorityMutation(semanticActionProjectRoot(config, configPath)!, async () => finishCancellation())
+      : finishCancellation());
   } finally {
     store.close();
   }
@@ -436,6 +536,12 @@ async function workerDeadLetterShow(args: string[]): Promise<number> {
       `Attempts completed: ${workerAttemptStatus(item).attempts_completed}; configured maximum: ${item.max_attempts}`,
       workerAttemptHumanLine(item),
       `Last safe error: ${item.last_error_code ?? "none"}`,
+      ...(item.status === "held" ? [
+        localDelayedCancelStatusPossible(store, proposal, item)
+          ? `This new delayed request is held with no recorded worker lease or source intent. No retry is scheduled. An owning local installation operator may request terminal cancellation with ${cliCommandName()} worker cancel ${shellQuote(proposalId)} --local-installation-operator --reason <reason> --config ${shellQuote(configPath)} after a default-No confirmation and final store/authority checks.`
+          : "This held item does not establish local cancellation eligibility; inspect its exact receipt and operator authority.",
+        "Do not submit a replacement while this request remains active.",
+      ] : []),
       `Proposal state: ${proposal.state}`,
       `Receipts retained: ${payload.receipts.length}`,
       `Events retained: ${payload.events.length}`,
@@ -617,8 +723,40 @@ export async function claimSupervisedWorkerItem(
         }
         resolveHealthySupervisionSinkAttention(store, config, eligibility.policy);
         await assertSemanticSupervisedWriterPosture(store, config, eligibility.policy, semanticAuthority.registry);
+        let requiredDelayedValidation: { proposalId: string; validationDigest: string } | undefined;
+        const next = store.listWorkerQueue().filter((candidate) =>
+          ((candidate.status === "queued" || candidate.status === "retry_wait")
+            && Date.parse(candidate.next_attempt_at) <= Date.now()
+            || candidate.status === "leased" && candidate.lease_expires_at !== undefined
+              && Date.parse(candidate.lease_expires_at) <= Date.now())
+          && candidate.execution_mode === "supervised_worker"
+          && candidate.contract_digest === eligibility.action_boundary_digest
+          && store.getProposal(candidate.proposal_id)?.action === policy.outcome
+          && ["approved", "pending_worker", "failed"].includes(store.getProposal(candidate.proposal_id)?.state ?? "")
+          && (!input.tenant || store.getProposal(candidate.proposal_id)?.tenant_id === input.tenant))
+          .sort((a, b) => a.next_attempt_at.localeCompare(b.next_attempt_at)
+            || a.created_at.localeCompare(b.created_at))[0];
+        if (!next) continue;
+        const pending = next ? store.getProposal(next.proposal_id) : undefined;
+        if (pending?.change_set.schema_version === "synapsor.change-set.v4" && pending.change_set.delayed_work) {
+          if (next.status !== "queued" || next.attempts !== 0) {
+            store.reconcileDelayedPriorAttempt(pending.proposal_id);
+            return undefined;
+          }
+          if (next.status === "queued" && next.attempts === 0) {
+            try {
+              const checked = await recordCurrentDelayedSemanticValidation({ proposal: pending, config, configPath,
+                store, phase: "dispatch" });
+              requiredDelayedValidation = { proposalId: pending.proposal_id, validationDigest: checked.validation_digest };
+            } catch (error) {
+              store.holdQueuedDelayedWork(pending.proposal_id, safeDelayedValidationCode(error));
+              return undefined;
+            }
+          }
+        }
         const item = store.claimWorkerItem({
           workerId: input.workerId,
+          proposalId: next.proposal_id,
           leaseSeconds: eligibility.policy.lease_seconds,
           executionMode: "supervised_worker",
           capability: policy.outcome,
@@ -630,6 +768,7 @@ export async function claimSupervisedWorkerItem(
             windowSeconds: eligibility.policy.rate_limit.window_seconds,
           },
           proposalTtlSeconds: eligibility.policy.proposal_ttl_seconds,
+          ...(requiredDelayedValidation ? { requiredDelayedValidation } : {}),
         });
         if (item) return { item, policy: eligibility.policy };
       } catch {

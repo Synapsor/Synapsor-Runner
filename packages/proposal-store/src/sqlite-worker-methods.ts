@@ -19,6 +19,7 @@ import {
 } from "./common.js";
 import {
   assertOperatorDecision,
+  semanticApprovalSetDigest,
   publicIdentitySummary,
   utcDayWindow,
 } from "./proposal-integrity.js";
@@ -29,6 +30,7 @@ import {
 import {
   ProposalStoreError,
 } from "./errors.js";
+import { localDelayedCancelPreviewDigest } from "./local-delayed-cancel-preview.js";
 
 import type {
   ProposalStoreWorkerMethods,
@@ -102,7 +104,7 @@ export const proposalStoreWorkersMethods: ProposalStoreWorkerMethods & ProposalS
           WHERE q.execution_mode = ?
             AND (? IS NULL OR q.contract_digest = ?)
             AND p.action = ?
-            AND q.status IN ('queued', 'leased', 'retry_wait', 'blocked', 'reconciliation_required')
+            AND q.status IN ('queued', 'held', 'leased', 'retry_wait', 'blocked', 'reconciliation_required')
         `).get(executionMode, contractDigest ?? null, contractDigest ?? null, proposal.action);
         if (isRecord(active) && Number(active.count ?? 0) >= queueLimit) {
           throw new ProposalStoreError(
@@ -170,6 +172,7 @@ export const proposalStoreWorkersMethods: ProposalStoreWorkerMethods & ProposalS
   
   claimWorkerItem(options: {
       workerId: string;
+      proposalId?: string;
       leaseSeconds?: number;
       executionMode?: WorkerExecutionMode;
       capability?: string;
@@ -181,6 +184,7 @@ export const proposalStoreWorkersMethods: ProposalStoreWorkerMethods & ProposalS
         windowSeconds: number;
       };
       proposalTtlSeconds?: number;
+      requiredDelayedValidation?: { proposalId: string; validationDigest: string };
       policyExecution?: WorkerPolicyExecutionLimits;
       now?: string;
     }): WorkerQueueItem | undefined {
@@ -254,6 +258,7 @@ export const proposalStoreWorkersMethods: ProposalStoreWorkerMethods & ProposalS
             AND (? IS NULL OR p.action = ?)
             AND (? IS NULL OR p.tenant_id = ?)
             AND (? IS NULL OR q.contract_digest = ?)
+            AND (? IS NULL OR q.proposal_id = ?)
           ORDER BY q.next_attempt_at ASC, q.created_at ASC
           LIMIT 1
         `).get(
@@ -267,15 +272,41 @@ export const proposalStoreWorkersMethods: ProposalStoreWorkerMethods & ProposalS
           options.tenant ?? null,
           options.contractDigest ?? null,
           options.contractDigest ?? null,
+          options.proposalId ?? null,
+          options.proposalId ?? null,
         );
         const item = rowToWorkerQueueItem(raw);
         if (!item) return;
         const proposal = this.requireProposal(item.proposal_id);
+        if (proposal.change_set.schema_version === "synapsor.change-set.v4" && proposal.change_set.delayed_work) {
+          if (item.status !== "queued" || item.attempts !== 0) {
+            this.db.prepare("UPDATE worker_queue SET status = 'reconciliation_required', last_error_code = 'DELAYED_WORK_PRIOR_ATTEMPT_UNKNOWN', updated_at = ? WHERE proposal_id = ?")
+              .run(now, item.proposal_id);
+            this.appendEvent(item.proposal_id, "delayed_work_reconciliation_required", options.workerId,
+              { safe_code: "DELAYED_WORK_PRIOR_ATTEMPT_UNKNOWN", source_database_changed: null });
+            return;
+          }
+          const validation = this.latestDelayedValidation(item.proposal_id, "dispatch");
+          if (!options.requiredDelayedValidation
+            || options.requiredDelayedValidation.proposalId !== item.proposal_id
+            || validation?.validation_digest !== options.requiredDelayedValidation.validationDigest
+            || validation.proposal_hash !== proposal.proposal_hash
+            || validation.proposal_version !== proposal.proposal_version
+            || validation.original_proof_digest !== proposal.change_set.semantic_authority.proof.proof_digest
+            || validation.execution_policy_digest !== proposal.change_set.delayed_work.execution_policy_digest
+            || validation.dependency_set_digest !== proposal.change_set.semantic_authority.proof.dependency_set_digest
+            || validation.effect_digest !== proposal.change_set.semantic_authority.effect.effect_digest
+            || validation.approval_set_digest !== semanticApprovalSetDigest(proposal, this.approvals(item.proposal_id))
+            || Date.parse(validation.valid_until) <= Date.parse(now)) return;
+        }
         if (options.proposalTtlSeconds !== undefined) {
           const ttlSeconds = Math.max(60, Math.min(options.proposalTtlSeconds, 2_592_000));
           const expiresAt = Date.parse(proposal.created_at) + ttlSeconds * 1_000;
           if (!Number.isFinite(expiresAt) || expiresAt <= Date.parse(now)) {
-            this.blockQueuedWorkerItem(item, options.workerId, "SUPERVISED_WORKER_PROPOSAL_EXPIRED", now);
+            if (proposal.change_set.schema_version === "synapsor.change-set.v4" && proposal.change_set.delayed_work
+              && item.status === "queued" && item.attempts === 0) {
+              this.holdQueuedDelayedWork(item.proposal_id, "DELAYED_WORK_REQUEST_EXPIRED", now);
+            } else this.blockQueuedWorkerItem(item, options.workerId, "SUPERVISED_WORKER_PROPOSAL_EXPIRED", now);
             return;
           }
         }
@@ -692,27 +723,61 @@ export const proposalStoreWorkersMethods: ProposalStoreWorkerMethods & ProposalS
       actor: string;
       identity?: OperatorIdentityProof;
       require_verified_identity?: boolean;
+      local_installation_operator_reason?: string;
+      expected_local_preview_digest?: `sha256:${string}`;
       now?: string;
     }): WorkerQueueItem {
       const now = options.now ?? new Date().toISOString();
-      const proposal = this.requireProposal(options.proposalId);
-      const item = this.requireWorkerQueueItem(options.proposalId);
-      assertOperatorDecision(
-        proposal,
-        "worker_cancel",
-        options.actor,
-        options.identity,
-        options.require_verified_identity === true,
-      );
-      if (item.cancellation_control_role && !options.identity?.roles.includes(item.cancellation_control_role)) {
-        throw new ProposalStoreError(
-          "WORKER_CANCEL_CONTROL_ROLE_REQUIRED",
-          `operator ${options.actor} lacks required worker cancellation control role ${item.cancellation_control_role}`,
-        );
+      const localReason = options.local_installation_operator_reason;
+      if (localReason !== undefined && (localReason.trim().length < 8 || localReason.length > 500
+        || !options.expected_local_preview_digest
+        || options.identity?.provider !== "dev_env" || options.identity.verified
+        || options.identity.subject !== options.actor || options.identity.roles.length !== 0
+        || !options.actor.startsWith("local-installation-operator:")
+        || options.require_verified_identity === true)) {
+        throw new ProposalStoreError("LOCAL_DELAYED_CANCEL_IDENTITY_INVALID",
+          "a bounded reason and attributed, unverified local installation operator are required");
       }
       this.transaction(() => {
         const item = this.requireWorkerQueueItem(options.proposalId);
-        if (item.status !== "queued" && item.status !== "retry_wait") {
+        const proposal = this.requireProposal(options.proposalId);
+        if (localReason !== undefined
+          && localDelayedCancelPreviewDigest({ proposal, queue: item, approvals: this.approvals(options.proposalId) })
+            !== options.expected_local_preview_digest) {
+          throw new ProposalStoreError("LOCAL_DELAYED_CANCEL_REQUEST_CHANGED",
+            "the exact request, approval history or queue changed after confirmation; inspect and choose again");
+        }
+        assertOperatorDecision(
+          proposal, "worker_cancel", options.actor, options.identity,
+          localReason === undefined && options.require_verified_identity === true,
+        );
+        if (item.cancellation_control_role && !options.identity?.roles.includes(item.cancellation_control_role)) {
+          throw new ProposalStoreError("WORKER_CANCEL_CONTROL_ROLE_REQUIRED",
+            `operator ${options.actor} lacks required worker cancellation control role ${item.cancellation_control_role}`);
+        }
+        const delayedRequest = proposal.change_set.schema_version === "synapsor.change-set.v4"
+          && proposal.change_set.delayed_work;
+        if (delayedRequest && ((item.status !== "queued" && item.status !== "held")
+          || item.attempts !== 0 || item.lease_id || item.lease_owner || item.lease_expires_at
+          || this.receipts(options.proposalId).length !== 0
+          || this.listWritebackIntents({ proposal_id: options.proposalId }).length !== 0
+          || this.events(options.proposalId).some(event =>
+            event.kind === "writeback_worker_claimed" || event.kind.startsWith("writeback_intent_")
+            || event.kind === "writeback_reconciliation_required"))) {
+          throw new ProposalStoreError("DELAYED_WORK_CANCEL_RECONCILIATION_REQUIRED",
+            "an execution attempt may have started; inspect the exact receipt and reconcile this delayed request");
+        }
+        if (localReason !== undefined) {
+          if (proposal.change_set.schema_version !== "synapsor.change-set.v4"
+            || !proposal.change_set.delayed_work
+            || item.cancellation_control_role !== null
+            || (item.status !== "queued" && item.status !== "held")
+            || item.attempts !== 0) {
+            throw new ProposalStoreError("LOCAL_DELAYED_CANCEL_RECONCILIATION_REQUIRED",
+              "local cancellation is limited to new pending or held delayed work with no possible execution attempt; inspect the exact receipt and reconcile uncertain work");
+          }
+        }
+        if (item.status !== "queued" && item.status !== "held" && item.status !== "retry_wait") {
           throw new ProposalStoreError(
             "WORKER_ITEM_NOT_CANCELLABLE",
             `worker queue item ${options.proposalId} is ${item.status}, not safely cancellable before lease`,
@@ -736,9 +801,63 @@ export const proposalStoreWorkersMethods: ProposalStoreWorkerMethods & ProposalS
           execution_mode: item.execution_mode,
           contract_digest: item.contract_digest ?? null,
           identity: options.identity ? publicIdentitySummary(options.identity) : null,
+          ...(localReason === undefined ? {} : {
+            authority: "local_installation_operator",
+            reason: localReason,
+            source_database_changed: false,
+          }),
         });
       });
       return this.requireWorkerQueueItem(options.proposalId);
+    },
+
+  cancelPendingDelayedRequest(options: {
+      proposalId: string;
+      actor: string;
+      identity: OperatorIdentityProof;
+      reason: string;
+      expected_local_preview_digest?: `sha256:${string}`;
+      now?: string;
+    }): StoredProposal {
+      const now = options.now ?? new Date().toISOString();
+      if (options.reason.trim().length < 8 || options.reason.length > 500
+        || !options.expected_local_preview_digest
+        || options.identity.provider !== "dev_env" || options.identity.verified
+        || options.identity.subject !== options.actor || options.identity.roles.length !== 0
+        || !options.actor.startsWith("local-installation-operator:")) {
+        throw new ProposalStoreError("LOCAL_DELAYED_CANCEL_IDENTITY_INVALID",
+          "a bounded reason and attributed, unverified local installation operator are required");
+      }
+      this.transaction(() => {
+        const proposal = this.requireProposal(options.proposalId);
+        if (localDelayedCancelPreviewDigest({ proposal, queue: null, approvals: this.approvals(options.proposalId) })
+            !== options.expected_local_preview_digest) {
+          throw new ProposalStoreError("LOCAL_DELAYED_CANCEL_REQUEST_CHANGED",
+            "the exact request or approval history changed after confirmation; inspect and choose again");
+        }
+        assertOperatorDecision(proposal, "worker_cancel", options.actor, options.identity, false);
+        const possibleAttempt = this.events(options.proposalId).some(event =>
+          event.kind === "writeback_worker_claimed" || event.kind.startsWith("writeback_intent_")
+          || event.kind === "writeback_reconciliation_required");
+        if (proposal.change_set.schema_version !== "synapsor.change-set.v4"
+          || !proposal.change_set.delayed_work || proposal.state !== "pending_review"
+          || this.workerQueueItem(options.proposalId) !== undefined
+          || this.receipts(options.proposalId).length !== 0
+          || this.listWritebackIntents({ proposal_id: options.proposalId }).length !== 0
+          || possibleAttempt) {
+          throw new ProposalStoreError("LOCAL_DELAYED_CANCEL_RECONCILIATION_REQUIRED",
+            "local cancellation is limited to a pending delayed request with no queue or possible execution attempt; inspect the exact receipt and reconcile uncertain work");
+        }
+        this.db.prepare("UPDATE proposals SET state = 'canceled', updated_at = ? WHERE proposal_id = ?")
+          .run(now, options.proposalId);
+        this.appendEvent(options.proposalId, "delayed_request_canceled", options.actor, {
+          authority: "local_installation_operator",
+          reason: options.reason,
+          identity: publicIdentitySummary(options.identity),
+          source_database_changed: false,
+        });
+      });
+      return this.requireProposal(options.proposalId);
     },
   
   listWorkerQueue(status?: WorkerQueueStatus): WorkerQueueItem[] {
@@ -747,6 +866,44 @@ export const proposalStoreWorkersMethods: ProposalStoreWorkerMethods & ProposalS
         : this.db.prepare("SELECT * FROM worker_queue ORDER BY created_at ASC").all();
       return rows.map(rowToWorkerQueueItem).filter((item): item is WorkerQueueItem => item !== undefined);
     },
+
+  holdQueuedDelayedWork(proposalId: string, safeCode: string, now = new Date().toISOString()): WorkerQueueItem {
+    if (!/^DELAYED_WORK_[A-Z0-9_]+$/.test(safeCode)) {
+      throw new ProposalStoreError("DELAYED_WORK_HOLD_CODE_INVALID", "only a safe delayed-work refusal can hold this queue item");
+    }
+    this.transaction(() => {
+      const item = this.requireWorkerQueueItem(proposalId);
+      const proposal = this.requireProposal(proposalId);
+      if (item.status !== "queued" || item.attempts !== 0
+        || proposal.change_set.schema_version !== "synapsor.change-set.v4" || !proposal.change_set.delayed_work
+        || this.receipts(proposalId).length !== 0) {
+        throw new ProposalStoreError("DELAYED_WORK_HOLD_UNAVAILABLE", "only new, unleased delayed work without a source attempt can be held");
+      }
+      this.db.prepare("UPDATE worker_queue SET status = 'held', last_error_code = ?, updated_at = ? WHERE proposal_id = ?")
+        .run(safeCode, now, proposalId);
+      this.appendEvent(proposalId, "delayed_work_held", "runner", { safe_code: safeCode, source_database_changed: false });
+    });
+    return this.requireWorkerQueueItem(proposalId);
+  },
+
+  reconcileDelayedPriorAttempt(proposalId: string, now = new Date().toISOString()): WorkerQueueItem {
+    return this.transaction(() => {
+      const proposal = this.requireProposal(proposalId);
+      const item = this.getWorkerQueueItem(proposalId);
+      if (!item || proposal.change_set.schema_version !== "synapsor.change-set.v4"
+        || !proposal.change_set.delayed_work || item.attempts < 1
+        || !(item.status === "retry_wait" || item.status === "queued"
+          || item.status === "leased" && item.lease_expires_at !== undefined
+            && Date.parse(item.lease_expires_at) <= Date.parse(now))) {
+        throw new ProposalStoreError("DELAYED_WORK_RECONCILIATION_UNAVAILABLE", "only an uncertain earlier delayed dispatch can enter reconciliation");
+      }
+      this.db.prepare("UPDATE worker_queue SET status = 'reconciliation_required', last_error_code = 'DELAYED_WORK_PRIOR_ATTEMPT_UNKNOWN', updated_at = ? WHERE proposal_id = ?")
+        .run(now, proposalId);
+      this.appendEvent(proposalId, "delayed_work_reconciliation_required", "runner",
+        { safe_code: "DELAYED_WORK_PRIOR_ATTEMPT_UNKNOWN", source_database_changed: null });
+      return this.getWorkerQueueItem(proposalId)!;
+    });
+  },
   
   getWorkerQueueItem(proposalId: string): WorkerQueueItem | undefined {
       return this.workerQueueItem(proposalId);

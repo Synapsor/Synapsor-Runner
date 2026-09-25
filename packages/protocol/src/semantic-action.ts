@@ -215,6 +215,47 @@ export const semanticAuthorityV1Schema = z.object({
   }
 });
 
+/** Request-anchored, reviewed limits. The original eligibility proof is never renewed. */
+export const delayedSemanticWorkV1Schema = z.object({
+  schema_version: z.literal("synapsor.delayed-semantic-work.v1"),
+  execution_policy_digest: sha256,
+  requested_at: timestamp,
+  approval_wait_seconds: z.number().int().min(60).max(2_592_000),
+  approval_validity_seconds: z.number().int().min(60).max(2_592_000),
+  absolute_request_age_seconds: z.number().int().min(60).max(2_592_000),
+  max_validation_attempts: z.number().int().min(2).max(20),
+}).strict().superRefine((work, ctx) => {
+  if (work.approval_wait_seconds > work.absolute_request_age_seconds) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "approval wait cannot outlive the original request", path: ["approval_wait_seconds"] });
+  }
+});
+export type DelayedSemanticWorkV1 = z.infer<typeof delayedSemanticWorkV1Schema>;
+
+const delayedValidationUnsignedSchema = z.object({
+  schema_version: z.literal("synapsor.delayed-validation.v1"),
+  phase: z.enum(["approval", "dispatch"]),
+  proposal_id: z.string().min(1).max(200),
+  proposal_hash: sha256,
+  proposal_version: z.number().int().positive(),
+  original_proof_digest: sha256,
+  execution_policy_digest: sha256,
+  checked_at: timestamp,
+  valid_until: timestamp,
+  dependency_set_digest: sha256,
+  effect_digest: sha256,
+  approval_set_digest: sha256.optional(),
+}).strict();
+export const delayedValidationV1Schema = delayedValidationUnsignedSchema.extend({ validation_digest: sha256 }).strict()
+  .superRefine((record, ctx) => {
+    const { validation_digest: _digest, ...unsigned } = record;
+    if (canonicalJsonDigest(unsigned) !== record.validation_digest
+      || Date.parse(record.valid_until) <= Date.parse(record.checked_at)
+      || (record.phase === "dispatch") !== (record.approval_set_digest !== undefined)) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "delayed validation integrity or stage mismatch", path: ["validation_digest"] });
+    }
+  });
+export type DelayedValidationV1 = z.infer<typeof delayedValidationV1Schema>;
+
 const semanticChangeSetBaseSchema = z.object({
   schema_version: z.literal(semanticProtocolVersions.changeSetV4),
   proposal_id: z.string().min(1).max(200),
@@ -279,12 +320,18 @@ const semanticChangeSetBaseSchema = z.object({
     executor: z.literal("semantic_rule").optional(),
   }).passthrough(),
   semantic_authority: semanticAuthorityV1Schema,
+  delayed_work: delayedSemanticWorkV1Schema.optional(),
   source_database_mutated: z.literal(false),
   integrity: z.object({ proposal_hash: sha256 }).strict(),
   created_at: timestamp,
 }).strict();
 
 export const changeSetV4Schema = semanticChangeSetBaseSchema.superRefine((changeSet, ctx) => {
+  if (changeSet.delayed_work && (changeSet.source.kind !== "external_postgres"
+    || changeSet.semantic_authority.proof.delegation
+    || changeSet.delayed_work.requested_at !== changeSet.created_at)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "delayed work requires a new nondelegated PostgreSQL request with its original time anchor", path: ["delayed_work"] });
+  }
   const { integrity: _integrity, ...proposalCore } = changeSet;
   if (canonicalJsonDigest(proposalCore) !== changeSet.integrity.proposal_hash) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "semantic proposal hash mismatch", path: ["integrity", "proposal_hash"] });
@@ -343,12 +390,16 @@ const normalizedSemanticWritebackJobV5Base = z.object({
   version_advance: versionAdvanceSchema.optional(),
   deduplication: z.object({ components: z.array(semanticDeduplicationComponentSchema).min(1).max(8) }).strict().optional(),
   semantic_authority: semanticAuthorityV1Schema,
+  delayed_work: delayedSemanticWorkV1Schema.optional(),
   idempotency_key: z.string().min(1).max(256),
   lease_expires_at: z.union([timestamp, z.number().int().positive()]),
   attempt_count: z.number().int().positive(),
 }).strict();
 
 function validateSemanticJob(job: z.infer<typeof normalizedSemanticWritebackJobV5Base>, ctx: z.RefinementCtx): void {
+  if (job.delayed_work && (job.engine !== "postgres" || job.semantic_authority.proof.delegation)) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "delegated or non-PostgreSQL work cannot use delayed verification", path: ["delayed_work"] });
+  }
   const effect = job.semantic_authority.effect;
   if (job.operation !== effect.operation || job.source_id !== effect.source || job.target.schema !== effect.schema || job.target.table !== effect.table || canonicalJsonStringify(job.target.primary_key) !== canonicalJsonStringify(effect.primary_key)) ctx.addIssue({ code: z.ZodIssueCode.custom, message: "semantic writeback target does not match the exact effect", path: ["semantic_authority", "effect"] });
   if (canonicalJsonStringify(job.patch) !== canonicalJsonStringify(effect.set)
@@ -384,6 +435,7 @@ export const writebackJobV5Schema = z.object({
   version_advance: versionAdvanceSchema.optional(),
   deduplication: normalizedSemanticWritebackJobV5Base.shape.deduplication,
   semantic_authority: semanticAuthorityV1Schema,
+  delayed_work: delayedSemanticWorkV1Schema.optional(),
   idempotency_key: z.string().min(1).max(256),
   lease: z.object({ lease_id: z.string().min(1), attempt: z.number().int().positive(), expires_at: timestamp }).strict(),
 }).strict().transform((job) => ({
@@ -403,6 +455,7 @@ export const writebackJobV5Schema = z.object({
   ...(job.version_advance === undefined ? {} : { version_advance: job.version_advance }),
   ...(job.deduplication === undefined ? {} : { deduplication: job.deduplication }),
   semantic_authority: job.semantic_authority,
+  ...(job.delayed_work === undefined ? {} : { delayed_work: job.delayed_work }),
   idempotency_key: job.idempotency_key,
   lease_expires_at: job.lease.expires_at,
   attempt_count: job.lease.attempt,

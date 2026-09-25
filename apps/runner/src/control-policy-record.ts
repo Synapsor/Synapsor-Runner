@@ -6,6 +6,7 @@ export const OPERATOR_POLICY_RECORD_VERSION = "synapsor.stored-operator-authorit
 export const OPERATOR_READ_SELECTION_KEY: ControlPolicyKey = { scope: { level: "operator" }, kind: "management", name: "read_selection" };
 export const OPERATOR_READ_AUTHORING_KEY: ControlPolicyKey = { scope: { level: "operator" }, kind: "management", name: "read_authoring" };
 export const OPERATOR_EXECUTION_POLICY_KEY: ControlPolicyKey = { scope: { level: "operator" }, kind: "execution", name: "supervised_worker" };
+export const OPERATOR_APPROVER_IDENTITY_KEY: ControlPolicyKey = { scope: { level: "operator" }, kind: "management", name: "approver_identity" };
 
 export type ReadAuthoringBindings = {
   repository_id: string;

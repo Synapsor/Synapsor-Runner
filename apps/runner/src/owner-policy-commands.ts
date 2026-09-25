@@ -24,6 +24,7 @@ export async function ownerPolicyCommand(args: string[], dependencies: {
 } = {}): Promise<number> {
   const [mode, ...rest] = args;
   if (mode === "connection") return ownerConnectionCommand(rest, dependencies);
+  if (mode === "approver") return approverConfigurationCommand(rest, dependencies);
   if (mode !== "storage" && mode !== "delegation") throw new Error("policy requires storage or delegation for owner-rule setup.");
   assertKnownOptions(rest, new Set(["--config", "--project-root", "--store", "--input", "--name"]), `policy ${mode}`);
   const configPath = runnerConfigPath(rest);
@@ -108,6 +109,55 @@ export async function ownerPolicyCommand(args: string[], dependencies: {
       return 0;
     } finally { await binding.close(); }
   } finally { terminal?.close(); }
+}
+
+async function approverConfigurationCommand(args: string[], dependencies: { io?: OwnerPolicyReviewIo; env?: NodeJS.ProcessEnv }): Promise<number> {
+  assertKnownOptions(args, new Set(["--config", "--project-root", "--store", "--input", "--previous-config"]), "policy approver");
+  // This is the existing local deployment-operator management boundary, not
+  // an agent, reviewer, or noninteractive development-identity decision.
+  if (!dependencies.io && (!process.stdin.isTTY || !process.stdout.isTTY)) {
+    throw new Error("POLICY_APPROVER_INTERACTIVE_ADMIN_REQUIRED: use the local deployment-operator terminal; no approver authority was changed.");
+  }
+  const configPath = path.resolve(runnerConfigPath(args));
+  const raw = await readJsonFileWithLocation<RuntimeConfig>(configPath, "Runner config");
+  const resolved = resolveRuntimeConfig(raw, path.dirname(configPath));
+  const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? resolved.action_rules?.project_root ?? path.dirname(configPath));
+  const file = optionalArg(args, "--input");
+  let identity: unknown;
+  if (file) {
+    if ((await fs.stat(file)).size > 65_536) throw new Error("Approver roster exceeds the 64 KiB local review limit.");
+    const text = await fs.readFile(file, "utf8");
+    if (Buffer.byteLength(text) > 65_536) throw new Error("Approver roster changed beyond the review limit.");
+    const document: unknown = JSON.parse(text);
+    if (!document || typeof document !== "object" || Array.isArray(document)
+      || Object.keys(document).length !== 1 || !Object.hasOwn(document, "operator_identity")) {
+      throw new Error("POLICY_APPROVER_INPUT_INVALID: --input must contain only operator_identity.");
+    }
+    identity = (document as { operator_identity: unknown }).operator_identity;
+  }
+  const { prepareApproverPolicyConfiguration } = await import("./approver-policy-configuration.js");
+  const prepared = await prepareApproverPolicyConfiguration({ projectRoot, configPath, identity,
+    previousConfigPath: optionalArg(args, "--previous-config"), storePath: optionalArg(args, "--store"), env: dependencies.env });
+  const terminal = dependencies.io ? undefined : createTerminalAnalyticsShellIo({ slashCommands: false });
+  const io = dependencies.io ?? terminal!;
+  const write = (lines: string[]) => io.write(lines.flatMap((line) => wrapStyledTerminalLine(safeTerminalText(line), terminalContentWidth(io.columns()))).join("\n") + "\n");
+  try {
+    const review = prepared.review;
+    write(["Review scoped verified approver configuration",
+      "Authority for this first-use transition: the interactive local deployment-operator account owns this project and its control-store process. This is local administration, not a cryptographically verified reviewer or dev identity.",
+      `Existing deployment revision: ${review.epoch}; exact operation: ${review.digest}`,
+      ...(review.recovery ? ["The prior execution binding was proven from the supplied previous configuration."] : []),
+      ...review.roster.map((item) => `${item.subject}: roles ${item.roles.join(", ")}; outcomes ${item.outcomes.join(", ")}; public key ${item.public_key_fingerprint}`),
+      ...review.role_scopes.map((item) => `${item.outcome}: approval role ${item.required_role}`),
+      `Affected execution outcomes: ${review.affected_outcomes.join(", ") || "none"}`,
+      "Saving this revision disables affected supervised execution. Review writer, receipt and Action prerequisites separately before enabling it again.",
+      "Historical proposals, approvals and queues retain their original bindings. This does not run or publish a business Action."]);
+    if (!await confirm(io, "Save this exact approver revision and leave execution disabled", review)) return 0;
+    await prepared.confirm(review.digest);
+    write(["Approver configuration reviewed and saved; execution remains disabled.",
+      "Next: use Action review to verify writer and receipt posture, then separately authorize execution under the new identity binding."]);
+    return 0;
+  } finally { terminal?.close(); await prepared.close(); }
 }
 
 async function confirm(io: OwnerPolicyReviewIo, label: string, details: unknown): Promise<boolean> {

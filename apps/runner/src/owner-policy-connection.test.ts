@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
-import { randomUUID } from "node:crypto";
+import { generateKeyPairSync, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { Pool } from "pg";
 import { describe, expect, it, vi } from "vitest";
@@ -16,12 +16,13 @@ import { recommendedBoundaryReviewCandidate } from "./boundary-candidate.js";
 import { buildActionRuleAuthorityDraft } from "./action-rule-authority.js";
 import { encodeOperatorAuthority, validateOperatorPolicySnapshot } from "./control-policy-authority-codec.js";
 import { encodeOperatorExecutionPolicy, executionBindingDigest, readOperatorExecutionConfig } from "./control-policy-execution.js";
-import { OPERATOR_EXECUTION_POLICY_KEY } from "./control-policy-record.js";
-import { migrateProjectControlPolicies, type ControlPolicyMigrationSnapshot } from "./control-policy-store.js";
+import { OPERATOR_APPROVER_IDENTITY_KEY, OPERATOR_EXECUTION_POLICY_KEY } from "./control-policy-record.js";
+import { migrateProjectControlPolicies, openProjectControlPolicies, type ControlPolicyMigrationSnapshot } from "./control-policy-store.js";
 import { readRuntimeConfig } from "./cli-project.js";
 import { inspectMcpToolBoundary, mcpConfigure, readLocalExploreRuntimeConfig, readMcpLaunchConfig } from "./mcp-runtime.js";
 import { ownerPolicyCommand } from "./owner-policy-commands.js";
 import { prepareOwnerConnectionReview } from "./owner-policy-connection.js";
+import { prepareApproverPolicyConfiguration } from "./approver-policy-configuration.js";
 import type { OwnerPolicyReviewIo } from "./owner-policy-review-ui.js";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 
@@ -145,6 +146,213 @@ function ui(answers: string[]) {
     choose: vi.fn(async () => answers.shift()), review: vi.fn(async (_title, lines) => { details.push(...lines); }), isTerminal: () => false };
   return { io, output, details };
 }
+
+async function reviewerIdentity(root: string) {
+  const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048,
+    publicKeyEncoding: { type: "spki", format: "pem" }, privateKeyEncoding: { type: "pkcs8", format: "pem" } });
+  await fs.writeFile(path.join(root, "reviewer.pub.pem"), publicKey, { mode: 0o600 });
+  return { provider: "signed_key" as const, operators: { reviewer_one: { public_key_path: "./reviewer.pub.pem",
+    roles: ["action_reviewer"], outcomes: ["inventory.adjust"] } } };
+}
+
+for (const backend of ["sqlite", "postgres"] as const) describe.skipIf(backend === "postgres" && !postgresUrl)(`${backend} scoped approver transition`, () => {
+  it("reviews a new key, keeps execution disabled, retains old authority and requires separate enable review", async () => {
+    await withFixture(backend, async (f) => {
+      const identity = await reviewerIdentity(f.root), before = await f.state();
+      const prepared = await prepareApproverPolicyConfiguration({ ...f.input, identity });
+      f.reviews.push(prepared as never);
+      expect(prepared.review).toMatchObject({ execution_was_enabled: true, execution_enabled_after: false,
+        roster: [{ subject: "reviewer_one", roles: ["action_reviewer"], outcomes: ["inventory.adjust"] }] });
+      expect(prepared.review.roster[0]!.public_key_fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/u);
+      expect(await f.state()).toEqual(before);
+      await prepared.confirm(prepared.review.digest);
+      const after = await f.state(), oldExecution = before.active.find((entry) => entry.kind === "execution")!;
+      const current = await readRuntimeConfig(f.configPath, { env: f.env, storePath: f.storePath });
+      expect(current.operator_identity).toMatchObject(identity);
+      expect(current.operator_identity?.operators?.reviewer_one?.public_key_fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/u);
+      expect(current.supervised_worker?.enabled).toBe(false);
+      expect(after.epoch).toBe(before.epoch + 1);
+      expect(after.active.filter((entry) => entry.kind !== "execution" && entry.name !== "approver_identity"))
+        .toEqual(before.active.filter((entry) => entry.kind !== "execution"));
+      const trustRevision = await f.binding.repository.active(f.binding.deployment_id, OPERATOR_APPROVER_IDENTITY_KEY);
+      expect(trustRevision?.content).toMatchObject({ type: "approver_identity",
+        identity_digest: canonicalJsonDigest(current.operator_identity),
+        public_keys: [{ subject: "reviewer_one", roles: ["action_reviewer"], outcomes: ["inventory.adjust"] }] });
+      expect(await f.binding.repository.revision(f.binding.deployment_id, OPERATOR_EXECUTION_POLICY_KEY, oldExecution.revision_id)).toEqual(oldExecution);
+      expect(after.active.find((entry) => entry.kind === "execution")?.revision_id).not.toBe(oldExecution.revision_id);
+      const reopened = await openProjectControlPolicies({ projectRoot: f.root, config: current,
+        storePath: f.storePath, env: f.env });
+      expect(reopened).toBeDefined();
+      try {
+        expect(await reopened!.repository.active(reopened!.deployment_id, OPERATOR_APPROVER_IDENTITY_KEY)).toEqual(trustRevision);
+        expect(await reopened!.repository.active(reopened!.deployment_id, OPERATOR_EXECUTION_POLICY_KEY))
+          .toEqual(await f.binding.repository.active(f.binding.deployment_id, OPERATOR_EXECUTION_POLICY_KEY));
+      } finally { await reopened?.close(); }
+      await expect(prepared.confirm(prepared.review.digest)).rejects.toMatchObject({ code: "POLICY_APPROVER_CONFIRMATION_REQUIRED" });
+    });
+  });
+
+  it("default cancellation leaves exact config and authority unchanged", async () => {
+    await withFixture(backend, async (f) => {
+      const identity = await reviewerIdentity(f.root), file = path.join(f.root, "approver-roster.json");
+      await fs.writeFile(file, JSON.stringify({ operator_identity: identity }), { mode: 0o600 });
+      const before = await f.state(), screen = ui(["cancel"]);
+      expect(await ownerPolicyCommand(["approver", "--config", f.configPath, "--input", file], { io: screen.io, env: f.env })).toBe(0);
+      expect(await f.state()).toEqual(before);
+      expect(await fs.readFile(f.configPath, "utf8")).toBe(f.configText);
+    });
+  });
+
+  it("pins a reviewer key relative to the selected nested Action configuration", async () => {
+    await withFixture(backend, async (f) => {
+      const identity = await reviewerIdentity(f.root);
+      identity.operators.reviewer_one.public_key_path = "../reviewer.pub.pem";
+      const directory = path.join(f.root, "owned-config");
+      await fs.mkdir(directory, { mode: 0o700 });
+      const configPath = path.join(directory, "synapsor.actions.runner.json");
+      await fs.rename(f.configPath, configPath);
+      const prepared = await prepareApproverPolicyConfiguration({ ...f.input, configPath, identity });
+      f.reviews.push(prepared as never);
+      await prepared.confirm(prepared.review.digest);
+      const selected = await readRuntimeConfig(configPath, { env: f.env, storePath: f.storePath });
+      expect(selected.operator_identity?.operators?.reviewer_one?.public_key_fingerprint).toMatch(/^sha256:[a-f0-9]{64}$/u);
+      expect(selected.supervised_worker?.enabled).toBe(false);
+    });
+  });
+
+  it("CLI explicit confirmation stages the reviewed roster without enabling execution", async () => {
+    await withFixture(backend, async (f) => {
+      const identity = await reviewerIdentity(f.root), file = path.join(f.root, "approver-roster.json");
+      await fs.writeFile(file, JSON.stringify({ operator_identity: identity }), { mode: 0o600 });
+      const screen = ui(["confirm"]), before = await f.state();
+      expect(await ownerPolicyCommand(["approver", "--config", f.configPath, "--input", file], { io: screen.io, env: f.env })).toBe(0);
+      expect(screen.io.choose).toHaveBeenCalledOnce();
+      const output = screen.output.join("");
+      expect(output).toContain("local deployment-operator");
+      expect(output).toContain("execution remains disabled");
+      expect(output).toMatch(/public key\s+sha256:[a-f0-9]{64}/u);
+      const after = await f.state();
+      expect(after.epoch).toBe(before.epoch + 1);
+      expect((await readRuntimeConfig(f.configPath, { env: f.env, storePath: f.storePath })).supervised_worker?.enabled).toBe(false);
+    });
+  });
+
+  it("refuses a new role outside the active approval mandate", async () => {
+    await withFixture(backend, async (f) => {
+      const identity = await reviewerIdentity(f.root);
+      identity.operators.reviewer_one.roles = ["worker_admin"];
+      const before = await f.state();
+      await expect(prepareApproverPolicyConfiguration({ ...f.input, identity })).rejects.toMatchObject({ code: "POLICY_APPROVER_ROLE_OUT_OF_SCOPE" });
+      expect(await f.state()).toEqual(before);
+    });
+  });
+
+  it("recovers only a proven prior execution binding after an identity-only file edit", async () => {
+    await withFixture(backend, async (f) => {
+      const identity = await reviewerIdentity(f.root), previous = path.join(f.root, "previous-actions.json");
+      await fs.writeFile(previous, f.configText, { mode: 0o600 });
+      await f.writeConfig({ ...f.config, operator_identity: identity });
+      await expect(prepareApproverPolicyConfiguration({ ...f.input })).rejects.toMatchObject({ code: "POLICY_APPROVER_PREVIOUS_BINDING_REQUIRED" });
+      const prepared = await prepareApproverPolicyConfiguration({ ...f.input, previousConfigPath: previous });
+      f.reviews.push(prepared as never);
+      expect(prepared.review.recovery).toBe(true);
+      await prepared.confirm(prepared.review.digest);
+      expect((await readRuntimeConfig(f.configPath, { env: f.env, storePath: f.storePath })).supervised_worker?.enabled).toBe(false);
+    });
+  });
+
+  it("does not accept changed public-key material or unrelated runtime fields after preview", async () => {
+    await withFixture(backend, async (f) => {
+      const identity = await reviewerIdentity(f.root);
+      const prepared = await prepareApproverPolicyConfiguration({ ...f.input, identity });
+      f.reviews.push(prepared as never);
+      const before = await f.state();
+      await fs.writeFile(path.join(f.root, "reviewer.pub.pem"), generateKeyPairSync("rsa", { modulusLength: 2048,
+        publicKeyEncoding: { type: "spki", format: "pem" }, privateKeyEncoding: { type: "pkcs8", format: "pem" } }).publicKey, { mode: 0o600 });
+      await expect(prepared.confirm(prepared.review.digest)).rejects.toMatchObject({ code: "POLICY_APPROVER_KEY_CHANGED" });
+      expect(await f.state()).toEqual(before);
+    });
+  });
+
+  it("refuses a held approver preview after a competing configuration edit or policy epoch", async () => {
+    await withFixture(backend, async (f) => {
+      const identity = await reviewerIdentity(f.root);
+      const prepared = await prepareApproverPolicyConfiguration({ ...f.input, identity });
+      f.reviews.push(prepared as never);
+      const changed = structuredClone(f.config);
+      changed.sources!.local_postgres!.statement_timeout_ms = 1234;
+      await f.writeConfig(changed);
+      const before = await f.state();
+      await expect(prepared.confirm(prepared.review.digest)).rejects.toMatchObject({ code: "POLICY_APPROVER_REVIEW_STALE" });
+      expect(await f.state()).toEqual(before);
+    });
+    await withFixture(backend, async (f) => {
+      const identity = await reviewerIdentity(f.root);
+      const prepared = await prepareApproverPolicyConfiguration({ ...f.input, identity });
+      f.reviews.push(prepared as never);
+      const before = await f.state();
+      await f.binding.repository.commit({ deployment_id: f.binding.deployment_id, expected_epoch: before.epoch,
+        revisions: [], active: [], event: event() });
+      const advanced = await f.state();
+      await expect(prepared.confirm(prepared.review.digest)).rejects.toMatchObject({ code: "POLICY_APPROVER_REVIEW_STALE" });
+      expect(await f.state()).toEqual(advanced);
+      expect(await fs.readFile(f.configPath, "utf8")).toBe(f.configText);
+    });
+  });
+
+  it("retains the prior public verification key when rotating and revoking a scoped reviewer", async () => {
+    await withFixture(backend, async (f) => {
+      const first = await reviewerIdentity(f.root);
+      const enrolled = await prepareApproverPolicyConfiguration({ ...f.input, identity: first });
+      f.reviews.push(enrolled as never);
+      await enrolled.confirm(enrolled.review.digest);
+      const oldRevision = (await f.binding.repository.active(f.binding.deployment_id, OPERATOR_APPROVER_IDENTITY_KEY))!;
+      const oldPem = (oldRevision.content as { public_keys: Array<{ public_key_pem: string }> }).public_keys[0]!.public_key_pem;
+      const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048,
+        publicKeyEncoding: { type: "spki", format: "pem" }, privateKeyEncoding: { type: "pkcs8", format: "pem" } });
+      await fs.writeFile(path.join(f.root, "replacement.pub.pem"), publicKey, { mode: 0o600 });
+      const replacement = { provider: "signed_key" as const,
+        operators: { reviewer_two: { public_key_path: "./replacement.pub.pem", roles: ["action_reviewer"], outcomes: ["inventory.adjust"] } } };
+      const rotated = await prepareApproverPolicyConfiguration({ ...f.input, identity: replacement });
+      f.reviews.push(rotated as never);
+      await rotated.confirm(rotated.review.digest);
+      const active = (await f.binding.repository.active(f.binding.deployment_id, OPERATOR_APPROVER_IDENTITY_KEY))!;
+      expect(active.revision_id).not.toBe(oldRevision.revision_id);
+      expect(await f.binding.repository.revision(f.binding.deployment_id, OPERATOR_APPROVER_IDENTITY_KEY, oldRevision.revision_id)).toEqual(oldRevision);
+      expect((oldRevision.content as { public_keys: Array<{ public_key_pem: string }> }).public_keys[0]!.public_key_pem).toBe(oldPem);
+      expect((active.content as { public_keys: Array<{ subject: string }> }).public_keys).toMatchObject([{ subject: "reviewer_two" }]);
+      const current = await readRuntimeConfig(f.configPath, { env: f.env, storePath: f.storePath });
+      expect(current.operator_identity?.operators?.reviewer_one).toBeUndefined();
+      expect(current.supervised_worker?.enabled).toBe(false);
+    });
+  });
+
+  it.each(["missing", "swapped"])("recovers local management after the old reviewer key is %s without admitting runtime", async (mode) => {
+    await withFixture(backend, async (f) => {
+      const first = await reviewerIdentity(f.root);
+      const enrolled = await prepareApproverPolicyConfiguration({ ...f.input, identity: first });
+      f.reviews.push(enrolled as never);
+      await enrolled.confirm(enrolled.review.digest);
+      const oldRevision = (await f.binding.repository.active(f.binding.deployment_id, OPERATOR_APPROVER_IDENTITY_KEY))!;
+      const oldPath = path.join(f.root, "reviewer.pub.pem");
+      if (mode === "missing") await fs.unlink(oldPath);
+      else await fs.writeFile(oldPath, generateKeyPairSync("rsa", { modulusLength: 2048,
+        publicKeyEncoding: { type: "spki", format: "pem" }, privateKeyEncoding: { type: "pkcs8", format: "pem" } }).publicKey);
+      await expect(readRuntimeConfig(f.configPath, { env: f.env, storePath: f.storePath })).rejects.toThrow();
+      const { publicKey } = generateKeyPairSync("rsa", { modulusLength: 2048,
+        publicKeyEncoding: { type: "spki", format: "pem" }, privateKeyEncoding: { type: "pkcs8", format: "pem" } });
+      await fs.writeFile(path.join(f.root, "new-reviewer.pub.pem"), publicKey, { mode: 0o600 });
+      const replacement = { provider: "signed_key" as const,
+        operators: { reviewer_two: { public_key_path: "./new-reviewer.pub.pem", roles: ["action_reviewer"],
+          outcomes: ["inventory.adjust"] } } };
+      const prepared = await prepareApproverPolicyConfiguration({ ...f.input, identity: replacement });
+      f.reviews.push(prepared as never);
+      await prepared.confirm(prepared.review.digest);
+      expect((await readRuntimeConfig(f.configPath, { env: f.env, storePath: f.storePath })).supervised_worker?.enabled).toBe(false);
+      expect(await f.binding.repository.revision(f.binding.deployment_id, OPERATOR_APPROVER_IDENTITY_KEY, oldRevision.revision_id)).toEqual(oldRevision);
+    });
+  });
+});
 
 for (const backend of ["sqlite", "postgres"] as const) describe.skipIf(backend === "postgres" && !postgresUrl)(`${backend} owner connection exact execution recovery`, () => {
   it.each(["management_only", "management_and_workload"])("recovers only added owner fields with independent exact execution consent and preserves immutable policies: %s", async (mode) => {

@@ -450,6 +450,23 @@ VALUES ($1, $2, $3::jsonb, $4::timestamptz)`,
     return await this.withWrite("recordFreshnessProof", (store) => store.recordFreshnessProof(input));
   }
 
+  async beginDelayedValidation(proposalId: string, phase: "approval" | "dispatch"): Promise<string> {
+    return await this.withWrite("beginDelayedValidation", (store) => store.beginDelayedValidation(proposalId, phase));
+  }
+
+  async recordDelayedValidationFailure(proposalId: string, attemptDigest: string, safeCode: string): Promise<void> {
+    await this.withWrite("recordDelayedValidationFailure", (store) => store.recordDelayedValidationFailure(proposalId, attemptDigest, safeCode));
+  }
+
+  async recordDelayedValidation(input: unknown, attemptDigest: string): Promise<import("@synapsor-runner/protocol").DelayedValidationV1> {
+    return await this.withWrite("recordDelayedValidation", (store) => store.recordDelayedValidation(input, attemptDigest));
+  }
+
+  async latestDelayedValidation(proposalId: string, phase: "approval" | "dispatch"):
+    Promise<import("@synapsor-runner/protocol").DelayedValidationV1 | undefined> {
+    return await this.withRead((store) => store.latestDelayedValidation(proposalId, phase));
+  }
+
   async latestFreshnessProof(proposalId: string): Promise<FreshnessProofV1 | undefined> {
     return await this.withRead((store) => store.latestFreshnessProof(proposalId));
   }
@@ -923,8 +940,22 @@ VALUES ($1, $2, $3::jsonb, $4::timestamptz)`,
     return await this.withWrite("cancelWorkerItem", (store) => store.cancelWorkerItem(input));
   }
 
+  async cancelPendingDelayedRequest(
+    input: Parameters<NonNullable<ProposalRuntimeStore["cancelPendingDelayedRequest"]>>[0],
+  ): Promise<StoredProposal> {
+    return await this.withWrite("cancelPendingDelayedRequest", (store) => store.cancelPendingDelayedRequest(input));
+  }
+
   async listWorkerQueue(status?: WorkerQueueStatus): Promise<WorkerQueueItem[]> {
     return await this.withRead((store) => store.listWorkerQueue(status));
+  }
+
+  async holdQueuedDelayedWork(proposalId: string, safeCode: string, now?: string): Promise<WorkerQueueItem> {
+    return await this.withWrite("holdQueuedDelayedWork", (store) => store.holdQueuedDelayedWork(proposalId, safeCode, now));
+  }
+
+  async reconcileDelayedPriorAttempt(proposalId: string, now?: string): Promise<WorkerQueueItem> {
+    return await this.withWrite("reconcileDelayedPriorAttempt", (store) => store.reconcileDelayedPriorAttempt(proposalId, now));
   }
 
   async getWorkerQueueItem(proposalId: string): Promise<WorkerQueueItem | undefined> {

@@ -6818,6 +6818,7 @@ function workbenchWorkerProjection(
   const queue = items.map((item) => {
     const proposal = store.getProposal(item.proposal_id);
     const capability = proposal?.action ?? proposal?.capability ?? "unknown";
+    const cancellationOffered = workbenchWorkerCancelOffered(item, config);
     const reconciliationIntent = item.status === "reconciliation_required"
       ? store.listWritebackIntents({ proposal_id: item.proposal_id, limit: 10 })
         .find((intent) => intent.status === "reconciliation_required" || intent.status === "applying")
@@ -6839,8 +6840,8 @@ function workbenchWorkerProjection(
       last_error_code: item.last_error_code ?? null,
       terminal_outcome: item.terminal_outcome ?? null,
       source_database_changed: proposal?.source_database_mutated === true,
-      next_action: workbenchWorkerNextAction(item),
-      cancel_confirmation: item.status === "queued" || item.status === "retry_wait"
+      next_action: workbenchWorkerNextAction(item, cancellationOffered),
+      cancel_confirmation: cancellationOffered
         ? `CANCEL ${item.proposal_id}`
         : null,
       recovery_confirmation: item.status === "dead_letter"
@@ -6948,8 +6949,22 @@ function workbenchWorkerApprovalSource(
   return "none";
 }
 
-function workbenchWorkerNextAction(item: WorkerQueueItem): string {
-  if (item.status === "queued") return "Run or resume the trusted worker, or cancel before it is leased.";
+export function workbenchWorkerCancelOffered(item: WorkerQueueItem, config: Record<string, unknown>): boolean {
+  if (item.status !== "queued" && item.status !== "retry_wait") return false;
+  const identity = asRecord(config.operator_identity);
+  if (identity.provider !== "signed_key") return true;
+  const role = item.cancellation_control_role;
+  if (!role) return false;
+  return Object.values(asRecord(identity.operators)).some((raw) => {
+    const operator = asRecord(raw);
+    return Array.isArray(operator.roles) && operator.roles.includes(role) && !Array.isArray(operator.outcomes);
+  });
+}
+
+function workbenchWorkerNextAction(item: WorkerQueueItem, cancellationOffered: boolean): string {
+  if (item.status === "queued") return cancellationOffered
+    ? "Run or resume the trusted worker, or ask a separately configured control actor to complete the current authorization check before cancellation."
+    : "Await an eligible worker. This view has not established an authorized cancellation actor.";
   if (item.status === "leased") return "Let the fenced lease finish; do not start a duplicate manual apply.";
   if (item.status === "retry_wait") return "Runner will retry only after a proven non-commit transient failure.";
   if (item.status === "dead_letter") return "Inspect the retained proposal and receipts, then explicitly requeue or discard.";

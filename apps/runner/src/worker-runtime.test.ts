@@ -146,8 +146,8 @@ describe("read-only semantic queue authority status", () => {
     const assessment = assessUnstartedSemanticQueueAuthority(item, semanticProposal, currentDigest)!;
     expect(workerQueueAuthorityHumanLines(assessment, item.proposal_id, "/tmp/generated actions.runner.json")).toEqual([
       "Blocked: the rules changed before this request started.",
-      "Next: synapsor-runner worker cancel wrp_old_rule --yes --config '/tmp/generated actions.runner.json'",
-      "Then read again and submit a fresh request under the current rules.",
+      "Inspect the exact request. Cancellation, if available to a separately authorized control actor, uses synapsor-runner worker cancel wrp_old_rule --yes --config '/tmp/generated actions.runner.json'. This status does not establish that such an actor is configured.",
+      "Only after this active request is lawfully resolved, read again and submit a fresh request under the current rules.",
       "Warning: do not cancel leased, dispatched, or reconciliation-required work; inspect its receipt instead.",
     ]);
   });

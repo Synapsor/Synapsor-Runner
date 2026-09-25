@@ -63,6 +63,7 @@ export function formatProposalFirstLook(proposal: StoredProposal, storedEvidence
     "",
     "Approval:",
     approvalBoundary(proposal),
+    ...delayedWorkStatusLines(proposal),
     "",
     "Evidence:",
     `${proposal.change_set.evidence.bundle_id}${evidenceItems > 0 ? ` (${plural(evidenceItems, "item")})` : ""}`,
@@ -102,11 +103,33 @@ export function formatProposalDetail(proposal: StoredProposal, storedEvidenceIte
     `evidence: ${changeSet.evidence.bundle_id}  query ${changeSet.evidence.query_fingerprint}  items ${evidenceItems}`,
     `writeback: ${writebackStatus} via ${changeSet.writeback.mode}`,
     `source database changed: ${proposal.source_database_mutated ? "yes" : "no"}`,
+    ...delayedWorkStatusLines(proposal),
     ...boundedSetReviewLines(changeSet, true),
     "",
     "Diff:",
     ...formatChangeLines(proposal, 100),
   ].join("\n") + "\n";
+}
+
+function delayedWorkStatusLines(proposal: StoredProposal): string[] {
+  const change = proposal.change_set;
+  if (change.schema_version !== protocolVersions.changeSetV4 || !change.delayed_work) return [];
+  const work = change.delayed_work;
+  const requested = Date.parse(work.requested_at);
+  const approvalUntil = new Date(requested + work.approval_wait_seconds * 1_000).toISOString();
+  const absoluteUntil = new Date(requested + work.absolute_request_age_seconds * 1_000).toISOString();
+  const lines = [
+    `Delayed request: original time ${work.requested_at}; approval-by ${approvalUntil}; absolute end ${absoluteUntil}.`,
+    `Any late approval or dispatch needs a new exact-operation source validation; the original proof is unchanged.`,
+  ];
+  if (proposal.state === "pending_review" && Date.now() >= Math.min(Date.parse(approvalUntil), Date.parse(absoluteUntil))) {
+    lines.push("Approval window ended for this request. It cannot be revived; an authorized reviewer can reject it, then a distinct request needs a new current reference and ordinary checks.");
+  } else if (proposal.state === "pending_review") {
+    lines.push("Human review remains pending; this display does not establish current source facts or approval readiness.");
+  } else if (proposal.state === "approved" || proposal.state === "pending_worker") {
+    lines.push(`Recorded approval remains history. Dispatch needs a fresh check and each approval's ${work.approval_validity_seconds}s mandate; no automatic retry is promised here.`);
+  }
+  return lines;
 }
 
 

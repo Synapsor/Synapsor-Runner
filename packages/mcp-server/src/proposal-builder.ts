@@ -13,6 +13,7 @@ import {
   type ChangeSetV2,
   type ChangeSetV3,
   type ChangeSetV4,
+  type DelayedSemanticWorkV1,
   type FreshnessAuthorityV1,
 } from "@synapsor-runner/protocol";
 import type {
@@ -57,6 +58,7 @@ export function buildDerivedChangeSet(input: {
   queryFingerprint: `sha256:${string}`;
   objectId?: string;
   contract?: ChangeSetV4["contract"];
+  delayedWork?: Omit<DelayedSemanticWorkV1, "schema_version" | "requested_at">;
 }): ChangeSetV4 {
   const { activated, semantic_authority: semanticAuthority } = input.decision;
   const effect = semanticAuthority.effect;
@@ -201,6 +203,11 @@ export function buildDerivedChangeSet(input: {
       executor: "semantic_rule" as const,
     },
     semantic_authority: semanticAuthority,
+    ...(input.delayedWork ? { delayed_work: {
+      schema_version: "synapsor.delayed-semantic-work.v1" as const,
+      requested_at: input.createdAt,
+      ...input.delayedWork,
+    } } : {}),
     source_database_mutated: false as const,
     created_at: input.createdAt,
   } satisfies Omit<ChangeSetV4, "integrity">;

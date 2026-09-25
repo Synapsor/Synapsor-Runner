@@ -104,7 +104,7 @@ import {
   formatRelationshipJoinColumns,
   formatRelationshipPath,
 } from "./derived-scope-display.js";
-import { resolveOperatorIdentity, verifyJwtOperatorProof, verifySignedOperatorProof, type OperatorIdentityConfig } from "./operator-identity.js";
+import { assertOperatorPublicKeyFingerprint, resolveOperatorIdentity, verifyJwtOperatorProof, verifySignedOperatorProof, type OperatorIdentityConfig } from "./operator-identity.js";
 import { resolveSynapsorProject } from "./project-resolution.js";
 import {
   exploreModelFacingFieldIds,
@@ -17567,6 +17567,7 @@ async function assertFreshOperatorProof(
       path.resolve(path.dirname(path.resolve(configPath)), operator.public_key_path),
       "utf8",
     );
+    assertOperatorPublicKeyFingerprint(operator, publicKey);
     if (!verifySignedOperatorProof(proof, publicKey)) {
       throw new Error("Signed operator proof failed independent verification.");
     }

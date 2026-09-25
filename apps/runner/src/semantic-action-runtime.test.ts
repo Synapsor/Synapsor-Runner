@@ -65,6 +65,21 @@ const config: RuntimeConfig = {
 };
 
 describe("composed semantic Action runtime", () => {
+  it("refuses a new delayed request when its reviewed policy is removed after client startup", async () => {
+    const f = await heldExecutionFixture({ sourceDb: true, delayedWork: true });
+    try {
+      const outcome = f.outcomes[0]!;
+      const before = structuredClone(f.initial.supervised_worker!.outcomes![0]!);
+      const current = f.current.supervised_worker!.outcomes![0]!;
+      delete current.delayed_work;
+      await f.publish(f.current);
+      expect(f.initial.supervised_worker!.outcomes![0]).toEqual(before);
+      await expect(f.request(outcome)).rejects.toMatchObject({ code: "DELAYED_WORK_AUTHORITY_CHANGED" });
+      expect(f.store.listProposals()).toEqual([]);
+      expect(f.store.listWorkerQueue()).toEqual([]);
+    } finally { await f.close(); }
+  });
+
   it.each(["available", "ineligible", "removed", "unclosed_legacy"] as const)("fresh reference with %s no-effect history uses current authority/facts; old replay stays old (derived lifecycle fixture)", async mode => {
     const f = await heldExecutionFixture({ sourceDb: true });
     try {
@@ -998,7 +1013,8 @@ async function reviewedRead(root: string) {
   return {read, build};
 }
 
-async function heldExecutionFixture(options: { configName?: string; configOnly?: boolean; relativeBindings?: boolean; sourceDb?: boolean } = {}) {
+async function heldExecutionFixture(options: { configName?: string; configOnly?: boolean; relativeBindings?: boolean;
+  sourceDb?: boolean; delayedWork?: boolean } = {}) {
   const outcomes = ["billing.pause_notifications", "billing.pause_digest_notifications", "billing.pause_reminder_notifications"];
   const {read, build} = await reviewedRead(projectRoot);
   const authorityOptions = { automaticApproval: true, generationLock: read.generation_lock_fingerprint,
@@ -1007,8 +1023,11 @@ async function heldExecutionFixture(options: { configName?: string; configOnly?:
   const storePath = path.join(projectRoot, "control.db"), configPath = path.join(projectRoot, options.configName ?? "synapsor.actions.runner.json");
   const policy = (outcome: string, write_url_env: string) => ({ outcome, write_url_env,
     action_boundary_digest: authority.authority.action_boundary.digest, mode: "supervised_worker" as const,
-    concurrency: 1, queue_limit: 10, lease_seconds: 60, max_attempts: 3, proposal_ttl_seconds: 3600,
-    rate_limit: { executions: 10, window_seconds: 60 }, worker_identity: "fixture_worker" });
+    concurrency: 1, queue_limit: 10, lease_seconds: 60, max_attempts: options.delayedWork ? 1 : 3, proposal_ttl_seconds: 3600,
+    rate_limit: { executions: 10, window_seconds: 60 }, worker_identity: "fixture_worker",
+    ...(options.delayedWork ? { delayed_work: { mode: "reverify_exact_operation" as const,
+      approval_wait_seconds: 1800, approval_validity_seconds: 1200,
+      absolute_request_age_seconds: 3600, max_validation_attempts: 4 } } : {}) });
   const initial: RuntimeConfig = { ...structuredClone(config), storage: { sqlite_path: storePath }, action_rules: { project_root: projectRoot },
     sources: { local_postgres: { engine: "postgres", read_url_env: "DATABASE_URL", write_url_env: "FIRST_WRITER", read_only: false,
       receipts: options.sourceDb ? { authority: "source_db", provisioning: "precreated", schema: "billing" } : { authority: "runner_ledger" } } },

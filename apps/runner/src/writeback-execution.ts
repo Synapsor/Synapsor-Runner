@@ -40,10 +40,11 @@ import { readRuntimeConfig, redactConfig, withRuntimeConfigAdmission } from "./c
 import { withProjectRuntimeAdmission } from "./project-runtime-admission.js";
 import { adapters } from "./cli-runtime.js";
 import { trustedCliContext } from "./operator-authority.js";
-import { verifyJwtOperatorProof, verifySignedOperatorProof } from "./operator-identity.js";
+import { assertOperatorPublicKeyFingerprint, verifyJwtOperatorProof, verifySignedOperatorProof } from "./operator-identity.js";
 import { loadActiveActionRuleAuthority } from "./action-rule-authority.js";
 import { semanticContextCapability } from "./semantic-action-runtime.js";
 import { executionBindingDigest } from "./control-policy-execution.js";
+import { assertDelayedSemanticWorkCurrent } from "./delayed-semantic-work.js";
 import { hashReceipt, runnerReceiptConfig, toExecutionReceipt, writebackDatabaseScope, writebackTimeoutMs } from "./writeback-domain.js";
 import { applyRuntimeDatabaseJob } from "./delegated-writeback.js";
 
@@ -85,7 +86,7 @@ async function applyAdmittedSqlJob(job: unknown, configPath: string, storePath: 
       parsedJob,
     ),
   };
-  const semanticVerifier = semanticActionVerifierForRuntime(runtimeConfig, configPath);
+  const semanticVerifier = semanticActionVerifierForRuntime(runtimeConfig, configPath, storePath);
   if (semanticVerifier) config.semanticActionVerifier = semanticVerifier;
   const intentAuthority = createWritebackIntentAuthority(runtimeConfig, parsedJob.source_id, env, store);
   if (config.receipts?.authority === "runner_ledger" && !intentAuthority.store) throw new Error("runner_ledger receipt authority requires --store or an authoritative shared runtime store");
@@ -113,11 +114,26 @@ async function applyAdmittedSqlJob(job: unknown, configPath: string, storePath: 
 export function semanticActionVerifierForRuntime(
   config: RuntimeConfig,
   configPath: string,
+  storePath?: string,
 ): RunnerConfig["semanticActionVerifier"] | undefined {
   const projectRoot = semanticActionProjectRoot(config, configPath);
   if (projectRoot === undefined) return undefined;
   return createSemanticActionVerifier({
     registry: async (outcome) => (await loadActiveActionRuleAuthority(projectRoot, { outcome })).registry,
+    allow_delayed_work: async (job, checkedAt) => {
+      if (!job.delayed_work || !storePath) throw new Error("DELAYED_WORK_LEDGER_REQUIRED: an exact local approval ledger is required.");
+      const store = new ProposalStore(storePath);
+      try {
+        const proposal = store.getProposal(job.proposal_id);
+        if (!proposal || proposal.proposal_hash !== job.proposal_hash || proposal.change_set.schema_version !== protocolVersions.changeSetV4
+          || canonicalJsonStringify(proposal.change_set.delayed_work ?? null) !== canonicalJsonStringify(job.delayed_work)) {
+          throw new Error("DELAYED_WORK_PROPOSAL_CHANGED: the original request is unavailable or differs from the leased job.");
+        }
+        assertDelayedSemanticWorkCurrent({ config, delayed_work: job.delayed_work, outcome: job.semantic_authority.proof.outcome,
+          action_boundary_digest: job.semantic_authority.proof.action_boundary_digest, source: job.source_id,
+          engine: job.engine, now: checkedAt, phase: "dispatch", approvals: store.approvals(job.proposal_id) });
+      } finally { store.close(); }
+    },
   });
 }
 
@@ -957,6 +973,7 @@ async function verifyLocalSemanticWritebackAuthority(
       || proposal.change_set.integrity.proposal_hash !== job.proposal_hash
       || proposal.action !== job.semantic_authority.proof.outcome
       || canonicalJsonStringify(proposal.change_set.semantic_authority) !== canonicalJsonStringify(job.semantic_authority)
+      || canonicalJsonStringify(proposal.change_set.delayed_work ?? null) !== canonicalJsonStringify(job.delayed_work ?? null)
       || canonicalJsonStringify(proposal.change_set.patch) !== canonicalJsonStringify(job.patch)
       || proposal.source_id !== job.source_id
       || proposal.source_schema !== job.target.schema
@@ -977,6 +994,22 @@ async function verifyLocalSemanticWritebackAuthority(
       && candidate.action_boundary_name === activated.action_boundary_name
       && candidate.action_boundary_digest === activated.action_boundary_digest);
     const humanApprovals = exactApprovals.filter((candidate) => !candidate.approver.startsWith("policy:"));
+    if (job.delayed_work) {
+      assertDelayedSemanticWorkCurrent({ config, delayed_work: job.delayed_work, outcome: job.semantic_authority.proof.outcome,
+        action_boundary_digest: job.semantic_authority.proof.action_boundary_digest, source: job.source_id,
+        engine: job.engine, now: new Date().toISOString(), phase: "dispatch", approvals: exactApprovals });
+      const validation = store.latestDelayedValidation(job.proposal_id, "dispatch");
+      if (!validation || validation.proposal_hash !== proposal.proposal_hash
+        || validation.proposal_version !== proposal.proposal_version
+        || validation.original_proof_digest !== job.semantic_authority.proof.proof_digest
+        || validation.execution_policy_digest !== job.delayed_work.execution_policy_digest
+        || validation.dependency_set_digest !== job.semantic_authority.proof.dependency_set_digest
+        || validation.effect_digest !== job.semantic_authority.effect.effect_digest
+        || validation.approval_set_digest !== job.approval_id
+        || Date.parse(validation.valid_until) <= Date.now()) {
+        throw new Error("DELAYED_WORK_VALIDATION_REQUIRED: guarded dispatch needs a current attributed exact-operation check.");
+      }
+    }
     if (exactPolicyApproval) {
       if (approval.mode !== "policy" || job.semantic_authority.proof.approval_path !== "automatic_eligible") {
         throw new Error("SEMANTIC_POLICY_APPROVAL_STALE: the exact active Action Boundary did not grant this automatic approval");
@@ -1120,9 +1153,13 @@ export async function verifyStoredApprovalAuthority(
   if (identity.provider === "signed_key") {
     const operator = config.operator_identity.operators?.[identity.subject];
     if (!operator) throw new Error(`approval operator ${identity.subject} is no longer registered`);
+    if (operator.outcomes && !operator.outcomes.includes(proposal.action)) {
+      throw new Error(`approval operator ${identity.subject} is no longer assigned to ${proposal.action}`);
+    }
     if (requiredRole && !operator.roles.includes(requiredRole)) throw new Error(`approval operator ${identity.subject} lacks currently registered role ${requiredRole}`);
     const publicKeyPath = path.resolve(path.dirname(path.resolve(configPath)), operator.public_key_path);
     const publicKey = await fs.readFile(publicKeyPath, "utf8");
+    assertOperatorPublicKeyFingerprint(operator, publicKey);
     if (!verifySignedOperatorProof(identity, publicKey)) {
       throw new Error(`proposal ${proposal.proposal_id} approval signature verification failed`);
     }

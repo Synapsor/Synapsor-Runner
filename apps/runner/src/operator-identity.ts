@@ -12,7 +12,9 @@ export type OperatorIdentityConfig = {
   apply_roles?: string[];
   operators?: Record<string, {
     public_key_path: string;
+    public_key_fingerprint?: string;
     roles: string[];
+    outcomes?: string[];
   }>;
   token_env?: string;
   token_file_env?: string;
@@ -40,6 +42,7 @@ export type ResolveOperatorIdentityInput = {
     proposal_id: string;
     proposal_version: number;
     proposal_hash: string;
+    action?: string;
   };
   action: OperatorDecision["action"];
   reason?: string;
@@ -116,6 +119,11 @@ export async function resolveOperatorIdentity(input: ResolveOperatorIdentityInpu
   const operator = config.operators?.[subject];
   if (!operator) throw new Error(`operator ${subject} is not present in operator_identity.operators`);
   assertRole(subject, operator.roles, input.requiredRole);
+  if (operator.outcomes && (!["approve", "reject"].includes(input.action)
+    || !operator.outcomes.includes(input.proposal.action ?? ""))) {
+    throw Object.assign(new Error(`OPERATOR_OUTCOME_NOT_AUTHORIZED: ${subject} is not assigned to this operation's outcome`),
+      { code: "OPERATOR_OUTCOME_NOT_AUTHORIZED" });
+  }
   const privateKeyPath = input.privateKeyPath?.trim() || env.SYNAPSOR_OPERATOR_PRIVATE_KEY_PATH?.trim();
   if (!privateKeyPath) throw new Error("signed operator identity requires --identity-key <private-key.pem> or SYNAPSOR_OPERATOR_PRIVATE_KEY_PATH");
   const configDir = path.dirname(path.resolve(input.configPath ?? "synapsor.runner.json"));
@@ -125,6 +133,7 @@ export async function resolveOperatorIdentity(input: ResolveOperatorIdentityInpu
     fs.readFile(publicKeyPath, "utf8"),
     fs.readFile(resolvedPrivateKeyPath, "utf8"),
   ]);
+  assertOperatorPublicKeyFingerprint(operator, publicKey);
   const decision = operatorDecision(input, subject);
   const canonical = stableJson(decision);
   const decisionHash = sha256(canonical);
@@ -163,6 +172,7 @@ export async function hasVerifiedRecoveryControlActor(input: {
       if (!operator || !privatePath || !roles.some(role => operator.roles.includes(role))) return false;
       const publicPath = path.resolve(path.dirname(path.resolve(input.configPath)), operator.public_key_path);
       const [publicKey, privateKey] = await Promise.all([fs.readFile(publicPath), fs.readFile(path.resolve(privatePath))]);
+      assertOperatorPublicKeyFingerprint(operator, publicKey);
       const challenge = crypto.randomBytes(32);
       return crypto.verify("sha256", challenge, publicKey, crypto.sign("sha256", challenge, privateKey));
     }
@@ -208,6 +218,29 @@ export function verifySignedOperatorProof(proof: OperatorIdentityProof, publicKe
   const { integrity_hash: _integrity, ...core } = proof;
   if (proof.integrity_hash !== sha256(stableJson(core))) return false;
   return crypto.verify("sha256", Buffer.from(canonical), publicKey, Buffer.from(proof.signature, "base64url"));
+}
+
+export function operatorPublicKeyFingerprint(publicKey: string | Buffer): string {
+  const der = crypto.createPublicKey(publicKey).export({ type: "spki", format: "der" });
+  return `sha256:${crypto.createHash("sha256").update(der).digest("hex")}`;
+}
+
+export function assertOperatorPublicKeyFingerprint(
+  operator: { public_key_fingerprint?: string }, publicKey: string | Buffer,
+): void {
+  if (operator.public_key_fingerprint && operator.public_key_fingerprint !== operatorPublicKeyFingerprint(publicKey)) {
+    throw Object.assign(new Error("OPERATOR_PUBLIC_KEY_CHANGED: reviewed approver key bytes changed; review the identity revision again."),
+      { code: "OPERATOR_PUBLIC_KEY_CHANGED" });
+  }
+}
+
+export async function assertPinnedOperatorPublicKeys(config: OperatorIdentityConfig | undefined, configPath: string): Promise<void> {
+  if (config?.provider !== "signed_key") return;
+  for (const operator of Object.values(config.operators ?? {})) {
+    if (!operator.public_key_fingerprint) continue;
+    const publicKey = await fs.readFile(path.resolve(path.dirname(configPath), operator.public_key_path));
+    assertOperatorPublicKeyFingerprint(operator, publicKey);
+  }
 }
 
 function operatorDecision(input: ResolveOperatorIdentityInput, subject: string): OperatorDecision {

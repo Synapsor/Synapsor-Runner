@@ -9,7 +9,8 @@ import { loadRuntimeConfigFromFile, resolveRuntimeConfig, resolveSemanticSupervi
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import type { ActionRuleSpecV1, DerivedEffectEnvelopeSpecV1, RuleVerificationBoundarySpecV1 } from "@synapsor/spec";
 import { activateSemanticActionRuntime, restoreReviewedSemanticReadScope, previewSemanticSupervisedExecution,
-  enableSemanticSupervisedExecution, executionReReviewOutcomesForActionActivation, semanticExecutionConfirmation } from "./semantic-action-deployment.js";
+  enableSemanticSupervisedExecution, executionReReviewOutcomesForActionActivation, semanticExecutionConfirmation,
+  semanticSupervisedExecutionConfig } from "./semantic-action-deployment.js";
 import { inspectDraftSemanticWriter, prepareSemanticWriterHandoff } from "./semantic-action-deployment.js";
 import { SemanticWriterPostureError } from "./semantic-execution-setup.js";
 import { buildActionRuleAuthorityDraft, writeActionRuleAuthorityDraft, loadActiveActionRuleAuthority,
@@ -106,6 +107,30 @@ describe("mixed-state semantic Read scope repair", () => {
 });
 
 describe("complete Action Boundary execution re-review", () => {
+  it("retains the prior reviewed worker age when delayed work is enabled", async () => {
+    const fixture = await activeProject("human", true);
+    const activation = (await loadActiveActionRuleAuthority(fixture.root)).activation;
+    const config = JSON.parse(await fs.readFile(fixture.configPath, "utf8"));
+    config.supervised_worker = { enabled: true, profile: "staging", capabilities: [], outcomes: [{
+      outcome: "billing.pause_notifications", action_boundary_digest: activation.authority.action_boundary.digest,
+      mode: "supervised_worker", write_url_env: "FIRST_WRITER_URL", concurrency: 1, queue_limit: 100,
+      lease_seconds: 300, max_attempts: 5, proposal_ttl_seconds: 3_600,
+      rate_limit: { executions: 10, window_seconds: 60 },
+    }] };
+    const build = (absolute_request_age_seconds: number) => semanticSupervisedExecutionConfig({
+      sourceConfig: config, activation, outcome: "billing.pause_notifications", profile: "staging",
+      writeUrlEnv: "FIRST_WRITER_URL", writerPostureFingerprint: `sha256:${"a".repeat(64)}`,
+      delayedWork: { mode: "reverify_exact_operation", approval_wait_seconds: 900,
+        approval_validity_seconds: 900, absolute_request_age_seconds, max_validation_attempts: 4 },
+    });
+    for (const age of [1_800, 3_600]) {
+      const next = build(age) as { supervised_worker: { outcomes: Array<{ proposal_ttl_seconds: number }> } };
+      expect(next.supervised_worker.outcomes[0]?.proposal_ttl_seconds).toBe(3_600);
+    }
+    expect(() => build(7_200)).toThrow(/DELAYED_WORK_EXCEEDS_WORKER_AGE/);
+    expect(config.supervised_worker.outcomes[0].proposal_ttl_seconds).toBe(3_600);
+  });
+
   it("retires one action from the same client only after activation and cannot resurrect it from the active baseline", async () => {
     const fixture = await activeProject("human", true);
     const original = await loadActiveActionRuleAuthority(fixture.root);
@@ -425,6 +450,20 @@ describe("separate exact semantic writers", () => {
     }
     expect(await Promise.all(fixture.authorityPaths.map((file) => fs.readFile(file, "utf8")))).toEqual(authorityBefore);
     expect(JSON.stringify(config)).not.toContain("postgresql://");
+  });
+
+  it("does not offer delayed work over a Runner-only receipt", async () => {
+    const fixture = await activeProject("human", true);
+    const before = await fs.readFile(fixture.configPath, "utf8");
+    await expect(previewSemanticSupervisedExecution({ projectRoot: fixture.root,
+      outcome: "billing.pause_notifications", profile: "staging", writeUrlEnv: "FIRST_WRITER_URL",
+      env: { FIRST_WRITER_URL: "postgresql://first-test-writer" },
+      inspect: async () => writerInspection("first", "status"),
+      delayedWork: { mode: "reverify_exact_operation", approval_wait_seconds: 900,
+        approval_validity_seconds: 900, absolute_request_age_seconds: 1_800,
+        max_validation_attempts: 4 },
+    })).rejects.toThrow(/DELAYED_WORK_UNSUPPORTED/);
+    expect(await fs.readFile(fixture.configPath, "utf8")).toBe(before);
   });
 });
 

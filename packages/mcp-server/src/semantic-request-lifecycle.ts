@@ -46,6 +46,11 @@ export async function semanticRequestLifecycle(store: ProposalRuntimeStore, init
   const rejected = applicable.some(a => a.status === "rejected");
   const automatic = accepted.some(a => a.approver.startsWith("policy:"));
   const human = accepted.some(a => !a.approver.startsWith("policy:"));
+  const work = proposal.change_set.schema_version === "synapsor.change-set.v4"
+    ? proposal.change_set.delayed_work : undefined;
+  const approvalWindowExpired = stable && proposal.state === "pending_review" && work !== undefined
+    && Date.now() >= Date.parse(work.requested_at)
+      + Math.min(work.approval_wait_seconds, work.absolute_request_age_seconds) * 1_000;
   const approval = !stable || (rejected && accepted.length > 0) || (automatic && human) || accepted.filter(a => a.approver.startsWith("policy:")).length > 1 ? "unknown"
     : proposal.state === "pending_review" && !automatic && !rejected ? "pending_human_review"
     : rejected ? "not_approved"
@@ -55,6 +60,8 @@ export async function semanticRequestLifecycle(store: ProposalRuntimeStore, init
     && Array.isArray(e.payload.tripped_limits) && e.payload.tripped_limits.length > 0);
   const approvalText = approval === "automatic" ? "automatically approved; apply remains a separate authority"
     : approval === "human" ? "approved by a human reviewer; apply remains a separate authority"
+    : approval === "pending_human_review" && approvalWindowExpired
+      ? "human approval was not recorded before this request's reviewed waiting deadline; the old request cannot be revived"
     : approval === "pending_human_review" ? limitDeferred
       ? "pending human review because a recorded automatic-approval limit did not pass" : "human review required"
     : approval === "not_approved" ? "a rejection is recorded; no approval is granted"
@@ -65,6 +72,7 @@ export async function semanticRequestLifecycle(store: ProposalRuntimeStore, init
     if (complete) outcome = "applied";
     else if (queue?.status === "leased") outcome = "in_progress";
     else if (queue?.status === "retry_wait") outcome = "retry_wait";
+    else if (queue?.status === "held" && queue.attempts === 0 && receipts.length === 0) outcome = "not_started";
     else if (proposal.state === "failed" && failed.length > 0) outcome = "failed";
     else if (queue?.status === "queued" && (queue.attempts === 0 || proposal.state === "approved" || proposal.state === "pending_worker")) outcome = "queued";
     else if (!queue && receipts.length === 0 && ["pending_review", "approved"].includes(proposal.state)) outcome = "not_started";
@@ -72,11 +80,12 @@ export async function semanticRequestLifecycle(store: ProposalRuntimeStore, init
   const disposition = !stable ? "unknown"
     : queue?.status === "reconciliation_required" || proposal.state === "reconciliation_required" ? "reconciliation_required"
     : queue?.status === "discarded" || queue?.status === "cancelled" || proposal.state === "rejected" || proposal.state === "canceled" ? "closed"
-    : queue?.status === "blocked" || queue?.status === "dead_letter" ? "blocked"
+    : approvalWindowExpired || queue?.status === "held" || queue?.status === "blocked" || queue?.status === "dead_letter" ? "blocked"
     : "open";
   const retry = unresolved || !store.getWorkerQueueItem || queue?.status === "retry_wait" && !validRetryTime(queue) ? null : queue?.status === "retry_wait";
   const execution: SemanticRequestExecution = complete ? "completed"
     : unresolved || disposition === "closed" || disposition === "blocked" ? "held"
+    : approvalWindowExpired ? "held"
     : proposal.state === "pending_review" ? "human_review"
     : outcome === "queued" ? "queued"
     : outcome === "in_progress" || outcome === "retry_wait" ? "held"
@@ -85,7 +94,7 @@ export async function semanticRequestLifecycle(store: ProposalRuntimeStore, init
         ? continuation.execution : continuation?.execution === "completed" || continuation?.execution === "queued" ? "held" : "not_enabled"
       : "held";
   const status = complete ? "completed" : disposition === "closed" ? "closed"
-    : unresolved ? "attention_required" : proposal.state === "pending_review" ? "pending_human_review"
+    : unresolved || disposition === "blocked" ? "attention_required" : proposal.state === "pending_review" ? "pending_human_review"
     : (proposal.state === "approved" || proposal.state === "pending_worker") && (approval === "automatic" || approval === "human")
       ? "approved_pending_execution" : "attention_required";
   const noEffect = stable && !unresolved && outcome === "failed" && failed.length === 1
@@ -96,6 +105,14 @@ export async function semanticRequestLifecycle(store: ProposalRuntimeStore, init
   const sourceChanged = complete ? true : noEffect || outcome === "not_started" || outcome === "queued" && queue?.attempts === 0 ? false : null;
   const next = disposition === "closed"
     ? "This work is closed; it will not retry. Its recorded approval and original outcome remain. A distinct request needs a new current reference and all ordinary checks; approval is not promised."
+    : approvalWindowExpired ? "The original human-approval window ended. No approval or worker dispatch is scheduled. Ask the installation operator to inspect the exact request and current cancellation authority. An authorized local owner may terminally cancel only an unattempted new delayed request with a reason and explicit confirmation; a separately configured control role takes precedence. Otherwise reconcile its receipt. A distinct request needs a new current reference and all ordinary checks."
+    : queue?.status === "held" ? work !== undefined && queue.attempts === 0 && receipts.length === 0
+      && queue.cancellation_control_role === null
+      && !queue.lease_id && !queue.lease_owner && !queue.lease_expires_at
+      && !events.some(event => event.kind === "writeback_worker_claimed"
+        || event.kind.startsWith("writeback_intent_") || event.kind === "writeback_reconciliation_required")
+      ? "This request is held before dispatch with no automatic retry. An owning local installation operator may request terminal cancellation of this new delayed request with a reason and explicit confirmation; the current store and authority must still pass final checks. Any possible execution attempt requires receipt reconciliation. A changed operation requires a distinct request with a new current reference and ordinary approval checks."
+      : "This request is held without a demonstrated new delayed-work cancellation route. Cancellation requires separate current operator authority; an uncertain attempt requires receipt reconciliation."
     : outcome === "applied" ? "Re-read the reviewed resource to present current source values."
     : outcome === "failed" || disposition === "blocked" ? `Execution did not complete successfully. ${retry === false ? "No automatic retry is scheduled." : "Retry status is unavailable."} Ask an authorized operator to inspect this request; do not assume a fresh request will be approved.`
     : outcome === "retry_wait" ? "A retry is scheduled; current policy, worker control and execution checks still apply."

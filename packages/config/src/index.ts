@@ -47,7 +47,7 @@ const OPERATOR_IDENTITY_KEYS = new Set([
   "issuer", "audience", "clock_skew_seconds", "jwks_cache_seconds", "jwks_cooldown_seconds", "fetch_timeout_ms",
   "max_response_bytes",
 ]);
-const OPERATOR_KEYS = new Set(["public_key_path", "roles"]);
+const OPERATOR_KEYS = new Set(["public_key_path", "public_key_fingerprint", "roles", "outcomes"]);
 const SESSION_AUTH_KEYS = new Set([
   "provider", "secret_env", "previous_secret_env", "algorithms", "jwks_url_env", "public_key_env", "public_key_path",
   "issuer", "audience", "tenant_claim", "principal_claim", "clock_skew_seconds", "jwks_cache_seconds",
@@ -123,6 +123,7 @@ const SUPERVISED_WORKER_OUTCOME_KEYS = new Set([
   "lease_seconds",
   "max_attempts",
   "proposal_ttl_seconds",
+  "delayed_work",
   "rate_limit",
   "write_url_env",
   "require_least_privilege_writer",
@@ -132,6 +133,7 @@ const SUPERVISED_WORKER_OUTCOME_KEYS = new Set([
   "required_attention_sinks",
 ]);
 const SUPERVISED_WORKER_RATE_LIMIT_KEYS = new Set(["executions", "window_seconds"]);
+const DELAYED_SEMANTIC_WORK_KEYS = new Set(["mode", "approval_wait_seconds", "approval_validity_seconds", "absolute_request_age_seconds", "max_validation_attempts"]);
 const NOTIFICATION_KEYS = new Set(["enabled", "workbench_url_env", "sinks"]);
 const NOTIFICATION_SINK_KEYS = new Set([
   "id",
@@ -1259,6 +1261,37 @@ function validateSupervisedWorkerOutcomes(input: {
         input.errors.push({ path: `${path}.${key}`, code: "INVALID_SUPERVISED_WORKER_BOUND", message: `${key} must be an integer from ${minimum} through ${maximum}.` });
       }
     }
+    if (rawEntry.delayed_work !== undefined) {
+      const delayed = rawEntry.delayed_work;
+      if (!isRecord(delayed)) {
+        input.errors.push({ path: `${path}.delayed_work`, code: "DELAYED_WORK_INVALID", message: "delayed_work must be a reviewed finite object." });
+      } else {
+        if (input.strict) checkUnknownKeys(delayed, DELAYED_SEMANTIC_WORK_KEYS, `${path}.delayed_work`, input.errors);
+        if (delayed.mode !== "reverify_exact_operation") {
+          input.errors.push({ path: `${path}.delayed_work.mode`, code: "DELAYED_WORK_MODE_INVALID", message: "only exact-operation reverification is supported." });
+        }
+        for (const [key, minimum, maximum] of [
+          ["approval_wait_seconds", 60, 2_592_000],
+          ["approval_validity_seconds", 60, 2_592_000],
+          ["absolute_request_age_seconds", 60, 2_592_000],
+          ["max_validation_attempts", 2, 20],
+        ] as const) {
+          if (!Number.isSafeInteger(delayed[key]) || Number(delayed[key]) < minimum || Number(delayed[key]) > maximum) {
+            input.errors.push({ path: `${path}.delayed_work.${key}`, code: "DELAYED_WORK_BOUND_INVALID", message: `${key} must be a finite integer from ${minimum} through ${maximum}.` });
+          }
+        }
+        if (Number.isSafeInteger(delayed.approval_wait_seconds)
+          && Number.isSafeInteger(delayed.absolute_request_age_seconds)
+          && Number(delayed.approval_wait_seconds) > Number(delayed.absolute_request_age_seconds)) {
+          input.errors.push({ path: `${path}.delayed_work`, code: "DELAYED_WORK_WAIT_EXCEEDS_AGE", message: "approval waiting cannot outlive the original request." });
+        }
+        if (Number.isSafeInteger(delayed.absolute_request_age_seconds)
+          && Number.isSafeInteger(rawEntry.proposal_ttl_seconds)
+          && Number(delayed.absolute_request_age_seconds) > Number(rawEntry.proposal_ttl_seconds)) {
+          input.errors.push({ path: `${path}.delayed_work`, code: "DELAYED_WORK_EXCEEDS_WORKER_AGE", message: "delayed request age cannot outlive the existing worker proposal TTL." });
+        }
+      }
+    }
     if (!isEnvName(rawEntry.write_url_env)) {
       input.errors.push({ path: `${path}.write_url_env`, code: "SUPERVISED_WORKER_WRITE_ENV_REQUIRED", message: "write_url_env must name the separately configured writer credential environment variable." });
     }
@@ -2351,8 +2384,16 @@ function validateOperatorIdentity(value: unknown, strict: boolean, errors: Confi
       }
       if (strict) checkUnknownKeys(operator, OPERATOR_KEYS, path, errors);
       if (!isNonEmptyString(operator.public_key_path)) errors.push({ path: `${path}.public_key_path`, code: "OPERATOR_PUBLIC_KEY_REQUIRED", message: "operator public_key_path is required." });
+      if (operator.public_key_fingerprint !== undefined && (typeof operator.public_key_fingerprint !== "string"
+        || !/^sha256:[a-f0-9]{64}$/u.test(operator.public_key_fingerprint))) {
+        errors.push({ path: `${path}.public_key_fingerprint`, code: "OPERATOR_PUBLIC_KEY_FINGERPRINT_INVALID", message: "public_key_fingerprint must be a SHA-256 digest." });
+      }
       if (!Array.isArray(operator.roles) || operator.roles.length === 0 || operator.roles.some((role) => !isSafeName(role))) {
         errors.push({ path: `${path}.roles`, code: "OPERATOR_ROLES_REQUIRED", message: "operator roles must contain one or more safe role names." });
+      }
+      if (operator.outcomes !== undefined && (!Array.isArray(operator.outcomes) || operator.outcomes.length === 0
+        || operator.outcomes.some((outcome) => !isSafeName(outcome)))) {
+        errors.push({ path: `${path}.outcomes`, code: "OPERATOR_OUTCOMES_INVALID", message: "outcomes must contain one or more exact Action outcome names." });
       }
     }
   }

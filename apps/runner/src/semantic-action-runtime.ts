@@ -56,6 +56,7 @@ import {
 import { loadExploreAuditKey } from "./scoped-explore.js";
 import { assertRuntimeControlPolicyContinuity, borrowRuntimeControlPolicies } from "./control-policy-store.js";
 import { executionBindingDigest, readOperatorExecutionConfig } from "./control-policy-execution.js";
+import { currentDelayedSemanticWork } from "./delayed-semantic-work.js";
 import { readPublishedPolicyConfiguration } from "./control-policy-config-publication.js";
 import { operationalLog, safeOperationalErrorCode } from "./cli-logging.js";
 
@@ -271,6 +272,51 @@ async function createAdmittedActionServices(input: ActionRuleRuntimeServiceInput
         allowed_outcomes: grant.allowed_outcomes.filter((outcome) => !existing.allowed_outcomes || existing.allowed_outcomes.includes(outcome)) };
     },
     unavailableOutcomes: async () => (await loadAuthority()).unavailable_outcomes ?? [],
+    resolveDelayedWork: async ({ activated }) => {
+      // Only a currently reviewed, enabled PostgreSQL source-db execution
+      // posture can opt a NEW immutable request into delayed verification.
+      // An ordinary short-lived request must retain its existing admission
+      // path, including its safe held-result projection under stale posture.
+      // This process cannot acquire a newly enabled delayed policy without a
+      // restart, so absence from the startup policy is decisive here.
+      const startupPolicy = executionConfigAtStartup.supervised_worker?.outcomes?.find((entry) =>
+        entry.outcome === activated.compiled.outcome
+        && entry.action_boundary_digest === activated.action_boundary_digest);
+      if (!executionConfigAtStartup.supervised_worker?.enabled || !startupPolicy?.delayed_work) return undefined;
+      let currentConfig = executionConfigAtStartup;
+      if (policyStore) {
+        let candidate = executionConfigAtStartup;
+        if (executionConfigPath) {
+          const text = await readPublishedPolicyConfiguration(projectRoot, executionConfigPath);
+          if (text === undefined) throw new Error("POLICY_RUNTIME_CONFIG_MISSING: reopen execution review.");
+          candidate = resolveRuntimeConfig(JSON.parse(text) as RuntimeConfig, path.dirname(executionConfigPath));
+        }
+        const reviewed = await readOperatorExecutionConfig({ projectRoot, config: candidate, policyStore });
+        assertExecutionConfigContinuation(executionConfigAtStartup, reviewed.config);
+        currentConfig = reviewed.config;
+      }
+      const policy = currentConfig.supervised_worker?.outcomes?.find((entry) => entry.outcome === activated.compiled.outcome
+        && entry.action_boundary_digest === activated.action_boundary_digest);
+      // A session that started with a reviewed delayed policy must never
+      // silently downgrade a NEW request to the short-proof path when that
+      // policy is removed, disabled or revised concurrently. The operator
+      // must reopen against the new exact execution contract.
+      if (!currentConfig.supervised_worker?.enabled || !policy?.delayed_work
+        || canonicalJsonDigest(policy) !== canonicalJsonDigest(startupPolicy)) {
+        throw Object.assign(new Error("DELAYED_WORK_AUTHORITY_CHANGED: the reviewed delayed execution policy changed; reopen this client before making a new request."),
+          { code: "DELAYED_WORK_AUTHORITY_CHANGED" });
+      }
+      if (delegatedRuntime) {
+        throw new Error("DELAYED_WORK_UNSUPPORTED: delayed work currently requires a nondelegated PostgreSQL semantic request.");
+      }
+      const eligibility = resolveSemanticSupervisedWorkerEligibility(currentConfig, activated, { phase: "queue" });
+      if (!eligibility.eligible || eligibility.policy !== policy) {
+        throw new Error("DELAYED_WORK_EXECUTION_UNAVAILABLE: the exact reviewed worker outcome is not currently available.");
+      }
+      return currentDelayedSemanticWork({ config: currentConfig, outcome: activated.compiled.outcome,
+        action_boundary_digest: activated.action_boundary_digest, source: activated.compiled.source,
+        engine: activated.compiled.target_resource.engine });
+    },
     onProposalReady: async ({ proposal, activated }) => {
       if (proposal.state === "applied") {
         return { execution: "completed", source_database_changed: true };
@@ -530,7 +576,7 @@ function assertSameRuleRevision(expected: ActivatedActionRuleV1, current: Activa
   }
 }
 
-async function openSemanticFactSession(input: {
+export async function openSemanticFactSession(input: {
   activated: ActivatedActionRuleV1;
   config: RuntimeConfig;
   env: NodeJS.ProcessEnv;

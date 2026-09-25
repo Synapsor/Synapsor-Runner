@@ -155,7 +155,7 @@ export function assertSemanticAuthorityCurrent(
  */
 export function assertSemanticActionAuthorityCurrent(
   registry: RuntimeActionRuleRegistryV1,
-  job: NormalizedWritebackJobV5,
+  job: SemanticReverificationSubject,
 ): {
   activated: ActivatedActionRuleV1;
   approval: ActivatedActionRuleApprovalClassV1;
@@ -274,7 +274,10 @@ export async function evaluateSemanticActionEligibility(
   };
 }
 
-function subjectIdentitiesFromJob(job: NormalizedWritebackJobV5): ActionRuleSubjectIdentityV1[] {
+export type SemanticReverificationSubject = Pick<NormalizedWritebackJobV5,
+  "semantic_authority" | "source_id" | "engine" | "proposal_id" | "target">;
+
+function subjectIdentitiesFromJob(job: SemanticReverificationSubject): ActionRuleSubjectIdentityV1[] {
   return job.semantic_authority.subject_bindings.map((subject) => {
     const matches = job.semantic_authority.dependencies.filter((dependency) =>
       dependency.binding === subject.binding && dependency.resource === subject.resource);
@@ -293,7 +296,7 @@ function subjectIdentitiesFromJob(job: NormalizedWritebackJobV5): ActionRuleSubj
   });
 }
 
-function trustedFactsFromJob(job: NormalizedWritebackJobV5, checkedAt: string): ActionRuleFactSetV1["trusted"] {
+function trustedFactsFromJob(job: SemanticReverificationSubject, checkedAt: string): ActionRuleFactSetV1["trusted"] {
   const principal = job.target.principal_scope?.value;
   if (principal !== undefined && typeof principal !== "string") {
     throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "Trusted principal scope has an invalid type.");
@@ -322,6 +325,7 @@ export function createSemanticActionVerifier(input: {
   registry: RuntimeActionRuleRegistryV1 | ((outcome: string) => RuntimeActionRuleRegistryV1 | Promise<RuntimeActionRuleRegistryV1>);
   clock?: () => string;
   check_delegation?: SemanticExecutionDelegationCheck;
+  allow_delayed_work?: (job: NormalizedWritebackJobV5, checkedAt: string) => Promise<void>;
 }): (request: {
   job: NormalizedWritebackJobV5;
   factLoader: ActionRuleFactLoaderAdapterV1;
@@ -334,65 +338,82 @@ export function createSemanticActionVerifier(input: {
     }
     const checkedAt = canonicalTimestamp(input.clock?.(), "Transaction verification time");
     const registry = typeof input.registry === "function" ? await input.registry(job.semantic_authority.proof.outcome) : input.registry;
-    const { activated, approval } = assertSemanticActionAuthorityCurrent(registry, job);
-    const inputs = validateActionRuleInputs(activated.compiled.rule, job.semantic_authority.business_inputs);
-    if ((Object.keys(inputs).length || job.semantic_authority.proof.business_inputs_digest)
-      && canonicalJsonDigest(inputs) !== job.semantic_authority.proof.business_inputs_digest) {
-      throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "Business inputs no longer match the immutable proposal proof.");
-    }
-    if (Date.parse(job.semantic_authority.proof.valid_until) <= Date.parse(checkedAt)) {
+    if (job.delayed_work) {
+      if (!input.allow_delayed_work || job.semantic_authority.proof.delegation
+        || job.engine !== "postgres"
+        || Date.parse(job.delayed_work.requested_at) + job.delayed_work.absolute_request_age_seconds * 1_000 <= Date.parse(checkedAt)) {
+        throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "Reviewed delayed-work authority is unavailable or expired.");
+      }
+      await input.allow_delayed_work(job, checkedAt);
+    } else if (Date.parse(job.semantic_authority.proof.valid_until) <= Date.parse(checkedAt)) {
       throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "The semantic proposal proof has expired.");
     }
-    const subjects = subjectIdentitiesFromJob(job);
-    const loaded = await loadActionRuleFacts({
-      compiled: activated.compiled,
-      subjects,
-      trusted: trustedFactsFromJob(job, checkedAt),
-      adapter: factLoader,
-      mode: "transaction_reverify",
-    });
-    const evaluation = evaluateActionRule({
-      compiled: activated.compiled,
-      facts: loaded.facts,
-      proposal_id: job.proposal_id,
-      inputs,
-    });
-    const proof = job.semantic_authority.proof;
-    const approvalBinding = approval.rules.find((binding) => binding.outcome === proof.outcome);
-    const approvalPredicate = proof.approval_path === "automatic_eligible"
-      ? approvalBinding?.auto_approve_when === undefined
-        ? undefined
-        : evaluateActionRuleApprovalPredicate({
-          compiled: activated.compiled,
-          facts: loaded.facts,
-          expression: approvalBinding.auto_approve_when,
-          inputs,
-        })
-      : undefined;
-    if (evaluation.result !== "eligible"
-      || evaluation.effect.effect_digest !== proof.derived_effect_digest
-      || evaluation.effect.effect_digest !== job.semantic_authority.effect.effect_digest
-      || evaluation.dependency_set_digest !== proof.dependency_set_digest
-      || canonicalJsonDigest(loaded.subject_bindings) !== proof.subject_bindings_digest
-      || (proof.approval_path === "automatic_eligible" && approvalPredicate?.result !== "match")) {
-      throw new ActionRuleError(
-        "ACTION_RULE_AUTHORITY_STALE",
-        "Current authoritative facts no longer prove the proposal's exact effect.",
-      );
-    }
-    await input.check_delegation?.({ job, activated, evaluation, facts: loaded.facts, inputs, checked_at: checkedAt });
-    const proofDigest = validatedDigest(proof.proof_digest, "Eligibility proof digest");
-    const actionRuleDigest = validatedDigest(proof.action_rule_digest, "Action Rule digest");
-    const compiledPlanDigest = validatedDigest(proof.compiled_plan_digest, "Compiled plan digest");
-    return {
-      status: "reverified",
-      proof_digest: proofDigest,
-      action_rule_digest: actionRuleDigest,
-      compiled_plan_digest: compiledPlanDigest,
+    const verified = await reverifySemanticOperation({ registry, job, factLoader, checkedAt });
+    await input.check_delegation?.({ job, activated: verified.activated, evaluation: verified.evaluation,
+      facts: verified.facts, inputs: verified.inputs, checked_at: checkedAt });
+    return verified.result;
+  };
+}
+
+/** Approval-time and source-transaction checks use this same fact/effect
+ * comparison. The caller handles the distinct temporal and authority gates. */
+export async function reverifySemanticProposal(input: {
+  registry: RuntimeActionRuleRegistryV1;
+  job: SemanticReverificationSubject;
+  factLoader: ActionRuleFactLoaderAdapterV1;
+  checkedAt?: string;
+}): Promise<SemanticActionReverificationV1> {
+  if (input.job.semantic_authority.proof.delegation) {
+    throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "Delegated delayed work is unsupported.");
+  }
+  const checkedAt = canonicalTimestamp(input.checkedAt, "Proposal reverification time");
+  return (await reverifySemanticOperation({ ...input, checkedAt })).result;
+}
+
+async function reverifySemanticOperation(input: {
+  registry: RuntimeActionRuleRegistryV1;
+  job: SemanticReverificationSubject;
+  factLoader: ActionRuleFactLoaderAdapterV1;
+  checkedAt: string;
+}): Promise<{
+  result: SemanticActionReverificationV1;
+  activated: ActivatedActionRuleV1;
+  evaluation: EligibleRuleEvaluation;
+  facts: ActionRuleFactSetV1;
+  inputs: Record<string, unknown>;
+}> {
+  const { job, checkedAt, factLoader } = input;
+  const { activated, approval } = assertSemanticActionAuthorityCurrent(input.registry, job);
+  const inputs = validateActionRuleInputs(activated.compiled.rule, job.semantic_authority.business_inputs);
+  if ((Object.keys(inputs).length || job.semantic_authority.proof.business_inputs_digest)
+    && canonicalJsonDigest(inputs) !== job.semantic_authority.proof.business_inputs_digest) {
+    throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "Business inputs no longer match the immutable proposal proof.");
+  }
+  const loaded = await loadActionRuleFacts({ compiled: activated.compiled,
+    subjects: subjectIdentitiesFromJob(job), trusted: trustedFactsFromJob(job, checkedAt),
+    adapter: factLoader, mode: "transaction_reverify" });
+  const evaluation = evaluateActionRule({ compiled: activated.compiled, facts: loaded.facts,
+    proposal_id: job.proposal_id, inputs });
+  const proof = job.semantic_authority.proof;
+  const approvalBinding = approval.rules.find((binding) => binding.outcome === proof.outcome);
+  const approvalPredicate = proof.approval_path === "automatic_eligible"
+    ? approvalBinding?.auto_approve_when === undefined ? undefined
+      : evaluateActionRuleApprovalPredicate({ compiled: activated.compiled, facts: loaded.facts,
+        expression: approvalBinding.auto_approve_when, inputs })
+    : undefined;
+  if (evaluation.result !== "eligible"
+    || evaluation.effect.effect_digest !== proof.derived_effect_digest
+    || evaluation.effect.effect_digest !== job.semantic_authority.effect.effect_digest
+    || evaluation.dependency_set_digest !== proof.dependency_set_digest
+    || canonicalJsonDigest(loaded.subject_bindings) !== proof.subject_bindings_digest
+    || (proof.approval_path === "automatic_eligible" && approvalPredicate?.result !== "match")) {
+    throw new ActionRuleError("ACTION_RULE_AUTHORITY_STALE", "Current authoritative facts no longer prove the proposal's exact effect.");
+  }
+  return { activated, evaluation, facts: loaded.facts, inputs,
+    result: { status: "reverified", proof_digest: validatedDigest(proof.proof_digest, "Eligibility proof digest"),
+      action_rule_digest: validatedDigest(proof.action_rule_digest, "Action Rule digest"),
+      compiled_plan_digest: validatedDigest(proof.compiled_plan_digest, "Compiled plan digest"),
       proposal_dependency_set_digest: proof.dependency_set_digest,
       dependency_set_digest: evaluation.dependency_set_digest,
-      effect_digest: evaluation.effect.effect_digest,
-      checked_at: checkedAt,
-    };
-  };
+      effect_digest: evaluation.effect.effect_digest, checked_at: checkedAt } };
 }

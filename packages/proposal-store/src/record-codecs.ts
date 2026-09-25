@@ -315,6 +315,7 @@ export function rowToWorkerQueueItem(row: unknown): WorkerQueueItem | undefined 
   const status = String(row.status);
   if (![
     "queued",
+    "held",
     "leased",
     "retry_wait",
     "completed",

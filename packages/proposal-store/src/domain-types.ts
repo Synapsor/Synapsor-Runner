@@ -1013,6 +1013,7 @@ export type FleetEventMetricRow = {
 
 export type WorkerQueueStatus =
   | "queued"
+  | "held"
   | "leased"
   | "retry_wait"
   | "completed"
@@ -1201,6 +1202,10 @@ export type ProposalRuntimeStore = {
   findActiveProposal(input: ActiveProposalLookup): MaybePromise<StoredProposal | undefined>;
   createProposal(input: unknown): MaybePromise<StoredProposal>;
   recordFreshnessProof(input: unknown): MaybePromise<FreshnessProofV1>;
+  beginDelayedValidation(proposalId: string, phase: "approval" | "dispatch"): MaybePromise<string>;
+  recordDelayedValidationFailure(proposalId: string, attemptDigest: string, safeCode: string): MaybePromise<void>;
+  recordDelayedValidation(input: unknown, attemptDigest: string): MaybePromise<import("@synapsor-runner/protocol").DelayedValidationV1>;
+  latestDelayedValidation(proposalId: string, phase: "approval" | "dispatch"): MaybePromise<import("@synapsor-runner/protocol").DelayedValidationV1 | undefined>;
   latestFreshnessProof(proposalId: string): MaybePromise<FreshnessProofV1 | undefined>;
   recordFreshnessApprovalBlocked(
     proposalId: string,
@@ -1323,8 +1328,18 @@ export type ProposalRuntimeStore = {
     actor: string;
     identity?: OperatorIdentityProof;
     require_verified_identity?: boolean;
+    local_installation_operator_reason?: string;
+    expected_local_preview_digest?: `sha256:${string}`;
     now?: string;
   }): MaybePromise<WorkerQueueItem>;
+  cancelPendingDelayedRequest?(input: {
+    proposalId: string;
+    actor: string;
+    identity: OperatorIdentityProof;
+    reason: string;
+    expected_local_preview_digest?: `sha256:${string}`;
+    now?: string;
+  }): MaybePromise<StoredProposal>;
   listWorkerQueue?(status?: WorkerQueueStatus): MaybePromise<WorkerQueueItem[]>;
   getWorkerQueueItem?(proposalId: string): MaybePromise<WorkerQueueItem | undefined>;
   recordAttentionEvent?(input: RecordAttentionEventInput): MaybePromise<AttentionEvent>;

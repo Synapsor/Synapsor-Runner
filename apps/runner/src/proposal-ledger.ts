@@ -24,7 +24,12 @@ import { TrustedOperatorInvocation } from "./operator-authority.js";
 import { formatEvidenceBrowserFacts, formatEvidenceBrowserPlan, formatEvidenceBrowserQuery, formatEvidenceBrowserRow, formatEvidenceBrowserSummary, formatEvidenceDetail, formatEvidenceFirstLook, formatEvidenceMarkdown, formatEvidenceSummary, formatProposalDebug, formatProposalDetail, formatProposalEventDetail, formatProposalFirstLook, formatProposalSummary, formatQueryAuditBrowserFacts, formatQueryAuditBrowserPlan, formatQueryAuditBrowserQuery, formatQueryAuditBrowserRow, formatQueryAuditBrowserSummary, formatQueryAuditDetail, formatQueryAuditFirstLook, formatQueryAuditSummary, formatReceiptDetail, formatReceiptFirstLook, formatReceiptSummary, formatReplayDebug, formatReplayDetail, formatReplayFirstLook, formatReplayMarkdown, formatReplaySummary } from "./proposal-formatting.js";
 import { sharedPostgresLedgerMirrorOptions } from "./shared-ledger-domain.js";
 import { argsWithRuntimeStoreBridge, assertLocalGovernanceMutationAllowed, assertNoRuntimeStoreForLocalMutation, maybeSharedPostgresRuntimeStoreRead, runtimeStoreBridgeRequired, sharedPostgresLedgerMirrorRequested, withoutSharedPostgresLedgerMirror, withSharedPostgresLedgerMirror, withSharedPostgresRuntimeStoreBridge } from "./store-shared.js";
-import { findProposalCapability, loadSemanticProposalAuthority } from "./writeback-execution.js";
+import { findProposalCapability, loadSemanticProposalAuthority, semanticActionProjectRoot } from "./writeback-execution.js";
+import { recordCurrentDelayedSemanticValidation } from "./delayed-semantic-validation.js";
+import { assertDelayedSemanticWorkCurrent } from "./delayed-semantic-work.js";
+import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
+import { assertPinnedOperatorPublicKeys } from "./operator-identity.js";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { terminalContentWidth, wrapStyledTerminalLine } from "./terminal-layout.js";
 import { renderTerminalSectionHeading, renderTerminalStyledText, safeTerminalText, terminalSyntaxColorEnabled } from "./terminal-syntax.js";
 import { readTerminalTextWithEscape, withAlternateTerminalScreen, withRawTerminalScreen, type TerminalKeypress } from "./terminal-prompt.js";
@@ -1602,7 +1607,7 @@ export async function proposalsApprove(
       if (!invocation.quiet && args.includes("--json")) process.stdout.write(`${JSON.stringify(freshnessJson(freshness), null, 2)}\n`);
       return freshnessExitCodes[freshness.status];
     }
-    await confirmDangerousAction(args, `Approve proposal ${resolvedProposalId} for guarded writeback?`);
+    await confirmDangerousAction(args, `Approve the displayed exact ${proposal.action} change for ${proposal.business_object} ${proposal.object_id} (${resolvedProposalId})?`);
     const reason = invocation.decision?.reason ?? optionalArg(args, "--reason");
     const identity = await operatorIdentityForDecision({
       args,
@@ -1613,7 +1618,11 @@ export async function proposalsApprove(
       reason,
       decision: invocation.decision,
     });
-    const updated = store.approveProposal(resolvedProposalId, {
+    const delayedValidation = proposal.change_set.schema_version === "synapsor.change-set.v4"
+      && proposal.change_set.delayed_work && config
+      ? await recordCurrentDelayedSemanticValidation({ proposal, config, configPath, store, phase: "approval" })
+      : undefined;
+    const approvalInput = {
       approver: identity.subject,
       proposal_hash: proposal.proposal_hash,
       proposal_version: proposal.proposal_version,
@@ -1621,7 +1630,33 @@ export async function proposalsApprove(
       identity,
       require_verified_identity: Boolean(config?.operator_identity && config.operator_identity.provider !== "dev_env"),
       freshness_proof_digest: freshness.required ? freshness.proof.proof_digest : undefined,
-    });
+      ...(delayedValidation ? { delayed_validation_digest: delayedValidation.validation_digest } : {}),
+    };
+    const delayedChange = proposal.change_set.schema_version === "synapsor.change-set.v4"
+      && proposal.change_set.delayed_work ? proposal.change_set : undefined;
+    const currentAuthoritySave = config && proposal.change_set.schema_version === "synapsor.change-set.v4"
+      && (delayedChange || config.operator_identity?.provider === "signed_key");
+    const updated = currentAuthoritySave
+      ? await (async () => {
+        const root = semanticActionProjectRoot(config!, configPath);
+        if (!root) throw new Error("DELAYED_WORK_AUTHORITY_MISSING: current Action authority is unavailable.");
+        // The prompt and source read happen outside the short authority writer
+        // section. Recheck the exact selected authority before durable approval.
+        return withProjectAuthorityMutation(root, async () => {
+          const currentConfig = await optionalRuntimeConfig(configPath);
+          if (!currentConfig) throw new Error("DELAYED_WORK_AUTHORITY_MISSING: reviewed execution is unavailable.");
+          if (canonicalJsonDigest(currentConfig.operator_identity ?? null) !== canonicalJsonDigest(config!.operator_identity ?? null)) {
+            throw new Error("POLICY_APPROVER_IDENTITY_CHANGED: the reviewed operator roster changed before approval; inspect the original request and reopen the decision.");
+          }
+          await assertPinnedOperatorPublicKeys(currentConfig.operator_identity, configPath);
+          await loadSemanticProposalAuthority(currentConfig, configPath, proposal);
+          if (delayedChange) assertDelayedSemanticWorkCurrent({ config: currentConfig, delayed_work: delayedChange.delayed_work!,
+            outcome: proposal.action, action_boundary_digest: delayedChange.semantic_authority.proof.action_boundary_digest,
+            source: proposal.source_id, engine: "postgres", now: new Date().toISOString(), phase: "approval" });
+          return store.approveProposal(resolvedProposalId, approvalInput);
+        });
+      })()
+      : store.approveProposal(resolvedProposalId, approvalInput);
     operationalLog("info", "operator_decision", {
       action: "approve",
       proposal_id: updated.proposal_id,

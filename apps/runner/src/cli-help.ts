@@ -333,6 +333,7 @@ SQLite ledger immutable compliance storage.
   ${cmd} policy delegation --config ./synapsor.runner.json [--name <parent-name>] [--project-root .]
   ${cmd} policy delegation --config ./synapsor.runner.json --name <parent-name> --input ./owner-delegation.json
   ${cmd} policy connection --config ./synapsor.runner.json [--input ./owner-connection.json] [--previous-config ./previous-runner.json]
+  ${cmd} policy approver --config ./synapsor.actions.runner.json --input ./approver-roster.json [--previous-config ./previous-actions-runner.json]
   ${cmd} policy recommend --contract ./synapsor.contract.json --config ./synapsor.runner.json --tenant <tenant> --capability <name> --policy <name> --store ./.synapsor/local.db
   ${cmd} policy recommendations list --tenant <tenant> --store ./.synapsor/local.db [--capability <name>] [--policy <name>] [--status pending_review|approved|rejected|exported]
   ${cmd} policy recommendations show <ptr_id> --tenant <tenant> --store ./.synapsor/local.db
@@ -1545,6 +1546,7 @@ Legacy capability examples (explicit configured-runtime projects):
   ${cmd} worker disable <capability> --digest sha256:<exact-digest> --yes --config ./synapsor.runner.json
   ${cmd} worker revoke <capability> --digest sha256:<exact-digest> --yes --config ./synapsor.runner.json
   ${cmd} worker cancel [latest|<proposal_id>] --yes --config ./synapsor.runner.json
+  ${cmd} worker cancel <proposal_id> --local-installation-operator --reason "held request no longer needed" --config ./synapsor.runner.json
   ${cmd} worker dead-letter list --config ./synapsor.runner.json
   ${cmd} worker dead-letter show wrp_... --config ./synapsor.runner.json
   ${cmd} worker dead-letter requeue wrp_... --retry-budget 3 --yes --config ./synapsor.runner.json --identity alice --identity-key ./alice.pem

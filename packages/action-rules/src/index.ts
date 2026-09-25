@@ -56,6 +56,8 @@ export {
   assertSemanticActionAuthorityCurrent,
   assertSemanticAuthorityCurrent,
   createSemanticActionVerifier,
+  reverifySemanticProposal,
+  type SemanticReverificationSubject,
   evaluateSemanticActionEligibility,
   type SemanticActionEligibilityDecisionV1,
   type SemanticActionEligibilityInputV1,

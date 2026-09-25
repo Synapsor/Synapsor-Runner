@@ -144,3 +144,4 @@ export type { EffectAdmissionTarget, EffectAdmissionState, PreparedEffectAdmissi
 export type { ControlRuntimeProof } from "./control-runtime-proofs.js";
 
 export { bindBlockedClosureBridge, blockedClosureDecisionReason, type BlockedClosureAssessment, type BlockedClosureSourceObservation, type CloseBlockedWorkerInput, type BlockedRollbackEvidence } from "./blocked-closure.js";
+export { localDelayedCancelPreviewDigest } from "./local-delayed-cancel-preview.js";

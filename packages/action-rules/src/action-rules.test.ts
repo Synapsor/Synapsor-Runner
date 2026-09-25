@@ -1704,6 +1704,28 @@ describe("semantic Action eligibility and transaction re-verification", () => {
       .rejects.toMatchObject({ code: "ACTION_RULE_AUTHORITY_STALE" });
   });
 
+  it("rechecks the exact original effect after proof expiry only with explicit delayed authority", async () => {
+    const { fixture, registry, job } = await eligibleFieldServiceRuntime();
+    const delayed = { ...job, delayed_work: {
+      schema_version: "synapsor.delayed-semantic-work.v1" as const,
+      execution_policy_digest: `sha256:${"a".repeat(64)}` as const,
+      requested_at: job.semantic_authority.proof.verified_at,
+      approval_wait_seconds: 3_600, approval_validity_seconds: 3_600,
+      absolute_request_age_seconds: 86_400, max_validation_attempts: 2,
+    } };
+    const afterExpiry = "2026-09-02T20:06:00.000Z";
+    await expect(createSemanticActionVerifier({ registry, clock: () => afterExpiry })({
+      job: delayed, factLoader: fieldServiceRuntimeAdapter(fixture),
+    })).rejects.toMatchObject({ code: "ACTION_RULE_AUTHORITY_STALE" });
+    const allowed = createSemanticActionVerifier({ registry, clock: () => afterExpiry,
+      allow_delayed_work: async () => undefined });
+    await expect(allowed({ job: delayed, factLoader: fieldServiceRuntimeAdapter(fixture) }))
+      .resolves.toMatchObject({ status: "reverified", effect_digest: job.semantic_authority.effect.effect_digest });
+    fixture.facts.bindings.offer!.rows[0]!.status = "released";
+    await expect(allowed({ job: delayed, factLoader: fieldServiceRuntimeAdapter(fixture) }))
+      .rejects.toMatchObject({ code: "ACTION_RULE_AUTHORITY_STALE" });
+  });
+
   it("refuses changed authoritative facts instead of applying a stale effect", async () => {
     const { fixture, registry, job } = await eligibleFieldServiceRuntime();
     fixture.facts.bindings.offer!.rows[0]!.status = "released";

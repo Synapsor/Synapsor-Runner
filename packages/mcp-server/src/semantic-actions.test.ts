@@ -39,6 +39,7 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { OwnerRuntimeError } from "./owner-runtime-identity.js";
 import { PostgresRlsPrerequisiteError } from "@synapsor-runner/postgres";
 import type { SemanticActionRequestContext } from "./runtime-types.js";
+import { semanticRequestLifecycle } from "./semantic-request-lifecycle.js";
 
 const lock = `sha256:${"a".repeat(64)}` as const;
 const readBoundary = `sha256:${"b".repeat(64)}` as const;
@@ -572,6 +573,7 @@ describe("fixed semantic Action MCP", () => {
 
   it.each([
     ["queued", "approved", "queued", "queued", "open", false],
+    ["held", "approved", "held", "not_started", "blocked", false],
     ["leased", "pending_worker", "held", "in_progress", "open", null],
     ["retry_wait", "approved", "held", "retry_wait", "open", null],
     ["blocked", "failed", "held", "failed", "blocked", null],
@@ -589,7 +591,7 @@ describe("fixed semantic Action MCP", () => {
     // reference, with read responses representing worker states (no source run).
     vi.spyOn(f.store, "getProposal").mockReturnValue(proposal);
     vi.spyOn(f.store, "getWorkerQueueItem").mockReturnValue({ proposal_id: original.proposal_id,
-      status: queueStatus, execution_mode: "supervised_worker", attempts: queueStatus === "queued" ? 0 : 1,
+      status: queueStatus, execution_mode: "supervised_worker", attempts: queueStatus === "queued" || queueStatus === "held" ? 0 : 1,
       max_attempts: 5, next_attempt_at: "2099-01-01T00:00:00.000Z", created_at: original.created_at,
       updated_at: original.updated_at, last_error_code: "PRIVATE_CAUSE_DO_NOT_DISCLOSE" });
     if (state === "failed" || state === "applied") {
@@ -617,12 +619,63 @@ describe("fixed semantic Action MCP", () => {
         execution, lifecycle: { execution: outcome, disposition, automatic_retry_scheduled: queueStatus === "reconciliation_required" ? null : queueStatus === "retry_wait" },
         invocation: { operation: "returned_existing_request", source_database_changed: false }, source_database_changed: sourceChanged });
       expect(data.proposal.approval).toBe("automatically approved; apply remains a separate authority");
+      if (queueStatus === "held") {
+        expect(data.result_summary.next).toMatch(/cancellation requires separate current operator authority/i);
+        expect(data.result_summary.next).not.toMatch(/can inspect and cancel/i);
+      }
       expect(JSON.parse((response.content as Array<{text:string}>)[0]!.text)).toEqual(data);
       expect(JSON.stringify(response)).not.toMatch(/pending human review|limit did not pass|current authoritative facts|PRIVATE_CAUSE|private_job|private_worker|private_idempotency|raw-preference-42|acct_northstar|customer_maya/u);
       expect(tables()).toEqual(before);
       expect(f.queries).toHaveLength(1); // replay does not load source facts again
       expect(data.lifecycle.next_retry_at).toBe(queueStatus === "retry_wait" ? "2099-01-01T00:00:00.000Z" : null);
     } finally { await client.close(); await server.close(); await runtime.close(); }
+  });
+
+  it("does not tell a human to keep waiting after a delayed proposal's approval window ended", async () => {
+    const f = createFixtureRuntime({ automaticApproval: false,
+      onProposalReady: async () => ({ execution: "human_review", source_database_changed: false }) });
+    try {
+      await f.semanticActions.callTool(REQUEST_CHANGE_TOOL, { outcome: "billing.pause_notifications",
+        subject_refs: { preference: await issueSubject(f) } });
+      const original = f.store.listProposals()[0]!;
+      const expired = { ...original, change_set: { ...original.change_set,
+        delayed_work: { schema_version: "synapsor.delayed-semantic-work.v1", requested_at: new Date(Date.now() - 120_000).toISOString(),
+          approval_wait_seconds: 60, approval_validity_seconds: 600, absolute_request_age_seconds: 3_600,
+          max_validation_attempts: 4, execution_policy_digest: actionBoundary } } } as typeof original;
+      vi.spyOn(f.store, "getProposal").mockReturnValue(expired);
+      const view = await semanticRequestLifecycle(f.store, expired);
+      expect(view).toMatchObject({ approval: "pending_human_review", execution: "held",
+        status: "attention_required", lifecycle: { execution: "not_started", disposition: "blocked" } });
+      expect(view.approvalText).toMatch(/waiting deadline/);
+      expect(view.next).toMatch(/authorized local owner may terminally cancel only an unattempted new delayed request/);
+      expect(view.next).not.toMatch(/wait for the separate authorized human review/i);
+    } finally { f.store.close(); }
+  });
+
+  it("offers only conditional local cancellation guidance for a proven new delayed held item", async () => {
+    const f = createFixtureRuntime({ automaticApproval: true,
+      onProposalReady: async () => ({ execution: "human_review", source_database_changed: false }) });
+    try {
+      await f.semanticActions.callTool(REQUEST_CHANGE_TOOL, { outcome: "billing.pause_notifications",
+        subject_refs: { preference: await issueSubject(f) } });
+      const original = f.store.listProposals()[0]!;
+      const delayed = { ...original, change_set: { ...original.change_set,
+        delayed_work: { schema_version: "synapsor.delayed-semantic-work.v1",
+          requested_at: original.created_at, approval_wait_seconds: 600,
+          approval_validity_seconds: 600, absolute_request_age_seconds: 3_600,
+          max_validation_attempts: 4, execution_policy_digest: actionBoundary } } } as typeof original;
+      vi.spyOn(f.store, "getProposal").mockReturnValue(delayed);
+      vi.spyOn(f.store, "getWorkerQueueItem").mockReturnValue({
+        proposal_id: original.proposal_id, status: "held", execution_mode: "supervised_worker",
+        cancellation_control_role: null, attempts: 0, max_attempts: 1,
+        next_attempt_at: original.created_at, created_at: original.created_at,
+        updated_at: original.updated_at,
+      });
+      const view = await semanticRequestLifecycle(f.store, delayed);
+      expect(view.next).toMatch(/owning local installation operator may request terminal cancellation/);
+      expect(view.next).toMatch(/current store and authority must still pass final checks/);
+      expect(view.next).not.toMatch(/automatically cancel|automatically retry/);
+    } finally { f.store.close(); }
   });
 
   it.each(["missing_approval", "wrong_approval", "conflicting_approval", "missing_receipt", "wrong_receipt", "duplicate_receipt", "changed_approval", "changed_receipt", "changed_event", "changed_queue", "changed_proposal"] as const)(

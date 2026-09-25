@@ -728,6 +728,51 @@
       ],
       "additionalProperties": false
     },
+    "delayed_work": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "synapsor.delayed-semantic-work.v1"
+        },
+        "execution_policy_digest": {
+          "$ref": "#/properties/proposal_hash"
+        },
+        "requested_at": {
+          "$ref": "#/properties/semantic_authority/properties/proof/properties/delegation/properties/valid_until"
+        },
+        "approval_wait_seconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 2592000
+        },
+        "approval_validity_seconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 2592000
+        },
+        "absolute_request_age_seconds": {
+          "type": "integer",
+          "minimum": 60,
+          "maximum": 2592000
+        },
+        "max_validation_attempts": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 20
+        }
+      },
+      "required": [
+        "schema_version",
+        "execution_policy_digest",
+        "requested_at",
+        "approval_wait_seconds",
+        "approval_validity_seconds",
+        "absolute_request_age_seconds",
+        "max_validation_attempts"
+      ],
+      "additionalProperties": false
+    },
     "idempotency_key": {
       "type": "string",
       "minLength": 1,

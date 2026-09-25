@@ -104,6 +104,36 @@ runner policy connection --config ./synapsor.actions.runner.json \
   --input ./owner-connection.json
 ```
 
+For an existing local deployment that needs its first verified human approver
+after Action publication, the deployment operator can separately review a
+scoped signed-key roster:
+
+```bash
+runner policy approver --config ./synapsor.actions.runner.json \
+  --input ./approver-roster.json
+```
+
+The input contains only `operator_identity` with `provider: "signed_key"` and
+operators whose roles and explicit `outcomes` match current Action approval
+mandates. A role name shared by two Actions does not silently grant both. This is an
+interactive local deployment-operator bootstrap, attributed to the OS account
+that owns the private project and config; it is not cryptographically verified
+administrator identity. The proposed reviewer key cannot authorize its own
+registration. The review shows each public-key fingerprint and affected Action
+outcome, then defaults to cancellation. Confirming saves a trust revision and
+**disables supervised execution**. Recheck writer, receipt, source and current
+Action prerequisites through the separate Action execution review before
+enabling execution again. No request, approval or source write is performed by
+the approver command. Its saved fingerprint prevents a changed key file from
+silently becoming the reviewed key. Rotations use a new key path so prior
+public keys remain in historical trust revisions.
+
+If a key was added manually before this command and the old execution binding
+now refuses, `--previous-config` must name the exact earlier project config.
+The command accepts only an identity difference that reproduces the old stored
+binding; it never edits a stored digest. Do not use `policy connection` for
+reviewer identity changes: that command is limited to owner sign-ins.
+
 Do not manually merge authentication into an execution-bound runtime file.
 Runner shows the exact sign-ins and preserves unrelated source, execution,
 Read/Action and owner policy settings. Existing enabled execution requires a
@@ -216,6 +246,19 @@ the old permissions. Do not edit queue records or reset approvals to retry work.
 Cancellation applies only before a worker lease, not to already dispatched or
 uncertain execution. Completed changes still require a separate reviewed change
 to reverse their business effect.
+
+For a **new delayed request** whose reviewed cancellation-role snapshot is
+explicitly empty, the local account that owns the private installation can use
+`runner worker cancel <exact-proposal-id> --local-installation-operator --reason
+"reason" --config ./synapsor.actions.runner.json`. This is a terminal cancel,
+not an approval or a verified administrator action. It requires an interactive
+default-No confirmation; `--yes`, actor and key overrides are refused. It covers
+pending human review without a queue and queued or held work with no possible
+execution attempt. Existing partial approvals stay in history and are not
+refunded. Any lease, attempt, intent, receipt or uncertain outcome routes to
+receipt reconciliation instead. A separately configured cancellation control
+role takes precedence. Legacy and historical blocked work do not acquire this
+local route.
 
 Hard shared allowances measure their declared successful effects plus
 outstanding reservations, not merely approvals. Two agents cannot allocate

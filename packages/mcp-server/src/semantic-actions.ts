@@ -114,6 +114,8 @@ export function createSemanticActionRuntime(input: {
   catalogSession?: ScopedCatalogSession;
   delegationRequired?: boolean;
   unavailableOutcomes?: () => string[] | Promise<string[]>;
+  resolveDelayedWork?: (input: { outcome: string; activated: ActivatedActionRuleV1 }) => Promise<
+    Omit<import("@synapsor-runner/protocol").DelayedSemanticWorkV1, "schema_version" | "requested_at"> | undefined>;
   onProposalReady?: (input: {
     proposal: StoredProposal;
     activated: ActivatedActionRuleV1;
@@ -253,6 +255,7 @@ export function createSemanticActionRuntime(input: {
               createdAt: claimed.claimed_at,
               evidenceBundleId,
               queryFingerprint,
+              ...(input.resolveDelayedWork ? { delayedWork: await input.resolveDelayedWork({ outcome: request.outcome, activated: decision.activated }) } : {}),
             });
             let proposal: StoredProposal;
             try {
