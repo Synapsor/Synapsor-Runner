@@ -1,0 +1,17 @@
+# Phase B discovery quality: bounded contract
+
+This source integrates accepted Phase A candidate3 (`a672229b6ae444817df10b36a0500ef70ffe1205`) with the discovery implementation `e5f2d1b64de52d8f66e4e608945c0e9b6ddb3908` and test-only followup `5f24aa0078f9817092d243085603ece6512cffe5`. Phase A's installed local acceptance does not establish Phase B acceptance or actual model completion. No frozen Phase A bytes are changed.
+
+The existing authorized-metadata ranker remains the source of ranking. A unique exact tier or sole complete hit permits an inline contract; numeric score or position alone does not establish unambiguous caller intent. Partial and ambiguous alternatives remain labelled. Unauthorized entries never contribute to matching, ranking or page state.
+
+Inline Action detail is prepared through the same current authorized registry/detail projection used by exact detail, with current permitted Read navigation. Listing permission cannot promote denied detail. Registry, caller authorization, availability and navigation bindings are rechecked after asynchronous preparation. The cursor remains opaque and bound to current query, limit and authority/caller/navigation state; stale or foreign continuation refuses rather than silently starting a different query.
+
+Explicit listing arguments return compact metadata and a truthful exact-detail route, preserving the legacy empty-input compatibility page. Complete inline contracts are never truncated to fit. An oversized inline projection falls back to the exact route; an exact projection that itself exceeds the existing entry/transport bound still refuses safely. Existing 16KiB response, 12KiB detail, 256KiB session and record/call limits remain unchanged. Larger accepted Read exact contracts retain their established compact envelope.
+
+The machine-readable discovery and page states distinguish unambiguous, ambiguous, partial and no-match results, exact-detail requirements, current authorized-metadata scope, continuation and exhaustion. Navigation uses existing public `describe_data`/`explore_data` grammar and Read disclosure. Caller inputs expose their reviewed names/types/units and acquisition responsibility only. Missing values stay unknown; discovery neither reads verifier collections nor supplies private totals, synthetic references, eligibility or approval promises.
+
+The finite benchmark is tester-owned: 48 predeclared cases (36 public, 12 held out), exact9/9 top1, permitted metadata20/21 top3, all18 ambiguity/privacy/currentness/pagination controls, complete bounded contract/navigation within two catalog calls and complete stable enumeration. Main does not inspect the held-out input file. Source-only results and corrected invalid fixture expectations remain separate from final independent installed verdicts.
+
+The paired comparison remains exactly four fixed tasks × baseline/candidate, eight fresh read-only native turns with counterbalanced order and isolated histories. Correctness is graded before sends/time/bytes. A poor answer is preserved, not retried or used for another tuning loop. One hard pre-handler guard blocks business requests in this comparison; product authority controls are separately tested.
+
+Final-source focused/full/type/real-PostgreSQL/offline gates, immutable package identity and independent installed full-four-tool acceptance are pending. The benchmark measures directional agent behavior, not all-model reliability, unseen onboarding, runtime safety or a historical Stage B pass.
