@@ -1,5 +1,11 @@
 # Action Capability Qualification
 
+## Retained-duty/current-publication Review — Phase A, 2026-09-26
+
+Product/tests `a672229b6ae444817df10b36a0500ef70ffe1205`, tree `88b0829e…`, passed the independent finite retained-duty and exact untouched saved-Review subject contract. One genuine BUSINESS episode saved complete current coverage after one eligible correction; ordinary restart/Review used validated_reuse with zero sends. Only the two owner-delegated client duties were assigned, verified:false. The separate native answer **NOT PASSED**: public boolean flags were incorrectly interpreted as absence of old queued follow-up work. The correct current catalog and permitted source readback do not cure that narration failure. No retry, business request, approval, worker or source effect followed.
+
+All source/history/authority/receipt invariants were retained, with only precise read-audit/reference and review/resume appends. Main rehashed the independent 185-member final index and complete logical snapshots; actual cold restore preceded owned cleanup. Six settled sends cost $0.33140105, campaign $3.57659495, tripwire $2.24344565; both uncertain holds retained. Exact product/artifact, gates/skips, historical A1/A2 installed failures, independent/personal scopes, current checkpoint and limits are in [Phase A final report](qualification-evidence/l4-retained-duty-discovery-quality-20260926/PHASE-A-FINAL-REPORT.md) and its result JSON. **Phase A complete at this boundary; Phase B remains separately pending.** No full L4 native PASS, production readiness or fresh Stage B pass is claimed; A remains owner-deferred.
+
 ## Post-B operator quality is a separate, zero-provider qualification
 
 The bounded package covers reviewer-grant impact/guidance, advisory approval configuration, finite CLI output, source-launcher transients and scoped-correction field conformance. Inline top-match detail is deferred. It changes no business authority and does not resume B or erase the recorded L4 failure. Exact artifact-specific gates, independent installed verdicts and limitations are recorded in the repository-only `docs/qualification-evidence/post-B-product-quality-20260926/FINAL-REPORT.md`; internal qualification evidence is not included in the distributed package.

@@ -1,0 +1,47 @@
+{
+  "phase": "A",
+  "candidate": 3,
+  "source_commit": "a672229b6ae444817df10b36a0500ef70ffe1205",
+  "product_commit": "a672229b6ae444817df10b36a0500ef70ffe1205",
+  "tests_commit": "a672229b6ae444817df10b36a0500ef70ffe1205",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/l4-retained-duty-discovery-quality-20260926/phase-A-frozen-v3/installed",
+  "tree_sha256": "88b0829e84504e7b950e8f583c4c37e013c34f2a9bb6385e5b2c64f24f688182",
+  "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/l4-retained-duty-discovery-quality-20260926/phase-A-frozen-v3/installed-artifact-manifest.json",
+  "manifest_sha256": "182918b7aabf77bd6dbf3c06c83801122746fb588beac26838a70c8cd0c6fb80",
+  "archive": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/l4-retained-duty-discovery-quality-20260926/phase-A-frozen-v3/installed-artifact.tar.gz",
+  "archive_sha256": "16a70c1587eb8efbf57f6553d178a47cc9748540aab2a41d9ce5f244738b9b78",
+  "entries": 7601,
+  "node": {
+    "version": "v22.23.3",
+    "executable": "/usr/bin/node",
+    "sha256": "fde6a4bf8d0562f7751d1a2d6cb9b417c4cfe107bbcb0aa3e9a24e125e348f48"
+  },
+  "entrypoints": {
+    "cli.js": "fd5383c5bd241f7c1f917ee548bc679b00a188ebeac0f117ac3e6224a7ea6acc",
+    "runner.mjs": "7ee532295c6645d2c634dcc5c827a4c9ce52934dc38baef4f515c366ad0dadc5",
+    "runtime.mjs": "daf7ab441e56539facab503fb29ad1913b5ad844bcffbbc4df0b6e5e28ac7887",
+    "authoring.mjs": "b82d745464b0e275993266d6eff074f4e0752a69117e75e8166a3f9d5b177116",
+    "shadow.mjs": "e6e0ed77d03ea74b86351a524777d1e13b328b59a9f32177ee727d15c08ced08"
+  },
+  "gates": {
+    "complete": "stable-full-A-005",
+    "typecheck": "types-A-014",
+    "selected_postgres": "selected-postgres-A-003",
+    "offline": "offline-package-plan-attempt3.json",
+    "index": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/l4-retained-duty-discovery-quality-20260926/records/PHASE-A-GATE-SUMMARY-003.json",
+    "index_sha256": "ff731e7292a46e5c1010d48bcfdca22093c7dced7527dc2315e2cd53682ea752"
+  },
+  "source_checkpoint": "eda3b55ee012ada23fa95bc059324ebfc7909ffc5c698b2d2ed97c8a846a91dd",
+  "main_verification": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/l4-retained-duty-discovery-quality-20260926/records/MAIN-PHASE-A-ARTIFACT-VERIFICATION-003.json",
+  "main_verification_sha256": "a89a934852da93494e9b42d27839caec2b5d87ce5918fc77891933aed1ca8f69",
+  "installed_acceptance": "PENDING: exact untouched original first-entry/save/restart required",
+  "live_L4": "NOT RUN",
+  "main_inference": 0,
+  "owner_additional_A3_slot_used": "1/1 newly authorized; A1/A2 failures preserved; if installedA3fails STOPA",
+  "assignment_extra_candidate_slots_used": "original1/1 plus ownerA3additional1/1; no extraBslot",
+  "previous_candidates_preserved": [
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/l4-retained-duty-discovery-quality-20260926/PHASE-A-ARTIFACT.json",
+    "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/l4-retained-duty-discovery-quality-20260926/PHASE-A-ARTIFACT-002.json"
+  ],
+  "recorded_at": "2026-09-26T18:31:59.012691+00:00"
+}
