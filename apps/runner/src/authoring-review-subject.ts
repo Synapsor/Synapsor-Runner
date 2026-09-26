@@ -83,6 +83,13 @@ export async function resolveAuthoringReviewSubject(input: {
     // A completed exact active review does not move back to a same-value
     // disabled record on restart. A real pending edit was handled above.
     subject = published;
+  } else if (explicitCurrent && anchor?.action_subject?.location === "active" && draftSubjects.length === 1
+    && draftSubjects[0]!.identity.record === explicitCurrent.published_from
+    && draftSubjects[0]!.authority.digest === explicitCurrent.authority.digest) {
+    // First explicit Review after a later publication must not reopen its
+    // historical candidate. Exact pending work was handled above; the existing
+    // source/Read/store/prior-publication checks authorize only this selection.
+    subject = explicitCurrent;
   } else if (anchor && sameContext(anchor, input.context) && draftSubjects.some(item => sameAction(item, anchor))) {
     subject = draftSubjects.find(item => sameAction(item, anchor));
   } else if (published && !draftSubjects.length) subject = published;

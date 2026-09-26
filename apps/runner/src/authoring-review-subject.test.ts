@@ -170,6 +170,55 @@ for (const backend of ["sqlite", "postgres"] as const) describe.skipIf(backend =
     expect(selected.subject?.identity.location).toBe('disabled');
     expect(unknown.chooseOption).not.toHaveBeenCalled();
   });
+  it('reviews the current publication on first entry from an untouched completed historical-active job', async () => {
+    const f = await fixture(backend); await f.publish();
+    const old = (await readActionRuleReviewSubjects(f.root)).find(item => item.identity.location === 'active')!;
+    const untouched = {...f.resume, completed_policy_reviews: [{...f.resume.completed_policy_reviews![0]!,
+      request: {...f.request, action_subject: old.identity}}]};
+    expect(untouched.pending_policy_review).toBeUndefined();
+    expect(untouched.pending_action_revision).toBeUndefined();
+    const next = f.make(600); await writeActionRuleAuthorityDraft(f.root, next); await f.publish(next);
+    // Retain the real published candidate through the normal save API, as in
+    // the authentic untouched start. Do not open Review to create a new anchor.
+    await writeActionRuleAuthorityDraft(f.root, next);
+    const subjects = await readActionRuleReviewSubjects(f.root);
+    const active = subjects.find(item => item.identity.location === 'active')!;
+    const disabled = subjects.find(item => item.identity.location === 'disabled')!;
+    expect(active.prior_subjects).toContainEqual({record: old.identity.record, digest: old.authority.digest});
+    expect(active.published_from).toBe(disabled.identity.record);
+    const before = structuredClone(untouched);
+    expect((await f.resolve(untouched)).subject?.identity).toEqual(active.identity);
+    expect(f.chooseOption).not.toHaveBeenCalled();
+    expect(untouched).toEqual(before);
+    expect(await readActionRuleReviewSubjects(f.root)).toEqual(subjects);
+    // This is an explicit current review, not an automatic retarget of Resume.
+    expect((await f.resolve(untouched, f.context, false)).subject?.identity).toEqual(disabled.identity);
+    const edit = {...untouched, pending_action_revision: {outcome: next.authority.rules[0]!.rule.outcome,
+      instruction: 'Review this exact saved edit', baseline_digest: f.draft.digest,
+      preparation: {read_digest: f.context.read_digest, authority_digest: f.draft.digest, prepared_digest: next.digest}}};
+    expect((await f.resolve(edit)).subject?.identity).toEqual(disabled.identity);
+    expect(edit.pending_action_revision.preparation.prepared_digest).toBe(next.digest);
+    const selected = await f.resolve(untouched);
+    await writeActionRuleAuthorityDraft(f.root, f.make(900));
+    await expect(selected.assertCurrent()).rejects.toThrow('POLICY_REVIEW_SUBJECT_CHANGED');
+    expect(untouched).toEqual(before);
+  });
+  it('does not infer that an unrelated disabled save is the historical candidate of the current publication', async () => {
+    const f = await fixture(backend); await f.publish();
+    const old = (await readActionRuleReviewSubjects(f.root)).find(item => item.identity.location === 'active')!;
+    const untouched = {...f.resume, completed_policy_reviews: [{...f.resume.completed_policy_reviews![0]!,
+      request: {...f.request, action_subject: old.identity}}]};
+    const next = f.make(600); await writeActionRuleAuthorityDraft(f.root, next); await f.publish(next);
+    const other = {...next, created_at: '2026-09-26T00:00:00.000Z'};
+    await writeActionRuleAuthorityDraft(f.root, other);
+    const subjects = await readActionRuleReviewSubjects(f.root);
+    const active = subjects.find(item => item.identity.location === 'active')!;
+    const disabled = subjects.find(item => item.identity.location === 'disabled')!;
+    expect(active.published_from).not.toBe(disabled.identity.record);
+    expect(active.authority.digest).toBe(disabled.authority.digest);
+    expect((await f.resolve(untouched)).subject?.identity).toEqual(disabled.identity);
+    expect(f.chooseOption).not.toHaveBeenCalled();
+  });
   it("preserves exact pending edits and explicitly distinguishes another current publication", async () => {
     const f = await fixture(backend); await f.publish();
     const next = f.make(600); await writeActionRuleAuthorityDraft(f.root, next);
