@@ -228,6 +228,9 @@ export function createPolicyManagementTools(options: {
         })));
         return bounded(pages.describe({ index, binding: canonicalJsonDigest({ binding, epoch: detail.epoch, section: request.section }),
           request: { cursor: request.cursor, limit: request.limit }, key: "resources", measureResponse: measure,
+          catalogTool: "app.explore_data", completeListing: true,
+          continuationArguments: cursor => ({ policy_view: POLICY_VIEW, section: request.section,
+            limit: request.limit ?? CATALOG_LIMITS.defaultPage, cursor }),
           context: { ...base(current.scope_label), section: request.section } }));
       }
       const request = revise.parse(parsed.data), handle = handles.get(request.control_ref);

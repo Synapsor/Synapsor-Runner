@@ -36,6 +36,56 @@ describe("scoped indexed catalog", () => {
     expect(() => call(new ScopedCatalogSession(), index, { detail: "REVIEW.APPROVE_CLAIM" })).toThrow(/not available/);
   });
 
+  it("identifies only a unique exact tier or a sole complete hit as unambiguous", () => {
+    const record = (id: string, title: string): CatalogEntry => ({ id, title, summary: title,
+      value: { outcome: id }, detail: () => ({ outcome: id }) });
+    const index = new ScopedCatalogIndex([
+      record("review.approve_claim", "Approve claim"), record("review.reject_claim", "Reject claim"),
+      record("review.approve_archive", "Approve archived claim"),
+    ]);
+    expect(index.search("REVIEW / APPROVE-CLAIM")).toHaveProperty("unambiguous_id", "review.approve_claim");
+    expect(index.search("please approve the claim")).toHaveProperty("unambiguous_id", "review.approve_claim");
+    expect(index.search("claim")).not.toHaveProperty("unambiguous_id");
+    expect(index.search("approve reject")).not.toHaveProperty("unambiguous_id");
+    const duplicateNames = new ScopedCatalogIndex([record("one.approve", "Approve claim"), record("two.approve", "Approve claim")]);
+    expect(duplicateNames.search("approve claim")).not.toHaveProperty("unambiguous_id");
+  });
+
+  it("emits structured current page state and exact schema continuation without implying source completeness", () => {
+    const index = new ScopedCatalogIndex(entries(7));
+    const session = new ScopedCatalogSession();
+    const first = call(session, index, { limit: 5 });
+    expect(first.pagination).toMatchObject({ state: "more_pages", scope: "authorized_catalog_metadata" });
+    expect(first.discovery).toMatchObject({ currentness: "checked_current_authority", next_steps: [
+      { kind: "continue_page", tool: "app.describe_actions", arguments: { limit: 5, cursor: first.next_cursor } },
+    ] });
+    const last = call(session, index, { limit: 5, cursor: first.next_cursor });
+    expect(last.pagination).toHaveProperty("state", "exhausted");
+    expect(last.discovery).toHaveProperty("next_steps.0.kind", "inspect_exact_details");
+    const none = call(session, index, { query: "absent" });
+    expect(none.pagination).toHaveProperty("state", "no_matches");
+    expect(none.discovery).toHaveProperty("next_steps.0.kind", "revise_query");
+  });
+
+  it("only inlines an explicitly prepared complete authorized contract, otherwise gives an exact route", () => {
+    const index = new ScopedCatalogIndex(entries(1));
+    const session = new ScopedCatalogSession();
+    const id = index.ids[0]!;
+    const value = index.get(id)!.detail();
+    const result = session.describe({ index, binding: "one", key: "actions", request: { query: "sku0" },
+      inlineDetail: { id, value } });
+    expect(result.inline_contract).toEqual(value);
+    expect(result.discovery).toHaveProperty("contract_status", "inline_complete");
+    const listingOnly = call(new ScopedCatalogSession(), index, { query: "sku0" });
+    expect(listingOnly).not.toHaveProperty("inline_contract");
+    expect(listingOnly.discovery).toHaveProperty("contract_status", "exact_detail_required");
+    const tooLarge = session.describe({ index, binding: "one", key: "actions", request: { query: "sku0" },
+      inlineDetail: { id, value: { outcome: id, inputs: "x".repeat(12_000) } } });
+    expect(tooLarge).not.toHaveProperty("inline_contract");
+    expect(tooLarge.discovery).toMatchObject({ contract_status: "exact_detail_required", inline_status: "complete_contract_exceeds_inline_bound",
+      next_steps: [{ kind: "inspect_exact_details", tool: "app.describe_actions", arguments: { outcome: id } }] });
+  });
+
   it("reports page counts and exact authorized match totals separately, with an unambiguous end", () => {
     const index = new ScopedCatalogIndex(entries(13));
     const session = new ScopedCatalogSession();

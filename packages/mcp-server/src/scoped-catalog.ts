@@ -65,7 +65,7 @@ export class ScopedCatalogIndex {
 
   get(id: string): CatalogEntry | undefined { return this.entries.get(id); }
 
-  search(query: string): { ids: string[]; visited: number; matches?: Record<string, SearchMatch> } {
+  search(query: string): { ids: string[]; visited: number; matches?: Record<string, SearchMatch>; unambiguous_id?: string } {
     const tokens = searchTerms(query);
     if (tokens.length > CATALOG_LIMITS.queryTerms) throw catalogError("ARGUMENT_INVALID", "Use at most 16 search terms.");
     if (!tokens.length) return { ids: query.trim() ? [] : this.ids, visited: 0 };
@@ -112,7 +112,13 @@ export class ScopedCatalogIndex {
     const completeHits = ranked.some(hit => hit.tier > 0);
     const selected = ranked.filter(hit => !completeHits || hit.tier > 0)
       .sort((a, b) => b.tier - a.tier || b.score - a.score || compareIds(a.id, b.id));
+    // Ranking identifies possibilities. Only a unique exact tier, or a sole
+    // complete hit, supports an inline contract; score/order alone is not intent.
+    const top = selected[0];
+    const unambiguous = top && top.match.kind !== "partial" && (selected.length === 1
+      || (top.tier >= 3 && selected[1]!.tier < top.tier));
     return { ids: selected.map(hit => hit.id), visited: work,
+      ...(unambiguous ? { unambiguous_id: top.id } : {}),
       matches: Object.fromEntries(selected.map(hit => [hit.id, hit.match])) };
   }
 }
@@ -121,6 +127,7 @@ type Cursor = {
   binding: string; query: string; limit: number; expires: number; offset: number;
   ids: string[]; legacy: boolean;
   matches?: Record<string, SearchMatch>;
+  unambiguousId?: string;
   next?: string;
 };
 
@@ -137,11 +144,24 @@ export class ScopedCatalogSession {
     /** Private current scope + catalog + delegation revisions, never model input. */
     binding: string;
     request: CatalogRequest;
+    /** Optional single-pass search prepared by this same authorized index. */
+    searchResult?: ReturnType<ScopedCatalogIndex["search"]>;
     legacy?: boolean;
     key: "actions" | "resources";
     context?: Record<string, unknown>;
     /** A scoped asynchronous provider may prepare the exact entry first. */
     detailValue?: Record<string, unknown>;
+    /** Prepared ONLY through the same current authorization/projection as exact
+     * detail. The index's listing permission never calls entry.detail for inline. */
+    inlineDetail?: { id: string; value: Record<string, unknown>; nextSteps?: Record<string, unknown>[] };
+    detailNextSteps?: Record<string, unknown>[];
+    inlineUnavailable?: boolean;
+    /** Actual public tool grammar, supplied by the owning runtime. */
+    exactDetailArguments?: (id: string) => Record<string, unknown>;
+    continuationArguments?: (cursor: string) => Record<string, unknown>;
+    catalogTool?: string;
+    /** Some existing settings catalogs already return full metadata entries. */
+    completeListing?: boolean;
     /** Account for the actual model projection before choosing a page size. */
     measureResponse?: (value: Record<string, unknown>) => number;
     /** Use the disclosed entry representation, not an unprojected operator record. */
@@ -170,26 +190,63 @@ export class ScopedCatalogSession {
       }
       page = cursor;
     } else {
-      const found = request.detail ? { ids: index.get(request.detail) ? [request.detail] : [], visited: 0 } : index.search(query);
+      const found = request.detail ? { ids: index.get(request.detail) ? [request.detail] : [], visited: 0 } : input.searchResult ?? index.search(query);
       visited = found.visited;
       if (request.detail && !found.ids.length) {
         throw catalogError("CATALOG_ENTRY_UNAVAILABLE", "That entry is not available in the current authorized catalog.");
       }
       page = { binding: input.binding, query, limit, ids: found.ids, offset: 0,
         expires: now + CATALOG_LIMITS.cursorMs, legacy: input.legacy === true,
-        ...("matches" in found ? { matches: found.matches as Record<string, SearchMatch> } : {}) };
+        ...("matches" in found ? { matches: found.matches as Record<string, SearchMatch> } : {}),
+        ...("unambiguous_id" in found ? { unambiguousId: found.unambiguous_id as string } : {}) };
     }
     const values: Record<string, unknown>[] = [];
-    const body = (): Record<string, unknown> => ({
-      ...input.context, ok: true, catalog_version: "synapsor.scoped-catalog.v2",
-      [input.key]: values, next_cursor: null,
-      pagination: { page_item_count: values.length, has_more: offset < page.ids.length,
-        total: { kind: "exact", value: page.ids.length }, consistency: "fixed_authorized_catalog" },
+    const tool = input.catalogTool ?? (input.key === "actions" ? "app.describe_actions" : "app.describe_data");
+    const exactArguments = (id: string) => input.exactDetailArguments?.(id)
+      ?? (input.key === "actions" ? { outcome: id } : { resource: id });
+    const continuationArguments = (cursor: string) => input.continuationArguments?.(cursor)
+      ?? { ...(request.query !== undefined ? { query: request.query } : {}), limit, cursor };
+    let inline: Record<string, unknown> | undefined;
+    let inlineStatus: string | undefined = input.inlineUnavailable ? "detail_unavailable_in_current_scope" : undefined;
+    const nextSteps = (next: string | null): Record<string, unknown>[] => {
+      if (request.detail) return input.detailNextSteps ?? [{ kind: "inspect_selected_contract", guidance: "Use this complete current contract; missing caller values remain unknown." }];
+      const steps: Record<string, unknown>[] = [];
+      if (inline) steps.push(...input.inlineDetail?.nextSteps ?? [{ kind: "inspect_selected_contract", guidance: "Review the complete inline contract before choosing an operation." }]);
+      else if (page.unambiguousId) steps.push({ kind: "inspect_exact_details", tool, arguments: exactArguments(page.unambiguousId) });
+      else if (!page.ids.length) steps.push(query
+        ? { kind: "revise_query", guidance: "No authorized metadata matches this query. Ask the caller to clarify or browse the current catalog; absence is not removal proof." }
+        : { kind: "review_catalog_availability", guidance: "The current authorized metadata catalog is empty. Ask the operator to inspect reviewed availability; absence is not removal proof." });
+      else if (query) steps.push({ kind: "clarify_intent", guidance: "These are alternatives, not a selected operation. Ask the caller or narrow the query before choosing exact details." });
+      if (next) steps.push({ kind: "continue_page", tool, arguments: continuationArguments(next) });
+      else if (!query && !request.detail && page.ids.length) steps.push(input.completeListing
+        ? { kind: "inspect_page_entries", guidance: "Inspect these complete current permitted metadata entries; catalog disclosure grants no authority." }
+        : { kind: "inspect_exact_details", guidance: "Choose the intended listed entry and use its exact public identifiers for detail; this exhausted page completes authorized metadata only." });
+      return steps;
+    };
+    // Large accepted Read details already carry complete next_action/grammar.
+    // Keep their compact envelope; listing guidance must not displace a valid
+    // exact contract at the existing disclosure limit.
+    const compactReadDetail = request.detail !== undefined && input.key === "resources" && input.detailNextSteps === undefined;
+    const body = (next: string | null = null): Record<string, unknown> => ({
+      ok: true, catalog_version: "synapsor.scoped-catalog.v2",
       discovery: { mode: request.detail ? "detail" : page.legacy ? "bounded_compatibility" : "summary",
         search_status: !query ? "no_query" : !page.ids.length ? "no_matches"
           : page.matches && Object.values(page.matches).every(match => match.kind === "partial") ? "partial_matches" : "matches",
-        eligibility: "not_checked", ...(query && !page.ids.length ? { empty_search: "no_matches_to_this_query" } : {}),
-        next_step: "Search or browse a shortlist, request exact details, then use the selected contract. Discovery grants no authority." },
+        ...(!compactReadDetail ? { match_status: !query ? "not_searched" : !page.ids.length ? "no_matches" : page.unambiguousId ? "unambiguous_match"
+          : page.matches && Object.values(page.matches).every(match => match.kind === "partial") ? "partial_alternatives" : "ambiguous_alternatives",
+        contract_status: request.detail || page.legacy ? "complete_exact_details" : input.completeListing ? "complete_listing_entries" : inline ? "inline_complete" : "exact_detail_required",
+        ...(inlineStatus ? { inline_status: inlineStatus } : {}),
+        currentness: "checked_current_authority", scope: "authorized_catalog_metadata", next_steps: nextSteps(next) } : {}),
+        eligibility: "not_checked",
+        ...(query && !page.ids.length ? { empty_search: "no_matches_to_this_query" } : {}),
+        next_step: compactReadDetail
+          ? "Search or browse a shortlist, request exact details, then use the selected contract. Discovery grants no authority."
+          : "Discovery gives possible operations and permitted metadata, not caller intent, eligibility or execution authority." },
+      pagination: { page_item_count: values.length, has_more: offset < page.ids.length,
+        ...(!compactReadDetail ? { state: request.detail ? "exact_detail" : query && !page.ids.length ? "no_matches" : offset < page.ids.length ? "more_pages" : "exhausted",
+        scope: "authorized_catalog_metadata" } : {}),
+        total: { kind: "exact", value: page.ids.length }, consistency: "fixed_authorized_catalog" },
+      ...input.context, [input.key]: values, ...(inline ? { inline_contract: inline } : {}), next_cursor: next,
       source_database_changed: false,
     });
     let offset = page.offset;
@@ -206,7 +263,7 @@ export class ScopedCatalogSession {
       values.push(value);
       // Include cursor-dependent presentation before pagination. Never split
       // or truncate an executable contract to fit the transport envelope.
-      const responseBytes = measure({ ...body(), next_cursor: request.detail ? null : `cur_${"a".repeat(43)}` });
+      const responseBytes = measure(body(request.detail || offset + 1 >= page.ids.length ? null : `cur_${"a".repeat(43)}`));
       if (responseBytes > CATALOG_LIMITS.responseBytes) {
         values.pop();
         if (!values.length) throw catalogContractSizeError("response", responseBytes, CATALOG_LIMITS.responseBytes);
@@ -214,12 +271,21 @@ export class ScopedCatalogSession {
       }
       offset++;
     }
-    const result = body();
     let next: string | undefined;
     if (offset < page.ids.length) {
       next = page.next ?? `cur_${randomBytes(32).toString("base64url")}`;
-      result.next_cursor = next;
     }
+    if (!request.detail && !page.legacy && page.offset === 0 && input.inlineDetail
+      && input.inlineDetail.id === page.unambiguousId && values.length > 0) {
+      const candidate = structuredClone(input.inlineDetail.value);
+      const detailBytes = input.measureDetail?.(candidate) ?? Buffer.byteLength(JSON.stringify(candidate));
+      inline = candidate;
+      if (detailBytes > CATALOG_LIMITS.detailBytes || measure(body(next ?? null)) > CATALOG_LIMITS.responseBytes) {
+        inline = undefined;
+        inlineStatus = "complete_contract_exceeds_inline_bound";
+      }
+    }
+    const result = body(next ?? null);
     const size = measure(result);
     if (size > CATALOG_LIMITS.responseBytes) throw catalogContractSizeError("response", size, CATALOG_LIMITS.responseBytes);
     if (this.records + values.length > CATALOG_LIMITS.sessionRecords || this.bytes + size > CATALOG_LIMITS.sessionBytes) throw budgetError();

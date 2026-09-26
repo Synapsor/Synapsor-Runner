@@ -68,6 +68,12 @@ export function createScopedReadDiscovery(
       throw new McpRuntimeError("CATALOG_CURSOR_INVALID", "Reviewed authority changed during discovery. Restart discovery with the current authorized catalog.");
     }
     const result = session.describe({ index, binding, key: "resources", detailValue, context,
+      exactDetailArguments: (id) => {
+        const entry = index.get(id)!;
+        return { boundary: entry.value.boundary_name, resource: entry.value.id };
+      },
+      continuationArguments: (cursor) => ({ ...(request.boundary ? { boundary: request.boundary } : {}),
+        ...(request.query !== undefined ? { query: request.query } : {}), limit: request.limit ?? CATALOG_LIMITS.defaultPage, cursor }),
       measureDetail: (value) => Buffer.byteLength(JSON.stringify((projectResponse({
         ...context, ok: true, catalog_version: "synapsor.scoped-catalog.v2", resources: [value],
       }, Boolean(detail)).resources as unknown[])[0])),

@@ -200,8 +200,11 @@ reinterpret old authority against a new schema.
 
 ## Model-Facing Request
 
-`app.describe_actions` lists activated outcomes and the opaque subject bindings
-each one needs. It reads no source rows and grants no authority.
+`app.describe_actions` lists activated outcome metadata. Exact detail, or the
+same complete inline contract for an unambiguous query, describes required
+opaque subject bindings, caller inputs and public effects. It reads no source
+rows and grants no authority. See [bounded catalog discovery](scoped-catalog-discovery.md)
+for compact listing, current navigation and pagination.
 
 `app.request_change` requires two properties and permits optional reviewed `inputs`:
 

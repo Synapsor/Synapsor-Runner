@@ -6,9 +6,12 @@ authority; a previous discovery result never authorizes a later request.
 
 ## Agent Workflow
 
-1. Search `app.describe_data` or `app.describe_actions` with `query` and `limit`.
-2. Fetch exact details with `resource` (optionally `boundary`) or `outcome`.
-3. Copy the selected contract into Explore or `app.request_change`.
+1. Browse compact metadata with `limit`, or search `app.describe_data` or
+   `app.describe_actions` with `query` and `limit`.
+2. Inspect an Action's complete `inline_contract` when present; otherwise fetch
+   exact details with `resource` (optionally `boundary`) or `outcome`.
+3. Follow `discovery.next_steps` to clarify intent, obtain permitted references
+   and ask for missing caller inputs before using the selected contract.
 
 Search/list takes an optional query of at most 256 characters, a limit of
 1-20 (default 5), and an opaque returned cursor. Exact detail cannot be mixed
@@ -23,7 +26,15 @@ continuation, and `total: {kind: "exact", value: ...}` counts only matching,
 authorized catalog entries, never source rows or eligible subjects.
 `discovery.search_status` distinguishes browsing (`no_query`), complete
 matches, explicitly partial matches and no matches. End of pagination is
-separate from no search match.
+separate from no search match. `pagination.state` is `more_pages`, `exhausted`,
+`no_matches` for an empty search, or `exact_detail` for Action detail. Its scope
+is authorized catalog metadata. Exact Read detail retains its existing compact
+`discovery.mode: detail` envelope and `next_action`, so additional listing
+guidance does not displace a complete large Read contract. `discovery.match_status` separates an unambiguous metadata
+match from ambiguous or partial alternatives; it never resolves user intent.
+Structured `discovery.next_steps` includes the actual tool and arguments for
+continuation or an unambiguous exact lookup. A rejected/stale cursor requires
+fresh current discovery without that cursor, not an automatic first-page fallback.
 
 Search uses deterministic lexical terms in reviewed identifiers, descriptions
 and labels. Action Rules may include reviewed `x-runner-discovery` metadata:
@@ -57,13 +68,25 @@ or client configuration. Empty Action discovery preserves full request
 contracts, but only for a bounded first page. Explicit `query` or `limit`
 returns summaries. Fetch one `outcome` for its complete input types, required
 subjects, bounds, effect summary and review behavior.
-Summary cards include a compact required-input list, all public business
-effect components and an exact-detail route. Exact Action detail in the
+Summary cards contain reviewed identifiers, names/descriptions, availability
+and an exact-detail route, with `contract_status: exact_detail_required`.
+They do not carry partial input/effect contracts. A query can also include a
+complete `inline_contract` only for a unique exact identifier/name tier, or a
+sole complete nonpartial match. This is the same current authorized projection
+as exact detail, including all disclosable inputs/effects and checked navigation.
+Listing permission alone does not prepare or authorize inline detail. If the
+complete inline projection exceeds the existing entry/response bound, no part
+is truncated: `inline_status: complete_contract_exceeds_inline_bound` retains
+the schema-valid exact-detail next step. Unavailable detail is reported as
+`detail_unavailable_in_current_scope`. Exact Action detail in the
 shared four-tool adapter connects to the current permitted Read root with a
 bounded subset of visible fields and allowed operators, a schema-valid rows
 example and reference support when established. Follow the exact Data
 Describe route for complete Read grammar. Relationship-only resources are
-labelled accordingly; they are not independent roots. Standalone adapters
+labelled accordingly; they are not independent roots. Checked inline or exact
+navigation can give `app.explore_data` arguments directly; another Data Describe
+call is only needed for complete Read grammar beyond this bounded navigation.
+Standalone adapters
 without the Read callback and compatibility `{}` contracts honestly mark the
 route unestablished. Navigation rechecks both Read and Action currentness.
 

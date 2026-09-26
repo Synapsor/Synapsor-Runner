@@ -2,7 +2,6 @@ import {
   ActionRuleError,
   actionRuleDiscoveryContract,
   actionRulePublicEffects,
-  actionRulePublicInputs,
   actionRuleDiscoveryMetadata,
   snapshotActionRuleRegistry,
   evaluateSemanticActionEligibility,
@@ -140,30 +139,45 @@ export function createSemanticActionRuntime(input: {
         const unavailable = await input.unavailableOutcomes?.() ?? [];
         const allowed = authorization.allowed_outcomes ? new Set(authorization.allowed_outcomes) : undefined;
         const visible = registry.rules.filter((entry) => !allowed || allowed.has(entry.compiled.outcome));
-        const selected = request.detail ? visible.find((entry) => entry.compiled.outcome === request.detail) : undefined;
-        const navigationResources = selected ? selected.compiled.rule.subjects.map(({ resource }) => resource) : [];
-        const navigation = navigationResources.length ? await options?.describeSubjectNavigation?.(navigationResources) : undefined;
-        const binding = canonicalJsonDigest({ registry: registry.digest, authorization, unavailable, navigation: navigation?.binding ?? null, navigation_subject: selected?.compiled.outcome ?? null });
-        if (!cachedCatalog || cachedCatalog.binding !== binding) {
+        const catalogBinding = canonicalJsonDigest({ registry: registry.digest, authorization, unavailable });
+        if (!cachedCatalog || cachedCatalog.binding !== catalogBinding) {
           const unavailableSet = new Set(unavailable);
           const index = new ScopedCatalogIndex(visible.map((entry) => {
             const activated = resolveActivatedActionRule(registry, entry.compiled.outcome);
             const metadata = actionRuleDiscoveryMetadata(activated.compiled.rule);
-            const description = metadata.title;
             const availability = unavailableSet.has(activated.compiled.outcome) ? "operator_review_required" : "available";
             return { id: activated.compiled.outcome, ...metadata,
-              value: { outcome: activated.compiled.outcome, description, summary: metadata.summary, availability,
-                subjects: activated.compiled.rule.subjects.map(({ binding, resource }) => ({ binding, resource })),
-                inputs: actionRulePublicInputs(activated.compiled.rule).map(({ acquisition: _acquisition, ...definition }) => definition),
-                business_effects: actionRulePublicEffects(activated.compiled),
-                exact_detail: { outcome: activated.compiled.outcome },
+              // A listing is a shortlist, explicitly not a shortened executable
+              // contract. Complete inputs/effects remain on the exact route.
+              value: { outcome: activated.compiled.outcome, description: metadata.title, summary: metadata.summary, availability,
+                contract_status: "exact_detail_required", exact_detail: { outcome: activated.compiled.outcome },
                 eligibility: "not_checked", approval: { disclosure: availability === "available" ? "not_reported" : "unavailable" } },
-              detail: () => describeAction(registry, activated, availability, selected?.compiled.outcome === activated.compiled.outcome ? navigation?.resources : undefined),
+              detail: () => describeAction(registry, activated, availability),
             };
           }));
-          cachedCatalog = { binding, index };
+          cachedCatalog = { binding: catalogBinding, index };
         }
-        const currentNavigation = navigationResources.length ? await options?.describeSubjectNavigation?.(navigationResources) : undefined;
+        const index = cachedCatalog.index;
+        const searchResult = !request.detail && request.query ? index.search(request.query) : undefined;
+        // Detail and inline both select from the same currently authorized
+        // registry, never from a merely listed Read or private verifier facts.
+        const selectedId = request.detail ?? searchResult?.unambiguous_id;
+        const selected = selectedId ? visible.find(entry => entry.compiled.outcome === selectedId) : undefined;
+        const navigationResources = selected ? selected.compiled.rule.subjects.map(({ resource }) => resource) : [];
+        let navigation: { binding: string; resources: Record<string, Record<string, unknown>> } | undefined;
+        let inlineUnavailable = false;
+        try { navigation = navigationResources.length ? await options?.describeSubjectNavigation?.(navigationResources) : undefined; }
+        catch (error) {
+          if (request.detail || !(error instanceof McpRuntimeError) || error.code !== "CATALOG_ENTRY_UNAVAILABLE") throw error;
+          // A metadata listing cannot turn a denied exact Read projection into
+          // inline disclosure. Preserve the shortlist, with truthful guidance.
+          inlineUnavailable = true;
+        }
+        const binding = canonicalJsonDigest({ registry: registry.digest, authorization, unavailable,
+          navigation: navigation?.binding ?? null, navigation_subject: selected?.compiled.outcome ?? null });
+        const availability = selected && unavailable.includes(selected.compiled.outcome) ? "operator_review_required" : "available";
+        const contract = selected && !inlineUnavailable ? describeAction(registry, resolveActivatedActionRule(registry, selected.compiled.outcome), availability, navigation?.resources) : undefined;
+        const currentNavigation = navigationResources.length && !inlineUnavailable ? await options?.describeSubjectNavigation?.(navigationResources) : undefined;
         const current = await loadRegistry();
         const currentAuthorization = await input.resolveCatalogAuthorization(current);
         const currentUnavailable = await input.unavailableOutcomes?.() ?? [];
@@ -171,8 +185,11 @@ export function createSemanticActionRuntime(input: {
           navigation: currentNavigation?.binding ?? null, navigation_subject: selected?.compiled.outcome ?? null }) !== binding) {
           throw new McpRuntimeError("CATALOG_CURSOR_INVALID", "Reviewed authority changed during discovery. Restart discovery with the current authorized catalog.");
         }
-        return catalogSession.describe({ index: cachedCatalog.index, binding, request,
-          legacy: Object.keys(args).length === 0, key: "actions", context: actionCatalogContext(Boolean(request.detail)) });
+        return catalogSession.describe({ index, binding, request, searchResult,
+          legacy: Object.keys(args).length === 0, key: "actions", inlineUnavailable, context: actionCatalogContext(Boolean(request.detail)),
+          ...(request.detail && contract ? { detailValue: contract, detailNextSteps: actionContractNextSteps(contract) } : {}),
+          ...(!request.detail && selected && contract ? { inlineDetail: { id: selected.compiled.outcome, value: contract,
+            nextSteps: actionContractNextSteps(contract) } } : {}) });
       }
       if (name !== REQUEST_CHANGE_TOOL) {
         throw new McpRuntimeError("MCP_TOOL_NOT_FOUND", "The requested Synapsor Action tool is not available.");
@@ -340,7 +357,7 @@ function semanticActionToolMetadata(): LocalToolMetadata[] {
     {
       name: DESCRIBE_ACTIONS_TOOL,
       title: "Describe reviewed actions",
-      description: 'List {} or {"query":"text","limit":5}; exact detail {"outcome":"<exact id>"}. Never mix outcome with meaningful query/limit/cursor; null means omitted. Exact detail connects current permitted Read/reference navigation and required caller inputs; ask the caller if an input is missing, never guess a private verifier value. Reuse still-current exact detail. Search ranks exact ids/names and full matches before labelled partial matches; ambiguous alternatives are not a chosen operation. pagination.page_item_count is this page; pagination.has_more/next_cursor mark continuation; pagination.total counts authorized catalog metadata only. Follow next_cursor until null. Keep the same query/limit/context. Limit is a maximum; byte-bounded pages may contain fewer entries. Empty input retains a bounded compatibility page of public request contracts. Availability is not eligibility; no source rows are read or authority granted. ' + APPROVAL_DISCLOSURE_GUIDANCE,
+      description: 'Browse compact metadata {"limit":5} or search {"query":"text","limit":5}; exact detail {"outcome":"<exact id>"}. Never mix outcome with meaningful query/limit/cursor; null means omitted. A genuinely unambiguous query may include the complete inline_contract; otherwise use the returned exact_detail route. Structured discovery.next_steps and pagination.state guide the next call; CATALOG_CURSOR_INVALID requires a fresh current lookup without the rejected cursor. Exact detail connects current permitted Read/reference navigation and required caller inputs; ask the caller if an input is missing, never guess a private verifier value. Reuse still-current exact detail. Search ranks exact ids/names and full matches before labelled partial matches; ambiguous alternatives are not a chosen operation. pagination.page_item_count is this page; pagination.has_more/next_cursor mark continuation; pagination.total counts authorized catalog metadata only. Follow next_cursor until null. Keep the same query/limit/context. Limit is a maximum; byte-bounded pages may contain fewer entries. Explicit listing pages are metadata shortlists, not truncated input/effect contracts. Empty input retains a bounded compatibility page of public request contracts. Availability is not eligibility; no source rows are read or authority granted. ' + APPROVAL_DISCLOSURE_GUIDANCE,
       kind: "action_catalog",
       input_schema: { query: { type: "string", required: false }, limit: { type: "number", required: false },
         cursor: { type: "string", required: false }, outcome: { type: "string", required: false } },
@@ -382,6 +399,27 @@ function describeAction(registry: RuntimeActionRuleRegistryV1, activated: Activa
   return { ...contract, subjects: (contract.subjects as Array<Record<string, unknown>>).map(subject => ({ ...subject,
     ...(navigation[String(subject.resource)] ? { navigation: navigation[String(subject.resource)] } : {}),
   })) };
+}
+
+/** Copy only checked exact-contract guidance; never synthesize caller values. */
+function actionContractNextSteps(contract: Record<string, unknown>): Record<string, unknown>[] {
+  const steps: Record<string, unknown>[] = [];
+  const inputs = Array.isArray(contract.inputs) ? contract.inputs.filter(isRecord) : [];
+  const required = inputs.filter(input => input.required === true && input.origin === "caller_business_input").map(input => input.name);
+  if (required.length) steps.push({ kind: "ask_caller_for_required_inputs", inputs: required,
+    guidance: "Ask the authorized caller for any missing reviewed input; no value has been supplied or inferred by discovery." });
+  for (const subject of Array.isArray(contract.subjects) ? contract.subjects.filter(isRecord) : []) {
+    const navigation = isRecord(subject.navigation) ? subject.navigation : undefined;
+    if (navigation?.status === "rows_reference_available" && isRecord(navigation.explore_data)) {
+      steps.push({ kind: "acquire_permitted_subject_reference", subject_binding: subject.binding,
+        tool: "app.explore_data", arguments: navigation.explore_data,
+        guidance: "Use the selected returned row's existing opaque reference when present. This permitted rows template does not choose the caller's intended subject or establish eligibility." });
+    } else steps.push({ kind: "inspect_subject_navigation", subject_binding: subject.binding,
+      status: navigation?.status ?? "not_established",
+      ...(isRecord(navigation?.describe_data) ? { tool: "app.describe_data", arguments: navigation.describe_data } : {}),
+      guidance: navigation?.guidance ?? "No current permitted subject-reference route is established; do not fabricate a reference." });
+  }
+  return steps.length ? steps : [{ kind: "inspect_selected_contract", guidance: "Review the exact permitted contract; discovery does not select caller intent or check eligibility." }];
 }
 
 function actionCatalogContext(exactDetail = false): Record<string, unknown> {

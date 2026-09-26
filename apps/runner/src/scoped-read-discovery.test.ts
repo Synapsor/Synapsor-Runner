@@ -71,6 +71,24 @@ describe("scoped Read discovery", () => {
     expect(f.requireTrustedScope).toHaveBeenCalled();
   });
 
+  it("emits valid exact Read and continuation arguments without obtaining detail from listing permission", async () => {
+    const f = fixture(6);
+    const exactSearch = await f.discover({ query: "public.resource_1" });
+    expect(exactSearch).not.toHaveProperty("inline_contract");
+    expect(exactSearch.discovery).toMatchObject({ contract_status: "exact_detail_required", next_steps: [{
+      kind: "inspect_exact_details", tool: "app.describe_data", arguments: { boundary: "public", resource: "public.resource_1" },
+    }] });
+    expect(f.describeResource).not.toHaveBeenCalled();
+    const page = await f.discover({ boundary: "public", query: "business", limit: 2 });
+    expect(page.discovery).toMatchObject({ next_steps: expect.arrayContaining([{ kind: "continue_page", tool: "app.describe_data",
+      arguments: { boundary: "public", query: "business", limit: 2, cursor: page.next_cursor } }]) });
+    expect(page.pagination).toMatchObject({ state: "more_pages", scope: "authorized_catalog_metadata" });
+    const continuation = (page.discovery as { next_steps: Array<{ kind: string; arguments: Record<string, unknown> }> }).next_steps.find(step => step.kind === "continue_page")!;
+    const next = await f.discover(continuation.arguments);
+    expect(new Set([...page.resources as Array<{ id: string }>, ...next.resources as Array<{ id: string }>].map(entry => entry.id)).size).toBe(4);
+    expect(f.describeResource).not.toHaveBeenCalled();
+  });
+
   it("does not distinguish denied from unknown resources and cannot retain revoked pages", async () => {
     const f = fixture();
     for (const resource of ["secret.resource_1", "unknown.resource_1"]) {

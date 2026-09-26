@@ -263,6 +263,8 @@ const catalogPaginationSchema = z.object({
   has_more: z.boolean(),
   total: z.object({ kind: z.literal("exact"), value: z.number().int().nonnegative() }).strict(),
   consistency: z.literal("fixed_authorized_catalog"),
+  state: z.enum(["exact_detail", "no_matches", "more_pages", "exhausted"]).optional(),
+  scope: z.literal("authorized_catalog_metadata").optional(),
 }).strict();
 
 const catalogSearchMatchSchema = z.object({

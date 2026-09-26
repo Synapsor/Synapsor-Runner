@@ -149,6 +149,9 @@ for (const backend of ["sqlite", "postgres"] as const) describe.skipIf(backend =
     const f = await fixture();
     const first = await f.tools.callTool("app.explore_data", { ...view, section: "vocabulary", limit: 1 });
     expect(first.resources).toHaveLength(1); expect(first.next_cursor).toMatch(/^cur_/u);
+    expect(first.discovery).toMatchObject({ contract_status: "complete_listing_entries", next_steps: [{
+      kind: "continue_page", tool: "app.explore_data", arguments: { ...view, section: "vocabulary", limit: 1, cursor: first.next_cursor },
+    }] });
     expect(JSON.stringify(first.resources)).not.toContain('"source"');
     const next = await f.tools.callTool("app.explore_data", { ...view, section: "vocabulary", limit: 1, cursor: first.next_cursor });
     expect(next.resources).toHaveLength(1);
