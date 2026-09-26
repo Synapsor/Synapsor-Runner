@@ -15,8 +15,13 @@ if ! node -e "const [major, minor] = process.versions.node.split('.').map(Number
   exit 1
 fi
 
-if [[ -f "$ROOT/apps/runner/src/cli.ts" && -x "$ROOT/node_modules/.bin/tsx" ]]; then
-  exec "$ROOT/node_modules/.bin/tsx" "$ROOT/apps/runner/src/cli.ts" "$@"
+if [[ -f "$ROOT/apps/runner/src/cli.ts" && -f "$ROOT/node_modules/tsx/dist/loader.mjs" ]]; then
+  # The tsx CLI creates an IPC socket under TMPDIR even without watch mode.
+  # Its optional transform cache also creates/cleans a shared temp directory.
+  # Source runs use the exported loader with an in-memory cache, avoiding both
+  # transient paths while retaining cwd, temporary root, arguments and signals.
+  export TSX_DISABLE_CACHE=1
+  exec node --import "$ROOT/node_modules/tsx/dist/loader.mjs" "$ROOT/apps/runner/src/cli.ts" "$@"
 fi
 
 exec node "$ROOT/apps/runner/dist/cli.js" "$@"
