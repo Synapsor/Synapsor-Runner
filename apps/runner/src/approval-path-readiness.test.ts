@@ -90,8 +90,10 @@ describe('nonmutating reviewer impact on proposed Action removal',()=>{
     expect(identity).toEqual(before); const lines=reviewerGrantImpactLines(impact,f.root).join('\n');
     expect(lines).toContain('policy approver'); expect(lines).toContain('separate'); expect(lines).toContain('historical approvals'); expect(lines).not.toContain(f.key);
   });
-  it('does not silently treat unrestricted legacy roles as an exact scoped reviewer inventory', async()=>{
+  it.each([false,true])('does not silently treat unrestricted legacy roles as an exact scoped reviewer inventory (shared APPLY=%s)', async sharedApply=>{
     const f=await fixture(); delete f.config.operator_identity!.operators!.reviewer!.outcomes;
+    if(sharedApply) f.config.operator_identity!.apply_roles=['action_reviewer'];
+    expect(await f.assess()).toMatchObject({state:'covered', required_role:'action_reviewer'});
     expect(reviewerGrantRemovalImpact(f.config.operator_identity,[f.outcome],[f.outcome])).toMatchObject({state:'unknown',reason:'UNRESTRICTED_LEGACY_REVIEWER_IMPACT_UNASSESSED'});
   });
   it('an absent/unavailable or mismatched authority never becomes zero impact',async()=>{

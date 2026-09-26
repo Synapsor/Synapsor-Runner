@@ -21,8 +21,10 @@ export function reviewerGrantRemovalImpact(identity: RuntimeConfig["operator_ide
   if (identity.provider !== "signed_key") return { state: "unknown", grants: [], reason: "EXTERNAL_REVIEWER_ROSTER_UNASSESSED" };
   const current = new Set(currentOutcomes), removed = new Set(removedOutcomes);
   if (removedOutcomes.some(outcome => !current.has(outcome))) return { state: "unknown", grants: [], reason: "ACTION_REMOVAL_BASELINE_CHANGED" };
+  // Legacy roles may satisfy both APPLY and an approval mandate. Membership in
+  // apply_roles does not establish that an unrestricted signer is APPLY-only.
   const unscoped = Object.values(identity.operators ?? {}).some(operator => operator.authority_kind !== "scoped_apply"
-    && !operator.outcomes?.length && operator.roles.some(role => !(identity.apply_roles ?? []).includes(role)));
+    && !operator.outcomes?.length && operator.roles.length > 0);
   const grants = Object.entries(identity.operators ?? {}).sort(([a], [b]) => a.localeCompare(b)).flatMap(([subject, operator]) => {
     if (operator.authority_kind === "scoped_apply") return [];
     // Legacy unrestricted reviewers are not converted to scoped ones here.
