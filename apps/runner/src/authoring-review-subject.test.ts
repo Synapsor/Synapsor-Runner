@@ -110,6 +110,66 @@ for (const backend of ["sqlite", "postgres"] as const) describe.skipIf(backend =
     expect(f.chooseOption).not.toHaveBeenCalled();
     expect(await readActionRuleAuthorityDraft(f.root, f.draft.authority.name)).toBeUndefined();
   });
+  it('offers exact disabled and published subjects on explicit Review while Resume retains the pending target', async () => {
+    const f = await fixture(backend), active = await f.publish();
+    // Composed lifecycle: normal repository save retains the exact original
+    // candidate after real publication, as in the authentic stopped project.
+    await writeActionRuleAuthorityDraft(f.root, f.draft);
+    const before = await readActionRuleReviewSubjects(f.root);
+    const disabled = before.find(item => item.identity.location === 'disabled')!;
+    const pending = {...f.resume, pending_policy_review: {...f.request, action_subject: disabled.identity}};
+    const original = structuredClone(pending);
+    expect((await f.resolve(pending, f.context, false)).subject?.identity).toEqual(disabled.identity);
+    expect(f.chooseOption).not.toHaveBeenCalled();
+    f.chooseOption.mockResolvedValueOnce('1');
+    const selected = await f.resolve(pending);
+    expect(selected.subject).toMatchObject({authority: active, identity: {location: 'active'}});
+    expect(f.chooseOption).toHaveBeenCalledOnce();
+    expect((f.chooseOption.mock.calls as unknown as [string, {label: string}[]][])[0]?.[1]).toEqual(expect.arrayContaining([
+      expect.objectContaining({label: expect.stringContaining('Disabled candidate')}),
+      expect.objectContaining({label: expect.stringContaining('Active published')}),
+    ]));
+    expect(pending).toEqual(original);
+    expect(await readActionRuleReviewSubjects(f.root)).toEqual(before);
+  });
+  it('cancels explicit subject choice without changing history or completing pending work', async () => {
+    const f = await fixture(backend); await f.publish(); await writeActionRuleAuthorityDraft(f.root, f.draft);
+    const before = await readActionRuleReviewSubjects(f.root);
+    const pending = {...f.resume, pending_policy_review: {...f.request,
+      action_subject: before.find(item => item.identity.location === 'disabled')!.identity}};
+    const original = structuredClone(pending); f.chooseOption.mockResolvedValueOnce(undefined as never);
+    expect(await f.resolve(pending)).toMatchObject({cancelled: true});
+    expect(pending).toEqual(original); expect(await readActionRuleReviewSubjects(f.root)).toEqual(before);
+  });
+  it('retains the recorded exact active subject after restart despite an equal-value draft, while respecting a real pending edit', async () => {
+    const f = await fixture(backend); await f.publish(); await writeActionRuleAuthorityDraft(f.root, f.draft);
+    const active = (await readActionRuleReviewSubjects(f.root)).find(item => item.identity.location === 'active')!;
+    // Normal resume factory record; this component control measures target
+    // selection, not a claimed canonical BUSINESS report or public review.
+    const completed = {...f.resume, completed_policy_reviews: [{...f.resume.completed_policy_reviews![0]!,
+      request: {...f.request, action_subject: active.identity}}]};
+    expect((await f.resolve(completed)).subject?.identity).toEqual(active.identity);
+    expect(f.chooseOption).not.toHaveBeenCalled();
+    const next = f.make(600); await writeActionRuleAuthorityDraft(f.root, next);
+    const edit = {...completed, pending_action_revision: {outcome: next.authority.rules[0]!.rule.outcome,
+      instruction: 'Change duration', baseline_digest: f.draft.digest,
+      preparation: {read_digest: f.context.read_digest, authority_digest: f.draft.digest, prepared_digest: next.digest}}};
+    const originalEdit = structuredClone(edit);
+    expect((await f.resolve(edit)).subject?.authority.digest).toBe(next.digest);
+    expect(edit).toEqual(originalEdit);
+  });
+  it('refuses publication drift during explicit subject choice and does not offer unproven active authority', async () => {
+    const f = await fixture(backend); await f.publish(); await writeActionRuleAuthorityDraft(f.root, f.draft);
+    const pending = {...f.resume, pending_policy_review: f.request};
+    f.chooseOption.mockImplementationOnce(async () => { await writeActionRuleAuthorityDraft(f.root, f.make(600)); return '1'; });
+    await expect(f.resolve(pending)).rejects.toThrow('POLICY_REVIEW_SUBJECT_CHANGED');
+    expect(pending.pending_policy_review).toEqual(f.request);
+    const unknown = await fixture(backend); await unknown.publish(); await writeActionRuleAuthorityDraft(unknown.root, unknown.draft);
+    vi.spyOn(ControlPolicyRepository.prototype, 'history').mockResolvedValue([]);
+    const selected = await unknown.resolve({...unknown.resume, pending_policy_review: unknown.request});
+    expect(selected.subject?.identity.location).toBe('disabled');
+    expect(unknown.chooseOption).not.toHaveBeenCalled();
+  });
   it("preserves exact pending edits and explicitly distinguishes another current publication", async () => {
     const f = await fixture(backend); await f.publish();
     const next = f.make(600); await writeActionRuleAuthorityDraft(f.root, next);

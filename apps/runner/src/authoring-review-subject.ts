@@ -58,6 +58,13 @@ export async function resolveAuthoringReviewSubject(input: {
       && (!pending.action_subject || canonicalJsonDigest(item.identity) === canonicalJsonDigest(pending.action_subject)))
       ?? (published && (!pending.action_subject || pending.action_subject.location === "active"
         && canonicalJsonDigest(published.identity) === canonicalJsonDigest(pending.action_subject)) ? published : undefined);
+    // Explicit Review may deliberately inspect the already-eligible current
+    // publication while retaining the exact disabled request. Resume never
+    // retargets it, and equality of names/programs alone supplies no choice.
+    if (subject?.identity.location === "disabled" && input.selectCurrentContext && explicitCurrent) {
+      subject = await select([subject, explicitCurrent]);
+      if (!subject) return { cancelled: true, assertCurrent: async () => {} };
+    }
     // A pending disabled review can move to its own exact publication only on
     // explicit Review, with a displayed lifecycle change and renewed binding.
     if (!subject && published && input.selectCurrentContext) subject = published;
@@ -72,6 +79,10 @@ export async function resolveAuthoringReviewSubject(input: {
     const prepared = input.resume.pending_action_revision.preparation?.prepared_digest;
     subject = prepared ? draftSubjects.find(item => item.authority.digest === prepared) : undefined;
     if (!subject) failure("POLICY_REVIEW_CANDIDATE_CHANGED", "The exact saved edit is not a current disabled candidate. Its request remains pending; current active authority cannot substitute for it.");
+  } else if (published && anchor?.action_subject?.location === "active") {
+    // A completed exact active review does not move back to a same-value
+    // disabled record on restart. A real pending edit was handled above.
+    subject = published;
   } else if (anchor && sameContext(anchor, input.context) && draftSubjects.some(item => sameAction(item, anchor))) {
     subject = draftSubjects.find(item => sameAction(item, anchor));
   } else if (published && !draftSubjects.length) subject = published;
