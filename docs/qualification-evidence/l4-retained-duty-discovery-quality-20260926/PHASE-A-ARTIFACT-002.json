@@ -1,0 +1,30 @@
+{
+  "phase": "A",
+  "candidate": 2,
+  "source_commit": "1f67aac549bde9da4d1d29619c6ac550af21a6bb",
+  "product_commit": "1f67aac549bde9da4d1d29619c6ac550af21a6bb",
+  "tests_commit": "1f67aac549bde9da4d1d29619c6ac550af21a6bb",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/l4-retained-duty-discovery-quality-20260926/phase-A-frozen-v2/installed",
+  "tree_sha256": "4f5bf1821838bb58f4989fe0613edc2c9d3e466250e39fdec3f5ac2f8f1785c7",
+  "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/l4-retained-duty-discovery-quality-20260926/phase-A-frozen-v2/installed-artifact-manifest.json",
+  "manifest_sha256": "72725498a0a34432d1f583573305c4316ab697787f12243deb7beda8f5423798",
+  "archive": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/l4-retained-duty-discovery-quality-20260926/phase-A-frozen-v2/installed-artifact.tar.gz",
+  "archive_sha256": "5e80e41ecad6e8096612a7837b5b3732fb387e38c62fdd754c48f53f46860a01",
+  "entries": 7601,
+  "gates": {
+    "complete": "stable-full-A-004",
+    "typecheck": "types-A-012",
+    "selected_postgres": "selected-postgres-A-002",
+    "offline": "offline-package-plan-attempt2.json",
+    "index": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/l4-retained-duty-discovery-quality-20260926/records/PHASE-A-GATE-SUMMARY-002.json",
+    "index_sha256": "981c73f279d3e08af9b173f68c69b72c19929002ececc767fcd1a24a9cf62d64"
+  },
+  "source_checkpoint": "0458597b2e46759fe604e54691911ce283ee114e1301d03fe17c6eadfe3e4479",
+  "main_verification": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/l4-retained-duty-discovery-quality-20260926/records/MAIN-PHASE-A-ARTIFACT-VERIFICATION-002.json",
+  "main_verification_sha256": "7338b23102c34ee2e41ea8fcac5baefff80df20c7c7f95bbb322f2f12f7b097a",
+  "installed_acceptance": "PENDING independent tester",
+  "live_L4": "NOT RUN",
+  "main_inference": 0,
+  "assignment_extra_candidate_slots_used": "1/1",
+  "previous_candidate_preserved": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/l4-retained-duty-discovery-quality-20260926/PHASE-A-ARTIFACT.json"
+}
