@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "classification": "Known-case Branch F/L4 exact reviewer setup, stopped before paid lane; report only",
+  "product_tests_commit": "1422fd470a26e5e490bd145c0b378f5a70523d37",
+  "previous_delivery": "cf3bbeeba17b0ffbc0af93d00c18e3d0d90d4b8a",
+  "installed_tree_sha256": "2dbf84a62e1295702a54dcd1b909973eb6733d0a894a3773ebb48e4a3b557777",
+  "manifest_sha256": "63026b2eb4c5cbfd94b9159438e9bb709d3f24b4bcab2e96a1017167b9965da6",
+  "archive_sha256": "ed3445a1367c627dd83095c74dafd26e49a9f1fde6ac18c5e94203a861a66d62",
+  "entries": 7601,
+  "verdicts": {
+    "authentic_restore": "PASS",
+    "exact_proposed_new_reviewer_scope": "PASS_NOT_ENROLLED",
+    "old_reviewer_and_apply_preservation": "PASS",
+    "installed_public_enrollment": "FAIL_POLICY_APPROVER_ROLE_OUT_OF_SCOPE",
+    "preview_default_No_confirmation": "NOT_REACHED",
+    "new_enrolled_reviewer_authentication_and_signed_approval": "NOT_RUN",
+    "execution_renewal_and_READY": "NOT_REACHED",
+    "native_request_accuracy_and_narration": "NOT_RUN",
+    "host_approval_worker_effect_new_receipts": "NOT_RUN",
+    "L4": "NOT_RUN",
+    "complete_logical_and_existing_physical_file_preservation": "PASS",
+    "cold_restore": "PASS_TESTER_PERSONAL_MAIN_INSPECTED"
+  },
+  "cause": "Every non-APPLY reviewer must match current active Action mandates; unchanged historical reviewer for removed follow-up fails and blocks exact valid new finalization addition",
+  "new_grant_input_sha256": "600b03c7d434d3406ec70e608b21cddaa6bc5e75a45f9639591a8a07d405b167",
+  "input_grant": {
+    "subject": "tester_finalization_reviewer",
+    "authority_kind": "legacy",
+    "roles": [
+      "authorized_human_reviewer"
+    ],
+    "outcomes": [
+      "energy_ops.finalize_settlement_cycle"
+    ]
+  },
+  "granted_permissions": [],
+  "tester_review_sha256": "caa370a1938da97d9c083ff275ec0821c2ae8125705baacfe2bb49896bd5b4f5",
+  "tester_index_sha256": "0fd5432e52f74abe4443d0cee99e24ceec94eaf4fddf48625f0e735d211df09e",
+  "tester_files_recomputed": 35,
+  "final_checkpoint_sha256": "6b6dd6566fe2ab3306d68ed53fe1ea4735d319a94ad89673a713c0298b93fbe9",
+  "new_operations": {
+    "enrollment_attempts": 1,
+    "saved_enrollments": 0,
+    "provider_sends": 0,
+    "reservations": 0,
+    "requests": 0,
+    "approvals": 0,
+    "workers": 0,
+    "effects": 0,
+    "cost_usd": "0"
+  },
+  "financial": "Unchanged closed ledger324e817cf2991ff688f49fe38090392847e3082d170f997ee398f6c97a18d0d8; campaignsettled3.00504865/tripwirebasis1.67189935/holds0.26298000+0.71608250/native119of192/112transportrecords/cap60/tripwire10",
+  "local_preparation_files": [
+    "project/.synapsor/operator-public-keys/tester-finalization-reviewer.pub.pem",
+    "project/tester-finalization-reviewer-input.json"
+  ],
+  "physical_existing_file_changes": [],
+  "process_boundary_limitation": "Existing APPLY key unnecessarily read-only mounted in enrollment-only process without actor/signing/network; new reviewer secret not mounted. No model or worker launched. No perfect least-privilege claim.",
+  "removed_covered_containers": [
+    "tester-b-reviewer-reviewer-one-20260926",
+    "tester-b-reviewer-cold-refused-001-20260926"
+  ],
+  "retained_uncovered_containers": [
+    "tester-b-cycle2-rsa-20260925",
+    "tester-b-cycle2-ec-20260925",
+    "tester-b-cycle2-rsa2047-20260925",
+    "tester-b-cycle2-ed-20260925",
+    "tester-scope-20260924-a"
+  ],
+  "record_only_followups": [
+    "Approval-path conditional review/role/outcome/quorum coverage and unverified availability distinct from APPLY readiness",
+    "Historical roster maintenance after removal without authority resurrection or grant expansion"
+  ],
+  "historical_stage_B": "ATTEMPTED_NOT_PASSED",
+  "A": "OWNER_DEFERRED_BUSINESS_PENDING",
+  "next": "STOP; no repair/enrollment workaround/paid retry automatically authorized"
+}
