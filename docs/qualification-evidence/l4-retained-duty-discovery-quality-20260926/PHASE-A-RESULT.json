@@ -1,0 +1,71 @@
+{
+  "at_utc": "2026-09-26T19:33:50.647547+00:00",
+  "phase": "A",
+  "product_tests": "a672229b6ae444817df10b36a0500ef70ffe1205",
+  "installed_tree": "88b0829e84504e7b950e8f583c4c37e013c34f2a9bb6385e5b2c64f24f688182",
+  "product_contract": "independent PASS",
+  "BUSINESS": "genuine PASS",
+  "restart": "PASS validated_reuse zero sends",
+  "native_complete_narration": "NOT PASSED unsupported workflow absence inference",
+  "Main_inference_calls": 0,
+  "cost_usd": "0.33140105",
+  "campaign_settled_usd": "3.57659495",
+  "tripwire_basis_usd": "2.24344565",
+  "holds_usd": [
+    "0.26298000",
+    "0.71608250"
+  ],
+  "native_total": 130,
+  "authoring_total": 23,
+  "comparison_sends": 0,
+  "report_sha256": "f676d6f221649528a07701b93a03200cedc15d092268df299e717ead02c8340a",
+  "checkpoint_sha256": "77851a16fbd06ae7fcd9a7a72b405af6a65edb8f6a13329d1bab1f8c7df871bd",
+  "evidence": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/l4-retained-duty-discovery-quality-20260926/PHASE-A-ARTIFACT-003.json",
+      "sha256": "bd827abdb53f43d7c770648d16d4242e0229cf60aaa9b830cbabe8e723dc9281",
+      "bytes": 3229
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/l4-retained-duty-discovery-quality-20260926/records/PHASE-A-GATE-SUMMARY-003.json",
+      "sha256": "ff731e7292a46e5c1010d48bcfdca22093c7dced7527dc2315e2cd53682ea752",
+      "bytes": 2868
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-L4-repair-discovery-20260926/phase-A/REVIEW-CANDIDATE3-INSTALLED-001.md",
+      "sha256": "d85ba2338f4974a8a7771402ac26eea901020a7fbe811833aa562469a6550f82",
+      "bytes": 8366
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-L4-repair-discovery-20260926/phase-A/INSTALLED-ACCEPTANCE-INDEX-003.json",
+      "sha256": "f8461b3d1d848494a27ea274ab50ed2ee3cfa96d69557b9713f723f9576da81e",
+      "bytes": 114089
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-L4-repair-discovery-20260926/phase-A/LIVE-REVIEW-001.md",
+      "sha256": "6ee8163ed9cae79c6dcac28a8c416f8fcd725831a00b6175204034cf889b9f50",
+      "bytes": 7581
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-L4-repair-discovery-20260926/phase-A/LIVE-REVIEW-INDEX-001.json",
+      "sha256": "65b7d4448229e9fa2569cca83cde0db26c507f5efcda20105576a62342302378",
+      "bytes": 67380
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/l4-retained-duty-discovery-quality-20260926/records/MAIN-A3-GENUINE-SAVE-RESTART-CHECK-002.json",
+      "sha256": "ac274d484e17171ccda9585a65df766f4ee9ffd7bee28be69d18760ba59711b4",
+      "bytes": 1411
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/l4-retained-duty-discovery-quality-20260926/records/MAIN-A3-LIVE-SPEND-CHECK-001.json",
+      "sha256": "831e42821f634d43e19ac647346a67d3dd205ff10daec6dddf5824e8532b89a9",
+      "bytes": 717
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/l4-retained-duty-discovery-quality-20260926/records/MAIN-A3-FINAL-SEAL-CHECK-001.json",
+      "sha256": "95b0bd41eeeb9cfd5ad590e5708615ff2a7e243a404ad39b87fbf45061aad276",
+      "bytes": 1455
+    }
+  ],
+  "next": "Phase B independent source quality checkpoint; no more A paid operations"
+}
