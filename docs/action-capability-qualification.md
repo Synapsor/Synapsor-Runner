@@ -1,5 +1,9 @@
 # Action Capability Qualification
 
+## Branch R removal and fresh finalization stop — 2026-09-26
+
+The independent tester's bounded [continuation record](qualification-evidence/known-case-b-lifecycle-20260925/BRANCH-R-F-CONTINUATION-20260926.md) establishes the installed Branch R removed-authority approval and worker-launch refusals. Branch C's original queued finalization was not run because its non-delayed proof expired. A fresh finalization branch stopped in the tester's local send guard before any `app.request_change`; no new effect or receipt occurred, and L4 restart is **NOT RUN**. Both stopped states are sealed/cold-restored. Seven evidence-covered qualification containers were removed; five without verified full recoverable coverage remain. The original Stage B verdict is unchanged.
+
 ## Scoped APPLY signer and known-case B continuation — 2026-09-25
 
 Product/tests `d5d33351d6dfc251ad97f27bcdd5dfeac7b0d93a` implements exact-outcome, reviewed signed APPLY enrollment and selected nonmutating worker readiness while preserving legacy/dev deployments with no `operator_identity`. The complete final-source suite, types, selected PostgreSQL and ten offline/package checks passed; the independent tester passed the frozen installed readiness contract. The [bounded result](qualification-evidence/known-case-b-lifecycle-20260925/SCOPED-APPLY-READINESS-AND-L2-L4-RESULT.md) records exact artifact and evidence.
