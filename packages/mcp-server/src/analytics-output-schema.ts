@@ -258,6 +258,19 @@ const observedSubjectReferenceSchema = z.object({
   expires_at: z.string().datetime(),
 }).strict();
 
+const catalogPaginationSchema = z.object({
+  page_item_count: z.number().int().nonnegative(),
+  has_more: z.boolean(),
+  total: z.object({ kind: z.literal("exact"), value: z.number().int().nonnegative() }).strict(),
+  consistency: z.literal("fixed_authorized_catalog"),
+}).strict();
+
+const catalogSearchMatchSchema = z.object({
+  kind: z.enum(["exact_id", "exact_name", "phrase", "all_terms", "partial"]),
+  matched_terms: z.array(z.string()).max(16),
+  missing_terms: z.array(z.string()).max(16),
+}).strict();
+
 const resultEnvelopeMetaSchema = z.object({
   tenant_id: z.string().optional(),
   principal: z.string().optional(),
@@ -289,6 +302,21 @@ const legacyTrustedContextSchema = z.object({
 
 const scopedExploreResultSchema = z.object({
   status: z.enum(["ok", "empty", "fully_suppressed", "incomplete_comparison"]),
+  pagination: z.object({
+    page_item_count: z.number().int().nonnegative(),
+    has_more: z.null(),
+    next_cursor: z.null(),
+    total: z.object({ kind: z.literal("unavailable") }).strict(),
+    continuation: z.literal("not_supported"),
+    consistency: z.literal("single_read_only_transaction"),
+    guidance: z.string(),
+  }).strict().optional(),
+  completeness: z.object({
+    result_page: z.literal("not_established"),
+    suppressed: z.boolean(),
+    reviewed_exclusions: z.boolean(),
+    guidance: z.string(),
+  }).strict().optional(),
   counted_entity: z.object({
     resource: z.string(),
     primary_key: z.string(),
@@ -611,6 +639,7 @@ export const scopedExploreDescribeOutputSchema = z.object({
     }).strict()),
   }).strict()).optional(),
   next_cursor: z.union([z.number().int().nonnegative(), z.string().regex(/^cur_[A-Za-z0-9_-]{43}$/u)]).nullable().optional(),
+  pagination: catalogPaginationSchema.optional(),
   raw_sql_available: z.literal(false).optional(),
   source_rows_available_before_activation: z.literal(false).optional(),
 }).strict();
@@ -633,6 +662,8 @@ const scopedExploreClientDescribeResourceSchema = z.object({
   label: z.string().max(64).optional(),
   description: z.string().max(280).optional(),
   fields: z.array(reviewedClientFieldMetadataSchema).optional(),
+  search_match: catalogSearchMatchSchema.optional(),
+  queryable_root: z.boolean().optional(),
 }).passthrough();
 
 export const scopedExploreDescribeToolOutputSchema = z.object({
@@ -644,6 +675,7 @@ export const scopedExploreDescribeToolOutputSchema = z.object({
   source_database_changed: z.literal(false).optional(),
   resources: z.array(scopedExploreClientDescribeResourceSchema).optional(),
   next_cursor: z.union([z.number().int().nonnegative(), z.string().regex(/^cur_[A-Za-z0-9_-]{43}$/u)]).nullable().optional(),
+  pagination: catalogPaginationSchema.optional(),
   catalog_view: z.enum(["resource_index", "resource_detail"]).optional(),
   metadata_only: z.literal(true).optional(),
   contains_source_values: z.literal(false).optional(),

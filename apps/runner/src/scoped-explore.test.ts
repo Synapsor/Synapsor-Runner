@@ -581,7 +581,14 @@ describe("Scoped Explore", () => {
         expect(explore({ plan })).toBe(false);
         expect((await client.callTool({ name: "app.explore_data", arguments: { plan } })).isError).toBe(true);
       }
-      for (const args of [rows, aggregate]) expect((await client.callTool({ name: "app.explore_data", arguments: args })).isError).not.toBe(true);
+      for (const args of [rows, aggregate]) {
+        const result = await client.callTool({ name: "app.explore_data", arguments: args });
+        expect(result.isError).not.toBe(true);
+        expect(result.structuredContent).toHaveProperty("outcome.result.pagination", expect.objectContaining({
+          page_item_count: 0, has_more: null, next_cursor: null, total: { kind: "unavailable" }, continuation: "not_supported",
+        }));
+        expect(result.structuredContent).toHaveProperty("outcome.result.completeness.result_page", "not_established");
+      }
       // The adapter sees tools/list bytes, not a separately authored schema.
       const definitions = tools.map(tool => ({ name: tool.name, description: tool.description ?? "",
         input_schema: tool.inputSchema as Record<string, unknown> }));

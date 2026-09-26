@@ -17,7 +17,9 @@ export function projectDescribeDataForModel(
         : modelResourceDetail(resource)
       : result.catalog_version === "synapsor.scoped-catalog.v2"
         ? withoutUndefined({ id: modelString(resource.id), label: modelString(resource.label),
-            description: modelString(resource.description), boundary_name: modelString(resource.boundary_name) })
+            description: modelString(resource.description), boundary_name: modelString(resource.boundary_name),
+            queryable_root: typeof resource.queryable_root === "boolean" ? resource.queryable_root : undefined,
+            search_match: modelRecord(resource.search_match) ? structuredClone(resource.search_match) : undefined })
       : modelResourceIndex(resource));
   const projected: Record<string, unknown> = {
     ...structuredClone(result),

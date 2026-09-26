@@ -14,6 +14,40 @@ const call = (session: ScopedCatalogSession, index: ScopedCatalogIndex, request 
   session.describe({ index, binding, request, key: "actions" });
 
 describe("scoped indexed catalog", () => {
+  it("ranks exact ids and strong phrases; tolerates incidental words and labels bounded partial alternatives", () => {
+    const record = (id: string, title: string, summary = ""): CatalogEntry => ({ id, title, summary,
+      value: { outcome: id }, detail: () => ({ outcome: id }) });
+    const index = new ScopedCatalogIndex([
+      record("review.approve_claim", "Approve claim", "Record a reviewed decision"),
+      record("review.reject_claim", "Reject claim", "Record a reviewed decision"),
+      record("review.audit", "Inspect decision", "Approve claim history"),
+    ]);
+    expect(index.search(" REVIEW / APPROVE-CLAIM ").ids[0]).toBe("review.approve_claim");
+    expect(index.search("please approve the claim").ids[0]).toBe("review.approve_claim");
+    const partial = call(new ScopedCatalogSession(), index, { query: "approve reject" });
+    expect(partial.discovery).toHaveProperty("search_status", "partial_matches");
+    expect(partial.actions).toEqual([
+      expect.objectContaining({ outcome: "review.approve_claim", search_match: expect.objectContaining({ kind: "partial", missing_terms: ["reject"] }) }),
+      expect.objectContaining({ outcome: "review.reject_claim", search_match: expect.objectContaining({ kind: "partial", missing_terms: ["approve"] }) }),
+    ]);
+    expect(index.search("unrelated absent approve register transaction").ids).toEqual([]);
+    expect(index.search("approve claim 999").ids).toEqual([]); // Never drop an unmatched numeric identifier.
+    expect(call(new ScopedCatalogSession(), index, { query: "approve reject" }).discovery).not.toHaveProperty("empty_search");
+    expect(() => call(new ScopedCatalogSession(), index, { detail: "REVIEW.APPROVE_CLAIM" })).toThrow(/not available/);
+  });
+
+  it("reports page counts and exact authorized match totals separately, with an unambiguous end", () => {
+    const index = new ScopedCatalogIndex(entries(13));
+    const session = new ScopedCatalogSession();
+    const first = call(session, index, { limit: 5 });
+    expect(first.pagination).toMatchObject({ page_item_count: 5, has_more: true, total: { kind: "exact", value: 13 } });
+    const second = call(session, index, { limit: 5, cursor: first.next_cursor });
+    const last = call(session, index, { limit: 5, cursor: second.next_cursor });
+    expect(last.pagination).toMatchObject({ page_item_count: 3, has_more: false, total: { kind: "exact", value: 13 } });
+    expect(last.next_cursor).toBeNull();
+    expect(call(new ScopedCatalogSession(), index, { query: "absent" }).discovery).toHaveProperty("search_status", "no_matches");
+    expect(call(new ScopedCatalogSession(), index).discovery).toHaveProperty("search_status", "no_query");
+  });
   it("reports empty search only for a genuinely empty filtered result, never for hits or browsing", () => {
     const index = new ScopedCatalogIndex(entries(4));
     const session = new ScopedCatalogSession();
@@ -64,7 +98,7 @@ describe("scoped indexed catalog", () => {
       expect(() => call(session, index, { cursor: first.next_cursor }, binding)).toThrowError(/Restart discovery/u);
     });
 
-  it("rejects tampered, replayed, cross-query, cross-page-size, expired and foreign-session cursors", () => {
+  it("replays the same page consistently but rejects tampered, cross-query, cross-page-size, expired and foreign-session cursors", () => {
     let now = 10;
     const index = new ScopedCatalogIndex(entries(15));
     const session = new ScopedCatalogSession(() => now);
@@ -73,8 +107,9 @@ describe("scoped indexed catalog", () => {
     expect(() => call(session, index, { query: "replenish", cursor })).toThrow();
     expect(() => call(session, index, { query: "restock", limit: 10, cursor })).toThrow();
     expect(() => call(new ScopedCatalogSession(() => now), index, { query: "restock", cursor })).toThrow();
-    const next = call(session, index, { query: "restock", cursor }).next_cursor;
-    expect(() => call(session, index, { query: "restock", cursor })).toThrow();
+    const page = call(session, index, { query: "restock", cursor });
+    const next = page.next_cursor;
+    expect(call(session, index, { query: "restock", cursor })).toEqual(page);
     now += CATALOG_LIMITS.cursorMs;
     expect(() => call(session, index, { query: "restock", cursor: next })).toThrow();
   });

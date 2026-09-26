@@ -27,6 +27,7 @@ import {
 import type { ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
 import { z } from "zod";
 import { createScopedReadDiscovery } from "./scoped-read-discovery.js";
+import { createActionSubjectNavigation } from "./action-subject-navigation.js";
 import { RuntimeAdmissionError } from "./project-runtime-admission.js";
 import { operationalLog, safeOperationalErrorCode } from "./cli-logging.js";
 import runnerPackage from "../package.json" with { type: "json" };
@@ -258,6 +259,7 @@ export function createScopedExploreMcpServer(
       ? portableDiscoveryInputJsonSchema(policyManagement ? z.union([exploreInput, policyManagementToolInputSchema(name)]) : exploreInput)
       : undefined);
   const settingsHint = policyManagement ? " For your own agent settings, use policy_view: agent_rules instead of source-data arguments; app.explore_data section summary provides its current typed control reference." : "";
+  const describeSubjectNavigation = createActionSubjectNavigation(runtime);
   if (options.semanticActions || policyManagement) {
     const actions = options.semanticActions ?? createInactiveSemanticActionRuntime();
     for (const tool of actions.listTools()) {
@@ -271,7 +273,9 @@ export function createScopedExploreMcpServer(
         const source = sourceSchema.safeParse(args);
         if (!source.success) throw new McpRuntimeError("ARGUMENT_INVALID", "Use one complete source Action contract, or the separately enabled agent-rules view; do not mix them.");
         if (isBoundarySetRuntime(runtime)) await runtime.requireTrustedScope?.();
-        return actions.callTool(tool.name, source.data);
+        return tool.name === "app.describe_actions"
+          ? actions.callTool(tool.name, source.data, { describeSubjectNavigation })
+          : actions.callTool(tool.name, source.data);
       }, undefined, {
         requestMeta: extra._meta, localPresentation: options.localPresentation,
         authorityMetadata: runtime.model_authority_metadata ?? "semantic",
@@ -290,7 +294,7 @@ export function createScopedExploreMcpServer(
   }).strict();
   server.registerTool(SCOPED_EXPLORE_DESCRIBE_TOOL, {
     title: "Describe reviewed data",
-    description: 'Metadata only; no source rows. Choose listing {} or {"query":"text","limit":5}, OR detail {"resource":"<exact id>"}. Host rejects a resource with meaningful query/limit/cursor. For detail, omit/null query; omit/null/0 limit and cursor. For listing, omit/null/empty resource. Optional boundary applies to BOTH operations. Never invent listing defaults for detail. Limit is a maximum; byte-bounded pages may contain fewer entries. Follow next_cursor until null. Keep the same query/boundary/context. Copy exact ids into app.explore_data for values. Search matches are not row eligibility.' + settingsHint,
+    description: 'Metadata only; no source rows. List {} or {"query":"text","limit":5}; exact detail {"resource":"<exact id>"}, optionally boundary. Never mix detail with meaningful query/limit/cursor. Detail permits null query and absent/null/0 limit/cursor; listing permits absent/null/empty resource. Copy exact permitted fields/operators into app.explore_data; reuse still-current detail. Search ranks exact/full matches before labelled partial matches, not row eligibility. pagination.page_item_count is this page; pagination.has_more/next_cursor mark continuation; pagination.total counts authorized metadata only. Follow next_cursor until null. Keep the same query/limit/boundary/context. Limit is a maximum; byte-bounded pages may contain fewer entries. Explore returns bounded live results without a continuation cursor or complete source total.' + settingsHint,
     inputSchema: policyManagement ? withPolicyManagementInput(describeInput, SCOPED_EXPLORE_DESCRIBE_TOOL) : describeInput,
     outputSchema: scopedExploreDescribeToolOutputSchema,
     annotations: {

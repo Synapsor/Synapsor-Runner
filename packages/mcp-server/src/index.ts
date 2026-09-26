@@ -50,6 +50,7 @@ export type {
   SemanticActionContextResolver,
   SemanticActionRequestContext,
   SemanticActionRuntime,
+  SemanticActionCatalogOptions,
   HttpMcpServerOptions,
   StreamableHttpSessionFactory,
   StreamableHttpSessionRuntime,

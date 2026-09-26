@@ -5,6 +5,16 @@ import { ActionRuleError } from "./errors.js";
 
 export const ACTION_DISCOVERY_CONTRACT_BYTES = 12_288;
 
+/** Inputs are caller intent, not access to private verification facts. */
+export function actionRulePublicInputs(rule: ActionRuleSpecV1) {
+  return (rule.inputs ?? []).map((definition) => ({ ...definition, required: true,
+    origin: "caller_business_input" as const,
+    acquisition: { source: "authorized_caller", public_lookup: "not_established_by_action_contract",
+      guidance: "Use a value explicitly supplied by the authorized caller or their established business process. If missing, ask for it before requesting. Do not guess from private verification, an earlier request or current posted values." },
+  }));
+}
+
+
 export function actionRuleDiscoveryMetadata(rule: ActionRuleSpecV1): { title: string; summary: string; aliases: string[] } {
   const extension = rule["x-runner-discovery"];
   const fallback = rule.name.split(".").slice(1).join(" ").replace(/[_:-]+/gu, " ").trim() || rule.name;
@@ -31,12 +41,17 @@ export function actionRuleDiscoveryContract(compiled: CompiledActionRuleV1, appr
   const metadata = actionRuleDiscoveryMetadata(compiled.rule);
   return {
     outcome: compiled.outcome, availability, description: metadata.title, summary: metadata.summary,
-    inputs: (compiled.rule.inputs ?? []).map((definition) => ({ ...definition, required: true, origin: "caller_business_input" })),
-    subjects: compiled.rule.subjects.map((subject) => ({ binding: subject.binding, resource: subject.resource, reference: "opaque Explore subject reference" })),
+    inputs: actionRulePublicInputs(compiled.rule),
+    subjects: compiled.rule.subjects.map((subject) => ({ binding: subject.binding, resource: subject.resource, reference: "opaque Explore subject reference",
+      navigation: { status: "not_established", describe_data: { resource: subject.resource },
+        guidance: "Request exact current data detail to establish permitted rows, fields and filters. Use the reference accompanying the selected returned row; never fabricate it. Public rows do not establish private eligibility." },
+    })),
     request_shape: { outcome: compiled.outcome,
       subject_refs: Object.fromEntries(compiled.rule.subjects.map((subject) => [subject.binding, "obj_<opaque reference>"])),
       ...(compiled.rule.inputs?.length ? { inputs: Object.fromEntries(compiled.rule.inputs.map((definition) =>
         [definition.name, "<value matching this input's reviewed type and bounds>"])) } : {}) },
+    request_shape_is_template: true,
+    request_guidance: "Replace every placeholder with the selected row's real opaque reference and authorized typed caller inputs. Unfilled placeholders are not usable arguments. Missing inputs require caller information, not guesses or eligibility probes.",
     eligibility: "not_checked; request_change validates this customer's references, inputs and current facts",
     proposal_effect: { scope: "primary_only; see business_effects for all components", operation: compiled.effect_envelope.operation, resource: compiled.effect_envelope.target_resource,
       fields: compiled.effect_envelope.allowed_fields.map((field) => field.name), max_rows: 1 },

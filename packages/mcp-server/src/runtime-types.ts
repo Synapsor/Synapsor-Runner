@@ -711,10 +711,18 @@ export type SemanticActionRequestContext = {
   close?(): void | Promise<void>;
 };
 
+export type SemanticActionCatalogOptions = {
+  /** Only current authorized model-facing Read metadata; no source rows. */
+  describeSubjectNavigation?: (resources: readonly string[]) => Promise<{
+    binding: string;
+    resources: Record<string, Record<string, unknown>>;
+  }>;
+};
+
 export type SemanticActionRuntime = {
   listTools(): LocalToolMetadata[];
   hasTool(name: string): boolean;
-  callTool(name: string, args: Record<string, unknown>): Promise<Record<string, unknown>>;
+  callTool(name: string, args: Record<string, unknown>, options?: SemanticActionCatalogOptions): Promise<Record<string, unknown>>;
 };
 
 export type SemanticActionContextResolver = (

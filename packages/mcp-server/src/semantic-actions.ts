@@ -2,6 +2,7 @@ import {
   ActionRuleError,
   actionRuleDiscoveryContract,
   actionRulePublicEffects,
+  actionRulePublicInputs,
   actionRuleDiscoveryMetadata,
   snapshotActionRuleRegistry,
   evaluateSemanticActionEligibility,
@@ -131,16 +132,19 @@ export function createSemanticActionRuntime(input: {
   return {
     listTools: () => structuredClone(tools),
     hasTool: (name) => name === DESCRIBE_ACTIONS_TOOL || name === REQUEST_CHANGE_TOOL,
-    async callTool(name, args) {
+    async callTool(name, args, options) {
       if (name === DESCRIBE_ACTIONS_TOOL) {
         const registry = await loadRegistry();
         const authorization = await input.resolveCatalogAuthorization(registry);
         const request = parseCatalogRequest(args);
         const unavailable = await input.unavailableOutcomes?.() ?? [];
-        const binding = canonicalJsonDigest({ registry: registry.digest, authorization, unavailable });
+        const allowed = authorization.allowed_outcomes ? new Set(authorization.allowed_outcomes) : undefined;
+        const visible = registry.rules.filter((entry) => !allowed || allowed.has(entry.compiled.outcome));
+        const selected = request.detail ? visible.find((entry) => entry.compiled.outcome === request.detail) : undefined;
+        const navigationResources = selected ? selected.compiled.rule.subjects.map(({ resource }) => resource) : [];
+        const navigation = navigationResources.length ? await options?.describeSubjectNavigation?.(navigationResources) : undefined;
+        const binding = canonicalJsonDigest({ registry: registry.digest, authorization, unavailable, navigation: navigation?.binding ?? null, navigation_subject: selected?.compiled.outcome ?? null });
         if (!cachedCatalog || cachedCatalog.binding !== binding) {
-          const allowed = authorization.allowed_outcomes ? new Set(authorization.allowed_outcomes) : undefined;
-          const visible = registry.rules.filter((entry) => !allowed || allowed.has(entry.compiled.outcome));
           const unavailableSet = new Set(unavailable);
           const index = new ScopedCatalogIndex(visible.map((entry) => {
             const activated = resolveActivatedActionRule(registry, entry.compiled.outcome);
@@ -150,16 +154,21 @@ export function createSemanticActionRuntime(input: {
             return { id: activated.compiled.outcome, ...metadata,
               value: { outcome: activated.compiled.outcome, description, summary: metadata.summary, availability,
                 subjects: activated.compiled.rule.subjects.map(({ binding, resource }) => ({ binding, resource })),
+                inputs: actionRulePublicInputs(activated.compiled.rule).map(({ acquisition: _acquisition, ...definition }) => definition),
+                business_effects: actionRulePublicEffects(activated.compiled),
+                exact_detail: { outcome: activated.compiled.outcome },
                 eligibility: "not_checked", approval: { disclosure: availability === "available" ? "not_reported" : "unavailable" } },
-              detail: () => describeAction(registry, activated, availability),
+              detail: () => describeAction(registry, activated, availability, selected?.compiled.outcome === activated.compiled.outcome ? navigation?.resources : undefined),
             };
           }));
           cachedCatalog = { binding, index };
         }
+        const currentNavigation = navigationResources.length ? await options?.describeSubjectNavigation?.(navigationResources) : undefined;
         const current = await loadRegistry();
         const currentAuthorization = await input.resolveCatalogAuthorization(current);
         const currentUnavailable = await input.unavailableOutcomes?.() ?? [];
-        if (canonicalJsonDigest({ registry: current.digest, authorization: currentAuthorization, unavailable: currentUnavailable }) !== binding) {
+        if (canonicalJsonDigest({ registry: current.digest, authorization: currentAuthorization, unavailable: currentUnavailable,
+          navigation: currentNavigation?.binding ?? null, navigation_subject: selected?.compiled.outcome ?? null }) !== binding) {
           throw new McpRuntimeError("CATALOG_CURSOR_INVALID", "Reviewed authority changed during discovery. Restart discovery with the current authorized catalog.");
         }
         return catalogSession.describe({ index: cachedCatalog.index, binding, request,
@@ -331,7 +340,7 @@ function semanticActionToolMetadata(): LocalToolMetadata[] {
     {
       name: DESCRIBE_ACTIONS_TOOL,
       title: "Describe reviewed actions",
-      description: 'Choose listing {} or {"query":"text","limit":5}, OR exact detail {"outcome":"<exact id>"}. Host rejects outcome combined with non-null query/limit/cursor. Optional null means omitted: full-property detail uses query:null, limit:null, cursor:null; listing uses outcome:null. Never invent listing defaults for detail. Limit is a maximum; byte-bounded pages may contain fewer entries. Follow next_cursor until null. Keep the same query/context. Search returns bounded summaries; empty input retains a bounded compatibility page of public request contracts. Inspect the chosen outcome before requesting it. Availability is not eligibility. No source rows are read and no authority is granted. ' + APPROVAL_DISCLOSURE_GUIDANCE,
+      description: 'List {} or {"query":"text","limit":5}; exact detail {"outcome":"<exact id>"}. Never mix outcome with meaningful query/limit/cursor; null means omitted. Exact detail connects current permitted Read/reference navigation and required caller inputs; ask the caller if an input is missing, never guess a private verifier value. Reuse still-current exact detail. Search ranks exact ids/names and full matches before labelled partial matches; ambiguous alternatives are not a chosen operation. pagination.page_item_count is this page; pagination.has_more/next_cursor mark continuation; pagination.total counts authorized catalog metadata only. Follow next_cursor until null. Keep the same query/limit/context. Limit is a maximum; byte-bounded pages may contain fewer entries. Empty input retains a bounded compatibility page of public request contracts. Availability is not eligibility; no source rows are read or authority granted. ' + APPROVAL_DISCLOSURE_GUIDANCE,
       kind: "action_catalog",
       input_schema: { query: { type: "string", required: false }, limit: { type: "number", required: false },
         cursor: { type: "string", required: false }, outcome: { type: "string", required: false } },
@@ -347,7 +356,7 @@ function semanticActionToolMetadata(): LocalToolMetadata[] {
     {
       name: REQUEST_CHANGE_TOOL,
       title: "Request a reviewed change",
-      description: "Request one activated business outcome using opaque Explore references and only the typed business inputs described by app.describe_actions. Runner validates those inputs and reloads authoritative facts to derive an immutable proposal; this tool cannot approve, apply, or accept an arbitrary patch. To check an accepted request later, repeat the identical outcome, original subject_refs and inputs. An already recorded request returns its durable status, not a second proposal. Do not obtain new references to check status. Completion requires a verified execution receipt; if authority or context changed, report unavailable rather than recreating the request.",
+      description: "Request one activated business outcome using opaque Explore references and only the typed business inputs described by app.describe_actions. Required caller inputs must come from the authorized caller or their established business process; ask if missing instead of guessing private verification values. Runner validates those inputs and reloads authoritative facts to derive an immutable proposal; this tool cannot approve, apply, or accept an arbitrary patch. To check an accepted request later, repeat the identical outcome, original subject_refs and inputs. An already recorded request returns its durable status, not a second proposal. Do not obtain new references to check status. Completion requires a verified execution receipt; if authority or context changed, report unavailable rather than recreating the request.",
       kind: "semantic_action",
       input_schema: {
         outcome: { type: "string", required: true },
@@ -366,8 +375,13 @@ function semanticActionToolMetadata(): LocalToolMetadata[] {
   ];
 }
 
-function describeAction(registry: RuntimeActionRuleRegistryV1, activated: ActivatedActionRuleV1, availability: string): Record<string, unknown> {
-  return actionRuleDiscoveryContract(activated.compiled, resolveActivatedApprovalClass(registry, activated.compiled.outcome).mode, availability);
+function describeAction(registry: RuntimeActionRuleRegistryV1, activated: ActivatedActionRuleV1, availability: string,
+  navigation?: Record<string, Record<string, unknown>>): Record<string, unknown> {
+  const contract = actionRuleDiscoveryContract(activated.compiled, resolveActivatedApprovalClass(registry, activated.compiled.outcome).mode, availability);
+  if (!navigation) return contract;
+  return { ...contract, subjects: (contract.subjects as Array<Record<string, unknown>>).map(subject => ({ ...subject,
+    ...(navigation[String(subject.resource)] ? { navigation: navigation[String(subject.resource)] } : {}),
+  })) };
 }
 
 function actionCatalogContext(exactDetail = false): Record<string, unknown> {

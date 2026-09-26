@@ -34,9 +34,9 @@ export function createScopedReadDiscovery(
         const label = resource.label ?? resource.id;
         const description = resource.description ?? label;
         const value = { id: resource.id, label: label.slice(0, 64), description: description.slice(0, 280),
-          boundary_name: boundary.pack.name, metadata_only: true };
+          boundary_name: boundary.pack.name, metadata_only: true, queryable_root: resource.relationship_only !== true };
         return { id: `${boundary.pack.name}/${resource.id}`, title: label.slice(0, 160), summary: description.slice(0, 400),
-          value, detail: () => value };
+          aliases: resource.id.length <= 80 ? [resource.id] : [], value, detail: () => value };
       }))) };
     }
     const index = cache.index;

@@ -141,8 +141,8 @@ async function createAdmittedReadActionServices(input: ActionRuleRuntimeServiceI
   };
   return admitActionServices({
     ...referenceContext,
-    semanticActions: { ...inactive, callTool: async (name, args) =>
-      ((await current())?.semanticActions ?? inactive).callTool(name, args) },
+    semanticActions: { ...inactive, callTool: async (name, args, options) =>
+      ((await current())?.semanticActions ?? inactive).callTool(name, args, options) },
     subjectReferences: {
       observationRequirement: async (resource) => (await current())?.subjectReferences.observationRequirement(resource),
       issue: async (request) => (await current())?.subjectReferences.issue(request) ?? [],
@@ -492,8 +492,8 @@ async function canonicalActionInput(input: ActionRuleRuntimeServiceInput, root: 
 
 function admitActionServices<T extends Omit<ActionRuleRuntimeServices, "authority">>(services: T, projectRoot: string): T {
   const call = services.semanticActions.callTool.bind(services.semanticActions);
-  services.semanticActions.callTool = (name, args) => withProjectRuntimeAdmission(projectRoot, async () => {
-    const result = await call(name, args);
+  services.semanticActions.callTool = (name, args, options) => withProjectRuntimeAdmission(projectRoot, async () => {
+    const result = await call(name, args, options);
     if (name === "app.request_change" && result.execution === "held" && result.status === "approved_pending_execution"
       && (result.lifecycle as { execution?: unknown } | undefined)?.execution === "not_started"
       && result.result_summary && typeof result.result_summary === "object" && !Array.isArray(result.result_summary)) {

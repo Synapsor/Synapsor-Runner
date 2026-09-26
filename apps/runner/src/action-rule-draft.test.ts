@@ -362,12 +362,17 @@ describe("model-authored Action Rule draft compilation", () => {
     });
     const tools = runtime.listTools();
     const query = { query: "temporary billing pause" };
-    expect(await runtime.callTool("app.describe_actions", query)).toMatchObject({ actions: [] });
+    expect(await runtime.callTool("app.describe_actions", query)).toMatchObject({
+      discovery: { search_status: "partial_matches" },
+      actions: [{ outcome: "billing.pause_account", search_match: { kind: "partial", missing_terms: ["temporary"] } }],
+    });
     const revised = draft();
     revised.discovery = { title: "Pause billing", summary: "Pause an eligible account with billing review.", aliases: [query.query] };
     registry = compile(revised).loaded.registry;
     expect(await runtime.callTool("app.describe_actions", query)).toMatchObject({
-      actions: [{ outcome: revised.outcome, description: revised.discovery.title, eligibility: "not_checked" }],
+      discovery: { search_status: "matches" },
+      actions: [{ outcome: revised.outcome, description: revised.discovery.title, eligibility: "not_checked",
+        search_match: { kind: "exact_name", missing_terms: [] } }],
     });
     expect(runtime.listTools()).toEqual(tools);
   });

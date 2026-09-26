@@ -54,6 +54,7 @@ export type ScopedExploreBoundarySetRuntime = {
   model_authority_metadata?: ModelAuthorityMetadataMode;
   trusted_scope?: ScopedExploreRuntime["trusted_scope"];
   requireTrustedScope?(): Promise<void>;
+  supportsSubjectReferences?(resource: string, boundary?: string): Promise<boolean>;
   withOperation?: ScopedExploreRuntime["withOperation"];
   authorizedCatalogBoundaries?(): Promise<ActivatedExplorationBoundary[]>;
   describe(input?: BoundarySetDescribeInput): Promise<Record<string, unknown>>;
@@ -126,11 +127,13 @@ async function createAdmittedBoundarySet(input: Parameters<typeof createScopedEx
     const describe = runtime.describe.bind(runtime), validate = runtime.validate.bind(runtime), explore = runtime.explore.bind(runtime);
     const close = runtime.close.bind(runtime), scope = runtime.requireTrustedScope?.bind(runtime);
     const catalog = runtime.authorizedCatalogBoundaries?.bind(runtime);
+    const references = runtime.supportsSubjectReferences?.bind(runtime);
     runtime.describe = (request) => operations.run(() => describe(request));
     runtime.validate = (plan, name) => operations.run(() => validate(plan, name));
     runtime.explore = (plan, name) => operations.run(() => explore(plan, name));
     if (scope) runtime.requireTrustedScope = () => operations.run(scope);
     if (catalog) runtime.authorizedCatalogBoundaries = () => operations.run(catalog);
+    if (references) runtime.supportsSubjectReferences = (resource, boundary) => operations.run(() => references(resource, boundary));
     runtime.close = () => operations.close(close);
     return runtime;
   } catch (error) {
@@ -221,6 +224,13 @@ async function createBoundarySetWithStore(input: Parameters<typeof createScopedE
       return allowed;
     },
     requireTrustedScope: async () => { await refresh(); await childFor(selected); },
+    supportsSubjectReferences: async (resource, boundaryName) => {
+      await refresh();
+      const target = route(boundaryName, resource);
+      if (target.resource?.relationship_only) return false;
+      const child = await childFor(target.boundary);
+      return await child.supportsSubjectReferences?.(resource) ?? false;
+    },
     get boundary() {
       return selected;
     },

@@ -18,6 +18,12 @@ query; browse or try other words, rather than concluding no action exists.
 `limit` is a maximum: a whole-record page may contain fewer entries to fit
 the byte budget. Follow `next_cursor` until it is null, not until a page is
 short. `empty_search` is present only when a search actually has no matches.
+`pagination.page_item_count` counts this page. `has_more` agrees with the
+continuation, and `total: {kind: "exact", value: ...}` counts only matching,
+authorized catalog entries, never source rows or eligible subjects.
+`discovery.search_status` distinguishes browsing (`no_query`), complete
+matches, explicitly partial matches and no matches. End of pagination is
+separate from no search match.
 
 Search uses deterministic lexical terms in reviewed identifiers, descriptions
 and labels. Action Rules may include reviewed `x-runner-discovery` metadata:
@@ -30,15 +36,46 @@ existing rule draft tool. A vocabulary-only revision preserves outcome identity,
 eligibility, effects and approval settings; the public title, summary and search
 phrases appear in the exact review and revision diff. Existing rules without
 reviewed vocabulary retain their identifier-derived fallback until reviewed.
+Search folds case/Unicode and identifier separators; execution/detail lookup
+still requires the exact canonical identifier. Exact IDs, exact strong names
+and strong phrases rank before matches across metadata. A finite set of
+grammar words (`a`, `an`, `the`, `for`, `of`, `to`, `with`, `please`) does not
+force a match. Business verbs, including approve/reject and remove/restore,
+remain distinct. If there is no complete match, a partial candidate needs a
+reviewed title/alias anchor and at least half the meaningful terms; every
+numeric token must still match. Selective full matching starts from the
+rarest indexed term before considering the bounded partial fallback. Each hit
+reports its matched/missing terms. Partial alternatives are suggestions, not
+a selected operation. Ranking ties use the canonical identifier. No private
+predicate, unpublished draft or source value participates in ranking/counts.
 
 ## Compatibility
 
-This release changes the discovery input schema once. Existing clients that
-cache schemas must refresh them; later business-rule updates need no new
-tool or client configuration. Empty Action discovery preserves full request
+These catalog enhancements retain the existing four input schemas. Clients
+should refresh cached descriptions; business-rule updates need no new tool
+or client configuration. Empty Action discovery preserves full request
 contracts, but only for a bounded first page. Explicit `query` or `limit`
 returns summaries. Fetch one `outcome` for its complete input types, required
 subjects, bounds, effect summary and review behavior.
+Summary cards include a compact required-input list, all public business
+effect components and an exact-detail route. Exact Action detail in the
+shared four-tool adapter connects to the current permitted Read root with a
+bounded subset of visible fields and allowed operators, a schema-valid rows
+example and reference support when established. Follow the exact Data
+Describe route for complete Read grammar. Relationship-only resources are
+labelled accordingly; they are not independent roots. Standalone adapters
+without the Read callback and compatibility `{}` contracts honestly mark the
+route unestablished. Navigation rechecks both Read and Action currentness.
+
+Typed Action inputs are caller business input. Their values must come from
+an authorized caller or an established business process. A private verifier
+comparison does not permit auto-fill, disclose its expected value or create
+an input lookup. When no reviewed acquisition mapping exists, discovery says
+that the Action contract does not establish one. Ask for missing input; do
+not guess from previous operations, already-posted values or bounded source
+pages. `request_shape` is a template: placeholders are not usable arguments.
+Rows results already pair `subjects[].row_index` with opaque references; use
+the matching reference without a redundant identity lookup when present.
 Exact Action detail omits the generic example request; the selected action's
 `request_shape` is the concrete contract. Discovery reports worker liveness as
 unknown and execution enablement as not reported. A proposal-only tool does
@@ -101,11 +138,22 @@ Each connection has at most 80 discovery calls, 300 returned records and
 256 KiB aggregate disclosure per catalog. These counters do not reset on a
 catalog edit. Search is bounded to 16 terms and 10,000 indexed entries.
 
-Server-held random cursors expire in five minutes. They bind the trusted
+Server-held random catalog cursors expire in five minutes. They bind the trusted
 scope, catalog revision, query/filter, page size and order. Reuse the same
-query and limit for continuation. A successful continuation consumes its
-cursor. Changed/revoked authority, another session or tampering requires
+query and limit for continuation. Replaying a cursor returns the same page
+and continuation under unchanged authority; every call still consumes the
+bounded session disclosure budget. Changed/revoked authority, another session or tampering requires
 fresh discovery. Tokens contain no readable authority hashes or identities.
+
+Explore rows/aggregate results have a different contract. They are bounded
+queries, with no source pagination cursor, source total or cross-request
+snapshot guarantee. `outcome.result.pagination` reports the returned count,
+unknown `has_more`, an unavailable total and unsupported continuation. A
+null cursor here is not proof of source exhaustion. Completeness metadata
+keeps suppression and reviewed exclusions explicit. Measures describe their
+reviewed query and disclosed groups; summing bounded/suppressed result pages
+does not establish a complete private verification collection. No extra
+source `COUNT` is performed for these fields.
 
 Authorization filtering precedes search and snippets. Exact denied and
 unknown entries have the same unavailable result. Private verification

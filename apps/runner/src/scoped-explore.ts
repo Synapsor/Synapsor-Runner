@@ -298,6 +298,7 @@ export type ScopedExploreRuntime = {
   session_fingerprint: `sha256:${string}`;
   model_authority_metadata?: ModelAuthorityMetadataMode;
   requireCurrentAuthority?(): Promise<void>;
+  supportsSubjectReferences?(resource: string): Promise<boolean>;
   /** Keeps a composed tool operation, including model projection, in one lifecycle. */
   withOperation?<T>(operation: () => Promise<T>): Promise<T>;
   trusted_scope?: {
@@ -634,10 +635,12 @@ async function createAdmittedScopedExploreRuntime(input: Parameters<typeof creat
     runtime.withOperation = (operation) => operations.run(operation);
     const describe = runtime.describe.bind(runtime), validate = runtime.validate.bind(runtime), explore = runtime.explore.bind(runtime);
     const close = runtime.close.bind(runtime), current = runtime.requireCurrentAuthority?.bind(runtime);
+    const references = runtime.supportsSubjectReferences?.bind(runtime);
     runtime.describe = (request) => operations.run(() => describe(request));
     runtime.validate = (plan) => operations.run(() => validate(plan));
     runtime.explore = (plan) => operations.run(() => explore(plan));
     if (current) runtime.requireCurrentAuthority = () => operations.run(current);
+    if (references) runtime.supportsSubjectReferences = (resource) => operations.run(() => references(resource));
     runtime.close = () => operations.close(close);
     return runtime;
   } catch (error) {
@@ -790,6 +793,14 @@ async function createScopedExploreRuntimeWithStore(input: Parameters<typeof crea
   };
   return {
     requireCurrentAuthority,
+    supportsSubjectReferences: async (id) => {
+      await requireCurrentAuthority();
+      const resource = prepared.boundary.pack.resources.find(candidate => candidate.id === id);
+      if (!resource || resource.relationship_only || !input.subjectReferences) return false;
+      const supported = Boolean(await input.subjectReferences.service.observationRequirement(id));
+      await requireCurrentAuthority();
+      return supported;
+    },
     boundary: prepared.boundary,
     session_fingerprint: sessionFingerprint,
     model_authority_metadata: input.modelAuthorityMetadata ?? "semantic",
@@ -3940,6 +3951,21 @@ function describeExploreResult(input: {
       rows_or_groups: input.response.rowCount,
       cells: input.response.cells,
       bytes: input.serializedBytes,
+    },
+    pagination: {
+      page_item_count: input.response.rowCount,
+      has_more: null,
+      next_cursor: null,
+      total: { kind: "unavailable" },
+      continuation: "not_supported",
+      consistency: "single_read_only_transaction",
+      guidance: "This is a bounded query result, not a paginated source inventory. Page length is not a source total; no continuation or cross-request snapshot is provided.",
+    },
+    completeness: {
+      result_page: "not_established",
+      suppressed: input.response.suppressed > 0 || input.response.incompleteComparisons > 0,
+      reviewed_exclusions: input.response.reviewedValueControls.excluded.length > 0,
+      guidance: "Returned measures describe only the reviewed query and disclosed groups. Do not sum a bounded page or suppressed groups to infer a complete collection or an undisclosed required business input.",
     },
     remaining_budgets: {
       queries: Math.max(0, budgets.max_queries_per_session - input.budgetUsage.query_count),

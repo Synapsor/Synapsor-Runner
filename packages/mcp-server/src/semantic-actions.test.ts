@@ -485,7 +485,8 @@ describe("fixed semantic Action MCP", () => {
       expect(first.next_cursor).toMatch(/^cur_/u);
       expect(JSON.stringify(first)).not.toMatch(/billing.pause_6|north\/maya|sha256:|auto_approve_when/u);
       expect(first.actions).toEqual(expect.arrayContaining([expect.objectContaining({ eligibility: "not_checked" })]));
-      expect((first.actions as Array<Record<string, unknown>>)[0]).not.toHaveProperty("inputs");
+      expect((first.actions as Array<Record<string, unknown>>)[0]).toMatchObject({ inputs: [{ name: "notification_state", required: true, origin: "caller_business_input" }] });
+      expect((first.actions as Array<Record<string, unknown>>)[0]).not.toHaveProperty("request_shape");
       const exact = await runtime.callTool(DESCRIBE_ACTIONS_TOOL, { outcome: "billing.pause_0" });
       expect(exact).not.toHaveProperty("request_shape");
       expect(exact).toMatchObject({ execution_status: { enablement: "not_reported_by_discovery", worker_liveness: "unknown" }, actions: [{
@@ -731,6 +732,76 @@ describe("fixed semantic Action MCP", () => {
       expect(fixture.semanticActions.listTools()).toEqual(tools);
       expect(await fixture.semanticActions.callTool(REQUEST_CHANGE_TOOL, request)).toMatchObject({ request_disposition: "created" });
     } finally { fixture.store.close(); }
+  });
+
+  it("hands exact Action detail to checked Read navigation without turning caller input into a private lookup", async () => {
+    const f = createFixtureRuntime({ businessInput: true });
+    const describeSubjectNavigation = vi.fn(async (resources: readonly string[]) => ({ binding: "read-current",
+      resources: Object.fromEntries(resources.map(resource => [resource, { status: "rows_reference_available",
+        describe_data: { boundary: "reviewed", resource }, selectable_fields: ["status"], filter_operators: {},
+        explore_data: { boundary: "reviewed", plan: { kind: "rows", resource, select: ["status"] } } }])) }));
+    try {
+      const result = await f.semanticActions.callTool(DESCRIBE_ACTIONS_TOOL, { outcome: "billing.pause_notifications" }, { describeSubjectNavigation });
+      expect(result).toMatchObject({ actions: [{ subjects: [{ navigation: { status: "rows_reference_available",
+        selectable_fields: ["status"] } }], inputs: [{ origin: "caller_business_input", acquisition: {
+          source: "authorized_caller", public_lookup: "not_established_by_action_contract" } }] }] });
+      expect(describeSubjectNavigation).toHaveBeenCalledTimes(2);
+      expect(describeSubjectNavigation).toHaveBeenCalledWith(["billing.preferences"]);
+      expect(f.queries).toHaveLength(0);
+      expect(await f.store.listProposals()).toEqual([]);
+    } finally { f.store.close(); }
+  });
+
+  it("rechecks Action availability after the final asynchronous Read navigation", async () => {
+    let unavailable: string[] = [];
+    const f = createFixtureRuntime({ unavailableOutcomes: () => unavailable });
+    let calls = 0;
+    try {
+      await expect(f.semanticActions.callTool(DESCRIBE_ACTIONS_TOOL, { outcome: "billing.pause_notifications" }, {
+        describeSubjectNavigation: async () => {
+          if (++calls === 2) unavailable = ["billing.pause_notifications"];
+          return { binding: "read-current", resources: {} };
+        },
+      })).rejects.toMatchObject({ code: "CATALOG_CURSOR_INVALID" });
+      expect(f.store.listProposals()).toHaveLength(0);
+    } finally { f.store.close(); }
+  });
+
+  it("refuses Action navigation if the current Read contract changes while it is composed", async () => {
+    const f = createFixtureRuntime();
+    const describeSubjectNavigation = vi.fn().mockResolvedValueOnce({ binding: "first", resources: {} })
+      .mockResolvedValueOnce({ binding: "revoked", resources: {} });
+    try {
+      await expect(f.semanticActions.callTool(DESCRIBE_ACTIONS_TOOL, { outcome: "billing.pause_notifications" },
+        { describeSubjectNavigation })).rejects.toMatchObject({ code: "CATALOG_CURSOR_INVALID" });
+      expect(f.queries).toHaveLength(0);
+      expect(await f.store.listProposals()).toEqual([]);
+    } finally { f.store.close(); }
+  });
+
+  it("keeps compact Action listings complete about effects and caller inputs without claiming a Read path", async () => {
+    const f = createFixtureRuntime({ businessInput: true });
+    const describeSubjectNavigation = vi.fn(async () => ({ binding: "current", resources: {} }));
+    try {
+      const result = await f.semanticActions.callTool(DESCRIBE_ACTIONS_TOOL, { query: "pause" }, { describeSubjectNavigation });
+      expect(result).toMatchObject({ actions: [{ exact_detail: { outcome: "billing.pause_notifications" },
+        inputs: [{ required: true, origin: "caller_business_input" }],
+        business_effects: { completeness: "all_components_with_restricted_details", components: [{ operation: "update" }] } }] });
+      expect(describeSubjectNavigation).not.toHaveBeenCalled();
+      const detail = await f.semanticActions.callTool(DESCRIBE_ACTIONS_TOOL, { outcome: "billing.pause_notifications" });
+      expect(detail).toMatchObject({ actions: [{ subjects: [{ navigation: { status: "not_established",
+        describe_data: { resource: "billing.preferences" } } }] }] });
+    } finally { f.store.close(); }
+  });
+
+  it("never asks the Read callback about an Action outside the authorized catalog", async () => {
+    const f = createFixtureRuntime();
+    const describeSubjectNavigation = vi.fn(async () => ({ binding: "current", resources: {} }));
+    try {
+      await expect(f.semanticActions.callTool(DESCRIBE_ACTIONS_TOOL, { outcome: "secret.unpublished" },
+        { describeSubjectNavigation })).rejects.toMatchObject({ code: "CATALOG_ENTRY_UNAVAILABLE" });
+      expect(describeSubjectNavigation).not.toHaveBeenCalled();
+    } finally { f.store.close(); }
   });
 
   it("discovers and validates business inputs before consuming subjects and binds replay to exact values", async () => {
