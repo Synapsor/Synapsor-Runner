@@ -1,0 +1,36 @@
+{
+  "phase": "B",
+  "candidate": 1,
+  "product_commit": "8f892a1f78da9fbe09a13bfac29cea8c5f2b9dd4",
+  "tests_commit": "8f892a1f78da9fbe09a13bfac29cea8c5f2b9dd4",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/l4-retained-duty-discovery-quality-20260926/phase-B-frozen/installed",
+  "tree_sha256": "9f7c842b896c484d7f37b795bfdfd6bb7886bcfcb69b6a26d6826302bcbf237a",
+  "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/l4-retained-duty-discovery-quality-20260926/phase-B-frozen/installed-artifact-manifest.json",
+  "manifest_sha256": "4779b331b87ab8b048a9be3eb7bedb085516cc03f7ec738615004b3bfe7c7902",
+  "archive": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/l4-retained-duty-discovery-quality-20260926/phase-B-frozen/installed-artifact.tar.gz",
+  "archive_sha256": "9f64fd9ffb64a38dc6a1b3fccb7ec29fb7ef41318f98d8af2f36c6bec03a7f0d",
+  "entries": 7602,
+  "node": {
+    "version": "v22.23.3",
+    "executable": "/usr/bin/node",
+    "sha256": "fde6a4bf8d0562f7751d1a2d6cb9b417c4cfe107bbcb0aa3e9a24e125e348f48"
+  },
+  "gates": {
+    "complete": "stable-full-B-002",
+    "typecheck": "types-B-002",
+    "selected_postgres": "selected-postgres-B-001",
+    "offline": "phase-B-offline-package-plan-attempt1.json",
+    "index": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/l4-retained-duty-discovery-quality-20260926/records/PHASE-B-GATE-SUMMARY-001.json",
+    "index_sha256": "4cb14ac9325bebcbee476de03c39596614ab552847dc6278a304fdfed456280b"
+  },
+  "main_verification": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/l4-retained-duty-discovery-quality-20260926/records/MAIN-PHASE-B-ARTIFACT-VERIFICATION-001.json",
+  "main_verification_sha256": "9b050e65b2f4a60fdc1f81886ade711a06d42a3bfed54e13d0ace94c5a4ef020",
+  "independent_installed_acceptance": "PENDING; source/component 48/48 PASS does not establish installed acceptance",
+  "native_comparison": "NOT RUN; no paid GO until independent installed and complete actual preflight acceptance",
+  "main_inference_calls": 0,
+  "unchanged_accepted_Phase_A_product": "a672229b6ae444817df10b36a0500ef70ffe1205",
+  "failed_full_gate_preserved": "stable-full-B-001: postbuild packaged documentation links",
+  "historical_A1_A2_artifacts_preserved": true,
+  "result_evidence_followup": "QUEUED; not part of these bytes, implementation T0 null",
+  "recorded_at": "2026-09-26T20:08:51.570972+00:00"
+}
