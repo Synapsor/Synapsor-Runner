@@ -279,6 +279,7 @@ const publicDocs = [
   "safe-action-control-plane.md",
   "safe-postgres-mcp.md",
   "schema-api-candidates.md",
+  "scoped-catalog-discovery.md",
   "secure-text-to-sql.md",
   "conformance.md",
   "recipes.md",
