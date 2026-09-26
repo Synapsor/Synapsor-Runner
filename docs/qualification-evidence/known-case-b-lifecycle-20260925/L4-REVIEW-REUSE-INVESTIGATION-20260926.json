@@ -1,0 +1,209 @@
+{
+  "at_utc": "2026-09-26T15:02:16.636097+00:00",
+  "classification": "ZERO-PROVIDER DIAGNOSIS; recommendation only, not product acceptance or historical PASS",
+  "original_observed_product": "1422fd470a26e5e490bd145c0b378f5a70523d37",
+  "diagnosis_checkout_delivery": "5e5925e7e90489b3b81f040e8efd5b59368f7c5c",
+  "product_changes": 0,
+  "provider_account_calls": 0,
+  "business_requests_approvals_workers": 0,
+  "new_cost_usd": 0,
+  "q1": "cached review predates earlier Action removal; exact prepared draft and business history mismatch already present at READY, no demonstrated new-effect/roster-only invalidation",
+  "q2": "business scope/removal decisions legitimately invalidate old whole report; full key also includes operational/provenance metadata; isolated DERIVED audit timestamp change reparses successfully, not evidence authentic whole report was reusable",
+  "q3": "host retained removed-Action deferred duty; assembled missing pointer fed back against generated parent as root; registered structural code, but no unique immediate-parent correction target; confinement refusal correct, retention/applicability and diagnostic routing defective",
+  "q4": "existing saved whole report cannot reuse/revalidate under current key/subject; raw L4 response parses but is not persisted and requires current client ownership",
+  "keys": {
+    "classification": "reconstruct exact key from captured canonical data; not product mutation",
+    "stored_key": "sha256:abb31ee8c1e14fe9c1e12b99f87ee896fd49e83ee0ef6f321a6bc9a91181a116",
+    "reconstructed_accepted_key": "sha256:abb31ee8c1e14fe9c1e12b99f87ee896fd49e83ee0ef6f321a6bc9a91181a116",
+    "episode_key": "sha256:0032ccc596c9d0262a894430fa6a1baeffbc763e1e66fceba35b6266605f0165",
+    "reconstructed_L4_key": "sha256:0032ccc596c9d0262a894430fa6a1baeffbc763e1e66fceba35b6266605f0165",
+    "stored_draft": "sha256:ae3bf9de4308da5750ab20cf212c4c341ed17eab7541ef6b033e38cade073816",
+    "captured_old_draft": "sha256:ae3bf9de4308da5750ab20cf212c4c341ed17eab7541ef6b033e38cade073816",
+    "captured_L4_draft": "sha256:3b533f724a1b9a7385c8920cd377c43d3bc98f4470746e24fa5e12569c0d7c68",
+    "feedback_context": "sha256:a78da23b310f64a87f26fc23fcb36207ad695b71ca6347b12d9e1838d32da98e",
+    "selected_fields": [
+      {
+        "key": "source",
+        "before_digest": "sha256:9456d3db05326d125f3e04615051baeb45355fd793df4244ed99fe8f1db811b1",
+        "after_digest": "sha256:9456d3db05326d125f3e04615051baeb45355fd793df4244ed99fe8f1db811b1",
+        "equal": true
+      },
+      {
+        "key": "messages",
+        "before_digest": "sha256:e6aa2570c2c7b4e16aa4d3d76c6a41820f2f554343a2722d351b2a40a9bfc747",
+        "after_digest": "sha256:0a77c55394fda5663768542a01732360078480573aded1a09477bea39cc2f506",
+        "equal": false
+      },
+      {
+        "key": "clarifications",
+        "before_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "equal": true
+      },
+      {
+        "key": "interpretations",
+        "before_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "after_digest": "sha256:4f53cda18c2baa0c0354bb5f9a3ecbe5ed12ab4d8e11ba873c2f11161202b945",
+        "equal": true
+      },
+      {
+        "key": "source_transaction_scope_reviews",
+        "before_digest": "sha256:4ec563fa265485dfb9c16c778e4eece1c3893fd7b37cdf37638f2e2921c7f054",
+        "after_digest": "sha256:4ec563fa265485dfb9c16c778e4eece1c3893fd7b37cdf37638f2e2921c7f054",
+        "equal": true
+      }
+    ]
+  },
+  "safe_binding_values": {
+    "stored_vs_L4_safe_values": [
+      {
+        "path": "/runner_evidence/action_revision/action_boundary_digest",
+        "before": "sha256:9dea8eaa819a4a57b1ffbef556e9c3472c37f42e89c4c4fb63ba4ace340f163f",
+        "after": "sha256:397ad96274f6f9ee2f021b64bf39ee78d20d87e60cf5d3f8859666b21bc2d127"
+      },
+      {
+        "path": "/runner_evidence/action_revision/review_record_digest",
+        "before": "sha256:333b3dcd25f58ced35ca4f9f4aff97c27578e306f28c55dbefcfd66429b2f322",
+        "after": "sha256:bdf6183e60e9194fa9b3f56126e7cc3f96179f42f3dbca0aea471befadb4dc0c"
+      },
+      {
+        "path": "/runner_evidence/action_subject_compatibility/action_digest",
+        "before": "sha256:333b3dcd25f58ced35ca4f9f4aff97c27578e306f28c55dbefcfd66429b2f322",
+        "after": "sha256:bdf6183e60e9194fa9b3f56126e7cc3f96179f42f3dbca0aea471befadb4dc0c"
+      },
+      {
+        "path": "/runner_evidence/counting_decisions/0/operator_history_digest",
+        "before": "sha256:e6aa2570c2c7b4e16aa4d3d76c6a41820f2f554343a2722d351b2a40a9bfc747",
+        "after": "sha256:0a77c55394fda5663768542a01732360078480573aded1a09477bea39cc2f506"
+      },
+      {
+        "path": "/runner_evidence/counting_decisions/0/reviewed_at",
+        "before": "2026-09-24T16:42:12.378Z",
+        "after": "2026-09-26T07:05:01.300Z"
+      },
+      {
+        "path": "/runner_evidence/counting_decisions/1/operator_history_digest",
+        "before": "sha256:e6aa2570c2c7b4e16aa4d3d76c6a41820f2f554343a2722d351b2a40a9bfc747",
+        "after": "sha256:0a77c55394fda5663768542a01732360078480573aded1a09477bea39cc2f506"
+      },
+      {
+        "path": "/runner_evidence/counting_decisions/1/reviewed_at",
+        "before": "2026-09-24T16:42:42.835Z",
+        "after": "2026-09-26T07:05:47.083Z"
+      },
+      {
+        "path": "/runner_evidence/runtime_contract/approval_counter_selection/outcome_domain/current_revision",
+        "before": "sha256:3dda15d9ba480d900b73aad1c71d5a93c814f38e30e79e14cb36057f574dba0f",
+        "after": "sha256:bdf6183e60e9194fa9b3f56126e7cc3f96179f42f3dbca0aea471befadb4dc0c"
+      },
+      {
+        "path": "/runner_evidence/runtime_contract/approval_counter_selection/outcome_domain/proposed_outcomes",
+        "before": [
+          "energy_ops.finalize_settlement_cycle",
+          "energy_ops.flag_cycle_follow_up"
+        ],
+        "after": [
+          "energy_ops.finalize_settlement_cycle"
+        ]
+      },
+      {
+        "path": "/runner_evidence/runtime_contract/approval_counter_selection/outcome_domain/proposed_revision",
+        "before": "sha256:333b3dcd25f58ced35ca4f9f4aff97c27578e306f28c55dbefcfd66429b2f322",
+        "after": "sha256:bdf6183e60e9194fa9b3f56126e7cc3f96179f42f3dbca0aea471befadb4dc0c"
+      },
+      {
+        "path": "/runner_evidence/runtime_contract/authoring_lifecycle/retained_business_answers",
+        "before": 8,
+        "after": 9
+      },
+      {
+        "path": "/runner_evidence/runtime_contract/receipt_configuration/digest",
+        "before": "sha256:fca7531e9092e2e1de76eb33ef041b84ef1c41c624c34277de90cca77355b06e",
+        "after": "sha256:f379505586c22a6781847032deb0cb6d41146a3a542364164e5fc5b89661b0a6"
+      },
+      {
+        "path": "/runner_evidence/runtime_contract/receipt_read_exclusion/configuration_digest",
+        "before": "sha256:fca7531e9092e2e1de76eb33ef041b84ef1c41c624c34277de90cca77355b06e",
+        "after": "sha256:f379505586c22a6781847032deb0cb6d41146a3a542364164e5fc5b89661b0a6"
+      },
+      {
+        "path": "/runner_evidence/runtime_contract/review_evidence_phases/candidate_action_binding_digest",
+        "before": "sha256:5a7cab5f77b62598fb346fc5c8fd4e69acb2cd0b7b860ce57c3658ae6e345613",
+        "after": "sha256:dcab510ae0866e2e34a9c68333e9f39b5c5b581428dc4704d0959bb378290aed"
+      },
+      {
+        "path": "/runner_evidence/runtime_contract/review_evidence_phases/candidate_action_digest",
+        "before": "sha256:9dea8eaa819a4a57b1ffbef556e9c3472c37f42e89c4c4fb63ba4ace340f163f",
+        "after": "sha256:397ad96274f6f9ee2f021b64bf39ee78d20d87e60cf5d3f8859666b21bc2d127"
+      },
+      {
+        "path": "/runner_evidence/runtime_contract/saved_execution_review",
+        "before": null,
+        "after": {
+          "action_digest": "sha256:397ad96274f6f9ee2f021b64bf39ee78d20d87e60cf5d3f8859666b21bc2d127",
+          "policy_digest": "sha256:96bee510ed2fd25abadff148c50084b51c44a466dd5ed6cfa0061997abfaacbe",
+          "enabled_outcomes": [
+            "energy_ops.finalize_settlement_cycle"
+          ]
+        }
+      }
+    ],
+    "Read_semantics_exact": true,
+    "finalization_semantics_exact": true,
+    "finalization_evidence_exact": true,
+    "source_metadata_unchanged": true,
+    "full_private_diff": "private/ACCEPTED-TO-L4-CONTEXT-DIFF-002.json"
+  },
+  "canonical_replay_current_raw": {
+    "parser": "PASS27",
+    "report_digest": "sha256:12399a89e445fbe582743e7641b771dcea8fedfa935716c4ee4c09c7a5a9e2f4",
+    "BUSINESS_readiness": "PENDING customer_selection/status_presentation ownership",
+    "full_flow_saved_revalidation": "NOT RUN"
+  },
+  "old_retained_duty": {
+    "source_lines": [
+      20,
+      20
+    ],
+    "family": "source_counter_maintenance",
+    "path": "/runner_evidence/actions/energy_ops.flag_cycle_follow_up/effect/source_counter_maintenance",
+    "feedback_component": "/",
+    "scope_refusal": "A finding has no unique passage or supported child in the immediate parent"
+  },
+  "enum_observation": "automatic_limits/0 and /1 nodes exist/canonical accepts, absent from advertised331enum; separate projection inconsistency, not demonstrated rejection cause",
+  "recommendation": "assess exact current source/Action/effect applicability before carrying prior duty; preserve retired history; retain applicable duties; attributable host-owned diagnostic; full validation/currentness/ownership unchanged; no general root correction or context-key bypass",
+  "historical_verdicts": "effect/receipts PASS; L4 BUSINESS FAIL; native L4 NOT RUN; A deferred; Stage B ATTEMPTED/NOT PASSED",
+  "references": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/L4-review-reuse-investigation-20260926/FINAL-EVIDENCE-INDEX-001.json",
+      "sha256": "93e98a68b90636a8881d838dbb3ac632c3a45ebcfc68e80d4ca26c943bb442a5",
+      "bytes": 7833
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/L4-review-reuse-investigation-20260926/MAIN-INDEPENDENT-READBACK-001.json",
+      "sha256": "3ef73b8dd3e6897b1fb528761308938adad4ed91596e3908bfedfe85542b5116",
+      "bytes": 694
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/L4-review-reuse-investigation-20260926/ORIGINAL-AND-COLD-PRESERVATION-001.json",
+      "sha256": "1805b2292f23d8e2cdccca4d6e6b28ceada23ba26075ad53dc394a291c2bd977",
+      "bytes": 1184
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/L4-review-reuse-investigation-20260926/SOURCE-IDENTITY-001.json",
+      "sha256": "4d355cbda024d6daedbae7a793bd51d06c2e3ce77b9088b53e71e9c31ab0d6a2",
+      "bytes": 2712
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-L4-review-reuse-20260926/REVIEW.md",
+      "sha256": "9595b79e658a12db2e9bfe4314e78f52e7bcbcb2ed07162ea08092ff6f5149e3",
+      "bytes": 9815
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-L4-review-reuse-20260926/EVIDENCE-INDEX.json",
+      "sha256": "8bd18d38243fa4298505623fec2b414d81b904e554442e78e6fd5308f7e65449",
+      "bytes": 363228
+    }
+  ],
+  "next": "report-only private delivery then STOP; no implementation/retry permission"
+}
