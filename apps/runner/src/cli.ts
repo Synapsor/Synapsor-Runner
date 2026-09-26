@@ -38,6 +38,7 @@ import { cliCommandName, isHelpRequest, isKnownTopLevelCommand, runnerPackageVer
 import { usage } from "./cli-help.js";
 import { errorNextAction, errorSourceDatabaseChanged, errorStatePreserved, formatCliErrorHint, operationalLog, redactCliErrorMessage, requestsJsonOutput, safeOperationalErrorCode } from "./cli-logging.js";
 import { normalizeCliArgv, optionalArg } from "./cli-options.js";
+import { runCliEntrypoint } from "./cli-output.js";
 import {
   activeProjectResolutionState,
   databaseInputFromArgs as databaseInputFromArgsImpl,
@@ -376,6 +377,14 @@ export async function runCliProcess(argv: string[]): Promise<number> {
 
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  runCliProcess(process.argv.slice(2))
-    .then((code) => process.exit(code));
+  const argv = process.argv.slice(2);
+  const [command, subcommand] = normalizeCliArgv(argv);
+  const protocolServer = command === "language-server"
+    || (command === "mcp" && ["serve", "serve-http", "serve-streamable-http"].includes(subcommand ?? ""));
+  if (protocolServer) {
+    // Protocol transports retain their existing error handling and lifetime.
+    runCliProcess(argv).then((code) => process.exit(code));
+  } else {
+    runCliEntrypoint(() => runCliProcess(argv));
+  }
 }
