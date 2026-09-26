@@ -120,7 +120,8 @@ export type PolicyPassage = {
   source_counter_resolution?: { source_digest: string; path: string; dependencies_digest: string;
     proof_digest: string; external_assurance: "unverified" };
 };
-export type PolicyCoverage = { scoped_disclosure?: ScopedDisclosureInventory; client_duties?: ClientDutyInventory;
+export type PolicyCoverage = { retained_duty_history?: import('./authoring-retained-duties.js').RetainedDutyHistory[];
+  scoped_disclosure?: ScopedDisclosureInventory; client_duties?: ClientDutyInventory;
   counting_inventory?: { version: 1; digest: string; paths: string[] };
   source_transaction_requirement_pending?: true;
   source_transaction_association?: { origin: 'HOST-REVIEW-ASSOCIATION'; requirement_digest: string;
@@ -408,6 +409,10 @@ export async function savePolicySources(root: string, session: PolicySourceSessi
     // requirement. Explicit removal of the source uses removePolicySources.
     try {
       const existing=JSON.parse(await fs.readFile(file,"utf8")) as PolicySourceSession;
+      const priorDutyHistory = existing.coverage?.retained_duty_history ?? [];
+      if (priorDutyHistory.some(record => !session.coverage?.retained_duty_history?.some(current =>
+        canonicalJsonDigest(current) === canonicalJsonDigest(record))))
+        throw new Error('POLICY_RETAINED_DUTY_HISTORY_CHANGED: Prior reports and retired associations must remain in history; no review was overwritten.');
       const prior=existing.scoped_disclosure_reviews??[];
       assertScopedDisclosureReviews(prior);
       if (prior.some((r,i)=>r.digest!==session.scoped_disclosure_reviews?.[i]?.digest))
@@ -476,7 +481,11 @@ export async function loadPolicySources(root: string, id: string): Promise<Polic
       || !(d.required_capability === null || typeof d.required_capability === "string" && d.required_capability.length <= 256)
       || !Number.isFinite(Date.parse(d.reviewed_at))))) delete value.counting_decisions;
   // Optional explanation records are not authority. Corruption must not make the intact source unreadable.
-  if (value.coverage && !validStoredCoverage(value.coverage, value.snapshots)) delete value.coverage;
+  if (value.coverage && !validStoredCoverage(value.coverage, value.snapshots)) {
+    if (value.coverage.retained_duty_history !== undefined)
+      throw new Error('POLICY_RETAINED_DUTY_PENDING: Saved retained-duty history is invalid. Preserve the source and inspect the prior report and publication history locally; no review can be reused or sent.');
+    delete value.coverage;
+  }
   if (value.read_interpretations && (!Array.isArray(value.read_interpretations) || value.read_interpretations.length > 16
     || !value.read_interpretations.every((record) => validReadInterpretation(record, value.snapshots)))) delete value.read_interpretations;
   if (value.application_assignments && (!Array.isArray(value.application_assignments) || value.application_assignments.length > 120
@@ -495,9 +504,31 @@ export function validApplicationObligations(value: unknown): value is NonNullabl
       || entry === "independent_source_readback" && value.length === 1);
 }
 
-function validStoredCoverage(report: PolicyCoverage, sources: PolicyTextSnapshot[]): boolean {
+function validStoredCoverage(report: PolicyCoverage, sources: PolicyTextSnapshot[], historyDepth = 0): boolean {
+  if (!report || historyDepth > 120) return false;
   const source = sources.find((entry) => entry.digest === report.source_digest);
-  return Boolean(source && (report.client_duties === undefined || validClientDutyInventory(report.client_duties)) && /^sha256:[a-f0-9]{64}$/u.test(report.draft_digest)
+  return Boolean(source && (report.retained_duty_history === undefined || Array.isArray(report.retained_duty_history)
+    && report.retained_duty_history.length <= 120 && report.retained_duty_history.every(record => record
+      && record.origin === 'HOST-RETAINED-DUTY' && record.verified === false && record.source_digest === source.digest
+      && record.disposition === 'outside_current_action_scope'
+      && record.removal_basis && /^sha256:[a-f0-9]{64}$/u.test(record.removal_basis.store)
+      && typeof record.removal_basis.origin_record === 'string' && record.removal_basis.origin_record.length <= 128
+      && /^sha256:[a-f0-9]{64}$/u.test(record.removal_basis.active_digest)
+      && Array.isArray(record.removal_basis.transitions) && record.removal_basis.transitions.length > 0
+      && record.removal_basis.transitions.length <= 100
+      && record.removal_basis.transitions.every(t => t && [t.event,t.before,t.after].every(v => typeof v === 'string' && v.length <= 128)
+        && [t.before_digest,t.after_digest].every(v => /^sha256:[a-f0-9]{64}$/u.test(v))
+        && [t.removed_outcomes,t.introduced_outcomes].every(values => Array.isArray(values) && values.length <= 128
+          && values.every(v => typeof v === 'string' && v.length <= 256)))
+      && [record.original_report_digest, record.coverage_authority_digest, record.lineage_digest].every(value => /^sha256:[a-f0-9]{64}$/u.test(value))
+      && record.original_report?.source_digest === source.digest
+      && canonicalJsonDigest(record.original_report) === record.original_report_digest
+      && validStoredCoverage(record.original_report, sources, historyDepth + 1)
+      && record.original_report.passages.some(p => canonicalJsonDigest(p) === canonicalJsonDigest(record.original_passage))
+      && Array.isArray(record.continuing_paths) && record.continuing_paths.length > 0 && record.continuing_paths.length <= 32
+      && record.continuing_paths.every(value => typeof value === 'string' && value.length <= 500 && value.startsWith('/runner_evidence/actions/'))
+      && validStoredCoverage({source_digest:source.digest,draft_digest:report.draft_digest,passages:[record.original_passage]}, [source], historyDepth + 1)))
+    && (report.client_duties === undefined || validClientDutyInventory(report.client_duties)) && /^sha256:[a-f0-9]{64}$/u.test(report.draft_digest)
     && (report.source_transaction_requirement_pending === undefined || report.source_transaction_requirement_pending === true)
     && !(report.source_transaction_requirement_pending && report.source_transaction_association)
     && (report.source_transaction_association === undefined || report.source_transaction_association.origin === 'HOST-REVIEW-ASSOCIATION'

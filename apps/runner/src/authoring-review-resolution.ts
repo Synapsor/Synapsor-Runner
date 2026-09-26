@@ -38,6 +38,7 @@ const reinspection: Policy = {operation:'reinspection',actor:'operator',availabi
 const terminal: Policy = {operation:'diagnostic_stop',actor:'none',availability:'terminal',cost:'none',consent:'none'};
 const scope: Policy = {operation:'source_transaction_scope_review',actor:'operator',availability:'available',cost:'local',consent:'existing_local'};
 const reasonPolicy = {
+  'retained_duty.applicability':reinspection,
   'scope.unknown':scope, 'scope.excluded':model, 'scope.capability':terminal,
   'counter_support.unknown_message':model, 'counter_support.quote_disagrees':model,
   'counter_support.unrecorded_quote':model, 'counter_support.interpretation_mismatch':model,

@@ -14,7 +14,8 @@ import type {SchemaInspection} from "@synapsor-runner/schema-inspector";
 import {buildAutoBoundary, activateExplorationBoundary, writeAutoBoundaryArtifacts, explorationBoundaryCandidateDigest,
   AUTO_BOUNDARY_OVERRIDES_VERSION, type ActivatedExplorationBoundary} from "./auto-boundary.js";
 import {recommendedBoundaryReviewCandidate} from "./boundary-candidate.js";
-import {buildActionRuleAuthorityDraft, writeActionRuleAuthorityDraft, activateActionRuleAuthority, readActionRuleReviewSubjects, readActionRuleAuthorityDraft, deactivateActionRuleAuthority} from "./action-rule-authority.js";
+import {buildActionRuleAuthorityDraft, writeActionRuleAuthorityDraft, activateActionRuleAuthority, readActionRuleReviewSubjects, readActionRuleAuthorityDraft, deactivateActionRuleAuthority,
+  readActionRuleCoverageLineage, removeOutcomeActionRuleAuthorityDraft} from "./action-rule-authority.js";
 import {encodeOperatorAuthority, validateOperatorPolicySnapshot} from "./control-policy-authority-codec.js";
 import {migrateProjectControlPolicies} from "./control-policy-store.js";
 let generationLock = `sha256:${"a".repeat(64)}` as const;
@@ -25,7 +26,7 @@ afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice
 async function fixture(backend: "sqlite" | "postgres" | "legacy" = "sqlite") {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-review-subject-"));
   cleanup.push(() => fs.rm(root, {recursive: true, force: true}));
-  const {read, build} = await reviewedRead(root), source = authoritySource();
+  const {read, build, candidate} = await reviewedRead(root), source = authoritySource();
   const schema = `review_subject_${randomUUID().replaceAll("-", "")}`;
   const storePath = path.join(root, ".synapsor/control.db");
   const config: RuntimeConfig = {version: 1, mode: "review", storage: backend !== "postgres" ? {sqlite_path: storePath} : {
@@ -64,10 +65,36 @@ async function fixture(backend: "sqlite" | "postgres" | "legacy" = "sqlite") {
   const chooseOption = vi.fn(async () => "0");
   const resolve = (state = resume, selectedContext = context, explicit = true) => resolveAuthoringReviewSubject({projectRoot: root,
     resume: state, context: selectedContext, session: {chooseOption}, selectCurrentContext: explicit});
-  return {root, binding, read, build, draft, make, publish, resolve, resume, resumeBinding, context, request, chooseOption};
+  return {root, binding, read, build, candidate, draft, make, publish, resolve, resume, resumeBinding, context, request, chooseOption};
 }
 
 for (const backend of ["sqlite", "postgres"] as const) describe.skipIf(backend === "postgres" && !process.env.SYNAPSOR_TEST_POSTGRES_URL)(`published authoring review (${backend})`, () => {
+  it('reads exact reviewed removal from real repository activation records without creating authority', async () => {
+    const f = await fixture(backend), original = authoritySource();
+    const extra = 'billing.pause_reminders';
+    const both = buildActionRuleAuthorityDraft({ name: f.draft.authority.name,
+      action_boundary_name: f.draft.authority.action_boundary.name, catalog: original.catalog,
+      rules: [original.rule, { ...original.rule, name: extra, outcome: extra }].map(rule => ({
+        read_boundary_name: f.read.pack.name, read_boundary_digest: f.read.activation.digest,
+        verification_boundary: original.verification, effect_envelope: original.envelope, rule })),
+      reviews: [f.draft.reviews[0]!, { ...f.draft.reviews[0]!, outcome: extra }] });
+    await writeActionRuleAuthorityDraft(f.root, both); await f.publish(both);
+    const removed = removeOutcomeActionRuleAuthorityDraft({ existing: both, outcome: extra });
+    // A disabled removal is not a completed publication.
+    await writeActionRuleAuthorityDraft(f.root, removed);
+    const readDigest = explorationBoundaryCandidateDigest(f.candidate);
+    expect(await readActionRuleCoverageLineage(f.root, removed, readDigest)).toBeUndefined();
+    const active = await f.publish(removed);
+    const before = await readActionRuleReviewSubjects(f.root);
+    const result = await readActionRuleCoverageLineage(f.root, active, readDigest);
+    const prior = result!.origins.find(v => v.coverage_authority_digest === canonicalJsonDigest({read:readDigest,action:both.digest}));
+    expect(prior?.authority.digest).toBe(both.digest);
+    expect(prior?.transitions).toMatchObject([{before_digest:both.digest,after_digest:removed.digest,removed_outcomes:[extra],introduced_outcomes:[]}]);
+    expect(await readActionRuleReviewSubjects(f.root)).toEqual(before);
+    // Legacy copies have no repository activation chain; absence is unknown.
+    const legacy = await fixture('legacy');
+    expect(await readActionRuleCoverageLineage(legacy.root, legacy.draft, explorationBoundaryCandidateDigest(legacy.candidate))).toBeUndefined();
+  });
   it("resolves the real publication after clearing its draft, persisting the reviewed subject and restarting", async () => {
     const f = await fixture(backend), before = await f.resolve();
     expect(before.subject?.identity.location).toBe("disabled");
@@ -178,7 +205,7 @@ async function reviewedRead(root: string) {
     confirmation: `ACTIVATE ${explorationBoundaryCandidateDigest(candidate)}`, confirmedDecisions: candidate.unresolved_decisions,
     currentInspection: inspection});
   generationLock = read.generation_lock_fingerprint;
-  return {read, build};
+  return {read, build, candidate};
 }
 
 function authoritySource(): {

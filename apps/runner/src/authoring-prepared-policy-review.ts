@@ -1,3 +1,6 @@
+import {readActionRuleCoverageLineage} from './action-rule-authority.js';
+import {explorationBoundaryCandidateDigest} from './auto-boundary.js';
+import {prepareRetainedDutyReview, assembleRetainedDutyReview, preflightRetainedDutyEvidence, RetainedDutyApplicabilityError} from './authoring-retained-duties.js';
 import { scopedDisclosureInventory } from "./authoring-scoped-disclosure.js";
 import { currentSourceTransactionReview, sourceTransactionReviewNeeded } from './authoring-source-transaction-review.js';
 import { sourceTransactionScopeQuestions } from './authoring-source-transaction-scope.js';
@@ -139,16 +142,33 @@ export async function ensurePreparedPolicyCoverage(input: {
     Object.assign(sources, staged);
     draftRecord = input.currentDraft();
   }
+  const loadLineage = () => input.authority && sources.coverage ? readActionRuleCoverageLineage(input.projectRoot,
+    input.authority, explorationBoundaryCandidateDigest(draftRecord.read)) : Promise.resolve(undefined);
+  const lineage = await loadLineage();
+  let retainedDutyPlan: ReturnType<typeof prepareRetainedDutyReview>;
+  const hostPending = (error: RetainedDutyApplicabilityError): never => { throw new ReviewResolutionError(error.code,
+    planCoverageResolution(error.feedback(canonicalJsonDigest(draftRecord))), error.message); };
+  try { retainedDutyPlan = prepareRetainedDutyReview(sources.coverage, source, draftRecord, lineage, sources.coverage_authority_digest);
+    preflightRetainedDutyEvidence(retainedDutyPlan, source, draftRecord); }
+  catch (error) { if (error instanceof RetainedDutyApplicabilityError) hostPending(error); throw error; }
+  const assertRetainedCurrent = async () => {
+    const current = await loadLineage();
+    if (canonicalJsonDigest(current ?? null) !== canonicalJsonDigest(lineage ?? null))
+      pending('currentness','POLICY_RETAINED_DUTY_CHANGED','Current Action publication history changed; reopen saved Review. No stale duty reconciliation was saved.');
+  };
   const preparedDraftDigest = canonicalJsonDigest(draftRecord);
   const key = canonicalJsonDigest({ source: source.digest, draft: draftRecord, messages: sources.operator_messages ?? [],
     clarifications: input.clarifications, interpretations: sources.read_interpretations ?? [],
-    source_transaction_scope_reviews:sources.source_transaction_scope_reviews?.map(record=>record.digest)??[] });
+    source_transaction_scope_reviews:sources.source_transaction_scope_reviews?.map(record=>record.digest)??[],
+    ...(lineage ? {retained_duty_lineage:canonicalJsonDigest(lineage)} : {}) });
   let reused: PolicyCoverage | undefined;
   if (!input.force && (state.attemptKey === key && state.report?.key === key
     || state.attemptKey === undefined && sources.coverage_context_digest === key && sources.coverage)) {
     try {
       reused = parsePolicyCoverage({ passages: (state.report?.key === key ? state.report.report : sources.coverage!).passages },
         source, draftRecord, sources.operator_messages ?? [],sources);
+      reused = assembleRetainedDutyReview(reused, retainedDutyPlan, source, draftRecord,
+        passages => parsePolicyCoverage({passages},source,draftRecord,sources.operator_messages??[],sources));
     } catch { /* Revalidate incompatible evidence; never treat a ready flag as proof. */ }
   }
   if (!input.force && state.attemptKey === key && !reused) {
@@ -158,6 +178,7 @@ export async function ensurePreparedPolicyCoverage(input: {
   const saveEpisode = async (update: (e: CoverageReviewEpisode) => void) => {
     await coordinated(async permit => {
       await assertCurrent(permit);
+      await assertRetainedCurrent();
       if (canonicalJsonDigest(input.currentDraft()) !== preparedDraftDigest)
         pending('currentness','POLICY_COVERAGE_CONTEXT_CHANGED','Reopen current Review; no stale correction was sent.');
       const staged = structuredClone(sources);
@@ -169,6 +190,7 @@ export async function ensurePreparedPolicyCoverage(input: {
     });
   };
   const produce = async () => {
+    await assertRetainedCurrent();
     const prior = sources.coverage_episodes?.filter(e=>e.context===key).at(-1);
     if (input.savedReviewEpisode || prior) {
       const context = input.savedReviewEpisode ? [
@@ -177,6 +199,7 @@ export async function ensurePreparedPolicyCoverage(input: {
         `Selected model: ${input.modelSession.provider}[${input.modelSession.model}]`,
         "Maximum: three model response submissions, including up to two eligible structural corrections, in this episode.",
         "No current validated coverage is reusable for this prepared review. A new provider-backed review is needed; provider charges may apply.",
+        ...(retainedDutyPlan.retire.length ? ["The earlier BUSINESS report included a removed Action. This is a changed review subject; obsolete associations stay in history and surviving source-wide duties remain unverified operating responsibilities."] : []),
         "This review does not publish rules, authorize execution or change source rows.",
         ...(prior ? [`A prior episode for this exact context reserved ${prior.submissions.length} submissions; its history remains saved.`]
           : sources.coverage_episodes?.length ? ["Earlier episodes for other contexts remain saved; none authorizes this new episode."] : []),
@@ -185,6 +208,7 @@ export async function ensurePreparedPolicyCoverage(input: {
         pending('episode_declined','POLICY_COVERAGE_EPISODE_PENDING',
           'A new provider-backed review was declined. Prior attempts and unresolved review remain saved; no model submission was reserved.');
       await assertCurrent();
+      await assertRetainedCurrent();
       if (canonicalJsonDigest(input.currentDraft()) !== preparedDraftDigest)
         pending('currentness','POLICY_COVERAGE_CONTEXT_CHANGED',
           'The reviewed target or selected model changed while awaiting consent. Reopen current Review; no provider call was started.');
@@ -194,12 +218,15 @@ export async function ensurePreparedPolicyCoverage(input: {
     episode = {id:randomUUID(), context:key, started_at:new Date().toISOString(),submissions:[]};
     await coordinated(async permit=>{
       await assertCurrent(permit);
+      await assertRetainedCurrent();
+      if (canonicalJsonDigest(input.currentDraft()) !== preparedDraftDigest)
+        pending('currentness','POLICY_COVERAGE_CONTEXT_CHANGED','Reopen current Review; no stale episode was allocated.');
       const staged={...sources,coverage_episodes:[...(sources.coverage_episodes??[]),episode]};
       await savePolicySources(input.projectRoot,staged,{expectedDigest:expectedSource,permit});
       expectedSource=canonicalJsonDigest(staged); Object.assign(sources,staged);
     });
     state.attemptKey = key;
-    return reviewPolicyCoverage({session:input.modelSession,source,draft:draftRecord,sourceSession:sources,
+    return reviewPolicyCoverage({session:input.modelSession,source,draft:draftRecord,sourceSession:sources,retainedDutyPlan,
       ...(sources.coverage?.source_digest===source.digest?{previousReport:sources.coverage}:{}),
       episode:{beforeSubmission:async number=>saveEpisode(e=>{
         if(number!==e.submissions.length+1 || number>3) pending('episode_exhausted','POLICY_COVERAGE_EPISODE_EXHAUSTED',
@@ -227,6 +254,9 @@ export async function ensurePreparedPolicyCoverage(input: {
   // Provider calls occur above, outside this coordinated section.
   await coordinated(async permit => {
     await assertCurrent(permit);
+    await assertRetainedCurrent();
+    assembleRetainedDutyReview(report, retainedDutyPlan, source, input.currentDraft(),
+      passages => parsePolicyCoverage({passages},source,input.currentDraft(),sources.operator_messages??[],sources));
     if (canonicalJsonDigest(input.currentDraft()) !== preparedDraftDigest) {
       pending('currentness','POLICY_CLIENT_CONTRACT_CHANGED',
         'The prepared candidate or client contract changed during review. Reopen current Review; no stale ownership was saved.');

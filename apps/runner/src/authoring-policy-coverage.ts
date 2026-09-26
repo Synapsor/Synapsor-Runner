@@ -1,3 +1,4 @@
+import {prepareRetainedDutyReview, assembleRetainedDutyReview, RetainedDutyApplicabilityError, type RetainedDutyPlan} from './authoring-retained-duties.js';
 import {createCoverageRepairScope, assembleScopedCoverageReplacement, scopeToolSchema, portableScopeToolSchema, CoverageScopedCorrectionError, type CoverageRepairScope} from "./authoring-scoped-correction.js";
 import {constrainReceiptComponentSchema, validateScopedReceiptComponents, receiptComponentMeanings} from "./authoring-scoped-receipt-components.js";
 import { CoverageReceiptDutyError } from './authoring-coverage-feedback.js';
@@ -809,6 +810,7 @@ export async function reviewPolicyCoverage(input: {
   session: ModelAuthoringNarrationSession; source: PolicyTextSnapshot; draft: unknown; env?: NodeJS.ProcessEnv;
   sourceSession?: PolicySourceSession;
   previousReport?: PolicyCoverage;
+  retainedDutyPlan?: RetainedDutyPlan;
   episode?: { beforeSubmission: (number: number) => Promise<void>;
     afterSubmission: (number: number, feedback: CoverageFeedback | undefined, accepted: boolean, tentative?: NonNullable<CoverageReviewEpisode["submissions"][number]["tentative"]>) => Promise<void> };
 }): Promise<PolicyCoverage> {
@@ -891,26 +893,15 @@ export async function reviewPolicyCoverage(input: {
         } else lastAssembly = undefined;
         tentativeReport = structuredClone(candidate);
         report = parsePolicyCoverage(candidate, input.source, input.draft, operatorMessages,input.sourceSession);
-        if (input.previousReport?.source_digest === input.source.digest) {
-          // A new response cannot complete a previously pending duty by omission.
-          // Reparse retained components against current evidence before saving.
-          const prior = input.previousReport.passages.filter(p => deferredReviewObligation(p) || receiptConfigurationComponentOnly(p) || isDeferredSourceReadback(p) || isDeferredSourceCounterMaintenance(p))
-            .filter(p => !report!.passages.some(next => {
-              const family = p.obligation_assessment?.family ?? (receiptConfigurationComponentOnly(p) ? "receipt_setup" : isDeferredSourceReadback(p) ? "independent_source_readback" : "source_counter_maintenance");
-              const path = p.obligation_assessment?.path ?? (receiptConfigurationComponentOnly(p) ? "/runner_evidence/runtime_contract/receipts" : p.source_counter_obligation?.path ?? p.draft_paths[0]);
-              return next.obligation_assessment?.family === family && next.obligation_assessment.path === path;
-            }));
-          const validatedPrior = prior.length ? parsePolicyCoverage({ passages: [...report.passages, ...prior] }, input.source, input.draft, operatorMessages,input.sourceSession).passages.slice(report.passages.length) : [];
-          const retained = validatedPrior.filter(p => (deferredReviewObligation(p) || receiptConfigurationComponentOnly(p))
-            && !report!.passages.some(next => next.obligation_assessment?.family === (p.obligation_assessment?.family ?? "receipt_setup")
-              && next.obligation_assessment.path === (p.obligation_assessment?.path ?? "/runner_evidence/runtime_contract/receipts")));
-          if (retained.length) report = parsePolicyCoverage({ passages: [...report.passages, ...retained] }, input.source, input.draft, operatorMessages,input.sourceSession);
-        }
+        const retention = input.retainedDutyPlan ?? prepareRetainedDutyReview(input.previousReport, input.source, input.draft);
+        report = assembleRetainedDutyReview(report, retention, input.source, input.draft,
+          passages => parsePolicyCoverage({passages}, input.source, input.draft, operatorMessages, input.sourceSession));
         return { ok: true, value: { recorded: true, semantic_completeness_proven: false, authority_granted: false } };
       } catch (error) {
         report = undefined;
         tentativeReport = structuredClone(candidate);
         feedback = collectCoverageFeedback(candidate, input.source, input.draft, operatorMessages, error,input.sourceSession);
+        if (error instanceof RetainedDutyApplicabilityError) feedback = error.feedback(contextIdentity);
         // A rejected envelope/category is not permission to regenerate the whole report.
         if (error instanceof CoverageScopedCorrectionError) feedback = {
           context: contextIdentity, findings: [{code:error.code,component:"/",identity:canonicalJsonDigest({context:contextIdentity,kind:"scope_refusal"}),
@@ -934,6 +925,9 @@ export async function reviewPolicyCoverage(input: {
     const index = operator_clarification ? operatorMessages.indexOf(operator_clarification) : -1;
     return { ...record, ...(index >= 0 ? { operator_message_id: index + 1 } : {}) };
   };
+  const retiredAssociations = new Set(input.retainedDutyPlan?.retire.map(entry => canonicalJsonDigest(entry.passage)) ?? []);
+  const previousUnresolved = input.previousReport ? unresolvedPolicyPassages(input.previousReport)
+    .filter(passage => !retiredAssociations.has(canonicalJsonDigest(passage))) : [];
   // Old reports without scoped dependencies require the full unchanged bundle.
   // A changed source/decision/reference invalidates support; nothing is applied
   // as a favorable-result cache or exempted from current coverage validation.
@@ -1003,7 +997,8 @@ export async function reviewPolicyCoverage(input: {
           `Privacy candidates requiring comparison with source requirements: ${JSON.stringify((input.draft as { runner_evidence?: { privacy_review?: unknown } })?.runner_evidence?.privacy_review ?? [])}`,
           `Source: ${input.source.name} v${input.source.version} ${input.source.digest}`,
           ...policyTextLines(input.source.text).map((line, index) => `${index + 1}: ${line}`),
-          ...(input.previousReport ? [`Previous untrusted coverage to reconcile, NOT new business requirements: ${JSON.stringify(unresolvedPolicyPassages(input.previousReport).map(previousPassageForModel))}`] : []),
+          ...(input.previousReport ? [`Previous untrusted coverage to reconcile, NOT new business requirements: ${JSON.stringify(previousUnresolved.map(previousPassageForModel))}`] : []),
+          ...(retiredAssociations.size ? ['Runner retains obsolete associations and their complete prior reports in host history after exact reviewed removal. They are not current references or fulfilled duties. Cover every still-applicable source-wide requirement using independently valid current evidence; do not recreate a removed Action.'] : []),
           ...(previousClarifications.length ? [`Previous supporting interpretations with unchanged source, accepted statements and applicable evidence (untrusted interpretations, not new authority): ${JSON.stringify(previousClarifications.map(previousPassageForModel))}`] : []),
           ...(attempt ? [`Correct this structural coverage problem: ${issue}`] : []),
           ...(repairScope ? [`Host repair scope (identities and exact references, not authority): ${JSON.stringify(repairScope)}`,
@@ -1105,6 +1100,7 @@ export function policyCoverageSummary(source: PolicyTextSnapshot, report?: Polic
   const topics = [...new Set(unresolved.map((passage) => passageTopic(source, passage)))];
   return [
     `Attached rules: ${source.name} v${source.version}; ${open.length} open check(s) across ${new Set(open.map((passage) => passageTopic(source, passage))).size} business topic(s).`,
+    ...(report.retained_duty_history?.length ? [`${report.retained_duty_history.length} obsolete Action association(s) retained in review history. Their source-wide duties continue under independently checked current counter responsibilities; external writers and production assurance remain unverified. No historical work was reauthorized.`] : []),
     ...(unresolved.length ? ["Structured draft prepared; policy coverage needs review before activation.",
       `Review topics: ${topics.slice(0, 3).join("; ")}. Open Review attached rules to inspect and resolve every topic.`]
       : ["Source interpretation is ready for your review, not proof of complete policy correctness."]),
@@ -1153,12 +1149,26 @@ export function policyCoverageSection(source: PolicyTextSnapshot, report: Policy
     `${unresolved.length} unresolved passage(s). ${report.passages.length} interpretations linked to this exact snapshot.`,
     "Model-assessed coverage, not proof of complete or correct policy. Compare source excerpts with the draft before activation.",
     `Source: ${source.digest}`, `Draft: ${report.draft_digest}`,
-  ], children: [...groups].map(([topic, passages], index) => {
+  ], children: [...[...groups].map(([topic, passages], index) => {
     const entries = passages.map((passage) => details(passage, report.passages.indexOf(passage)));
     return { id: `topic_${index}`, title: `${topic} | ${passageStatus(passages[0]!)}`,
       lines: entries.flatMap((entry) => entry.lines),
       children: entries.length === 1 ? entries[0]!.children : entries,
     };
-  }) };
+  }), ...(report.retained_duty_history?.length ? [{ id: 'retained_duty_history', title: 'Historical associations after reviewed removal',
+    lines: ['These records are outside current Action scope, not fulfilled or waived. Source-wide obligations remain under their current responsibilities; historical work is not reauthorized.'],
+    children: report.retained_duty_history.map((record, index) => ({id:`retired_duty_${index}`,title:`Historical source lines ${record.original_passage.start}-${record.original_passage.end}`,
+      lines:[`Original interpretation: ${record.original_passage.interpretation}`,
+        `Original association: ${record.original_passage.draft_paths.join(', ')}`,
+        `Disposition: ${record.disposition}; verification: false`,
+        `Original report: ${record.original_report_digest}`, `Publication lineage: ${record.lineage_digest}`,
+        ...record.removal_basis.transitions.map(t => `Reviewed publication: ${t.before} -> ${t.after}; event ${t.event}`),
+        `Continuing current duties: ${record.continuing_paths.join(', ')}`],
+      children:[{id:`original_retired_report_${index}`,title:'Complete original report (historical)',
+        lines:[`Original source: ${record.original_report.source_digest}`,`Original draft: ${record.original_report.draft_digest}`,
+          'Preserved interpretations are historical evidence, not current acceptance or renewed authority.'],
+        children:record.original_report.passages.map((p,i)=>({id:`historical_passage_${index}_${i}`,title:`Original source lines ${p.start}-${p.end}`,
+          lines:[`Original disposition: ${p.disposition}`,`Original interpretation: ${p.interpretation}`,
+            `Original responsibility: ${p.responsibility ?? 'unassigned'}`,`Original links: ${p.draft_paths.join(', ')}`]}))}]})) }] : [])] };
 }
 import { defaultProviderKeyEnv } from "./hosted-provider-settings.js";
