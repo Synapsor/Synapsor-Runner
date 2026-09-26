@@ -1,5 +1,12 @@
 # Action Capability Qualification
 
+## Discovery quality — Phase B delivered, 2026-09-26
+
+Product/tests `8f892a1f78da9fbe09a13bfac29cea8c5f2b9dd4`, tree `9f7c842b…`, passed independent finite deterministic/installed discovery acceptance and settled full/type/PostgreSQL/ten offline gates. The fixed source matrix passed48/48; baseline ranking was alreadyperfect, so no ranking gain is established. Exactlyeight read-only native turns completed once: new3/4 wholeanswers versusbaseline2/4, both17sends overall. Enumeration retainedall32IDs withone fewer candidatepage/send; both ambiguous answers invented unestablished reservation semantics and remainFAIL despite correctclarification. Missingcallerinput was truthfully requested, never privately inferred. No new businessoperation/sourceeffect occurred.
+
+Main compared complete42-table storesx8, project/archive members, source/ACL/checkpoint hash bindings and exactspending/history. Settled Bcost$0.28833835; campaign$3.86493330, tripwire$2.53178400; bothholds unchanged. The owner-authorized600000-byte local harness limit passed inert under/at/over checks; actualpeak110085B, no capstop/retry. Finalcoldmaterial and failed measurements are preserved; only coveredowned resourcesremoved, fiveolderuncovered retained. Exact layers, mixedanswers, artifacts/gates/costs and immutable independentindexes are in repository-only `docs/qualification-evidence/l4-retained-duty-discovery-quality-20260926/PHASE-B-FINAL-REPORT.md` and `PHASE-B-RESULT.json`. Result-evidence support is a separately queued assignment; this delivery does not repair model prose or claim generalreliability/production/unseenStageB qualification.
+
+
 ## Retained-duty/current-publication Review — Phase A, 2026-09-26
 
 Product/tests `a672229b6ae444817df10b36a0500ef70ffe1205`, tree `88b0829e…`, passed the independent finite retained-duty and exact untouched saved-Review subject contract. One genuine BUSINESS episode saved complete current coverage after one eligible correction; ordinary restart/Review used validated_reuse with zero sends. Only the two owner-delegated client duties were assigned, verified:false. The separate native answer **NOT PASSED**: public boolean flags were incorrectly interpreted as absence of old queued follow-up work. The correct current catalog and permitted source readback do not cure that narration failure. No retry, business request, approval, worker or source effect followed.
