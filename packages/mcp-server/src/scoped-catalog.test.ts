@@ -216,3 +216,41 @@ describe("scoped indexed catalog", () => {
     expect(call(session, index, { query: "sku3" }).actions).toEqual([]);
   });
 });
+
+describe("owned parcel session disclosure coverage v002", () => {
+  it("does not prepare denied exact detail from listing permission or a mismatched prepared entry", () => {
+    let exactCalls = 0;
+    const id = "studio.pack_parcel";
+    const index = new ScopedCatalogIndex([{ id, title: "Pack parcel", summary: "Reviewed public parcel metadata",
+      value: { outcome: id, exact_detail: { outcome: id } }, detail: () => { exactCalls++; throw new Error("Exact disclosure denied"); } }]);
+    const listing = call(new ScopedCatalogSession(), index, { query: "Pack parcel" });
+    expect(listing).not.toHaveProperty("inline_contract");
+    expect(exactCalls).toBe(0);
+    const mismatched = new ScopedCatalogSession().describe({ index, binding: "studio:owned", key: "actions", request: { query: "Pack parcel" },
+      inlineDetail: { id: "studio.foreign_parcel", value: { outcome: "studio.foreign_parcel", private_detail: "DENIED_DETAIL_MARKER" } } });
+    expect(mismatched).not.toHaveProperty("inline_contract");
+    expect(JSON.stringify(mismatched)).not.toContain("DENIED_DETAIL_MARKER");
+    expect(exactCalls).toBe(0);
+    expect(() => call(new ScopedCatalogSession(), index, { detail: id })).toThrow("Exact disclosure denied");
+    expect(exactCalls).toBe(1);
+  });
+
+  it("refuses an imported complete entry beyond the entry bound after an honest inline fallback", () => {
+    const id = "studio.pack_parcel";
+    const description = "Unshortened public caller requirement. ".repeat(400);
+    const full = { outcome: id, inputs: [{ name: "requested_stage", required: true, description,
+      origin: "caller_business_input", type: { kind: "string", max_length: 16 } }], subjects: [{ binding: "parcel", resource: "studio.parcels" }] };
+    const index = new ScopedCatalogIndex([{ id, title: "Pack parcel", summary: "Reviewed public parcel metadata",
+      value: { outcome: id, exact_detail: { outcome: id } }, detail: () => structuredClone(full) }]);
+    expect(Buffer.byteLength(JSON.stringify(full))).toBeGreaterThan(CATALOG_LIMITS.detailBytes);
+    const session = new ScopedCatalogSession();
+    const result = session.describe({ index, binding: "studio:owned", key: "actions", request: { query: "Pack parcel" },
+      inlineDetail: { id, value: full } });
+    expect(result).not.toHaveProperty("inline_contract");
+    expect(result.discovery).toMatchObject({ inline_status: "complete_contract_exceeds_inline_bound", contract_status: "exact_detail_required",
+      next_steps: [{ kind: "inspect_exact_details", tool: "app.describe_actions", arguments: { outcome: id } }] });
+    expect(catalogResponseBytes(result)).toBeLessThanOrEqual(CATALOG_LIMITS.responseBytes);
+    expect(() => call(session, index, { detail: id })).toThrow(/No constraints were truncated/);
+    expect(index.get(id)!.detail()).toEqual(full);
+  });
+});
