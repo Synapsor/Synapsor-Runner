@@ -95,6 +95,7 @@ export class CoverageReceiptReadContextError extends Error {
 /** Reasons originate with coverage findings. The resolution planner consumes
  * this type without making finding production depend on the planner. */
 export type ReviewResolutionReason =
+  | 'retained_duty.applicability'
   | `scope.${SourceTransactionScopeError['reason']}`
   | `counter_support.${CoverageCounterSupportError['reason']}`
   | `receipt_duty.${CoverageReceiptDutyError['reason']}`

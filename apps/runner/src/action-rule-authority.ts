@@ -85,6 +85,69 @@ export type ActionRuleReviewSubject = {
   prior_subjects?: Array<{ record: string; digest: `sha256:${string}` }>;
 };
 
+/** Private authoring evidence from the complete selected repository, never a
+ * model catalog. An immutable activation before/after chain proves removal;
+ * missing history, a draft edit or absence from a list does not. */
+export type ActionRuleCoverageLineage = {
+  store: string; selected_digest: string; active_digest: string;
+  origins: Array<{ coverage_authority_digest: string; authority: ActionRuleAuthorityActivationV1;
+    record: string; transitions: Array<{ event: string; before: string; after: string;
+      before_digest: string; after_digest: string; removed_outcomes: string[]; introduced_outcomes: string[] }> }>;
+};
+
+export async function readActionRuleCoverageLineage(projectRoot: string, selected: ActionRuleAuthorityReviewSubjectV1,
+  readDigest: string): Promise<ActionRuleCoverageLineage | undefined> {
+  return (await withStoredActionPolicies(projectRoot, undefined, async (binding, current) => {
+    const activeRevision = current.active.find(r => r.name === selected.authority.name);
+    if (!activeRevision) return undefined;
+    const active = parseStoredActionActivation(activeRevision).activation;
+    // A disabled copy may review its exact publication, but a new unpublished
+    // replacement cannot supply completed removal lineage.
+    if (active.digest !== selected.digest || canonicalJsonDigest(active.authority) !== canonicalJsonDigest(selected.authority)) return undefined;
+    const key = actionKey(activeRevision.name);
+    const history = await binding.repository.history({ deployment_id: binding.deployment_id, key, limit: 100 });
+    const page = await binding.repository.policyHistory({ deployment_id: binding.deployment_id, key, limit: 100 }, {
+      keys: [key], authorize: ([value]) => { if (value?.revision_id !== activeRevision.revision_id)
+        throw authorityError('POLICY_REVISION_CONFLICT', 'Current Action changed during retained-duty inspection.'); },
+    });
+    const origins: ActionRuleCoverageLineage['origins'] = [];
+    let revision = activeRevision;
+    const transitions: ActionRuleCoverageLineage['origins'][number]['transitions'] = [];
+    const seen = new Set<string>();
+    for (let depth = 0; depth < 100; depth++) {
+      if (seen.has(revision.revision_id)) return undefined;
+      seen.add(revision.revision_id);
+      const authority = parseStoredActionActivation(revision).activation;
+      if (!authority.authority.rules.every(entry => selected.authority.rules.some(currentEntry =>
+        currentEntry.read_boundary_name === entry.read_boundary_name && currentEntry.read_boundary_digest === entry.read_boundary_digest))) return undefined;
+      const coverage_authority_digest = canonicalJsonDigest({ read: readDigest, action: authority.digest });
+      origins.push({ coverage_authority_digest, authority,
+        record: revision.revision_id, transitions: structuredClone(transitions).reverse() });
+      const refs = page.items.filter(item => item.operation === 'revision_created' && item.revision_id === revision.revision_id);
+      if (refs.length !== 1) break;
+      const event = await binding.repository.event(binding.deployment_id, refs[0]!.event_id);
+      const receipt = event?.receipt as Record<string, unknown> | undefined;
+      if (!event || receipt?.operation !== 'activate_action' || receipt.after !== revision.revision_id
+        || receipt.name !== selected.authority.name || receipt.source_database_changed !== false || typeof receipt.before !== 'string') break;
+      const priors = history.filter(item => item.revision.revision_id === receipt.before && item.epoch < event.epoch);
+      if (priors.length !== 1 || (storedActionContent(priors[0]!.revision) as { state?: unknown }).state !== 'active') break;
+      const prior = parseStoredActionActivation(priors[0]!.revision).activation;
+      const beforeOutcomes = prior.authority.rules.map(entry => entry.rule.outcome);
+      const afterOutcomes = authority.authority.rules.map(entry => entry.rule.outcome);
+      transitions.push({ event: event.event_id, before: receipt.before, after: revision.revision_id,
+        before_digest: prior.digest, after_digest: authority.digest,
+        removed_outcomes: beforeOutcomes.filter(value => !afterOutcomes.includes(value)),
+        introduced_outcomes: afterOutcomes.filter(value => !beforeOutcomes.includes(value)) });
+      revision = priors[0]!.revision;
+    }
+    if ((await binding.repository.deployment(binding.deployment_id))?.epoch !== current.epoch)
+      throw authorityError('POLICY_REVISION_CONFLICT', 'Authority changed during retained-duty inspection.');
+    return { store: canonicalJsonDigest({ project: path.resolve(projectRoot), repository: binding.repository_id,
+      deployment: binding.deployment_id, project_id: binding.project_id }), selected_digest: selected.digest,
+      active_digest: active.digest, origins };
+  })) ?? undefined;
+}
+
 export type ActionRuleAuthorityRevisionBaseline = {
   projectRoot: string;
   drafts: Record<string, string>;

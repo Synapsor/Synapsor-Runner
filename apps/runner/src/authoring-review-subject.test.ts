@@ -14,7 +14,8 @@ import type {SchemaInspection} from "@synapsor-runner/schema-inspector";
 import {buildAutoBoundary, activateExplorationBoundary, writeAutoBoundaryArtifacts, explorationBoundaryCandidateDigest,
   AUTO_BOUNDARY_OVERRIDES_VERSION, type ActivatedExplorationBoundary} from "./auto-boundary.js";
 import {recommendedBoundaryReviewCandidate} from "./boundary-candidate.js";
-import {buildActionRuleAuthorityDraft, writeActionRuleAuthorityDraft, activateActionRuleAuthority, readActionRuleReviewSubjects, readActionRuleAuthorityDraft, deactivateActionRuleAuthority} from "./action-rule-authority.js";
+import {buildActionRuleAuthorityDraft, writeActionRuleAuthorityDraft, activateActionRuleAuthority, readActionRuleReviewSubjects, readActionRuleAuthorityDraft, deactivateActionRuleAuthority,
+  readActionRuleCoverageLineage, removeOutcomeActionRuleAuthorityDraft} from "./action-rule-authority.js";
 import {encodeOperatorAuthority, validateOperatorPolicySnapshot} from "./control-policy-authority-codec.js";
 import {migrateProjectControlPolicies} from "./control-policy-store.js";
 let generationLock = `sha256:${"a".repeat(64)}` as const;
@@ -25,7 +26,7 @@ afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice
 async function fixture(backend: "sqlite" | "postgres" | "legacy" = "sqlite") {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-review-subject-"));
   cleanup.push(() => fs.rm(root, {recursive: true, force: true}));
-  const {read, build} = await reviewedRead(root), source = authoritySource();
+  const {read, build, candidate} = await reviewedRead(root), source = authoritySource();
   const schema = `review_subject_${randomUUID().replaceAll("-", "")}`;
   const storePath = path.join(root, ".synapsor/control.db");
   const config: RuntimeConfig = {version: 1, mode: "review", storage: backend !== "postgres" ? {sqlite_path: storePath} : {
@@ -64,10 +65,36 @@ async function fixture(backend: "sqlite" | "postgres" | "legacy" = "sqlite") {
   const chooseOption = vi.fn(async () => "0");
   const resolve = (state = resume, selectedContext = context, explicit = true) => resolveAuthoringReviewSubject({projectRoot: root,
     resume: state, context: selectedContext, session: {chooseOption}, selectCurrentContext: explicit});
-  return {root, binding, read, build, draft, make, publish, resolve, resume, resumeBinding, context, request, chooseOption};
+  return {root, binding, read, build, candidate, draft, make, publish, resolve, resume, resumeBinding, context, request, chooseOption};
 }
 
 for (const backend of ["sqlite", "postgres"] as const) describe.skipIf(backend === "postgres" && !process.env.SYNAPSOR_TEST_POSTGRES_URL)(`published authoring review (${backend})`, () => {
+  it('reads exact reviewed removal from real repository activation records without creating authority', async () => {
+    const f = await fixture(backend), original = authoritySource();
+    const extra = 'billing.pause_reminders';
+    const both = buildActionRuleAuthorityDraft({ name: f.draft.authority.name,
+      action_boundary_name: f.draft.authority.action_boundary.name, catalog: original.catalog,
+      rules: [original.rule, { ...original.rule, name: extra, outcome: extra }].map(rule => ({
+        read_boundary_name: f.read.pack.name, read_boundary_digest: f.read.activation.digest,
+        verification_boundary: original.verification, effect_envelope: original.envelope, rule })),
+      reviews: [f.draft.reviews[0]!, { ...f.draft.reviews[0]!, outcome: extra }] });
+    await writeActionRuleAuthorityDraft(f.root, both); await f.publish(both);
+    const removed = removeOutcomeActionRuleAuthorityDraft({ existing: both, outcome: extra });
+    // A disabled removal is not a completed publication.
+    await writeActionRuleAuthorityDraft(f.root, removed);
+    const readDigest = explorationBoundaryCandidateDigest(f.candidate);
+    expect(await readActionRuleCoverageLineage(f.root, removed, readDigest)).toBeUndefined();
+    const active = await f.publish(removed);
+    const before = await readActionRuleReviewSubjects(f.root);
+    const result = await readActionRuleCoverageLineage(f.root, active, readDigest);
+    const prior = result!.origins.find(v => v.coverage_authority_digest === canonicalJsonDigest({read:readDigest,action:both.digest}));
+    expect(prior?.authority.digest).toBe(both.digest);
+    expect(prior?.transitions).toMatchObject([{before_digest:both.digest,after_digest:removed.digest,removed_outcomes:[extra],introduced_outcomes:[]}]);
+    expect(await readActionRuleReviewSubjects(f.root)).toEqual(before);
+    // Legacy copies have no repository activation chain; absence is unknown.
+    const legacy = await fixture('legacy');
+    expect(await readActionRuleCoverageLineage(legacy.root, legacy.draft, explorationBoundaryCandidateDigest(legacy.candidate))).toBeUndefined();
+  });
   it("resolves the real publication after clearing its draft, persisting the reviewed subject and restarting", async () => {
     const f = await fixture(backend), before = await f.resolve();
     expect(before.subject?.identity.location).toBe("disabled");
@@ -82,6 +109,115 @@ for (const backend of ["sqlite", "postgres"] as const) describe.skipIf(backend =
     await result.assertCurrent();
     expect(f.chooseOption).not.toHaveBeenCalled();
     expect(await readActionRuleAuthorityDraft(f.root, f.draft.authority.name)).toBeUndefined();
+  });
+  it('offers exact disabled and published subjects on explicit Review while Resume retains the pending target', async () => {
+    const f = await fixture(backend), active = await f.publish();
+    // Composed lifecycle: normal repository save retains the exact original
+    // candidate after real publication, as in the authentic stopped project.
+    await writeActionRuleAuthorityDraft(f.root, f.draft);
+    const before = await readActionRuleReviewSubjects(f.root);
+    const disabled = before.find(item => item.identity.location === 'disabled')!;
+    const pending = {...f.resume, pending_policy_review: {...f.request, action_subject: disabled.identity}};
+    const original = structuredClone(pending);
+    expect((await f.resolve(pending, f.context, false)).subject?.identity).toEqual(disabled.identity);
+    expect(f.chooseOption).not.toHaveBeenCalled();
+    f.chooseOption.mockResolvedValueOnce('1');
+    const selected = await f.resolve(pending);
+    expect(selected.subject).toMatchObject({authority: active, identity: {location: 'active'}});
+    expect(f.chooseOption).toHaveBeenCalledOnce();
+    expect((f.chooseOption.mock.calls as unknown as [string, {label: string}[]][])[0]?.[1]).toEqual(expect.arrayContaining([
+      expect.objectContaining({label: expect.stringContaining('Disabled candidate')}),
+      expect.objectContaining({label: expect.stringContaining('Active published')}),
+    ]));
+    expect(pending).toEqual(original);
+    expect(await readActionRuleReviewSubjects(f.root)).toEqual(before);
+  });
+  it('cancels explicit subject choice without changing history or completing pending work', async () => {
+    const f = await fixture(backend); await f.publish(); await writeActionRuleAuthorityDraft(f.root, f.draft);
+    const before = await readActionRuleReviewSubjects(f.root);
+    const pending = {...f.resume, pending_policy_review: {...f.request,
+      action_subject: before.find(item => item.identity.location === 'disabled')!.identity}};
+    const original = structuredClone(pending); f.chooseOption.mockResolvedValueOnce(undefined as never);
+    expect(await f.resolve(pending)).toMatchObject({cancelled: true});
+    expect(pending).toEqual(original); expect(await readActionRuleReviewSubjects(f.root)).toEqual(before);
+  });
+  it('retains the recorded exact active subject after restart despite an equal-value draft, while respecting a real pending edit', async () => {
+    const f = await fixture(backend); await f.publish(); await writeActionRuleAuthorityDraft(f.root, f.draft);
+    const active = (await readActionRuleReviewSubjects(f.root)).find(item => item.identity.location === 'active')!;
+    // Normal resume factory record; this component control measures target
+    // selection, not a claimed canonical BUSINESS report or public review.
+    const completed = {...f.resume, completed_policy_reviews: [{...f.resume.completed_policy_reviews![0]!,
+      request: {...f.request, action_subject: active.identity}}]};
+    expect((await f.resolve(completed)).subject?.identity).toEqual(active.identity);
+    expect(f.chooseOption).not.toHaveBeenCalled();
+    const next = f.make(600); await writeActionRuleAuthorityDraft(f.root, next);
+    const edit = {...completed, pending_action_revision: {outcome: next.authority.rules[0]!.rule.outcome,
+      instruction: 'Change duration', baseline_digest: f.draft.digest,
+      preparation: {read_digest: f.context.read_digest, authority_digest: f.draft.digest, prepared_digest: next.digest}}};
+    const originalEdit = structuredClone(edit);
+    expect((await f.resolve(edit)).subject?.authority.digest).toBe(next.digest);
+    expect(edit).toEqual(originalEdit);
+  });
+  it('refuses publication drift during explicit subject choice and does not offer unproven active authority', async () => {
+    const f = await fixture(backend); await f.publish(); await writeActionRuleAuthorityDraft(f.root, f.draft);
+    const pending = {...f.resume, pending_policy_review: f.request};
+    f.chooseOption.mockImplementationOnce(async () => { await writeActionRuleAuthorityDraft(f.root, f.make(600)); return '1'; });
+    await expect(f.resolve(pending)).rejects.toThrow('POLICY_REVIEW_SUBJECT_CHANGED');
+    expect(pending.pending_policy_review).toEqual(f.request);
+    const unknown = await fixture(backend); await unknown.publish(); await writeActionRuleAuthorityDraft(unknown.root, unknown.draft);
+    vi.spyOn(ControlPolicyRepository.prototype, 'history').mockResolvedValue([]);
+    const selected = await unknown.resolve({...unknown.resume, pending_policy_review: unknown.request});
+    expect(selected.subject?.identity.location).toBe('disabled');
+    expect(unknown.chooseOption).not.toHaveBeenCalled();
+  });
+  it('reviews the current publication on first entry from an untouched completed historical-active job', async () => {
+    const f = await fixture(backend); await f.publish();
+    const old = (await readActionRuleReviewSubjects(f.root)).find(item => item.identity.location === 'active')!;
+    const untouched = {...f.resume, completed_policy_reviews: [{...f.resume.completed_policy_reviews![0]!,
+      request: {...f.request, action_subject: old.identity}}]};
+    expect(untouched.pending_policy_review).toBeUndefined();
+    expect(untouched.pending_action_revision).toBeUndefined();
+    const next = f.make(600); await writeActionRuleAuthorityDraft(f.root, next); await f.publish(next);
+    // Retain the real published candidate through the normal save API, as in
+    // the authentic untouched start. Do not open Review to create a new anchor.
+    await writeActionRuleAuthorityDraft(f.root, next);
+    const subjects = await readActionRuleReviewSubjects(f.root);
+    const active = subjects.find(item => item.identity.location === 'active')!;
+    const disabled = subjects.find(item => item.identity.location === 'disabled')!;
+    expect(active.prior_subjects).toContainEqual({record: old.identity.record, digest: old.authority.digest});
+    expect(active.published_from).toBe(disabled.identity.record);
+    const before = structuredClone(untouched);
+    expect((await f.resolve(untouched)).subject?.identity).toEqual(active.identity);
+    expect(f.chooseOption).not.toHaveBeenCalled();
+    expect(untouched).toEqual(before);
+    expect(await readActionRuleReviewSubjects(f.root)).toEqual(subjects);
+    // This is an explicit current review, not an automatic retarget of Resume.
+    expect((await f.resolve(untouched, f.context, false)).subject?.identity).toEqual(disabled.identity);
+    const edit = {...untouched, pending_action_revision: {outcome: next.authority.rules[0]!.rule.outcome,
+      instruction: 'Review this exact saved edit', baseline_digest: f.draft.digest,
+      preparation: {read_digest: f.context.read_digest, authority_digest: f.draft.digest, prepared_digest: next.digest}}};
+    expect((await f.resolve(edit)).subject?.identity).toEqual(disabled.identity);
+    expect(edit.pending_action_revision.preparation.prepared_digest).toBe(next.digest);
+    const selected = await f.resolve(untouched);
+    await writeActionRuleAuthorityDraft(f.root, f.make(900));
+    await expect(selected.assertCurrent()).rejects.toThrow('POLICY_REVIEW_SUBJECT_CHANGED');
+    expect(untouched).toEqual(before);
+  });
+  it('does not infer that an unrelated disabled save is the historical candidate of the current publication', async () => {
+    const f = await fixture(backend); await f.publish();
+    const old = (await readActionRuleReviewSubjects(f.root)).find(item => item.identity.location === 'active')!;
+    const untouched = {...f.resume, completed_policy_reviews: [{...f.resume.completed_policy_reviews![0]!,
+      request: {...f.request, action_subject: old.identity}}]};
+    const next = f.make(600); await writeActionRuleAuthorityDraft(f.root, next); await f.publish(next);
+    const other = {...next, created_at: '2026-09-26T00:00:00.000Z'};
+    await writeActionRuleAuthorityDraft(f.root, other);
+    const subjects = await readActionRuleReviewSubjects(f.root);
+    const active = subjects.find(item => item.identity.location === 'active')!;
+    const disabled = subjects.find(item => item.identity.location === 'disabled')!;
+    expect(active.published_from).not.toBe(disabled.identity.record);
+    expect(active.authority.digest).toBe(disabled.authority.digest);
+    expect((await f.resolve(untouched)).subject?.identity).toEqual(disabled.identity);
+    expect(f.chooseOption).not.toHaveBeenCalled();
   });
   it("preserves exact pending edits and explicitly distinguishes another current publication", async () => {
     const f = await fixture(backend); await f.publish();
@@ -178,7 +314,7 @@ async function reviewedRead(root: string) {
     confirmation: `ACTIVATE ${explorationBoundaryCandidateDigest(candidate)}`, confirmedDecisions: candidate.unresolved_decisions,
     currentInspection: inspection});
   generationLock = read.generation_lock_fingerprint;
-  return {read, build};
+  return {read, build, candidate};
 }
 
 function authoritySource(): {

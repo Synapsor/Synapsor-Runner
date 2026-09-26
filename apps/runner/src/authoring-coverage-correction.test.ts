@@ -190,8 +190,17 @@ describe('captured coverage correction round trip',()=>{
 });
 
 describe('durable bounded review episodes and actual prepared save',()=>{
-  async function prepared(mode:string) {
+  async function prepared(mode:string, historicalSource = false) {
     const root=await fs.mkdtemp(path.join(os.tmpdir(),'coverage-episode-'));const f=fixture();
+    if (!historicalSource) {
+      // DERIVED current-source prior report, built by the canonical parser.
+      // The captured prior report belongs to a different complete source and
+      // is preserved below as a host-pending negative. These episode controls
+      // need applicable retained duties, not a forged source digest. No prior
+      // prepared-context validation is claimed for this local fixture.
+      f.sources.coverage=parsePolicyCoverage(f.corrected,f.source,f.draft,f.sources.operator_messages,f.sources);
+      delete f.sources.coverage_context_digest;
+    }
     const t=transport(f,mode==='interrupted'?[new Error('transport stopped')]:[f.replies[0],f.corrected]);
     vi.spyOn(receiptConfiguration,'authoringReceiptConfiguration').mockResolvedValue(f.draft.runner_evidence.runtime_contract.receipt_configuration);
     const chooseOption=vi.fn(async()=> 'assign'),confirm=vi.fn(async()=>false),onValidated=vi.fn();
@@ -200,6 +209,16 @@ describe('durable bounded review episodes and actual prepared save',()=>{
       authorityDigest:f.sources.coverage_authority_digest,clarifications:[],assertCurrent:async()=>{},state:{},onValidated};
     return {root,f,t,input,chooseOption,confirm,onValidated};
   }
+  it('preserves the captured old-source duties as pending before episode allocation or transport',async()=>{
+    const x=await prepared('success',true);try {
+      const before=await loadPolicySources(x.root,x.f.sources.id);
+      expect(before.coverage!.source_digest).not.toBe(x.f.source.digest);
+      await expect(ensurePreparedPolicyCoverage(x.input)).rejects.toThrow('POLICY_RETAINED_DUTY_PENDING');
+      expect(x.t.requests).toHaveLength(0);expect(x.confirm).not.toHaveBeenCalled();
+      expect(x.chooseOption).not.toHaveBeenCalled();expect(x.onValidated).not.toHaveBeenCalled();
+      expect(await loadPolicySources(x.root,x.f.sources.id)).toEqual(before);
+    }finally{vi.restoreAllMocks();await fs.rm(x.root,{recursive:true,force:true});}
+  });
   it('strictly validates, saves coverage plus explicit unverified ownership, restarts and reuses',async()=>{
     const x=await prepared('success');try {
       const result=await ensurePreparedPolicyCoverage(x.input);expect(result.activity).toBe('provider');
