@@ -120,7 +120,16 @@ export type PolicyPassage = {
   source_counter_resolution?: { source_digest: string; path: string; dependencies_digest: string;
     proof_digest: string; external_assurance: "unverified" };
 };
-export type PolicyCoverage = { retained_duty_history?: import('./authoring-retained-duties.js').RetainedDutyHistory[];
+export type RetainedDutyHistory = {
+  origin: 'HOST-RETAINED-DUTY'; source_digest: string; original_report_digest: string;
+  original_report: PolicyCoverage;
+  coverage_authority_digest: string; original_passage: PolicyPassage;
+  removal_basis: { store: string; origin_record: string; active_digest: string;
+    transitions: Array<{event:string;before:string;after:string;before_digest:string;after_digest:string;removed_outcomes:string[];introduced_outcomes:string[]}> };
+  disposition: 'outside_current_action_scope'; lineage_digest: string;
+  continuing_paths: string[]; verified: false;
+};
+export type PolicyCoverage = { retained_duty_history?: RetainedDutyHistory[];
   scoped_disclosure?: ScopedDisclosureInventory; client_duties?: ClientDutyInventory;
   counting_inventory?: { version: 1; digest: string; paths: string[] };
   source_transaction_requirement_pending?: true;

@@ -1,7 +1,7 @@
 import { canonicalJsonDigest } from '@synapsor-runner/protocol';
 import type { ActionRuleCoverageLineage } from './action-rule-authority.js';
 import { deferredReviewObligation, receiptConfigurationComponentOnly, isDeferredSourceReadback,
-  isDeferredSourceCounterMaintenance, type PolicyCoverage, type PolicyPassage, type PolicyTextSnapshot } from './authoring-policy-source.js';
+  isDeferredSourceCounterMaintenance, type PolicyCoverage, type PolicyPassage, type PolicyTextSnapshot, type RetainedDutyHistory } from './authoring-policy-source.js';
 import type { CoverageFeedback } from './authoring-coverage-feedback.js';
 import { resolveSourceCounterObligation } from './authoring-counter-maintenance-review.js';
 import { assessReviewObligation } from './authoring-obligation-review.js';
@@ -9,15 +9,6 @@ import { assessReviewObligation } from './authoring-obligation-review.js';
 /** Audit belongs to the host and original report, never the correction tool.
  * Only the obsolete association is retired. The source-wide duty continues at
  * independently validated current records; external assurance remains false. */
-export type RetainedDutyHistory = {
-  origin: 'HOST-RETAINED-DUTY'; source_digest: string; original_report_digest: string;
-  original_report: PolicyCoverage;
-  coverage_authority_digest: string; original_passage: PolicyPassage;
-  removal_basis: { store: string; origin_record: string; active_digest: string;
-    transitions: ActionRuleCoverageLineage['origins'][number]['transitions'] };
-  disposition: 'outside_current_action_scope'; lineage_digest: string;
-  continuing_paths: string[]; verified: false;
-};
 export class RetainedDutyApplicabilityError extends Error {
   readonly code = 'POLICY_RETAINED_DUTY_PENDING';
   constructor(readonly path: string, readonly reason: 'lineage_unavailable' | 'binding_changed' | 'shared_duty_unresolved' | 'retained_validation') {
