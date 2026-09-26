@@ -54,7 +54,7 @@ export async function assessWorkerLaunch(input: {
     local_identity: "environment_or_other_trusted_provider", inputs: [], issues: [], execution_enabled: config.supervised_worker?.enabled === true, execution_binding: "unverified",
     receipt: { mode: "unverified", selected_mode: null, matches_execution_configuration: null, selection: "unverified", live_verification: "not_performed" }, coverage: "per_item_only",
     recovery_prerequisites: "unassessed", apply_identity: { state: "unassessed", verified: false },
-    approval_path: unknownApprovalPath("SELECT_ONE_CURRENT_OUTCOME") };
+    approval_path: unknownApprovalPath(input.capability ? "APPROVAL_CONFIGURATION_NOT_ASSESSED" : "SELECT_ONE_CURRENT_OUTCOME") };
   const projectRoot = semanticActionProjectRoot(config, input.configPath);
   let env = input.env ?? process.env;
   let supplied: Record<string, string> | undefined;
@@ -77,6 +77,7 @@ export async function assessWorkerLaunch(input: {
   if (!("outcome" in policy)) return result;
   result.scope = policy.outcome;
   result.coverage = "selected_semantic_outcome";
+  result.approval_path = unknownApprovalPath("CURRENT_SELECTED_APPROVAL_AUTHORITY_UNAVAILABLE");
   if (!result.execution_enabled) result.issues.push("SUPERVISED_EXECUTION_DISABLED");
   result.recovery_prerequisites = !config.operator_identity?.apply_roles?.length ? "roles_missing"
     : await hasVerifiedRecoveryControlActor({ config: config.operator_identity, configPath: input.configPath, env })

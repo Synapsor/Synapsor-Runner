@@ -190,6 +190,22 @@ describe.skipIf(!process.env.SYNAPSOR_TEST_POSTGRES_URL)("connected semantic wor
     expect(await f.rows()).toEqual([before[0], { preference_id: "pref_1", account_id: "acct_1", principal_id: "customer_1", status: "paused", version: 5 }]);
   }), 30_000);
 
+  it("reports unavailable selected approval authority without asking to select it again", async () => fixture(async f => {
+    const rows = await f.rows(), before = f.snapshot();
+    const current = await assessWorkerLaunch({ config: f.config, configPath: f.configPath, capability: "billing.pause_notifications" });
+    expect(current.issues).toEqual([]);
+    expect(current.approval_path).toMatchObject({ human_path: "mandatory", required_role: "action_reviewer" });
+    expect(f.snapshot()).toEqual(before);
+    await deactivateActionRuleAuthority(f.root);
+    const stopped = f.snapshot();
+    const unavailable = await assessWorkerLaunch({ config: f.config, configPath: f.configPath, capability: "billing.pause_notifications" });
+    expect(unavailable.coverage).toBe("selected_semantic_outcome");
+    expect(unavailable.approval_path).toMatchObject({ state: "unknown", reason: "CURRENT_SELECTED_APPROVAL_AUTHORITY_UNAVAILABLE" });
+    expect(unavailable.issues.length).toBeGreaterThan(0);
+    expect(f.snapshot()).toEqual(stopped);
+    expect(await f.rows()).toEqual(rows);
+  }), 30_000);
+
   it("uses the same safe assessment for the handoff and check command; malformed writer input never leases", async () => fixture(async f => {
     const snapshot = f.snapshot(), rows = await f.rows();
     const launch = await assessWorkerLaunch({ config: f.config, configPath: f.configPath });
