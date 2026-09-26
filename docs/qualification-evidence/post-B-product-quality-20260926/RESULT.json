@@ -1,0 +1,48 @@
+{
+  "verdict": "PASS finite priorities1-5;6DEFERRED",
+  "product_test_source_commit": "2ea6428bf52846cfae4494c43ef6c42a248ef483",
+  "artifact": {
+    "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/post-B-product-quality-20260926/frozen-v2/installed-artifact-manifest.json",
+    "manifest_sha256": "b4e04f98014d2b4451ec71d8ee0c423780a13a45946800c53ff16c34787b8dfe",
+    "archive_sha256": "37c355c666f84e917ffc9130506f622d917186a266a05b7ad4cc88488ee0a2ca",
+    "tree_sha256": "360eec565803e384acbe3a05c3e8953826dd8eed249a30b5460908233011b9dc",
+    "entries": 7601,
+    "package_lock_sha256": "28ba71a0f09224e853bcebc7d2385e3b57adc99666ef6db4e16afc683346388f"
+  },
+  "independent": {
+    "report": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-post-B-quality-20260926/REVIEW.md",
+    "sha256": "4225e67c54afa21a735cc9840aac4b07eb6c6ba083d656b7dd2cd2c933805464",
+    "index": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-post-B-quality-20260926/EVIDENCE-INDEX.json",
+    "index_sha256": "eab71e09bb1c63c171b127b924f5d882ea70fbbd96f1b499a06ada06c72a6fc8",
+    "entries": 579,
+    "main_personally_rehashed": true
+  },
+  "gates": {
+    "complete_full04": {
+      "exit": 0,
+      "passed": 7390,
+      "skipped": 514
+    },
+    "explicit_types009": 0,
+    "postgres006": {
+      "exit": 0,
+      "passed": 122,
+      "skipped": 4
+    },
+    "offline_attempt2": "10/10exit0",
+    "index": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/post-B-product-quality-20260926/GATE-INDEX-CANDIDATE-002.json"
+  },
+  "first_candidate_verdict": "FAIL preserved",
+  "frozen_candidates": 2,
+  "replacement_used": 1,
+  "replacement_remaining": 0,
+  "external_provider_inference_account_calls": 0,
+  "authentic_B_operations": 0,
+  "new_costs_reservations": 0,
+  "T0": "2026-09-26T07:27:00Z",
+  "deadline": "2026-09-26T15:27:00Z",
+  "historical_B": "effect/receiptsPASS;L4BUSINESSFAIL;nativeL4NOTRUN",
+  "historical_stage_B": "ATTEMPTED/NOTPASSED",
+  "A": "ownerdeferred/BUSINESSPENDING",
+  "next": "private delivery then STOP"
+}

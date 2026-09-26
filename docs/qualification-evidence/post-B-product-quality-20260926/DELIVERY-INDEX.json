@@ -1,0 +1,61 @@
+{
+  "recorded_at": "2026-09-26T09:12:40.323818+00:00",
+  "verdict": "PASS finite quality1-5;6DEFERRED",
+  "product_test_source": "2ea6428bf52846cfae4494c43ef6c42a248ef483",
+  "report_commit": "recorded separately in raw DELIVERY.json after private push; report-only descendant",
+  "records": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/post-B-product-quality-20260926/FINAL-EVIDENCE-INDEX-001.json",
+      "sha256": "640d45aa10967e11e58351b1bfc3f16384e2f9dd0597014d0077930fa8615955",
+      "bytes": 1071562
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/post-B-product-quality-20260926/GATE-INDEX-CANDIDATE-002.json",
+      "sha256": "f624c17cb57eeb57eba261bec8bd484a680e1f767d2b87f48894f69eebb8923d",
+      "bytes": 12082
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/post-B-product-quality-20260926/MAIN-INDEPENDENT-EVIDENCE-READBACK-001.json",
+      "sha256": "58d73a6e47334df68c07ba2b0d52f6e5c8d67ccacd1daed681700c602ffbe9b2",
+      "bytes": 595
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/post-B-product-quality-20260926/MAIN-INDEPENDENT-LOGICAL-COMPARISONS-001.json",
+      "sha256": "8374d10b9b1017a34924dac8d9a7efa3a9e807d2459db597e81aa6a87218934a",
+      "bytes": 5795
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/post-B-product-quality-20260926/MAIN-ARTIFACT-VERIFICATION-002.json",
+      "sha256": "62b16c2a05b0d97a2a7cf136d24a3f1a85d828691547214a08d5b9d4caf3e1e3",
+      "bytes": 2272
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/post-B-product-quality-20260926/MAIN-ORIGINAL-B-SEAL-PRESERVATION-001.json",
+      "sha256": "98b0a2964569078b8b1a46584db455f95d59f1978e39675ebe238c139128c3bd",
+      "bytes": 2360
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/post-B-product-quality-20260926/MAIN-GATE-CLEANUP-001.json",
+      "sha256": "ac00f9a2cb325fc31ca672e0f9cbc8d67ae091f92df85a43b2c92cb393506a4b",
+      "bytes": 1210
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-post-B-quality-20260926/REVIEW.md",
+      "sha256": "4225e67c54afa21a735cc9840aac4b07eb6c6ba083d656b7dd2cd2c933805464",
+      "bytes": 8798
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-post-B-quality-20260926/EVIDENCE-INDEX.json",
+      "sha256": "eab71e09bb1c63c171b127b924f5d882ea70fbbd96f1b499a06ada06c72a6fc8",
+      "bytes": 162511
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-post-B-quality-20260926/records/OWNED-RESOURCE-CLEANUP-001.json",
+      "sha256": "517d2c2bc6a0f42be2fbab6186c1047450f44dd0a944cdcac42559664fef68a5",
+      "bytes": 15833
+    }
+  ],
+  "provider_calls_new_costs": 0,
+  "historical_B_verdict_unchanged": true,
+  "next": "STOP"
+}
