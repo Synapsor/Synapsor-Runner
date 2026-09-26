@@ -1,0 +1,127 @@
+{
+  "recorded_at_utc": "2026-09-26T04:25:19.456881+00:00",
+  "product_tests_commit": "1422fd470a26e5e490bd145c0b378f5a70523d37",
+  "installed_tree_sha256": "2dbf84a62e1295702a54dcd1b909973eb6733d0a894a3773ebb48e4a3b557777",
+  "manifest_sha256": "63026b2eb4c5cbfd94b9159438e9bb709d3f24b4bcab2e96a1017167b9965da6",
+  "archive_sha256": "ed3445a1367c627dd83095c74dafd26e49a9f1fde6ac18c5e94203a861a66d62",
+  "entries": 7601,
+  "verdicts": {
+    "input_feasibility": "PASS: branch C",
+    "finite_independent_installed_contract": "PASS",
+    "read_only_business_state_preservation": "PASS",
+    "task1_model_narration_baseline": "FAIL: false eligibility claim",
+    "task1_model_narration_candidate": "FAIL: false statelessness and limited-result completeness claims",
+    "task2_exact_recall": "PASS: 21/21 both lanes",
+    "task3_missing_input_honesty": "PASS both lanes",
+    "universal_efficiency": "NOT ESTABLISHED",
+    "separate_database_timing": "NOT ESTABLISHED",
+    "original_finalization": "NOT ESTABLISHED",
+    "L4_business_journey": "NOT RUN",
+    "historical_Stage_B": "ATTEMPTED / NOT PASSED",
+    "A": "owner-deferred UNESTABLISHED / BUSINESS PENDING"
+  },
+  "independent_review": {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-discovery-audit-20260926/REVIEW-DISCOVERY-FINAL-001.md",
+    "sha256": "0ecee7456e6c0e867245b9f1f55ce0ecc9dc1106c40c0f6fe98c58cdfd226dcb",
+    "index_path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-discovery-audit-20260926/FINAL-DISCOVERY-EVIDENCE-INDEX-001.json",
+    "index_sha256": "abe9ebf34fb00d82266012e2280a148996b7bd71dd88a76f062e3bd0741a338d",
+    "main_rehashed_files": 294
+  },
+  "benchmark": {
+    "pairs": 3,
+    "turns": 6,
+    "new_native_sends": 25,
+    "samples": [
+      {
+        "task": 1,
+        "lane": "baseline",
+        "sends": 7,
+        "mcp_calls": 6,
+        "elapsed_seconds": 38.13864744199964,
+        "actual_settled_usd": "0.05630960",
+        "narration_errors": [
+          "Answer says reference encodes customer eligibility. Actual metadata says eligibility not checked; reference is selection/scope evidence, not eligibility authority."
+        ],
+        "final_answer_sha256": "b48180d507174715e63ce759c00daf78a1dbde6a86fb1f5c6680ea9006d2b156"
+      },
+      {
+        "task": 1,
+        "lane": "candidate",
+        "sends": 4,
+        "mcp_calls": 5,
+        "elapsed_seconds": 35.142748572005075,
+        "actual_settled_usd": "0.04674880",
+        "narration_errors": [
+          "Answer says references are stateless with no server registry. Actual Runner records observed_subject_references.",
+          "Answer says no incomplete comparisons for a five-row limited result; the selected rows do not certify complete business eligibility or totals."
+        ],
+        "final_answer_sha256": "8452b12ef7ecda93fa7c4a324971c853c31d16a083689974806b1cbd2391fda0"
+      },
+      {
+        "task": 2,
+        "lane": "baseline",
+        "sends": 3,
+        "mcp_calls": 4,
+        "elapsed_seconds": 14.324856963998172,
+        "actual_settled_usd": "0.02608475",
+        "narration_errors": [],
+        "final_answer_sha256": "9d9f2263202e008708c925a9a398d8c27c8f601c899aefc4787f676d95916ef6"
+      },
+      {
+        "task": 2,
+        "lane": "candidate",
+        "sends": 5,
+        "mcp_calls": 8,
+        "elapsed_seconds": 25.839423594996333,
+        "actual_settled_usd": "0.05667225",
+        "narration_errors": [],
+        "final_answer_sha256": "aa8bcdc485c1dd9116952b21ad0699b24f7afb712606ee36c137b71f26177493"
+      },
+      {
+        "task": 3,
+        "lane": "baseline",
+        "sends": 3,
+        "mcp_calls": 2,
+        "elapsed_seconds": 14.849354082994978,
+        "actual_settled_usd": "0.01297865",
+        "narration_errors": [],
+        "final_answer_sha256": "080f340168240e7927d35d06e29fc72b9907580d46e5e102670c20db48de4ab8"
+      },
+      {
+        "task": 3,
+        "lane": "candidate",
+        "sends": 3,
+        "mcp_calls": 2,
+        "elapsed_seconds": 16.913281222994556,
+        "actual_settled_usd": "0.01403515",
+        "narration_errors": [],
+        "final_answer_sha256": "2839735f6370751ff62da84bdfd23dcfd9fc1afab20667d75394310fc6060958"
+      }
+    ]
+  },
+  "money": {
+    "actual_settled_benchmark_usd": "0.21282920",
+    "campaign_settled_usd": "3.00504865",
+    "uncertain_campaign_hold_usd": "0.26298000",
+    "external_account_hold_usd": "0.71608250",
+    "continuation_tripwire_basis_settled_usd": "1.67189935",
+    "tripwire_usd": "10.00000000",
+    "campaign_ceiling_usd": "60.00000000",
+    "native_aggregate_used": 119,
+    "native_aggregate_max": 192,
+    "remaining_current_and_future_internal_reservations_usd": "0.00000000"
+  },
+  "main_inference_calls": 0,
+  "postfreeze_replacement_candidates_used": 0,
+  "new_business_requests_workers_effects": 0,
+  "unresolved_owner_questions": [],
+  "next_authorized_action": "Final report-only private-backup delivery then STOP; no further samples or business operations",
+  "cleanup": {
+    "container_cleanup": "VERIFIED: 10 tester originals +10 cold copies, 3 Main containers covered/restored before removal",
+    "anonymous_volume_cleanup": "NOT ESTABLISHED / INCOMPLETE; no attributable mount records, zero removed; unknown volumes retained",
+    "five_uncovered_historical_containers": "Retained untouched",
+    "addendum_path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-discovery-audit-20260926/CLEANUP-ADDENDUM-001.md",
+    "addendum_sha256": "6e9b8fd133734d4c38c05f0b34ba6c9af03d0145ed87d15180d8177c4e862640",
+    "record_sha256": "c14403f6a99d7e2f4f7057aedb3e60d4bdcf6de863d1aff244118f136f7a56cf"
+  }
+}
