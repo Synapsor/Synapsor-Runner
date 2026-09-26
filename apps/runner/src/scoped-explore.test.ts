@@ -11,7 +11,7 @@ import { createScopedExploreBoundarySetRuntime } from "./scoped-explore-boundary
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { SubjectReferenceService } from "@synapsor-runner/mcp-server";
-import { createInactiveSemanticActionRuntime } from "@synapsor-runner/mcp-server";
+import { createInactiveSemanticActionRuntime, resultEvidenceSchema } from "@synapsor-runner/mcp-server";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
@@ -556,7 +556,9 @@ describe("Scoped Explore", () => {
       for (const name of ["app.describe_data", "app.describe_actions", "app.request_change"]) {
         const answer = await client.callTool({ name, arguments: name === "app.request_change" ? { outcome: "missing.outcome", subject_refs: { item: `obj_${"a".repeat(43)}` } } : {} });
         expect(answer.structuredContent, JSON.stringify({ name, answer })).toBeDefined();
-        expect(answer.structuredContent).toHaveProperty("result_evidence.version", "synapsor.result-evidence.v1");
+        const publicAnswer = answer.structuredContent as Record<string, unknown>;
+        expect(resultEvidenceSchema.safeParse(publicAnswer.result_evidence).success).toBe(true);
+        expect(typeof publicAnswer.evidence_summary).toBe("string");
       }
     } finally { await client.close(); await server.close(); await runtime.close(); }
   });

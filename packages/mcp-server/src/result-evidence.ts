@@ -5,13 +5,13 @@ export const RESULT_EVIDENCE_TOOLS = ["app.describe_data", "app.explore_data", "
 export type ResultEvidenceTool = typeof RESULT_EVIDENCE_TOOLS[number];
 /** Registered output families, not a new authority or lifecycle registry. */
 export const RESULT_EVIDENCE_FAMILIES = [
-  "catalog.actions", "catalog.resources", "catalog.settings", "actions.unavailable",
+  "catalog.actions", "catalog.resources", "catalog.resources_unpaged", "catalog.settings", "actions.unavailable",
   "source.rows", "source.aggregate", "request.semantic", "settings.data", "settings.actions",
   "settings.summary", "settings.saved", "settings.replay", "refusal", "unknown",
 ] as const;
 export type ResultEvidenceFamily = typeof RESULT_EVIDENCE_FAMILIES[number];
 
-export const resultEvidenceSchema = z.object({
+const fullResultEvidenceSchema = z.object({
   version: z.literal("synapsor.result-evidence.v1"),
   family: z.enum(RESULT_EVIDENCE_FAMILIES),
   observation: z.enum(["catalog_metadata", "source_rows", "aggregate_groups", "request_lifecycle", "agent_settings", "operation_refusal", "unknown"]),
@@ -28,9 +28,16 @@ export const resultEvidenceSchema = z.object({
     effect: z.enum(["verified_applied", "not_established"]) }).strict().optional(),
   next_step: z.enum(["continue_page", "inspect_contract", "use_reviewed_query", "use_authorized_status", "inspect_recorded_status", "human_settings_review", "follow_refusal", "information_unavailable"]),
 }).strict();
+// Catalog v2 declares its own query/page grammar. Projected unpaged Read
+// metadata declares metadata-only observation and retains its resource array
+// and existing continuation. Neither needs a duplicate observation envelope;
+// unpaged metadata does not acquire v2 completeness from this addition.
+const catalogResultEvidenceSchema = z.object({ runner_history: z.literal("not_inspected") }).strict();
+export const resultEvidenceSchema = z.union([fullResultEvidenceSchema, catalogResultEvidenceSchema]);
 export type ResultEvidence = z.infer<typeof resultEvidenceSchema>;
+type FullResultEvidence = z.infer<typeof fullResultEvidenceSchema>;
 
-const references = (): NonNullable<ResultEvidence["reference"]> => ({ meaning: "opaque_scoped_lookup",
+const references = (): NonNullable<FullResultEvidence["reference"]> => ({ meaning: "opaque_scoped_lookup",
   not_proof_of: ["intent", "eligibility", "approval", "execution", "snapshot"] });
 const record = (value: unknown): Record<string, unknown> => isRecord(value) ? value : {};
 
@@ -52,6 +59,9 @@ export function resultEvidenceFamily(tool: ResultEvidenceTool, value: Record<str
     case "app.request_change": return value.replay === true ? "settings.replay"
       : typeof value.status === "string" && isRecord(value.review) ? "settings.saved" : "unknown";
   }
+  if (tool === "app.describe_data" && value.metadata_only === true && value.contains_source_values === false
+    && ["resource_detail", "resource_index"].includes(String(value.catalog_view))
+    && Array.isArray(value.resources) && value.resources.every(isRecord)) return "catalog.resources_unpaged";
   if (tool === "app.explore_data" && record(value.outcome).type === "success" && Array.isArray(value.data) && value.data.every(isRecord)) {
     if (value.kind === "rows") return "source.rows";
     if (value.kind === "aggregate") return "source.aggregate";
@@ -67,7 +77,9 @@ export function resultEvidenceFamily(tool: ResultEvidenceTool, value: Record<str
 export function withResultEvidence(tool: string, value: Record<string, unknown>): Record<string, unknown> {
   if (!RESULT_EVIDENCE_TOOLS.includes(tool as ResultEvidenceTool)) return value;
   const family = resultEvidenceFamily(tool as ResultEvidenceTool, value);
-  const evidence: ResultEvidence = { version: "synapsor.result-evidence.v1", family, observation: "unknown",
+  const compactReadGuidance = family === "catalog.resources_unpaged"
+    && value.next_action === "Metadata only; use app.explore_data for values.";
+  const evidence: FullResultEvidence = { version: "synapsor.result-evidence.v1", family, observation: "unknown",
     coverage: { scope: "unestablished", status: "unknown" }, runner_history: "unknown", next_step: "information_unavailable" };
   let summary: string;
   switch (family) {
@@ -80,9 +92,13 @@ export function withResultEvidence(tool: string, value: Record<string, unknown>)
       evidence.returned = { count, unit: "items" };
       evidence.runner_history = "not_inspected";
       evidence.next_step = more === true ? "continue_page" : "inspect_contract";
-      summary = `Returned ${count} metadata items. ${more === true ? "Continue the cursor for this authorized catalog query" : more === false ? "This authorized catalog query is exhausted" : "Catalog enumeration is unestablished"}; source/Runner work is unassessed.`;
+      summary = `${count} metadata items; source/Runner work unassessed.`;
       break;
     }
+    case "catalog.resources_unpaged":
+      // This resource-array count is not a complete source/catalog total.
+      summary = `${(value.resources as unknown[]).length} metadata item${(value.resources as unknown[]).length === 1 ? "" : "s"}${value.catalog_view === "resource_detail" ? "; use app.explore_data" : ""}`;
+      break;
     case "source.rows": case "source.aggregate": {
       const count = (value.data as unknown[]).length;
       const unit = family === "source.rows" ? "rows" : "groups";
@@ -151,5 +167,10 @@ export function withResultEvidence(tool: string, value: Record<string, unknown>)
   // Place the boundary first in both representations. Ignore any preexisting
   // metadata with these reserved names; it never supplies host evidence.
   const { result_evidence: _oldEvidence, evidence_summary: _oldSummary, ...facts } = value;
-  return { result_evidence: evidence, evidence_summary: summary, ...facts };
+  // Relocate this exact duplicate guidance beside the existing metadata-only
+  // fields. Custom guidance and every executable/query fact remain untouched.
+  if (compactReadGuidance) delete facts.next_action;
+  const publishedEvidence: ResultEvidence = family.startsWith("catalog.")
+    ? { runner_history: "not_inspected" } : evidence;
+  return { result_evidence: publishedEvidence, evidence_summary: summary, ...facts };
 }
