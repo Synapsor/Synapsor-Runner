@@ -54,6 +54,7 @@ describe("prepareSavedActionRuleRemoval", () => {
     expect((await reviewFinalActionRemoval({ projectRoot: "/fixture", removal, session })).completed).toBe(false);
     expect(showReviewDetails).toHaveBeenCalledWith("Remove the last allowed change", expect.arrayContaining([
       expect.stringContaining(pending.draft_digest), expect.stringContaining("already-dispatched"),
+      expect.stringContaining("Reviewer-grant impact: unknown"), expect.stringContaining("separate"),
     ]));
     expect(chooseOption).toHaveBeenCalledWith("REMOVE THE LAST ALLOWED CHANGE", expect.any(Array),
       expect.objectContaining({ initialValue: "pause", exactDetails: { title: "Remove the last allowed change", summaryTitle: "Removal review", lines: expect.any(Array) } }));

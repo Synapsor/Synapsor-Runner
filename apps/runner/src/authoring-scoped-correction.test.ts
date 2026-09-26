@@ -9,7 +9,27 @@ import { recordCoverageFeedbackParent } from './authoring-coverage-feedback.js';
 import { MAX_COVERAGE_SUBMISSIONS } from './authoring-coverage-feedback.js';
 import { coverageToolDeclarationIssue } from './authoring-coverage-tool-profile.js';
 import { createCoverageRepairScope, assembleScopedCoverageReplacement, scopeToolSchema, portableScopeToolSchema,
-  type CoverageRepairCategory, type CoverageRepairContext } from './authoring-scoped-correction.js';
+  COVERAGE_REPAIR_CATEGORIES, type CoverageRepairCategory, type CoverageRepairContext } from './authoring-scoped-correction.js';
+
+// Deliberate publication/host differences are classified, not silently defaulted.
+// A newly registered category requires an explicit classification in this gate.
+const correctionFieldOwnership = {
+  compiled_effect: { model: ['interpretation', 'draft_paths'], conditional: ['implemented', 'responsibility:runner', 'issue_kind:coverage_link'], unresolved: ['current compiled effect/execution proof'] },
+  receipt_configuration: { model: ['interpretation', 'draft_paths'], conditional: ['implemented', 'responsibility:runner', 'issue_kind:coverage_link'], unresolved: ['current selected receipt mode'] },
+  source_transaction_coupling: { model: ['interpretation', 'draft_paths'], conditional: ['exact coupling.representation target: host supplies responsibility=runner, issue_kind=coverage_link, receipt_component=source_transaction_coupling; explicit conflicts refuse'], unresolved: ['current operator interpretation', 'exact transaction capability', 'observation cannot be invented'] },
+  receipt_read_exclusion: { model: ['interpretation', 'draft_paths'], conditional: ['implemented', 'responsibility:runner', 'issue_kind:coverage_link'], unresolved: ['current reviewed Read exclusion'] },
+  setup: { model: ['interpretation', 'draft_paths', 'deployment_prerequisite'], conditional: ['actual setup responsibility/evidence'], unresolved: ['provisioning and execution consent'] },
+  receipt_observation: { model: ['interpretation', 'draft_paths'], conditional: ['positive observation reference only if supported'], unresolved: ['standard prepared context has no positive receipt-observation references; claims remain terminal'] },
+  independent_readback: { model: ['interpretation', 'draft_paths', 'application_obligations'], conditional: ['actual responsibility and duty evidence'], unresolved: ['independent readback observation'] },
+  ordinary: { model: ['interpretation', 'draft_paths', 'disposition'], conditional: ['source field/counter/client-duty requirements'], unresolved: ['owner meaning and current full-source proof'] },
+} satisfies Record<CoverageRepairCategory, { model:string[]; conditional:string[]; unresolved:string[] }>;
+const sharedCorrectionOwnership = {
+  host_owned: ['scope_digest', 'parent_digest', 'context', 'target_id', 'member_path'],
+  host_only_wire_superset: ['target/category/reference correlations', 'per-target exact array membership', 'immediate-parent and current-context provenance', 'outside-record retention', 'whole assembled review validation'],
+  editable_shapes: ['passage', 'counter_child'],
+  fragment_ranges: 'Model supplies required start/end within the exact host-nominated source ranges; the host does not default these values',
+  counter_child: { model: ['path', 'current_capability', 'required_capability'], conditional: ['operator_message_id', 'operator_clarification'], host: ['exact existing path and nominated parent/index/anchor; outside siblings retained'], unresolved: ['counter maintenance proof'] },
+};
 
 const root = '/runner_evidence/runtime_contract';
 const effect = '/runner_evidence/actions/example.action/effect';
@@ -51,6 +71,15 @@ function fixture() {
   return {context, parent, feedback, scope, payload, assemble};
 }
 describe('host-scoped unaccepted coverage assembly', () => {
+  it('classifies every registered category and editable shape in the normal conformance inventory', () => {
+    expect(Object.keys(correctionFieldOwnership).sort()).toEqual([...COVERAGE_REPAIR_CATEGORIES].sort());
+    expect(sharedCorrectionOwnership.editable_shapes).toEqual(['passage','counter_child']);
+    for(const category of COVERAGE_REPAIR_CATEGORIES) {
+      expect(correctionFieldOwnership[category].model).toContain('interpretation');
+      expect(correctionFieldOwnership[category].unresolved.length).toBeGreaterThan(0);
+    }
+    expect(correctionFieldOwnership.receipt_observation.unresolved.join(' ')).toContain('no positive');
+  });
   it('nominates the exact returned feedback and parent, preserving every outside raw record and optional absence', () => {
     const f = fixture(), before = structuredClone(f.parent), result = f.assemble();
     expect(f.feedback.findings.map(f => f.component)).toEqual(['/passages/1/draft_paths/0']);
@@ -415,6 +444,10 @@ describe('host-scoped unaccepted coverage assembly', () => {
     }};
     const strict=scopeToolSchema(f.scope,passageSchema);
     const portable=portableScopeToolSchema(f.scope,passageSchema,strict);
+    // Inventory the actual emitted edit channels, not a second schema registry.
+    const emitted = portable as any;
+    expect(Object.keys(emitted.properties.groups.items.properties).sort())
+      .toEqual(['counter_replacements','passage_replacements','target_id']);
     const validate=new (Ajv as unknown as {new(options:unknown):any})({strict:false}).compile(portable);
     expect(validate(f.payload),JSON.stringify(validate.errors)).toBe(true);
     expect(JSON.stringify(portable)).not.toMatch(/"(?:oneOf|anyOf|allOf|not|const|\$ref)"/u);
@@ -441,6 +474,7 @@ describe('host-scoped unaccepted coverage assembly', () => {
         stages:[{stage:'initial',profile:'openai_non_strict_function',case:'authoring-policy-coverage.test.ts actual encoded request'},
           {stage:'first_scoped_correction',profile:'openai_non_strict_function',schema_sha256:hash(portable),case:'single and multiple nominated groups'},
           {stage:'second_scoped_correction',profile:'openai_non_strict_function',schema_sha256:hash(portable),case:'same builder; admission still conditional on host progress gate'}],
+        field_ownership:{categories:correctionFieldOwnership,shared:sharedCorrectionOwnership},
         deliberate_wire_superset:['category-to-target and edit-anchor pairing remain in canonical scope assembler',
           'per-target passage/counter array membership remains host-only','whole assembled review validation remains host-only'],
         other_structured_authoring_emitters_encountered_unchecked:authoringEmitters.filter(name=>name!=='authoring-policy-coverage.ts'),

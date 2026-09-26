@@ -208,7 +208,19 @@ async function prepareOperatorIdentityConfiguration(input: Input, mode: "approve
           roleScopes.some((scope) => scope.outcome === outcome && scope.required_role === role)))
           || item.outcomes.some((outcome) => !item.roles.some((role) =>
             roleScopes.some((scope) => scope.outcome === outcome && scope.required_role === role)))) {
-          fail("POLICY_APPROVER_ROLE_OUT_OF_SCOPE", "Each reviewed role and outcome must form an exact active Action approval mandate.");
+          const currentOutcomes = new Set(active.registry.rules.map(rule => rule.compiled.outcome));
+          const obsolete = item.outcomes.filter(outcome => !currentOutcomes.has(outcome)
+            && priorOperators[item.subject]?.outcomes?.includes(outcome));
+          const invalidOutcomes = item.outcomes.filter(outcome => !obsolete.includes(outcome)
+            && !item.roles.some(role => roleScopes.some(scope => scope.outcome === outcome && scope.required_role === role)));
+          const invalidRoles = item.roles.filter(role => !item.outcomes.some(outcome =>
+            roleScopes.some(scope => scope.outcome === outcome && scope.required_role === role)));
+          const detail = [
+            ...(obsolete.length ? [`Existing reviewer ${item.subject} retains removed outcome scope ${obsolete.join(", ")}. The complete current Action authority no longer contains that scope. Explicitly retire only that obsolete grant in the proposed roster; preserve other legitimate grants and historical verification material. If it is the last scope, remove the active reviewer entry rather than omit or empty its outcomes restriction.`] : []),
+            ...(invalidOutcomes.length || invalidRoles.length || !item.outcomes.length
+              ? [`Proposed reviewer ${item.subject} also has invalid grants: outcomes ${invalidOutcomes.join(", ") || (item.outcomes.length ? "none separately identified" : "unrestricted")}; roles ${invalidRoles.join(", ") || "none separately identified"}. Each reviewed role and outcome must form an exact active Action approval mandate. Retiring an obsolete scope does not authorize these grants.`] : []),
+          ].join(" ");
+          fail("POLICY_APPROVER_ROLE_OUT_OF_SCOPE", `${detail} Next: use policy approver --input <reviewed-roster.json> to preview and separately confirm the exact resulting roster; saving leaves execution disabled for separate review. Action removal and grant retirement are distinct operations. Historical approvals remain recorded.`);
         }
       }
     } else {

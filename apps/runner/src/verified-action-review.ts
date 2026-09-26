@@ -27,6 +27,7 @@ import { renderRunnerResultPanel } from "./runner-result-panel.js";
 import { reviewActionRevisionImpact } from "./action-revision-impact.js";
 import { readSavedActionJobReview } from "./saved-action-job-review.js";
 import { revalidateSavedActionReadDependencies, savedActionReadReviewState } from "./action-read-recovery.js";
+import { inspectReviewerGrantRemovalImpact, reviewerGrantImpactLines } from "./reviewer-grant-impact.js";
 import {
   verifySemanticExecutionReadPosture,
   activateSemanticActionRuntime,
@@ -176,7 +177,13 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
     const notice = verifiedActionNotice(value, active, configPath);
     return { ...notice, lines: [...jobReview.summary, ...notice.lines] };
   };
+  const removedOutcomes = input.active && input.draft ? input.active.authority.rules.map(rule => rule.rule.outcome)
+    .filter(outcome => !input.draft!.authority.rules.some(rule => rule.rule.outcome === outcome)) : [];
+  const removalImpact = async (outcomes = removedOutcomes) => input.active && outcomes.length
+    ? reviewerGrantImpactLines(await inspectReviewerGrantRemovalImpact({ projectRoot: input.projectRoot,
+      activeDigest: input.active.digest, removedOutcomes: outcomes, env: input.env }), input.projectRoot) : [];
   const summary = [
+    ...await removalImpact(),
     ...jobReview.summary,
     ...subjectLines,
     ...(needsReadReview ? ["Review the saved read access first; its latest revision is not active.",
@@ -225,7 +232,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
     }
     const accepted = await (input.session.confirmActivation ?? input.session.confirm)(
       `Activate verified Action Boundary "${input.draft.authority.action_boundary.name}"?`,
-      { context: [...input.draft.authority.rules.flatMap(actionRuleEffectLines), ...summary] },
+      { context: [...await removalImpact(), ...input.draft.authority.rules.flatMap(actionRuleEffectLines), ...summary] },
     );
     if (!accepted) return reviewedNotice(input.draft, false);
     const activated = await activateSemanticActionRuntime({
@@ -456,6 +463,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
         {
           defaultValue: false,
           context: [
+            ...await removalImpact(input.active.authority.rules.map(rule => rule.rule.outcome)),
             "Agents will no longer be able to nominate these outcomes.",
             "Existing proposals and evidence remain; approval, apply, and source data are unchanged.",
           ],
@@ -474,6 +482,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
         `Activate verified Action Boundary "${input.draft.authority.action_boundary.name}"?`,
         {
           context: [
+            ...await removalImpact(),
             ...input.draft.authority.rules.flatMap(actionRuleEffectLines),
             ...summary,
             "This grants proposal authority only. It cannot approve, apply, or write source data.",

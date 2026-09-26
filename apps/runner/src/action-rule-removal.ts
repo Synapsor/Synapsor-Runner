@@ -7,6 +7,7 @@ import {
 } from "./action-rule-authority.js";
 import type { BoundaryReviewInteractiveSession, BoundaryAccessNotice } from "./boundary-cli-picker.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { inspectReviewerGrantRemovalImpact, reviewerGrantImpactLines } from "./reviewer-grant-impact.js";
 
 export async function reviewFinalActionRemoval(input: {
   projectRoot: string;
@@ -14,8 +15,12 @@ export async function reviewFinalActionRemoval(input: {
   session: BoundaryReviewInteractiveSession;
 }): Promise<{ completed: boolean; notice: BoundaryAccessNotice }> {
   const { removal, session } = input;
+  const reviewerImpact = removal.completedDeactivation ? [] : reviewerGrantImpactLines(
+    await inspectReviewerGrantRemovalImpact({ projectRoot: input.projectRoot, activeDigest: removal.digest,
+      removedOutcomes: [removal.removedOutcome] }), input.projectRoot);
   const lines = [
     `${removal.removedOutcome} will no longer accept new requests or begin execution.`,
+    ...reviewerImpact,
     "Read access, private-field protections and your existing client connection stay unchanged.",
     "Pending requests and receipts stay in history. Old approvals cannot start a new execution while this action is off.",
     "An already-dispatched database transaction may finish; inspect its receipt. This does not undo completed changes.",

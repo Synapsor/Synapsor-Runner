@@ -59,6 +59,45 @@ export type ResolveOperatorIdentityInput = {
   tokenInput?: Readable;
 };
 
+/** Shared signed-roster decision scope. This checks configuration only; it
+ * does not authenticate key possession or grant a decision. Actual signing
+ * and static operator diagnostics use the same restrictions. */
+export function assertSignedOperatorDecisionScope(
+  config: OperatorIdentityConfig, subject: string,
+  input: Pick<ResolveOperatorIdentityInput, "action" | "proposal" | "requiredRole">,
+): NonNullable<OperatorIdentityConfig["operators"]>[string] {
+  const operator = config.operators?.[subject];
+  if (!operator) throw Object.assign(new Error("OPERATOR_IDENTITY_NOT_ENROLLED: signed operator is not present in the reviewed roster"),
+    { code: "OPERATOR_IDENTITY_NOT_ENROLLED" });
+  if (config.roster_version === 2 && !operator.authority_kind) {
+    throw Object.assign(new Error("OPERATOR_AUTHORITY_KIND_MISSING: the reviewed signed roster is incomplete."),
+      { code: "OPERATOR_AUTHORITY_KIND_MISSING" });
+  }
+  if (config.roster_version !== 2 && (operator.authority_kind !== undefined || operator.apply_outcomes !== undefined)) {
+    throw Object.assign(new Error("OPERATOR_ROSTER_VERSION_INVALID: versioned signer authority is not active."),
+      { code: "OPERATOR_ROSTER_VERSION_INVALID" });
+  }
+  if (operator.authority_kind === "scoped_apply") {
+    if (operator.roles.length || operator.outcomes !== undefined || !Array.isArray(operator.apply_outcomes)
+      || input.action !== "apply" || !operator.apply_outcomes.includes(input.proposal.action ?? "")) {
+      throw Object.assign(new Error("OPERATOR_SCOPED_APPLY_NOT_AUTHORIZED: this signed identity cannot perform the requested decision."),
+        { code: "OPERATOR_SCOPED_APPLY_NOT_AUTHORIZED" });
+    }
+  } else if (operator.authority_kind !== undefined && operator.authority_kind !== "legacy") {
+    throw Object.assign(new Error("OPERATOR_AUTHORITY_KIND_INVALID: the signed roster has an unknown authority variant."),
+      { code: "OPERATOR_AUTHORITY_KIND_INVALID" });
+  } else if (operator.authority_kind === "legacy" && (!operator.roles.length || operator.apply_outcomes !== undefined)) {
+    throw Object.assign(new Error("OPERATOR_LEGACY_AUTHORITY_INVALID: the reviewed signed roster is incomplete."),
+      { code: "OPERATOR_LEGACY_AUTHORITY_INVALID" });
+  } else if (operator.outcomes && (!["approve", "reject"].includes(input.action)
+    || !operator.outcomes.includes(input.proposal.action ?? ""))) {
+    throw Object.assign(new Error(`OPERATOR_OUTCOME_NOT_AUTHORIZED: ${subject} is not assigned to this operation's outcome`),
+      { code: "OPERATOR_OUTCOME_NOT_AUTHORIZED" });
+  }
+  assertRole(subject, operator.roles, input.requiredRole);
+  return operator;
+}
+
 /** The same nonmutating identity/operation check used by actual decisions and
  * worker preflight. It signs an ephemeral decision but writes no ledger entry. */
 export async function resolveAuthorizedOperatorIdentity(input: ResolveOperatorIdentityInput): Promise<OperatorIdentityProof> {
@@ -135,35 +174,7 @@ export async function resolveOperatorIdentity(input: ResolveOperatorIdentityInpu
   const subject = input.identity?.trim() || env.SYNAPSOR_OPERATOR_ID?.trim();
   if (!subject) throw Object.assign(new Error("OPERATOR_IDENTITY_MISSING: signed operator identity requires --identity <operator> or SYNAPSOR_OPERATOR_ID"),
     { code: "OPERATOR_IDENTITY_MISSING" });
-  const operator = config.operators?.[subject];
-  if (!operator) throw Object.assign(new Error("OPERATOR_IDENTITY_NOT_ENROLLED: signed operator is not present in the reviewed roster"),
-    { code: "OPERATOR_IDENTITY_NOT_ENROLLED" });
-  if (config.roster_version === 2 && !operator.authority_kind) {
-    throw Object.assign(new Error("OPERATOR_AUTHORITY_KIND_MISSING: the reviewed signed roster is incomplete."),
-      { code: "OPERATOR_AUTHORITY_KIND_MISSING" });
-  }
-  if (config.roster_version !== 2 && (operator.authority_kind !== undefined || operator.apply_outcomes !== undefined)) {
-    throw Object.assign(new Error("OPERATOR_ROSTER_VERSION_INVALID: versioned signer authority is not active."),
-      { code: "OPERATOR_ROSTER_VERSION_INVALID" });
-  }
-  if (operator.authority_kind === "scoped_apply") {
-    if (operator.roles.length || operator.outcomes !== undefined || !Array.isArray(operator.apply_outcomes)
-      || input.action !== "apply" || !operator.apply_outcomes.includes(input.proposal.action ?? "")) {
-      throw Object.assign(new Error("OPERATOR_SCOPED_APPLY_NOT_AUTHORIZED: this signed identity cannot perform the requested decision."),
-        { code: "OPERATOR_SCOPED_APPLY_NOT_AUTHORIZED" });
-    }
-  } else if (operator.authority_kind !== undefined && operator.authority_kind !== "legacy") {
-    throw Object.assign(new Error("OPERATOR_AUTHORITY_KIND_INVALID: the signed roster has an unknown authority variant."),
-      { code: "OPERATOR_AUTHORITY_KIND_INVALID" });
-  } else if (operator.authority_kind === "legacy" && (!operator.roles.length || operator.apply_outcomes !== undefined)) {
-    throw Object.assign(new Error("OPERATOR_LEGACY_AUTHORITY_INVALID: the reviewed signed roster is incomplete."),
-      { code: "OPERATOR_LEGACY_AUTHORITY_INVALID" });
-  } else if (operator.outcomes && (!["approve", "reject"].includes(input.action)
-    || !operator.outcomes.includes(input.proposal.action ?? ""))) {
-    throw Object.assign(new Error(`OPERATOR_OUTCOME_NOT_AUTHORIZED: ${subject} is not assigned to this operation's outcome`),
-      { code: "OPERATOR_OUTCOME_NOT_AUTHORIZED" });
-  }
-  assertRole(subject, operator.roles, input.requiredRole);
+  const operator = assertSignedOperatorDecisionScope(config, subject, input);
   const privateKeyPath = input.privateKeyPath?.trim() || env.SYNAPSOR_OPERATOR_PRIVATE_KEY_PATH?.trim();
   if (!privateKeyPath) throw Object.assign(new Error("OPERATOR_PRIVATE_KEY_MISSING: signed operator identity requires --identity-key <private-key.pem> or SYNAPSOR_OPERATOR_PRIVATE_KEY_PATH"),
     { code: "OPERATOR_PRIVATE_KEY_MISSING" });

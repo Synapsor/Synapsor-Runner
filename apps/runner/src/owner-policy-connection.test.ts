@@ -580,7 +580,12 @@ for (const backend of ["sqlite", "postgres"] as const) describe.skipIf(backend =
       const identity = await reviewerIdentity(f.root);
       identity.operators.reviewer_one.roles = ["worker_admin"];
       const before = await f.state();
-      await expect(prepareApproverPolicyConfiguration({ ...f.input, identity })).rejects.toMatchObject({ code: "POLICY_APPROVER_ROLE_OUT_OF_SCOPE" });
+      await expect(prepareApproverPolicyConfiguration({ ...f.input, identity })).rejects.toMatchObject({
+        code: "POLICY_APPROVER_ROLE_OUT_OF_SCOPE", message: expect.stringContaining("roles worker_admin"),
+      });
+      await expect(prepareApproverPolicyConfiguration({ ...f.input, identity })).rejects.toMatchObject({
+        message: expect.stringContaining("outcomes inventory.adjust"),
+      });
       expect(await f.state()).toEqual(before);
     });
   });

@@ -11,6 +11,7 @@ import { inspectSemanticReceiptSetup } from "./semantic-receipt-setup.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import { shellQuote } from "./cli-format.js";
 import { hasVerifiedRecoveryControlActor, resolveAuthorizedOperatorIdentity } from "./operator-identity.js";
+import { assessApprovalPath, approvalPathReadinessLines, unknownApprovalPath, type ApprovalPathReadiness } from "./approval-path-readiness.js";
 
 export type WorkerLaunchAssessment = {
   config_path: string;
@@ -27,6 +28,8 @@ export type WorkerLaunchAssessment = {
     code?: string; verified: boolean };
   /** Advisory for future failed attempts; never changes launch or item eligibility. */
   recovery_prerequisites?: "unassessed" | "roles_missing" | "actor_unverified" | "actor_verified";
+  /** Advisory operator evidence; never part of worker admission or issues. */
+  approval_path?: ApprovalPathReadiness;
 };
 
 function safeCode(error: unknown): string {
@@ -50,7 +53,8 @@ export async function assessWorkerLaunch(input: {
   const result: WorkerLaunchAssessment = { config_path: path.resolve(input.configPath), scope: input.capability ?? "all configured outcomes",
     local_identity: "environment_or_other_trusted_provider", inputs: [], issues: [], execution_enabled: config.supervised_worker?.enabled === true, execution_binding: "unverified",
     receipt: { mode: "unverified", selected_mode: null, matches_execution_configuration: null, selection: "unverified", live_verification: "not_performed" }, coverage: "per_item_only",
-    recovery_prerequisites: "unassessed", apply_identity: { state: "unassessed", verified: false } };
+    recovery_prerequisites: "unassessed", apply_identity: { state: "unassessed", verified: false },
+    approval_path: unknownApprovalPath("SELECT_ONE_CURRENT_OUTCOME") };
   const projectRoot = semanticActionProjectRoot(config, input.configPath);
   let env = input.env ?? process.env;
   let supplied: Record<string, string> | undefined;
@@ -86,6 +90,8 @@ export async function assessWorkerLaunch(input: {
   try {
     const active = await loadActiveActionRuleAuthority(projectRoot, { outcome: policy.outcome });
     const rule = resolveActivatedActionRule(active.registry, policy.outcome);
+    result.approval_path = await assessApprovalPath({ config, configPath: input.configPath,
+      registry: active.registry, outcome: policy.outcome, unavailableOutcomes: active.unavailable_outcomes });
     result.execution_binding = policy.action_boundary_digest === rule.action_boundary_digest ? "current" : "stale";
     if (result.execution_binding === "stale") result.issues.push("SUPERVISED_EXECUTION_BINDING_STALE");
     try {
@@ -155,6 +161,7 @@ export function workerLaunchLines(result: WorkerLaunchAssessment): string[] {
     ...result.inputs.map(x => `${x.purpose} reference ${x.reference}: ${x.present ? "present" : "missing"}${x.source === "reviewed_local_identity" ? " (reviewed local identity)" : ""}.`),
     `Receipts configured: ${result.receipt.mode}; selected: ${result.receipt.selected_mode ?? "unverified"} (${result.receipt.selection}); matches execution: ${result.receipt.matches_execution_configuration === null ? "unverified" : result.receipt.matches_execution_configuration ? "yes" : "no"}. Live verification not performed by this check.`,
     `Apply identity: ${result.apply_identity.state}${result.apply_identity.code ? ` (${result.apply_identity.code})` : ""}; ${result.apply_identity.verified ? "verified" : "not verified"}. This is a nonmutating current-input assessment, not a cached execution permit.`,
+    ...approvalPathReadinessLines(result.approval_path ?? unknownApprovalPath("SELECT_ONE_CURRENT_OUTCOME")),
     ...recoveryPrerequisiteLines(result.recovery_prerequisites ?? "unassessed"),
     ...(result.issues.length ? [`Launch prerequisites refused: ${result.issues.join(", ")}. Restore the reviewed inputs, then check again.`] : []),
     ...(result.coverage === "per_item_only" ? ["Per-item prerequisites remain unassessed. Select one semantic outcome with --capability for its launch check."] : []),
