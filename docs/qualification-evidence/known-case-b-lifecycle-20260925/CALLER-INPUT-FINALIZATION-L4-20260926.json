@@ -1,0 +1,58 @@
+{
+  "schema_version": 1,
+  "classification": "Known-case B caller-input continuation, no new product candidate",
+  "product_tests_commit": "1422fd470a26e5e490bd145c0b378f5a70523d37",
+  "installed_tree_sha256": "2dbf84a62e1295702a54dcd1b909973eb6733d0a894a3773ebb48e4a3b557777",
+  "installed_manifest_sha256": "63026b2eb4c5cbfd94b9159438e9bb709d3f24b4bcab2e96a1017167b9965da6",
+  "installed_archive_sha256": "ed3445a1367c627dd83095c74dafd26e49a9f1fde6ac18c5e94203a861a66d62",
+  "verdicts": {
+    "artifact": "PASS",
+    "authentic_restore": "PASS",
+    "synthetic_external_caller_input_coherence": "PASS",
+    "installed_local_worker_readiness": "PASS_SCOPED_NONMUTATING_OFFLINE",
+    "human_approval_readiness": "BLOCKED_NO_QUALIFIED_EXISTING_REVIEWER",
+    "native_request_accuracy_and_narration": "NOT_RUN",
+    "host_approval_execution_new_receipts_readback": "NOT_RUN",
+    "positive_L4": "NOT_RUN",
+    "complete_logical_preservation": "PASS",
+    "physical_sqlite_bytes": "CHANGED_LOGICAL_RECORDS_EQUAL",
+    "cold_restore": "PASS_TESTER_PERSONAL_MAIN_INSPECTED"
+  },
+  "tester_review_sha256": "52f8510405164d2e4cb01b54c42009705c1443b896bcb0bf791ce8e9d06fede0",
+  "tester_index_sha256": "5ceca65087bba2d795408a8258dfc2e39610a5cc52a5a34236b86597012556c5",
+  "tester_index_verified_files": 41,
+  "new_checkpoint_sha256": "58fe3c36db9ac485b1da46de8755db43b0a975a917e83384dde9fd40af1a32bb",
+  "new_operations": {
+    "provider_sends": 0,
+    "requests": 0,
+    "approvals": 0,
+    "workers": 0,
+    "source_effects": 0,
+    "cost_usd": 0
+  },
+  "carried_financial": {
+    "cap_usd": "60",
+    "tripwire_limit_usd": "10",
+    "settled_campaign_usd": "3.00504865",
+    "tripwire_basis_usd": "1.67189935",
+    "uncertain_campaign_hold_usd": "0.26298000",
+    "older_external_hold_usd": "0.71608250",
+    "native_sends_used": 119,
+    "native_aggregate_limit": 192,
+    "ledger_sha256": "324e817cf2991ff688f49fe38090392847e3082d170f997ee398f6c97a18d0d8"
+  },
+  "cleanup_removed_containers": [
+    "tester-b-caller-caller-one-20260926",
+    "tester-b-caller-cold-blocked-001-20260926"
+  ],
+  "cleanup_retained_uncovered_containers": [
+    "tester-b-cycle2-rsa-20260925",
+    "tester-b-cycle2-ec-20260925",
+    "tester-b-cycle2-rsa2047-20260925",
+    "tester-b-cycle2-ed-20260925",
+    "tester-scope-20260924-a"
+  ],
+  "historical_stage_b": "ATTEMPTED_NOT_PASSED",
+  "A": "OWNER_DEFERRED_BUSINESS_PENDING",
+  "next_authorized_operation": "STOP_NO_AUTOMATIC_RETRY_ENROLLMENT_OR_REPAIR"
+}
