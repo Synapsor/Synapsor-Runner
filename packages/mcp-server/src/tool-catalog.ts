@@ -30,6 +30,7 @@ import {
 import type {
   LocalToolPresentationSink,
 } from "./local-presentation.js";
+import { withResultEvidence } from "./result-evidence.js";
 export {
   zodInputShape,
   zodInputShapeFromJsonSchema,
@@ -72,9 +73,10 @@ export async function toolCallResult(
         operator_metadata_withheld: projection.operator_metadata_withheld === true,
       });
     }
+    const modelResult = withResultEvidence(toolName, projection.value);
     return {
-      content: [{ type: "text" as const, text: JSON.stringify(projection.value, null, 2) }],
-      structuredContent: projection.value,
+      content: [{ type: "text" as const, text: JSON.stringify(modelResult, null, 2) }],
+      structuredContent: modelResult,
       ...(projection.withheld || projection.operator_metadata_withheld
         ? {
           _meta: {
@@ -100,10 +102,11 @@ export async function toolCallResult(
         operator_metadata_withheld: true,
       });
     }
+    const modelResult = withResultEvidence(toolName, projection.value);
     return {
       isError: true,
-      content: [{ type: "text" as const, text: JSON.stringify(projection.value, null, 2) }],
-      structuredContent: projection.value,
+      content: [{ type: "text" as const, text: JSON.stringify(modelResult, null, 2) }],
+      structuredContent: modelResult,
       ...(projection.withheld
         ? { _meta: { "synapsor.operator_metadata_withheld": true } }
         : {}),

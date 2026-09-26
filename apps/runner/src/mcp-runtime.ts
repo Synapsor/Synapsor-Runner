@@ -1727,11 +1727,13 @@ function mcpAgentInstructions(
   aliasMode: ToolNameStyle,
   exploreMode: ExploreSurfaceMode | undefined,
 ): Record<string, unknown> {
+  const resultEvidenceGuidance = "Report supported observations and scope returned counts and completeness to the result's query or catalog page. Business rows do not establish Runner request, approval or queue status. Reference issuance alone does not establish eligibility, approval, intent or a stable snapshot. Never use a fresh request_change as a harmless status probe.";
   if (exploreMode) {
     return {
       target_client: client,
       alias_mode: "canonical",
       recommended_system_prompt: [
+        resultEvidenceGuidance,
         "Use app.describe_data only to discover exact reviewed resource, field, relationship, enum, metric, band, and time-window identifiers.",
         "Use app.explore_data for bounded values and copy exact identifiers from app.describe_data; never invent identifiers, formulas, SQL, tenant scope, or principal scope.",
         `Each query must stay inside one active reviewed ${exploreMode === "production" ? "production" : "development/staging"} boundary. If Runner returns an actionable refusal, correct only the named plan field or ask for operator review.`,
@@ -1752,6 +1754,7 @@ function mcpAgentInstructions(
     target_client: client,
     alias_mode: aliasMode,
     recommended_system_prompt: [
+      resultEvidenceGuidance,
       "Use Synapsor Runner tools in a propose-first pattern.",
       "Inspect relevant records, policy rows, and other evidence before proposing a change.",
       "Do not claim a database change was committed unless a result says source_database_changed: true.",

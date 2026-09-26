@@ -694,7 +694,7 @@ async function semanticProposalResult(
     request_disposition: disposition === "created" ? "created" : "already_recorded",
     status_check: {
       tool: REQUEST_CHANGE_TOOL,
-      guidance: "Repeat the identical outcome, original subject_refs and inputs to check this recorded request. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
+      guidance: "Only an exact replay of this already recorded request can return its existing status: identical outcome, original subject_refs and inputs. A fresh request_change can create work and is not a harmless status probe. Do not substitute newly explored references or inputs. If current authority or context no longer permits replay, report status unavailable; do not recreate the request.",
       completion_evidence: "Only completed with a verified execution_receipt confirms completion; approval or a changed source row alone does not.",
     },
     ...(projection.executionReceipt ? { execution_receipt: projection.executionReceipt } : {}),

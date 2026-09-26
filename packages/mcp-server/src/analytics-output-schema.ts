@@ -1,6 +1,7 @@
 import type {
   ProtectedReadAggregateSpec,
 } from "@synapsor/spec";
+import { resultEvidenceSchema, RESULT_EVIDENCE_TOOLS } from "./result-evidence.js";
 import {
   z,
   type ZodTypeAny,
@@ -669,6 +670,8 @@ const scopedExploreClientDescribeResourceSchema = z.object({
 }).passthrough();
 
 export const scopedExploreDescribeToolOutputSchema = z.object({
+  result_evidence: resultEvidenceSchema.optional(),
+  evidence_summary: z.string().max(1600).optional(),
   ok: z.boolean(),
   outcome: scopedExploreClientDescribeOutcomeSchema.optional(),
   error_code: z.string().optional(),
@@ -758,6 +761,8 @@ const scopedExploreClientOutcomeSchema = z.discriminatedUnion("type", [
 ]);
 
 export const scopedExploreQueryToolOutputSchema = z.object({
+  result_evidence: resultEvidenceSchema.optional(),
+  evidence_summary: z.string().max(1600).optional(),
   ok: z.boolean(),
   outcome: scopedExploreClientOutcomeSchema,
   error_code: z.string().optional(),
@@ -776,8 +781,11 @@ export function analyticalToolOutputSchema(
 ): z.ZodObject<Record<string, ZodTypeAny>> | undefined {
   const dataSchema = analyticalDataSchema(capability);
   if (!dataSchema) return undefined;
+  const presentation: Record<string, ZodTypeAny> = RESULT_EVIDENCE_TOOLS.includes(capability.name as typeof RESULT_EVIDENCE_TOOLS[number])
+    ? { result_evidence: resultEvidenceSchema.optional(), evidence_summary: z.string().max(1600).optional() } : {};
   if (resultFormat === 2) {
     return z.object({
+      ...presentation,
       ok: z.boolean(),
       summary: z.string(),
       action: z.literal(capability.name),
@@ -814,6 +822,7 @@ export function analyticalToolOutputSchema(
     model_egress: modelEgressResultSchema.optional(),
   };
   return z.object({
+    ...presentation,
     ...runtimeErrorFields,
     ok: z.literal(false).optional(),
     code: z.string().optional(),

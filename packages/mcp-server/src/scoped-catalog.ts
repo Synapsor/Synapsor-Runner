@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { McpRuntimeError } from "./runtime-errors.js";
+import { withResultEvidence } from "./result-evidence.js";
 
 export const CATALOG_LIMITS = Object.freeze({
   defaultPage: 5, maxPage: 20, queryCharacters: 256, queryTerms: 16,
@@ -13,8 +14,13 @@ export type CatalogRequest = { query?: string; limit?: number; cursor?: string; 
 /** Budget both MCP representations, including the prettified compatibility
  * text and maximum disclosure metadata used by the supported transports. */
 export function catalogResponseBytes(value: Record<string, unknown>, format: "pretty" | "compact" = "pretty"): number {
+  const tool = value.policy_view === "agent_rules" && value.source === "runner_control_plane"
+    ? Array.isArray(value.actions) ? "app.describe_actions" : value.review ? "app.request_change"
+      : value.control_ref || value.section ? "app.explore_data" : "app.describe_data"
+    : Array.isArray(value.actions) ? "app.describe_actions" : "app.describe_data";
+  const modelResult = withResultEvidence(tool, value);
   return Buffer.byteLength(JSON.stringify({
-    content: [{ type: "text", text: JSON.stringify(value, null, format === "pretty" ? 2 : undefined) }], structuredContent: value,
+    content: [{ type: "text", text: JSON.stringify(modelResult, null, format === "pretty" ? 2 : undefined) }], structuredContent: modelResult,
     _meta: { "synapsor.model_withheld_values": true, "synapsor.operator_metadata_withheld": true },
   }));
 }

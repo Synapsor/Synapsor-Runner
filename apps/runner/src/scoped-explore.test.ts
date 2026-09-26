@@ -532,6 +532,35 @@ describe("Scoped Explore", () => {
     } finally { await client.close(); await server.close(); await runtime.close(); }
   });
 
+  it("delivers result-derived evidence through the real four-tool SDK without treating source flags as queue status", async () => {
+    const fixture = await activatedFixture();
+    const runtime = await createScopedExploreRuntime({ projectRoot: fixture.root, transport: "stdio", env: fixture.env,
+      inspectDatabaseFn: async () => fixture.inspection, executor: fixedExecutor(Array.from({ length: 12 }, (_, i) => ({ region: `Area ${i}` }))) });
+    const server = createScopedExploreMcpServer(runtime, { semanticActions: createInactiveSemanticActionRuntime() });
+    const client = new Client({ name: "result-evidence-contract", version: "1" });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    try {
+      await server.connect(b); await client.connect(a);
+      expect((await client.listTools()).tools).toHaveLength(4);
+      const response = await client.callTool({ name: "app.explore_data", arguments: {
+        plan: { kind: "rows", resource: "public.subscriptions", select: ["region"], limit: 20 },
+      } });
+      expect(response.isError).not.toBe(true);
+      const value = response.structuredContent as Record<string, any>;
+      expect(value.data).toHaveLength(12);
+      expect(value.result_evidence).toMatchObject({ observation: "source_rows", returned: { count: 12, unit: "rows" },
+        coverage: { scope: "executed_read_query", status: "unknown" }, runner_history: "not_inspected" });
+      expect(value.evidence_summary).toContain("Returned 12 rows");
+      expect(value.evidence_summary).toContain("does not inspect Runner request/approval/queue history");
+      expect(JSON.parse((response.content as Array<{ text: string }>)[0]!.text)).toEqual(value);
+      for (const name of ["app.describe_data", "app.describe_actions", "app.request_change"]) {
+        const answer = await client.callTool({ name, arguments: name === "app.request_change" ? { outcome: "missing.outcome", subject_refs: { item: `obj_${"a".repeat(43)}` } } : {} });
+        expect(answer.structuredContent, JSON.stringify({ name, answer })).toBeDefined();
+        expect(answer.structuredContent).toHaveProperty("result_evidence.version", "synapsor.result-evidence.v1");
+      }
+    } finally { await client.close(); await server.close(); await runtime.close(); }
+  });
+
   it("publishes portable discovery fields, preserves host exclusivity and complete Explore grammar", async () => {
     const fixture = await activatedFixture();
     const runtime = await createScopedExploreRuntime({ projectRoot: fixture.root, transport: "stdio", env: fixture.env,

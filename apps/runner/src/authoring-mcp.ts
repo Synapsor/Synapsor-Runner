@@ -20,6 +20,7 @@ import {
   CATALOG_LIMITS,
   catalogResponseBytes,
   catalogContractSizeError,
+  withResultEvidence,
   withPolicyManagementInput,
   policyManagementToolInputSchema,
   type PolicyManagementTools,
@@ -277,6 +278,7 @@ export function createScopedExploreMcpServer(
           ? actions.callTool(tool.name, source.data, { describeSubjectNavigation })
           : actions.callTool(tool.name, source.data);
       }, undefined, {
+        toolName: tool.name,
         requestMeta: extra._meta, localPresentation: options.localPresentation,
         authorityMetadata: runtime.model_authority_metadata ?? "semantic",
         withOperation: runtime.withOperation,
@@ -344,6 +346,7 @@ export function createScopedExploreMcpServer(
       };
     },
     {
+      toolName: SCOPED_EXPLORE_DESCRIBE_TOOL,
       requestMeta: extra._meta,
       localPresentation: options.localPresentation,
       authorityMetadata: runtime.model_authority_metadata ?? "semantic",
@@ -373,7 +376,7 @@ export function createScopedExploreMcpServer(
   }, async (discoveryInput: Record<string, unknown>, extra: { _meta?: Record<string, unknown> }) => {
     if (policyManagement?.handles(discoveryInput)) return toolResult(
       () => policyManagement.callTool(SCOPED_EXPLORE_QUERY_TOOL, discoveryInput), undefined,
-      { requestMeta: extra._meta, localPresentation: options.localPresentation,
+      { toolName: SCOPED_EXPLORE_QUERY_TOOL, requestMeta: extra._meta, localPresentation: options.localPresentation,
         authorityMetadata: runtime.model_authority_metadata ?? "semantic", withOperation: runtime.withOperation },
     );
     let boundary: string | undefined;
@@ -414,6 +417,7 @@ export function createScopedExploreMcpServer(
           authorityMetadata: runtime.model_authority_metadata ?? "semantic",
         }),
       {
+        toolName: SCOPED_EXPLORE_QUERY_TOOL,
         requestMeta: extra._meta,
         localPresentation: options.localPresentation,
         authorityMetadata: runtime.model_authority_metadata ?? "semantic",
@@ -586,7 +590,7 @@ export function createOwnerSettingsMcpServer(provider: PolicyManagementTools): M
       inputSchema: policyManagementToolInputSchema(name),
       annotations: { readOnlyHint: name !== "app.request_change", destructiveHint: false },
       _meta: { "synapsor/owner-settings-only": true },
-    }, (args) => toolResult(() => provider.callTool(name, args)));
+    }, (args) => toolResult(() => provider.callTool(name, args), undefined, { toolName: name }));
   }
   return server;
 }
@@ -599,19 +603,20 @@ function isBoundarySetRuntime(
 
 async function toolResult(
   action: () => Record<string, unknown> | Promise<Record<string, unknown>>,
-  projectForModel?: (
+  projectForModel: ((
     result: Record<string, unknown>,
   ) => {
     value: Record<string, unknown>;
     withheld: boolean;
     operator_metadata_withheld?: boolean;
-  },
+  }) | undefined,
   options: {
+    toolName: string;
     requestMeta?: Record<string, unknown>;
     localPresentation?: LocalToolPresentationSink;
     authorityMetadata?: ModelAuthorityMetadataMode;
     withOperation?: ScopedExploreRuntime["withOperation"];
-  } = {},
+  },
 ) {
   try {
     const prepare = async () => {
@@ -621,7 +626,7 @@ async function toolResult(
         projection?.value ?? result,
         options.authorityMetadata ?? "semantic",
       );
-      const modelResult = authority.value;
+      const modelResult = withResultEvidence(options.toolName, authority.value);
       const operatorMetadataWithheld = projection?.operator_metadata_withheld === true
         || authority.withheld;
       if (projection?.withheld || operatorMetadataWithheld) {
@@ -706,9 +711,10 @@ async function toolResult(
         operator_metadata_withheld: true,
       });
     }
+    const modelResult = withResultEvidence(options.toolName, authority.value);
     return {
-      content: [{ type: "text" as const, text: JSON.stringify(authority.value) }],
-      structuredContent: authority.value,
+      content: [{ type: "text" as const, text: JSON.stringify(modelResult) }],
+      structuredContent: modelResult,
       isError: true,
       ...(authority.withheld
         ? { _meta: { "synapsor.operator_metadata_withheld": true } }

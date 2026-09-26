@@ -73,6 +73,8 @@ export { semanticActionInputSchema, semanticActionCatalogJsonSchema } from "./se
 export type { SemanticActionContinuation, CatalogAuthorization } from "./semantic-actions.js";
 export { ScopedCatalogIndex, ScopedCatalogSession, CATALOG_LIMITS, catalogResponseBytes, catalogContractSizeError } from "./scoped-catalog.js";
 export type { CatalogRequest, CatalogEntry } from "./scoped-catalog.js";
+export { withResultEvidence, resultEvidenceSchema, resultEvidenceFamily, RESULT_EVIDENCE_TOOLS, RESULT_EVIDENCE_FAMILIES } from "./result-evidence.js";
+export type { ResultEvidence, ResultEvidenceFamily, ResultEvidenceTool } from "./result-evidence.js";
 export {
   buildDerivedChangeSet,
 } from "./proposal-builder.js";

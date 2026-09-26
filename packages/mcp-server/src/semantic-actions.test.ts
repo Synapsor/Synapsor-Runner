@@ -624,6 +624,11 @@ describe("fixed semantic Action MCP", () => {
       const response = await client.callTool({ name: REQUEST_CHANGE_TOOL, arguments: args });
       expect(response.isError).not.toBe(true);
       const data = response.structuredContent as Record<string, any>;
+      expect(data.result_evidence).toMatchObject({ family: "request.semantic", runner_history: "one_request_only",
+        request: { invocation: "returned_existing_request", execution: outcome, disposition, approval: "automatic",
+          effect: state === "applied" ? "verified_applied" : "not_established" } });
+      expect(JSON.parse((response.content as Array<{ text: string }>)[0]!.text)).toEqual(data);
+      expect(data.evidence_summary).toContain("does not perform another effect");
       expect(data).toMatchObject({ request_disposition: "already_recorded", authorization: { approval: "automatic", execution },
         execution, lifecycle: { execution: outcome, disposition, automatic_retry_scheduled: queueStatus === "reconciliation_required" ? null : queueStatus === "retry_wait" },
         invocation: { operation: "returned_existing_request", source_database_changed: false }, source_database_changed: sourceChanged });

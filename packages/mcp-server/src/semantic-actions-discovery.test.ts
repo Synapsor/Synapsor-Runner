@@ -134,7 +134,25 @@ describe("owned parcel discovery coverage v002", () => {
       const result = await f.describe(args);
       const exactArgs = { outcome, query: null, limit: null, cursor: null };
       semanticActionCatalogSchema.parse(exactArgs);
-      expect(result.inline_contract).toEqual(((await f.describe(exactArgs)).actions as unknown[])[0]);
+      const exact = await f.describe(exactArgs);
+      // This rich navigation fixture was only 110 bytes below the transport
+      // bound before result-evidence framing. The full contract remains exact;
+      // the existing conditional inline path must now disclose its fallback.
+      expect(result).not.toHaveProperty("inline_contract");
+      expect(result.discovery).toMatchObject({ contract_status: "exact_detail_required",
+        inline_status: "complete_contract_exceeds_inline_bound", next_steps: expect.arrayContaining([
+          { kind: "inspect_exact_details", tool: "app.describe_actions", arguments: { outcome } },
+        ]) });
+      expect(catalogResponseBytes(result)).toBeLessThanOrEqual(CATALOG_LIMITS.responseBytes);
+      expect(catalogResponseBytes(exact)).toBeLessThanOrEqual(CATALOG_LIMITS.responseBytes);
+      const candidate = { ...result, inline_contract: (exact.actions as unknown[])[0],
+        discovery: { ...(result.discovery as Record<string, unknown>), contract_status: "inline_complete",
+          next_steps: (exact.discovery as Record<string, unknown>).next_steps } };
+      expect(catalogResponseBytes(candidate)).toBeGreaterThan(CATALOG_LIMITS.responseBytes);
+      const options: SemanticActionCatalogOptions = { describeSubjectNavigation: async () => ({ binding: "compact-current-read",
+        resources: { [resource]: { status: "reference_not_established", guidance: "No independent reference route is established" } } }) };
+      const small = await f.describe(args, options);
+      expect(small.inline_contract).toEqual(((await f.describe(exactArgs, options)).actions as unknown[])[0]);
     } finally { f.close(); }
   });
 
