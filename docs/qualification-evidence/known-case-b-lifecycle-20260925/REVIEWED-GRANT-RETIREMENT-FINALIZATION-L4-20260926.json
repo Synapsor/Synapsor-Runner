@@ -1,0 +1,42 @@
+{
+  "classification": "Known-case existing-capability and one caller-input effect; substantive L4 stop",
+  "at_utc": "2026-09-26T07:24:11.783557+00:00",
+  "product_commit": "1422fd470a26e5e490bd145c0b378f5a70523d37",
+  "installed_tree": "2dbf84a62e1295702a54dcd1b909973eb6733d0a894a3773ebb48e4a3b557777",
+  "verdicts": {
+    "roster_maintenance": "PASS_EXISTING_CAPABILITY",
+    "independent_six_rows": "PASS",
+    "caller_input_provenance": "PASS_SYNTHETIC_EXTERNAL_OWNER_AUTHORIZED",
+    "native_navigation_request": "PASS_ONE_REQUEST",
+    "native_narration": "QUALIFIED_PRIMARY_EFFECT_ONLY_NO_FALSE_APPLIED_CLAIM",
+    "signed_approval": "PASS",
+    "one_finite_worker": "PASS_APPLIED",
+    "distinct_receipts_and_full_effect": "PASS_MAIN_RECOMPUTED",
+    "saved_business_L4": "FAIL_REFERENCE_MISSING_SCOPED_CORRECTION_REFUSED",
+    "native_L4": "NOT_RUN_SUBSTANTIVE_STOP",
+    "whole_L4": "NOT_ESTABLISHED",
+    "cold_restore": "TESTER_PERSONALLY_VERIFIED_MAIN_INSPECTED",
+    "full_preservation": "PASS_WITH_ATTRIBUTED_ROSTER_EXECUTION_REVIEW_EPISODE_AND_EXISTING_DRAFT_RESTAGING",
+    "historical_stage_B": "ATTEMPTED_NOT_PASSED",
+    "A": "OWNER_DEFERRED"
+  },
+  "new_cost_usd": "0.24014525",
+  "campaign_settled_usd": "3.24519390",
+  "tripwire_basis_usd": "1.91204460",
+  "holds_usd": [
+    "0.26298000",
+    "0.71608250"
+  ],
+  "native_sends": [
+    126,
+    192
+  ],
+  "authoring_sends": [
+    21,
+    96
+  ],
+  "main_paid_calls": 0,
+  "final_checkpoint_sha256": "91c52e13b7a1b34e877d5c8159852e99e4e88d54cf5f8661d2b687a0b93f4a39",
+  "tester_index_sha256": "b41a0326b529ab7a8a18dd44c19f2e19e1bfbec8424764f327193d8267c1994e",
+  "status": "DELIVERED_SUBSTANTIVE_STOP_NO_B_RETRY"
+}
