@@ -57,6 +57,40 @@ export function verifiedActionManualRevisionChoice(manualRevision: VerifiedActio
   }] : [];
 }
 
+export function verifiedActionActivationChoiceCopy(input: {
+  draftReady: boolean;
+  readReviewPending: boolean;
+  programConcern: boolean;
+  subjectConcern: boolean;
+  canRecheckRead: boolean;
+  boundaryName: string;
+}) {
+  if (input.draftReady) return {
+    label: "Activate this exact proposal authority",
+    detail: "Agents may nominate these outcomes; approval and apply remain separate.",
+  };
+  if (input.readReviewPending) return {
+    label: "Activate linked Read Boundary first",
+    detail: `This revision is locked to the exact Read Boundary ${input.boundaryName}.`,
+  };
+  if (input.canRecheckRead) return {
+    label: "Recheck saved changes first",
+    detail: `This revision is locked to the exact Read Boundary ${input.boundaryName}.`,
+  };
+  if (input.programConcern) return {
+    label: "Review saved program status first",
+    detail: "Resolve the listed program or attached-policy review concern for this exact saved revision.",
+  };
+  if (input.subjectConcern) return {
+    label: "Review subject requirements first",
+    detail: "Resolve the listed subject acquisition concern before activation.",
+  };
+  return {
+    label: "Activate linked Read Boundary first",
+    detail: `This revision is locked to the exact Read Boundary ${input.boundaryName}.`,
+  };
+}
+
 export async function reviewVerifiedActionAuthority(input: {
   projectRoot: string;
   baseConfigPath?: string;
@@ -279,11 +313,9 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
         ...(input.draft
           ? [{
               value: "activate",
-              label: draftReady ? "Activate this exact proposal authority"
-                : canRecheckRead ? "Recheck saved changes first" : "Activate linked Read Boundary first",
-              detail: draftReady
-                ? "Agents may nominate these outcomes; approval and apply remain separate."
-                : `This revision is locked to the exact Read Boundary ${input.boundaryName}.`,
+              ...verifiedActionActivationChoiceCopy({ draftReady, readReviewPending: needsReadReview,
+                programConcern: programConcerns.length > 0,
+                subjectConcern: subjectConcerns.length > 0, canRecheckRead, boundaryName: input.boundaryName }),
               disabled: !draftReady,
             }]
           : []),
@@ -911,10 +943,11 @@ function verifiedActionAuthoritySummary(
   enabledExecutionOutcomes: Set<string> = new Set(),
   terminalColumns = 100,
   unavailableOutcomes: Set<string> = new Set(),
+  page = 0,
 ): string[] {
   const allRules = value.authority.action_boundary.rules;
-  const visibleRules = allRules.length > AUTHORING_PROGRAM_CAPACITY.reviewPageActions
-    ? allRules.slice(0, AUTHORING_PROGRAM_CAPACITY.reviewPageActions) : allRules;
+  const selectedPage = authoringReviewPage(allRules, page);
+  const visibleRules = selectedPage.items;
   const rows = visibleRules.map((rule) => [
     rule.outcome,
     actionRuleEffectInventory(value.authority.rules.find(r => r.rule.outcome === rule.outcome)!).components
@@ -948,7 +981,7 @@ function verifiedActionAuthoritySummary(
   return [
     `${stateLabel}  ${value.authority.action_boundary.name}`,
     ...(allRules.length > visibleRules.length ? [
-      `Showing first ${visibleRules.length} of ${allRules.length} outcomes. Review the complete inventory in ${Math.ceil(allRules.length / AUTHORING_PROGRAM_CAPACITY.reviewPageActions)} pages; exact details contain the full candidate.`,
+      `Showing outcomes ${selectedPage.start + 1}–${selectedPage.start + visibleRules.length} of ${allRules.length}. Page ${page + 1}/${selectedPage.pages}. Review the complete inventory in ${selectedPage.pages} pages; final consent covers the full candidate.`,
       `Full candidate digest: ${value.digest}`,
     ] : []),
     ...table,
@@ -979,12 +1012,30 @@ export function verifiedActionAuthoritySections(
   draft: ActionRuleAuthorityDraftV1,
   terminalColumns = 100,
 ): import("./read-boundary-review-view.js").ReviewSection[] {
+  const total = draft.authority.action_boundary.rules.length;
+  if (total > AUTHORING_PROGRAM_CAPACITY.reviewPageActions) {
+    const pages = Math.ceil(total / AUTHORING_PROGRAM_CAPACITY.reviewPageActions);
+    return [
+      { id: "outcomes", title: "All reviewed outcomes", lines: [
+        `${total} outcomes in ${pages} pages. Select a page, then its overview or an exact outcome.`,
+        "Inspection changes no scope. Final consent covers every outcome; execution is a separate review.",
+        `Full candidate digest: ${draft.digest}`,
+        `Action Boundary digest: ${draft.authority.action_boundary.digest}`,
+      ], children: Array.from({length: pages}, (_, page) => {
+        const selected = authoringReviewPage(draft.authority.action_boundary.rules, page);
+        return {id: `outcomes-page-${page + 1}`,
+          title: `Page ${page + 1}/${pages}: outcomes ${selected.start + 1}–${selected.start + selected.items.length} of ${total}`,
+          lines: verifiedActionAuthoritySummary(draft, "PENDING PROPOSAL AUTHORITY", new Set(), terminalColumns, new Set(), page),
+          children: selected.items.map(rule => ({id: `outcome:${rule.outcome}`, title: rule.outcome,
+            lines: verifiedActionAuthorityDetails(draft, terminalColumns, rule.outcome)}))};
+      }) },
+      { id: "authority", title: "Complete authority and fingerprints", lines: verifiedActionAuthorityDetails(draft, terminalColumns) },
+    ];
+  }
   return [
     { id: "outcomes", title: "All reviewed outcomes", lines: [
       ...verifiedActionAuthoritySummary(draft, "PENDING PROPOSAL AUTHORITY", new Set(), terminalColumns),
-      draft.authority.rules.length > AUTHORING_PROGRAM_CAPACITY.reviewPageActions
-        ? "The summary is paged; complete authority and fingerprints contain every retained and added outcome. Execution is a separate review."
-        : "Every retained and added outcome in this revision is listed. Execution is a separate review.",
+      "Every retained and added outcome in this revision is listed. Execution is a separate review.",
       `Action Boundary digest: ${draft.authority.action_boundary.digest}`,
     ] },
     { id: "authority", title: "Complete authority and fingerprints", lines: verifiedActionAuthorityDetails(draft, terminalColumns) },

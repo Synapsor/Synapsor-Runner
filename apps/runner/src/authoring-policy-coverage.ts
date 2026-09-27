@@ -13,6 +13,7 @@ import { clientDutyInventory } from "./authoring-client-duties.js";
 import { assessReviewObligation, assessReceiptCouplingCapability, assertRequiredReceiptCoupling, receiptCouplingInterpretation, repairableReceiptCouplingRepresentation, deferredReviewObligation, receiptSelectionComponent } from "./authoring-obligation-review.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { associateCountingRequirements, countingSourceRequirements, configuredCountingLimits } from "./authoring-counting-requirements.js";
+import { countingRequirementsReviewText } from "./authoring-review-context.js";
 import { associateCountingComponents, resolveCountingComparison } from "./authoring-counting-review.js";
 import { resolveSourceCounterObligation, sourceCounterMaintenanceReferences, SOURCE_COUNTER_CLASSIFICATION_GUIDANCE } from "./authoring-counter-maintenance-review.js";
 import { stripVTControlCharacters } from "node:util";
@@ -26,6 +27,7 @@ import type { ReviewSection } from "./read-boundary-review-types.js";
 import { redactCliErrorMessage } from "./cli-logging.js";
 import { safeTerminalText } from "./terminal-syntax.js";
 import { ACTION_RULE_SOURCE_CONSTRAINT_GUIDANCE } from "./action-rule-source-evidence.js";
+import { finiteReviewReferenceSchema } from './authoring-review-reference-schema.js';
 
 const DISPOSITIONS = ["implemented", "needs_decision", "conflict", "unsupported", "background", "overridden"] as const;
 const TOOL = "runner.review_policy_coverage";
@@ -831,7 +833,7 @@ export async function reviewPolicyCoverage(input: {
       items: { type: "object", additionalProperties: false, required: ["start", "end", "disposition", "interpretation", "draft_paths"], properties: {
         start: { type: "integer", minimum: 1, maximum: inventory.line_count }, end: { type: "integer", minimum: 1, maximum: inventory.line_count }, disposition: { type: "string", enum: [...DISPOSITIONS] },
         interpretation: { type: "string", maxLength: 800 }, draft_paths: ordinaryReferences.length
-          ? { type: "array", items: { type: "string", enum: ordinaryReferences } }
+          ? { type: "array", items: finiteReviewReferenceSchema(ordinaryReferences) }
           : { type: "array", maxItems: 0, items: { type: "string" } }, operator_override: { type: "string" },
         ...(operatorMessages.length ? { operator_message_id: { type: "integer", minimum: 1, maximum: operatorMessages.length,
           description: "Exact indexed operator evidence. For disposition=overridden Runner saves its original text as the override. A reference on another disposition is saved as its exact supporting clarification only: it does not waive any requirement or replace validation. Prefer this ID without a redundant operator_override quote. A pause or deferred action is not an override." } } : {}),
@@ -991,7 +993,7 @@ export async function reviewPolicyCoverage(input: {
           `Current draft (JSON pointer root): ${JSON.stringify(input.draft)}`,
           ...(scopeDecisions.length?[`Current attributed outcome-scope decisions for registered source-transaction questions (not capability, setup or observation): ${JSON.stringify(scopeDecisions)}. An absent or pending answer is not a negative. A does_not_apply answer excludes only this clause/outcome association and preserves independent receipt duties.`]:[]),
           `Exact narrow receipt component meanings (capability is not observation): ${JSON.stringify(receiptComponentMeanings(input.draft))}`,
-          `Host counting requirement states (unknown is not boundary-wide; source and explicit review establish meaning): ${JSON.stringify(countingSourceRequirements(input.source, input.draft, operatorMessages))}`,
+          `Host counting requirement states (unknown is not boundary-wide; source and explicit review establish meaning): ${countingRequirementsReviewText(countingSourceRequirements(input.source, input.draft, operatorMessages))}`,
           `Exact coverage references (select, do not invent paths): ${JSON.stringify(coverageReferences(input.draft))}`,
           `Indexed operator messages for supporting clarifications or explicit overrides (not source text or model narration): ${JSON.stringify(operatorMessages.map((message, index) => ({ operator_message_id: index + 1, message })))}`,
           `Privacy candidates requiring comparison with source requirements: ${JSON.stringify((input.draft as { runner_evidence?: { privacy_review?: unknown } })?.runner_evidence?.privacy_review ?? [])}`,

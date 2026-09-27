@@ -9820,7 +9820,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           lines: [...requestImpact, ...verifiedActionAuthorityDetails(semanticActionAuthorityDraft,
             terminalContentWidth(input.session.terminalColumns ?? process.stdout.columns) - 2)] },
         context: [
-          `This revision contains ${semanticActionAuthorityDraft.authority.rules.length} outcomes; ${retainedOutcomeCount} retained. View exact details > All reviewed outcomes lists all.`,
+          `This revision contains ${semanticActionAuthorityDraft.authority.rules.length} outcomes; ${retainedOutcomeCount} retained. View exact details > All reviewed outcomes ${semanticActionAuthorityDraft.authority.rules.length > AUTHORING_PROGRAM_CAPACITY.reviewPageActions ? "opens the complete paged inventory" : "lists all"}.`,
           ...(revisionReview.length ? ["REVIEWED REPLACEMENT", ...revisionReview, ""] : []),
           ...requestImpact.slice(0, 3),
           ...semanticActionDrafts.flatMap((entry) => [

@@ -4,6 +4,7 @@ import { coverageFeedbackParentDigest, type CoverageFeedback, type CoverageFindi
 import { policyTextLines, type PolicyTextSnapshot } from './authoring-policy-source.js';
 import { missingReviewSourceLines } from './authoring-source-coverage.js';
 import { sourceCounterMaintenanceReferences } from './authoring-counter-maintenance-review.js';
+import { finiteReviewReferenceSchema } from './authoring-review-reference-schema.js';
 
 /** Authoring transport only. Neither a scope nor an assembly certifies coverage. */
 export const COVERAGE_REPAIR_CATEGORIES = ['compiled_effect', 'receipt_configuration', 'source_transaction_coupling',
@@ -666,13 +667,23 @@ export function portableScopeToolSchema(scope: CoverageRepairScope, passageSchem
   if(passagePaths.length){
     properties.start={type:'integer',minimum:firstLine,maximum:lastLine};properties.end=structuredClone(properties.start);
   }
-  properties.draft_paths=paths.length?{type:'array',maxItems:32,items:{type:'string',enum:paths}}
+  properties.draft_paths=paths.length?{type:'array',maxItems:32,items:finiteReviewReferenceSchema(paths)}
     :{type:'array',maxItems:0,items:{type:'string'}};
   for(const key of ['counter_requirements','evidence_checks','source_counter_obligation'] as const){
     const property=properties[key];
     const child=key==='source_counter_obligation'?property:record(property)?property.items:undefined;
     if(!record(child)||!record(child.properties)||!record(child.properties.path))continue;
-    child.properties.path=paths.length?{...child.properties.path,type:'string',enum:paths}:{type:'string',maxLength:0};
+    if (!paths.length) child.properties.path={type:'string',maxLength:0};
+    else {
+      const reference=finiteReviewReferenceSchema(paths);
+      if (reference.enum) child.properties.path={...child.properties.path,type:'string',enum:reference.enum};
+      else {
+        const {enum: _previousEnum, ...constraints}=child.properties.path;
+        child.properties.path={...constraints,...reference,
+          ...(typeof constraints.maxLength==='number'&&typeof reference.maxLength==='number'
+            ?{maxLength:Math.min(constraints.maxLength,reference.maxLength)}:{})};
+      }
+    }
   }
   const counterProperty=passageSchema.properties.counter_requirements;
   const counterSchema=record(counterProperty)&&record(counterProperty.items)?structuredClone(counterProperty.items):undefined;

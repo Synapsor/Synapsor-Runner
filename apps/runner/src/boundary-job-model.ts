@@ -734,13 +734,27 @@ function readOrientedJobText(jobIntent: string): string {
   const fragments = jobIntent
     .split(/(?<=[.!?;])\s+/u)
     .flatMap((sentence) => {
-      const readMatch = /\b(?:read|view|inspect|explore|analy[sz]e|understand|answer|report|show|list|summari[sz]e|explain)\b/iu.exec(sentence);
+      // "Keep the same Read Boundary" names preserved authority, not a
+      // request to expose the private verification facts later in the clause.
+      // Continue scanning: a subsequent "and show ..." is still a read request.
+      const readMatch = [...sentence.matchAll(/\b(?:read|view|inspect|explore|analy[sz]e|understand|answer|report|show|list|summari[sz]e|explain)\b/giu)]
+        .find(match => !isPreservedReadBoundaryMention(sentence, match.index)
+          && !/\b(?:do\s+not|don't|never)\s+$/iu.test(sentence.slice(0, match.index)));
       if (!readMatch) return [];
       const afterRead = sentence.slice(readMatch.index);
       const actionConnector = /\b(?:and|then)\s+(?:(?:let|allow)\s+(?:the\s+)?(?:agent|model|user|customer|them|it)\s+)?(?:propos(?:e|ing)|update|insert|delete|write|apply|approve|change)\b/iu.exec(afterRead);
       return [actionConnector ? afterRead.slice(0, actionConnector.index) : afterRead];
     });
   return fragments.join(" ");
+}
+
+function isPreservedReadBoundaryMention(sentence: string, index: number): boolean {
+  if (!/^read\s+(?:boundary|mapping|revision)\b/iu.test(sentence.slice(index))) return false;
+  // An explicit exception/addition contradicts preservation; retain the
+  // ordinary missing-resource guard rather than assuming unchanged access.
+  if (/\b(?:but|except|and)\s+(?:also\s+)?(?:add|include|expose|extend|expand)\b/iu.test(sentence.slice(index))) return false;
+  return /\b(?:keep|reuse|retain|preserve|leave)\s+(?:(?:the|our|this|same|existing|current|unchanged|saved|reviewed)\s+|saved\s+job\s+and\s+)*$/iu
+    .test(sentence.slice(0, index));
 }
 
 function normalizedSemanticWords(value: string): string[] {

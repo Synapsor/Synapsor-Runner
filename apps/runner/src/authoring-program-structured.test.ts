@@ -11,7 +11,9 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { generateModelActionRuleDraft } from "./action-rule-model.js";
 import { createModelAuthoringConversation } from "./model-authoring-conversation.js";
 import { newPolicySourceSession, policyTextSnapshot, authoringDestination, savePolicySources, loadPolicySources } from "./authoring-policy-source.js";
-import { reviewVerifiedActionAuthority } from "./verified-action-review.js";
+import { reviewVerifiedActionAuthority, verifiedActionAuthoritySections } from "./verified-action-review.js";
+import { createBoundaryAuthoringChat } from './boundary-authoring-chat.js';
+import type { AnalyticsShellIo } from './analytics-shell.js';
 import { explorationBoundaryCandidateDigest } from "./auto-boundary.js";
 import { loadActionRuleIntentSkeletons } from "./action-rule-intent-skeleton.js";
 import { readActionRuleAuthorityDraft } from "./action-rule-authority.js";
@@ -76,6 +78,43 @@ describe("owned complete public structured program", () => {
       expect(Buffer.byteLength(exportedText)).toBeLessThanOrEqual(512 * 1024);
       expect(request.actions).toHaveLength(50);
       const full = (await readActionRuleAuthorityDraft(root, `${context.candidate.pack.name}_rules`))!;
+      const beforeInventory = JSON.stringify(full);
+      const inventorySections = verifiedActionAuthoritySections(full, 100).find(section => section.id === 'outcomes')!.children ?? [];
+      expect(inventorySections).toHaveLength(7);
+      expect(inventorySections.flatMap(section => section.lines.flatMap(line => line.match(/studio\.pack_parcel_\d+/gu) ?? [])))
+        .toEqual(full.authority.action_boundary.rules.map(rule => rule.outcome));
+      for (const [index, section] of inventorySections.entries()) {
+        expect(section.lines.join('\n')).toContain(`Page ${index + 1}/7`);
+        expect(section.lines.join('\n')).toContain(full.digest);
+        expect(section.lines.flatMap(line => line.match(/studio\.pack_parcel_\d+/gu) ?? [])).toHaveLength(index === 6 ? 2 : 8);
+      }
+      // Exercise the ordinary confirmation/details adapter. Inspection returns
+      // to the same default-No choice and neither calls a model nor mutates it.
+      const sections = verifiedActionAuthoritySections(full, 100);
+      const inventoryChoices = ['__view_runner_details__', 'section:0',
+        ...inventorySections.flatMap((_, index) => [`section:${index + 1}`, 'section:0', 'back']), 'back', 'back', 'no'];
+      const inspected: string[][] = [];
+      const io: AnalyticsShellIo = { read: async () => undefined,
+        choose: async choice => {
+          if (choice.options.some(option => option.value === 'yes')) expect(choice.initialValue).toBe('no');
+          const value = inventoryChoices.shift();
+          expect(choice.options.some(option => option.value === value), `Actual menu must expose ${value}`).toBe(true);
+          return value;
+        },
+        review: async (_title, lines) => { inspected.push([...lines]); },
+        write: () => undefined, writeChunk: () => undefined, setStatus: () => undefined,
+        clearStatus: () => undefined, isTerminal: () => true, columns: () => 100,
+        onInterrupt: () => () => undefined, close: () => undefined };
+      const chat = createBoundaryAuthoringChat({io, color: false});
+      const guide = vi.fn(async () => { throw new Error('Inspection must remain local.'); });
+      chat.setPermissionGuide!(guide);
+      expect(await chat.session.confirmActivation!('Activate verified Action Boundary "studio"?', {
+        context: ['Review the complete candidate.'], exactDetails: {title: 'EXACT ACTION BOUNDARY',
+          summaryTitle: 'ACTION REVIEW', sections, lines: ['Full candidate retained.']},
+      })).toBe(false);
+      chat.close();
+      expect(inspected).toHaveLength(7); expect(inventoryChoices).toHaveLength(0);
+      expect(guide).not.toHaveBeenCalled(); expect(JSON.stringify(full)).toBe(beforeInventory);
       const builtCatalog = buildActionRuleAuthoringCatalog({ boundary: context.candidate, inspection: ownedProgramInspection(), retainedCatalog: full.authority.catalog });
       const skeletons = await loadActionRuleIntentSkeletons({ projectRoot: root, binding, builtCatalog,
         readBoundaryDigest: explorationBoundaryCandidateDigest(context.candidate),
