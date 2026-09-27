@@ -1,5 +1,8 @@
 # Supported large-program continuation — work in progress
 
+Current checkpoint: repair cycle1 independently accepted only for installed native terminal cancellation/identity; immutable product/tests6b6430f8, tree0403ff69… . Settled full/types/selectedPG/tenoffline PASS; independent04320real OS-PTY controls PASS. Whole mixed50/52 and paid GO remain pending. See REPAIR-CYCLE1-CHECKPOINT.md for exact hashes. The source-commit-era progress below is historical preparation and does not override this checkpoint.
+
+
 T1:2026-09-27T16:10:48Z. Deadline:2026-09-29T16:10:48Z. No new product changes after2026-09-28T16:10:48Z. Main makes zero paid inference calls. The existing independent tester owns both conditional provider journeys.
 
 Unchanged delivery2768ed5409808e4fc57ebce768fb84f9019d34ed; product/tests93c5eb3ba06c6b4698e7194f47fa1c42e78a3286. Tree3354fe17d39fb9c10aeeeebbfc65976f876370bb2ff7d8d6f6ba6a6e4eff8454; manifestb5c6dda1badb8b83b766cfa0cd38d9ff05969a55816fc988f5be2640b645faab; archivefaee3b4ee46158bb17f71bbbc5761db2bd7e1f1b06b50f446ebc90deddf9e61c;7,604 entries. Complete membership/bytes/modes/links, Node/entrypoints and unchanged gate provenance personally verified by Main. Baseline inspection was report-only; the later native terminal counterexample now requires repair cycle1 before paid use.
