@@ -2,6 +2,39 @@ import { describe, expect, it } from "vitest";
 import { createTaskContextMeter, taskContextReportedUsage } from "./task-context-measurement.js";
 
 describe("actual encoded task context measurement", () => {
+  it("refuses ambiguous duplicate keys and invalid UTF-8 without leaking payloads", () => {
+    const meter = createTaskContextMeter();
+    expect(() => meter.observe({ boundary: "provider_request", encoded: '{"input":[],"\\u0069nput":["private"]}' })).toThrow("duplicate JSON object keys");
+    expect(() => meter.observe({ boundary: "mcp_result", encoded: '{"content":[{"type":"text","text":"one","text":"private"}]}' })).toThrow("duplicate JSON object keys");
+    expect(() => meter.observe({ boundary: "provider_request", encoded: Buffer.from([123, 34, 97, 34, 58, 34, 255, 34, 125]) })).toThrow("valid UTF-8 JSON");
+    const valid = meter.observe({ boundary: "provider_request", encoded: String.raw`{"tools":[{"nested":["[,]",{"x":"\\\""}]}],"input":[]}` });
+    expect(valid.provider_request_observations).toBe(1);
+    expect(valid.static_instruction_bytes + valid.schema_bytes + valid.conversation_bytes + valid.framing_and_other_bytes).toBe(valid.encoded_utf8_bytes);
+  });
+  it("retains raw Unicode escapes and whitespace in exact encoded unit identity", () => {
+    const meter = createTaskContextMeter();
+    const escaped = String.raw`{"instructions":"\u00e9","input":[{"role":"user","content":"\u00e9"}],"tools":[]}`;
+    const a = meter.observe({ boundary: "provider_request", encoded: escaped });
+    expect(a.encoded_utf8_bytes).toBe(81);
+    expect(a.static_instruction_bytes).toBe(8);
+    expect(a.new_conversation_bytes).toBe(34);
+    const literal = '{"instructions":"é","input":[{"role":"user","content":"é"}],"tools":[]}';
+    const b = meter.observe({ boundary: "provider_request", encoded: literal });
+    expect(b.encoded_utf8_bytes).toBe(73);
+    expect(b.new_conversation_bytes).toBe(30);
+    expect(b.repeated_conversation_bytes).toBe(0);
+    const spaced = String.raw`{ "input" : [ { "role" : "user", "content" : "\u00e9" } ] }`;
+    const c = meter.observe({ boundary: "provider_request", encoded: spaced });
+    expect(c.new_conversation_bytes).toBe(Buffer.byteLength(String.raw`{ "role" : "user", "content" : "\u00e9" }`));
+    expect(c.repeated_conversation_bytes).toBe(0);
+    const d = meter.observe({ boundary: "provider_request", encoded: escaped });
+    expect(d.repeated_conversation_bytes).toBe(34);
+    expect(d.new_conversation_bytes).toBe(0);
+    const e = meter.observe({ boundary: "mcp_result", encoded: String.raw`{"result":{"content":[{"type":"text","text":"\u00e9"}],"structuredContent":{"label":"\u00e9"}}}` });
+    expect(e.mcp_text_rendering_bytes).toBe(8);
+    expect(e.mcp_structured_rendering_bytes).toBe(Buffer.byteLength(String.raw`{"label":"\u00e9"}`));
+  });
+
   it("partitions UTF-8, escaping, schemas and role-preserving history without treating bytes as tokens", () => {
     const meter = createTaskContextMeter();
     const first = { model: "synthetic", messages: [{ role: "system", content: "rule 界\n\"" }, { role: "user", content: "task" }], tools: [{ name: "one" }] };

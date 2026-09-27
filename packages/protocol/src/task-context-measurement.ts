@@ -44,8 +44,65 @@ export type TaskContextMeter = { observe(input: TaskContextObservation): TaskCon
 const record = (value: unknown): Record<string, unknown> | undefined =>
   value !== null && typeof value === "object" && !Array.isArray(value)
     ? value as Record<string, unknown> : undefined;
-const bytes = (value: unknown): number => Buffer.byteLength(JSON.stringify(value) ?? "", "utf8");
-const digest = (value: unknown): string => crypto.createHash("sha256").update(JSON.stringify(value) ?? "").digest("hex");
+const bytes = (encoded: string): number => Buffer.byteLength(encoded, "utf8");
+const digest = (encoded: string): string => crypto.createHash("sha256").update(encoded, "utf8").digest("hex");
+
+// The complete input is JSON.parse-validated first. This bounded linear scanner
+// only locates original value slices; it does not interpret or repair JSON.
+// Re-serialization would erase legal escape/whitespace differences and make an
+// "exact encoded units" claim false for an external client's actual encoding.
+function skipSpace(text: string, index: number): number {
+  while (index < text.length && /[\t\r\n ]/u.test(text[index]!)) index++;
+  return index;
+}
+function stringEnd(text: string, index: number): number {
+  for (index++; index < text.length; index++) {
+    if (text[index] === "\\") index++;
+    else if (text[index] === '"') return index + 1;
+  }
+  throw new TypeError("context measurement encountered an incomplete JSON value");
+}
+function valueEnd(text: string, index: number): number {
+  if (text[index] === '"') return stringEnd(text, index);
+  if (text[index] === "[" || text[index] === "{") {
+    let depth = 0;
+    for (; index < text.length; index++) {
+      const char = text[index];
+      if (char === '"') { index = stringEnd(text, index) - 1; continue; }
+      if (char === "[" || char === "{") depth++;
+      else if (char === "]" || char === "}") { if (--depth === 0) return index + 1; }
+    }
+  } else {
+    while (index < text.length && !/[\t\r\n ,}\]]/u.test(text[index]!)) index++;
+    return index;
+  }
+  throw new TypeError("context measurement encountered an incomplete JSON value");
+}
+function objectValues(text: string): Map<string, string> {
+  const values = new Map<string, string>();
+  let index = skipSpace(text, 0) + 1;
+  while (text[index = skipSpace(text, index)] !== "}") {
+    const keyEnd = stringEnd(text, index), key: string = JSON.parse(text.slice(index, keyEnd));
+    index = skipSpace(text, keyEnd) + 1; // colon in validated object
+    const start = skipSpace(text, index), end = valueEnd(text, start);
+    if (values.has(key)) throw new TypeError("context measurement cannot partition duplicate JSON object keys");
+    values.set(key, text.slice(start, end));
+    index = skipSpace(text, end);
+    if (text[index] === ",") index++;
+  }
+  return values;
+}
+function arrayValues(text: string): string[] {
+  const values: string[] = [];
+  let index = skipSpace(text, 0) + 1;
+  while (text[index = skipSpace(text, index)] !== "]") {
+    const end = valueEnd(text, index);
+    values.push(text.slice(index, end));
+    index = skipSpace(text, end);
+    if (text[index] === ",") index++;
+  }
+  return values;
+}
 
 /** Normalized explicitly supplied API usage, not a local token/cost estimate. */
 export function taskContextReportedUsage(body: Record<string, unknown>): TaskContextReportedUsage | undefined {
@@ -86,22 +143,25 @@ export function createTaskContextMeter(maximumTrackedUnits = 4096): TaskContextM
   return {
     observe(input) {
       const encoded = typeof input.encoded === "string" ? Buffer.from(input.encoded, "utf8") : Buffer.from(input.encoded);
-      const body = record(JSON.parse(encoded.toString("utf8")));
+      const text = encoded.toString("utf8");
+      if (!Buffer.from(text, "utf8").equals(encoded)) throw new TypeError("context measurement expects valid UTF-8 JSON");
+      const body = record(JSON.parse(text));
       if (!body) throw new TypeError("context measurement expects an encoded JSON object");
+      const fields = objectValues(text);
       let instructions = 0, schemas = 0, conversation = 0, newlySeen = 0, repeated = 0;
       let textRendering = 0, structuredRendering = 0;
       let equivalent: boolean | null = null;
       if (input.boundary === "provider_request") {
         sends += 1; cumulativeInput += encoded.length; peakInput = Math.max(peakInput, encoded.length);
-        for (const key of ["system", "instructions"]) if (body[key] !== undefined) instructions += bytes(body[key]);
-        if (body.tools !== undefined) schemas = bytes(body.tools);
+        for (const key of ["system", "instructions"]) if (fields.has(key)) instructions += bytes(fields.get(key)!);
+        if (fields.has("tools")) schemas = bytes(fields.get("tools")!);
         for (const key of ["messages", "input"]) {
-          if (body[key] === undefined) continue;
-          const value = body[key];
-          const units = Array.isArray(value) ? value : [value];
+          const value = fields.get(key);
+          if (value === undefined) continue;
+          const units = Array.isArray(body[key]) ? arrayValues(value) : [value];
           let instructionUnits = 0;
           for (const unit of units) {
-            const role = record(unit)?.role;
+            const role = record(JSON.parse(unit))?.role;
             if (role === "system" || role === "developer") { instructionUnits += bytes(unit); continue; }
             const size = bytes(unit), hash = digest(unit);
             if (seen.has(hash)) repeated += size;
@@ -117,12 +177,13 @@ export function createTaskContextMeter(maximumTrackedUnits = 4096): TaskContextM
       else if (input.boundary === "mcp_request" && body.method === "tools/call") calls += 1;
       else if (input.boundary === "mcp_result") {
         const result = record(body.result) ?? body;
-        if (result.structuredContent !== undefined) structuredRendering = bytes(result.structuredContent);
-        const content = Array.isArray(result.content) ? result.content : [];
+        const resultFields = record(body.result) ? objectValues(fields.get("result")!) : fields;
+        if (resultFields.has("structuredContent")) structuredRendering = bytes(resultFields.get("structuredContent")!);
+        const content = Array.isArray(result.content) ? arrayValues(resultFields.get("content")!) : [];
         for (const block of content) {
-          const item = record(block);
+          const item = record(JSON.parse(block));
           if (item?.type !== "text" || typeof item.text !== "string") continue;
-          textRendering += bytes(item.text);
+          textRendering += bytes(objectValues(block).get("text")!);
           if (result.structuredContent !== undefined) {
             try {
               const same = canonicalJsonStringify(JSON.parse(item.text)) === canonicalJsonStringify(result.structuredContent);

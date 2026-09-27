@@ -4,6 +4,8 @@ This package measures product-controlled JSON after the provider adapter's last 
 
 The meter returns numbers and fixed labels. It retains at most 4,096 SHA-256 unit identities by default (configurable 1–16,384); it stores neither source text nor responses. When identity tracking fills, new/repeated-unit measurements become unknown while byte/call counters continue. It never resets disclosure, correction or financial counters.
 
+JSON is syntax-validated, then component measurements use slices of the original UTF-8 encoding. Legal Unicode escapes and whitespace remain distinct for byte identity. Re-serializing parsed values is insufficient for this contract. Invalid UTF-8 and duplicate keys in an object that must be partitioned refuse measurement with a fixed diagnostic; the meter neither rewrites nor interprets ambiguous input. Independent C01 exposed this distinction and its original failing evidence is retained.
+
 | Field | Meaning and limits |
 |---|---|
 | `encoded_utf8_bytes` | Actual supplied final JSON encoding, including UTF-8 and escaping; not JavaScript string length. |
