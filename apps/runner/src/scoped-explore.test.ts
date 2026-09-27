@@ -11,7 +11,7 @@ import { createScopedExploreBoundarySetRuntime } from "./scoped-explore-boundary
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import type { SubjectReferenceService } from "@synapsor-runner/mcp-server";
-import { createInactiveSemanticActionRuntime, resultEvidenceSchema } from "@synapsor-runner/mcp-server";
+import { CATALOG_LIMITS, ScopedCatalogSession, createInactiveSemanticActionRuntime, resultEvidenceSchema } from "@synapsor-runner/mcp-server";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
@@ -268,29 +268,90 @@ describe("Scoped Explore", () => {
     }
   });
 
-  it("refuses an unrepresentable replacement before changing active Read authority", async () => {
+  it.each([
+    { count: 24, description: "Reviewed business amount. ".repeat(10), representable: true },
+    { count: 96, description: `Reviewed business amount. ${"漢".repeat(240)}`, representable: false },
+  ])("preserves activation safety for representable and cumulative-overbound replacements (fields=$count)", async ({ count, description, representable }) => {
     const fixture = await activatedFixture();
+    const authorityBefore = await loadActivatedExplorationBoundary(fixture.root);
     const activePath = path.join(fixture.root, ".synapsor/exploration-boundaries.active.json");
     const before = await fs.readFile(activePath, "utf8");
     const inspection = churnInspection();
     const fields: Record<string, ReviewedMetadataDecision> = {};
-    for (let index = 0; index < 24; index++) {
+    for (let index = 0; index < count; index++) {
       const field = `fee_${index}`;
       inspection.tables[0]!.columns.push(column(field, "integer"));
       inspection.tables[0]!.suggestions.default_visible_columns.push(field);
-      fields[field] = { description: "Reviewed business amount. ".repeat(10), actor: "owner@example.test",
+      fields[field] = { description, actor: "owner@example.test",
         reason: "Exact explanatory metadata for this fixture.", decided_at: "2026-09-08T00:00:00.000Z" };
     }
     const build = buildAutoBoundary({ inspection, sourceEnv: "DATABASE_URL",
       project: { root: fixture.root, package_manager: "pnpm", frameworks: [], schema_inputs: [], database_env_names: ["DATABASE_URL"] },
       overrides: { schema_version: AUTO_BOUNDARY_OVERRIDES_VERSION, resources: { "public.subscriptions": { field_metadata: fields } } } });
     const candidate = build.exploration_boundary, digest = explorationBoundaryCandidateDigest(candidate);
-    await expect(activateExplorationBoundary({ projectRoot: fixture.root, candidate, expectedDigest: digest,
-      reviewDraft: candidate, generationLock: build.lock,
-      actor: "reviewer@example.test", confirmation: `ACTIVATE ${digest}`,
-      confirmedDecisions: candidate.unresolved_decisions, currentInspection: inspection,
-    })).rejects.toThrow(/Discovery compatibility/u);
-    expect(await fs.readFile(activePath, "utf8")).toBe(before);
+    // Both inputs pass the ordinary override normalizer, including its280-char
+    // bound. The old24-field fixture is now a legitimate navigable positive;
+    // the96 multibyte descriptions exhaust the unchanged cumulative wire meter.
+    expect(description.length).toBeLessThanOrEqual(280);
+    expect(candidate.pack.resources[0]!.selectable_fields.filter(field => field.startsWith("fee_"))).toHaveLength(count);
+    const original = ScopedCatalogSession.prototype.describe;
+    const refusals: Array<{ code: unknown; calls: number; records: number; bytes: number;
+      prepared_bytes: number; maximum_unit_bytes: number; next_frame_bytes: number }> = [];
+    // Observation only: execute the real walker/meter and rethrow unchanged.
+    const observation = vi.spyOn(ScopedCatalogSession.prototype, "describe").mockImplementation(function (this: ScopedCatalogSession, ...args) {
+      let frameBytes = 0;
+      const input = { ...args[0], measureResponse: (value: Record<string, unknown>) => {
+        frameBytes = args[0].measureResponse?.(value) ?? 0;
+        return frameBytes;
+      } };
+      try { return original.call(this, input); }
+      catch (error) {
+        const state = this as unknown as { calls: number; records: number; bytes: number;
+          documents: Map<string, { bytes: number; sections: Array<{ items: unknown[] }> }> };
+        const document = [...state.documents.values()][0];
+        refusals.push({ code: error && typeof error === "object" && "code" in error ? error.code : undefined,
+          calls: state.calls, records: state.records, bytes: state.bytes, prepared_bytes: document?.bytes ?? 0,
+          maximum_unit_bytes: Math.max(0, ...(document?.sections.flatMap(section => section.items)
+            .map(unit => Buffer.byteLength(JSON.stringify(unit), "utf8")) ?? [])), next_frame_bytes: frameBytes });
+        throw error;
+      }
+    });
+    try {
+      expect(readDiscoveryCompatibility(candidate, digest).length > 0).toBe(!representable);
+      const activation = activateExplorationBoundary({ projectRoot: fixture.root, candidate, expectedDigest: digest,
+        reviewDraft: candidate, generationLock: build.lock,
+        actor: "reviewer@example.test", confirmation: `ACTIVATE ${digest}`,
+        confirmedDecisions: candidate.unresolved_decisions, currentInspection: inspection,
+      });
+      if (representable) {
+        await expect(activation).resolves.toHaveProperty("activation.digest", digest);
+        expect((await loadActivatedExplorationBoundary(fixture.root)).activation.digest).toBe(digest);
+        expect(refusals).toEqual([]);
+      } else {
+        await expect(activation).rejects.toThrow(/Discovery compatibility/u);
+        expect(await fs.readFile(activePath, "utf8")).toBe(before);
+        expect(await loadActivatedExplorationBoundary(fixture.root)).toEqual(authorityBefore);
+        expect(refusals.length).toBeGreaterThan(0);
+        for (const refusal of refusals) {
+          expect(refusal.code).toBe("CATALOG_SESSION_LIMIT");
+          expect(refusal.calls).toBeLessThan(CATALOG_LIMITS.sessionCalls);
+          expect(refusal.records).toBeLessThan(CATALOG_LIMITS.sessionRecords);
+          expect(refusal.bytes).toBeGreaterThan(CATALOG_LIMITS.sessionBytes - CATALOG_LIMITS.responseBytes);
+          expect(refusal.bytes).toBeLessThanOrEqual(CATALOG_LIMITS.sessionBytes);
+          expect(refusal.prepared_bytes).toBeLessThanOrEqual(CATALOG_LIMITS.sessionBytes);
+          expect(refusal.maximum_unit_bytes).toBeLessThanOrEqual(CATALOG_LIMITS.detailBytes);
+          expect(refusal.next_frame_bytes).toBeLessThanOrEqual(CATALOG_LIMITS.responseBytes);
+          expect(refusal.bytes + refusal.next_frame_bytes).toBeGreaterThan(CATALOG_LIMITS.sessionBytes);
+        }
+      }
+      if (process.env.SYNAPSOR_TEST_EVIDENCE_DIR) {
+        const evidence = path.join(process.env.SYNAPSOR_TEST_EVIDENCE_DIR, `read-activation-budget-${count}.json`);
+        await fs.writeFile(evidence, JSON.stringify({ label: "DERIVED normal builder and real activation; observation-only, no Source DB/provider",
+          count, description_utf16_units: description.length, description_utf8_bytes: Buffer.byteLength(description, "utf8"),
+          representable, prior_authority_digest: authorityBefore.activation.digest,
+          current_authority_digest: (await loadActivatedExplorationBoundary(fixture.root)).activation.digest, refusals }, null, 2), { flag: "wx" });
+      }
+    } finally { observation.mockRestore(); }
   });
 
   it.each(["28P01", "ER_ACCESS_DENIED_ERROR", "ECONNREFUSED", "ETIMEDOUT", "UNRECOGNIZED"])("returns useful sanitized database diagnostics for %s without retrying a query", async (code) => {
