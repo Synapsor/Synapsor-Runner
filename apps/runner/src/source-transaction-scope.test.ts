@@ -73,14 +73,30 @@ describe('per-outcome source transaction scope',()=>{
       .toThrow('SOURCE_TRANSACTION_SCOPE_UNESTABLISHED');
   });
 
-  it('fails closed instead of truncating an unsupported Action inventory',()=>{
-    const {f}=fixture();
-    for(let index=2;index<=12;index++){
-      const action=structuredClone(f.draft.actions[1]);
-      action.name=`energy_ops.excess_${index}`;action.outcome=action.name;
-      f.draft.actions.push(action);
+  it('retains all registered pairings at sixty-four and refuses sixty-five without truncation',()=>{
+    const {f,first,second}=fixture();
+    const template=structuredClone(f.draft.actions[1]);
+    const expected=[template.outcome];
+    for(let index=3;index<=64;index++){
+      const action=structuredClone(template);
+      action.name=`energy_ops.supported_${index}`;action.outcome=action.name;
+      f.draft.actions.push(action); expected.push(action.outcome);
+      f.draft.runner_evidence.actions[action.outcome]=structuredClone(f.draft.runner_evidence.actions[template.outcome]);
+      f.draft.runner_evidence.runtime_contract.deployment_prerequisites.runner_execution_setup.outcomes.push({
+        ...f.draft.runner_evidence.runtime_contract.deployment_prerequisites.runner_execution_setup.outcomes[1],
+        outcome:action.outcome});
+      f.sources.coverage_episodes[0].submissions[0].tentative.raw_response.passages.push({
+        ...structuredClone(second),draft_paths:receiptCouplingPaths(action.outcome)});
     }
-    expect(f.draft.actions).toHaveLength(13);
+    expect(f.draft.actions).toHaveLength(64);
+    const questions=sourceTransactionScopeQuestions(f.source,f.draft,f.sources);
+    expect(questions.map(question=>question.action.outcome).sort()).toEqual(expected.sort());
+    expect(questions).toHaveLength(63);
+    expect(questions.every(question=>!question.current)).toBe(true);
+    expect(()=>assertRequiredReceiptCoupling([first],f.source,f.draft,[],f.sources))
+      .toThrow('SOURCE_TRANSACTION_SCOPE_UNESTABLISHED');
+    f.draft.actions.push({...structuredClone(template),name:'energy_ops.unsupported_65',outcome:'energy_ops.unsupported_65'});
+    expect(f.draft.actions).toHaveLength(65);
     expect(()=>sourceTransactionScopeQuestions(f.source,f.draft,f.sources))
       .toThrow('SOURCE_TRANSACTION_SCOPE_INVENTORY_LIMIT');
   });

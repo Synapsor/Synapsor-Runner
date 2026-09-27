@@ -458,7 +458,7 @@ describe("runner cli", () => {
         "--draft", draft, "--dry-run", "--json"])).resolves.toBe(2);
       const rendered = output.mock.calls.map(([chunk]) => String(chunk)).join("");
       expect(JSON.parse(rendered)).toMatchObject({ ok: false, code: "STRUCTURED_DRAFT_VALIDATION_FAILED",
-        message: "structured boundary draft must use synapsor.boundary-draft-input.v1.",
+        message: "structured boundary draft must use synapsor.boundary-draft-input.v1 or synapsor.boundary-draft-input.v2.",
         source_database_changed: false, active_authority_changed: false });
       expect(rendered).not.toMatch(/choose one table|own-database onboarding|legacy capability compatibility/u);
       expect(await fs.readFile(draft, "utf8")).toBe("{}\n");
