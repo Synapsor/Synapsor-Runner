@@ -20,7 +20,8 @@ describe("bounded row continuation output and evidence", () => {
     expect(output.result_evidence).toMatchObject({ family: "source.rows", returned: { count: 2, unit: "rows" }, coverage: { status: "unknown" }, next_step: "continue_page" });
     expect(output.evidence_summary).toContain("not a source-population total");
     const last = withResultEvidence("app.explore_data", { ...base,
-      outcome: { ...base.outcome, result: { pagination: { ...pagination, has_more: false, next_cursor: null } } },
+      data: [{ name: "last" }],
+      outcome: { ...base.outcome, result: { pagination: { ...pagination, page_item_count: 1, has_more: false, next_cursor: null } } },
       next_cursor: null, row_continuation: { ...base.row_continuation, offset: 4, source_query_executed_this_call: false } });
     expect(scopedExploreQueryToolOutputSchema.parse(last)).toEqual(last);
     expect(last.result_evidence).toMatchObject({ coverage: { status: "unknown" }, next_step: "use_authorized_status" });
