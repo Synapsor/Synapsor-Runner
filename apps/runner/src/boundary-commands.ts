@@ -5391,6 +5391,12 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         action_strategy: "rule_derived", action_intent: pending.instruction, action_intents: [pending.instruction],
         summary: "Finish the acknowledged edit; no changed candidate has been saved yet.",
         correction_used: false, authority_granted: false, source_database_changed: false };
+      if (preserveProgramRevisionAgenda) {
+        // The durable v2 agenda is the whole program, not the work item being
+        // resumed. Its separately recorded edit owns its own partial draft.
+        resumeAction = { intent: pending.instruction, intents: [pending.instruction],
+          outcome: pending.outcome, strategy: "rule_derived", ...(pending.checkpoint ? { checkpoint: pending.checkpoint } : {}) };
+      }
       input.authoringChat?.checkpoint("Saved Action edit still needs drafting", [
         `Request: ${pending.instruction}`, `Current saved revision: ${baseline.authorityDigest}`,
         "The request is saved; the changed draft is not. Next: prepare and validate the same disabled edit."]);
@@ -6739,6 +6745,11 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           resources: string[];
           blockers?: string[];
         } | undefined;
+        const actionFreshness: Parameters<typeof assertBoundaryAuthoringResumeCurrent>[2] = preserveProgramRevisionAgenda && pendingActionRevision
+          ? { revision: { outcome: semanticActionRevisionBaseline!.outcome, instruction: semanticIntent,
+            baseline_digest: canonicalJsonDigest(semanticActionRevisionBaseline!),
+            ...(pendingActionRevision.operator_statements ? { operator_statements: pendingActionRevision.operator_statements } : {}) } }
+          : { intent: semanticIntent, outcome: semanticActionRevisionBaseline?.outcome };
         while (!semanticActionModelResult) {
           let failure: BoundaryModelDraftFailure | undefined;
           try {
@@ -6784,13 +6795,14 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
                   ? { checkpoint: partialActionCheckpoint, revalidateSavedComponents: true } : {}),
                 onCheckpoint: async (checkpoint) => {
                   assertRunning();
-                  await assertAuthoringResumeCurrent({ intent: semanticIntent, outcome: semanticActionRevisionBaseline?.outcome }, true);
-                  const previousAction = resumeAction;
+                  await assertAuthoringResumeCurrent(actionFreshness, true);
+                  const previousAction = resumeAction, previousRevision = pendingActionRevision;
                   try {
-                    resumeAction = { ...resumeAction, intent: actionIntents[0]!, intents: actionIntents, strategy: "rule_derived", checkpoint };
+                    if (preserveProgramRevisionAgenda) pendingActionRevision = { ...pendingActionRevision!, checkpoint };
+                    else resumeAction = { ...resumeAction, intent: actionIntents[0]!, intents: actionIntents, strategy: "rule_derived", checkpoint };
                     await persistAuthoringResume("action_drafting");
                     if (resumePersistenceBlocked) throw checkpointSaveFailure("The checkpoint");
-                  } catch (error) { resumeAction = previousAction; throw error; }
+                  } catch (error) { resumeAction = previousAction; pendingActionRevision = previousRevision; throw error; }
                 },
                 readBoundary: mappingBoundary,
                 readBoundaryDigest: explorationBoundaryCandidateDigest(mappingBoundary),
@@ -6800,7 +6812,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
                 egressAcknowledged: true,
                 env: process.env,
                 reviewHistorySelectors: request => reviewHistorySelectorChange(request, input.session, async () => {
-                  await assertAuthoringResumeCurrent({ intent: semanticIntent, outcome: semanticActionRevisionBaseline?.outcome }, true);
+                  await assertAuthoringResumeCurrent(actionFreshness, true);
                   const fresh = await loadBoundaryReviewContext(input.projectRoot);
                   if (explorationBoundaryCandidateDigest(fresh.candidate) !== request.read_digest) throw new Error("ACTION_RULE_REVISION_STALE: Read changed during selector review.");
                 }),
@@ -6831,7 +6843,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
                   const prepared = await reviewPrivateActionSourceForModel({ request, inspection: actionInspection!,
                     session: input.session, modelLabel: boundaryModelLabel(ruleSession),
                     assertCurrent: async () => {
-                      await assertAuthoringResumeCurrent({ intent: semanticIntent, outcome: semanticActionRevisionBaseline?.outcome });
+                      await assertAuthoringResumeCurrent(actionFreshness);
                       const fresh = await loadBoundaryReviewContext(input.projectRoot);
                       const lock = await loadGenerationLockSnapshot(input.projectRoot, request.context.readBoundary.generation_lock_fingerprint);
                       if (explorationBoundaryCandidateDigest(fresh.candidate) !== request.context.readBoundaryDigest

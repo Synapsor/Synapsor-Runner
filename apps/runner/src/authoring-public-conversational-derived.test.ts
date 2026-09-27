@@ -19,6 +19,7 @@ import { ownedProgramDraft, ownedProgramInspection } from "./test-fixtures/owned
 const evidence = process.env.OWNED_CONVERSATIONAL_EVIDENCE ?? path.join(process.env.SYNAPSOR_TEST_EVIDENCE_DIR ?? os.tmpdir(), `owned-public-conversational-${randomUUID()}`);
 const count = Number(process.env.OWNED_CONVERSATIONAL_ACTIONS ?? 13);
 const existingProject = process.env.OWNED_CONVERSATIONAL_EXISTING_PROJECT;
+const editIndex = count === 50 ? 37 : count;
 // Sealed synthetic operator plan, consumed only through the ordinary menu. This
 // records planned ownership; it does not attest to an implemented/live client.
 const derivedClientPlan = { owner: "client_application", duties: ["customer_selection", "status_presentation"], verified: false } as const;
@@ -33,7 +34,7 @@ const rename = <T,>(value: T): T => JSON.parse(JSON.stringify(value).replaceAll(
 const inspection = async () => rename(ownedProgramInspection());
 const draftFor = (index: number) => rename(ownedProgramDraft(index));
 const intentFor = (index: number) => `Action ${index}: workshop.adjust_card_${index} records caller-supplied units from 1 to 10 for an available card; unavailable cards are refused. It proposes only and requires one human card_reviewer.`;
-const editRequest = "Revise workshop.adjust_card_37 ttl_seconds from 300 to 240; preserve every original exception, global responsibility, unit input bound, effect, and human approval requirement in the complete selected program.";
+const editRequest = `Revise workshop.adjust_card_${editIndex} ttl_seconds from 300 to 240; preserve every original exception, global responsibility, unit input bound, effect, and human approval requirement in the complete selected program.`;
 const removeRequest = "Remove workshop.adjust_card_50 from the selected program and explicitly withdraw its requested Action 50 source clause. Retain every other source clause, early exception and global responsibility.";
 
 it(`runs the normal public conversational DERIVED ${count}-Action source route`, async () => {
@@ -60,7 +61,7 @@ it(`runs the normal public conversational DERIVED ${count}-Action source route`,
   const boundedJob = `Prepare all ${count} selected workshop.adjust_card_1 through workshop.adjust_card_${count} Actions in the attached rules, preserving the early exception and shared human-review obligation. Read labels and unit counts from workshop.cards. workshop.cards is the card register; workshop.cards.label is the public card name; workshop.cards.units is the requested unit count.`;
   expect(boundedJob.length).toBeLessThan(4000);
   let transcript = "", requests = 0, coverageRequests = 0, stage = existingProject ? "resume_create" : "create", actionReplyIndex = new Map<string, number>();
-  let publicationDeclined = false, midpointPaused = false;
+  let publicationDeclined = false, midpointPaused = false, editInterrupted = false, editSaveDeclined = false;
   const decisions: any[] = [], notices: any[] = [], bodies: any[] = [];
   let interrupt: (() => void) | undefined;
   let answers = existingProject ? [] : [`/attach ${sourceFile}`, boundedJob];
@@ -81,6 +82,11 @@ it(`runs the normal public conversational DERIVED ${count}-Action source route`,
       else if (choice.title === "CLIENT FOR THIS JOB") selected = "later";
       else if (choice.title === "SEND ATTACHED RULES") { expect(choice.initialValue).toBe("cancel"); selected = "send"; }
       else if (choice.title === "USE THE SAVED ATTACHMENT") selected = "continue";
+      else if (choice.message === "Save this exact disabled Action edit?") {
+        expect(choice.initialValue).toBe("no"); expect(choice.options.find((o: any) => o.value === "yes")).toBeDefined();
+        expect(transcript.replace(/\s+/gu, " ")).toContain(editRequest);
+        selected = editSaveDeclined ? "yes" : "no"; editSaveDeclined = true;
+      }
       else if (choice.message === "Run a new bounded model review?") {
         expect(choice.initialValue).toBe("no"); expect(transcript).toContain("openai[owned-offline]");
         expect(transcript).toContain("Maximum: three model response submissions"); expect(transcript).toContain("Review subject:"); selected = "yes";
@@ -112,8 +118,8 @@ it(`runs the normal public conversational DERIVED ${count}-Action source route`,
     let name: string | undefined, args: any, responseText: string | undefined;
     if (names.includes("runner__plan_boundary_job")) {
       name = "runner__plan_boundary_job";
-      args = stage === "edit_prepare" ? { status: "planned", read_mode: "reuse", action_mode: "revise", action_strategy: "rule_derived",
-        action_outcome: "workshop.adjust_card_37", action_intent: editRequest, summary: "Revise only Action 37 request lifetime, retaining the complete program." }
+      args = stage.startsWith("edit") ? { status: "planned", read_mode: "reuse", action_mode: "revise", action_strategy: "rule_derived",
+        action_outcome: `workshop.adjust_card_${editIndex}`, action_intent: editRequest, summary: "Revise only Action 37 request lifetime, retaining the complete program." }
         : stage === "remove_request" ? { status: "planned", read_mode: "reuse", action_mode: "remove", action_outcome: "workshop.adjust_card_50", summary: "Withdraw only the explicitly removed Action 50; retain all outside responsibilities." }
         : { status: "planned", read_mode: "create", read_intent: "Read card labels and unit counts from workshop.cards.",
         action_mode: "create", action_strategy: "rule_derived", action_intent: intents[0], action_intents: intents, summary: `Prepare the complete selected ${count}-Action program.` };
@@ -133,10 +139,10 @@ it(`runs the normal public conversational DERIVED ${count}-Action source route`,
         midpointPaused = true; interrupt?.(); throw new AskError("ASK_CANCELLED", "DERIVED operator interrupted at the ordinary saved program midpoint.", 499);
       }
       const current = draftFor(index);
-      if (stage.startsWith("edit") && index === 37) {
+      if (stage.startsWith("edit") && index === editIndex) {
         current.ttl_seconds = 240;
         const program = lineJson(text, "Host saved complete program and current work unit (progress only; attributed owner decisions remain scoped to their recorded applicability): ");
-        expect(program.selected_intents).toHaveLength(50); expect(program.current_intent_index).toBe(36);
+        expect(program.selected_intents).toHaveLength(count); expect(program.current_intent_index).toBe(editIndex - 1);
         expect(program.counter_owner_reviews.length).toBeGreaterThan(0);
       }
       const { schema_version, verification, effect, approval, ...rule } = current;
@@ -148,6 +154,9 @@ it(`runs the normal public conversational DERIVED ${count}-Action source route`,
         ["runner__validate_action_draft", {}],
       ];
       const key = `${stage}:${index}`; const phase = actionReplyIndex.get(key) ?? 0; actionReplyIndex.set(key, phase + 1);
+      if (stage === "edit_prepare" && phase === 1 && !editInterrupted) {
+        editInterrupted = true; interrupt?.(); throw new AskError("ASK_CANCELLED", "DERIVED interruption after the exact pending edit checkpoint.", 499);
+      }
       if (phase < phases.length) [name, args] = phases[phase] as any;
       else responseText = "The complete structured draft is prepared; separate attached-source review and operator publication are required.";
     } else if (names.includes("runner__review_policy_coverage")) {
@@ -260,21 +269,40 @@ it(`runs the normal public conversational DERIVED ${count}-Action source route`,
     }
     expect(coverageRequests).toBeGreaterThan(0);
     expect(activation?.digest).toBe(active.activation.digest);
-    if (count === 50) {
+    {
       stage = "edit_prepare"; publicationDeclined = false; answers = [editRequest];
       expect(await boundaryReviewCommand(["--project-root", root, "--access", "--job-first"], inspection, outer, undefined, options)).toBe(0);
+      const pendingEdit = JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
+      expect(editInterrupted).toBe(true);
+      expect(pendingEdit.action.intents).toEqual(intents); expect(pendingEdit.action.completed_outcomes).toHaveLength(count);
+      expect(pendingEdit.pending_action_revision).toMatchObject({ outcome: `workshop.adjust_card_${editIndex}`, instruction: editRequest });
+      expect(pendingEdit.pending_action_revision.checkpoint).toBeDefined(); expect(pendingEdit.action.checkpoint).toBeUndefined();
+      expect((await loadActiveActionRuleAuthority(root)).activation.digest).toBe(active.activation.digest);
+      await fs.writeFile(path.join(evidence, "pending-edit-checkpoint.json"), JSON.stringify(pendingEdit, null, 2));
+      stage = "edit_resume";
+      expect(await boundaryReviewCommand(["--project-root", root, "--access", "--job-first"], inspection, outer, undefined, options)).toBe(0);
+      expect(editSaveDeclined).toBe(true);
+      expect(await listActionRuleAuthorityDrafts(root)).toEqual([]);
+      expect((await loadActiveActionRuleAuthority(root)).activation.digest).toBe(active.activation.digest);
+      const declinedEdit = JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
+      expect(declinedEdit.action.intents).toEqual(intents); expect(declinedEdit.pending_action_revision.instruction).toBe(editRequest);
+      expect(declinedEdit.pending_action_revision.checkpoint).toBeDefined();
+      await fs.writeFile(path.join(evidence, "declined-edit-save.json"), JSON.stringify(declinedEdit, null, 2));
+      stage = "edit_after_decline";
+      expect(await boundaryReviewCommand(["--project-root", root, "--access", "--job-first"], inspection, outer, undefined, options)).toBe(0);
       const [edited] = await listActionRuleAuthorityDrafts(root);
-      expect(edited!.authority.rules).toHaveLength(50);
-      expect(edited!.authority.rules.find(entry => entry.rule.outcome === "workshop.adjust_card_37")!.rule.ttl_seconds).toBe(240);
-      expect((await loadActiveActionRuleAuthority(root)).authority.rules.find(entry => entry.rule.outcome === "workshop.adjust_card_37")!.rule.ttl_seconds).toBe(300);
+      expect(edited!.authority.rules).toHaveLength(count);
+      expect(edited!.authority.rules.find(entry => entry.rule.outcome === `workshop.adjust_card_${editIndex}`)!.rule.ttl_seconds).toBe(240);
+      expect((await loadActiveActionRuleAuthority(root)).authority.rules.find(entry => entry.rule.outcome === `workshop.adjust_card_${editIndex}`)!.rule.ttl_seconds).toBe(300);
       await fs.writeFile(path.join(evidence, "late37-disabled.json"), JSON.stringify(edited, null, 2));
       stage = "edit_publish_resume";
       expect(await boundaryReviewCommand(["--project-root", root, "--access", "--job-first"], inspection, outer, undefined, options)).toBe(0);
       const changed = await loadActiveActionRuleAuthority(root);
-      expect(changed.authority.rules).toHaveLength(50);
-      expect(changed.authority.rules.find(entry => entry.rule.outcome === "workshop.adjust_card_37")!.rule.ttl_seconds).toBe(240);
-      for (const entry of changed.authority.rules.filter(entry => entry.rule.outcome !== "workshop.adjust_card_37"))
+      expect(changed.authority.rules).toHaveLength(count);
+      expect(changed.authority.rules.find(entry => entry.rule.outcome === `workshop.adjust_card_${editIndex}`)!.rule.ttl_seconds).toBe(240);
+      for (const entry of changed.authority.rules.filter(entry => entry.rule.outcome !== `workshop.adjust_card_${editIndex}`))
         expect(entry.rule).toEqual(active.authority.rules.find(before => before.rule.outcome === entry.rule.outcome)!.rule);
+      if (count === 50) {
       stage = "remove_request"; answers = [removeRequest];
       expect(await boundaryReviewCommand(["--project-root", root, "--access", "--job-first"], inspection, outer, undefined, options)).toBe(0);
       const [removed] = await listActionRuleAuthorityDrafts(root);
@@ -287,6 +315,7 @@ it(`runs the normal public conversational DERIVED ${count}-Action source route`,
       expect(retained.authority.rules).toHaveLength(49); expect(retained.authority.rules.some(entry => entry.rule.outcome === "workshop.adjust_card_50")).toBe(false);
       for (const entry of retained.authority.rules) expect(entry.rule).toEqual(changed.authority.rules.find(before => before.rule.outcome === entry.rule.outcome)!.rule);
       await fs.writeFile(path.join(evidence, "maintenance-result.json"), JSON.stringify({ edited: changed.activation.digest, removed: retained.activation.digest, activeOutcomes: retained.authority.rules.map(entry => entry.rule.outcome), providerCalls: 0 }, null, 2));
+      }
     }
   } finally {
     stdout.mockRestore(); fetch.mockRestore();
