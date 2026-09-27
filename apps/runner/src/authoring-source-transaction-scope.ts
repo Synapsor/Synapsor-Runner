@@ -1,3 +1,4 @@
+import { AUTHORING_PROGRAM_CAPACITY } from "./authoring-program-capacity.js";
 import { canonicalJsonDigest } from '@synapsor-runner/protocol';
 import { currentSourceTransactionReview, type SourceTransactionReview } from './authoring-source-transaction-review.js';
 
@@ -119,10 +120,10 @@ export function sourceTransactionScopeQuestions(source:Source,draft:unknown,sess
   if(!requirement)return [];
   const value=object(draft),read=object(value.read),actions=Array.isArray(value.actions)?value.actions:[],
     store=object(object(value.runner_evidence).source_transaction_requirement).store_digest;
-  // The canonical structured authoring boundary permits at most 12 Actions.
+  // This whole-program inventory uses authoring capacity, never a page-size slice.
   // Never truncate registered questions: an omitted tail could otherwise turn
   // an unanswered source meaning into apparent complete coverage.
-  if(actions.length>12)throw new Error('SOURCE_TRANSACTION_SCOPE_INVENTORY_LIMIT: Review the supported Action inventory before accepting coverage.');
+  if(actions.length>AUTHORING_PROGRAM_CAPACITY.totalActions)throw new Error('SOURCE_TRANSACTION_SCOPE_INVENTORY_LIMIT: Review the supported Action inventory before accepting coverage.');
   if(!sha(store))return [];
   const candidates=new Map<string,SourceTransactionScopeQuestion>();
   const add=(outcome:string)=>{

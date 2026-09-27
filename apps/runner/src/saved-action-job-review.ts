@@ -1,8 +1,12 @@
+import { AUTHORING_PROGRAM_RESUME_VERSION } from "./authoring-program-capacity.js";
+import { explorationBoundaryCandidateDigest } from "./auto-boundary.js";
+import { savedAuthoringPolicyReview } from "./authoring-saved-review.js";
+import type { ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";
 import { receiptRequirement } from "./authoring-obligation-review.js";
 import { readBoundaryAuthoringResumeState, type BoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 
-export type SavedActionJobReview = { summary: string[]; details: string[]; detailsLabel?: string };
+export type SavedActionJobReview = { summary: string[]; details: string[]; detailsLabel?: string; completeProgram?: { draftsComplete: boolean } };
 
 /** A compiled outcome is not evidence that every requested job or edit is done. */
 export function unfinishedActionIntents(resume: BoundaryAuthoringResumeState, currentOutcomes: readonly string[]): string[] {
@@ -61,6 +65,15 @@ export async function readSavedActionJobReview(input: {
       "Reopen model-guided setup to reconcile the saved job with the current review. No saved work or active permission changed."],
   };
   const pending = unfinishedActionIntents(saved.value, input.currentOutcomes);
+  if (saved.value.schema_version === AUTHORING_PROGRAM_RESUME_VERSION) {
+    const ready = !pending.length && !saved.value.pending_job_revision && !saved.value.pending_read_revision
+      && !saved.value.pending_policy_review && ["authority_review", "client_setup"].includes(saved.value.stage);
+    return { completeProgram: { draftsComplete: ready },
+      summary: [ready ? `Complete selected program: all ${saved.value.action?.intents?.length ?? 1} intended Actions are represented in this candidate. Exact source and authority validation remain required.`
+        : `Complete selected program is pending: ${pending.length} intended Actions or saved edits still require review. Publication stays disabled.`],
+      details: ["Complete selected program", ...pending.map((intent, index) => `${index + 1}. ${intent}`),
+        "A work unit is saved progress. It cannot be published as completion of the selected program."] };
+  }
   if (!pending.length) return { summary: [], details: [] };
   return {
     summary: [`Saved job: ${pending.length} requested ${pending.length === 1 ? "change remains" : "changes remain"} unfinished. This review covers only the ${input.currentOutcomes.length} prepared ${input.currentOutcomes.length === 1 ? "change" : "changes"} below.`,
@@ -99,4 +112,50 @@ export async function readSavedExecutionRequirements(input: { projectRoot: strin
   return { source_digest: source.digest, receipt_requirements: receiptRequirements,
     passages: passages.length ? passages.map(passage => `Source lines ${passage.start}-${passage.end}: ${lines.slice(passage.start - 1, passage.end).join("\n")}`)
       : [source.text] };
+}
+
+/** Current v2 program gate. Runs again under publication's existing mutation lock.
+ * Legacy v1 subset reviews keep their semantics; compiled counts alone never
+ * establish full-program completion or current policy coverage. */
+export async function assertCompleteSelectedActionProgram(input: {
+  projectRoot: string; draft: ActionRuleAuthorityDraftV1; env?: NodeJS.ProcessEnv;
+  /** Activation supplies its existing admitted mutation permit; UI does not. */
+  permit?: import("./project-authority-mutation.js").ProjectAuthorityMutationPermit;
+}): Promise<void> {
+  let selected;
+  try { selected = (await readProjectReadAuthoring(input.projectRoot, input.env))?.selected; }
+  catch (error) {
+    if ((error as { code?: string }).code === "POLICY_READ_AUTHORING_MISSING") return;
+    throw error;
+  }
+  if (!selected) return;
+  const binding = { boundary_name: selected.progress.candidate.pack.name,
+    generation_lock_fingerprint: selected.progress.candidate.generation_lock_fingerprint,
+    schema_fingerprint: selected.draft_lock.schema_fingerprint,
+    role_posture_fingerprint: selected.draft_lock.role_posture_fingerprint };
+  const loaded = await readBoundaryAuthoringResumeState(input.projectRoot, binding);
+  if (loaded.status === "none") return;
+  const refuse = (reason: string): never => { throw new Error(`AUTHORING_PROGRAM_NOT_READY: ${reason} Resume the complete saved program. Its drafts and existing authority remain unchanged.`); };
+  if (loaded.status === "invalid") return refuse("The saved program integrity cannot be verified.");
+  if (loaded.value.schema_version !== AUTHORING_PROGRAM_RESUME_VERSION) return;
+  if (loaded.status !== "ready") return refuse("The saved program belongs to older database or access metadata.");
+  const saved = loaded.value;
+  const outcomes = input.draft.authority.rules.map(rule => rule.rule.outcome);
+  const intents = saved.action?.intents;
+  const completed = saved.action?.completed_outcomes;
+  if (!intents?.length || !completed || completed.length !== intents.length
+    || new Set(intents).size !== intents.length || new Set(completed).size !== completed.length
+    || unfinishedActionIntents(saved, outcomes).length || saved.action?.checkpoint
+    || saved.pending_job_revision || saved.pending_read_revision || saved.pending_policy_review
+    || !["authority_review", "client_setup"].includes(saved.stage)) return refuse("The selected intent inventory or a requested edit is unfinished.");
+  const readDigest = explorationBoundaryCandidateDigest(selected.progress.candidate);
+  if (completed.some(outcome => !input.draft.authority.rules.some(rule => rule.rule.outcome === outcome
+    && rule.read_boundary_name === binding.boundary_name && rule.read_boundary_digest === readDigest))) {
+    refuse("An intended outcome does not match the current exact Read revision.");
+  }
+  if (saved.policy_source_session) {
+    const review = await savedAuthoringPolicyReview({ projectRoot: input.projectRoot, binding, readDigest,
+      exactActionDraft: input.draft, env: input.env, permit: input.permit });
+    if (!review?.ready) refuse("Full attached source coverage and shared obligations need current validation.");
+  }
 }

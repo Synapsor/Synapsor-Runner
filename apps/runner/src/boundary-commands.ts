@@ -1,3 +1,4 @@
+import { AUTHORING_PROGRAM_CAPACITY, AUTHORING_PROGRAM_RESUME_VERSION, authoringProgramProgressLines } from "./authoring-program-capacity.js";
 import { scopedDisclosureStoreDigest } from "./authoring-scoped-disclosure.js";
 import { localScopedDisclosureReview } from "./authoring-scoped-disclosure-operation.js";
 import { localSourceTransactionReview, localSourceTransactionScopeReview } from "./authoring-source-transaction-operation.js";
@@ -4390,6 +4391,12 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   let readPrerequisiteDecisions = parseReadPrerequisiteBusinessDecisions(availableResume?.read_prerequisite_decisions ?? []);
   let pendingActionAddition = availableResume?.pending_action_addition;
   let resumeAction: BoundaryAuthoringResumeAction | undefined = availableResume?.action;
+  // An exact late edit uses the existing one-outcome work loop, while the v2
+  // saved agenda remains the complete program. Its pending edit checkpoint is
+  // separate from any unfinished original Action checkpoint.
+  const programRevisionAgenda = availableResume?.schema_version === AUTHORING_PROGRAM_RESUME_VERSION && availableResume.action?.intents?.length
+    ? structuredClone(availableResume.action) : undefined;
+  let preserveProgramRevisionAgenda = Boolean(programRevisionAgenda && pendingActionRevision);
   // Read edits and metadata recovery recompile saved outcomes, not an unfinished agenda.
   let retainedReadEdit: { action?: BoundaryAuthoringResumeAction; addition?: BoundaryAuthoringActionAddition } | undefined = pendingReadRevision
     ? { action: structuredClone(resumeAction), addition: structuredClone(pendingActionAddition) } : undefined;
@@ -4465,8 +4472,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         ...((retainedReadEdit ? retainedReadEdit.addition : pendingActionAddition)
           ? { pendingActionAddition: retainedReadEdit ? retainedReadEdit.addition : pendingActionAddition } : {}),
         ...(resumeRead ? { read: resumeRead } : {}),
-        ...((retainedReadEdit ? retainedReadEdit.action : resumeAction)
-          ? { action: retainedReadEdit ? retainedReadEdit.action : resumeAction } : {}),
+        ...((retainedReadEdit ? retainedReadEdit.action : preserveProgramRevisionAgenda ? programRevisionAgenda : resumeAction)
+          ? { action: retainedReadEdit ? retainedReadEdit.action : preserveProgramRevisionAgenda ? programRevisionAgenda : resumeAction } : {}),
         ...(activeResume ? { previous: activeResume } : {}),
       });
       assertRunning();
@@ -5226,6 +5233,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     try {
       const removal = await prepareSavedActionRuleRemoval(input.projectRoot, outcome,
         pendingActionRemoval?.outcome === outcome ? pendingActionRemoval : undefined);
+      if (preserveProgramRevisionAgenda) resumeAction = programRevisionAgenda;
+      preserveProgramRevisionAgenda = false;
       if (removal.mode === "deactivate") {
         pendingActionRemoval = { outcome, authority_name: removal.authorityName,
           draft_digest: removal.digest as `sha256:${string}`, mode: "deactivate" };
@@ -5735,6 +5744,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           : availableResume?.action;
       if (!retainedReadEdit && !resumesCompletedActionsAfterRevalidation && jobPlan.action_mode === "revise"
         && jobPlan.action_strategy === "rule_derived" && !pendingReadRevision) {
+        preserveProgramRevisionAgenda = Boolean(programRevisionAgenda);
         const outcome = jobPlan.action_outcome ?? uniqueExistingSemanticOutcome(reusableState.current_state.actions);
         if (!outcome) throw new Error("ACTION_RULE_REVISION_AMBIGUOUS: Select the exact outcome before preparing this edit.");
         const baseline = await loadActionRuleRevisionBaseline({ projectRoot: input.projectRoot,
@@ -6561,6 +6571,10 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         const partialActionIndex = resumeAction?.completed_outcomes?.length ?? 0;
         semanticDraftLoop: for (let semanticIndex = 0; semanticIndex < actionIntents.length; semanticIndex += 1) {
         const semanticIntent = actionIntents[semanticIndex]!;
+        if (actionIntents.length > AUTHORING_PROGRAM_CAPACITY.recommendedWorkUnitActions) {
+          await writeRunner("SELECTED PROGRAM PROGRESS",
+            authoringProgramProgressLines(actionIntents.length, semanticIndex), "normal");
+        }
         semanticActionModelResult = undefined;
         semanticActionModelDraft = undefined;
         semanticActionRevisionBaseline = undefined;
@@ -6745,6 +6759,26 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
                 reservedOutcomes: semanticActionDrafts.map((entry) => entry.result.compiled.rule.outcome),
                 preparedDrafts: semanticActionDrafts.map((entry) => entry.result.compiled.draft),
                 pendingIntents: actionIntents.slice(semanticIndex),
+                ...((actionIntents.length > AUTHORING_PROGRAM_CAPACITY.recommendedWorkUnitActions || preserveProgramRevisionAgenda) && activeResume
+                  ? { programContext: { selected_intents: preserveProgramRevisionAgenda ? programRevisionAgenda!.intents! : actionIntents,
+                    current_intent_index: preserveProgramRevisionAgenda
+                      ? Math.max(0, programRevisionAgenda!.completed_outcomes?.indexOf(semanticActionRevisionBaseline?.outcome ?? pendingActionRevision?.outcome ?? "") ?? 0)
+                      : semanticIndex,
+                    binding: activeResume.binding, resume_revision: activeResume.revision_digest,
+                    owner_decisions: readPrerequisiteDecisions,
+                    counter_owner_reviews: reviewedVersionFields,
+                    disclosure_reviews: reviewedActionDisclosures,
+                    source_decisions: {
+                      counting_decisions: authoringConversation?.policySources?.counting_decisions,
+                      scoped_disclosure_reviews: authoringConversation?.policySources?.scoped_disclosure_reviews,
+                      source_transaction_reviews: authoringConversation?.policySources?.source_transaction_reviews,
+                      source_transaction_scope_reviews: authoringConversation?.policySources?.source_transaction_scope_reviews,
+                      application_assignments: authoringConversation?.policySources?.application_assignments,
+                      read_interpretations: authoringConversation?.policySources?.read_interpretations,
+                    },
+                    unresolved: [...(preserveProgramRevisionAgenda
+                      ? programRevisionAgenda!.intents!.slice(programRevisionAgenda!.completed_outcomes?.length ?? 0)
+                      : actionIntents.slice(semanticIndex)), ...(pendingActionRevision ? [pendingActionRevision.instruction] : [])] } } : {}),
                 builtCatalog: semanticActionCatalog!,
                 ...(partialActionCheckpoint && semanticIndex === partialActionIndex
                   ? { checkpoint: partialActionCheckpoint, revalidateSavedComponents: true } : {}),
@@ -10091,7 +10125,7 @@ async function promptDelegationActionIntents(
   session: BoundaryReviewInteractiveSession,
 ): Promise<string[] | undefined> {
   const intents: string[] = [];
-  while (intents.length < 8) {
+  while (intents.length < AUTHORING_PROGRAM_CAPACITY.totalActions) {
     const answer = await session.promptText(
       intents.length === 0
         ? "What may the agent propose? Leave blank for a read-only job."
@@ -10107,6 +10141,10 @@ async function promptDelegationActionIntents(
     }
     intents.push(normalized);
   }
+  session.present?.("Complete selected program", [
+    `All ${intents.length} selected Action intents are retained. This authoring path supports at most ${AUTHORING_PROGRAM_CAPACITY.totalActions} selected Actions.`,
+    "Drafting and review use bounded work units; the complete program still needs validation and separate publication.",
+  ]);
   return intents;
 }
 
@@ -10861,9 +10899,15 @@ export async function reviewSavedBoundaryPolicy(input: {
           :'The saved review remains pending. Reopen this local decision when current source meaning can be established.',
         localTransaction:'handled'};
     }
-    const scopeQuestion=sourceTransactionScopeQuestions(source,transactionDraft,input.sources)
-      .find(question=>!question.current||question.current.decision==='deferred');
+    const scopeQuestions=sourceTransactionScopeQuestions(source,transactionDraft,input.sources);
+    const scopeQuestion=scopeQuestions.find(question=>!question.current||question.current.decision==='deferred');
     if(scopeQuestion){
+      const index=scopeQuestions.indexOf(scopeQuestion), start=Math.floor(index/AUTHORING_PROGRAM_CAPACITY.reviewPageActions)*AUTHORING_PROGRAM_CAPACITY.reviewPageActions;
+      input.session.present?.('Source requirement scope inventory',[
+        `Reviewing outcome ${index+1}/${scopeQuestions.length}; ${scopeQuestions.filter(q=>!q.current||q.current.decision==='deferred').length} decisions remain unresolved.`,
+        ...scopeQuestions.slice(start,start+AUTHORING_PROGRAM_CAPACITY.reviewPageActions).map(q=>`${q.action.outcome}: ${q.current?.decision??'unanswered'}`),
+        'This page is navigation only. Every registered requirement and outcome remains in the complete source review; no answer establishes execution or verification.',
+      ]);
       const resolution=planReviewPrerequisite('source_transaction_scope',scopeQuestion.action.outcome,
         canonicalJsonDigest({source:source.digest,action:scopeQuestion.action,binding:scopeQuestion.action_binding_digest,
           requirement:scopeQuestion.requirement.digest}));

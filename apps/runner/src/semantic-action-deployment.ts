@@ -1,3 +1,5 @@
+import { withProjectRuntimeAdmission } from "./project-runtime-admission.js";
+import { assertCompleteSelectedActionProgram } from "./saved-action-job-review.js";
 import fs from "node:fs/promises";
 import { inspectSemanticReceiptSetup, selectedSemanticReceipts, type SemanticReceiptMode } from "./semantic-receipt-setup.js";
 import { postgresAdapter } from "@synapsor-runner/postgres";
@@ -233,17 +235,18 @@ export async function activateSemanticActionRuntime(input: {
 }): Promise<SemanticActionRuntimeActivation> {
   const draft = parseStoredActionRuleAuthority(input.draft);
   if (draft.state !== "disabled") throw new Error("ACTION_RULE_DRAFT_REQUIRED: review a disabled Action revision before activation.");
-  return withProjectAuthorityMutation(input.projectRoot, (permit) => activateSemanticActionRuntimeUnlocked({ ...input,
+  return withProjectRuntimeAdmission(input.projectRoot, root => withProjectAuthorityMutation(root, (permit) => activateSemanticActionRuntimeUnlocked({ ...input,
     draft,
     projectRoot: permit.projectRoot,
     ...(input.baseConfigPath === undefined ? {} : { baseConfigPath: projectPathAfterLock(input.baseConfigPath, input.projectRoot, permit.projectRoot) }),
     ...(input.outputConfigPath === undefined ? {} : { outputConfigPath: projectPathAfterLock(input.outputConfigPath, input.projectRoot, permit.projectRoot) }),
-  }, permit));
+  }, permit)));
 }
 
 async function activateSemanticActionRuntimeUnlocked(input: Parameters<typeof activateSemanticActionRuntime>[0],
   permit: ProjectAuthorityMutationPermit): Promise<SemanticActionRuntimeActivation> {
   const projectRoot = path.resolve(input.projectRoot);
+  await assertCompleteSelectedActionProgram({ projectRoot, draft: input.draft, env: input.env, permit });
   const outputConfigPath = path.resolve(
     input.outputConfigPath ?? path.join(projectRoot, SEMANTIC_ACTION_RUNTIME_CONFIG),
   );

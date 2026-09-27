@@ -11,10 +11,14 @@ import { policyReviewReadiness } from "./authoring-review-readiness.js";
 import { withCountingOutcomeDomain } from "./authoring-counting-domain.js";
 import { clientDutyInventory } from "./authoring-client-duties.js";
 
-/** Status/navigation projection only. Never replaces the current guided
- * coverage check, exact activation review, or runtime admission. */
+/** Rechecks saved policy status against the exact current dependencies. Never
+ * replaces guided coverage production, exact authority consent or runtime admission. */
 export async function savedAuthoringPolicyReview(input: {
   projectRoot: string; binding: BoundaryAuthoringResumeBinding; readDigest: string;
+  exactActionDraft?: import("./action-rule-authority.js").ActionRuleAuthorityDraftV1;
+  env?: NodeJS.ProcessEnv;
+  /** Only supplied under an existing runtime-admission -> mutation scope. */
+  permit?: import("./project-authority-mutation.js").ProjectAuthorityMutationPermit;
 }): Promise<ReturnType<typeof policyReviewReadiness> | undefined> {
   const pending = (message: string) => ({ ready: false, privacy: false, summary: [message,
     "Resume the saved job to recheck its policy and pending work. Active authority is unchanged."] });
@@ -28,7 +32,7 @@ export async function savedAuthoringPolicyReview(input: {
     const session = await loadPolicySources(input.projectRoot, saved.policy_source_session);
     const source = activePolicySource(session);
     if (!source) return undefined;
-    const drafts = await listActionRuleAuthorityDrafts(input.projectRoot);
+    const drafts = input.exactActionDraft ? [input.exactActionDraft] : await listActionRuleAuthorityDrafts(input.projectRoot);
     const authorityDigests = (drafts.length ? drafts.map(draft => draft.digest) : [null])
       .map(action => canonicalJsonDigest({ read: input.readDigest, action }));
     if (!session.coverage || session.coverage.source_digest !== source.digest
@@ -66,7 +70,7 @@ export async function savedAuthoringPolicyReview(input: {
     if (domains.length) {
       const matching = drafts.filter(draft => canonicalJsonDigest({ read: input.readDigest, action: draft.digest }) === session.coverage_authority_digest);
       if (matching.length !== 1 || !await withCountingOutcomeDomain(input.projectRoot, matching[0]!, async current =>
-        domains.every(domain => canonicalJsonDigest(domain) === canonicalJsonDigest(current)))) {
+        domains.every(domain => canonicalJsonDigest(domain) === canonicalJsonDigest(current)), input.env, input.permit)) {
         return pending("The saved counting comparison needs revalidation against current authority and retained history. Its former domain condition is not current review evidence.");
       }
     }
@@ -76,7 +80,7 @@ export async function savedAuthoringPolicyReview(input: {
     }
     const receipts = obligations.filter(p => p.obligation_assessment!.family === "receipt_setup");
     if (receipts.length) {
-      const current = await authoringReceiptConfiguration(input.projectRoot, matchingAuthority?.authority.rules.map(r => r.rule.source) ?? []);
+      const current = await authoringReceiptConfiguration(input.projectRoot, matchingAuthority?.authority.rules.map(r => r.rule.source) ?? [], input.env);
       if (current.status === "unavailable" || receipts.some(p => p.obligation_assessment!.configuration_digest !== current.digest)) {
         return pending("Receipt configuration changed or is unavailable. Recheck its setup obligation; no receipt or execution was verified.");
       }

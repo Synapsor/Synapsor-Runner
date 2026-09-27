@@ -52,6 +52,8 @@ import {
   formatPolicyDuration,
 } from "./action-policy-scope.js";
 
+import { authoringProgramWorkUnit } from "./authoring-program-capacity.js";
+
 const TOOL_VERIFICATION = "runner.submit_verification_boundary_draft";
 const TOOL_EFFECT = "runner.submit_effect_envelope_draft";
 const TOOL_RULE = "runner.submit_action_rule_draft";
@@ -60,6 +62,22 @@ const MAX_CATALOG_BYTES = 96 * 1024;
 const MAX_OPERATOR_CLARIFICATIONS = 2;
 const MAX_MECHANICAL_REDIRECTS = 1;
 const MAX_FINAL_COMPILER_REPAIRS = 2;
+
+/** Host bookkeeping supplements complete source and job context; it is neither
+ * a model assertion nor operator approval or source authority. */
+export type ActionAuthoringProgramContext = {
+  selected_intents: string[];
+  current_intent_index: number;
+  binding: import("./boundary-authoring-resume.js").BoundaryAuthoringResumeBinding;
+  resume_revision: string;
+  owner_decisions: NonNullable<import("./boundary-authoring-resume.js").BoundaryAuthoringResumeState["read_prerequisite_decisions"]>;
+  source_decisions?: Pick<import("./authoring-policy-source.js").PolicySourceSession,
+    "counting_decisions" | "scoped_disclosure_reviews" | "source_transaction_reviews"
+    | "source_transaction_scope_reviews" | "application_assignments" | "read_interpretations">;
+  counter_owner_reviews?: import("./boundary-authoring-resume.js").BoundaryAuthoringResumeState["reviewed_version_fields"];
+  disclosure_reviews?: import("./boundary-authoring-resume.js").BoundaryAuthoringResumeState["reviewed_action_disclosures"];
+  unresolved: string[];
+};
 
 export type ActionRuleModelSession = {
   provider: AskProvider;
@@ -207,6 +225,7 @@ export type ModelActionRuleDraftInput = {
   preparedDrafts?: ActionRuleModelDraftV1[];
   /** Current host-retained agenda; a prerequisite resume must retain its job. */
   pendingIntents?: string[];
+  programContext?: ActionAuthoringProgramContext;
   checkpoint?: ActionRuleAuthoringCheckpoint;
   /** Host-mediated resume of a still-pending job may retain untrusted components
    * after a Read edit. Never pass a checkpoint for a withdrawn source/outcome. */
@@ -251,6 +270,11 @@ export type ModelActionRuleDraftInput = {
 /** The model edits disabled components; only the compiler can mark a draft ready. */
 export async function generateModelActionRuleDraft(input: ModelActionRuleDraftInput): Promise<ModelActionRuleDraftResult> {
   const intent = boundedText(input.intent, "Action Rule intent", 2_000);
+  const program = input.programContext;
+  const progress = program ? authoringProgramWorkUnit(program.selected_intents.length, program.current_intent_index) : undefined;
+  if (program && (!progress?.unit || new Set(program.selected_intents).size !== program.selected_intents.length)) {
+    throw new Error("AUTHORING_PROGRAM_CONTEXT_INVALID: the current saved work unit needs reconciliation before drafting.");
+  }
   const originalStatements = actionOperatorStatements(input);
   const operatorJob = input.operatorJob ? boundedText(input.operatorJob, "Operator job", 4_000) : originalStatements[0]!;
   const savedCheckpoint = input.checkpoint ? parseActionRuleAuthoringCheckpoint(input.checkpoint) : undefined;
@@ -701,6 +725,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       history: input.session.conversation ? modelAuthoringHistory(input.session.conversation, input.session) : history.slice(-16),
       question: [
         `Original operator job (preserve shared policy across actions): ${JSON.stringify(operatorJob)}`,
+        ...(program ? [`Host saved complete program and current work unit (progress only; attributed owner decisions remain scoped to their recorded applicability): ${JSON.stringify({ ...program, progress })}`] : []),
         ...(input.operatorStatements ? [
           `Original policy and accepted operator statements: ${JSON.stringify(originalStatements)}`,
           `Generated repair context (not operator intent): ${JSON.stringify(intent)}`,

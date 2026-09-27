@@ -52,10 +52,12 @@ import { createBoundaryReviewInteractiveSession, type BoundaryReviewInteractiveS
 import { reviewActionVersionField } from "./action-rule-version-review.js";
 import type { ReviewedActionVersionField } from "./action-rule-authoring-checkpoint.js";
 
+import { AUTHORING_PROGRAM_CAPACITY, AUTHORING_PROGRAM_INPUT_VERSION } from "./authoring-program-capacity.js";
+
 const INPUT_VERSION = "synapsor.boundary-draft-input.v1" as const;
 const EXTERNAL_DRAFT_ACTOR = "external_draft";
 // The exported envelope must always be eligible for unchanged re-submission.
-const MAX_DRAFT_BYTES = 512 * 1024;
+const MAX_DRAFT_BYTES = AUTHORING_PROGRAM_CAPACITY.structuredDraftBytes;
 
 let structuredActionDraftValidator: ReturnType<Ajv2020["compile"]> | undefined;
 
@@ -64,11 +66,12 @@ type StructuredRuleSource = Parameters<typeof buildActionRuleAuthorityDraft>[0][
 type StructuredActionEntry = { draft: ActionRuleModelDraftV1; retained?: StructuredRuleSource };
 
 type StructuredBoundaryDraftInput = {
-  schema_version: typeof INPUT_VERSION;
+  schema_version: typeof INPUT_VERSION | typeof AUTHORING_PROGRAM_INPUT_VERSION;
   review_bundle_digest: `sha256:${string}`;
   bindings: BoundaryReviewMutationBindings;
   read: { resources: JsonRecord[] };
   actions: ActionRuleModelDraftV1[];
+  programReferences?: Array<{ outcome: string; digest: string }>;
 };
 
 /**
@@ -228,8 +231,28 @@ async function exportStructuredDraft(projectRoot: string, schemaInspector: typeo
   if (context.candidate.pack.resources.length === 0 && !bootstrapResource) {
     throw new Error("STRUCTURED_DRAFT_BOOTSTRAP_CATALOG_MISSING: the disabled metadata-only Read draft has no governed resource catalog. Re-run boundary draft; Runner will not infer a table from an empty candidate.");
   }
+  if (baselineActions.length > AUTHORING_PROGRAM_CAPACITY.totalActions
+    || actionSkeletons.skeletons.length > AUTHORING_PROGRAM_CAPACITY.totalActions) {
+    throw new Error(`STRUCTURED_DRAFT_PROGRAM_EXPORT_LIMIT: complete structured program export supports at most ${AUTHORING_PROGRAM_CAPACITY.totalActions} Actions. Existing canonical authority is unchanged; use its exact authority review instead. No inventory was truncated or exported as complete.`);
+  }
+  const programEnvelope = baselineActions.length > AUTHORING_PROGRAM_CAPACITY.structuredChangedActions
+      || actionSkeletons.skeletons.length > AUTHORING_PROGRAM_CAPACITY.structuredChangedActions
+    ? AUTHORING_PROGRAM_INPUT_VERSION : INPUT_VERSION;
+  const completeActionIndex = new Map(baselineActions.map((draft, index) => [draft.outcome, index]));
+  // v2 keeps complete contracts once. A reference is emitted only when its
+  // target has exactly the same checked draft; incomplete state remains explicit.
+  const skeletons = programEnvelope === AUTHORING_PROGRAM_INPUT_VERSION ? actionSkeletons.skeletons.map(skeleton => {
+    const { candidates: _candidates, continuation, ...state } = skeleton;
+    const index = continuation.state === "exact_current_draft" ? completeActionIndex.get(continuation.outcome) : undefined;
+    const exact = index !== undefined && continuation.state === "exact_current_draft"
+      && canonicalJsonDigest(baselineActions[index]) === canonicalJsonDigest(continuation.draft);
+    return { ...state, candidates_ref: "/action_skeleton_candidates",
+      continuation: exact && continuation.state === "exact_current_draft"
+        ? { state: continuation.state, outcome: continuation.outcome, digest: continuation.digest, draft_ref: `/actions/${index}` }
+        : continuation };
+  }) : actionSkeletons.skeletons;
   const payload = {
-    schema_version: INPUT_VERSION,
+    schema_version: programEnvelope,
     review_bundle_digest: context.bundle.bundle_digest,
     bindings: context.bundle.mutation_bindings,
     read: {
@@ -241,7 +264,9 @@ async function exportStructuredDraft(projectRoot: string, schemaInspector: typeo
     actions: baselineActions,
     // Incomplete context from a current saved model job. It is not an input to
     // the submission parser and cannot become Action authority by itself.
-    action_skeletons: actionSkeletons.skeletons,
+    action_skeletons: skeletons,
+    ...(programEnvelope === AUTHORING_PROGRAM_INPUT_VERSION && actionSkeletons.skeletons[0]
+      ? { action_skeleton_candidates: actionSkeletons.skeletons[0].candidates } : {}),
     read_request_json_schema: structuredReadRequestJsonSchema(),
     action_rule_draft_json_schema: actionRuleModelDraftJsonSchema(),
     action_authoring_catalog: compactActionRuleAuthoringCatalog(catalog.authoring),
@@ -250,7 +275,7 @@ async function exportStructuredDraft(projectRoot: string, schemaInspector: typeo
       state: "template_only",
       provenance: EXTERNAL_DRAFT_ACTOR,
       activation: "not_available_from_this_input",
-      instructions: "Edit typed read.resources and actions only. action_skeletons are view-only incomplete context, not ready actions; Runner ignores them on submission. The export contains no identity values, confirmations, activation authority, credentials, source rows, or runtime grants. A submission must request at least one real Read or Action change; all saved revisions remain disabled for separate human review.",
+      instructions: `Edit typed read.resources and actions only. Submit at most ${AUTHORING_PROGRAM_CAPACITY.structuredChangedActions} added or changed Actions at a time; unchanged complete exported entries do not consume that allowance. action_skeletons are view-only incomplete context, not ready actions; Runner never uses them as Action authority. V2 local references must resolve to current saved contracts. The export contains no identity values, confirmations, activation authority, credentials, source rows, or runtime grants. A submission must request at least one real Read or Action change; all saved revisions remain disabled for separate human review.`,
     },
   };
   return payload;
@@ -344,6 +369,13 @@ async function prepareStructuredDraft(
     replacementDrafts.set(rule.rule.outcome, { draft,
       ...(rule.read_boundary_name !== prospectiveRead.pack.name ? { retained: structuredClone(source) } : {}) });
   }
+  for (const reference of input.programReferences ?? []) {
+    const saved = replacementDrafts.get(reference.outcome);
+    if (!saved || canonicalJsonDigest(saved.draft) !== reference.digest) {
+      throw new Error("STRUCTURED_DRAFT_PROGRAM_REFERENCE_STALE: an exact exported continuation no longer matches the saved Action. Re-export the current candidate; no metadata reference can establish authority.");
+    }
+  }
+  let changedActions = 0;
   for (const draft of input.actions) {
     if (replacementDrafts.has(draft.outcome) && input.actions.filter((item) => item.outcome === draft.outcome).length > 1) {
       throw new Error(`STRUCTURED_DRAFT_ACTION_DUPLICATE: outcome ${draft.outcome} appears more than once.`);
@@ -354,6 +386,11 @@ async function prepareStructuredDraft(
         throw new Error(`STRUCTURED_DRAFT_READ_DEPENDENCY_REQUIRED: ${draft.outcome} belongs to Read Boundary ${previous.retained.read_boundary_name}, not the selected ${prospectiveRead.pack.name}. This selected-Read export cannot edit that dependency. Open boundary review and select the original Read Boundary to inspect the joint review; do not rename or duplicate the outcome. All saved work remains unchanged.`);
       }
       continue;
+    }
+    if (!previous || canonicalJsonDigest(previous.draft) !== canonicalJsonDigest(draft)) {
+      if (++changedActions > AUTHORING_PROGRAM_CAPACITY.structuredChangedActions) {
+        throw new Error(`STRUCTURED_DRAFT_WORK_UNIT_TOO_LARGE: submit at most ${AUTHORING_PROGRAM_CAPACITY.structuredChangedActions} added or changed Actions at a time. Unchanged exported entries do not consume this work unit. All saved work remains unchanged.`);
+      }
     }
     replacementDrafts.set(draft.outcome, { draft });
   }
@@ -614,27 +651,66 @@ function parseStructuredDraftInput(value: unknown): StructuredBoundaryDraftInput
   assertKeys(root, [
     "schema_version", "review_bundle_digest", "bindings", "read", "actions",
     "action_skeletons", "read_request_json_schema", "action_rule_draft_json_schema", "action_authoring_catalog", "read_authoring_catalog", "notes",
+    ...(root.schema_version === AUTHORING_PROGRAM_INPUT_VERSION ? ["action_skeleton_candidates"] : []),
   ], "structured boundary draft");
-  if (root.schema_version !== INPUT_VERSION) throw new Error(`structured boundary draft must use ${INPUT_VERSION}.`);
+  if (root.schema_version !== INPUT_VERSION && root.schema_version !== AUTHORING_PROGRAM_INPUT_VERSION) {
+    throw new Error(`structured boundary draft must use ${INPUT_VERSION} or ${AUTHORING_PROGRAM_INPUT_VERSION}.`);
+  }
+  const maximum = root.schema_version === INPUT_VERSION
+    ? AUTHORING_PROGRAM_CAPACITY.structuredChangedActions : AUTHORING_PROGRAM_CAPACITY.totalActions;
   const read = record(root.read, "read");
   assertKeys(read, ["resources"], "read");
   if (!Array.isArray(read.resources) || read.resources.length > 500) {
     throw new Error("structured boundary draft read.resources must contain at most 500 resource requests.");
   }
-  if (!Array.isArray(root.actions) || root.actions.length > 12) {
-    throw new Error("structured boundary draft actions must contain at most 12 ActionRuleModelDraftV1 entries.");
+  if (!Array.isArray(root.actions) || root.actions.length > maximum) {
+    throw new Error(`structured boundary draft actions must contain at most ${maximum} ActionRuleModelDraftV1 entries for ${root.schema_version}.`);
   }
   if (root.action_skeletons !== undefined
-    && (!Array.isArray(root.action_skeletons) || root.action_skeletons.length > 12)) {
-    throw new Error("structured boundary draft action_skeletons must be an export-only array of at most 12 entries.");
+    && (!Array.isArray(root.action_skeletons) || root.action_skeletons.length > maximum)) {
+    throw new Error(`structured boundary draft action_skeletons must be an export-only array of at most ${maximum} entries for ${root.schema_version}.`);
   }
+  const actions = root.actions.map((item, index) => parseStructuredActionDraft(item, index));
+  const programReferences = root.schema_version === AUTHORING_PROGRAM_INPUT_VERSION
+    ? parseProgramExportReferences(root, actions) : undefined;
   return {
-    schema_version: INPUT_VERSION,
+    schema_version: root.schema_version,
     review_bundle_digest: hash(root.review_bundle_digest, "review_bundle_digest"),
     bindings: parseBindings(root.bindings),
     read: { resources: read.resources.map((item, index) => record(item, `read.resources[${index}]`)) },
-    actions: root.actions.map((item, index) => parseStructuredActionDraft(item, index)),
+    actions,
+    ...(programReferences?.length ? { programReferences } : {}),
   };
+}
+
+/** Export metadata is only a checked local navigation projection. Its exact
+ * prior-draft digest is checked against host-loaded records, not an edited
+ * submission. Therefore ordinary edits do not turn model metadata into proof. */
+function parseProgramExportReferences(root: JsonRecord, actions: ActionRuleModelDraftV1[]): Array<{ outcome: string; digest: string }> {
+  const skeletons = root.action_skeletons as unknown[] | undefined;
+  if (!skeletons?.length) return [];
+  const candidates = record(root.action_skeleton_candidates, "action_skeleton_candidates");
+  assertKeys(candidates, ["resources", "relationships", "subject_ref_resource_candidates"], "action_skeleton_candidates");
+  if (!Array.isArray(candidates.resources) || !Array.isArray(candidates.relationships)
+    || !Array.isArray(candidates.subject_ref_resource_candidates)
+    || candidates.subject_ref_resource_candidates.some(value => typeof value !== "string")) {
+    throw new Error("STRUCTURED_DRAFT_PROGRAM_REFERENCE_INVALID: shared candidates must be complete typed arrays, never JSON strings or implicit defaults.");
+  }
+  return skeletons.flatMap((value, index) => {
+    const skeleton = record(value, `action_skeletons[${index}]`);
+    if (skeleton.candidates_ref !== "/action_skeleton_candidates" || skeleton.state !== "incomplete") {
+      throw new Error("STRUCTURED_DRAFT_PROGRAM_REFERENCE_INVALID: skeleton candidates must reference this complete envelope's candidate catalog.");
+    }
+    const continuation = record(skeleton.continuation, `action_skeletons[${index}].continuation`);
+    if (continuation.state === "unprepared") { assertKeys(continuation, ["state"], "unprepared continuation"); return []; }
+    assertKeys(continuation, ["state", "outcome", "digest", "draft_ref"], "exact continuation");
+    const target = typeof continuation.draft_ref === "string" ? /^\/actions\/(0|[1-9][0-9]*)$/u.exec(continuation.draft_ref) : undefined;
+    const action = target ? actions[Number(target[1])] : undefined;
+    if (continuation.state !== "exact_current_draft" || !action || action.outcome !== continuation.outcome) {
+      throw new Error("STRUCTURED_DRAFT_PROGRAM_REFERENCE_INVALID: exact continuations must reference their own complete Action in this envelope.");
+    }
+    return [{ outcome: action.outcome, digest: hash(continuation.digest, "exact continuation digest") }];
+  });
 }
 
 /**

@@ -12,11 +12,13 @@ import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } fro
 
 /** Read the already selected store, including before execution setup exists.
  * Runtime gate -> authority mutex -> store read; provider work stays outside.
- * A missing/mismatched store is unavailable evidence, never empty history. */
+ * A missing/mismatched store is unavailable evidence, never empty history.
+ * A held permit is only for callers already holding runtime admission first;
+ * the existing mutation scope validates it before any store is opened. */
 export async function withCountingOutcomeDomain<T>(projectRoot: string, proposed: ActionRuleAuthorityReviewSubjectV1,
   operation: (domain: CountingOutcomeDomain, permit: ProjectAuthorityMutationPermit) => Promise<T>,
-  env: NodeJS.ProcessEnv = process.env): Promise<T> {
-  return withProjectRuntimeAdmission(projectRoot, async root => {
+  env: NodeJS.ProcessEnv = process.env, heldPermit?: ProjectAuthorityMutationPermit): Promise<T> {
+  const admitted = async (root: string) => withProjectAuthorityMutation(root, async permit => {
     const semantic = path.join(root, SEMANTIC_ACTION_RUNTIME_CONFIG);
     const fallback = await fs.stat(semantic).then(() => semantic).catch((error: NodeJS.ErrnoException) => {
       if (error.code !== "ENOENT") throw error;
@@ -30,25 +32,24 @@ export async function withCountingOutcomeDomain<T>(projectRoot: string, proposed
     }
     const store = await createProjectRuntimeStore({ projectRoot: root, config, storePath, env });
     try {
-      return await withProjectAuthorityMutation(root, async permit => {
-        const binding = await borrowRuntimeControlPolicies(root, store);
-        const active = await readActionRuleAuthorityActivation(root, binding);
-        if (!store.automaticApprovalOutcomeDomain) throw new Error("POLICY_COUNTING_HISTORY_UNAVAILABLE: This store cannot establish the retained outcome domain.");
-        const boundary = proposed.authority.action_boundary.name;
-        const history = await store.automaticApprovalOutcomeDomain(boundary);
-        const sameBoundary = active?.authority.action_boundary.name === boundary;
-        const domain: CountingOutcomeDomain = {
-          boundary_name: boundary, proposed_revision: proposed.digest,
-          proposed_outcomes: proposed.authority.rules.map(entry => entry.rule.outcome).sort(),
-          current_revision: active?.digest ?? null,
-          current_outcomes: sameBoundary ? active!.authority.rules.map(entry => entry.rule.outcome).sort() : [],
-          retained_automatic_outcomes: history.outcomes, complete: history.complete,
-          store_binding_digest: canonicalJsonDigest({ root, storePath, storage: config.storage ?? null,
-            repository: binding?.repository_id ?? null, deployment: binding?.deployment_id ?? null, project: binding?.project_id ?? null }),
-          history_scope: "all_retained_boundary_automatic_approvals",
-        };
-        return await operation(domain, permit);
-      });
+      const binding = await borrowRuntimeControlPolicies(root, store);
+      const active = await readActionRuleAuthorityActivation(root, binding);
+      if (!store.automaticApprovalOutcomeDomain) throw new Error("POLICY_COUNTING_HISTORY_UNAVAILABLE: This store cannot establish the retained outcome domain.");
+      const boundary = proposed.authority.action_boundary.name;
+      const history = await store.automaticApprovalOutcomeDomain(boundary);
+      const sameBoundary = active?.authority.action_boundary.name === boundary;
+      const domain: CountingOutcomeDomain = {
+        boundary_name: boundary, proposed_revision: proposed.digest,
+        proposed_outcomes: proposed.authority.rules.map(entry => entry.rule.outcome).sort(),
+        current_revision: active?.digest ?? null,
+        current_outcomes: sameBoundary ? active!.authority.rules.map(entry => entry.rule.outcome).sort() : [],
+        retained_automatic_outcomes: history.outcomes, complete: history.complete,
+        store_binding_digest: canonicalJsonDigest({ root, storePath, storage: config.storage ?? null,
+          repository: binding?.repository_id ?? null, deployment: binding?.deployment_id ?? null, project: binding?.project_id ?? null }),
+        history_scope: "all_retained_boundary_automatic_approvals",
+      };
+      return await operation(domain, permit);
     } finally { await store.close(); }
-  });
+  }, heldPermit === undefined ? {} : { permit: heldPermit });
+  return heldPermit === undefined ? withProjectRuntimeAdmission(projectRoot, admitted) : admitted(projectRoot);
 }

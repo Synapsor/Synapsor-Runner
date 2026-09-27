@@ -220,7 +220,7 @@ export async function planModelBoundaryJob(input: {
     "Preserve every reviewed resource concept explicitly named in the operator's read request. Do not summarize a requested read area away.",
     `For read_mode=create, keep read_intent within ${MAX_BOUNDARY_READ_QUESTION_CHARACTERS} characters because it becomes a representative read question. For read_mode=revise, the access-edit instruction may use up to ${MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS} characters; it does not become a read question. Keep action_intent within ${MAX_BOUNDARY_ACTION_INTENT_CHARACTERS} characters. Preserve the full original request and policy; do not copy their complete contents into routing summaries.`,
     "Use action_mode=create or revise only for requested structured changes. Use reuse only when existing Action authority already represents the requested change and should remain unchanged.",
-    "For a job with multiple new business actions, put each independent business outcome in action_intents (at most eight), preserving its criteria. Keep one operation whose records must change together (for example switch plan AND consume its offer) in one intent, not separate actions; the checked effect supports up to four exact version-guarded UPDATEs in one transaction. Set action_intent to the first entry. Do not silently drop additional requested actions. A revision edits one named outcome; other outcomes remain unchanged.",
+    `For a job with multiple new business actions, put each independent business outcome in action_intents (at most ${AUTHORING_PROGRAM_CAPACITY.totalActions} in the complete selected program), preserving its criteria. Keep one operation whose records must change together (for example switch plan AND consume its offer) in one intent, not separate actions; the checked effect supports up to four exact version-guarded UPDATEs in one transaction. Set action_intent to the first entry. Do not silently drop additional requested actions. A revision edits one named outcome; other outcomes remain unchanged. Runner drafts one Action at a time and saves progress in bounded work units; the inventory is the full requested program, never the first subset.`,
     "Shared automatic-approval limits across the requested actions must remain joint limits in every applicable action_intent. Never rewrite a common allowance into separate per-action allowances. Preserve the overall and trusted-customer maxima, elapsed windows, and human fallback for valid over-limit requests.",
     "Eligibility, refusal of invalid requests, automatic approval, human fallback for other valid requests or limit overruns, and supervised completion are branches of ONE business action, not separate action_intents. For example, switching a subscription from a selected offer is one outcome even when routine offers auto-approve and exceptions need a reviewer. Only separate independently requested database effects; never create a refusal-only or approval-routing-only action.",
     "Preserve automatic-completion/execution intent, and any explicit no-write restriction, in each relevant action_intent. Automatically approve AND complete means separately reviewed supervised execution, not proposal-only. Routing and drafting remain disabled; execution activation is always a later operator decision.",
@@ -409,7 +409,7 @@ function jobPlanToolDefinition(state: BoundaryJobCurrentState): AskToolDefinitio
               description: "Concise Action-only routing intent. Runner validates the exact Action separately.",
             },
             action_intents: {
-              type: "array", minItems: 1, maxItems: 8,
+              type: "array", minItems: 1, maxItems: AUTHORING_PROGRAM_CAPACITY.totalActions,
               items: { type: "string", minLength: 1, maxLength: MAX_BOUNDARY_ACTION_INTENT_CHARACTERS },
               description: "Independent business outcomes for a multi-action create job; each keeps its own requested rules.",
             },
@@ -592,8 +592,8 @@ function parseJobPlan(
     if (actionMode === "remove") {
       throw new Error("action_mode=remove must not include action_intents; it removes one exact existing outcome.");
     }
-    if (actionMode !== "create" || !Array.isArray(value.action_intents) || value.action_intents.length < 1 || value.action_intents.length > 8) {
-      throw new Error("action_intents must contain 1-8 separate business outcomes for action_mode=create.");
+    if (actionMode !== "create" || !Array.isArray(value.action_intents) || value.action_intents.length < 1 || value.action_intents.length > AUTHORING_PROGRAM_CAPACITY.totalActions) {
+      throw new Error(`action_intents must contain 1-${AUTHORING_PROGRAM_CAPACITY.totalActions} separate business outcomes in the complete selected program for action_mode=create.`);
     }
     actionIntents = value.action_intents.map((intent) => boundedText(intent, "Action intent", MAX_BOUNDARY_ACTION_INTENT_CHARACTERS));
     if (new Set(actionIntents).size !== actionIntents.length || actionIntents[0] !== actionIntent) {
@@ -900,3 +900,4 @@ function refusal(message: string): Awaited<ReturnType<AskToolGateway["callTool"]
   };
 }
 import { defaultProviderKeyEnv } from "./hosted-provider-settings.js";
+import { AUTHORING_PROGRAM_CAPACITY } from "./authoring-program-capacity.js";

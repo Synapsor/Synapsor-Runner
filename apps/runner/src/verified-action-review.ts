@@ -1,4 +1,5 @@
 import { actionRuleEffectLines, actionRuleEffectInventory } from "@synapsor-runner/action-rules";
+import { AUTHORING_PROGRAM_CAPACITY, authoringReviewPage } from "./authoring-program-capacity.js";
 import { actionSubjectCompatibility } from "./action-subject-compatibility.js";
 import process from "node:process";
 import { assessWorkerLaunch, workerLaunchLines } from "./worker-launch.js";
@@ -25,7 +26,7 @@ import { clearPausedExecutionSetup, executionSetupProblem, savePausedExecutionSe
 import { exportWriterProvisioning, writerPolicyRepairSummary, type WriterProvisioningPlan } from "./writer-provisioning.js";
 import { renderRunnerResultPanel } from "./runner-result-panel.js";
 import { reviewActionRevisionImpact } from "./action-revision-impact.js";
-import { readSavedActionJobReview } from "./saved-action-job-review.js";
+import { assertCompleteSelectedActionProgram, readSavedActionJobReview } from "./saved-action-job-review.js";
 import { revalidateSavedActionReadDependencies, savedActionReadReviewState } from "./action-read-recovery.js";
 import { inspectReviewerGrantRemovalImpact, reviewerGrantImpactLines } from "./reviewer-grant-impact.js";
 import {
@@ -113,7 +114,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
   const compatibility = input.draft || input.active ? actionSubjectCompatibility((input.draft ?? input.active)!.authority, activeReads) : undefined;
   const subjectConcerns = compatibility?.subjects.filter(s => !s.obtainable) ?? [];
   const subjectLines = subjectConcerns.flatMap(s => [`${s.outcome}/${s.binding}: ${s.code}.`, s.next_step!]);
-  const draftReady = !subjectConcerns.length && (input.draft?.authority.rules.every((rule) => activeReads.some((boundary) =>
+  let draftReady = !subjectConcerns.length && (input.draft?.authority.rules.every((rule) => activeReads.some((boundary) =>
     boundary.pack.name === rule.read_boundary_name
     && boundary.activation.digest === rule.read_boundary_digest)) ?? false);
   const unavailableOutcomes = new Set(input.active?.authority.rules.filter((rule) => !activeReads.some((boundary) =>
@@ -173,6 +174,15 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
   const requestImpact = await reviewActionRevisionImpact(input);
   const jobReview = await readSavedActionJobReview({ projectRoot: input.projectRoot, boundaryName: input.boundaryName,
     currentOutcomes: current.authority.rules.map((rule) => rule.rule.outcome), env: input.env });
+  const programConcerns: string[] = [];
+  if (input.draft) {
+    try { await assertCompleteSelectedActionProgram({ projectRoot: input.projectRoot, draft: input.draft, env: input.env }); }
+    catch (error) {
+      if (!(error instanceof Error) || !error.message.startsWith("AUTHORING_PROGRAM_NOT_READY:")) throw error;
+      draftReady = false;
+      programConcerns.push(error.message);
+    }
+  }
   const reviewedNotice = (value: ActionRuleAuthorityDraftV1 | ActionRuleAuthorityActivationV1, active: boolean, configPath?: string) => {
     const notice = verifiedActionNotice(value, active, configPath);
     return { ...notice, lines: [...jobReview.summary, ...notice.lines] };
@@ -185,6 +195,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
   const summary = [
     ...await removalImpact(),
     ...jobReview.summary,
+    ...programConcerns,
     ...subjectLines,
     ...(needsReadReview ? ["Review the saved read access first; its latest revision is not active.",
       "Your business rules stay saved. Read approval is separate and does not enable changes or execution.",
@@ -210,6 +221,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
           ? unavailableOutcomes.size ? "The saved activation is unchanged until you separately confirm this exact replacement."
             : "The active authority remains live until you separately confirm this exact replacement."
           : "Disabled revision is ready for its separate proposal-authority confirmation."
+        : programConcerns.length ? "The complete selected program needs current review before publication."
         : subjectConcerns.length ? "This revision is not ready for the four-tool client: review its subject acquisition requirement. Existing authority remains unchanged."
         : input.active
           ? canRecheckRead ? "The saved activation is unchanged. Recheck its replacement against the reviewed access before activation."
@@ -232,7 +244,9 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
     }
     const accepted = await (input.session.confirmActivation ?? input.session.confirm)(
       `Activate verified Action Boundary "${input.draft.authority.action_boundary.name}"?`,
-      { context: [...await removalImpact(), ...input.draft.authority.rules.flatMap(actionRuleEffectLines), ...summary] },
+      { context: [...await removalImpact(), ...input.draft.authority.rules.flatMap(actionRuleEffectLines), ...summary],
+        exactDetails: { title: "EXACT ACTION BOUNDARY", lines: verifiedActionAuthorityDetails(input.draft, input.session.terminalColumns),
+          summaryTitle: "ACTION REVIEW", sections: verifiedActionAuthoritySections(input.draft, input.session.terminalColumns) } },
     );
     if (!accepted) return reviewedNotice(input.draft, false);
     const activated = await activateSemanticActionRuntime({
@@ -244,10 +258,18 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
     });
     return reviewedNotice(activated.activation, true, activated.config_path);
   }
+  let inventoryPage = 0;
+  let inventoryQuery = "";
+  let executionPage = 0;
   while (true) {
-    const choice = await input.session.chooseOption(
+    let choice = await input.session.chooseOption(
       "VERIFIED ACTION BOUNDARY",
       [
+        ...(current.authority.rules.length > AUTHORING_PROGRAM_CAPACITY.reviewPageActions ? [
+          { value: "inventory", label: "Review complete outcome inventory", detail: "Eight outcomes per page, exact outcome details and search. Publication still covers the full candidate." },
+        ] : []),
+        ...(input.active && input.active.authority.rules.length > AUTHORING_PROGRAM_CAPACITY.reviewPageActions
+          ? [{ value: "execution_inventory", label: "Review saved execution inventory", detail: "Manage every currently active outcome in bounded pages, including outcomes removed by a pending replacement." }] : []),
         ...(jobReview.details.length ? [{ value: "details_pending_job", label: jobReview.detailsLabel ?? "View unfinished saved work",
           detail: "Inspect saved job status without changing this review or contacting the model." }] : []),
         ...(needsReadReview && input.reviewRead ? [{ value: "review_read", label: "Review saved read access",
@@ -289,7 +311,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
               detail: input.modelRevision.detail,
             }]
           : []),
-        ...(input.active?.authority.action_boundary.rules.flatMap((rule) => {
+        ...(input.active && input.active.authority.rules.length <= AUTHORING_PROGRAM_CAPACITY.reviewPageActions ? input.active.authority.action_boundary.rules.flatMap((rule) => {
           if (rule.writeback.mode !== "direct_sql" || rule.writeback.supervised_worker !== "allowed") return [];
           const enabled = enabledExecutionOutcomes().has(rule.outcome);
           if (!enabled && unavailableOutcomes.has(rule.outcome)) return [];
@@ -302,7 +324,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
               ? "Stops new worker leases for this exact outcome; proposal authority stays active."
               : "Separately inspect and bind one least-privilege writer. No write runs during setup.",
           }];
-        }) ?? []),
+        }) : []),
         ...(input.active
           ? [{
               value: "deactivate",
@@ -380,6 +402,66 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
           { context: details, displayContext: true, initialValue: "back" });
         continue;
       }
+    }
+    if (choice === "execution_inventory" && input.active) {
+      for (;;) {
+        const selectedPage = authoringReviewPage(input.active.authority.action_boundary.rules, executionPage);
+        const selected = await input.session.chooseOption("SAVED EXECUTION INVENTORY", [
+          ...selectedPage.items.flatMap(rule => {
+            if (rule.writeback.mode !== "direct_sql" || rule.writeback.supervised_worker !== "allowed") return [];
+            const enabled = enabledExecutionOutcomes().has(rule.outcome);
+            if (!enabled && unavailableOutcomes.has(rule.outcome)) return [];
+            return [{ value: `${enabled ? "disable" : "enable"}_execution:${rule.outcome}`,
+              label: `${enabled ? "Disable" : "Review"} execution for ${rule.outcome}` }];
+          }),
+          ...(executionPage > 0 ? [{ value: "previous", label: "Previous page" }] : []),
+          ...(executionPage + 1 < selectedPage.pages ? [{ value: "next", label: "Next page" }] : []),
+          { value: "back", label: "Back to full candidate review" },
+        ], { initialValue: "back", displayContext: true, context: [
+          `Active inventory page ${executionPage + 1}/${selectedPage.pages}; ${selectedPage.total} saved outcomes.`,
+          `Active candidate: ${input.active.digest}. Execution needs its existing separate exact writer review.`,
+        ] });
+        if (selected === "previous") { executionPage--; continue; }
+        if (selected === "next") { executionPage++; continue; }
+        choice = selected;
+        break;
+      }
+      if (!choice || choice === "back") continue;
+    }
+    if (choice === "inventory") {
+      for (;;) {
+        const selectedPage = authoringReviewPage(current.authority.rules, inventoryPage,
+          rule => !inventoryQuery || rule.rule.outcome.toLocaleLowerCase().includes(inventoryQuery));
+        const selected = await input.session.chooseOption("COMPLETE ACTION INVENTORY", [
+          ...selectedPage.items.map(rule => ({ value: `outcome:${rule.rule.outcome}`, label: rule.rule.outcome,
+            detail: "Inspect exact conditions, effects, limits and dependencies." })),
+          ...(inventoryPage > 0 ? [{ value: "previous", label: "Previous page" }] : []),
+          ...(inventoryPage + 1 < selectedPage.pages ? [{ value: "next", label: "Next page" }] : []),
+          { value: "search", label: "Search outcomes" },
+          ...(inventoryQuery ? [{ value: "clear", label: "Clear search" }] : []),
+          { value: "back", label: "Back to full candidate review" },
+        ], { initialValue: "back", displayContext: true, context: [
+          `Page ${inventoryPage + 1}/${selectedPage.pages}; ${selectedPage.matched} matching / ${selectedPage.total} full candidate outcomes.`,
+          `Exact candidate: ${current.digest}. Search and pages never change its scope.`,
+        ] });
+        if (!selected || selected === "back") break;
+        if (selected === "next") { inventoryPage++; continue; }
+        if (selected === "previous") { inventoryPage--; continue; }
+        if (selected === "clear") { inventoryQuery = ""; inventoryPage = 0; continue; }
+        if (selected === "search") {
+          const answer = await input.session.promptText("Find an outcome by name (blank clears search)");
+          if (answer !== undefined) { inventoryQuery = answer.trim().toLocaleLowerCase(); inventoryPage = 0; }
+          continue;
+        }
+        if (selected.startsWith("outcome:")) {
+          const outcome = selected.slice("outcome:".length);
+          if (!selectedPage.items.some(rule => rule.rule.outcome === outcome)) continue;
+          await input.session.chooseOption("EXACT ACTION OUTCOME", [{ value: "back", label: "Back to inventory" }],
+            { initialValue: "back", displayContext: true,
+              context: verifiedActionAuthorityDetails(current, input.session.terminalColumns, outcome) });
+        }
+      }
+      continue;
     }
     if (choice === "details_pending_job") {
       await input.session.chooseOption("UNFINISHED SAVED WORK", [{ value: "back", label: "Back to this Action review" }],
@@ -488,6 +570,8 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
             "This grants proposal authority only. It cannot approve, apply, or write source data.",
             "Use exact details to inspect the immutable digest before confirming.",
           ],
+          exactDetails: { title: "EXACT ACTION BOUNDARY", lines: verifiedActionAuthorityDetails(input.draft, input.session.terminalColumns),
+            summaryTitle: "ACTION REVIEW", sections: verifiedActionAuthoritySections(input.draft, input.session.terminalColumns) },
         },
       );
       if (!confirmed) continue;
@@ -828,7 +912,10 @@ function verifiedActionAuthoritySummary(
   terminalColumns = 100,
   unavailableOutcomes: Set<string> = new Set(),
 ): string[] {
-  const rows = value.authority.action_boundary.rules.map((rule) => [
+  const allRules = value.authority.action_boundary.rules;
+  const visibleRules = allRules.length > AUTHORING_PROGRAM_CAPACITY.reviewPageActions
+    ? allRules.slice(0, AUTHORING_PROGRAM_CAPACITY.reviewPageActions) : allRules;
+  const rows = visibleRules.map((rule) => [
     rule.outcome,
     actionRuleEffectInventory(value.authority.rules.find(r => r.rule.outcome === rule.outcome)!).components
       .map(c => `${c.operation.toUpperCase()} ${c.resource} (max ${c.max_rows})`).join("; "),
@@ -860,6 +947,10 @@ function verifiedActionAuthoritySummary(
       );
   return [
     `${stateLabel}  ${value.authority.action_boundary.name}`,
+    ...(allRules.length > visibleRules.length ? [
+      `Showing first ${visibleRules.length} of ${allRules.length} outcomes. Review the complete inventory in ${Math.ceil(allRules.length / AUTHORING_PROGRAM_CAPACITY.reviewPageActions)} pages; exact details contain the full candidate.`,
+      `Full candidate digest: ${value.digest}`,
+    ] : []),
     ...table,
   ];
 }
@@ -891,7 +982,9 @@ export function verifiedActionAuthoritySections(
   return [
     { id: "outcomes", title: "All reviewed outcomes", lines: [
       ...verifiedActionAuthoritySummary(draft, "PENDING PROPOSAL AUTHORITY", new Set(), terminalColumns),
-      "Every retained and added outcome in this revision is listed. Execution is a separate review.",
+      draft.authority.rules.length > AUTHORING_PROGRAM_CAPACITY.reviewPageActions
+        ? "The summary is paged; complete authority and fingerprints contain every retained and added outcome. Execution is a separate review."
+        : "Every retained and added outcome in this revision is listed. Execution is a separate review.",
       `Action Boundary digest: ${draft.authority.action_boundary.digest}`,
     ] },
     { id: "authority", title: "Complete authority and fingerprints", lines: verifiedActionAuthorityDetails(draft, terminalColumns) },
@@ -901,10 +994,11 @@ export function verifiedActionAuthoritySections(
 export function verifiedActionAuthorityDetails(
   value: ActionRuleAuthorityDraftV1 | ActionRuleAuthorityActivationV1,
   terminalColumns = 100,
+  selectedOutcome?: string,
 ): string[] {
   const byOutcome = new Map(value.reviews.map((review) => [review.outcome, review]));
   const lines: string[] = [];
-  for (const rule of value.authority.action_boundary.rules) {
+  for (const rule of value.authority.action_boundary.rules.filter(rule => selectedOutcome === undefined || rule.outcome === selectedOutcome)) {
     const review = byOutcome.get(rule.outcome);
     const source = value.authority.rules.find((candidate) => candidate.rule.outcome === rule.outcome);
     const approval = value.authority.approval_classes.find((candidate) => candidate.name === rule.approval_class);
@@ -942,6 +1036,12 @@ export function verifiedActionAuthorityDetails(
       `Action Boundary digest: ${value.authority.action_boundary.digest}`,
       "",
     );
+  }
+  if (selectedOutcome !== undefined) {
+    const source = value.authority.rules.find(rule => rule.rule.outcome === selectedOutcome);
+    lines.push(`Full candidate digest: ${value.digest}`, "EXACT SELECTED OUTCOME (OPERATOR ONLY)",
+      "This detail is one outcome; final consent covers every outcome in the full candidate.", ...JSON.stringify(source, null, 2).split("\n"));
+    return lines;
   }
   lines.push(
     "EXACT AUTHORITY (OPERATOR ONLY)",
