@@ -1,3 +1,17 @@
+# Supported large-program continuation — current owner-scope boundary
+
+Updated 2026-09-27 UTC. Original T1 is 2026-09-27T16:10:48Z. Owner amendment034 now permits four repair cycles total, product changes only before **2026-09-29T16:10:00Z**, final operation/delivery deadline **2026-09-30T23:59:00Z**. Old timing/counter prose below is historical. Cycle1 has narrow installed acceptance; cycle2 is developing and **unaccepted**, with no final gates/freeze. Cycles3/4 are unused conditional allowances.
+
+Current interim source/test recovery commit is **efb593096e2fae933899483083000f353b7eb663** on the separate development branch, private backup only. It binds exact unfrozen source checkpoint042 (13 changed files, record SHA bd62df1ba9e2b171e0117e30c672741c7d15f5503fe09aec1b6f49f279776b4b). It is not a frozen artifact or an acceptance claim. Main keeps canonical product unchanged while the owner resolves the removal scope; see [REPAIR-CYCLE2-SOURCE-STOP.md](REPAIR-CYCLE2-SOURCE-STOP.md).
+
+Independent Tester115: late37 source-level edit/publication/restart passed. Exact remove43 saved disabled49; a fresh current49 review confirmed22 counting meanings and persisted current coverage, but honestly left original50 source lines3/46/54 pending. Publication refused. This is a real owner-scope boundary, not proof the full-program guard is defective. The pending-program menu guidance was corrected and personally exercised on source042. Main rehashed all41 immutable index members and compared ledger/Source byte identities in raw verification044. Old107 index had a mutable resume pointer; its full-seal claim is explicitly corrected, with immutable108/115 preserved.
+
+Next depends on owner choice: separately select/review49 as a new smaller job; authorize a distinct exact rights-reducing withdrawal while original50 remains pending; or accept refusal and leave the positive removal row incomplete. No gate, freeze, paid Lane C or readiness bypass is admitted while that meaning is unresolved. Existing original50 authority/history remains; no business request, worker or source effect occurred.
+
+Main inference0; newpaid0. Campaign$60 and named LaneC$20/provider/$40combined/400transports each remain shared with prior liabilities and rolling reservations. Last checked settled$4.18686165, holds$0.26298000+$0.71608250, no new reservation; not a current account-balance claim. A owner-deferred; historical StageB ATTEMPTED/NOTPASSED. Sole tester remains task01a0bcb8-0925-7380-911a-8bab207b9e0b.
+
+# Historical checkpoint — cycle1 and early preparation
+
 # Supported large-program continuation — work in progress
 
 Current checkpoint: repair cycle1 independently accepted only for installed native terminal cancellation/identity; immutable product/tests6b6430f8, tree0403ff69… . Settled full/types/selectedPG/tenoffline PASS; independent04320real OS-PTY controls PASS. Whole mixed50/52 and paid GO remain pending. See REPAIR-CYCLE1-CHECKPOINT.md for exact hashes. The source-commit-era progress below is historical preparation and does not override this checkpoint.
