@@ -1,5 +1,16 @@
 # Action Capability Qualification
 
+## Supported mixed-program continuation — active, 2026-09-27
+
+A new owner-authorized continuation starts at2026-09-27T16:10:48Z, ending2026-09-29T16:10:48Z; new product changes stop2026-09-28T16:10:48Z. It starts on unchanged product/tests `93c5eb3ba06c6b4698e7194f47fa1c42e78a3286` and delivery `2768ed5409808e4fc57ebce768fb84f9019d34ed`. Main verified all7,604 installed/archive entries and unchanged source/gate provenance without rebuilding. The prior partial delivery and original five-shape NOT ESTABLISHED result remain historical.
+
+The independent tester sealed one replacement synthetic specification: the original forty supported Actions plus ten meaningful instances of the four supported shapes (13/13/12/12). It must first exercise the public combined representatives, then one fresh public13→32→50 program, whole review/publication, restart and late-edit/removal controls. All52 acceptance rows and their evidence layers remain required. Main verified the specification seal and safe plan without reading private answers. Independent qualification and paid GO remain pending; no new provider calls or product changes have occurred.
+
+The original inverse-PK/FK companion pattern is a coherent zero-or-one relationship that current exact mutation-target selection does not support. It is separately diagnosed; no fifth-shape implementation is authorized. A wrapper stdin leak was reproduced with inert controls, while actual installed Runner signal-free shutdown still requires independent observation. Two new narrow repair cycles maximum (0used) may address reproduced supported-route defects before paid work/cutoff. Each of two named model journeys permits400 actual transports/$20, combined$40 inside the existing cumulative$60; historical charges, holds and counts remain. Actual technical acceptance, measured envelopes, pinned settings and rolling reservations precede egress.
+
+Current status, limits and evidence pointers are in repository-only `docs/qualification-evidence/larger-programs-supported-20260927/CONTINUATION.md` and the existing account-switch handoff. This is not a pass for the old task, broad provider compatibility, production readiness or historical StageB.
+
+
 ## Larger programs — bounded partial delivery,2026-09-27
 
 Frozen product/tests `93c5eb3ba06c6b4698e7194f47fa1c42e78a3286` passes complete full7,568/521skip, explicit types, selected realPG160/4skip and ten offline checks. The sole replacement repairs96-field catalog traversal/cursor integration under unchanged limits. Independent076 accepts its actual installed100×30 public Read activation, four-tool contract/value/privacy controls and cold preservation; tree `3354fe17…`, manifest `b5c6dda1…`, archive `faee3b4e…`,7,604entries. Main rehashed224 final members and compared complete20-table112-row Source/184grants,42-table control and project/HOME cold records. Normal wrapper shutdown remains unestablished.

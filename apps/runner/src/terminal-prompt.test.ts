@@ -1,4 +1,5 @@
 import { PassThrough } from "node:stream";
+import { execFileSync } from "node:child_process";
 import type { ReadStream } from "node:tty";
 import type { WriteStream } from "node:tty";
 import { describe, expect, it } from "vitest";
@@ -9,6 +10,103 @@ import {
   withRawTerminalScreen,
   withTerminalProgress,
 } from "./terminal-prompt.js";
+
+describe("terminal text input lifecycle", () => {
+  // A child isolates uncaught readline errors, so a crashed adapter cannot
+  // look like a fulfilled cancellation. This is a real readline component
+  // check; installed OS-PTY controls separately cover actual terminal devices.
+  it.each(["input-error", "end-raw-error", "blank", "value", "escape"])(
+    "settles %s without crashing or applying a cancelled default",
+    (scenario) => {
+      const script = `
+        import { PassThrough } from 'node:stream';
+        import { readTerminalTextWithEscape } from './apps/runner/src/terminal-prompt.ts';
+        const input = new PassThrough();
+        const output = new PassThrough();
+        output.resume();
+        Object.assign(input, { isTTY: true, isRaw: false, setRawMode(value) {
+          this.isRaw = value;
+          if (!value && ${JSON.stringify(scenario)} === 'end-raw-error') {
+            this.emit('error', Object.assign(new Error('Detached terminal'), { code: 'EIO' }));
+          }
+        }});
+        Object.assign(output, { isTTY: true, columns: 100, rows: 30 });
+        const result = readTerminalTextWithEscape('Prompt', input, output, { defaultValue: 'source_db' });
+        switch (${JSON.stringify(scenario)}) {
+          case 'input-error': input.destroy(new Error('Owned input failure')); break;
+          case 'end-raw-error': input.end(); break;
+          case 'blank': input.write('\\r'); break;
+          case 'value': input.write(' requested \\r'); break;
+          case 'escape': input.emit('keypress', '\\u001b', { name: 'escape', sequence: '\\u001b' }); break;
+        }
+        const value = await result;
+        input.pause();
+        console.log(JSON.stringify({ value: value ?? null, errorListeners: input.listenerCount('error'),
+          endListeners: input.listenerCount('end'), keypressListeners: input.listenerCount('keypress') }));
+      `;
+      const output = execFileSync(process.execPath, ["--import", "tsx", "--input-type", "module", "--eval", script], {
+        cwd: new URL("../../../", import.meta.url),
+        env: { PATH: process.env.PATH },
+        encoding: "utf8",
+        timeout: 10_000,
+      });
+      expect(JSON.parse(output)).toEqual({
+        value: scenario === "blank" ? "source_db" : scenario === "value" ? "requested" : null,
+        errorListeners: 0,
+        endListeners: 0,
+        keypressListeners: 0,
+      });
+    },
+  );
+});
+
+describe("terminal confirmation input lifecycle", () => {
+  it.each(["boolean", "activation"])("cancels %s on a detached input without restoring its dead TTY", (kind) => {
+    const script = `
+      import { PassThrough } from 'node:stream';
+      import { readTerminalBooleanConfirmation, readTerminalActivationConfirmation } from './apps/runner/src/terminal-prompt.ts';
+      const input = new PassThrough();
+      const output = new PassThrough();
+      output.resume();
+      Object.assign(input, { isTTY: true, isRaw: false, setRawMode(value) {
+        if (!value && this.readableEnded) throw Object.assign(new Error('Detached terminal'), { code: 'EIO' });
+        this.isRaw = value;
+      }});
+      Object.assign(output, { isTTY: true, columns: 100, rows: 30 });
+      const result = ${kind === "boolean" ? "readTerminalBooleanConfirmation" : "readTerminalActivationConfirmation"}('Prompt', input, output);
+      input.end();
+      const value = await result;
+      console.log(JSON.stringify({ value: value ?? null, paused: input.isPaused(),
+        errorListeners: input.listenerCount('error'), endListeners: input.listenerCount('end'),
+        keypressListeners: input.listenerCount('keypress') }));
+    `;
+    const output = execFileSync(process.execPath, ["--import", "tsx", "--input-type", "module", "--eval", script], {
+      cwd: new URL("../../../", import.meta.url), env: { PATH: process.env.PATH }, encoding: "utf8", timeout: 10_000,
+    });
+    expect(JSON.parse(output)).toEqual({ value: null, paused: true, errorListeners: 0, endListeners: 0, keypressListeners: 0 });
+  });
+
+  it.each(["healthy-EIO", "ended-EINVAL"])("does not suppress unrelated cleanup failure: %s", (scenario) => {
+    const script = `
+      import { PassThrough } from 'node:stream';
+      import { readTerminalBooleanConfirmation } from './apps/runner/src/terminal-prompt.ts';
+      const input = new PassThrough(); const output = new PassThrough(); output.resume();
+      Object.assign(input, { isTTY: true, isRaw: false, setRawMode(value) {
+        if (!value) throw Object.assign(new Error('Owned cleanup failure'), { code: '${scenario === "healthy-EIO" ? "EIO" : "EINVAL"}' });
+        this.isRaw = value;
+      }});
+      Object.assign(output, { isTTY: true, columns: 100, rows: 30 });
+      const result = readTerminalBooleanConfirmation('Prompt', input, output);
+      ${scenario === "healthy-EIO" ? "input.emit('keypress', 'n', { name: 'n', sequence: 'n' });" : "input.end();"}
+      let code; try { await result; } catch(error) { code = error.code; }
+      console.log(JSON.stringify({ code, paused: input.isPaused(), errorListeners: input.listenerCount('error') }));
+    `;
+    const output = execFileSync(process.execPath, ["--import", "tsx", "--input-type", "module", "--eval", script], {
+      cwd: new URL("../../../", import.meta.url), env: { PATH: process.env.PATH }, encoding: "utf8", timeout: 10_000,
+    });
+    expect(JSON.parse(output)).toEqual({ code: scenario === "healthy-EIO" ? "EIO" : "EINVAL", paused: true, errorListeners: 0 });
+  });
+});
 
 describe("in-place terminal rendering", () => {
   it("never paints a custom background on the alternate terminal screen", async () => {

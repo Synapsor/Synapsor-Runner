@@ -246,6 +246,7 @@ export async function readTerminalTextWithEscape(
       rl.off("SIGINT", onEnd);
       rl.off("close", onEnd);
       rl.close();
+      rl.off("error", onError);
       resolve(value);
     };
     const onEnd = () => finish(undefined);
@@ -259,6 +260,10 @@ export async function readTerminalTextWithEscape(
     input.once("end", onEnd);
     input.once("close", onEnd);
     input.once("error", onError);
+    // readline forwards input errors before our input listener runs. Keep
+    // this listener through close(), which can also report a detached TTY
+    // while restoring raw mode; both cases are cancellation, never a default.
+    rl.on("error", onError);
     rl.once("SIGINT", onEnd);
     rl.once("close", onEnd);
     rl.question(questionPrompt, (value) => {
@@ -372,8 +377,16 @@ export async function withRawTerminalScreen<T>(
     input.off("error", closeHandler);
     renderer.clear();
     output.write("\u001b[?25h");
-    input.setRawMode(wasRaw);
-    if (!wasFlowing) input.pause();
+    try {
+      input.setRawMode(wasRaw);
+    } catch (error) {
+      // A real input end may detach its TTY before cleanup. Still restore
+      // usable terminals; only that closed-device EIO is cancellation.
+      if (!terminalClosed || !(error instanceof Error)
+        || (error as NodeJS.ErrnoException).code !== "EIO") throw error;
+    } finally {
+      if (!wasFlowing) input.pause();
+    }
   }
 }
 
