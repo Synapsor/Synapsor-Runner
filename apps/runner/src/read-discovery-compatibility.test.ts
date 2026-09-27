@@ -287,7 +287,7 @@ describe("complete bounded Read contracts", () => {
       const payload = result.structuredContent as Record<string, unknown>;
       if (oversized) {
         expect(payload).toMatchObject({ ok: false, error_code: "CATALOG_CONTRACT_TOO_LARGE",
-          details: { kind: "entry", measured_bytes: expect.any(Number), limit_bytes: 12288, retryable: false, recovery: "operator_boundary_review" } });
+          details: { kind: "indivisible_item", measured_bytes: expect.any(Number), limit_bytes: 12288, retryable: false, recovery: "operator_boundary_review" } });
         expect(payload.message).toContain("Do not guess permissions");
         expect(payload).not.toHaveProperty("resources");
       } else {

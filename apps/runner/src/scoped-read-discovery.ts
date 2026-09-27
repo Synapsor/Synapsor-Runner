@@ -3,7 +3,7 @@ import { CATALOG_LIMITS, McpRuntimeError, ScopedCatalogIndex, ScopedCatalogSessi
 import type { ScopedExploreRuntime } from "./scoped-explore.js";
 import { resolveActiveExploreTarget, type ScopedExploreBoundarySetRuntime } from "./scoped-explore-boundary-set.js";
 
-export type ReadDiscoveryRequest = { boundary?: string; resource?: string; query?: string; cursor?: string; limit?: number };
+export type ReadDiscoveryRequest = { boundary?: string; resource?: string; query?: string; cursor?: string; limit?: number; section?: string; item?: string; contract_revision?: string };
 
 /** Model-facing discovery is bounded independently of operator inspection APIs. */
 export function createScopedReadDiscovery(
@@ -42,17 +42,25 @@ export function createScopedReadDiscovery(
     const index = cache.index;
     let detail: string | undefined;
     let detailValue: Record<string, unknown> | undefined;
+    let sectionValue: Record<string, unknown> | undefined;
+    let sectionContext: Record<string, unknown> | undefined;
     let context: Record<string, unknown> = boundaries.length === 1
       ? { boundary_digest: boundaries[0]!.activation.digest } : {};
     if (request.resource) {
-      if (request.query !== undefined || request.cursor !== undefined || request.limit !== undefined) {
+      if (request.query !== undefined || request.section === undefined && (request.cursor !== undefined || request.limit !== undefined)) {
         throw new McpRuntimeError("ARGUMENT_INVALID", "Use resource with optional boundary for exact details, without query, limit or cursor.");
       }
       let target: ReturnType<typeof resolveActiveExploreTarget>;
       try { target = resolveActiveExploreTarget(boundaries, request.boundary, request.resource); }
       catch { throw new McpRuntimeError("CATALOG_ENTRY_UNAVAILABLE", "That resource is not available unambiguously in the current authorized catalog. Browse authorized resources and use their exact boundary and resource."); }
       detail = `${target.boundary.pack.name}/${target.resource!.id}`;
-      if (index.get(detail)) {
+      const prepared = request.section === undefined ? undefined : session.preparedContract(binding, "resources", detail);
+      if (prepared) {
+        detailValue = prepared.value;
+        sectionValue = prepared.value;
+        context = prepared.context;
+        sectionContext = prepared.context;
+      } else if (index.get(detail)) {
         const described = await runtime.describe({ boundary: target.boundary.pack.name,
           resource: target.resource!.id, include_time_coverage: false });
         const resources = described.resources as Array<Record<string, unknown>> | undefined;
@@ -62,12 +70,18 @@ export function createScopedReadDiscovery(
         detailValue = resources[0];
         const { resources: _resources, boundaries: _boundaries, next_cursor: _cursor, ...rest } = described;
         context = rest;
+        // Section only the same public model projection that exact detail uses.
+        // Raw operator descriptors and private maps never enter its cache.
+        const projected = projectResponse({ ...context, ok: true, catalog_version: "synapsor.scoped-catalog.v2", resources: [detailValue] }, true);
+        sectionValue = (projected.resources as Array<Record<string, unknown>>)[0];
+        const { resources: _projectedResources, ...publicContext } = projected;
+        sectionContext = publicContext;
       }
     }
     if (authorityBinding(await authorizedBoundaries(), request) !== binding) {
       throw new McpRuntimeError("CATALOG_CURSOR_INVALID", "Reviewed authority changed during discovery. Restart discovery with the current authorized catalog.");
     }
-    const result = session.describe({ index, binding, key: "resources", detailValue, context,
+    const result = session.describe({ index, binding, key: "resources", detailValue, sectionValue, sectionContext, context,
       exactDetailArguments: (id) => {
         const entry = index.get(id)!;
         return { boundary: entry.value.boundary_name, resource: entry.value.id };
@@ -79,6 +93,8 @@ export function createScopedReadDiscovery(
       }, Boolean(detail)).resources as unknown[])[0])),
       measureResponse: (value) => catalogResponseBytes(projectResponse(value, Boolean(detail)), "compact"),
       request: { ...(detail ? { detail } : {}), ...(request.query === undefined ? {} : { query: request.query }),
+        ...(request.section === undefined ? {} : { section: request.section }),
+        ...(request.contract_revision === undefined ? {} : { contract_revision: request.contract_revision }), ...(request.item === undefined ? {} : { item: request.item }),
         ...(request.cursor === undefined ? {} : { cursor: request.cursor }), ...(request.limit === undefined ? {} : { limit: request.limit }) } });
     if ("requireCurrentAuthority" in runtime) await runtime.requireCurrentAuthority?.();
     const bytes = catalogResponseBytes(projectResponse(result, Boolean(detail)), "compact");

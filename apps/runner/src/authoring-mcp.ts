@@ -75,6 +75,9 @@ const optionalBoundarySelector = optionalModelArgument(z.string()
   .describe("Exact active boundary name; empty means omitted."));
 const optionalResourceSelector = optionalModelArgument(z.string().max(256)
   .describe("Exact resource id; empty means omitted."));
+const contractSectionSelector = z.string().min(1).max(128).describe("Exact public section from the returned contract_navigation; no private or guessed paths.");
+const contractRevisionSelector = optionalModelArgument(z.string().regex(/^rev_[A-Za-z0-9_-]{43}$/u).describe("Exact opaque public revision returned with the section navigation."));
+const contractItemSelector = optionalModelArgument(z.string().min(1).max(256).describe("One exact public item key/field/input id in this section."));
 // Detail/listing are existing operations, not arbitrary combinations of optional
 // fields. Keep canonical branch meanings; publish a portable field projection.
 // The host still refuses meaningful mixtures after neutral-value normalization.
@@ -82,6 +85,10 @@ const readCatalogInput = z.union([
   z.object({ boundary: optionalBoundarySelector, resource: z.string().min(1).max(256),
     query: z.null().optional(), cursor: z.union([z.literal(0), z.null()]).optional(),
     limit: z.union([z.literal(0), z.null()]).optional() }).strict(),
+  z.object({ boundary: optionalBoundarySelector, resource: z.string().min(1).max(256), section: contractSectionSelector,
+    item: contractItemSelector, contract_revision: contractRevisionSelector, query: z.null().optional(),
+    cursor: optionalModelArgument(z.string().regex(/^cur_[A-Za-z0-9_-]{43}$/u)),
+    limit: optionalModelArgument(z.number().int().min(1).max(20)) }).strict(),
   z.object({ boundary: optionalBoundarySelector, resource: z.union([z.literal(""), z.null()]).optional(),
     query: optionalModelArgument(z.string().max(256)),
     cursor: optionalModelArgument(z.union([z.string().regex(/^cur_[A-Za-z0-9_-]{43}$/u), z.literal(0)])),
@@ -290,13 +297,14 @@ export function createScopedExploreMcpServer(
   const describeInput = z.object({
     boundary: optionalBoundarySelector,
     resource: optionalResourceSelector,
+    section: optionalModelArgument(contractSectionSelector), contract_revision: contractRevisionSelector, item: contractItemSelector,
     query: optionalModelArgument(z.string().max(256)),
     cursor: optionalModelArgument(z.union([z.string().regex(/^cur_[A-Za-z0-9_-]{43}$/u), z.literal(0)]).transform((value) => value === 0 ? undefined : value)),
     limit: z.preprocess((value) => value === 0 ? undefined : value, optionalModelArgument(z.number().int().positive().max(20))),
   }).strict();
   server.registerTool(SCOPED_EXPLORE_DESCRIBE_TOOL, {
     title: "Describe reviewed data",
-    description: 'Metadata only; no source rows. List {} or {"query":"text","limit":5}; exact detail {"resource":"<exact id>"}, optionally boundary. Never mix detail with meaningful query/limit/cursor. Follow structured discovery.next_steps and pagination.state; CATALOG_CURSOR_INVALID requires a fresh current lookup without the rejected cursor. Detail permits null query and absent/null/0 limit/cursor; listing permits absent/null/empty resource. Copy exact permitted fields/operators into app.explore_data; reuse still-current detail. Search ranks exact/full matches before labelled partial matches, not row eligibility. pagination.page_item_count is this page; pagination.has_more/next_cursor mark continuation; pagination.total counts authorized metadata only. Follow next_cursor until null. Keep the same query/limit/boundary/context. Limit is a maximum; byte-bounded pages may contain fewer entries. Explore returns bounded live results without a continuation cursor or complete source total.' + settingsHint,
+    description: 'Metadata only; no source rows. List {} or {"query":"text","limit":5}; exact detail {"resource":"<exact id>"}, optionally boundary. Oversized detail returns a partial contract_navigation: follow its exact section calls; section pages may include item, limit and returned section cursor. Missing sections are not permission. Never mix query with exact detail/sections. Follow discovery.next_steps and pagination.state; CATALOG_CURSOR_INVALID requires a fresh current lookup without the rejected cursor. Small detail permits null query and absent/null/0 limit/cursor; listing permits absent/null/empty resource. Copy exact permitted fields/operators into app.explore_data; reuse still-current detail. Search ranks exact/full matches before labelled partial matches, not row eligibility. Catalog totals count authorized metadata only; section totals count that exact section/selection. Keep the same query/section/item/limit/boundary/context on continuation. Explore returns bounded live results without a source continuation cursor or complete source total.' + settingsHint,
     inputSchema: policyManagement ? withPolicyManagementInput(describeInput, SCOPED_EXPLORE_DESCRIBE_TOOL) : describeInput,
     outputSchema: scopedExploreDescribeToolOutputSchema,
     annotations: {
@@ -322,6 +330,8 @@ export function createScopedExploreMcpServer(
       return discoverReads({
         ...(source.boundary ? { boundary: source.boundary } : {}),
         ...(source.resource ? { resource: source.resource } : {}),
+        ...(source.section === undefined ? {} : { section: source.section }),
+        ...(source.contract_revision === undefined ? {} : { contract_revision: source.contract_revision }), ...(source.item === undefined ? {} : { item: source.item }),
         ...(source.query === undefined ? {} : { query: source.query }),
         ...(source.cursor === undefined ? {} : { cursor: source.cursor }),
         ...(source.limit === undefined ? {} : { limit: source.limit }),

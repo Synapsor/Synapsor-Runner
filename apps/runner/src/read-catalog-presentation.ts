@@ -9,6 +9,15 @@ export function projectDescribeDataForModel(
   if (result.ok === false || !Array.isArray(result.resources)) {
     return projectAuthorityMetadataForModel(result, authorityMetadata).value;
   }
+  // These host-reserved shapes contain units from the ALREADY projected exact
+  // contract, never raw source rows/operator descriptors. Re-projecting each
+  // partial stub as a full resource would fabricate empty permissions/defaults.
+  if (result.catalog_version === "synapsor.scoped-catalog.v2"
+    && (modelRecord(result.contract_navigation) || modelRecord(result.contract_section))) {
+    return projectAuthorityMetadataForModel({ ...structuredClone(result), catalog_view: "contract_sections",
+      metadata_only: true, contains_source_values: false,
+      next_action: "Partial permitted metadata; follow exact contract section calls. Missing sections are not permission and metadata is not source data." }, authorityMetadata).value;
+  }
   const resources = result.resources
     .filter(modelRecord)
     .map((resource) => resourceDetail

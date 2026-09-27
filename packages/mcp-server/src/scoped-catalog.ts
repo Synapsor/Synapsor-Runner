@@ -1,5 +1,6 @@
 import { randomBytes } from "node:crypto";
 import { McpRuntimeError } from "./runtime-errors.js";
+import { CONTRACT_SECTION_INDEX, contractSections, selectContractItems, type ContractDocument, type ContractNavigation, type ContractSectionPage } from "./catalog-detail-sections.js";
 import { withResultEvidence } from "./result-evidence.js";
 
 export const CATALOG_LIMITS = Object.freeze({
@@ -9,7 +10,7 @@ export const CATALOG_LIMITS = Object.freeze({
   maxEntries: 10_000, maxSearchWork: 10_000, cursors: 128,
 });
 
-export type CatalogRequest = { query?: string; limit?: number; cursor?: string; detail?: string };
+export type CatalogRequest = { query?: string; limit?: number; cursor?: string; detail?: string; section?: string; item?: string; contract_revision?: string };
 
 /** Budget both MCP representations, including the prettified compatibility
  * text and maximum disclosure metadata used by the supported transports. */
@@ -135,6 +136,7 @@ type Cursor = {
   matches?: Record<string, SearchMatch>;
   unambiguousId?: string;
   next?: string;
+  contract?: { detail: string; section: string; item?: string; revision: string };
 };
 
 /** One server-side discovery budget, never reset by catalog edits or cursors. */
@@ -143,7 +145,16 @@ export class ScopedCatalogSession {
   private records = 0;
   private bytes = 0;
   private readonly cursors = new Map<string, Cursor>();
+  private readonly documents = new Map<string, ContractDocument & { expires: number; unitsFramed: boolean; value: Record<string, unknown>; context: Record<string, unknown> }>();
   constructor(private readonly clock: () => number = Date.now) {}
+
+  /** Read-through public metadata cache only. The caller must establish the
+   * current trusted binding first; returning it does not consume or renew any
+   * disclosure budget. The eventual describe call still meters the response. */
+  preparedContract(binding: string, key: "actions" | "resources", detail: string) {
+    const document = this.documents.get(`${binding}\0${key}\0${detail}`);
+    return document && document.expires > this.clock() ? { value: document.value, context: document.context } : undefined;
+  }
 
   describe(input: {
     index: ScopedCatalogIndex;
@@ -157,6 +168,11 @@ export class ScopedCatalogSession {
     context?: Record<string, unknown>;
     /** A scoped asynchronous provider may prepare the exact entry first. */
     detailValue?: Record<string, unknown>;
+    /** Exact public projection used for sections. Never pass a raw operator
+     * descriptor here when its normal model projection withholds information. */
+    sectionValue?: Record<string, unknown>;
+    /** The owning projection's public context, for read-through cached sections. */
+    sectionContext?: Record<string, unknown>;
     /** Prepared ONLY through the same current authorization/projection as exact
      * detail. The index's listing permission never calls entry.detail for inline. */
     inlineDetail?: { id: string; value: Record<string, unknown>; nextSteps?: Record<string, unknown>[] };
@@ -175,7 +191,10 @@ export class ScopedCatalogSession {
   }): Record<string, unknown> {
     const { request, index } = input;
     const measure = input.measureResponse ?? catalogResponseBytes;
-    if (request.detail !== undefined && (request.query !== undefined || request.cursor !== undefined || request.limit !== undefined)) {
+    if ((request.section !== undefined || request.item !== undefined || request.contract_revision !== undefined) && request.detail === undefined
+      || (request.item !== undefined || request.contract_revision !== undefined) && request.section === undefined
+      || request.detail !== undefined && (request.query !== undefined
+        || request.section === undefined && (request.cursor !== undefined || request.limit !== undefined))) {
       throw catalogError("ARGUMENT_INVALID", "Use an exact entry alone, without search or pagination arguments.");
     }
     const limit = request.limit ?? CATALOG_LIMITS.defaultPage;
@@ -184,6 +203,11 @@ export class ScopedCatalogSession {
       throw catalogError("ARGUMENT_INVALID", "Use limit 1 through 20 and a query of at most 256 characters.");
     }
     if (++this.calls > CATALOG_LIMITS.sessionCalls) throw budgetError();
+    if (request.detail && request.section !== undefined) {
+      const entry = index.get(request.detail);
+      if (!entry) throw catalogError("CATALOG_ENTRY_UNAVAILABLE", "That entry is not available in the current authorized catalog.");
+      return this.contractPage(input, input.sectionValue ?? input.detailValue ?? entry.detail());
+    }
     const query = (request.query ?? "").normalize("NFKC").toLowerCase().trim().replace(/\s+/gu, " ");
     const now = this.clock();
     for (const [token, cursor] of this.cursors) if (cursor.expires <= now) this.cursors.delete(token);
@@ -191,7 +215,7 @@ export class ScopedCatalogSession {
     let visited = 0;
     if (request.cursor) {
       const cursor = this.cursors.get(request.cursor);
-      if (!cursor || cursor.binding !== input.binding || cursor.query !== query || cursor.limit !== limit) {
+      if (!cursor || cursor.contract || cursor.binding !== input.binding || cursor.query !== query || cursor.limit !== limit) {
         throw catalogError("CATALOG_CURSOR_INVALID", "This page cannot be continued. Restart discovery in the current session and scope.");
       }
       page = cursor;
@@ -264,6 +288,7 @@ export class ScopedCatalogSession {
       if (page.matches?.[entry.id]) value.search_match = page.matches[entry.id];
       const detailBytes = input.measureDetail?.(value) ?? Buffer.byteLength(JSON.stringify(value));
       if (detailBytes > CATALOG_LIMITS.detailBytes) {
+        if (request.detail) return this.contractPage(input, input.sectionValue ?? value);
         throw catalogContractSizeError("entry", detailBytes, CATALOG_LIMITS.detailBytes);
       }
       values.push(value);
@@ -272,7 +297,10 @@ export class ScopedCatalogSession {
       const responseBytes = measure(body(request.detail || offset + 1 >= page.ids.length ? null : `cur_${"a".repeat(43)}`));
       if (responseBytes > CATALOG_LIMITS.responseBytes) {
         values.pop();
-        if (!values.length) throw catalogContractSizeError("response", responseBytes, CATALOG_LIMITS.responseBytes);
+        if (!values.length) {
+          if (request.detail) return this.contractPage(input, input.sectionValue ?? value);
+          throw catalogContractSizeError("response", responseBytes, CATALOG_LIMITS.responseBytes);
+        }
         break;
       }
       offset++;
@@ -310,6 +338,166 @@ export class ScopedCatalogSession {
 
   /** Operator/test instrumentation; not a model-visible cross-scope count. */
   lastWork = { visited: 0, returned: 0, bytes: 0 };
+
+  /** Same authorization binding, cursor store, call/record/byte meter and
+   * transport measurement as ordinary exact detail. A section is not a new
+   * business capability or a new disclosure allowance. */
+  private contractPage(input: Parameters<ScopedCatalogSession["describe"]>[0], value: Record<string, unknown>): Record<string, unknown> {
+    const { request } = input;
+    const detail = request.detail!;
+    const measure = input.measureResponse ?? catalogResponseBytes;
+    const now = this.clock();
+    for (const [key, document] of this.documents) if (document.expires <= now) this.documents.delete(key);
+    for (const [key, cursor] of this.cursors) if (cursor.expires <= now) this.cursors.delete(key);
+    const documentKey = `${input.binding}\0${input.key}\0${detail}`;
+    let document = this.documents.get(documentKey);
+    if (request.contract_revision !== undefined && document?.revision !== request.contract_revision) {
+      throw catalogError("CATALOG_CURSOR_INVALID", "This exact contract revision is no longer available in the current session, authority and scope.");
+    }
+    if (!document) {
+      const preparedValue = structuredClone(value);
+      const prepared = contractSections(preparedValue, CATALOG_LIMITS.detailBytes, CATALOG_LIMITS.sessionBytes);
+      const context = structuredClone(input.sectionContext ?? {});
+      const bytes = prepared.bytes + Buffer.byteLength(JSON.stringify(context), "utf8");
+      if (bytes > CATALOG_LIMITS.sessionBytes) throw catalogError("CATALOG_DETAIL_WORK_LIMIT", "The public contract and context exceed the bounded detail-preparation limit; no metadata was truncated.");
+      // Cache only bounded PUBLIC metadata, not source facts or private policy.
+      // Eviction invalidates dependent cursors; it never changes their identity.
+      while (this.documents.size && [...this.documents.values()].reduce((sum, item) => sum + item.bytes, 0) + bytes > CATALOG_LIMITS.sessionBytes) {
+        this.documents.delete(this.documents.keys().next().value!);
+      }
+      document = { ...prepared, bytes, unitsFramed: false, value: preparedValue, context, revision: `rev_${randomBytes(32).toString("base64url")}`, expires: now + CATALOG_LIMITS.cursorMs };
+      this.documents.set(documentKey, document);
+    }
+    const tool = input.catalogTool ?? (input.key === "actions" ? "app.describe_actions" : "app.describe_data");
+    const exact = input.exactDetailArguments?.(detail) ?? (input.key === "actions" ? { outcome: detail } : { resource: detail });
+    const identity: Record<string, unknown> = input.key === "actions" ? { outcome: String(value.outcome ?? detail) }
+      : { id: String(value.id ?? detail), ...(typeof value.boundary_name === "string" ? { boundary_name: value.boundary_name } : {}) };
+    const limit = request.limit ?? CATALOG_LIMITS.defaultPage;
+    const indexMode = request.section === undefined || request.section === CONTRACT_SECTION_INDEX;
+    if (indexMode && request.item !== undefined) throw catalogError("ARGUMENT_INVALID", "Use the section index without an item selector; select an exact returned section first.");
+    const args = (section: string, cursor?: string) => ({ ...exact, section, contract_revision: document!.revision, ...(request.item ? { item: request.item } : {}), limit, ...(cursor ? { cursor } : {}) });
+    const stub = { ...identity, contract_status: "partial_navigable" };
+    const response = (part: Record<string, unknown>, total: number, offset: number, count: number, next: string | null, reuseContext = request.contract_revision !== undefined): Record<string, unknown> => {
+      const pageSection = part.contract_section as ContractSectionPage | undefined;
+      return {
+      ...(reuseContext ? typeof input.context?.boundary_name === "string" ? { boundary_name: input.context.boundary_name } : {} : input.context),
+      ok: true, catalog_version: "synapsor.scoped-catalog.v2", [input.key]: [stub],
+      discovery: { mode: pageSection ? "section" : "overview", contract_status: "partial_navigable",
+        currentness: "checked_current_authority", eligibility: "not_checked", scope: "authorized_contract_metadata",
+        context_basis: reuseContext ? "same_previously_disclosed_contract_revision" : "included_in_this_response",
+        next_steps: pageSection ? next ? [{ kind: "continue_contract_section", tool, arguments: args(pageSection.section, next) }]
+          : [{ kind: "inspect_contract_sections", tool, arguments: exact,
+            guidance: "This section/selection ended; other sections remain separate. Missing inputs/constraints are not permission." }]
+          : next ? [{ kind: "continue_contract_index", tool, arguments: args(CONTRACT_SECTION_INDEX, next) }]
+            : [{ kind: "inspect_contract_sections", guidance: "Use each contract_navigation next_call; every section-index page and section is required for the complete contract." }] },
+      pagination: { page_item_count: count, has_more: next !== null, state: next ? "more_pages" : "exhausted",
+        total: { kind: "exact", value: total }, scope: pageSection ? "selected_contract_section" : "contract_section_index",
+        consistency: "fixed_authorized_contract" },
+      ...part, next_cursor: next, source_database_changed: false,
+      };
+    };
+    let result: Record<string, unknown>;
+    if (indexMode) {
+      // A navigable overview must not advertise a continuation already known
+      // to be impossible. Check whole units including actual transport framing.
+      if (!document.unitsFramed) for (const section of document.sections) for (const unit of section.items) {
+        const probe = response({ contract_section: { subject: String(identity.outcome ?? identity.id), revision: document.revision,
+          section: section.section, representation: section.representation, items: [unit], complete_section: section.items.length === 1 } },
+          section.items.length, 0, 1, section.items.length > 1 ? `cur_${"a".repeat(43)}` : null, true);
+        const size = measure(probe);
+        if (size > CATALOG_LIMITS.responseBytes) {
+          this.documents.delete(documentKey);
+          throw catalogContractSizeError("response", size, CATALOG_LIMITS.responseBytes);
+        }
+      }
+      document.unitsFramed = true;
+      let offset = 0;
+      if (request.cursor) {
+        const cursor = this.cursors.get(request.cursor);
+        if (!cursor || cursor.binding !== input.binding || cursor.limit !== limit || cursor.contract?.detail !== detail
+          || cursor.contract.section !== CONTRACT_SECTION_INDEX || cursor.contract.revision !== document.revision) {
+          throw catalogError("CATALOG_CURSOR_INVALID", "This section index cannot be continued in the current session, authority and scope.");
+        }
+        offset = cursor.offset;
+      }
+      const start = offset;
+      const selected: ContractNavigation["sections"] = [];
+      const page = (next: string | null) => {
+        const navigation: ContractNavigation = { subject: String(identity.outcome ?? identity.id), revision: document!.revision,
+          complete_contract: false, complete_section_index: start === 0 && offset === document!.sections.length,
+          sections: selected,
+          reconstruction: "Keep the public context from the first response, then use all section-index pages and every exact section in this revision. Arrays retain returned position keys; objects retain keys; value sections retain one whole value. Empty sections remain explicit. A page or selected item is not the whole contract." };
+        return response({ contract_navigation: navigation }, document!.sections.length, start, selected.length, next);
+      };
+      while (offset < document.sections.length && selected.length < limit) {
+        const section = document.sections[offset]!;
+        selected.push({ section: section.section, representation: section.representation, item_count: section.items.length,
+          next_call: { tool, arguments: { ...exact, section: section.section, contract_revision: document.revision, limit } } });
+        offset++;
+        const candidate = page(offset < document.sections.length ? `cur_${"a".repeat(43)}` : null);
+        if (Buffer.byteLength(JSON.stringify(selected)) > CATALOG_LIMITS.detailBytes || measure(candidate) > CATALOG_LIMITS.responseBytes) {
+          selected.pop(); offset--;
+          if (!selected.length) throw catalogContractSizeError("response", measure(candidate), CATALOG_LIMITS.responseBytes);
+          break;
+        }
+      }
+      const next = offset < document.sections.length ? `cur_${randomBytes(32).toString("base64url")}` : null;
+      result = page(next);
+      if (next) {
+        while (this.cursors.size >= CATALOG_LIMITS.cursors) this.cursors.delete(this.cursors.keys().next().value!);
+        this.cursors.set(next, { binding: input.binding, query: "", limit, expires: document.expires, offset, ids: [], legacy: false,
+          contract: { detail, section: CONTRACT_SECTION_INDEX, revision: document.revision } });
+      }
+    } else {
+      const section = document.sections.find(section => section.section === request.section);
+      if (!section) throw catalogError("CATALOG_ENTRY_UNAVAILABLE", "That section is not available in this current permitted contract.");
+      const items = selectContractItems(section, request.item);
+      let offset = 0;
+      if (request.cursor) {
+        const cursor = this.cursors.get(request.cursor);
+        if (!cursor || cursor.binding !== input.binding || cursor.limit !== limit || cursor.contract?.detail !== detail
+          || cursor.contract.section !== request.section || cursor.contract.item !== request.item || cursor.contract.revision !== document.revision) {
+          throw catalogError("CATALOG_CURSOR_INVALID", "This exact section cannot be continued in the current session, authority and scope.");
+        }
+        offset = cursor.offset;
+      }
+      const start = offset;
+      const returned: typeof items = [];
+      const page = (next: string | null): Record<string, unknown> => {
+        const content: ContractSectionPage = { subject: String(identity.outcome ?? identity.id), revision: document!.revision,
+          section: section.section, representation: section.representation, ...(request.item ? { item: request.item } : {}),
+          items: returned, complete_section: request.item === undefined && start === 0 && offset === items.length };
+        return response({ contract_section: content }, items.length, start, returned.length, next);
+      };
+      while (offset < items.length && returned.length < limit) {
+        returned.push(structuredClone(items[offset]!)); offset++;
+        const candidate = page(offset < items.length ? `cur_${"a".repeat(43)}` : null);
+        if (Buffer.byteLength(JSON.stringify(returned)) > CATALOG_LIMITS.detailBytes || measure(candidate) > CATALOG_LIMITS.responseBytes) {
+          returned.pop(); offset--;
+          if (!returned.length) throw catalogContractSizeError("response", measure(candidate), CATALOG_LIMITS.responseBytes);
+          break;
+        }
+      }
+      const next = offset < items.length ? `cur_${randomBytes(32).toString("base64url")}` : null;
+      result = page(next);
+      const size = measure(result);
+      if (size > CATALOG_LIMITS.responseBytes) throw catalogContractSizeError("response", size, CATALOG_LIMITS.responseBytes);
+      if (this.records + 1 > CATALOG_LIMITS.sessionRecords || this.bytes + size > CATALOG_LIMITS.sessionBytes) throw budgetError();
+      if (next) {
+        while (this.cursors.size >= CATALOG_LIMITS.cursors) this.cursors.delete(this.cursors.keys().next().value!);
+        this.cursors.set(next, { binding: input.binding, query: "", limit, expires: document.expires, offset, ids: [], legacy: false,
+          contract: { detail, section: section.section, ...(request.item ? { item: request.item } : {}), revision: document.revision } });
+      }
+    }
+    const size = measure(result);
+    if (size > CATALOG_LIMITS.responseBytes) throw catalogContractSizeError("response", size, CATALOG_LIMITS.responseBytes);
+    if (this.records + 1 > CATALOG_LIMITS.sessionRecords || this.bytes + size > CATALOG_LIMITS.sessionBytes) throw budgetError();
+    // One disclosed catalog subject, as with exact detail; units do not grant a
+    // fresh per-section pool or debit an undisclosed complete document.
+    this.records++; this.bytes += size;
+    this.lastWork = { visited: 0, returned: 1, bytes: size };
+    return result;
+  }
 }
 
 export function catalogContractSizeError(kind: "entry" | "response", measured: number, limit: number): McpRuntimeError {

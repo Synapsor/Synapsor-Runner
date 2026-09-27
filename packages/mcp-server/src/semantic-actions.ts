@@ -357,9 +357,10 @@ function semanticActionToolMetadata(): LocalToolMetadata[] {
     {
       name: DESCRIBE_ACTIONS_TOOL,
       title: "Describe reviewed actions",
-      description: 'Browse compact metadata {"limit":5} or search {"query":"text","limit":5}; exact detail {"outcome":"<exact id>"}. Never mix outcome with meaningful query/limit/cursor; null means omitted. A genuinely unambiguous query may include the complete inline_contract; otherwise use the returned exact_detail route. Structured discovery.next_steps and pagination.state guide the next call; CATALOG_CURSOR_INVALID requires a fresh current lookup without the rejected cursor. Exact detail connects current permitted Read/reference navigation and required caller inputs; ask the caller if an input is missing, never guess a private verifier value. Reuse still-current exact detail. Search ranks exact ids/names and full matches before labelled partial matches; ambiguous alternatives are not a chosen operation. pagination.page_item_count is this page; pagination.has_more/next_cursor mark continuation; pagination.total counts authorized catalog metadata only. Follow next_cursor until null. Keep the same query/limit/context. Limit is a maximum; byte-bounded pages may contain fewer entries. Explicit listing pages are metadata shortlists, not truncated input/effect contracts. Empty input retains a bounded compatibility page of public request contracts. Availability is not eligibility; no source rows are read or authority granted. ' + APPROVAL_DISCLOSURE_GUIDANCE,
+      description: 'Browse compact metadata {"limit":5} or search {"query":"text","limit":5}; exact detail {"outcome":"<exact id>"}. Oversized detail returns partial contract_navigation with executable section calls; follow exact section/item/limit/cursor routes. Missing sections are not optional inputs or permission. Never mix query with exact detail/sections; null means omitted. Unambiguous search may include complete inline_contract; otherwise use exact_detail. Follow discovery.next_steps and pagination.state; CATALOG_CURSOR_INVALID needs a fresh current lookup without that cursor. Exact detail connects permitted Read/reference navigation and required caller inputs; ask the caller if missing, never guess private verifier values. Reuse still-current detail. Ranking identifies alternatives, not caller intent. Totals count authorized catalog metadata or the explicitly selected section, never source rows. Keep the same query/section/item/limit/context on continuation. Explicit listing is a shortlist; empty input keeps a bounded compatibility page. Availability is not eligibility; no source rows or authority are supplied. ' + APPROVAL_DISCLOSURE_GUIDANCE,
       kind: "action_catalog",
       input_schema: { query: { type: "string", required: false }, limit: { type: "number", required: false },
+        section: { type: "string", required: false }, contract_revision: { type: "string", required: false }, item: { type: "string", required: false },
         cursor: { type: "string", required: false }, outcome: { type: "string", required: false } },
       annotations: {
         readOnlyHint: true,
@@ -448,6 +449,9 @@ function parseCatalogRequest(args: Record<string, unknown>): CatalogRequest {
     throw new McpRuntimeError("ARGUMENT_INVALID", "Use outcome alone for detail, or query (up to 256 characters), limit (1-20) and the returned cursor for discovery. Optional null means omitted; do not combine meaningful listing fields with outcome.");
   }
   return { ...(typeof args.outcome === "string" ? { detail: args.outcome } : {}),
+    ...(typeof args.section === "string" ? { section: args.section } : {}),
+    ...(typeof args.contract_revision === "string" ? { contract_revision: args.contract_revision } : {}),
+    ...(typeof args.item === "string" ? { item: args.item } : {}),
     ...(typeof args.query === "string" ? { query: args.query } : {}),
     ...(typeof args.limit === "number" ? { limit: args.limit } : {}),
     ...(typeof args.cursor === "string" ? { cursor: args.cursor } : {}) };

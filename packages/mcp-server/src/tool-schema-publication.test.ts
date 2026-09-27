@@ -36,17 +36,20 @@ describe("portable discovery declarations", () => {
   it("projects canonical fields without changing the canonical operation validator", () => {
     const before = mcpToolInputJsonSchema(semanticActionCatalogSchema);
     const declaration = semanticActionCatalogJsonSchema();
-    expect(before.anyOf).toHaveLength(2);
+    expect(before.anyOf).toHaveLength(3);
     expect(declaration).toMatchObject({ type: "object", additionalProperties: false });
     expect(declaration).not.toHaveProperty("anyOf");
     expect(declaration).not.toHaveProperty("required");
-    expect(Object.keys(declaration.properties!)).toEqual(["outcome", "query", "limit", "cursor"]);
-    for (const args of [{}, { query: "label", limit: 2 }, { outcome: "example.action" },
-      { outcome: "example.action", query: null, limit: null, cursor: null }]) {
+    expect(Object.keys(declaration.properties!)).toEqual(["outcome", "query", "limit", "cursor", "section", "contract_revision", "item"]);
+    for (const args of [{}, { section: null, item: null, contract_revision: null }, { query: "label", limit: 2 }, { outcome: "example.action" },
+      { outcome: "example.action", query: null, limit: null, cursor: null, section: null, item: null, contract_revision: null },
+      { outcome: "example.action", section: "inputs", item: "quantity", contract_revision: `rev_${"a".repeat(43)}`, limit: 2 }]) {
       expect(semanticActionCatalogSchema.safeParse(args).success).toBe(true);
     }
     for (const args of [{ outcome: "example.action", query: "label" },
       { outcome: "example.action", limit: 2 }, { outcome: "example.action", cursor: `cur_${"a".repeat(43)}` },
+      { section: "inputs" }, { outcome: "example.action", item: "quantity" },
+      { outcome: "example.action", section: "inputs", query: "label" },
       { cursor: "" }, { limit: 0 }, { extra: null }]) {
       expect(semanticActionCatalogSchema.safeParse(args).success).toBe(false);
     }

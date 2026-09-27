@@ -73,6 +73,8 @@ export { semanticActionInputSchema, semanticActionCatalogJsonSchema } from "./se
 export type { SemanticActionContinuation, CatalogAuthorization } from "./semantic-actions.js";
 export { ScopedCatalogIndex, ScopedCatalogSession, CATALOG_LIMITS, catalogResponseBytes, catalogContractSizeError } from "./scoped-catalog.js";
 export type { CatalogRequest, CatalogEntry } from "./scoped-catalog.js";
+export { CONTRACT_SECTION_INDEX, contractSections, selectContractItems } from "./catalog-detail-sections.js";
+export type { ContractUnit, ContractSection, ContractDocument, ContractNavigation, ContractSectionPage } from "./catalog-detail-sections.js";
 export { withResultEvidence, resultEvidenceSchema, resultEvidenceFamily, RESULT_EVIDENCE_TOOLS, RESULT_EVIDENCE_FAMILIES } from "./result-evidence.js";
 export type { ResultEvidence, ResultEvidenceFamily, ResultEvidenceTool } from "./result-evidence.js";
 export {
