@@ -1,0 +1,76 @@
+{
+  "classification": "Report-only LaneA addendum; original final report/evidence unchanged",
+  "independent_index_members_rehashed": 423,
+  "records": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-result-evidence-20260926/PAIRED-REVIEW-008.md",
+      "sha256": "31ae395e193b55f41e70c08f4a957c4ad1141011f894ead1d4e9cd25483a0249",
+      "bytes": 8675
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-result-evidence-20260926/PAIRED-REVIEW-INDEX-008.json",
+      "sha256": "8c773aeba06319b5bd5165e851c465f4a3120f082e66abc54f52007a804b20e5",
+      "bytes": 120954
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-result-evidence-20260926/PAIRED-SCORECARD-116.json",
+      "sha256": "69555a683cf42c8b9765f796c13dee31652682d7bc707eaa919c9f4981a50a40",
+      "bytes": 18955
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-result-evidence-20260926/PAIRED-FINANCIAL-CLOSURE-117.json",
+      "sha256": "b7cfd95dba46f4271457428a9efd0a540fa0af6fab0ae7174720ce43b390b085",
+      "bytes": 1456
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-result-evidence-20260926/PAIRED-COLD-SEAL-111.json",
+      "sha256": "58efc6b38d85ffa4b8b027e61fcac89e39b52e6bbfe42d01a9732d64b82a6f64",
+      "bytes": 9214
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-result-evidence-20260926/PAIRED-COLD-RESTORE-113.json",
+      "sha256": "dd977dd9a302d5d923f71356eabe201cb3793bf875d491f3258db25fa6512eb1",
+      "bytes": 3026
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-result-evidence-20260926/PRECISE-AUDIT-CORRELATION-110.json",
+      "sha256": "7153512676cfa1f91516cb073c03641cb6da3721dbdbb8d04563dc646a69f61f",
+      "bytes": 4845
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-result-evidence-20260926/PAIRED-PRESERVATION-CLEANUP-115.json",
+      "sha256": "d9d0fdbfbe466cf2be9b74ffe4de4140d7cc4c37fe0386dc366a89be3f833cd1",
+      "bytes": 3269
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/MAIN-PAIRED-LOGICAL-COMPARISON-001.json",
+      "sha256": "545fe9890ece9103bc242a7fc55e2ab55496797f3d75c82818a202fc61d65410",
+      "bytes": 7775
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/MAIN-PAIRED-METRICS-READBACK-001.json",
+      "sha256": "a40b4f0380272ad0f3b69c8b48fcff3229720f0f72a8a9f6716a6cf075c2bed6",
+      "bytes": 3974
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/MAIN-PAIRED-TRANSPORT-READBACK-001.json",
+      "sha256": "7cb0a7ddbf425a5b55fbcb61f47ec595e72f4e657fa42893dc75efdd503b5716",
+      "bytes": 13616
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/MAIN-PAIRED-JOINT-ACCEPTANCE-100.json",
+      "sha256": "5dabbaef5bc356162563bab526a4180ba59dd4dfd50a8b98105c72c0c7d0b110",
+      "bytes": 1621
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/MAIN-PAIRED-INDEX-VERIFICATION-001.json",
+      "sha256": "2e0a0ab6a06677c6fc982bbc3766d185da0b4f55fad182636ccfd94e61deaa3a",
+      "bytes": 1221
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/OWNER-CAP-AMENDMENT-001.md",
+      "sha256": "d13905728aac7b55b8a6d10e5b1f23f2bb3ac7cd55c1bdfd138b4251be64b2fd",
+      "bytes": 866
+    }
+  ]
+}

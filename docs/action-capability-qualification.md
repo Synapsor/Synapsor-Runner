@@ -1,3 +1,7 @@
+## Result-evidence paired addendum — 2026-09-27
+
+Eight fixed read-only turns completed on unchanged ee6ffd9: native objective NOT MET, candidate2/4 versus baseline1/4;43sends/$0.32192835/peak85,137B. Correct deterministic evidence does not guarantee accurate prose. Complete business-state preservation and cold restoration PASS; Main0inference. See [paired addendum](qualification-evidence/result-evidence-20260926/PAIRED-COMPARISON-ADDENDUM.md), separate from the immutable original envelope-stop report. No retry/repair/business continuation follows. Next: owner-reconciled larger-programs package, actual implementationT0 after this delivery/seal,36h cappedSep30, final12hreserved; public50Actions mandatory, LaneB0provider, conditional twoLaneCauthoringjourneys each$12/192transports inside campaign$60.
+
 # Action Capability Qualification
 
 ## Result-evidence support — bounded contract delivered,2026-09-27
