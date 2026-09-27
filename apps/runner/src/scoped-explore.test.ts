@@ -7417,6 +7417,7 @@ async function activatedFixture(
     fields?: Record<string, ReviewedMetadataDecision>;
     exact_numeric_grouping?: string[];
     principal_rls_setting?: string;
+    field_exposure?: Record<string, "withhold_from_model" | "allow_reviewed_use">;
   },
 ): Promise<{
   root: string;
@@ -7461,10 +7462,14 @@ async function activatedFixture(
         },
       }
       : {}),
-    ...(trustedScopeExposure
+    ...(trustedScopeExposure || metadata?.field_exposure
       ? {
         fields: {
-          tenant_id: {
+          ...Object.fromEntries(Object.entries(metadata?.field_exposure ?? {}).map(([field, exposure]) => [field, {
+            exposure, actor: "owner@example.test", reason: "Owned fixture explicitly reviews this field disclosure boundary.",
+            decided_at: "2026-07-28T00:00:00.000Z",
+          }])),
+          ...(trustedScopeExposure ? { tenant_id: {
             exposure: trustedScopeExposure === "runner_only"
               ? "withhold_from_model" as const
               : "allow_reviewed_use" as const,
@@ -7473,7 +7478,7 @@ async function activatedFixture(
               ? "Show trusted scope only in Runner's local verified result."
               : "Show the fixed trusted scope in the reviewed model result.",
             decided_at: "2026-07-28T00:00:00.000Z",
-          },
+          } } : {}),
         },
       }
       : {}),
@@ -8493,3 +8498,199 @@ function column(
     },
   };
 }
+
+// Owned deterministic continuation composition: normal reviewed-Read activation,
+// runtime validation/currentness and durable query accounting, fake SOURCE
+// executor only. No external database or provider is contacted by these tests.
+describe("bounded original row continuation", () => {
+  it("pages one normally reserved query through the actual MCP grammar without granting a fresh query or source total", async () => {
+    const fixture = await activatedFixture();
+    const storePath = path.join(fixture.root, "row-continuation.sqlite");
+    const store = new ProposalStore(storePath);
+    const reservations = () => {
+      const read = new DatabaseSync(storePath, { readOnly: true });
+      try { return read.prepare("SELECT * FROM explore_budget_reservations ORDER BY rowid").all(); }
+      finally { read.close(); }
+    };
+    const sourceRows = Array.from({ length: 6 }, (_, i) => ({ region: `owned-region-${i}` }));
+    const executeBatch = vi.fn(async ({ queries }: Parameters<NonNullable<ScopedExploreExecutor["executeBatch"]>>[0]) => {
+      expect(store.stats().explore_budget_reservations).toBe(executeBatch.mock.calls.length);
+      expect(reservations().at(-1)).toMatchObject({ reserved_cells: 6, status: "pending" });
+      expect(queries).toHaveLength(1);
+      expect(queries[0]!.sql).not.toMatch(/OFFSET/u);
+      expect(queries[0]!.params.at(-1)).toBe(6);
+      return [structuredClone(sourceRows)];
+    });
+    const runtime = await createScopedExploreRuntime({ projectRoot: fixture.root, transport: "stdio", env: fixture.env, store,
+      executor: { ...fixedExecutor(sourceRows), executeBatch }, inspectDatabaseFn: async () => fixture.inspection });
+    const server = createScopedExploreMcpServer(runtime, { semanticActions: createInactiveSemanticActionRuntime() });
+    const client = new Client({ name: "owned-bounded-row-paging", version: "1" }), [a, b] = InMemoryTransport.createLinkedPair();
+    const plan = { kind: "rows", resource: "public.subscriptions", select: ["region"], limit: 6 };
+    try {
+      await server.connect(b); await client.connect(a);
+      const tools = (await client.listTools()).tools;
+      expect(tools).toHaveLength(4);
+      expect(tools.find(tool => tool.name === "app.explore_data")!.inputSchema.properties).toHaveProperty("page_rows");
+      const call = (cursor?: string) => client.callTool({ name: "app.explore_data", arguments: { plan, page_rows: 2, ...(cursor ? { cursor } : {}) } });
+      const initial = await call();
+      expect(initial.isError, JSON.stringify(initial)).not.toBe(true);
+      let value = initial.structuredContent as any;
+      const rows = [...value.data];
+      expect(value.outcome.result.pagination).toMatchObject({ page_item_count: 2, has_more: true,
+        total: { kind: "exact_bounded_query_result", value: 6 }, continuation: "same_bounded_result" });
+      const beforePages = { stats: store.stats(), audit: store.listQueryAudit(), evidence: store.listEvidenceBundles(), reservations: reservations() };
+      while (value.next_cursor) {
+        const result = await call(value.next_cursor);
+        expect(result.isError, JSON.stringify(result)).not.toBe(true);
+        value = result.structuredContent as any;
+        expect(value.row_continuation.source_query_executed_this_call).toBe(false);
+        expect(value.outcome.result.returned).toEqual({ rows_or_groups: value.data.length, cells: value.data.length,
+          bytes: Buffer.byteLength(JSON.stringify(value.data)) });
+        expect(value.row_continuation.retained_metadata_scope).toBe("original_query");
+        rows.push(...value.data);
+      }
+      expect(rows).toEqual(sourceRows);
+      expect(value.outcome.result.completeness.result_page).toBe("not_established");
+      expect(executeBatch).toHaveBeenCalledOnce();
+      expect({ stats: store.stats(), audit: store.listQueryAudit(), evidence: store.listEvidenceBundles(), reservations: reservations() }).toEqual(beforePages);
+      const ordinary = await client.callTool({ name: "app.explore_data", arguments: { plan } });
+      expect(ordinary.isError, JSON.stringify(ordinary)).not.toBe(true);
+      expect((ordinary.structuredContent as any).data).toEqual(rows);
+      expect(ordinary.structuredContent).not.toHaveProperty("row_continuation");
+      expect(executeBatch).toHaveBeenCalledTimes(2); // two separately authorized queries, not one query per page
+    } finally { await client.close(); await server.close(); await runtime.close(); store.close(); }
+  });
+
+  it("refuses cursor forgery, changed plan/page size, lost caller binding and restart without another query", async () => {
+    const fixture = await activatedFixture();
+    const sourceRows = Array.from({ length: 6 }, (_, i) => ({ region: `owned-row-${i}` }));
+    const executor = fixedExecutor(sourceRows), executeBatch = vi.fn(executor.executeBatch!);
+    const runtime = await createScopedExploreRuntime({ projectRoot: fixture.root, transport: "stdio", env: fixture.env,
+      executor: { ...executor, executeBatch }, inspectDatabaseFn: async () => fixture.inspection });
+    const server = createScopedExploreMcpServer(runtime, { semanticActions: createInactiveSemanticActionRuntime() });
+    const client = new Client({ name: "owned-row-cursor-negatives", version: "1" }), [a, b] = InMemoryTransport.createLinkedPair();
+    const plan = { kind: "rows", resource: "public.subscriptions", select: ["region"], limit: 6 };
+    try {
+      await server.connect(b); await client.connect(a);
+      const call = (args: Record<string, unknown>) => client.callTool({ name: "app.explore_data", arguments: args });
+      const first = await call({ plan, page_rows: 2 });
+      expect(first.isError, JSON.stringify(first)).not.toBe(true);
+      const cursor = (first.structuredContent as any).next_cursor;
+      for (const args of [{ plan, page_rows: 2, cursor: `cur_${"x".repeat(43)}` },
+        { plan: { ...plan, limit: 5 }, page_rows: 2, cursor }, { plan, page_rows: 3, cursor },
+        { plan: { ...plan, select: ["tenant_id"] }, page_rows: 2, cursor },
+        { plan: { kind: "aggregate", resource: "public.subscriptions", measures: [{ function: "count" }] }, page_rows: 2 }]) {
+        expect((await call(args)).isError).toBe(true);
+      }
+      fixture.env.SYNAPSOR_TENANT_ID = "different-current-tenant";
+      expect((await call({ plan, page_rows: 2, cursor })).isError).toBe(true);
+      expect(executeBatch).toHaveBeenCalledOnce();
+      fixture.env.SYNAPSOR_TENANT_ID = "tenant-acme";
+      const restartedServer = createScopedExploreMcpServer(runtime, { semanticActions: createInactiveSemanticActionRuntime() });
+      const restartedClient = new Client({ name: "new-row-client", version: "1" }), [c, d] = InMemoryTransport.createLinkedPair();
+      try {
+        await restartedServer.connect(d); await restartedClient.connect(c);
+        expect((await restartedClient.callTool({ name: "app.explore_data", arguments: { plan, page_rows: 2, cursor } })).isError).toBe(true);
+        expect(executeBatch).toHaveBeenCalledOnce();
+      } finally { await restartedClient.close(); await restartedServer.close(); }
+    } finally { await client.close(); await server.close(); await runtime.close(); }
+  });
+
+  it("reprojects private cells for each page and keeps duplicate-page disclosure in the same finite session", async () => {
+    const fixture = await activatedFixture(candidate => restrictPrivateFieldAnalysis(candidate, "public.subscriptions", ["region"]),
+      undefined, undefined, undefined, { field_exposure: { region: "withhold_from_model" } });
+    const sourceRows = Array.from({ length: 6 }, () => ({ region: "hidden-source-operand" }));
+    const executor = fixedExecutor(sourceRows), executeBatch = vi.fn(executor.executeBatch!);
+    const runtime = await createScopedExploreRuntime({ projectRoot: fixture.root, transport: "stdio", env: fixture.env,
+      executor: { ...executor, executeBatch }, inspectDatabaseFn: async () => fixture.inspection });
+    const server = createScopedExploreMcpServer(runtime, { semanticActions: createInactiveSemanticActionRuntime() });
+    const client = new Client({ name: "owned-private-row-paging", version: "1" }), [a, b] = InMemoryTransport.createLinkedPair();
+    const plan = { kind: "rows", resource: "public.subscriptions", select: ["region"], limit: 6 };
+    try {
+      await server.connect(b); await client.connect(a);
+      const call = (cursor?: string) => client.callTool({ name: "app.explore_data", arguments: { plan, page_rows: 2, ...(cursor ? { cursor } : {}) } });
+      const first = await call();
+      expect(first.isError, JSON.stringify(first)).not.toBe(true);
+      const value = first.structuredContent as any, tokens = value.data.map((row: any) => row.region);
+      expect(new Set(tokens).size).toBe(2);
+      expect(value.model_egress).toMatchObject({ token_scope: "this_tool_response_only", value_equality_withheld_columns: ["region"] });
+      const second = await call(value.next_cursor);
+      expect(second.isError, JSON.stringify(second)).not.toBe(true);
+      expect(JSON.stringify([first, second])).not.toContain("hidden-source-operand");
+      const nextTokens = (second.structuredContent as any).data.map((row: any) => row.region);
+      expect(nextTokens.every((token: string) => !tokens.includes(token))).toBe(true);
+      let stopped: any;
+      for (let count = 0; count < 81; count++) {
+        const repeated = await call(value.next_cursor);
+        expect(JSON.stringify(repeated)).not.toContain("hidden-source-operand");
+        if (repeated.isError) { stopped = repeated.structuredContent; break; }
+      }
+      expect(stopped).toMatchObject({ error_code: "EXPLORE_CONTINUATION_LIMIT" });
+      expect(executeBatch).toHaveBeenCalledOnce();
+    } finally { await client.close(); await server.close(); await runtime.close(); }
+  });
+
+  it("continues the original resolved interval across a later runtime clock without another source read", async () => {
+    const fixture = await activatedFixture();
+    let now = Date.parse("2026-08-31T23:59:59.000Z");
+    const sourceRows = Array.from({ length: 6 }, (_, i) => ({ region: `owned-time-row-${i}` }));
+    const executor = fixedExecutor(sourceRows), executeBatch = vi.fn(executor.executeBatch!);
+    const runtime = await createScopedExploreRuntime({ projectRoot: fixture.root, transport: "stdio", env: fixture.env,
+      clock: () => now, executor: { ...executor, executeBatch }, inspectDatabaseFn: async () => fixture.inspection });
+    const server = createScopedExploreMcpServer(runtime, { semanticActions: createInactiveSemanticActionRuntime() });
+    const client = new Client({ name: "owned-original-interval", version: "1" }), [a, b] = InMemoryTransport.createLinkedPair();
+    const plan = { kind: "rows", resource: "public.subscriptions", select: ["region"], limit: 6,
+      time_window: { field: "churned_at", window: "previous_month" } };
+    try {
+      await server.connect(b); await client.connect(a);
+      const first = await client.callTool({ name: "app.explore_data", arguments: { plan, page_rows: 2 } });
+      expect(first.isError, JSON.stringify(first)).not.toBe(true);
+      const firstQuery = structuredClone(executeBatch.mock.calls[0]![0].queries[0]!);
+      expect(firstQuery.params).toContain("2026-07-01T00:00:00.000Z");
+      expect(firstQuery.params).toContain("2026-08-01T00:00:00.000Z");
+      now += 2000; // crosses a reporting-month boundary; no new relative interval is resolved for a page
+      const second = await client.callTool({ name: "app.explore_data", arguments: { plan, page_rows: 2,
+        cursor: (first.structuredContent as any).next_cursor } });
+      expect(second.isError, JSON.stringify(second)).not.toBe(true);
+      expect((second.structuredContent as any).data).toEqual(sourceRows.slice(2, 4));
+      expect(executeBatch).toHaveBeenCalledOnce();
+      expect(executeBatch.mock.calls[0]![0].queries[0]).toEqual(firstQuery);
+      expect(JSON.stringify(second)).not.toContain("operator_time_windows");
+    } finally { await client.close(); await server.close(); await runtime.close(); }
+  });
+
+
+  it("keeps full original extraction accounting across page replay and a new client session", async () => {
+    const fixture = await activatedFixture(candidate => { candidate.budgets.max_extracted_cells_per_session = 6; });
+    const store = new ProposalStore(path.join(fixture.root, "row-shared-budget.sqlite"));
+    const sourceRows = Array.from({ length: 6 }, (_, i) => ({ region: `owned-meter-row-${i}` }));
+    const executor = fixedExecutor(sourceRows), executeBatch = vi.fn(executor.executeBatch!);
+    const plan = { kind: "rows", resource: "public.subscriptions", select: ["region"], limit: 6 };
+    const open = async (name: string) => {
+      const runtime = await createScopedExploreRuntime({ projectRoot: fixture.root, transport: "stdio", env: fixture.env, store,
+        executor: { ...executor, executeBatch }, inspectDatabaseFn: async () => fixture.inspection });
+      const server = createScopedExploreMcpServer(runtime, { semanticActions: createInactiveSemanticActionRuntime() });
+      const client = new Client({ name, version: "1" }), [a, b] = InMemoryTransport.createLinkedPair();
+      await server.connect(b); await client.connect(a);
+      return { runtime, server, client, close: async () => { await client.close(); await server.close(); await runtime.close(); } };
+    };
+    const first = await open("owned-meter-first");
+    try {
+      const page = await first.client.callTool({ name: "app.explore_data", arguments: { plan, page_rows: 2 } });
+      expect(page.isError, JSON.stringify(page)).not.toBe(true);
+      const cursor = (page.structuredContent as any).next_cursor;
+      for (let i = 0; i < 2; i++) expect((await first.client.callTool({ name: "app.explore_data",
+        arguments: { plan, page_rows: 2, cursor } })).isError).not.toBe(true);
+      const secondQuery = await first.client.callTool({ name: "app.explore_data", arguments: { plan, page_rows: 2 } });
+      expect(secondQuery.structuredContent).toMatchObject({ error_code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED" });
+      expect(executeBatch).toHaveBeenCalledOnce();
+    } finally { await first.close(); }
+    const restarted = await open("owned-meter-restarted");
+    try {
+      const refused = await restarted.client.callTool({ name: "app.explore_data", arguments: { plan, page_rows: 2 } });
+      expect(refused.structuredContent).toMatchObject({ error_code: "EXPLORE_PRIVACY_BUDGET_EXHAUSTED" });
+      expect(executeBatch).toHaveBeenCalledOnce();
+    } finally { await restarted.close(); store.close(); }
+  });
+
+});

@@ -27,6 +27,7 @@ import {
 } from "@synapsor-runner/mcp-server";
 import type { ProposalRuntimeStore } from "@synapsor-runner/proposal-store";
 import { z } from "zod";
+import { createScopedRowContinuation } from "./scoped-row-continuation.js";
 import { createScopedReadDiscovery } from "./scoped-read-discovery.js";
 import { createActionSubjectNavigation } from "./action-subject-navigation.js";
 import { RuntimeAdmissionError } from "./project-runtime-admission.js";
@@ -243,17 +244,42 @@ export function createScopedExploreMcpServer(
       ? { message: invalidExploreKindMessage() }
       : { message: context.defaultError },
   });
-  const exploreInput = z.object({
-    boundary: optionalBoundarySelector,
-    plan,
-  }).strict();
+  const pageRows = optionalModelArgument(z.number().int().min(1).max(CATALOG_LIMITS.maxPage).describe(
+    "Rows only: maximum visible rows on a bounded result page, not a new query limit. Keep the original plan and page_rows on cursor continuation.",
+  ));
+  const rowCursor = optionalModelArgument(z.string().regex(/^cur_[A-Za-z0-9_-]{43}$/u).describe(
+    "Rows only: exact returned next_cursor with the same plan, page_rows, boundary and client. It never renews source facts or subject references.",
+  ));
+  const exploreInput = z.object({ boundary: optionalBoundarySelector, plan, page_rows: pageRows, cursor: rowCursor }).strict();
 
   // Keep the dispatcher responsible for safe, actionable grammar diagnostics.
   // tools/list publishes exploreInput below; this envelope never authorizes a plan.
   const exploreDiscoveryInput = z.object({ boundary: optionalBoundarySelector,
-    plan: z.object({ kind: z.string(), resource: resourceId }).passthrough(),
+    plan: z.object({ kind: z.string(), resource: resourceId }).passthrough(), page_rows: pageRows, cursor: rowCursor,
   }).strict();
 
+  const projectQueryResult = (queryPlan: unknown, boundary: string | undefined, result: Record<string, unknown>) => isBoundarySetRuntime(runtime)
+    ? runtime.projectResultForModel({ tool: SCOPED_EXPLORE_QUERY_TOOL, arguments: { ...(boundary ? { boundary } : {}), plan: queryPlan }, result })
+    : projectScopedExploreResultForModel({ tool: SCOPED_EXPLORE_QUERY_TOOL, arguments: { plan: queryPlan }, result,
+        boundary: runtime.boundary, authorityMetadata: runtime.model_authority_metadata ?? "semantic" });
+  const continueRows = createScopedRowContinuation({
+    current: async () => { if (isBoundarySetRuntime(runtime)) await runtime.requireTrustedScope?.();
+      if ("requireCurrentAuthority" in runtime) await runtime.requireCurrentAuthority?.(); },
+    session: () => runtime.session_fingerprint,
+    validate: (queryPlan, boundary) => isBoundarySetRuntime(runtime) ? runtime.validate(queryPlan, boundary) : runtime.validate(queryPlan),
+    explore: (queryPlan, boundary) => isBoundarySetRuntime(runtime) ? runtime.explore(queryPlan, boundary) : runtime.explore(queryPlan),
+    project: projectQueryResult,
+    limits: boundaryName => {
+      const boundary = isBoundarySetRuntime(runtime) ? runtime.boundaries.find(item => item.pack.name === boundaryName) : runtime.boundary;
+      if (!boundary) throw new ScopedExploreError("EXPLORE_CURSOR_INVALID", "The reviewed boundary is no longer available for row continuation.");
+      return boundary.budgets;
+    },
+    measure: value => {
+      const model = withResultEvidence(SCOPED_EXPLORE_QUERY_TOOL, value);
+      return Buffer.byteLength(JSON.stringify({ content: [{ type: "text", text: JSON.stringify(model) }], structuredContent: model,
+        _meta: { "synapsor.model_withheld_values": true, "synapsor.operator_metadata_withheld": true } }), "utf8");
+    },
+  });
   const server = new McpServer(
     { name: production ? "synapsor-runner-production-explore" : "synapsor-runner-authoring", version: runnerPackage.version },
     { capabilities: { tools: {} } },
@@ -304,7 +330,7 @@ export function createScopedExploreMcpServer(
   }).strict();
   server.registerTool(SCOPED_EXPLORE_DESCRIBE_TOOL, {
     title: "Describe reviewed data",
-    description: 'Metadata only; no source rows. List {} or {"query":"text","limit":5}; exact detail {"resource":"<exact id>"}, optionally boundary. Oversized detail returns a partial contract_navigation: follow its exact section calls; section pages may include item, limit and returned section cursor. Missing sections are not permission. Never mix query with exact detail/sections. Follow discovery.next_steps and pagination.state; CATALOG_CURSOR_INVALID requires a fresh current lookup without the rejected cursor. Small detail permits null query and absent/null/0 limit/cursor; listing permits absent/null/empty resource. Copy exact permitted fields/operators into app.explore_data; reuse still-current detail. Search ranks exact/full matches before labelled partial matches, not row eligibility. Catalog totals count authorized metadata only; section totals count that exact section/selection. Keep the same query/section/item/limit/boundary/context on continuation. Explore returns bounded live results without a source continuation cursor or complete source total.' + settingsHint,
+    description: 'Metadata only; no source rows. List {} or {"query":"text","limit":5}; exact detail {"resource":"<exact id>"}, optionally boundary. Oversized detail returns a partial contract_navigation: follow its exact section calls; section pages may include item, limit and returned section cursor. Missing sections are not permission. Never mix query with exact detail/sections. Follow discovery.next_steps and pagination.state; CATALOG_CURSOR_INVALID requires a fresh current lookup without the rejected cursor. Small detail permits null query and absent/null/0 limit/cursor; listing permits absent/null/empty resource. Copy exact permitted fields/operators into app.explore_data; reuse still-current detail. Search ranks exact/full matches before labelled partial matches, not row eligibility. Catalog totals count authorized metadata only; section totals count that exact section/selection. Keep the same query/section/item/limit/boundary/context on continuation. Explore rows can page one original bounded observation with page_rows and its cursor; neither a page total nor final page establishes the complete source population.' + settingsHint,
     inputSchema: policyManagement ? withPolicyManagementInput(describeInput, SCOPED_EXPLORE_DESCRIBE_TOOL) : describeInput,
     outputSchema: scopedExploreDescribeToolOutputSchema,
     annotations: {
@@ -365,7 +391,7 @@ export function createScopedExploreMcpServer(
   ));
   server.registerTool(SCOPED_EXPLORE_QUERY_TOOL, {
     title: "Explore reviewed data",
-    description: exploreToolDescription(production, automaticBandsReviewed) + settingsHint,
+    description: exploreToolDescription(production, automaticBandsReviewed) + " Rows only: optional page_rows pages one original bounded query; continue with its exact returned cursor and unchanged plan/page_rows/boundary. No new query, proof or source total is implied." + settingsHint,
     inputSchema: policyManagement ? withPolicyManagementInput(exploreDiscoveryInput, SCOPED_EXPLORE_QUERY_TOOL) : exploreDiscoveryInput,
     outputSchema: scopedExploreQueryToolOutputSchema,
     annotations: {
@@ -391,8 +417,9 @@ export function createScopedExploreMcpServer(
     );
     let boundary: string | undefined;
     let parsedPlan: z.infer<typeof plan> | undefined;
+    let pageProjection: ReturnType<typeof projectQueryResult> | undefined;
     return toolResult(
-      () => {
+      async () => {
         const validated = exploreInput.safeParse(discoveryInput);
         if (!validated.success) {
           const issue = validated.error.issues[0];
@@ -406,26 +433,17 @@ export function createScopedExploreMcpServer(
         boundary = validated.data.boundary || undefined;
         parsedPlan = validated.data.plan;
         const normalizedPlan = omitUndefinedModelArguments(parsedPlan);
+        if (validated.data.page_rows !== undefined || validated.data.cursor !== undefined) {
+          pageProjection = await continueRows({ plan: normalizedPlan, ...(boundary ? { boundary } : {}),
+            ...(validated.data.page_rows === undefined ? {} : { page_rows: validated.data.page_rows }),
+            ...(validated.data.cursor === undefined ? {} : { cursor: validated.data.cursor }) });
+          return pageProjection.value;
+        }
         return isBoundarySetRuntime(runtime)
           ? runtime.explore(normalizedPlan, boundary)
           : runtime.explore(normalizedPlan);
       },
-      (result) => isBoundarySetRuntime(runtime)
-        ? runtime.projectResultForModel({
-          tool: SCOPED_EXPLORE_QUERY_TOOL,
-          arguments: {
-            ...(boundary ? { boundary } : {}),
-            plan: omitUndefinedModelArguments(parsedPlan ?? {}),
-          },
-          result,
-        })
-        : projectScopedExploreResultForModel({
-          tool: SCOPED_EXPLORE_QUERY_TOOL,
-          arguments: { plan: omitUndefinedModelArguments(parsedPlan ?? {}) },
-          result,
-          boundary: runtime.boundary,
-          authorityMetadata: runtime.model_authority_metadata ?? "semantic",
-        }),
+      (result) => pageProjection ?? projectQueryResult(omitUndefinedModelArguments(parsedPlan ?? {}), boundary, result),
       {
         toolName: SCOPED_EXPLORE_QUERY_TOOL,
         requestMeta: extra._meta,
