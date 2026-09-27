@@ -1,0 +1,13 @@
+# Bounded reviewed contracts and rows
+
+The runtime still exposes four tools. Discovery lists authorized metadata; it does not decide whether a record qualifies for a change. Get the exact Action or resource detail before using its inputs or fields.
+
+A fitting contract returns its ordinary complete detail. A wider contract returns `contract_status: partial_navigable` and a `contract_navigation` index. Follow the supplied `next_call` arguments, including the opaque `contract_revision`, section and page limit. An index may itself have more pages. Collect the complete index and every section under the same revision to reconstruct the permitted contract. Arrays preserve position keys, objects preserve keys and scalar sections preserve one whole value. A selected item or an exhausted section is not the complete contract.
+
+Sections contain whole semantic units. An enum, constraint or companion effect is never sliced into strings or silently shortened. An indivisible item that cannot fit returns a specific refusal; it does not authorize guessing the omitted contract. Current caller, authority, query, section, item and revision checks still apply. Expired, changed or foreign cursors refuse. A continuation may refer to public context already disclosed in the first response of that same contract revision; this does not disclose hidden conditions.
+
+For permitted rows queries, optional `page_rows` (1–20) pages the one original bounded observation. Continue with the returned cursor and unchanged plan, boundary and page size. Runner executes the original normally validated query once, charging its complete extraction and query budgets before returning the first page. Continuation performs current access checks and returns remaining already-projected records; it uses neither growing OFFSET queries nor fresh budget allowances.
+
+`pagination.total.kind: exact_bounded_query_result` counts that original query result, not a source population. Visible `returned` counts describe the current page. `row_continuation.retained_metadata_scope: original_query` labels retained audit, remaining-budget and freshness metadata. Those records are not refreshed on each page. Source values may since have changed; existing subject references retain their original expiry. A page does not establish eligibility, approval, execution, query completeness or a later source snapshot. Private-cell labels remain scoped to each response.
+
+The reviewed total row, field, response, source-work and privacy budgets still bound the original query. Continuation adds bounded session memory, calls and disclosure accounting. An indivisible row that cannot fit refuses honestly; a separately authorized smaller field projection is an ordinary new query with ordinary accounting.
