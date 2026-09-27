@@ -117,6 +117,7 @@ export async function makeRunnerDeclarationsPortable() {
     packageNames,
     program,
     roots: authoringRoots,
+    preserveClosedAliases: true,
   });
 
   const cli = portableEntry(emitted.get("cli.d.ts"), cliDeclarations, {
@@ -143,6 +144,7 @@ function declarationClosure({
   packageNames,
   program,
   roots,
+  preserveClosedAliases = false,
 }) {
   const records = new Map();
   const names = new Map();
@@ -222,6 +224,8 @@ function declarationClosure({
   }
 
   function aliasBody(type, declaration, localName) {
+    const canonical = preserveClosedAliases ? closedLibraryAlias(declaration) : undefined;
+    if (canonical !== undefined) return canonical;
     const structural = {
       ...type,
       aliasSymbol: undefined,
@@ -240,6 +244,27 @@ function declarationClosure({
         .join(" & ");
     }
     throw new Error(`Portable declaration expansion remained self-referential: ${localName}`);
+  }
+
+  // Expanding Partial<Record<...>> under the compiler's optional-property mode
+  // can add explicit undefined that the source forbids in exact-optional consumers.
+  // Preserve the actual annotation only when no contextual type binding escapes.
+  function closedLibraryAlias(declaration) {
+    if (!ts.isTypeAliasDeclaration(declaration) || declaration.typeParameters?.length) return undefined;
+    let closed = true;
+    const visit = (node) => {
+      if (ts.isImportTypeNode(node) || ts.isTypeQueryNode(node) || ts.isTypeParameterDeclaration(node) ||
+          ts.isMappedTypeNode(node) || ts.isInferTypeNode(node)) closed = false;
+      if (ts.isTypeReferenceNode(node)) {
+        const symbol = ts.isIdentifier(node.typeName) ? checker.getSymbolAtLocation(node.typeName) : undefined;
+        const declarations = symbol ? resolveAlias(checker, symbol).declarations : undefined;
+        if (!declarations?.length ||
+            !declarations.every((item) => program.isSourceFileDefaultLibrary(item.getSourceFile()))) closed = false;
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(declaration.type);
+    return closed ? ts.createPrinter().printNode(ts.EmitHint.Unspecified, declaration.type, declaration.getSourceFile()) : undefined;
   }
 
   function objectType(type, declaration) {

@@ -136,6 +136,8 @@ const meter: TaskContextMeter = createTaskContextMeter(16);
 const observation: TaskContextObservation = { boundary: "provider_request", encoded: '{"input":[]}' };
 const profile: TaskContextProfile = meter.observe(observation);
 const usage = taskContextReportedUsage({ usage: { input_tokens: 7 } });
+// @ts-expect-error Canonical optional usage fields do not admit explicit undefined.
+meter.observe({ boundary: "provider_request", encoded: "{}", reportedUsage: { input_tokens: undefined } });
 
 void [
   main,
@@ -157,6 +159,7 @@ cat > tsconfig.packed-consumer.json <<'JSON'
     "moduleResolution": "NodeNext",
     "target": "ES2022",
     "strict": true,
+    "exactOptionalPropertyTypes": true,
     "skipLibCheck": false,
     "noEmit": true
   },
