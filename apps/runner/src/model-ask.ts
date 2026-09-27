@@ -4,7 +4,7 @@ import http, { type IncomingMessage } from "node:http";
 import https from "node:https";
 import net from "node:net";
 import { StringDecoder } from "node:string_decoder";
-import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { canonicalJsonDigest, createTaskContextMeter, taskContextReportedUsage, type TaskContextMeter, type TaskContextProfile } from "@synapsor-runner/protocol";
 import { openaiToolNameAlias, toolNameExposures } from "@synapsor-runner/mcp-server";
 import type { RelativeTimeWindow } from "./relative-time-window.js";
 import {
@@ -256,6 +256,8 @@ type ProviderHttpInput = {
   body: Record<string, unknown>;
   signal: AbortSignal;
   timeoutMs?: number;
+  /** Trusted optional numerical observer; never included in provider input. */
+  contextMeasurement?: { meter: TaskContextMeter; onProfile: (profile: TaskContextProfile) => void };
   stream?: {
     format: "openai_responses" | "openai_chat" | "anthropic";
     onEvent?: (event: AskProviderStreamEvent) => void;
@@ -285,6 +287,8 @@ export type AskProviderDependencies = {
     tool?: string;
   }) => void;
   onStream?: (event: AskProviderStreamEvent) => void;
+  /** Reuse one meter across a measured journey; no raw prompt/response is emitted. */
+  contextMeasurement?: { meter?: TaskContextMeter; onProfile: (profile: TaskContextProfile) => void };
 };
 
 export class AskError extends Error {
@@ -672,7 +676,10 @@ export async function runAskProviderTurn(input: {
     }
   };
   const request = input.dependencies?.requestJson ?? secureAskJsonRequest;
-  const requestJson: NonNullable<AskProviderDependencies["requestJson"]> = (requestInput) => checked(() => request({ ...requestInput, signal }));
+  const contextMeasurement = input.dependencies?.contextMeasurement
+    ? { ...input.dependencies.contextMeasurement, meter: input.dependencies.contextMeasurement.meter ?? createTaskContextMeter() }
+    : undefined;
+  const requestJson: NonNullable<AskProviderDependencies["requestJson"]> = (requestInput) => checked(() => request({ ...requestInput, signal, contextMeasurement }));
   const gateway: AskToolGateway = {
     get mode() { return input.gateway.mode; },
     get ownerPolicyReview() { return input.gateway.ownerPolicyReview; },
@@ -716,6 +723,9 @@ export async function secureAskJsonRequest(input: ProviderHttpInput): Promise<Pr
   if (Buffer.byteLength(serialized) > MAX_PROVIDER_REQUEST_BYTES) {
     throw new AskError("ASK_PROVIDER_REQUEST_TOO_LARGE", "The provider request exceeded the bounded Ask request size.");
   }
+  if (input.contextMeasurement) {
+    input.contextMeasurement.onProfile(input.contextMeasurement.meter.observe({ boundary: "provider_request", encoded: serialized }));
+  }
   const destination = await resolveAskDestination(input.endpoint, input.scope);
   assertAskNotCancelled(input.signal);
   const transport = input.endpoint.protocol === "https:" ? https : http;
@@ -726,10 +736,19 @@ export async function secureAskJsonRequest(input: ProviderHttpInput): Promise<Pr
   );
 
   return new Promise<ProviderHttpResult>((resolve, reject) => {
+    const started = performance.now();
     let settled = false;
     let deadline: NodeJS.Timeout | undefined;
     const finishResolve = (body: Record<string, unknown>, status: number) => {
       if (settled) return;
+      if (input.contextMeasurement) {
+        try {
+          input.contextMeasurement.onProfile(input.contextMeasurement.meter.observe({
+            boundary: "provider_completed_response", encoded: JSON.stringify(body), elapsedMs: performance.now() - started,
+            reportedUsage: taskContextReportedUsage(body),
+          }));
+        } catch (error) { finishReject(error); return; }
+      }
       settled = true;
       if (deadline) clearTimeout(deadline);
       resolve({ body, status });

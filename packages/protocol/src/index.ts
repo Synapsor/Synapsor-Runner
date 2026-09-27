@@ -5,6 +5,7 @@ export {
   canonicalJsonStringify,
 } from "./canonical-json.js";
 export { outgoingToolSchemaIssue, type OutgoingToolProfile, type OutgoingToolIssue } from "./outgoing-tool-contract.js";
+export { createTaskContextMeter, taskContextReportedUsage, type TaskContextMeter, type TaskContextObservation, type TaskContextProfile, type TaskContextReportedUsage } from "./task-context-measurement.js";
 import {
   canonicalJsonDigest,
 } from "./canonical-json.js";

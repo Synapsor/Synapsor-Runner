@@ -8,6 +8,7 @@ import {
   type SynapsorContract,
   type WorkflowSpec,
 } from "@synapsor/spec";
+export { createTaskContextMeter, taskContextReportedUsage, type TaskContextMeter, type TaskContextObservation, type TaskContextProfile } from "@synapsor-runner/protocol";
 
 export type SynapsorContractDefinition = Omit<SynapsorContract, "spec_version" | "kind">;
 
