@@ -8,10 +8,10 @@ const cursor = `cur_${"a".repeat(43)}`;
 const pagination = { page_item_count: 2, has_more: true, next_cursor: cursor,
   total: { kind: "exact_bounded_query_result", value: 5 }, continuation: "same_bounded_result",
   consistency: "fixed_original_query_result", guidance: "Continue this bounded result only." };
-const base = { ok: true, kind: "rows", source_database_changed: false,
+const base = { ok: true, kind: "rows", source_database_changed: false, next_cursor: cursor,
   outcome: { type: "success", status: "ok", result: { pagination } }, data: [{ name: "a" }, { name: "b" }],
   row_continuation: { page_rows: 2, offset: 0, original_result_rows: 5, original_query_limit: 10,
-    source_query_executed_this_call: true, reference_expiry: "unchanged" } };
+    source_query_executed_this_call: true, reference_expiry: "unchanged", retained_metadata_scope: "original_query" } };
 
 describe("bounded row continuation output and evidence", () => {
   it("keeps exact bounded result totals separate from query/population completeness", () => {
@@ -21,7 +21,7 @@ describe("bounded row continuation output and evidence", () => {
     expect(output.evidence_summary).toContain("not a source-population total");
     const last = withResultEvidence("app.explore_data", { ...base,
       outcome: { ...base.outcome, result: { pagination: { ...pagination, has_more: false, next_cursor: null } } },
-      row_continuation: { ...base.row_continuation, offset: 4, source_query_executed_this_call: false } });
+      next_cursor: null, row_continuation: { ...base.row_continuation, offset: 4, source_query_executed_this_call: false } });
     expect(scopedExploreQueryToolOutputSchema.parse(last)).toEqual(last);
     expect(last.result_evidence).toMatchObject({ coverage: { status: "unknown" }, next_step: "use_authorized_status" });
     expect(last.evidence_summary).toContain("does not renew reference expiry");

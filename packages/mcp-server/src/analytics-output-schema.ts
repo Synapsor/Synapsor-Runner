@@ -367,6 +367,7 @@ const rowContinuationSchema = z.object({
   original_query_limit: z.number().int().positive(),
   source_query_executed_this_call: z.boolean(),
   reference_expiry: z.literal("unchanged"),
+  retained_metadata_scope: z.literal("original_query"),
 }).strict();
 
 const scopedExploreResultSchema = z.object({
@@ -755,6 +756,7 @@ export const scopedExploreQueryOutputSchema = z.object({
   details: safeRecordSchema.optional(),
   kind: z.enum(["rows", "aggregate"]).optional(),
   row_continuation: rowContinuationSchema.optional(),
+  next_cursor: z.string().regex(/^cur_[A-Za-z0-9_-]{43}$/u).nullable().optional(),
   counted_entity: z.object({
     resource: z.string(),
     primary_key: z.string(),
@@ -832,6 +834,7 @@ export const scopedExploreQueryToolOutputSchema = z.object({
   details: safeRecordSchema.optional(),
   source_database_changed: z.literal(false),
   row_continuation: rowContinuationSchema.optional(),
+  next_cursor: z.string().regex(/^cur_[A-Za-z0-9_-]{43}$/u).nullable().optional(),
   data: z.array(z.record(jsonScalarSchema)).optional(),
   subjects: z.array(observedSubjectReferenceSchema).max(100).optional(),
   privacy: scopedExploreClientPrivacyEnvelopeSchema.optional(),
