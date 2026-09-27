@@ -1,7 +1,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { readSemanticSupervisedExecutionState, SEMANTIC_ACTION_RUNTIME_CONFIG } from "./semantic-action-deployment.js";
+import { readSemanticSupervisedExecutionState, SEMANTIC_ACTION_RUNTIME_CONFIG } from "./semantic-execution-state.js";
 
 /** Authoring evidence only: no credential values or permission to execute.
  * The existing governed execution reader validates the config binding. */

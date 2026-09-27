@@ -1,3 +1,5 @@
+import { SEMANTIC_ACTION_RUNTIME_CONFIG, executionConfigForReview, readSemanticSupervisedExecutionState, type SemanticSupervisedExecutionState } from "./semantic-execution-state.js";
+export { SEMANTIC_ACTION_RUNTIME_CONFIG, readSemanticSupervisedExecutionState, type SemanticSupervisedExecutionState } from "./semantic-execution-state.js";
 import { withProjectRuntimeAdmission } from "./project-runtime-admission.js";
 import { assertCompleteSelectedActionProgram } from "./saved-action-job-review.js";
 import fs from "node:fs/promises";
@@ -40,13 +42,12 @@ import { compareGenerationLock, loadGenerationLockForActivatedBoundary, generati
 import { bindSemanticReadScope, bindSemanticReviewedReadScope } from "./semantic-action-read-scope.js";
 import { SemanticWriterPostureError } from "./semantic-execution-setup.js";
 import { writerProvisioningPlan } from "./writer-provisioning.js";
-import { encodeOperatorExecutionPolicy, parseOperatorExecutionPolicy, readOperatorExecutionConfig } from "./control-policy-execution.js";
+import { encodeOperatorExecutionPolicy, parseOperatorExecutionPolicy } from "./control-policy-execution.js";
 import { OPERATOR_EXECUTION_POLICY_KEY, assertOperatorPolicyRecord } from "./control-policy-record.js";
 import { openBoundProjectControlPolicies, openProjectControlPolicies,
   type BoundProjectPolicyStore } from "./control-policy-store.js";
 import { assertNoPendingPolicyConfiguration, publishPolicyConfiguration, recoverPolicyConfiguration } from "./control-policy-config-publication.js";
 
-export const SEMANTIC_ACTION_RUNTIME_CONFIG = "synapsor.actions.runner.json";
 
 /** A dedicated credential reference is stable across rule and database reviews. */
 export function semanticDedicatedWriterEnvironment(outcome: string): string {
@@ -88,12 +89,6 @@ export type SemanticSupervisedExecutionPreview = {
   policy: RuntimeSupervisedWorkerOutcomePolicy;
   config: Record<string, unknown>;
   policy_epoch?: number;
-};
-
-export type SemanticSupervisedExecutionState = {
-  enabled: boolean;
-  config_path: string;
-  policies: RuntimeSupervisedWorkerOutcomePolicy[];
 };
 
 /**
@@ -577,32 +572,6 @@ export async function verifySemanticExecutionReadPosture(input: {
   if (issues.length) throw new Error(`SEMANTIC_ACTION_DATABASE_REVIEW_REQUIRED: The read connection cannot yet verify these changes.\n${issues.map(issue => `${issue.relation}: ${issue.reason}`).join("\n")}`);
 }
 
-export async function readSemanticSupervisedExecutionState(input: {
-  projectRoot: string;
-  configPath?: string;
-  env?: NodeJS.ProcessEnv;
-}): Promise<SemanticSupervisedExecutionState> {
-  const projectRoot = path.resolve(input.projectRoot);
-  const configPath = path.resolve(
-    input.configPath ?? path.join(projectRoot, SEMANTIC_ACTION_RUNTIME_CONFIG),
-  );
-  assertContainedProjectPath(projectRoot, configPath);
-  const text = await readOptionalText(configPath);
-  if (text === undefined) {
-    return { enabled: false, config_path: projectRelativePath(projectRoot, configPath), policies: [] };
-  }
-  const { config } = await executionConfigForReview(projectRoot, configPath, await readJsonObject(configPath), undefined, input.env);
-  const worker = isRecord(config.supervised_worker) ? config.supervised_worker : undefined;
-  const policies = Array.isArray(worker?.outcomes)
-    ? worker.outcomes.filter(isRecord).map((entry) => entry as RuntimeSupervisedWorkerOutcomePolicy)
-    : [];
-  return {
-    enabled: worker?.enabled === true,
-    config_path: projectRelativePath(projectRoot, configPath),
-    policies,
-  };
-}
-
 /** Operator prompt defaults only, never execution authority. Historical records
  * must still match this runtime binding; every use requires a fresh review. */
 export async function readSemanticExecutionReviewDefaults(input: {
@@ -688,18 +657,6 @@ async function executionReviewActionAuthority(projectRoot: string, env?: NodeJS.
   const binding = await openBoundProjectControlPolicies(projectRoot, env);
   try { return binding ? await createActiveActionRuleAuthorityLoader(projectRoot, binding)(options) : await loadActiveActionRuleAuthority(projectRoot, options); }
   finally { await binding?.close(); }
-}
-
-async function executionConfigForReview(projectRoot: string, configPath: string, raw: Record<string, unknown>,
-  policyStore?: BoundProjectPolicyStore, env?: NodeJS.ProcessEnv) {
-  const reviewed = await readOperatorExecutionConfig({ projectRoot,
-    config: resolveRuntimeConfig(raw as RuntimeConfig, path.dirname(configPath)), policyStore, env,
-    storePath: path.resolve(path.dirname(configPath), (raw as RuntimeConfig).storage?.sqlite_path ?? ".synapsor/local.db") });
-  if (reviewed.epoch === undefined) return { config: raw, digest: canonicalJsonDigest(raw) };
-  const config = structuredClone(raw);
-  delete config.supervised_worker;
-  if (reviewed.config.supervised_worker) config.supervised_worker = reviewed.config.supervised_worker;
-  return { config, epoch: reviewed.epoch, digest: canonicalJsonDigest({ config, policy_epoch: reviewed.epoch }) };
 }
 
 /** Internal persistence after exact operator confirmation. Store CAS also

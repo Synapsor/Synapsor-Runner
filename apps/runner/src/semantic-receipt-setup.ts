@@ -12,7 +12,7 @@ import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 import { actionRuleModelDraftFromAuthority } from "./action-rule-draft.js";
 import { explorationBoundaryCandidateDigest } from "./auto-boundary.js";
 import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
-import { readSavedExecutionRequirements } from "./saved-action-job-review.js";
+import { readSavedExecutionRequirements } from "./saved-execution-requirements.js";
 
 const identifier = z.string().regex(/^[a-zA-Z_][a-zA-Z0-9_]{0,62}$/u);
 export const semanticReceiptModeSchema = z.discriminatedUnion("authority", [

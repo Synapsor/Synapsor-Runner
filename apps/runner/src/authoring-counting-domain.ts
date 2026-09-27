@@ -6,7 +6,7 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { readActionRuleAuthorityActivation, type ActionRuleAuthorityReviewSubjectV1 } from "./action-rule-authority.js";
 import { borrowRuntimeControlPolicies, createProjectRuntimeStore } from "./control-policy-store.js";
 import { readLedgerRuntimeConfig, runnerConfigPath } from "./cli-project.js";
-import { SEMANTIC_ACTION_RUNTIME_CONFIG } from "./semantic-action-deployment.js";
+import { SEMANTIC_ACTION_RUNTIME_CONFIG } from "./semantic-execution-state.js";
 import { withProjectRuntimeAdmission } from "./project-runtime-admission.js";
 import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 
