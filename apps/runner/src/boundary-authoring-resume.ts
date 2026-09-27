@@ -668,7 +668,7 @@ function normalizeActionRemoval(value: unknown): BoundaryAuthoringActionRemoval 
     ...(value.mode === "deactivate" ? { mode: "deactivate" as const } : {}) };
 }
 
-function normalizeActionAddition(value: unknown, maximum = AUTHORING_PROGRAM_CAPACITY.recommendedWorkUnitActions): BoundaryAuthoringActionAddition {
+function normalizeActionAddition(value: unknown, maximum: number = AUTHORING_PROGRAM_CAPACITY.recommendedWorkUnitActions): BoundaryAuthoringActionAddition {
   if (!isRecord(value) || typeof value.policy_source_digest !== "string" || !Array.isArray(value.source_ranges)
     || !isRecord(value.retained_action)
     || value.source_ranges.length < 1 || value.source_ranges.length > 16
@@ -735,7 +735,7 @@ function normalizeRead(value: BoundaryAuthoringResumeRead): BoundaryAuthoringRes
   };
 }
 
-function normalizeAction(value: BoundaryAuthoringResumeAction, maximum = AUTHORING_PROGRAM_CAPACITY.recommendedWorkUnitActions): BoundaryAuthoringResumeAction {
+function normalizeAction(value: BoundaryAuthoringResumeAction, maximum: number = AUTHORING_PROGRAM_CAPACITY.recommendedWorkUnitActions): BoundaryAuthoringResumeAction {
   if (value.closed_unchanged !== undefined && !["confirmed_current", "cancelled"].includes(value.closed_unchanged)) {
     throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Unchanged request disposition is invalid.");
   }

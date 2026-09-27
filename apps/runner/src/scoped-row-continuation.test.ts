@@ -14,7 +14,7 @@ function composition(rows = Array.from({ length: 6 }, (_, i) => ({ label: `owned
     outcome: { result: { completeness: { result_page: "not_established" } } } };
   const validate = vi.fn(async (request: unknown) => ({ normalized_plan: structuredClone(request),
     boundary_name: "owned", boundary_digest: revision, generation_lock_fingerprint: "lock",
-    database_engine: "postgres", trusted_scope: { tenant: "t", principal: "p" } } as ScopedExploreValidationResult));
+    database_engine: "postgres", trusted_scope: { tenant: "t", principal: "p" } } as unknown as ScopedExploreValidationResult));
   const explore = vi.fn(async () => source);
   const project = vi.fn((_plan: ExplorePlan, _boundary: string, value: Record<string, unknown>) => ({ value, withheld: false }));
   const page = createScopedRowContinuation({ current: async () => {}, session: () => session, validate, explore, project,

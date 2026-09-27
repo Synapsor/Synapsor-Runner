@@ -1,7 +1,7 @@
 import { randomBytes } from "node:crypto";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { CATALOG_LIMITS } from "@synapsor-runner/mcp-server";
-import { ScopedExploreError, type ExplorePlan, type ScopedExploreValidationResult } from "./scoped-explore.js";
+import { ScopedExploreError, type ExplorePlan, type ScopedExploreValidationResult, type ScopedExploreErrorCode } from "./scoped-explore.js";
 
 type Projection = { value: Record<string, unknown>; withheld: boolean; operator_metadata_withheld?: boolean };
 export type RowContinuationRequest = { plan: unknown; boundary?: string; page_rows?: number; cursor?: string };
@@ -32,7 +32,7 @@ export function createScopedRowContinuation(input: {
   const clock = input.clock ?? Date.now;
   const cursors = new Map<string, Cursor>();
   let calls = 0, disclosedBytes = 0;
-  const refuse = (code: string, message: string): never => { throw new ScopedExploreError(code, message); };
+  const refuse = (code: ScopedExploreErrorCode, message: string): never => { throw new ScopedExploreError(code, message); };
   const binding = (validation: ScopedExploreValidationResult) => canonicalJsonDigest({
     session: input.session(), boundary: validation.boundary_name, digest: validation.boundary_digest,
     lock: validation.generation_lock_fingerprint, engine: validation.database_engine,
@@ -54,7 +54,7 @@ export function createScopedRowContinuation(input: {
     let queried = false;
     if (request.cursor !== undefined) {
       const cursor = cursors.get(request.cursor);
-      if (!cursor || cursor.document.request !== requestKey) refuse("EXPLORE_CURSOR_INVALID", "This row cursor is unavailable for the exact current caller, plan, page size and client session. Use current permitted discovery; no old result or reference was renewed.");
+      if (!cursor || cursor.document.request !== requestKey) return refuse("EXPLORE_CURSOR_INVALID", "This row cursor is unavailable for the exact current caller, plan, page size and client session. Use current permitted discovery; no old result or reference was renewed.");
       document = cursor.document;
       // Validate the ORIGINAL normalized interval rather than resolving a new
       // relative interval on a later page. The public request must still match.
@@ -63,13 +63,13 @@ export function createScopedRowContinuation(input: {
       offset = cursor.offset;
     } else {
       const validated = await input.validate(request.plan, request.boundary);
-      if (validated.normalized_plan.kind !== "rows") refuse("EXPLORE_PLAN_INVALID", "Only a reviewed rows query can start row continuation.");
+      if (validated.normalized_plan.kind !== "rows") return refuse("EXPLORE_PLAN_INVALID", "Only a reviewed rows query can start row continuation.");
       const plan = validated.normalized_plan;
       const before = binding(validated);
       const raw = await input.explore(plan, validated.boundary_name);
       const projected = input.project(plan, validated.boundary_name, raw);
       if (projected.value.ok === false) return projected;
-      if (!Array.isArray(projected.value.data)) refuse("EXPLORE_CONTINUATION_UNAVAILABLE", "The bounded rows observation is unavailable; no source completeness or effect can be inferred.");
+      if (!Array.isArray(projected.value.data)) return refuse("EXPLORE_CONTINUATION_UNAVAILABLE", "The bounded rows observation is unavailable; no source completeness or effect can be inferred.");
       const limits = input.limits(validated.boundary_name);
       if (projected.value.data.length > plan.limit || plan.limit > limits.max_rows
         || Buffer.byteLength(JSON.stringify(projected.value.data), "utf8") > limits.max_response_bytes) {
