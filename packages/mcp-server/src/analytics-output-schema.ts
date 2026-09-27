@@ -339,9 +339,8 @@ const legacyTrustedContextSchema = z.object({
   provenance: z.string(),
 }).strict();
 
-const scopedExploreResultSchema = z.object({
-  status: z.enum(["ok", "empty", "fully_suppressed", "incomplete_comparison"]),
-  pagination: z.object({
+const scopedRowsPaginationSchema = z.union([
+  z.object({
     page_item_count: z.number().int().nonnegative(),
     has_more: z.null(),
     next_cursor: z.null(),
@@ -349,7 +348,30 @@ const scopedExploreResultSchema = z.object({
     continuation: z.literal("not_supported"),
     consistency: z.literal("single_read_only_transaction"),
     guidance: z.string(),
-  }).strict().optional(),
+  }).strict(),
+  z.object({
+    page_item_count: z.number().int().nonnegative(),
+    has_more: z.boolean(),
+    next_cursor: z.string().regex(/^cur_[A-Za-z0-9_-]{43}$/u).nullable(),
+    total: z.object({ kind: z.literal("exact_bounded_query_result"), value: z.number().int().nonnegative() }).strict(),
+    continuation: z.literal("same_bounded_result"),
+    consistency: z.literal("fixed_original_query_result"),
+    guidance: z.string(),
+  }).strict(),
+]);
+
+const rowContinuationSchema = z.object({
+  page_rows: z.number().int().positive(),
+  offset: z.number().int().nonnegative(),
+  original_result_rows: z.number().int().nonnegative(),
+  original_query_limit: z.number().int().positive(),
+  source_query_executed_this_call: z.boolean(),
+  reference_expiry: z.literal("unchanged"),
+}).strict();
+
+const scopedExploreResultSchema = z.object({
+  status: z.enum(["ok", "empty", "fully_suppressed", "incomplete_comparison"]),
+  pagination: scopedRowsPaginationSchema.optional(),
   completeness: z.object({
     result_page: z.literal("not_established"),
     suppressed: z.boolean(),
@@ -732,6 +754,7 @@ export const scopedExploreQueryOutputSchema = z.object({
   message: z.string().optional(),
   details: safeRecordSchema.optional(),
   kind: z.enum(["rows", "aggregate"]).optional(),
+  row_continuation: rowContinuationSchema.optional(),
   counted_entity: z.object({
     resource: z.string(),
     primary_key: z.string(),
@@ -778,6 +801,7 @@ export const scopedExploreQueryOutputSchema = z.object({
 
 const scopedExploreClientResultEnvelopeSchema = z.object({
   query_audit_handle: sha256Schema.optional(),
+  pagination: scopedRowsPaginationSchema.optional(),
 }).passthrough();
 
 const scopedExploreClientPrivacyEnvelopeSchema = z.object({
@@ -807,6 +831,7 @@ export const scopedExploreQueryToolOutputSchema = z.object({
   message: z.string().optional(),
   details: safeRecordSchema.optional(),
   source_database_changed: z.literal(false),
+  row_continuation: rowContinuationSchema.optional(),
   data: z.array(z.record(jsonScalarSchema)).optional(),
   subjects: z.array(observedSubjectReferenceSchema).max(100).optional(),
   privacy: scopedExploreClientPrivacyEnvelopeSchema.optional(),

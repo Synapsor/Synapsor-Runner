@@ -121,8 +121,15 @@ export function withResultEvidence(tool: string, value: Record<string, unknown>)
       evidence.returned = { count, unit };
       evidence.runner_history = "not_inspected";
       evidence.next_step = "use_authorized_status";
+      const pagination = record(record(value.outcome).result).pagination;
+      const rowPage = family === "source.rows" && isRecord(pagination)
+        && pagination.continuation === "same_bounded_result"
+        && pagination.consistency === "fixed_original_query_result";
+      if (rowPage && pagination.has_more === true && typeof pagination.next_cursor === "string"
+        && /^cur_[A-Za-z0-9_-]{43}$/u.test(pagination.next_cursor)) evidence.next_step = "continue_page";
       if (Array.isArray(value.subjects) && value.subjects.length) evidence.reference = references();
       summary = `Returned ${count} ${unit} for this reviewed query. These are ${family === "source.rows" ? "business-record" : "authorized aggregate"} observations; this result does not inspect Runner request/approval/queue history. Query completeness is not established; ${family === "source.aggregate" ? "withheld values and omitted groups are not zero or a complete source total" : "the returned count is not a population total"}. ${evidence.reference ? "Opaque references identify scoped lookups subject to their returned expiry and later checks; they prove neither intent, eligibility, approval, execution nor a later snapshot. " : ""}For unassessed work status, use the existing authorized application/operator status surface.`;
+      if (rowPage) summary += " This page continues only the original bounded query result; its total is not a source-population total, and continuation does not renew reference expiry or assert a later snapshot.";
       break;
     }
     case "request.semantic": {
