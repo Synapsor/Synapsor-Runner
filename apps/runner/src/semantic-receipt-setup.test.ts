@@ -30,7 +30,7 @@ import { encodeOperatorAuthority, validateOperatorPolicySnapshot } from "./contr
 import { migrateProjectControlPolicies, openBoundProjectControlPolicies } from "./control-policy-store.js";
 import { activateSemanticActionRuntime, previewSemanticSupervisedExecution, prepareSemanticWriterHandoff, enableSemanticSupervisedExecution, semanticExecutionConfirmation } from "./semantic-action-deployment.js";
 import { inspectSemanticReceiptSetup, previewSemanticReceiptSelection, saveSemanticReceiptSelection, selectedSemanticReceipts, reviewSemanticReceiptSetup } from "./semantic-receipt-setup.js";
-import * as savedRequirements from "./saved-action-job-review.js";
+import * as savedRequirements from "./saved-execution-requirements.js";
 import { writebackSetup } from "./writeback-setup.js";
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 const roots: string[] = [];
