@@ -8,6 +8,20 @@ import { readProjectReadAuthoring } from "./control-policy-read-authoring-projec
 
 export type SavedActionJobReview = { summary: string[]; details: string[]; detailsLabel?: string; completeProgram?: { draftsComplete: boolean } };
 
+/** Removal remains pending until publication. Only its exact prepared retained
+ * replacement can pass the draft-completion check; no stale/partial agenda or
+ * deactivation request is converted into completed work. Full source/Read and
+ * publication currentness checks still apply to that replacement. */
+function isPreparedProgramRemoval(resume: BoundaryAuthoringResumeState, draft?: ActionRuleAuthorityDraftV1): boolean {
+  const removal = resume.pending_action_removal;
+  const completed = resume.action?.completed_outcomes;
+  const outcomes = draft?.authority.rules.map(rule => rule.rule.outcome);
+  return Boolean(removal && !removal.mode && draft && resume.stage === "authority_review"
+    && removal.authority_name === draft.authority.name && removal.draft_digest === draft.digest
+    && outcomes && completed && !outcomes.includes(removal.outcome) && completed.length === outcomes.length
+    && new Set(completed).size === completed.length && completed.every(outcome => outcomes.includes(outcome)));
+}
+
 /** A compiled outcome is not evidence that every requested job or edit is done. */
 export function unfinishedActionIntents(resume: BoundaryAuthoringResumeState, currentOutcomes: readonly string[]): string[] {
   const action = resume.action;
@@ -36,6 +50,7 @@ export function unfinishedActionIntents(resume: BoundaryAuthoringResumeState, cu
 
 export async function readSavedActionJobReview(input: {
   projectRoot: string; boundaryName: string; currentOutcomes: readonly string[]; env?: NodeJS.ProcessEnv;
+  currentDraft?: ActionRuleAuthorityDraftV1;
 }): Promise<SavedActionJobReview> {
   let selected;
   try {
@@ -64,12 +79,15 @@ export async function readSavedActionJobReview(input: {
     details: [`Saved setup: ${saved.status}. ${saved.reason}`,
       "Reopen model-guided setup to reconcile the saved job with the current review. No saved work or active permission changed."],
   };
-  const pending = unfinishedActionIntents(saved.value, input.currentOutcomes);
+  const preparedRemoval = isPreparedProgramRemoval(saved.value, input.currentDraft);
+  const pending = unfinishedActionIntents(preparedRemoval ? { ...saved.value, pending_action_removal: undefined } : saved.value, input.currentOutcomes);
   if (saved.value.schema_version === AUTHORING_PROGRAM_RESUME_VERSION) {
     const ready = !pending.length && !saved.value.pending_job_revision && !saved.value.pending_read_revision
       && !saved.value.pending_policy_review && ["authority_review", "client_setup"].includes(saved.value.stage);
     return { completeProgram: { draftsComplete: ready },
-      summary: [ready ? `Complete selected program: all ${saved.value.action?.intents?.length ?? 1} intended Actions are represented in this candidate. Exact source and authority validation remain required.`
+      summary: [ready ? preparedRemoval
+        ? `Complete replacement program: all ${saved.value.action?.intents?.length ?? 1} retained Actions are prepared. Removal of ${saved.value.pending_action_removal!.outcome} remains pending until separate publication; exact source and authority validation remain required.`
+        : `Complete selected program: all ${saved.value.action?.intents?.length ?? 1} intended Actions are represented in this candidate. Exact source and authority validation remain required.`
         : `Complete selected program is pending: ${pending.length} intended Actions or saved edits still require review. Publication stays disabled.`],
       details: ["Complete selected program", ...pending.map((intent, index) => `${index + 1}. ${intent}`),
         "A work unit is saved progress. It cannot be published as completion of the selected program."] };
@@ -143,9 +161,10 @@ export async function assertCompleteSelectedActionProgram(input: {
   const outcomes = input.draft.authority.rules.map(rule => rule.rule.outcome);
   const intents = saved.action?.intents;
   const completed = saved.action?.completed_outcomes;
+  const completionState = isPreparedProgramRemoval(saved, input.draft) ? { ...saved, pending_action_removal: undefined } : saved;
   if (!intents?.length || !completed || completed.length !== intents.length
     || new Set(intents).size !== intents.length || new Set(completed).size !== completed.length
-    || unfinishedActionIntents(saved, outcomes).length || saved.action?.checkpoint
+    || unfinishedActionIntents(completionState, outcomes).length || saved.action?.checkpoint
     || saved.pending_job_revision || saved.pending_read_revision || saved.pending_policy_review
     || !["authority_review", "client_setup"].includes(saved.stage)) return refuse("The selected intent inventory or a requested edit is unfinished.");
   const readDigest = explorationBoundaryCandidateDigest(selected.progress.candidate);

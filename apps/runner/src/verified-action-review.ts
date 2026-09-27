@@ -173,7 +173,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
     : [];
   const requestImpact = await reviewActionRevisionImpact(input);
   const jobReview = await readSavedActionJobReview({ projectRoot: input.projectRoot, boundaryName: input.boundaryName,
-    currentOutcomes: current.authority.rules.map((rule) => rule.rule.outcome), env: input.env });
+    currentOutcomes: current.authority.rules.map((rule) => rule.rule.outcome), env: input.env, currentDraft: input.draft });
   const programConcerns: string[] = [];
   if (input.draft) {
     try { await assertCompleteSelectedActionProgram({ projectRoot: input.projectRoot, draft: input.draft, env: input.env }); }
