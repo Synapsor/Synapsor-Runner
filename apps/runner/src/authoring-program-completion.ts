@@ -12,6 +12,7 @@ export function isPreparedProgramRemoval(resume: BoundaryAuthoringResumeState, d
   const intents = resume.action?.intents;
   const outcomes = draft?.authority.rules.map(rule => rule.rule.outcome);
   return Boolean(resume.schema_version === AUTHORING_PROGRAM_RESUME_VERSION && removal && !removal.mode && draft && resume.stage === "authority_review"
+    && !resume.action?.checkpoint
     && removal.authority_name === draft.authority.name && removal.draft_digest === draft.digest
     && outcomes && completed && intents && intents.length === completed.length && new Set(intents).size === intents.length
     && !outcomes.includes(removal.outcome) && completed.length === outcomes.length

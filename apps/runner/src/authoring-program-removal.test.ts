@@ -1,6 +1,9 @@
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { actionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
+import { isPreparedProgramRemoval } from "./authoring-program-completion.js";
 import { expect, it, vi } from "vitest";
 import { onboard } from "./guided-start.js";
 import { structuredBoundaryAuthoringCommand } from "./boundary-structured-authoring.js";
@@ -59,6 +62,12 @@ it("permits only the exact prepared v2 removal while retaining its pending publi
     expect(unfinishedActionIntents(state, prepared.retainedOutcomes)).toEqual([`Requested removal: ${removed}`]);
     await expect(assertCompleteSelectedActionProgram({ projectRoot: root, draft: prepared.draft })).resolves.toBeUndefined();
     expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: state });
+    expect(isPreparedProgramRemoval(state, prepared.draft)).toBe(true);
+    const interrupted = buildBoundaryAuthoringResumeState({ binding, previous: state, stage: "authority_review", jobIntent: state.job_intent,
+      provider: "openai", model: "owned-offline", pendingActionRemoval: pending,
+      action: { ...state.action!, checkpoint: actionRuleAuthoringCheckpoint({ intent_digest: canonicalJsonDigest(state.action!.intent),
+        context_digest: canonicalJsonDigest(binding), components: {} }) } });
+    expect(isPreparedProgramRemoval(interrupted, prepared.draft)).toBe(false);
     const display = await readSavedActionJobReview({ projectRoot: root, boundaryName: binding.boundary_name,
       currentOutcomes: prepared.retainedOutcomes, currentDraft: prepared.draft });
     expect(display.completeProgram?.draftsComplete).toBe(true);
