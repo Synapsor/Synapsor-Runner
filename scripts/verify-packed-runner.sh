@@ -114,7 +114,11 @@ npm install \
   >/dev/null
 cat > packed-consumer.ts <<'TS'
 import { main, type SupervisedWriterPostureAssessment } from "@synapsor/runner/cli";
-import { defineResource, type ResourceSpec } from "@synapsor/runner/authoring";
+import {
+  defineResource, type ResourceSpec,
+  createTaskContextMeter, taskContextReportedUsage,
+  type TaskContextMeter, type TaskContextObservation, type TaskContextProfile,
+} from "@synapsor/runner/authoring";
 import {
   createShadowOutcomeRecorder,
   type ShadowEffect,
@@ -128,6 +132,10 @@ const assessment: SupervisedWriterPostureAssessment | undefined = undefined;
 const resource: ResourceSpec | undefined = undefined;
 const effect: ShadowEffect | undefined = undefined;
 const resolver: TenantCredentialResolver | undefined = undefined;
+const meter: TaskContextMeter = createTaskContextMeter(16);
+const observation: TaskContextObservation = { boundary: "provider_request", encoded: '{"input":[]}' };
+const profile: TaskContextProfile = meter.observe(observation);
+const usage = taskContextReportedUsage({ usage: { input_tokens: 7 } });
 
 void [
   main,
@@ -138,6 +146,8 @@ void [
   resource,
   effect,
   resolver,
+  profile,
+  usage,
 ];
 TS
 cat > tsconfig.packed-consumer.json <<'JSON'
@@ -154,16 +164,38 @@ cat > tsconfig.packed-consumer.json <<'JSON'
 }
 JSON
 ./node_modules/.bin/tsc --project tsconfig.packed-consumer.json
+node --input-type=module <<'JS'
+import assert from "node:assert/strict";
+import { createTaskContextMeter, taskContextReportedUsage } from "@synapsor/runner/authoring";
+const encoded = JSON.stringify({ input: [{ role: "user", content: "é\n" }] });
+const meter = createTaskContextMeter(16);
+const first = meter.observe({ boundary: "provider_request", encoded });
+assert.equal(first.encoded_utf8_bytes, Buffer.byteLength(encoded, "utf8"));
+assert.equal(first.actual_provider_sends, null);
+assert.equal(first.token_estimate, null);
+assert.equal(first.reported_usage, null);
+const second = meter.observe({ boundary: "provider_request", encoded });
+assert.equal(second.new_conversation_bytes, 0);
+assert.equal(second.repeated_conversation_bytes, first.new_conversation_bytes);
+assert.equal(taskContextReportedUsage({}), undefined);
+assert.deepEqual(taskContextReportedUsage({ usage: { prompt_tokens: 7, completion_tokens: 2 } }),
+  { input_tokens: 7, output_tokens: 2 });
+assert.throws(() => createTaskContextMeter(0), RangeError);
+JS
 if grep -E \
   '@synapsor-runner/|from "\./|import\("\./' \
   "$TEMP_DIR/node_modules/@synapsor/runner/dist/cli.d.ts" \
-  "$TEMP_DIR/node_modules/@synapsor/runner/dist/shadow.d.ts"; then
+  "$TEMP_DIR/node_modules/@synapsor/runner/dist/shadow.d.ts" \
+  "$TEMP_DIR/node_modules/@synapsor/runner/dist/authoring.d.ts" \
+  "$TEMP_DIR/node_modules/@synapsor/runner/dist/runtime.d.ts"; then
   echo "packed Runner declarations expose an omitted internal module" >&2
   exit 1
 fi
 if grep -F "$ROOT/" \
   "$TEMP_DIR/node_modules/@synapsor/runner/dist/cli.d.ts" \
-  "$TEMP_DIR/node_modules/@synapsor/runner/dist/shadow.d.ts"; then
+  "$TEMP_DIR/node_modules/@synapsor/runner/dist/shadow.d.ts" \
+  "$TEMP_DIR/node_modules/@synapsor/runner/dist/authoring.d.ts" \
+  "$TEMP_DIR/node_modules/@synapsor/runner/dist/runtime.d.ts"; then
   echo "packed Runner declarations expose a repository-local absolute path" >&2
   exit 1
 fi

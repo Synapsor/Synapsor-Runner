@@ -37,6 +37,14 @@ const shadowRoots = [
   ["@synapsor-runner/proposal-store", "StoredShadowOutcome", "type", true],
 ];
 
+const authoringRoots = [
+  ["@synapsor-runner/protocol", "createTaskContextMeter", "value", true],
+  ["@synapsor-runner/protocol", "taskContextReportedUsage", "value", true],
+  ["@synapsor-runner/protocol", "TaskContextMeter", "type", true],
+  ["@synapsor-runner/protocol", "TaskContextObservation", "type", true],
+  ["@synapsor-runner/protocol", "TaskContextProfile", "type", true],
+];
+
 export async function makeRunnerDeclarationsPortable() {
   const configPath = path.join(runnerRoot, "tsconfig.json");
   const configFile = ts.readConfigFile(configPath, ts.sys.readFile);
@@ -83,6 +91,7 @@ export async function makeRunnerDeclarationsPortable() {
   const checker = program.getTypeChecker();
   const cliSource = requiredSource(program, path.join(sourceRoot, "cli.ts"));
   const shadowSource = requiredSource(program, path.join(sourceRoot, "shadow.ts"));
+  const authoringSource = requiredSource(program, path.join(sourceRoot, "authoring.ts"));
   const packageNames = await workspacePackageNames();
 
   const cliDeclarations = declarationClosure({
@@ -101,6 +110,14 @@ export async function makeRunnerDeclarationsPortable() {
     program,
     roots: shadowRoots,
   });
+  const authoringDeclarations = declarationClosure({
+    checker,
+    compilerOptions: parsed.options,
+    context: authoringSource,
+    packageNames,
+    program,
+    roots: authoringRoots,
+  });
 
   const cli = portableEntry(emitted.get("cli.d.ts"), cliDeclarations, {
     removeLocalUiImport: true,
@@ -108,10 +125,14 @@ export async function makeRunnerDeclarationsPortable() {
   const shadow = portableEntry(emitted.get("shadow.d.ts"), shadowDeclarations, {
     removeProposalStoreReexport: true,
   });
+  const authoring = portableEntry(emitted.get("authoring.d.ts"), authoringDeclarations, {
+    removeProtocolReexport: true,
+  });
 
   await Promise.all([
     writePortableDeclaration("cli", cli),
     writePortableDeclaration("shadow", shadow),
+    writePortableDeclaration("authoring", authoring),
   ]);
 }
 
@@ -197,7 +218,7 @@ function declarationClosure({
       throw new Error(`Missing declaration for internal value ${record.symbol.name}`);
     }
     const type = checker.getTypeOfSymbolAtLocation(record.symbol, declaration);
-    return `declare const ${record.name}: ${portableTypeString(type, declaration)};`;
+    return `${record.exported ? "export " : ""}declare const ${record.name}: ${portableTypeString(type, declaration)};`;
   }
 
   function aliasBody(type, declaration, localName) {
@@ -294,6 +315,14 @@ function declarationClosure({
 
 function importedSymbol(checker, source, moduleName, exportName) {
   for (const statement of source.statements) {
+    if (ts.isExportDeclaration(statement) && statement.moduleSpecifier?.text === moduleName &&
+        statement.exportClause && ts.isNamedExports(statement.exportClause)) {
+      const element = statement.exportClause.elements.find((candidate) => candidate.name.text === exportName);
+      if (element) {
+        const symbol = checker.getSymbolAtLocation(element.name);
+        if (symbol) return resolveAlias(checker, symbol);
+      }
+    }
     if (!ts.isImportDeclaration(statement) || statement.moduleSpecifier.text !== moduleName) {
       continue;
     }
@@ -426,6 +455,12 @@ function portableEntry(raw, declarations, options) {
   if (options.removeProposalStoreReexport) {
     result = result.replace(
       /^export type \{[^}]+\} from "@synapsor-runner\/proposal-store";\n/gm,
+      "",
+    );
+  }
+  if (options.removeProtocolReexport) {
+    result = result.replace(
+      /^export (?:type )?\{[^}]+\} from "@synapsor-runner\/protocol";\n/gm,
       "",
     );
   }
