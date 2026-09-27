@@ -41,6 +41,65 @@ function rawContract(boundary: ExplorationBoundaryDraft) {
 function resource(value: Record<string, unknown>): any { return (value.resources as unknown[])[0]; }
 
 describe("complete bounded Read contracts", () => {
+  it("activates and reconstructs a 96-field Read through the advertised sections within one cumulative budget", async () => {
+    const boundary = fixture(95);
+    const selected = boundary.pack.resources[0]!;
+    selected.field_metadata = Object.fromEntries(selected.selectable_fields.map((id, index) =>
+      [id, { label: `Public business field ${index}` }]));
+    const before = structuredClone(boundary);
+    const raw = rawContract(boundary);
+    const complete = resource(projectDescribeDataForModel(raw, true, "exact"));
+    expect(complete.selectable_fields).toHaveLength(96);
+    // The withheld primary-key descriptor is metadata, not a returnable field.
+    expect(complete.fields).toHaveLength(97);
+    expect(catalogResponseBytes(projectDescribeDataForModel(raw, true, "exact"), "compact"))
+      .toBeGreaterThan(CATALOG_LIMITS.responseBytes);
+    expect(readDiscoveryCompatibility(boundary, digest)).toEqual([]);
+
+    const runtime = { boundary: { ...boundary, activation: { digest } }, session_fingerprint: digest,
+      model_authority_metadata: "exact", describe: async () => structuredClone(raw) } as unknown as ScopedExploreRuntime;
+    const server = createScopedExploreMcpServer(runtime, { semanticActions: createInactiveSemanticActionRuntime() });
+    const client = new Client({ name: "wide-read-cumulative-contract", version: "1" });
+    const [ct, st] = InMemoryTransport.createLinkedPair();
+    let bytes = 0, calls = 0;
+    const call = async (args: Record<string, unknown>) => {
+      const reply = await client.callTool({ name: "app.describe_data", arguments: args });
+      expect(reply.isError, JSON.stringify(reply)).not.toBe(true);
+      const value = reply.structuredContent as Record<string, any>;
+      const size = catalogResponseBytes(value, "compact");
+      expect(size).toBeLessThanOrEqual(CATALOG_LIMITS.responseBytes);
+      bytes += size; calls++;
+      return value;
+    };
+    try {
+      await server.connect(st); await client.connect(ct);
+      let index = await call({ resource: selected.id });
+      const sections: any[] = [];
+      do {
+        sections.push(...index.contract_navigation.sections);
+        const next = index.discovery.next_steps.find((step: any) => step.kind === "continue_contract_index");
+        if (!next) break;
+        index = await call(next.arguments);
+      } while (true);
+      const reconstructed: Record<string, unknown> = {};
+      for (const section of sections) {
+        const units: Array<{ key: string; value: unknown }> = [];
+        let args = section.next_call.arguments;
+        do {
+          const page = await call(args);
+          units.push(...page.contract_section.items);
+          args = page.next_cursor ? { ...args, cursor: page.next_cursor } : undefined;
+        } while (args);
+        reconstructed[section.section] = section.representation === "array" ? units.map(unit => unit.value)
+          : section.representation === "object" ? Object.fromEntries(units.map(unit => [unit.key, unit.value])) : units[0]!.value;
+      }
+      expect(reconstructed).toEqual(complete);
+      expect(calls).toBeLessThanOrEqual(CATALOG_LIMITS.sessionCalls);
+      expect(bytes).toBeLessThanOrEqual(CATALOG_LIMITS.sessionBytes);
+      expect(boundary).toEqual(before);
+    } finally { await client.close(); await server.close(); }
+  });
+
   const localConsumer = process.env.SYNAPSOR_TEST_DISCOVERY_CONSUMER_OLLAMA === "1";
   it.skipIf(process.env.SYNAPSOR_TEST_DISCOVERY_CONSUMER_LIVE !== "1" && !localConsumer)(`live ${localConsumer ? "Ollama" : "Terra"} consumes grouped permissions into an exact composite plan (metadata/validation only)`, async () => {
     if (!localConsumer && !process.env.OPENAI_API_KEY) throw new Error("Explicit live qualification requires OPENAI_API_KEY");

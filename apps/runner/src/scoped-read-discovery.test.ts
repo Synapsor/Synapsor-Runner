@@ -32,6 +32,40 @@ function fixture(count = 40, longSummaries = false) {
 }
 
 describe("scoped Read discovery", () => {
+  it("binds resource-only sections to the resolved authorized boundary without broadening listing or replay scope", async () => {
+    const boundary = (name: string) => ({ pack: { name, resources: [{ id: "shared.resource", label: "Shared resource" },
+      { id: `${name}.only`, label: `${name} only` }] }, activation: { digest: `sha256:${name.repeat(64).slice(0, 64)}` } });
+    const a = boundary("a"), b = boundary("b");
+    let allowed = [a];
+    const runtime = { boundaries: [a, b], session_fingerprint: `sha256:${"f".repeat(64)}`,
+      authorizedCatalogBoundaries: async () => allowed,
+      describe: async ({ resource, boundary }: { resource: string; boundary: string }) => ({ boundary_name: boundary,
+        resources: [{ id: resource, fields: Array.from({ length: 60 }, (_, i) => ({ id: `field_${i}`, description: "Reviewed text ".repeat(30) })) }] }),
+    } as unknown as ScopedExploreBoundarySetRuntime;
+    const discover = createScopedReadDiscovery(runtime);
+    const overview = await discover({ resource: "shared.resource" });
+    const args = (overview.contract_navigation as any).sections.find((section: any) => section.section === "fields").next_call.arguments;
+    expect(args.boundary).toBe("a");
+    const page = await discover(args);
+    expect(page.contract_section).toMatchObject({ section: "fields" });
+    expect(page.next_cursor).toMatch(/^cur_/);
+    const next = { ...args, cursor: page.next_cursor };
+    expect((await discover(next)).contract_section).toHaveProperty("section", "fields");
+
+    allowed = [a, b];
+    await expect(discover({ resource: "shared.resource" })).rejects.toMatchObject({ code: "CATALOG_ENTRY_UNAVAILABLE" });
+    await expect(discover(next)).rejects.toMatchObject({ code: "CATALOG_CURSOR_INVALID" });
+    await expect(discover({ ...next, boundary: "b" })).rejects.toMatchObject({ code: "CATALOG_CURSOR_INVALID" });
+    const explicit = await discover({ resource: "shared.resource", boundary: "a" });
+    expect(explicit.contract_navigation).toHaveProperty("subject", "shared.resource");
+    await discover({ resource: "a.only" });
+    expect((await discover({ boundary: "a" })).resources).toEqual(expect.arrayContaining([expect.objectContaining({ id: "a.only" })]));
+    expect((await discover({ boundary: "a" })).resources).not.toEqual(expect.arrayContaining([expect.objectContaining({ id: "b.only" })]));
+    expect((await discover({ boundary: "b" })).resources).toEqual(expect.arrayContaining([expect.objectContaining({ id: "b.only" })]));
+    allowed = [b];
+    await expect(discover({ ...args, boundary: "a" })).rejects.toMatchObject({ code: "CATALOG_ENTRY_UNAVAILABLE" });
+  });
+
   it("retains four typed object-root declarations for native consumers without root combinators", async () => {
     const f = fixture(6);
     const server = createScopedExploreMcpServer(f.runtime, { semanticActions: createInactiveSemanticActionRuntime() });

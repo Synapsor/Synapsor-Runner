@@ -145,7 +145,7 @@ export class ScopedCatalogSession {
   private records = 0;
   private bytes = 0;
   private readonly cursors = new Map<string, Cursor>();
-  private readonly documents = new Map<string, ContractDocument & { expires: number; unitsFramed: boolean; value: Record<string, unknown>; context: Record<string, unknown> }>();
+  private readonly documents = new Map<string, ContractDocument & { expires: number; unitsFramed: boolean; sectionLimit: number; value: Record<string, unknown>; context: Record<string, unknown> }>();
   constructor(private readonly clock: () => number = Date.now) {}
 
   /** Read-through public metadata cache only. The caller must establish the
@@ -365,7 +365,8 @@ export class ScopedCatalogSession {
       while (this.documents.size && [...this.documents.values()].reduce((sum, item) => sum + item.bytes, 0) + bytes > CATALOG_LIMITS.sessionBytes) {
         this.documents.delete(this.documents.keys().next().value!);
       }
-      document = { ...prepared, bytes, unitsFramed: false, value: preparedValue, context, revision: `rev_${randomBytes(32).toString("base64url")}`, expires: now + CATALOG_LIMITS.cursorMs };
+      document = { ...prepared, bytes, unitsFramed: false, sectionLimit: request.limit ?? CATALOG_LIMITS.maxPage,
+        value: preparedValue, context, revision: `rev_${randomBytes(32).toString("base64url")}`, expires: now + CATALOG_LIMITS.cursorMs };
       this.documents.set(documentKey, document);
     }
     const tool = input.catalogTool ?? (input.key === "actions" ? "app.describe_actions" : "app.describe_data");
@@ -432,7 +433,14 @@ export class ScopedCatalogSession {
       while (offset < document.sections.length && selected.length < limit) {
         const section = document.sections[offset]!;
         selected.push({ section: section.section, representation: section.representation, item_count: section.items.length,
-          next_call: { tool, arguments: { ...exact, section: section.section, contract_revision: document.revision, limit } } });
+          // The index remains a short list. Its default must not force every
+          // field/permission section into tiny pages whose repeated framing
+          // exhausts the same cumulative disclosure budget. Recommend the
+          // existing bounded section maximum unless initially chosen explicitly.
+          // An index cursor carries its own limit, not a new section choice.
+          // Explicit section requests still apply; every page fits its wire limit.
+          next_call: { tool, arguments: { ...exact, section: section.section, contract_revision: document.revision,
+            limit: document.sectionLimit } } });
         offset++;
         const candidate = page(offset < document.sections.length ? `cur_${"a".repeat(43)}` : null);
         if (Buffer.byteLength(JSON.stringify(selected)) > CATALOG_LIMITS.detailBytes || measure(candidate) > CATALOG_LIMITS.responseBytes) {

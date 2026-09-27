@@ -48,6 +48,27 @@ describe("bounded exact contract sections", () => {
     expect(() => fixture({ ...small, description: "x".repeat(16_384) }).call()).toThrow(expect.objectContaining({ code: "CATALOG_CONTRACT_TOO_LARGE" }));
   });
 
+  it("recommends bounded section batches independently of the index default and respects explicit limits", () => {
+    const f = fixture(wide());
+    const overview = f.call();
+    const section = (overview.contract_navigation as any).sections.find((entry: any) => entry.section === "inputs");
+    expect(section.next_call.arguments.limit).toBe(CATALOG_LIMITS.maxPage);
+    const args = section.next_call.arguments;
+    const page = f.call({ detail: args.outcome, section: args.section, contract_revision: args.contract_revision, limit: args.limit });
+    // Large units still reduce a recommended batch to the wire envelope.
+    expect((page.contract_section as any).items.length).toBeLessThanOrEqual(CATALOG_LIMITS.maxPage);
+    expect(catalogResponseBytes(page)).toBeLessThanOrEqual(CATALOG_LIMITS.responseBytes);
+    expect(page.next_cursor).toMatch(/^cur_/);
+    expect(() => f.call({ detail: args.outcome, section: args.section, contract_revision: args.contract_revision,
+      limit: 5, cursor: page.next_cursor })).toThrow(expect.objectContaining({ code: "CATALOG_CURSOR_INVALID" }));
+
+    const explicit = fixture(wide()).call({ detail: "inventory.reserve", section: "@sections", limit: 2 });
+    expect(explicit.pagination).toMatchObject({ page_item_count: 2 });
+    expect((explicit.contract_navigation as any).sections.every((entry: any) => entry.next_call.arguments.limit === 2)).toBe(true);
+    const smallPage = f.call({ detail: "inventory.reserve", section: "inputs", limit: 2 });
+    expect((smallPage.contract_section as any).items).toHaveLength(2);
+  });
+
   it("supports focused exact input while binding continuation to section/current trusted authority", () => {
     const f = fixture(wide());
     const input = f.call({ detail: "inventory.reserve", section: "inputs", item: "quantity_27" });

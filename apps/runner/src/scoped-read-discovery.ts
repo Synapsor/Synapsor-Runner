@@ -25,6 +25,17 @@ export function createScopedReadDiscovery(
       filter: request.boundary ?? null });
   return async (request: ReadDiscoveryRequest): Promise<Record<string, unknown>> => {
     const boundaries = await authorizedBoundaries();
+    if (request.resource && (request.query !== undefined || request.section === undefined && (request.cursor !== undefined || request.limit !== undefined))) {
+      throw new McpRuntimeError("ARGUMENT_INVALID", "Use resource with optional boundary for exact details, without query, limit or cursor.");
+    }
+    if (request.resource && request.boundary === undefined) {
+      // Exact continuation arguments name the resolved boundary. Bind the
+      // original lookup and its index to that SAME authorized target, so adding
+      // the advertised boundary does not invalidate its own revision/cursor.
+      // Listings retain their original filter; ambiguous/denied ids still refuse.
+      try { request = { ...request, boundary: resolveActiveExploreTarget(boundaries, undefined, request.resource).boundary.pack.name }; }
+      catch { throw new McpRuntimeError("CATALOG_ENTRY_UNAVAILABLE", "That resource is not available unambiguously in the current authorized catalog. Browse authorized resources and use their exact boundary and resource."); }
+    }
     const binding = authorityBinding(boundaries, request);
     if (!cache || cache.binding !== binding) {
       // Resource summaries are prepared from reviewed metadata, without opening
@@ -47,9 +58,6 @@ export function createScopedReadDiscovery(
     let context: Record<string, unknown> = boundaries.length === 1
       ? { boundary_digest: boundaries[0]!.activation.digest } : {};
     if (request.resource) {
-      if (request.query !== undefined || request.section === undefined && (request.cursor !== undefined || request.limit !== undefined)) {
-        throw new McpRuntimeError("ARGUMENT_INVALID", "Use resource with optional boundary for exact details, without query, limit or cursor.");
-      }
       let target: ReturnType<typeof resolveActiveExploreTarget>;
       try { target = resolveActiveExploreTarget(boundaries, request.boundary, request.resource); }
       catch { throw new McpRuntimeError("CATALOG_ENTRY_UNAVAILABLE", "That resource is not available unambiguously in the current authorized catalog. Browse authorized resources and use their exact boundary and resource."); }
