@@ -259,13 +259,49 @@ const observedSubjectReferenceSchema = z.object({
   expires_at: z.string().datetime(),
 }).strict();
 
-const catalogPaginationSchema = z.object({
+const catalogPaginationFields = {
   page_item_count: z.number().int().nonnegative(),
   has_more: z.boolean(),
   total: z.object({ kind: z.literal("exact"), value: z.number().int().nonnegative() }).strict(),
+};
+const catalogPaginationSchema = z.union([z.object({
+  ...catalogPaginationFields,
   consistency: z.literal("fixed_authorized_catalog"),
   state: z.enum(["exact_detail", "no_matches", "more_pages", "exhausted"]).optional(),
   scope: z.literal("authorized_catalog_metadata").optional(),
+}).strict(), z.object({
+  ...catalogPaginationFields,
+  consistency: z.literal("fixed_authorized_contract"),
+  state: z.enum(["more_pages", "exhausted"]),
+  scope: z.enum(["contract_section_index", "selected_contract_section"]),
+}).strict()]);
+
+const contractRevisionSchema = z.string().regex(/^rev_[A-Za-z0-9_-]{43}$/u);
+const contractRepresentationSchema = z.enum(["array", "object", "value"]);
+// Whole projected JSON values remain indivisible. The root value is required;
+// null is data, whereas a missing value is a malformed section unit.
+const contractUnitValueSchema = z.union([jsonScalarSchema, z.array(z.unknown()), safeRecordSchema]);
+const contractNavigationSchema = z.object({
+  subject: z.string().min(1), revision: contractRevisionSchema,
+  complete_contract: z.literal(false), complete_section_index: z.boolean(),
+  sections: z.array(z.object({
+    section: z.string().min(1), representation: contractRepresentationSchema,
+    item_count: z.number().int().nonnegative(),
+    next_call: z.object({
+      tool: z.enum(["app.describe_data", "app.describe_actions"]),
+      // Exact subject/boundary and continuation arguments are provided by the
+      // host. Their canonical argument checks remain in the actual tool.
+      arguments: safeRecordSchema,
+    }).strict(),
+  }).strict()),
+  reconstruction: z.string().min(1),
+}).strict();
+const contractSectionSchema = z.object({
+  subject: z.string().min(1), revision: contractRevisionSchema,
+  section: z.string().min(1), representation: contractRepresentationSchema,
+  item: z.string().min(1).optional(),
+  items: z.array(z.object({ key: z.string(), value: contractUnitValueSchema }).strict()),
+  complete_section: z.boolean(),
 }).strict();
 
 const catalogSearchMatchSchema = z.object({
@@ -681,7 +717,9 @@ export const scopedExploreDescribeToolOutputSchema = z.object({
   resources: z.array(scopedExploreClientDescribeResourceSchema).optional(),
   next_cursor: z.union([z.number().int().nonnegative(), z.string().regex(/^cur_[A-Za-z0-9_-]{43}$/u)]).nullable().optional(),
   pagination: catalogPaginationSchema.optional(),
-  catalog_view: z.enum(["resource_index", "resource_detail"]).optional(),
+  catalog_view: z.enum(["resource_index", "resource_detail", "contract_sections"]).optional(),
+  contract_navigation: contractNavigationSchema.optional(),
+  contract_section: contractSectionSchema.optional(),
   metadata_only: z.literal(true).optional(),
   contains_source_values: z.literal(false).optional(),
   next_action: z.string().optional(),

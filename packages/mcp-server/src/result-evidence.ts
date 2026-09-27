@@ -5,7 +5,7 @@ export const RESULT_EVIDENCE_TOOLS = ["app.describe_data", "app.explore_data", "
 export type ResultEvidenceTool = typeof RESULT_EVIDENCE_TOOLS[number];
 /** Registered output families, not a new authority or lifecycle registry. */
 export const RESULT_EVIDENCE_FAMILIES = [
-  "catalog.actions", "catalog.resources", "catalog.resources_unpaged", "catalog.settings", "actions.unavailable",
+  "catalog.actions", "catalog.resources", "catalog.resources_unpaged", "catalog.settings", "catalog.contract_index", "catalog.contract_section", "actions.unavailable",
   "source.rows", "source.aggregate", "request.semantic", "settings.data", "settings.actions",
   "settings.summary", "settings.saved", "settings.replay", "refusal", "unknown",
 ] as const;
@@ -48,6 +48,14 @@ export function resultEvidenceFamily(tool: ResultEvidenceTool, value: Record<str
   if (value.ok !== true) return "unknown";
   const settings = value.policy_view === "agent_rules" && value.source === "runner_control_plane";
   if (value.catalog_version === "synapsor.scoped-catalog.v2" && isRecord(value.pagination)) {
+    if ((tool === "app.describe_data" || tool === "app.describe_actions")
+      && value.pagination.consistency === "fixed_authorized_contract") {
+      if (value.pagination.scope === "contract_section_index" && isRecord(value.contract_navigation)
+        && value.contract_navigation.complete_contract === false && Array.isArray(value.contract_navigation.sections)) return "catalog.contract_index";
+      if (value.pagination.scope === "selected_contract_section" && isRecord(value.contract_section)
+        && Array.isArray(value.contract_section.items)) return "catalog.contract_section";
+      return "unknown";
+    }
     if (settings && Array.isArray(value.resources)) return "catalog.settings";
     if (tool === "app.describe_actions" && Array.isArray(value.actions)) return "catalog.actions";
     if (tool === "app.describe_data" && Array.isArray(value.resources)) return "catalog.resources";
@@ -83,6 +91,12 @@ export function withResultEvidence(tool: string, value: Record<string, unknown>)
     coverage: { scope: "unestablished", status: "unknown" }, runner_history: "unknown", next_step: "information_unavailable" };
   let summary: string;
   switch (family) {
+    case "catalog.contract_index":
+      summary = "Contract section-index page; collect every index page and its exact revision-bound sections. This is partial contract metadata; source and Runner work are unassessed.";
+      break;
+    case "catalog.contract_section":
+      summary = "Contract section page; other sections remain separate. An ended page or selected item is not the complete contract, eligibility, approval or execution evidence.";
+      break;
     case "catalog.actions": case "catalog.resources": case "catalog.settings": {
       const items = family === "catalog.actions" ? value.actions : value.resources;
       const count = (items as unknown[]).length;
