@@ -1,0 +1,79 @@
+{
+  "recorded_at_utc": "2026-09-27T01:13:34.593643+00:00",
+  "product_tests": "ee6ffd9f3c23e99012117cd2a4bb86e78b511df2",
+  "baseline_product": "8f892a1f78da9fbe09a13bfac29cea8c5f2b9dd4",
+  "baseline_delivery": "6623d40cc9b824bf8c793c5a22db2412bb9a08fd",
+  "artifact": {
+    "recorded_at_utc": "2026-09-27T01:01:14.899194+00:00",
+    "candidate": 1,
+    "product_tests": "ee6ffd9f3c23e99012117cd2a4bb86e78b511df2",
+    "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/frozen/installed",
+    "manifest_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/frozen/installed-artifact-manifest.json",
+    "manifest_sha256": "1c7d1aa7559557fea3e94bbb245be72d86f9508871583d20ced28e78a7041849",
+    "archive_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/frozen/installed-artifact.tar.gz",
+    "archive_sha256": "81c6386c4b7fd9f9b26257f013488ba8b988788e435b493ea750e2cf1d9c8feb",
+    "tree_sha256": "feb93f62067fb629bc03311a2a3bfe7dfb6eb8bee09c7bed1e622e8202928c29",
+    "entries": 7602,
+    "root_mode": 320,
+    "installed_and_archive_complete_membership_content_modes_links": true,
+    "node": {
+      "version": "v22.23.3",
+      "executable": "/usr/bin/node",
+      "sha256": "fde6a4bf8d0562f7751d1a2d6cb9b417c4cfe107bbcb0aa3e9a24e125e348f48"
+    },
+    "runner": "1.8.0",
+    "local_spec": "1.11.0",
+    "package_lock_sha256": "ea0af5baf6456c754b41037d6e4bb0a3f4e22f35c7090318a29c26efe1cb09bb",
+    "source_clean": true,
+    "independent_installed_acceptance": "PASS bounded006/007, native separate",
+    "main_calls": 0
+  },
+  "verdicts": {
+    "deterministic_contract": "PASS bounded original invariants, independent007 layered evidence",
+    "installed_delivery_privacy": "PASS bounded personal independent006/007",
+    "native_answer_quality": "NOT RUN/input-envelope blocked; all8",
+    "positive_saved_BUSINESS_reuse": "NOT ESTABLISHED/model chooser cancelled075",
+    "cancellation_and_preservation": "PASS",
+    "live_PG_rollback_proof": "NOT ESTABLISHED/11 skipped",
+    "overall_native_objective": "UNESTABLISHED; no fixed-hallucinations claim"
+  },
+  "freezes": 1,
+  "replacements": 0,
+  "main_inference_calls": 0,
+  "native_turns_run": 0,
+  "new_cost_usd": "0",
+  "new_reservation_usd": "0",
+  "financial": {
+    "utc": "2026-09-27T01:06:19.059425+00:00",
+    "ledger": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-L4-repair-discovery-20260926/private/shared/provider-budget-ledger-B-003.json",
+    "ledger_sha256": "cd40c1e92071af84dda643c892a061c8c654c9ee6341f6b511552f27a7e6ef43",
+    "status": "PHASE_B_LIVE_CLOSED",
+    "settled_spend_usd": "3.86493330",
+    "uncertain_hold_usd": "0.26298000",
+    "older_hold_already_reflected_usd": "0.71608250",
+    "active_operation": null,
+    "current_package_native_paid_sends": 0,
+    "main_paid_calls": 0,
+    "tripwire_basis_usd": "2.53178400",
+    "campaign_cap_usd": "60",
+    "credit_check": "NOT RUN; no paid GO",
+    "native_closed_cumulative": 164,
+    "current_dedicated_allocation": 128,
+    "current_dedicated_used": 0,
+    "note": "Legacy native_prior_sends field is not the current cumulative total; history retained, no ledger mutation or hold release"
+  },
+  "independent_reports": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-result-evidence-20260926/REVIEW-INSTALLED-006.md",
+      "sha256": "178e5bb206cdf9c2c8ef8c1277053a346e109c19bb716942813b599d3ffcd505"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-result-evidence-20260926/REVIEW-INSTALLED-SUPPLEMENT-007.md",
+      "sha256": "2726fe4c7b6d1f598dcb4733001f420d94444205fcf8cb0c6ff70f0bbd516638"
+    }
+  ],
+  "unresolved_owner_question": "Does prior600000B local cap apply to these current eight paired turns? No inferred permission; closed as NOT RUN at delivery",
+  "queued_next_assignment": "larger-programs, T0 null until separately recorded start; latest accepted compatible source",
+  "historical_Stage_B": "ATTEMPTED/NOT PASSED",
+  "A": "owner-deferred/BUSINESS PENDING"
+}

@@ -1,0 +1,133 @@
+{
+  "utc": "2026-09-27T01:13:34.593643+00:00",
+  "raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926",
+  "independent_root": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-result-evidence-20260926",
+  "records": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/OWNER-BRIEF.txt",
+      "bytes": 20249,
+      "sha256": "11dd18622fc56c114c70ff3177a98f4764d80254a48fb76cb5def2ebe2ca0cb3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/CLAIM-EVIDENCE-DIAGNOSIS-001.json",
+      "bytes": 1849,
+      "sha256": "c5c495686032d7b5f08371b6fad34d319bd709de1d350caff5f120341c19edd6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/ARTIFACT-CHECKPOINT-001.json",
+      "bytes": 1420,
+      "sha256": "f20969a6bf0e097391405a7a57045f0cff163a3e67fdee49ad7a6256b4410608"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/ARTIFACT-CHECKPOINT-002.json",
+      "bytes": 1420,
+      "sha256": "04dfa8facb033d6914c0470df8b445e26aa1c099f7c0dd70cfa80cecb605f511"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/SETTLED-GATE-READBACK-001.json",
+      "bytes": 2626,
+      "sha256": "e5bb4ced0b91861e8d0887d0f09c32a410c2078fc44fcbaf45ee005a256251ab"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/OFFLINE-READBACK-001.json",
+      "bytes": 3516,
+      "sha256": "9646add1eb3ee38251b10ec615b0d7436acebc1978d1674203637008328ab66a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/RESULT-FAMILY-CONFORMANCE-INVENTORY-003.json",
+      "bytes": 21716,
+      "sha256": "249f0b4505a90eddcc5559bc36bfcf08899b2fae27f0cec5b64de38f56429eb4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/MAIN-GATE-PROVENANCE-CHECK-001.json",
+      "bytes": 1166,
+      "sha256": "56a81a383280714beff737104086421ad25569d259c329323b45fa8a25e63e37"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/MAIN-INSTALLED-LOGICAL-READBACK-006.json",
+      "bytes": 2659,
+      "sha256": "cba7e2d2d22826d5c48bee1de15591400a1db0aefb6de1b604f19d07b8d9c2b5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/MAIN-FINANCIAL-READBACK-001.json",
+      "bytes": 902,
+      "sha256": "075fcc0c7e3aa01342a979b4a09eab7e9678e9499554c94192e7c3ba7f33718a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/INDEPENDENT-INSTALLED-INDEX-READBACK-006.json",
+      "bytes": 938,
+      "sha256": "9f8072029052de9cdbc0e597445070dd8076010b53b19d660dd4cd480759274a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/INDEPENDENT-INSTALLED-INDEX-READBACK-007.json",
+      "bytes": 831,
+      "sha256": "235c33c162d4301d7645481ade42b9f6fc908bd5797603cadc13db0c67162b63"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/MAIN-GATE-CLEANUP-001.json",
+      "bytes": 1165,
+      "sha256": "d974abd0c1e06b60158993053024b84de440b251fbe3b4dc4c818760944c5e4c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/RETAINED-RESOURCE-INVENTORY-001.json",
+      "bytes": 1662,
+      "sha256": "235c13a009c88c131e1972656cb9e9b33378c395d5c3a602a606a884bcf09af6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/NATIVE-ENVELOPE-STOP-001.json",
+      "bytes": 754,
+      "sha256": "76e84f7c4452c45bbb03ecc50b704c2127b7210a409a3583fb10185a406bbf88"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/frozen/installed-artifact-manifest.json",
+      "bytes": 1629393,
+      "sha256": "1c7d1aa7559557fea3e94bbb245be72d86f9508871583d20ced28e78a7041849"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/frozen/installed-artifact.tar.gz",
+      "bytes": 18050176,
+      "sha256": "81c6386c4b7fd9f9b26257f013488ba8b988788e435b493ea750e2cf1d9c8feb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-result-evidence-20260926/REVIEW-INSTALLED-006.md",
+      "bytes": 7323,
+      "sha256": "178e5bb206cdf9c2c8ef8c1277053a346e109c19bb716942813b599d3ffcd505"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-result-evidence-20260926/REVIEW-INSTALLED-INDEX-006.json",
+      "bytes": 46095,
+      "sha256": "1ee7c8025fa001b6007ffac20970a16ccbf5b28acbc36f66ab259318f25b8aef"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-result-evidence-20260926/REVIEW-INSTALLED-SUPPLEMENT-007.md",
+      "bytes": 5825,
+      "sha256": "2726fe4c7b6d1f598dcb4733001f420d94444205fcf8cb0c6ff70f0bbd516638"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-result-evidence-20260926/REVIEW-INSTALLED-SUPPLEMENT-INDEX-007.json",
+      "bytes": 5438,
+      "sha256": "09bf85a296bf640728a7f57c4410770e5885411991474333849e4bd78fb3f35b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-result-evidence-20260926/OWNER-INVARIANT-COVERAGE-007.json",
+      "bytes": 5152,
+      "sha256": "d5032009a134fb9e0986471540aab5061d92b9e63b89e37f9d08b13f5339257c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-result-evidence-20260926/FINITE-MATRIX-READBACK-006.json",
+      "bytes": 13029,
+      "sha256": "d21162615a877ffb6dd8cdc9229a4458ecdfae46a396ddc091e32cfc5210f109"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-result-evidence-20260926/OWNED-INSTALLED-STATE-SEAL-071.json",
+      "bytes": 4023,
+      "sha256": "475e9021661c759e2b49b48a1dd57c164bbadedb9941255a4580478be54562f5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-result-evidence-20260926/COLD-RESTORE-VERIFICATION-078.json",
+      "bytes": 1496,
+      "sha256": "658ff4054eb90059c983996d4f69edbf9e87d4b2561c7a20ae5133288d10a989"
+    }
+  ],
+  "private_payloads": "Remain only in restricted raw checkpoint/capture indexes; no secrets copied into repository"
+}

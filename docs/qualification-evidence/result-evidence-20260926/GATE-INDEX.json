@@ -1,0 +1,219 @@
+{
+  "product_tests": "ee6ffd9f3c23e99012117cd2a4bb86e78b511df2",
+  "complete_full": {
+    "recorded_at_utc": "2026-09-26T23:58:23.112651+00:00",
+    "product_tests": "ee6ffd9f3c23e99012117cd2a4bb86e78b511df2",
+    "main_inference": 0,
+    "full": {
+      "passed": 7510,
+      "skipped": 521,
+      "files_passed": 352,
+      "files_skipped": 21,
+      "unfiltered": "complete corepack pnpm test; postbuild/package checks included"
+    },
+    "selected_pg": {
+      "passed": 160,
+      "skipped": 4,
+      "files": 4,
+      "actual_scope": "owned synthetic PostgreSQL Read/projection/privacy/currentness and persistence controls; not historical B fixture"
+    },
+    "records": [
+      {
+        "name": "stable-full-003",
+        "command": [
+          "corepack",
+          "pnpm",
+          "test"
+        ],
+        "source_digest": "be289c016911286c81b0a72007af331e317775d4925e2fe3bc3ed800634acf9b",
+        "start": "2026-09-26T23:50:24.076131+00:00",
+        "end": "2026-09-26T23:55:18.962620+00:00",
+        "exit": 0,
+        "record_sha256": "164c2f4dbcc2d64c12f11697b0cb431a38ee62043a5b214691befc222e9b3ada",
+        "log_sha256": "b5cb93edd6b27854e62cf6ffca72dd19078533e4085956547ca0f239bce70d99"
+      },
+      {
+        "name": "stable-types-001",
+        "command": [
+          "corepack",
+          "pnpm",
+          "typecheck"
+        ],
+        "source_digest": "be289c016911286c81b0a72007af331e317775d4925e2fe3bc3ed800634acf9b",
+        "start": "2026-09-26T23:55:56.447802+00:00",
+        "end": "2026-09-26T23:55:56.996082+00:00",
+        "exit": 0,
+        "record_sha256": "5e9bfa05f7699d49d3bf512eddf563452049301734215e8bf40b0dd0b6947885",
+        "log_sha256": "c1be77a4441f848296f98843b456b869f6ae0b9e2ade331b70ac752aa30adb74"
+      },
+      {
+        "name": "stable-postgres-001",
+        "command": [
+          "corepack",
+          "pnpm",
+          "exec",
+          "vitest",
+          "run",
+          "apps/runner/src/scoped-explore-composite-postgres.test.ts",
+          "apps/runner/src/owner-policy-connection.test.ts",
+          "apps/runner/src/semantic-writeback-authority.test.ts",
+          "apps/runner/src/authoring-review-subject.test.ts",
+          "--maxWorkers=1",
+          "--minWorkers=1",
+          "--testTimeout=20000",
+          "--hookTimeout=20000"
+        ],
+        "source_digest": "be289c016911286c81b0a72007af331e317775d4925e2fe3bc3ed800634acf9b",
+        "start": "2026-09-26T23:56:13.029984+00:00",
+        "end": "2026-09-26T23:57:17.215005+00:00",
+        "exit": 0,
+        "record_sha256": "7f1baf37f3890b2997a71882ddbc5cf275cbbd3e3ad351285ccc95204e48ad8b",
+        "log_sha256": "7ef944c195f572f9b292bd1d8aa7ee6cafc817a3f4da50035c130cf916e0370f"
+      }
+    ],
+    "independent": "source/installed acceptance pending; not inferred from gates",
+    "offline": "ten checks running"
+  },
+  "offline": {
+    "recorded_at_utc": "2026-09-27T00:03:09.654556+00:00",
+    "product": "ee6ffd9f3c23e99012117cd2a4bb86e78b511df2",
+    "source_clean": true,
+    "offline_plan": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/result-evidence-honest-answer-queued-20260926/offline-package-plan-attempt1.json",
+    "plan_sha256": "e20498071f4ad73a7db93c3934732be8ff00f3e3ab2a8cff44d274450708aaef",
+    "checks": [
+      {
+        "name": "trusted-core",
+        "command": [
+          "node",
+          "scripts/check-trusted-core-dependencies.mjs"
+        ],
+        "exit": 0,
+        "source_unchanged": true,
+        "log_sha256": "63131cc49060d868d00e8f81d836eec8cbc9ef9a6081b03ec18b1d375d31288a"
+      },
+      {
+        "name": "licenses",
+        "command": [
+          "node",
+          "scripts/check-license-content.mjs"
+        ],
+        "exit": 0,
+        "source_unchanged": true,
+        "log_sha256": "81c81f063c5391a1e9f237b114a7ba197da9b6cece450fa3fd851f6fcac80bac"
+      },
+      {
+        "name": "human-commands",
+        "command": [
+          "node",
+          "scripts/verify-human-command-surface.mjs"
+        ],
+        "exit": 0,
+        "source_unchanged": true,
+        "log_sha256": "4ca02cff1d23604455f2707b16fc58bea2d0beb7f6adff085887cbdae1379222"
+      },
+      {
+        "name": "dsl-sources",
+        "command": [
+          "bash",
+          "scripts/verify-dsl-source-paths.sh"
+        ],
+        "exit": 0,
+        "source_unchanged": true,
+        "log_sha256": "3bd663b10b211bb9dbfa01117dd164a3a851d9936e4be1568a6bd5f9ccf7d50a"
+      },
+      {
+        "name": "cursor-plugin",
+        "command": [
+          "node",
+          "scripts/verify-cursor-plugin.mjs"
+        ],
+        "exit": 0,
+        "source_unchanged": true,
+        "log_sha256": "cc12e22d29ebd660345c60ee249826505ffccb62bb45e1b39590202b7ee7135f"
+      },
+      {
+        "name": "mcp-client-configs",
+        "command": [
+          "node",
+          "scripts/verify-mcp-client-configs.mjs"
+        ],
+        "exit": 0,
+        "source_unchanged": true,
+        "log_sha256": "2f7381391a6021698fef7eabd7d0b73b5ca571a5dfa59cc43f5e80f3fdd66061"
+      },
+      {
+        "name": "local-package",
+        "command": [
+          "bash",
+          "scripts/verify-local-runner.sh"
+        ],
+        "exit": 0,
+        "source_unchanged": true,
+        "log_sha256": "a034a4d058fe5c6d091cd6c9edbff7b113114f9c7427b829fa23558c3f8fc247"
+      },
+      {
+        "name": "bundle-freshness",
+        "command": [
+          "node",
+          "scripts/verify-local-runner-bundle-freshness.mjs"
+        ],
+        "exit": 0,
+        "source_unchanged": true,
+        "log_sha256": "4534215e15034b5b5391ab51d71121ebc119c68a2226f6194462a8558e9489b7"
+      },
+      {
+        "name": "public-commands",
+        "command": [
+          "bash",
+          "scripts/verify-public-commands.sh"
+        ],
+        "exit": 0,
+        "source_unchanged": true,
+        "log_sha256": "2121e7f079daf2f2826853340dcdbf7349aeb7e7ed01ffc464e8202cec41e559"
+      },
+      {
+        "name": "packed-offline",
+        "command": [
+          "bash",
+          "scripts/verify-packed-runner.sh"
+        ],
+        "exit": 0,
+        "source_unchanged": true,
+        "log_sha256": "8b452ff1f5c7e44594a87c248da3d737f67488e9d6c9424c9126ed7b1f659b2d"
+      }
+    ],
+    "note": "source_immutable_during_full_suite:false means these checks ran after full, not during it; explicit before/after equality verifies unchanged source",
+    "gate_source_digest_method": "gate records hash sorted map; offline records hash sorted [path,sha] list; distinct digests are not a source delta",
+    "main_calls": 0,
+    "freeze": "pending independent source checkpoint"
+  },
+  "final_source_readback": {
+    "recorded_at_utc": "2026-09-27T00:55:01.992662+00:00",
+    "product_tests": "ee6ffd9f3c23e99012117cd2a4bb86e78b511df2",
+    "source_members_checked": 1228,
+    "mismatches": [],
+    "gate_logs_verified": [
+      {
+        "name": "stable-full-003",
+        "record_sha256": "164c2f4dbcc2d64c12f11697b0cb431a38ee62043a5b214691befc222e9b3ada",
+        "log_sha256": "b5cb93edd6b27854e62cf6ffca72dd19078533e4085956547ca0f239bce70d99",
+        "exit": 0
+      },
+      {
+        "name": "stable-types-001",
+        "record_sha256": "5e9bfa05f7699d49d3bf512eddf563452049301734215e8bf40b0dd0b6947885",
+        "log_sha256": "c1be77a4441f848296f98843b456b869f6ae0b9e2ade331b70ac752aa30adb74",
+        "exit": 0
+      },
+      {
+        "name": "stable-postgres-001",
+        "record_sha256": "7f1baf37f3890b2997a71882ddbc5cf275cbbd3e3ad351285ccc95204e48ad8b",
+        "log_sha256": "7ef944c195f572f9b292bd1d8aa7ee6cafc817a3f4da50035c130cf916e0370f",
+        "exit": 0
+      }
+    ],
+    "worktree_status": "",
+    "actual_live_pg_atomic_rollback": "NOT RUN: semantic-atomic-postgres.test.ts skipped in full003 and not in selectedPG; scripted adapter / DERIVED lifecycle controls are separate",
+    "paid_calls_main": 0
+  }
+}
