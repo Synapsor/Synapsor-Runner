@@ -1,0 +1,132 @@
+{
+  "utc": "2026-09-27T12:47:46.468005+00:00",
+  "classification": "Safe report-only hash references. Restricted payloads remain at indexed private paths and are not copied to Git. This index does not promote source-only/DERIVED evidence into installed or model completion.",
+  "raw_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926",
+  "tester_root": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-larger-programs-20260927",
+  "source_frozen": "93c5eb3ba06c6b4698e7194f47fa1c42e78a3286",
+  "independent_final_index_members": 224,
+  "Main_rehashed_all_final_members": true,
+  "accepted_scope": "Narrow installed N01 Read96 only; full fixed50/52 NOT ESTABLISHED; paidC NOT RUN technical",
+  "members": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/CURRENT-LANE-LIMIT-REGISTER-004.json",
+      "sha256": "e80c482a32e0a8dea60bab1fcf0f5f3952ebd684bd4f1ac40a36b11e27f7c320",
+      "bytes": 3046
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/PROGRAM-PUBLIC-FINAL-INDEX-017.json",
+      "sha256": "518cd4c33e51849ef99ddd9ea45db5afa1eb7a43269c8189afc8d4d0bcd9b4cd",
+      "bytes": 24324
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/COLD-RESTORE-CORRECTION-018.json",
+      "sha256": "42393c83cc16a3d6a8225f030c12376c80da1f1fc467b407ac7fb473a7bbd9c3",
+      "bytes": 15009
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/main-context/OWNED-COVERAGE-SIZE-003.json",
+      "sha256": "16a1a67555db682c02eb7f2062fd0092aec2b0ba57e7365916920f45158ee14b",
+      "bytes": 2138
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/SETTLED-REPLACEMENT-GATES-INDEX-113.json",
+      "sha256": "9db648e590f75957b39960991f02380761da416dc8bbec5814bc58f5e82ad408",
+      "bytes": 53093
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/REPLACEMENT-ARTIFACT-126.json",
+      "sha256": "bbfd121ab2927367706021e3e5c74666ff509040519a505a00fec35b2d7076d5",
+      "bytes": 1766
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/REPLACEMENT-ARTIFACT-VERIFICATION-114.json",
+      "sha256": "9f577a179473749d367d8a263a5a066cff48d4998a6b54e4f21a76ae3165d448",
+      "bytes": 1684
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/SAME-BYTES-FREEZE-COMPLETION-124.json",
+      "sha256": "da403c2f803fe30e01507f87a48a1a8bcdb02246f23b6dfb9692b42a7201c888",
+      "bytes": 598
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/INDEPENDENT-SETTLED-GATE-VERIFICATION-122.json",
+      "sha256": "21e980f80e9d1c54282ee92c157ca454b9b9b90a674e408a4e70d7595161086f",
+      "bytes": 510
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/INDEPENDENT-REPLACEMENT-IDENTITY-VERIFICATION-131.json",
+      "sha256": "416e33ae037ddf76d50e2e0cfba51362127dfb6780ddfad3ab8f0a4f76a2a3ec",
+      "bytes": 736
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/INDEPENDENT-FINAL-INDEX-VERIFICATION-139.json",
+      "sha256": "83b15a2b2a6b36f9ca29de84ad61ca7f7899e30c765a71b660923b1f6a6c0bb2",
+      "bytes": 659
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/PERSONAL-INSTALLED075-COMPARISON-140.json",
+      "sha256": "2f30b527d8f24bac904e52bb2916dcb0457f8420c9084e32d1d86e8419d65f48",
+      "bytes": 5327
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/COMPARISON-HARNESS-NOTE-142.json",
+      "sha256": "66601fd275ed9c1843f6715bb5daf51ba850b9626e7e543068bdb597874e9080",
+      "bytes": 590
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/PERSONAL-AUTHORITY075-COMPARISON-143.json",
+      "sha256": "6e4ee27223706c4a6251cec22e20ac7f50b6c9af1f0f5b5b57af29a9de37f0a0",
+      "bytes": 691
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/RESOURCE-FINAL-141.json",
+      "sha256": "e10bd85b5b31ad505c933c3ec222ece5a719719fe4a6e31aabdc3c1db78afa66",
+      "bytes": 2890
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/FINAL-PRESERVATION-RESOURCES-145.json",
+      "sha256": "ccb54148b1cdb1c8d612c54c00cfe6385257d9ba6eb9b481524b99bcbdc042a1",
+      "bytes": 1735
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/MAIN-OWNED-REPLACEMENT-PG-CLEANUP-117.json",
+      "sha256": "33231e50f9c9583f7579bb9be450c51f63325da89b4368dbd09795c162719684",
+      "bytes": 890
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-larger-programs-20260927/FINAL-INDEPENDENT-REVIEW-076.md",
+      "sha256": "2f3db59a7d4fc477faf4a5f6f2cabb7deadebd9051fdd8557e3f9c4ea6105221",
+      "bytes": 4399
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-larger-programs-20260927/FINAL-INDEPENDENT-REVIEW-076.json",
+      "sha256": "9d2d91442ccbafd93e2fa399ab3b11c4e1301ee61c1a782f8f8fdd499efbcc8c",
+      "bytes": 23097
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-larger-programs-20260927/FINAL-INDEPENDENT-INDEX-076.json",
+      "sha256": "e7b0f5cf30c3a74ceb0439af886f5bc1841c4cde80b152ca869c575f3b1d0d0f",
+      "bytes": 65240
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-larger-programs-20260927/INSTALLED-PENDING-INDEX-060.json",
+      "sha256": "ed0b1b7aaf1a171c1255f10da09f1e4b805f22343ccbc38ee9d381c5e88faed7",
+      "bytes": 311106
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-larger-programs-20260927/READINESS-CONTINUATION-INDEX-064.json",
+      "sha256": "ac3a1f08aa718f47c094b162d83301ccc13532a0fe3b305d05d84d1823ac77e3",
+      "bytes": 73787
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-larger-programs-20260927/SOURCE-CONFINEMENT-INDEX-066.json",
+      "sha256": "84ccf6a73d068b6d0d0f0e6b6b2a4828cbacd86f05515f0fa101d24ab87e21c0",
+      "bytes": 13998
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-larger-programs-20260927/ARTIFACT-IDENTITY-INDEX-074.json",
+      "sha256": "fadebbd1b138449ec0514580b60e9a567852fd3ed92260ea2940f57b053285ec",
+      "bytes": 1714
+    }
+  ]
+}

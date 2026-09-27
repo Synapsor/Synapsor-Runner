@@ -1,0 +1,276 @@
+{
+  "classification": "Report-only reference to exact unchanged gated source; not new gates",
+  "raw_index": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/SETTLED-REPLACEMENT-GATES-INDEX-113.json",
+  "raw_index_sha256": "9db648e590f75957b39960991f02380761da416dc8bbec5814bc58f5e82ad408",
+  "source": "93c5eb3ba06c6b4698e7194f47fa1c42e78a3286",
+  "source_digest": "6ddf6d08c77a877085168c250b5416c907eec4aafedf311de83007de83c72756",
+  "records": [
+    {
+      "name": "stable-full-007",
+      "command": [
+        "corepack",
+        "pnpm",
+        "test"
+      ],
+      "started_at": "2026-09-27T11:02:53.148341+00:00",
+      "source_commit": "93c5eb3ba06c6b4698e7194f47fa1c42e78a3286",
+      "source_digest": "6ddf6d08c77a877085168c250b5416c907eec4aafedf311de83007de83c72756",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 2946590,
+      "exit": 0,
+      "finished_at": "2026-09-27T11:26:47.504510+00:00",
+      "source_unchanged": true,
+      "test_summary": [
+        "\n Test Files  365 passed | 21 skipped (386)",
+        "      Tests  7568 passed | 521 skipped (8089)"
+      ],
+      "skip_scope": "original command output retained"
+    },
+    {
+      "name": "stable-types-010",
+      "command": [
+        "corepack",
+        "pnpm",
+        "typecheck"
+      ],
+      "started_at": "2026-09-27T11:26:57.649073+00:00",
+      "source_commit": "93c5eb3ba06c6b4698e7194f47fa1c42e78a3286",
+      "source_digest": "6ddf6d08c77a877085168c250b5416c907eec4aafedf311de83007de83c72756",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 2974524,
+      "exit": 0,
+      "finished_at": "2026-09-27T11:26:58.168391+00:00",
+      "source_unchanged": true,
+      "test_summary": [],
+      "skip_scope": "original command output retained"
+    },
+    {
+      "name": "selected-postgres-003",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "apps/runner/src/scoped-explore-composite-postgres.test.ts",
+        "apps/runner/src/owner-policy-connection.test.ts",
+        "apps/runner/src/semantic-writeback-authority.test.ts",
+        "apps/runner/src/authoring-review-subject.test.ts",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "started_at": "2026-09-27T11:28:03.101621+00:00",
+      "source_commit": "93c5eb3ba06c6b4698e7194f47fa1c42e78a3286",
+      "source_digest": "6ddf6d08c77a877085168c250b5416c907eec4aafedf311de83007de83c72756",
+      "credentials": "owned PostgreSQL gate URL only",
+      "umask": "0077",
+      "database_destination": {
+        "host": "127.0.0.1",
+        "port": 32840,
+        "database": "large_gate",
+        "container_id": "7ae97b181669a6b05d63c854845e744abb73bc5b12c3ee01ee0d70260cbadce3"
+      },
+      "pid": 2976093,
+      "exit": 0,
+      "finished_at": "2026-09-27T11:33:44.971826+00:00",
+      "source_unchanged": true,
+      "test_summary": [
+        "\n Test Files  4 passed (4)",
+        "      Tests  160 passed | 4 skipped (164)"
+      ],
+      "skip_scope": "reported honestly, selected PG is not full backend suite"
+    },
+    {
+      "name": "offline-replacement-01-trusted-core",
+      "command": [
+        "node",
+        "scripts/check-trusted-core-dependencies.mjs"
+      ],
+      "started_at": "2026-09-27T11:33:45.136760+00:00",
+      "source_commit": "93c5eb3ba06c6b4698e7194f47fa1c42e78a3286",
+      "source_digest": "6ddf6d08c77a877085168c250b5416c907eec4aafedf311de83007de83c72756",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 2980873,
+      "exit": 0,
+      "finished_at": "2026-09-27T11:33:46.827731+00:00",
+      "source_unchanged": true,
+      "test_summary": [],
+      "skip_scope": "original command output retained"
+    },
+    {
+      "name": "offline-replacement-02-licenses",
+      "command": [
+        "node",
+        "scripts/check-license-content.mjs"
+      ],
+      "started_at": "2026-09-27T11:33:46.966185+00:00",
+      "source_commit": "93c5eb3ba06c6b4698e7194f47fa1c42e78a3286",
+      "source_digest": "6ddf6d08c77a877085168c250b5416c907eec4aafedf311de83007de83c72756",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 2980904,
+      "exit": 0,
+      "finished_at": "2026-09-27T11:33:48.960239+00:00",
+      "source_unchanged": true,
+      "test_summary": [],
+      "skip_scope": "original command output retained"
+    },
+    {
+      "name": "offline-replacement-03-human-commands",
+      "command": [
+        "node",
+        "scripts/verify-human-command-surface.mjs"
+      ],
+      "started_at": "2026-09-27T11:33:49.098440+00:00",
+      "source_commit": "93c5eb3ba06c6b4698e7194f47fa1c42e78a3286",
+      "source_digest": "6ddf6d08c77a877085168c250b5416c907eec4aafedf311de83007de83c72756",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 2980938,
+      "exit": 0,
+      "finished_at": "2026-09-27T11:33:50.105149+00:00",
+      "source_unchanged": true,
+      "test_summary": [],
+      "skip_scope": "original command output retained"
+    },
+    {
+      "name": "offline-replacement-04-dsl-sources",
+      "command": [
+        "bash",
+        "scripts/verify-dsl-source-paths.sh"
+      ],
+      "started_at": "2026-09-27T11:33:50.238980+00:00",
+      "source_commit": "93c5eb3ba06c6b4698e7194f47fa1c42e78a3286",
+      "source_digest": "6ddf6d08c77a877085168c250b5416c907eec4aafedf311de83007de83c72756",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 2980954,
+      "exit": 0,
+      "finished_at": "2026-09-27T11:33:51.617399+00:00",
+      "source_unchanged": true,
+      "test_summary": [],
+      "skip_scope": "original command output retained"
+    },
+    {
+      "name": "offline-replacement-05-cursor-plugin",
+      "command": [
+        "node",
+        "scripts/verify-cursor-plugin.mjs"
+      ],
+      "started_at": "2026-09-27T11:33:51.746373+00:00",
+      "source_commit": "93c5eb3ba06c6b4698e7194f47fa1c42e78a3286",
+      "source_digest": "6ddf6d08c77a877085168c250b5416c907eec4aafedf311de83007de83c72756",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 2981008,
+      "exit": 0,
+      "finished_at": "2026-09-27T11:33:51.963474+00:00",
+      "source_unchanged": true,
+      "test_summary": [],
+      "skip_scope": "original command output retained"
+    },
+    {
+      "name": "offline-replacement-06-mcp-client-configs",
+      "command": [
+        "node",
+        "scripts/verify-mcp-client-configs.mjs"
+      ],
+      "started_at": "2026-09-27T11:33:52.089828+00:00",
+      "source_commit": "93c5eb3ba06c6b4698e7194f47fa1c42e78a3286",
+      "source_digest": "6ddf6d08c77a877085168c250b5416c907eec4aafedf311de83007de83c72756",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 2981024,
+      "exit": 0,
+      "finished_at": "2026-09-27T11:34:13.242148+00:00",
+      "source_unchanged": true,
+      "test_summary": [],
+      "skip_scope": "original command output retained"
+    },
+    {
+      "name": "offline-replacement-07-local-package",
+      "command": [
+        "bash",
+        "scripts/verify-local-runner.sh"
+      ],
+      "started_at": "2026-09-27T11:34:13.427422+00:00",
+      "source_commit": "93c5eb3ba06c6b4698e7194f47fa1c42e78a3286",
+      "source_digest": "6ddf6d08c77a877085168c250b5416c907eec4aafedf311de83007de83c72756",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 2981598,
+      "exit": 0,
+      "finished_at": "2026-09-27T11:34:55.960895+00:00",
+      "source_unchanged": true,
+      "test_summary": [],
+      "skip_scope": "original command output retained"
+    },
+    {
+      "name": "offline-replacement-08-bundle-freshness",
+      "command": [
+        "node",
+        "scripts/verify-local-runner-bundle-freshness.mjs"
+      ],
+      "started_at": "2026-09-27T11:34:56.100128+00:00",
+      "source_commit": "93c5eb3ba06c6b4698e7194f47fa1c42e78a3286",
+      "source_digest": "6ddf6d08c77a877085168c250b5416c907eec4aafedf311de83007de83c72756",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 2982434,
+      "exit": 0,
+      "finished_at": "2026-09-27T11:35:01.848852+00:00",
+      "source_unchanged": true,
+      "test_summary": [],
+      "skip_scope": "original command output retained"
+    },
+    {
+      "name": "offline-replacement-09-public-commands",
+      "command": [
+        "bash",
+        "scripts/verify-public-commands.sh"
+      ],
+      "started_at": "2026-09-27T11:35:01.992176+00:00",
+      "source_commit": "93c5eb3ba06c6b4698e7194f47fa1c42e78a3286",
+      "source_digest": "6ddf6d08c77a877085168c250b5416c907eec4aafedf311de83007de83c72756",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 2982704,
+      "exit": 0,
+      "finished_at": "2026-09-27T11:36:03.039957+00:00",
+      "source_unchanged": true,
+      "test_summary": [],
+      "skip_scope": "original command output retained"
+    },
+    {
+      "name": "offline-replacement-10-packed-offline",
+      "command": [
+        "bash",
+        "scripts/verify-packed-runner.sh"
+      ],
+      "started_at": "2026-09-27T11:36:03.210091+00:00",
+      "source_commit": "93c5eb3ba06c6b4698e7194f47fa1c42e78a3286",
+      "source_digest": "6ddf6d08c77a877085168c250b5416c907eec4aafedf311de83007de83c72756",
+      "credentials": "absent",
+      "umask": "0077",
+      "pid": 2984602,
+      "exit": 0,
+      "finished_at": "2026-09-27T11:38:08.304246+00:00",
+      "source_unchanged": true,
+      "test_summary": [],
+      "skip_scope": "original command output retained"
+    }
+  ],
+  "Main135member_verification": {
+    "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/INDEPENDENT-SETTLED-GATE-VERIFICATION-122.json",
+    "sha256": "21e980f80e9d1c54282ee92c157ca454b9b9b90a674e408a4e70d7595161086f"
+  },
+  "independent_inspection": {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-larger-programs-20260927/SETTLED-GATES-INSPECTION-072.md",
+    "sha256": "d5e11aa2654d5e128d11765daec3ddb1492ecff5ed72f2cc802c842efc2f24d2"
+  }
+}

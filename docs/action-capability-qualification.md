@@ -1,8 +1,13 @@
-## Result-evidence paired addendum — 2026-09-27
-
-Eight fixed read-only turns completed on unchanged ee6ffd9: native objective NOT MET, candidate2/4 versus baseline1/4;43sends/$0.32192835/peak85,137B. Correct deterministic evidence does not guarantee accurate prose. Complete business-state preservation and cold restoration PASS; Main0inference. See the repository-only `docs/qualification-evidence/result-evidence-20260926/PAIRED-COMPARISON-ADDENDUM.md`, separate from the immutable original envelope-stop report. No retry/repair/business continuation follows. Next: owner-reconciled larger-programs package, actual implementationT0 after this delivery/seal,36h cappedSep30, final12hreserved; public50Actions mandatory, LaneB0provider, conditional twoLaneCauthoringjourneys each$12/192transports inside campaign$60.
-
 # Action Capability Qualification
+
+## Larger programs — bounded partial delivery,2026-09-27
+
+Frozen product/tests `93c5eb3ba06c6b4698e7194f47fa1c42e78a3286` passes complete full7,568/521skip, explicit types, selected realPG160/4skip and ten offline checks. The sole replacement repairs96-field catalog traversal/cursor integration under unchanged limits. Independent076 accepts its actual installed100×30 public Read activation, four-tool contract/value/privacy controls and cold preservation; tree `3354fe17…`, manifest `b5c6dda1…`, archive `faee3b4e…`,7,604entries. Main rehashed224 final members and compared complete20-table112-row Source/184grants,42-table control and project/HOME cold records. Normal wrapper shutdown remains unestablished.
+
+Main ordinary public DERIVED13/32/50 program work succeeds with one update shape, retained full agenda/source and late37/removal controls. The mandatory independent fixedfive-shape50 stops40/50 at an unsupported inversePK/FK subject premise; full50/global workflow/full52 remain **NOT ESTABLISHED**. Original candidate1 N01 FAIL and all failed gates/harness outputs remain historical. Both real-model journeys **NOT RUN technical**, zero package inference/cost; latest direct400/OpenRouter192-or400 allowance adds no money and waives no prerequisite. Campaign settled$4.18686165 and holds$0.26298000+$0.71608250 unchanged.
+
+Exact bounded results, identity/gates/independent hashes, unrun rows and roadmap are in repository-only `docs/qualification-evidence/larger-programs-20260927/FINAL-REPORT.md` and sibling indexes. One integrated freeze plus one replacement used; **STOP at delivery**, no further repair or live sample. A owner-deferred, historical StageB ATTEMPTED/NOTPASSED and unfinished B journey unchanged.
+
 
 ## Result-evidence support — bounded contract delivered,2026-09-27
 

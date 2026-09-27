@@ -1,6 +1,6 @@
 # Larger-program limit inventory
 
-Status: source implementation, not final installed acceptance. Lane A is delivered; the current integrated candidate is not frozen. Counts, bytes, operator pages, provider envelopes and total disclosure are different dimensions. Relevant source symbols and public routes below identify their enforcing layers.
+Status: final93c5 source and replacement2 frozen; independent076 accepts the narrow installed Read96 contract only. Full fixed50/whole52 and both paid journeys remain unestablished/not run. Lane A is delivered. Counts, bytes, operator pages, provider envelopes and total disclosure are different dimensions. Relevant source symbols and public routes below identify their enforcing layers.
 
 | Dimension / source | Current or prospective value | Layer, failure and continuation |
 |---|---|---|
@@ -24,4 +24,6 @@ The Lane C joint pre-send register must resolve exact configured model/provider,
 
 Direct OpenAI's current encoder sets `parallel_tool_calls:false`. Its documented single-call mode requires at least five drafting/validation transports per new Action, before narration, planning or review. Independent009 established a250 minimum for50 under the historical192 allowance. That historical result remains; the owner's2026-09-27 transport amendment prospectively permits400, with unchanged model/settings and monetary caps. Actual final-route measurement and independent feasibility confirmation still precede Lane C; a local reply that violates the effective API mode cannot prove that fit.
 
-Implementation starts **2026-09-27T02:19:50Z** after Lane A delivery/seal. Feature cutoff **2026-09-28T02:19:50Z**, delivery deadline **2026-09-28T14:19:50Z**. These are the single recorded prospective clock. One integrated freeze and at most one independently reproduced in-scope installed replacement; zero used so far. Resource budget remains one fixture/heavy job at a time,2GiB incremental fixture data,2GiB free floor plus4GiB build reserve. Historical uncovered resources cannot be removed merely to meet a resource target.
+Implementation starts **2026-09-27T02:19:50Z** after Lane A delivery/seal. Feature cutoff **2026-09-28T02:19:50Z**, delivery deadline **2026-09-28T14:19:50Z**. These are the single recorded prospective clock. One integrated freeze plus the sole installed replacement are used (1/1 replacement); no further candidate is authorized here. Resource budget remains one fixture/heavy job at a time,2GiB incremental fixture data,2GiB free floor plus4GiB build reserve. Historical uncovered resources cannot be removed merely to meet a resource target.
+
+Final delivery note: the transport allowance changes ceilings only. No Lane C send, key/account/pricing preflight or cost occurred; the missing mandatory installed50/full52 prerequisites prevented launch. This is not a money/model failure. Current historical sends and holds remain unchanged.

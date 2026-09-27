@@ -1,0 +1,140 @@
+{
+  "utc": "2026-09-27T12:46:34.577892+00:00",
+  "state": "FINAL_BOUNDED_DELIVERY_PARTIAL_QUALIFICATION",
+  "artifact": {
+    "utc": "2026-09-27T11:46:24.321455+00:00",
+    "candidate": 2,
+    "replacement_used": 1,
+    "replacement_allowance": 1,
+    "source": "93c5eb3ba06c6b4698e7194f47fa1c42e78a3286",
+    "product_delta_commit": "1b3dd17746d73fdaf537a38759325551cf7de4d8",
+    "test_only_commit": "93c5eb3ba06c6b4698e7194f47fa1c42e78a3286",
+    "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/frozen-replacement2/installed",
+    "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/frozen-replacement2/installed-artifact-manifest.json",
+    "manifest_sha256": "b5c6dda1badb8b83b766cfa0cd38d9ff05969a55816fc988f5be2640b645faab",
+    "archive": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/frozen-replacement2/installed-artifact.tar.gz",
+    "archive_sha256": "faee3b4ee46158bb17f71bbbc5761db2bd7e1f1b06b50f446ebc90deddf9e61c",
+    "tree_sha256": "3354fe17d39fb9c10aeeeebbfc65976f876370bb2ff7d8d6f6ba6a6e4eff8454",
+    "entries": 7604,
+    "Main_identity_verification_sha256": "9f577a179473749d367d8a263a5a066cff48d4998a6b54e4f21a76ae3165d448",
+    "same_bytes_seal_verification_sha256": "da403c2f803fe30e01507f87a48a1a8bcdb02246f23b6dfb9692b42a7201c888",
+    "gate_index": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/SETTLED-REPLACEMENT-GATES-INDEX-113.json",
+    "gate_index_sha256": "9db648e590f75957b39960991f02380761da416dc8bbec5814bc58f5e82ad408",
+    "independent_installed": "PASS narrow N01 Read96 only, independent076",
+    "paid_GO": false,
+    "package_provider_calls": 0,
+    "scope": "Sole frozen replacement, finite D1-D9 read-only delta; no acceptance transfer to fixed50/whole52"
+  },
+  "verdicts": {
+    "whole_package": "NOT COMPLETE: fixed mixed-shape50/whole52 not established",
+    "main_public_13_32_50": "DERIVED/source public-route PASS, one update shape; not independent mixed-shape qualification",
+    "independent_fixed50": "40 prepared across4shapes, no publication; unsupported inversePK/FK companion route, no forced premise",
+    "original_candidate1_readonly_wide": "N01 FAIL retained, active17 preserved",
+    "replacement_readonly_installed": "ACCEPT sole frozen replacement2 ONLY for personally tested narrow installed N01 publicRead96 navigation/value contract and specified controls. No blanket M6/full52/fixed50/StageB/paid acceptance.",
+    "full007": "PASS7568/521skip, complete unfiltered plus downstream",
+    "types010": "PASS",
+    "selectedPG003": "PASS160/4skip, selected4files only",
+    "tenoffline": "PASS localSpec1, not registry release",
+    "replacement_artifact_identity": "Main114 PASS and independent074 personally PASS all7604entries; not workflow acceptance",
+    "Lane_C_OpenRouter": "NOT RUN technical acceptance prerequisite missing",
+    "Lane_C_OpenAI": "NOT RUN technical acceptance prerequisite missing",
+    "optional_model_free_client_example": "DEFERRED optional",
+    "historical_Lane_A": "CLOSED DELIVERED objectiveNOTMET, no repeated samples",
+    "historical_Stage_B": "ATTEMPTED/NOTPASSED",
+    "A": "Owner-deferred"
+  },
+  "package_provider_calls": 0,
+  "Main_inference": 0,
+  "money": {
+    "campaign_cap": 60,
+    "settled": "4.18686165",
+    "holds": [
+      "0.26298000",
+      "0.71608250"
+    ],
+    "package_cost": 0,
+    "balance": "unchecked, technical prerequisites absent"
+  },
+  "Lane_C_amendment": {
+    "direct_max_transports": 400,
+    "OpenRouter_max_transports": 192,
+    "OpenRouter_pre_measured_escalation": 400,
+    "max_USD_each": 12,
+    "max_USD_combined": 24,
+    "choice": "Seal50 if measured final-route transport/uppercost fits400/$12; otherwise original30 before firstsend only. No unsupported-shape workaround/target switch."
+  },
+  "replacement_allowance": {
+    "used": 1,
+    "max": 1
+  },
+  "deadline": "2026-09-28T14:19:50Z",
+  "current_independent_source": "Frozen93c5 with product1b3; no source changes during installed checks",
+  "independent_verdicts": [
+    {
+      "id": "Identity",
+      "verdict": "PASS",
+      "basis": "Personally recomputed every record in121/manifest/Main tree/archive/owned extraction; final recheck unchanged."
+    },
+    {
+      "id": "D1",
+      "verdict": "PASS",
+      "basis": "Personally executed fixed four-tool inventory; input schemas unchanged from064, no Source identifiers embedded; original17 complete summaries and smallunit/empty grammar exact."
+    },
+    {
+      "id": "D2",
+      "verdict": "PASS",
+      "basis": "Personally executed ordinary100x30 CLI review of same saved93/93 decisions; explicit human Read activation94fc fingerprint; stored18resources/96fields and onlyRead epoch23\u219224."
+    },
+    {
+      "id": "D3",
+      "verdict": "PASS limited to advertised public grammar",
+      "basis": "32 actual SDK metadata calls:4 index pages,20 sections,97fieldmetadata entries includingPK plus96selectors; labels/grants/inherited defaults reconstructed exactly. Actual Source SQL text types checked separately; no published SQL-type inventory claim."
+    },
+    {
+      "id": "D4",
+      "verdict": "PASS",
+      "basis": "All36x96 values includingNULL/texttypes/order equal own originalSource oracle,10 original projections/11calls, continuation has no repeatedSourcequery; boundedquery end is not populationproof."
+    },
+    {
+      "id": "D5",
+      "verdict": "PASS for specified cases",
+      "basis": "PrivateSUM/inputfacts/blockedfilter/blockedselect and catalogtamper/changedlimit/rowprojection refuse. Privateinterval has32metadata/currentness SQL, no businessrelationquery; literalzeroSQL false."
+    },
+    {
+      "id": "D6",
+      "verdict": "NOT ESTABLISHED",
+      "basis": "Original Source has no legitimate indivisible oversized item for actual native refusal; live caller/store/tenant/CAS/revocation/context races/budgetexhaustion not executed. Source066 components and inspectedMain gates remain labelled separately."
+    },
+    {
+      "id": "D7",
+      "verdict": "PASS stored restart/cold/inert preservation; normal whole-process shutdown NOT ESTABLISHED",
+      "basis": "OrdinaryCLI/nativeSDK restart catalog current18; all42ledger/project/HOME exact across coldrestore/inertstatus; Source20tables112rows184ACL/RLS/types/functions exact. client.close returned but ownedwrapper lingered and required exactownedSIGTERM, as064."
+    },
+    {
+      "id": "D8",
+      "verdict": "PASS scope/history bookkeeping; mandatory campaign and paid prerequisites NOT ESTABLISHED",
+      "basis": "Original064 N01 FAIL and006 FAIL retained. Original060 fixed50 inversefifthshape unsupported, whole52/fixed50/businessobjective/paidC notestablished. Main settled offline/localSpec1 gates inspected072, not tester rerun."
+    },
+    {
+      "id": "D9",
+      "verdict": "PASS specified defaults and cursor controls",
+      "basis": "Implicit index5/defaultsection20 exact followedcalls; explicit5 remains5 across valid continuation after tamper/limit-change refusals. Expired390.87s revision seq46 safe refusal preserved, one same-case contingency request seq47; sameSDKmeter/authority."
+    }
+  ],
+  "independent_index": {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-larger-programs-20260927/FINAL-INDEPENDENT-INDEX-076.json",
+    "sha256": "e7b0f5cf30c3a74ceb0439af886f5bc1841c4cde80b152ca869c575f3b1d0d0f",
+    "members": 224
+  },
+  "personal_comparisons": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/PERSONAL-INSTALLED075-COMPARISON-140.json",
+      "sha256": "2f30b527d8f24bac904e52bb2916dcb0457f8420c9084e32d1d86e8419d65f48"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-queued-20260926/PERSONAL-AUTHORITY075-COMPARISON-143.json",
+      "sha256": "6e4ee27223706c4a6251cec22e20ac7f50b6c9af1f0f5b5b57af29a9de37f0a0"
+    }
+  ],
+  "next": "STOP; no further repair/paid work under this package"
+}
