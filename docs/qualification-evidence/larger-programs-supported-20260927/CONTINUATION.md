@@ -4,6 +4,8 @@ Updated 2026-09-28T15:57:44.065546+00:00. Frozen4 unchanged; independent540/539/
 
 Existing tester continues the finite gaps; no product changes, duplicate heavy suite or tester. Fifth cycle unused. Current owner039/register047 retain originalT1, cutoff2026-09-30T00:10Z, final2026-09-30T23:59Z and existing finance/resource boundaries. After mandatory independent acceptance and joint preflight, proceed directly to both authorized LaneC journeys on the same artifact; stop at delivery.
 
+Owner continuation amendment062 now permits jointly documented category-B exceptions for an unaffected complete sealed LaneC task; it does not relabel results or waive shared safety/required-path acceptance. Draft mapping063/classification064 awaits tester assessment. See [prospective amendment](NONBLOCKING-FINDING-CONTINUATION.md). Current quota discrepancy is preserved without an inferred sixth cycle; unaffected work continues.
+
 # Historical boundaries and prior checkpoint prose
 
 The removal decision below was subsequently resolved by owner option2 and tested as an exact rights-reducing withdrawal, preserving pending duties/history. Old deadlines, counts, limits and unresolved statuses below remain historical, not current instructions.
