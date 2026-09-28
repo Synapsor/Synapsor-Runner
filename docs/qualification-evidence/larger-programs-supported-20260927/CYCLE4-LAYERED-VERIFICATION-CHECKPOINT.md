@@ -1,0 +1,27 @@
+# Cycle 4 layered verification checkpoint
+
+Updated 2026-09-28T14:19:00.782342+00:00. Product/tests remain `f20e8633b352528fe216adfca6ca45a47a351e27`; frozen tree `38c189a1caaa90c54f3926a04187e413990c10bdd989b98905ceb14d1f1d34cf`. Main inference and Lane C sends remain zero. This checkpoint is not independent package acceptance or paid authorization.
+
+The existing tester personally executed the ordinary installed complete local Review/save/restart/reuse (438) and concurrent Source-change/refusal/reopen (441). Main compared the complete captured control records and Source/grants at the layers stated in verification031/032. Main did not separately observe an after441 Source-database capture; that preservation claim remains tester-observed. Legacy public typed draft import/save/reopen455 passed with component document preparation; its oversized public export452 refusal remains a separate limitation.
+
+Main also verified complete read accounting and retained history for actual SQL timeout/interruption458 and public SDK baseline/private-twin468. The oversized Source-row fixture464 failed its own existing constraint before a read, so that inner path is not exercised. These findings do not establish universal cancellation or receipt behavior. Historical reports remain immutable.
+
+For the tester's current semantic readback question, raw prepared-draft equality is false (483/487) and remains recorded. Main041 binds the entire copied205 authority to the genuine sealed206 archive; all11 isolated approval-class names reproduce the canonical complete incoming-class hash. All12 exact mode, role, quorum, automatic predicates, limits and rule/effect class references match the actual native486 reconstruction. Across74 verification bindings for50 outcomes, omitted raw-view fields are only catalog mechanical identity/version/scope guards that remain present in canonical verification. This does not globally equate reordered expressions or substitute Main's verdict for the tester's C03 adjudication.
+
+The merge isolates approval classes when complete policies differ, including per-capability selectors. Runtime accounting uses boundary, inclusive time and optional capability/trusted-scope/object filters; class spelling and limit IDs do not partition history. All12 current automatic outcomes have identical joint tenant/principal count3/window86400 limits, plus exact per-outcome capability count2/window86400 limits. The other38 outcomes are human-mode. These are exact current fixture observations, not generic assumptions about names or historical eligibility.
+
+Main040b verifies12 captured actual serialized request bodies, schemas and final stream framing through both encoders, plus two exact immutable product prefixes. The472 models are explicitly DERIVED;479 prospectively tests the supported Terra IDs locally. A second eligible correction was not run: the same-group regression legitimately refused another correction. Local serialization is not upstream admission, effective strict mode, real model output, token usage or funding evidence. Original Main measurement errors040a and the concurrent temporary-expansion FileNotFound are retained without replaying an operation.
+
+The current source defaults are direct `gpt-5.6-terra` and OpenRouter `openai/gpt-5.6-terra`, but a default is not a selected paid profile. Per-stage output bounds are unchanged: planner4000, Action draft5000, BUSINESS review/corrections12000. Direct Responses authors store:false, reasoning low for the selected GPT-5 family and parallel_tool_calls:false; OpenRouter Chat authors deny collection, require parameters and no fallback. Strict is omitted. The current official Responses guide describes attempted strict normalization with non-strict fallback when compatible normalization fails; omitted strict alone does not establish the actual upstream mode. See raw036/038; no setting was changed.
+
+The sole existing tester must close the finite mandatory scorecard and immutable index, then Main/tester jointly sign the actual selected paired profiles, privacy, envelopes/token bounds, pricing/credit, resources and rolling reservations. Only then do the two authorized Lane C journeys begin on this same accepted candidate. Cycle5 remains unused, conditional on a demonstrated in-scope blocker before paid entry. No routine milestone ends the assignment.
+
+Raw root: `/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-supported-continuation-20260927/repair-cycle4/`.
+
+|Main record|SHA-256|Personally established|
+|---|---|---|
+|INDEPENDENT447-ENCODERS-MAIN-VERIFICATION-040b.json|53c646987c959ea7cfbc7fe1e62e96700eb92a9e970be52322796dfbf6559153|Final framing/schema identities and exact compiled prefixes|
+|SEMANTIC-RECONSTRUCTION-PROVENANCE-041.json|29f81831fe3f0d0bdd4ddc3aaa0ee4a7d1180edbe0688e094a405f172893dcee|Complete original authority/class hash/bindings/guard inventory and source trace|
+|SHARED-COUNTER-CONTEXT-043.json|953fd85a0ece3d30ccfbc493740cbd76d15c99eac67ca483eb657a79d89600c6|Exact current12 automatic/38 human outcome inventory and counter selectors|
+
+Shared campaign$60; named Lane C$20/provider,$40combined,400 transports/provider, rolling reservations and historical holds retained. Actual provider balances and current funding GO are not established by this report. Main never reads keys. A remains deferred; historical Stage B ATTEMPTED/NOT PASSED; no authentic B operation is authorized.
