@@ -1057,6 +1057,14 @@ async function createScopedExploreRuntimeWithStore(input: Parameters<typeof crea
         );
         requiresDifferencing = requiresDifferencingProtection(plan, prepared.boundary);
         await assertRuntimeControlPolicyContinuity(projectRoot, policyStore);
+        const tenantLimits = mode === "production_http" ? {
+          ...input.productionTenantLimits!,
+          // Use the same effective bound for admission and its safe diagnosis.
+          max_response_cells: Math.min(
+            input.productionTenantLimits!.max_response_cells,
+            prepared.boundary.budgets.max_response_cells,
+          ),
+        } : undefined;
         const reservation = mode === "production_http"
           ? await claimProductionExploreBudget(store, {
             reservation_id: reservationId,
@@ -1067,15 +1075,7 @@ async function createScopedExploreRuntimeWithStore(input: Parameters<typeof crea
             requires_differencing: requiresDifferencing,
             estimated_response_cells: estimatedResponseCells,
             principal_limits: prepared.boundary.budgets,
-            tenant_limits: {
-              ...input.productionTenantLimits!,
-              // A deployment-wide ceiling may be stricter, but can never make
-              // one response looser than this reviewed boundary permits.
-              max_response_cells: Math.min(
-                input.productionTenantLimits!.max_response_cells,
-                prepared.boundary.budgets.max_response_cells,
-              ),
-            },
+            tenant_limits: tenantLimits!,
             now: new Date(executionStartedAt).toISOString(),
           })
           : await claimLocalExploreBudget(store, {
@@ -1100,8 +1100,14 @@ async function createScopedExploreRuntimeWithStore(input: Parameters<typeof crea
             && (reservation.exhausted_scope === "principal" || reservation.exhausted_scope === "tenant")
             ? reservation.exhausted_scope
             : undefined;
+          const refusedLimits = exhaustedScope === "tenant"
+            ? tenantLimits!
+            : prepared.boundary.budgets;
+          const responseTooLarge = reservation.code === "EXTRACTION_BUDGET_EXHAUSTED"
+            && estimatedResponseCells > refusedLimits.max_response_cells;
           throw new ScopedExploreError(
-            reservation.code === "RATE_LIMIT_EXHAUSTED"
+            responseTooLarge ? "EXPLORE_RESPONSE_TOO_LARGE"
+              : reservation.code === "RATE_LIMIT_EXHAUSTED"
               ? "EXPLORE_RATE_LIMITED"
               : "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
             exploreBudgetRefusalMessage(
@@ -1109,9 +1115,7 @@ async function createScopedExploreRuntimeWithStore(input: Parameters<typeof crea
                 code: reservation.code,
                 fallback: reservation.message,
                 usage: reservation.usage,
-                limits: exhaustedScope === "tenant"
-                  ? input.productionTenantLimits!
-                  : prepared.boundary.budgets,
+                limits: refusedLimits,
                 estimatedResponseCells,
                 now: executionStartedAt,
                 exhaustedScope,
@@ -4355,6 +4359,14 @@ function exploreBudgetRefusalMessage(input: {
     ].join("\n");
   }
   if (input.code === "EXTRACTION_BUDGET_EXHAUSTED") {
+    if (input.estimatedResponseCells > input.limits.max_response_cells) {
+      return [
+        `${scope}: reviewed response-cell limit exceeded.`,
+        `This request could return up to ${input.estimatedResponseCells} cells; the maximum per response is ${input.limits.max_response_cells}.`,
+        "Use fewer selected fields or measures, or reduce the original query's row or group limit. Smaller delivery pages do not reduce its admission estimate.",
+        "Waiting for rolling allowances to reset does not increase this fixed response limit. Cumulative disclosure controls still apply to a smaller query.",
+      ].join("\n");
+    }
     return [
       `${scope}: disclosure-control extracted-cell allowance exhausted.`,
       `Used ${input.usage.extracted_cells} of ${input.limits.max_extracted_cells_per_session} cells; this request could return up to ${input.estimatedResponseCells} more.`,

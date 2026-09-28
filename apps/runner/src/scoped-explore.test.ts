@@ -6787,6 +6787,101 @@ describe("Scoped Explore", () => {
     })).rejects.toMatchObject({ code: "EXPLORE_BOUNDARY_MISMATCH" });
   });
 
+  it.each([100, 4])("distinguishes a fixed response-cell bound from rolling extraction exhaustion before querying (rolling $0)", async (extractionLimit) => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.budgets.max_response_cells = 4;
+      candidate.budgets.max_extracted_cells_per_session = extractionLimit;
+      candidate.budgets.max_queries_per_session = 10;
+      candidate.budgets.rate_limit_per_minute = 10;
+    });
+    const store = new ProposalStore();
+    const execute = vi.fn(async () => [{ region: "north", reason_category: "price" }]);
+    const executeBatch = vi.fn(async ({ queries }: Parameters<ScopedExploreExecutor["executeBatch"]>[0]) =>
+      queries.map(() => [{ region: "north", reason_category: "price" }]));
+    let now = Date.parse("2026-07-26T12:00:00.000Z");
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root, transport: "stdio", env: fixture.env, store,
+      executor: { execute, executeBatch, close: async () => undefined },
+      inspectDatabaseFn: async () => fixture.inspection, clock: () => now,
+    });
+    const query = { kind: "rows", resource: "public.subscriptions",
+      select: ["region", "reason_category"], limit: 1 };
+    try {
+      await runtime.explore(query);
+      const reservations = store.db.prepare("SELECT * FROM explore_budget_reservations ORDER BY reservation_id").all();
+      const calls = executeBatch.mock.calls.length;
+      for (const instant of [now, now + 25 * 60 * 60 * 1000]) {
+        now = instant;
+        const refusal = await runtime.explore({ ...query, limit: 3 }).catch((error: unknown) => error);
+        expect(refusal).toMatchObject({
+          code: "EXPLORE_RESPONSE_TOO_LARGE",
+          message: expect.stringMatching(/response-cell limit exceeded[\s\S]*6[\s\S]*4/),
+        });
+        expect((refusal as Error).message).not.toMatch(/allowance exhausted|Capacity returns|Used \d+ of/);
+        expect(executeBatch).toHaveBeenCalledTimes(calls);
+        expect(execute).not.toHaveBeenCalled();
+        expect(store.db.prepare("SELECT * FROM explore_budget_reservations ORDER BY reservation_id").all())
+          .toEqual(reservations);
+      }
+      const result = await runtime.explore({ ...query, limit: 2 });
+      expect(result).toMatchObject({ ok: true, source_database_changed: false });
+      expect(executeBatch).toHaveBeenCalledTimes(calls + 1);
+    } finally {
+      await runtime.close();
+      store.close();
+    }
+  });
+
+  it.each([
+    { scope: "tenant" as const, tenantResponse: 10, queryLimit: 6, effective: 4 },
+    { scope: "tenant" as const, tenantResponse: 2, queryLimit: 3, effective: 2 },
+    { scope: "principal" as const, tenantResponse: 10, queryLimit: 6, effective: 4 },
+  ])("diagnoses the same effective $scope response bound used by production admission ($tenantResponse)", async (testCase) => {
+    const fixture = await activatedProductionFixture((candidate) => {
+      candidate.budgets.max_response_cells = 4;
+      candidate.budgets.max_extracted_cells_per_session = 100;
+    });
+    // Storage refusal seam only: the real consumer must retain the limits
+    // submitted to admission. Native backend enforcement has separate gates.
+    const claimBudget = vi.fn(async (_input: unknown) => ({
+      allowed: false as const, code: "EXTRACTION_BUDGET_EXHAUSTED" as const,
+      message: "The extracted-cell budget would be exceeded.",
+      exhausted_scope: testCase.scope,
+      usage: { query_count: 0, queries_last_minute: 0, extracted_cells: 0, differencing_attempts: 0 },
+    }));
+    const store = new ProposalStore();
+    Object.assign(store, { claimProductionExploreBudgetReservation: claimBudget });
+    const execute = vi.fn(async () => [] as Record<string, unknown>[]);
+    const executeBatch = vi.fn(async () => [] as Record<string, unknown>[][]);
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root, transport: "streamable_http", mode: "production_http",
+      env: fixture.env, store,
+      sessionContext: { tenant_id: "tenant-from-jwt", principal: "principal-from-jwt", provenance: "http_claims" },
+      productionPrivacyHmacKey: Buffer.from("shared-production-accounting-key-32-bytes-minimum"),
+      productionAccountingNamespace: "example.analytics.production",
+      productionTenantLimits: { max_queries_per_session: 100, rate_limit_per_minute: 100,
+        max_extracted_cells_per_session: 100, max_differencing_queries: 16,
+        max_response_cells: testCase.tenantResponse },
+      executor: { execute, executeBatch, close: async () => undefined },
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-07-26T12:00:00.000Z"),
+    });
+    try {
+      await expect(runtime.explore({ kind: "rows", resource: "public.subscriptions",
+        select: ["region"], limit: testCase.queryLimit })).rejects.toMatchObject({
+          code: "EXPLORE_RESPONSE_TOO_LARGE",
+          message: expect.stringContaining(`maximum per response is ${testCase.effective}`),
+        });
+      const submitted = claimBudget.mock.calls[0]?.[0] as unknown as { tenant_limits: { max_response_cells: number } };
+      expect(submitted.tenant_limits.max_response_cells).toBe(Math.min(4, testCase.tenantResponse));
+      expect(execute).not.toHaveBeenCalled();
+      expect(executeBatch).not.toHaveBeenCalled();
+    } finally {
+      await runtime.close();
+      store.close();
+    }
+  });
+
   it("enforces response, extraction, rate, and redacted source-error boundaries", async () => {
     const fixture = await activatedFixture((candidate) => {
       candidate.budgets.max_response_bytes = 80;
