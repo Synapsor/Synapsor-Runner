@@ -1,0 +1,9 @@
+# Lane C harness v7 — preserve the product correction boundary
+
+Owner136 permits existing bounded product corrections. On exact frozen source f20, `boundary-job-model.ts` allows at most two planning attempts and includes `ASK_PROVIDER_RESPONSE_INVALID` and `ASK_PROVIDER_RESPONSE_INCOMPLETE` among eligible first-attempt errors. The Responses and Chat stream assemblers produce these errors for incomplete generations. They do not accept incomplete tool arguments.
+
+The inherited v6 harness stopped its lane whenever generation was incomplete, even if complete usage had been accounted and funding remained valid. That imposed a lower correction bound. Main identified the mismatch by source inspection; the independent tester agreed from `git show f20`. Earlier incomplete-stop controls remain preserved as observations of the old harness behavior, not proof that behavior satisfied owner136.
+
+V7 records `generation_incomplete` separately from complete usage. It delivers the unchanged response and lets the unchanged product decide whether a bounded correction is eligible or the result is terminal. It creates no retry, extra episode or transport allowance. Every subsequent product request must pass ordinary reservation, serial, privacy, context, deadline and counter checks. Unknown cost retains its full hold and stops; privacy, late provider errors, over-reservation and monetary/counter limits retain their existing stops. No partial response is marked successful or manually supplied to a product tool.
+
+Count v5 changes only its import to the v7 shared validators. Budget v3 and the earlier privacy and exact root-declaration checks are unchanged. This is qualification-harness alignment, not a product repair or candidate freeze. Source checkpoint151 binds the exact modules and focused controls; independent installed correction-path verification remains required before paid signoff.

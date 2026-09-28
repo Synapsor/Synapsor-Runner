@@ -1,0 +1,9 @@
+# Lane C harness v6 — unchanged frozen planner declaration
+
+Independent installed test703 captured an ordinary planner request through the actual native Node HTTPS/DNS path. Proxy v5 refused it before any count/inference forward because it assumed every function parameter declaration had root `type: object`. Frozen `jobPlanToolDefinition` instead emits root `oneOf` of closed object alternatives, with current-state-dependent modes/outcomes. This is a harness mismatch; product bytes remain unchanged.
+
+V6 adds a shared finite shape predicate. Existing object roots remain accepted. A signed plan may explicitly include `oneOf-closed-objects` in `function_parameter_root_forms`. That enables a nonempty root containing only `oneOf`, whose alternatives are closed typed objects with a properties map and a unique required list referring to existing properties. Empty, scalar, open, inconsistent or inclusive replacement forms refuse. The existing encoded-request byte bound applies. Count v4 uses the same predicate and preserves the complete original declaration, input, instructions and tool choice.
+
+No schema keyword is replaced, normalized or removed. Exclusive alternatives remain exclusive on the wire; no disjointness/equivalence claim is necessary or made. This finite harness check does not establish vendor schema admission, strict-mode support or model correctness. Those remain separate observed results. Budget v3, response privacy from proxy v5 and count privacy from v3 remain unchanged.
+
+Main012/013 onward controls preserve the exact captured request hash and failing-before refusal. Current sources and results are bound by source checkpoint149. Tester agreed this is the smallest demonstrated harness alignment and owns the independent final installed recheck. No product gate, freeze or real-provider retry is authorized by this change.
