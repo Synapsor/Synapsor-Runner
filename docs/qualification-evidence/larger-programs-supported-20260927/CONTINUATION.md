@@ -1,10 +1,10 @@
-# Current supported large-program continuation
+# Current supported large-program qualification — delivered at prerequisite stop
 
-Frozen4 unchanged; independent592/593 **43 PASS / 9 NOT ESTABLISHED**. P10 finite general Source duty passed586/Main084; N04/N17 remain narrowly signed categoryB/NE. Current647delta has independently checked Main116 append preservation; earlier checks remain attached to their exact indexes. All13 settled product gates remain unchanged.
+Frozen4 unchanged; independent final666 **43 PASS / 9 NOT ESTABLISHED**. P10 finite general Source duty passed586/Main084; N04/N17 remain narrowly signed category B/NE for the same unchanged-source sealed50 tasks only. Final index670 and Main132 bind the appended evidence. All 13 settled product gates remain unchanged. Main131 and independent668 freshly verified the complete installed/archive identity.
 
-Test-only harnessv3 counter/capture/halt controls passed independently636/637; original610/621/630 failures remain. Actual paid C07/M03 preflight is **NOT ESTABLISHED**. Owner099 permits separate100 token-count calls per journey alongside400 inference calls, with unchanged money and histories. Owner114 raises the continuation storage cap to12GiB, retaining the2GiB free floor and4GiB build reserve. Current limit register115 records both amendments. Owner092/095 account attestations are recorded with their exact limits. See [current preflight checkpoint](LANE-C-PREFLIGHT-CHECKPOINT.md).
+Test-only harness v3 counter/capture/halt controls passed independently636/637; original610/621/630 failures remain. Both paid journeys are **NOT RUN**: actual M03/C07 financial/profile prerequisites remain unestablished. Owner099/122 permit separately recorded count calls with normal metadata responses and no generation; owner114 sets 12 GiB storage while preserving the free/build floor. Register128 and reconciliation127 retain all limits and liabilities. See [final report](FINAL-QUALIFICATION-STATUS.md) and [preflight closeout](LANE-C-PREFLIGHT-CHECKPOINT.md).
 
-Maininference0/LaneC0. Fourproductcycles allocated/fifthunused; originalT1 and Sep30cutoff/finaldeadline unchanged. No productchange afterpaid begins. Continue actual joint preflight and eligible journeys without another routine GO; no benchmark or B continuation is reopened.
+Main inference0; Lane C inference0 per provider. One historical toy count remains, with exactly one provisional $0.00170000 hold. Four product cycles used/fifth unused; original T1 and deadlines unchanged. No automatic repair, vendor/token framework, provider call or business continuation starts after delivery. Product correctness at the measured layers is distinct from unrun real-model authoring and the unfinished B journey.
 
 # Historical boundaries and prior checkpoint prose
 
