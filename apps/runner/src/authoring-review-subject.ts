@@ -2,6 +2,7 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { loadActiveActionRuleAuthority, readActionRuleReviewSubjects, type ActionRuleReviewSubject } from "./action-rule-authority.js";
 import type { BoundaryAuthoringResumeState, BoundaryPolicyReviewContext } from "./boundary-authoring-resume.js";
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
+import { activePolicySource, loadPolicySources } from "./authoring-policy-source.js";
 
 type Context = { source_session: string; source_digest: `sha256:${string}`; read_name: string; read_digest: `sha256:${string}` };
 type ReviewSubjectErrorCode = "POLICY_REVIEW_CANDIDATE_CHANGED" | "POLICY_REVIEW_CANDIDATE_UNAVAILABLE" | "POLICY_REVIEW_SUBJECT_CHANGED";
@@ -43,6 +44,23 @@ export async function resolveAuthoringReviewSubject(input: {
     && (!anchor.action_subject || anchor.action_subject.store === active.identity.store)
     && active.prior_subjects?.some(prior => prior.digest === anchor.action_digest
       && (!anchor.action_subject || prior.record === anchor.action_subject.record)) ? active : undefined;
+  const savedCoverageMatchesPublication = async (publication: ActionRuleReviewSubject): Promise<boolean> => {
+    if (input.resume.policy_source_session !== input.context.source_session) return false;
+    let sources;
+    try { sources = await loadPolicySources(input.projectRoot, input.context.source_session); }
+    catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return false; throw error; }
+    const source = activePolicySource(sources);
+    return sources.id === input.context.source_session && source?.digest === input.context.source_digest
+      && sources.coverage?.source_digest === source.digest
+      && sources.coverage_authority_digest === canonicalJsonDigest({read: input.context.read_digest, action: publication.authority.digest});
+  };
+  // Initial guided publication has real saved Source/semantic coverage but no
+  // saved-review request anchor. Explicit Review may inspect that publication;
+  // it does not retrospectively complete a request or retarget Resume/edit work.
+  // The existing repository resolver supplies its store and publication proof.
+  const initialPublication = active?.published_from && input.selectCurrentContext && input.resume.action
+    && !pending && !input.resume.completed_policy_reviews?.length && !input.resume.pending_action_revision && !draftSubjects.length
+    && await savedCoverageMatchesPublication(active) ? active : undefined;
   let subject: ActionRuleReviewSubject | undefined;
   const select = async (choices: ActionRuleReviewSubject[]) => {
     const selected = await input.session.chooseOption?.("SELECT EXACT ACTION SUBJECT TO REVIEW", choices.map((value, index) => ({
@@ -106,12 +124,16 @@ export async function resolveAuthoringReviewSubject(input: {
   } else if (explicitCurrent) {
     subject = await select([explicitCurrent]);
     if (!subject) return { cancelled: true, assertCurrent: async () => {} };
+  } else if (initialPublication) {
+    subject = initialPublication;
   } else failure("POLICY_REVIEW_CANDIDATE_UNAVAILABLE", "No current Action matches this job's exact review and publication bindings. Inspect its recorded review and current authority; no draft recreation or unrelated active replacement was inferred.");
   const snapshot = canonicalJsonDigest(all);
   const assertCurrent = async () => {
     const current = await readActionRuleReviewSubjects(input.projectRoot);
     if (canonicalJsonDigest(current) !== snapshot)
       failure("POLICY_REVIEW_SUBJECT_CHANGED", "Action review subjects or their selected store changed. Reopen the exact current review; no stale completion was saved.");
+    if (subject === initialPublication && initialPublication && !await savedCoverageMatchesPublication(initialPublication))
+      failure("POLICY_REVIEW_SUBJECT_CHANGED", "The selected publication's complete Source or saved semantic coverage changed. Reopen the current review; no stale completion was saved.");
     if (subject?.identity.location === "active") {
       const loaded = await loadActiveActionRuleAuthority(input.projectRoot);
       if (canonicalJsonDigest(loaded.activation) !== canonicalJsonDigest(subject.authority))

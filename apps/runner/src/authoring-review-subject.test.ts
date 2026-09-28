@@ -18,6 +18,7 @@ import {buildActionRuleAuthorityDraft, writeActionRuleAuthorityDraft, activateAc
   readActionRuleCoverageLineage, removeOutcomeActionRuleAuthorityDraft} from "./action-rule-authority.js";
 import {encodeOperatorAuthority, validateOperatorPolicySnapshot} from "./control-policy-authority-codec.js";
 import {migrateProjectControlPolicies} from "./control-policy-store.js";
+import { newPolicySourceSession, policyTextSnapshot, bindPolicyCoverage, savePolicySources, loadPolicySources } from "./authoring-policy-source.js";
 let generationLock = `sha256:${"a".repeat(64)}` as const;
 const stateType: ActionRuleScalarTypeSpecV1 = {kind: "string", max_length: 16, comparison: "exact", enum: ["active", "paused"]};
 const cleanup: Array<() => Promise<void>> = [];
@@ -48,7 +49,7 @@ async function fixture(backend: "sqlite" | "postgres" | "legacy" = "sqlite") {
       examples: [{kind: "eligible", scenario: "Active preference", result: "One proposal"}]}] });
   const draft = make(); await writeActionRuleAuthorityDraft(root, draft);
   const subject = (await readActionRuleReviewSubjects(root))[0]!;
-  const context = {source_session: randomUUID(), source_digest: canonicalJsonDigest("complete attached source"),
+  const context: Parameters<typeof resolveAuthoringReviewSubject>[0]['context'] = {source_session: randomUUID(), source_digest: canonicalJsonDigest("complete attached source"),
     read_name: read.pack.name, read_digest: read.activation.digest};
   const request = {operation: "review_rules" as const, request: "Review existing rules", source_session: context.source_session,
     source_digest: context.source_digest, read_digest: context.read_digest, action_name: draft.authority.name,
@@ -69,6 +70,72 @@ async function fixture(backend: "sqlite" | "postgres" | "legacy" = "sqlite") {
 }
 
 for (const backend of ["sqlite", "postgres"] as const) describe.skipIf(backend === "postgres" && !process.env.SYNAPSOR_TEST_POSTGRES_URL)(`published authoring review (${backend})`, () => {
+  it('explicitly resolves an anchorless initial guided publication from its saved full Source and semantic binding', async () => {
+    const f = await fixture(backend), initial = await initialGuidedJob(f);
+    await writeBoundaryAuthoringResumeState(f.root, initial.resume, {expectedRevisionDigest: null});
+    const disabled = (await readActionRuleReviewSubjects(f.root))[0]!;
+    const active = await f.publish();
+    expect(await readActionRuleAuthorityDraft(f.root, f.draft.authority.name)).toBeUndefined();
+    const reopened = await readBoundaryAuthoringResumeState(f.root, f.resumeBinding);
+    if (reopened.status !== 'ready') throw new Error('fixture resume unavailable');
+    expect(reopened.value.pending_policy_review).toBeUndefined();
+    expect(reopened.value.completed_policy_reviews ?? []).toHaveLength(0);
+    const before = structuredClone(reopened.value), sourcesBefore = await loadPolicySources(f.root, initial.sources.id);
+    const selected = await f.resolve(reopened.value, initial.context);
+    expect(selected.subject).toMatchObject({authority: active, identity: {location: 'active'}, published_from: disabled.identity.record});
+    await selected.assertCurrent();
+    expect(f.chooseOption).not.toHaveBeenCalled();
+    expect(reopened.value).toEqual(before);
+    expect(await loadPolicySources(f.root, initial.sources.id)).toEqual(sourcesBefore);
+    // Selection is not retrospective completion of the guided job or a Resume retarget.
+    await expect(f.resolve(reopened.value, initial.context, false)).rejects.toThrow('POLICY_REVIEW_CANDIDATE_UNAVAILABLE');
+  });
+  it.each(['missing_source', 'missing_coverage', 'changed_source', 'wrong_session', 'wrong_read', 'changed_action', 'missing_publication', 'withdrawn'] as const)(
+    'does not guess an anchorless publication when its binding is unavailable or stale (%s)', async mode => {
+      const f = await fixture(backend), initial = await initialGuidedJob(f); await f.publish();
+      const context = {...initial.context}, before = structuredClone(initial.resume);
+      if (mode === 'missing_source') await fs.rm(path.join(f.root, '.synapsor/boundary-authoring/policy-sources', `${initial.sources.id}.json`));
+      if (mode === 'missing_coverage') { delete initial.sources.coverage; await savePolicySources(f.root, initial.sources); }
+      if (mode === 'changed_source') {
+        const next = policyTextSnapshot(Buffer.from(initial.source.text + '\nAn additional restriction remains unresolved.'), 'rules.txt', 2);
+        initial.sources.snapshots.push(next); initial.sources.active = next.version; await savePolicySources(f.root, initial.sources);
+        context.source_digest = next.digest as `sha256:${string}`;
+      }
+      if (mode === 'wrong_session') context.source_session = randomUUID();
+      if (mode === 'wrong_read') context.read_digest = canonicalJsonDigest('another Read');
+      if (mode === 'changed_action') { const next = f.make(600); await writeActionRuleAuthorityDraft(f.root, next); await f.publish(next); }
+      if (mode === 'missing_publication') vi.spyOn(ControlPolicyRepository.prototype, 'history').mockResolvedValue([]);
+      if (mode === 'withdrawn') await deactivateActionRuleAuthority(f.root);
+      await expect(f.resolve(initial.resume, context)).rejects.toThrow('POLICY_REVIEW_CANDIDATE_UNAVAILABLE');
+      expect(initial.resume).toEqual(before); expect(f.chooseOption).not.toHaveBeenCalled();
+    });
+  it('retains anchorless pending edits and current disabled candidates instead of substituting coverage-bound active authority', async () => {
+    const f = await fixture(backend), initial = await initialGuidedJob(f); await f.publish();
+    const next = f.make(600); await writeActionRuleAuthorityDraft(f.root, next);
+    const edit = {...initial.resume, pending_action_revision: {outcome: next.authority.rules[0]!.rule.outcome,
+      instruction: 'Change the duration', baseline_digest: f.draft.digest,
+      preparation: {read_digest: initial.context.read_digest, authority_digest: f.draft.digest, prepared_digest: next.digest}}};
+    const before = structuredClone(edit);
+    expect((await f.resolve(edit, initial.context)).subject?.authority.digest).toBe(next.digest);
+    expect((await f.resolve(initial.resume, initial.context)).subject?.authority.digest).toBe(next.digest);
+    expect(edit).toEqual(before);
+    await f.publish(next);
+    await expect(f.resolve(edit, initial.context)).rejects.toThrow('POLICY_REVIEW_CANDIDATE_CHANGED');
+  });
+  it('rechecks the real saved Source and repository before using an anchorless selected publication', async () => {
+    const f = await fixture(backend), initial = await initialGuidedJob(f); await f.publish();
+    const selected = await f.resolve(initial.resume, initial.context), original = structuredClone(initial.resume);
+    const next = policyTextSnapshot(Buffer.from(initial.source.text + '\nPreserve this newer restriction.'), 'rules.txt', 2);
+    initial.sources.snapshots.push(next); initial.sources.active = next.version;
+    await savePolicySources(f.root, initial.sources);
+    await expect(selected.assertCurrent()).rejects.toThrow('POLICY_REVIEW_SUBJECT_CHANGED');
+    expect((await loadPolicySources(f.root, initial.sources.id)).snapshots).toEqual(initial.sources.snapshots);
+    expect(initial.resume).toEqual(original);
+    const other = await fixture(backend), current = await initialGuidedJob(other); await other.publish();
+    const prepared = await other.resolve(current.resume, current.context);
+    await writeActionRuleAuthorityDraft(other.root, other.make(600));
+    await expect(prepared.assertCurrent()).rejects.toThrow('POLICY_REVIEW_SUBJECT_CHANGED');
+  });
   it('reads exact reviewed removal from real repository activation records without creating authority', async () => {
     const f = await fixture(backend), original = authoritySource();
     const extra = 'billing.pause_reminders';
@@ -285,6 +352,23 @@ it("does not infer publication lineage from an active legacy file or a same-valu
 });
 import { resolveAuthoringReviewSubject } from "./authoring-review-subject.js";
 import { buildBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState, readBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
+async function initialGuidedJob(f: Awaited<ReturnType<typeof fixture>>) {
+  const sources = newPolicySourceSession(), source = policyTextSnapshot(Buffer.from('Propose pausing an active preference with human approval.'), 'rules.txt');
+  sources.snapshots = [source]; sources.active = source.version;
+  // DERIVED selection fixture, not a claimed complete BUSINESS assessment.
+  // Use the ordinary stored coverage/source/resume factories and real repository publication.
+  bindPolicyCoverage(sources, {source_digest: source.digest, draft_digest: canonicalJsonDigest('derived prepared review'),
+    passages: [{start: 1, end: 1, disposition: 'implemented', responsibility: 'runner',
+      interpretation: 'The reviewed Action proposes pausing an active preference and requires human approval.', draft_paths: ['/actions/0']}]},
+    canonicalJsonDigest({read: f.context.read_digest, action: f.draft.digest}));
+  await savePolicySources(f.root, sources);
+  const context = {...f.context, source_session: sources.id, source_digest: source.digest as `sha256:${string}`};
+  const resume = buildBoundaryAuthoringResumeState({binding: f.resumeBinding, stage: 'authority_review', jobIntent: 'Maintain preferences',
+    provider: 'openai', model: 'fixture', policySourceSession: sources.id,
+    action: {intent: 'Maintain preferences', outcome: f.draft.authority.rules[0]!.rule.outcome, strategy: 'rule_derived',
+      completed_outcomes: f.draft.authority.rules.map(rule => rule.rule.outcome)}});
+  return {sources, source, context, resume};
+}
 async function reviewedRead(root: string) {
   const columns = ["preference_id", "account_id", "principal_id", "status", "version"];
   const inspection: SchemaInspection = {
