@@ -3,7 +3,7 @@ import path from "node:path";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   readActionRuleAuthorityActivation, readActionRuleAuthorityDraft, readActionRuleAuthorityRevisionBaseline, readActionRuleReviewSubjects,
-  type ActionRuleAuthorityDraftV1,
+  type ActionRuleAuthorityDraftV1, type ActionWithdrawalReview,
 } from "./action-rule-authority.js";
 import { proveExactActionWithdrawal } from "./action-rule-withdrawal-proof.js";
 import { explorationBoundaryCandidateDigest, loadActivatedExplorationBoundaries } from "./auto-boundary.js";
@@ -15,14 +15,7 @@ import { activePolicySource, loadPolicySources } from "./authoring-policy-source
 import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { withProjectRuntimeAdmission } from "./project-runtime-admission.js";
 
-export type ActionWithdrawalReview = {
-  kind: "withdrawal";
-  from_digest: string;
-  removed_outcomes: string[];
-  business_review_completed: false;
-  review_context_digest: string;
-  pending_source_ranges: Array<{ start: number; end: number }>;
-};
+export type { ActionWithdrawalReview } from "./action-rule-authority.js";
 
 /** Read-only preview and publication use this same real dependency assessment.
  * Pending English obligations remain pending. No model result grants withdrawal,
