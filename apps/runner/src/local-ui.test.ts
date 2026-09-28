@@ -29,7 +29,7 @@ import {
 } from "./local-ui.js";
 import { ExploreTrustedScopeError } from "./explore-trusted-scope.js";
 import { compileSafeActionDraft } from "./safe-action.js";
-import { createScopedExploreRuntime } from "./scoped-explore.js";
+import { createScopedExploreRuntime, ScopedExploreError } from "./scoped-explore.js";
 import {
   ACTION_SUGGESTION_VERSION,
   assessActionSuggestion,
@@ -2052,6 +2052,47 @@ export default defineCapability({
       await fs.rm(tempDir, { recursive: true, force: true });
     }
   });
+
+  it.each(["EXPLORE_RESPONSE_TOO_LARGE", "EXPLORE_BUDGET_UNAVAILABLE"] as const)(
+    "keeps public Workbench recovery faithful to typed budget failure (%s)", async (code) => {
+      const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-workbench-budget-remedy-"));
+      const inspection = boundaryReviewInspection();
+      const build = buildAutoBoundary({
+        inspection,
+        project: { root: tempDir, package_manager: "npm", frameworks: ["node"], schema_inputs: [], database_env_names: ["DATABASE_URL"] },
+        sourceEnv: "DATABASE_URL", inspectedSchema: "public",
+      });
+      const written = await writeAutoBoundaryArtifacts({ projectRoot: tempDir, build });
+      const guided = await initializeGuidedProject({ projectRoot: tempDir, build, runnerVersion: "1.8.0" });
+      // Projection seam only: native budget enforcement/recovery is tested separately.
+      const server = await startLocalUiServer({
+        projectRoot: tempDir, boundaryRoot: written.root,
+        configPath: guided.config_path, storePath: guided.store_path,
+        token: "budget-remedy-token", csrfToken: "budget-remedy-csrf",
+        schemaInspector: async () => inspection,
+        scopedExploreRuntimeFactory: async () => { throw new ScopedExploreError(code, "Safe typed refusal."); },
+      });
+      try {
+        const response = await fetch(`http://${server.host}:${server.port}/api/explore/run`, {
+          method: "POST",
+          headers: { "content-type": "application/json", "x-synapsor-ui-token": "budget-remedy-token", "x-synapsor-csrf": "budget-remedy-csrf" },
+          body: JSON.stringify({ plan: { kind: "aggregate", resource: "public.members", measures: [{ function: "count" }], top_n: 5 } }),
+        });
+        expect(response.status).toBe(409);
+        const body = await response.json() as { error_code: string; remediation: { action: string } };
+        expect(body.error_code).toBe(code);
+        expect(body.remediation.action).not.toMatch(/broader|raise.*limit|restart.*session/i);
+        if (code === "EXPLORE_RESPONSE_TOO_LARGE") {
+          expect(body.remediation.action).toMatch(/reduce|fewer|narrow/i);
+          expect(body.remediation.action).not.toMatch(/or wait|rate window/i);
+        } else {
+          expect(body.remediation.action).toMatch(/budget.*store|budget.*state|reservation/i);
+          expect(body.remediation.action).toContain("does not establish exhaustion");
+          expect(body.remediation.action).not.toMatch(/^Wait|Narrow.*or wait|rate window/i);
+        }
+      } finally { await server.close(); await fs.rm(tempDir, { recursive: true, force: true }); }
+    },
+  );
 
   it("activates one conservative development resource and drives a real scoped runtime call in the instant path", async () => {
     const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-local-ui-instant-"));

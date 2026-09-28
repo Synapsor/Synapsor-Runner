@@ -6404,6 +6404,18 @@ function runnerBoundaryRefusalAnswer(
   if (lastRefusal?.error_code === "EXPLORE_SOURCE_UNAVAILABLE") {
     return "The database connection is unavailable (EXPLORE_SOURCE_UNAVAILABLE), so this query did not produce a result. Ask the operator to check the connection and credentials before retrying. Access permissions have not changed.";
   }
+  if (lastRefusal?.error_code === "EXPLORE_RESPONSE_TOO_LARGE") {
+    return "Runner refused an oversized reviewed response (EXPLORE_RESPONSE_TOO_LARGE). Reduce selected fields or measures, or the original query's row or group limit. Waiting does not increase a fixed cell or byte limit; smaller delivery pages do not reduce the admission estimate. The exact refusal details may identify an additional disclosure limit, and a smaller query must satisfy all of those controls. Access permissions have not changed.";
+  }
+  if (lastRefusal?.error_code === "EXPLORE_BUDGET_UNAVAILABLE") {
+    return "The reviewed budget reservation state is unavailable (EXPLORE_BUDGET_UNAVAILABLE), so no source query was executed. Ask the operator to check the local budget store before retrying. Unavailable state does not establish that an allowance is exhausted. Access permissions have not changed.";
+  }
+  if (lastRefusal?.error_code === "EXPLORE_PRIVACY_BUDGET_EXHAUSTED") {
+    return "Runner's disclosure controls refused this request (EXPLORE_PRIVACY_BUDGET_EXHAUSTED). Inspect the exact refusal details for the applicable privacy control and any documented rolling allowance. Smaller delivery pages or a new MCP session do not reset the control. Do not widen access or raise throughput limits to bypass it.";
+  }
+  if (lastRefusal?.error_code === "EXPLORE_RATE_LIMITED") {
+    return "Runner's request-rate allowance refused this request (EXPLORE_RATE_LIMITED). Wait for the documented rolling rate allowance; a new MCP session does not reset the trusted-scope limit. Access permissions have not changed.";
+  }
   const coverage = safeBoundaryCoverage(description);
   const codes = [...new Set(traces
     .filter((trace) => trace.status === "refused" && trace.error_code)

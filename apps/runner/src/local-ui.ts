@@ -10480,11 +10480,24 @@ function scopedExploreRemediation(error: unknown): {
         action: "Restore the reviewed read-only database connection and retry. Runner will recheck role and schema posture.",
         preserved,
       };
-    case "EXPLORE_PRIVACY_BUDGET_EXHAUSTED":
-    case "EXPLORE_RATE_LIMITED":
     case "EXPLORE_RESPONSE_TOO_LARGE":
       return {
-        action: "Narrow the reviewed request or wait for the documented session/rate window; do not widen the boundary to bypass the limit.",
+        action: "Reduce selected fields or measures, or the original query's row or group limit. Waiting does not increase a fixed response limit, and smaller delivery pages do not reduce the admission estimate. The request must still satisfy the disclosure controls; do not widen the boundary to bypass a limit.",
+        preserved,
+      };
+    case "EXPLORE_BUDGET_UNAVAILABLE":
+      return {
+        action: "Check the local budget store and restore the reservation state before retrying. Unavailable state does not establish exhaustion; changing the query or waiting for an allowance is not a repair for unavailable storage.",
+        preserved,
+      };
+    case "EXPLORE_PRIVACY_BUDGET_EXHAUSTED":
+      return {
+        action: "Follow the exact disclosure-control refusal. Smaller delivery pages, another cursor, or a new MCP session do not reset that control. Wait only where the documented rolling allowance permits it; do not widen the boundary or raise throughput limits to bypass it.",
+        preserved,
+      };
+    case "EXPLORE_RATE_LIMITED":
+      return {
+        action: "Wait for the documented rolling request-rate allowance. A new session does not reset the trusted-scope limit; do not widen the boundary to bypass it.",
         preserved,
       };
     case "EXPLORE_FIELD_FORBIDDEN":

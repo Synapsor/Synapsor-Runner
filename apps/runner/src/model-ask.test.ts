@@ -7938,6 +7938,48 @@ describe("Workbench BYOM Ask", () => {
     expect(gateway.calls.map((call) => call.name)).toEqual(["app.describe_data"]);
   });
 
+  it.each([
+    "EXPLORE_RESPONSE_TOO_LARGE",
+    "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
+    "EXPLORE_BUDGET_UNAVAILABLE",
+  ])("keeps Runner fallback recovery faithful to the typed budget refusal (%s)", async (code) => {
+    const gateway: AskToolGateway = {
+      mode: "authoring",
+      listTools: () => authoringTools,
+      callTool: async (name) => name === "app.describe_data" ? {
+        ok: true,
+        value: { ok: true, resources: [{ id: "public.members", label: "Members" }], source_database_changed: false },
+      } : {
+        ok: false, error_code: code,
+        value: { ok: false, error_code: code, message: "Safe typed refusal details.", source_database_changed: false },
+      },
+      close: async () => undefined,
+    };
+    let requests = 0;
+    const result = await configuredSession(askToolSurfaceDigest(authoringTools)).run("How many members are there?", gateway, {
+      requestJson: async () => ++requests === 1
+        ? openAiToolCall("typed_budget_refusal", "app__explore_data", {
+          plan: { kind: "aggregate", resource: "public.members", measures: [{ function: "count" }], top_n: 10 },
+        })
+        : openAiText(""),
+    });
+    expect(result.answer_source).toBe("runner");
+    expect(result.tool_calls).toContainEqual(expect.objectContaining({ status: "refused", error_code: code }));
+    expect(result.answer).toContain(code);
+    expect(result.answer).not.toMatch(/review broader access|raise (?:the )?(?:budget|response) limit|restart.*to (?:reset|bypass)/i);
+    if (code === "EXPLORE_RESPONSE_TOO_LARGE") {
+      expect(result.answer).toMatch(/reduce.*fields|fewer.*fields/i);
+      expect(result.answer).toMatch(/waiting.*does not|waiting.*will not/i);
+    } else if (code === "EXPLORE_BUDGET_UNAVAILABLE") {
+      expect(result.answer).toMatch(/unavailable|could not.*reserve/i);
+      expect(result.answer).toContain("does not establish");
+      expect(result.answer).not.toMatch(/Capacity returns|age out/i);
+    } else {
+      expect(result.answer).toMatch(/disclosure|privacy/i);
+      expect(result.answer).not.toMatch(/fresh session|another cursor/i);
+    }
+  });
+
   it("returns a Runner-authored boundary explanation when OpenAI exhausts refused plans without final prose", async () => {
     const calls: Array<{ name: string; args: Record<string, unknown> }> = [];
     const gateway: AskToolGateway = {

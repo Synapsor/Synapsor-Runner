@@ -267,6 +267,7 @@ export type ScopedExploreErrorCode =
   | "EXPLORE_RELATIONSHIP_FORBIDDEN"
   | "EXPLORE_SUBJECT_REFERENCE_UNAVAILABLE"
   | "EXPLORE_PRIVACY_BUDGET_EXHAUSTED"
+  | "EXPLORE_BUDGET_UNAVAILABLE"
   | "EXPLORE_RATE_LIMITED"
   | "EXPLORE_CURSOR_INVALID"
   | "EXPLORE_CONTINUATION_LIMIT"
@@ -1139,8 +1140,8 @@ async function createScopedExploreRuntimeWithStore(input: Parameters<typeof crea
         const refusal = error instanceof ScopedExploreError
           ? error
           : new ScopedExploreError(
-            "EXPLORE_PRIVACY_BUDGET_EXHAUSTED",
-            "Runner could not reserve the reviewed privacy budget, so no source query was executed.",
+            "EXPLORE_BUDGET_UNAVAILABLE",
+            "The reviewed budget reservation state is unavailable, so no source query was executed. Ask the operator to check the local budget store before retrying; this does not establish that an allowance is exhausted.",
           );
         await recordPreExecutionRefusalAudit(store, {
           mode,
@@ -4360,11 +4361,18 @@ function exploreBudgetRefusalMessage(input: {
   }
   if (input.code === "EXTRACTION_BUDGET_EXHAUSTED") {
     if (input.estimatedResponseCells > input.limits.max_response_cells) {
+      const rollingInsufficient = input.usage.extracted_cells + input.estimatedResponseCells
+        > input.limits.max_extracted_cells_per_session;
       return [
         `${scope}: reviewed response-cell limit exceeded.`,
         `This request could return up to ${input.estimatedResponseCells} cells; the maximum per response is ${input.limits.max_response_cells}.`,
         "Use fewer selected fields or measures, or reduce the original query's row or group limit. Smaller delivery pages do not reduce its admission estimate.",
         "Waiting for rolling allowances to reset does not increase this fixed response limit. Cumulative disclosure controls still apply to a smaller query.",
+        ...(rollingInsufficient ? [
+          "The rolling extracted-cell allowance is also insufficient for this request.",
+          `Used ${input.usage.extracted_cells} of ${input.limits.max_extracted_cells_per_session} cells; this request could return up to ${input.estimatedResponseCells} more.`,
+          "A smaller request must satisfy both limits. Smaller delivery pages, another cursor, or a new MCP session do not reset the rolling allowance.",
+        ] : []),
       ].join("\n");
     }
     return [

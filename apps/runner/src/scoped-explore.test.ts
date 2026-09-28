@@ -6817,7 +6817,13 @@ describe("Scoped Explore", () => {
           code: "EXPLORE_RESPONSE_TOO_LARGE",
           message: expect.stringMatching(/response-cell limit exceeded[\s\S]*6[\s\S]*4/),
         });
-        expect((refusal as Error).message).not.toMatch(/allowance exhausted|Capacity returns|Used \d+ of/);
+        if (extractionLimit === 4) {
+          expect((refusal as Error).message).toMatch(/rolling.*extracted-cell.*also.*insufficient/i);
+          const priorCells = instant === Date.parse("2026-07-26T12:00:00.000Z") ? 2 : 0;
+          expect((refusal as Error).message).toContain(`Used ${priorCells} of 4 cells`);
+        } else {
+          expect((refusal as Error).message).not.toMatch(/allowance exhausted|Capacity returns|Used \d+ of/);
+        }
         expect(executeBatch).toHaveBeenCalledTimes(calls);
         expect(execute).not.toHaveBeenCalled();
         expect(store.db.prepare("SELECT * FROM explore_budget_reservations ORDER BY reservation_id").all())
@@ -6830,6 +6836,67 @@ describe("Scoped Explore", () => {
       await runtime.close();
       store.close();
     }
+  });
+
+  it("distinguishes unavailable reservation state and permits native same-session recovery", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.budgets.max_response_cells = 4;
+      candidate.budgets.max_extracted_cells_per_session = 100;
+    });
+    const store = new ProposalStore();
+    // Failure seam only; the next call uses the original native reservation.
+    vi.spyOn(store, "claimExploreBudgetReservation").mockImplementationOnce(() => {
+      throw new Error("EIO private-budget-location");
+    });
+    const execute = vi.fn(async () => [{ region: "north" }]);
+    const executeBatch = vi.fn(async ({ queries }: Parameters<ScopedExploreExecutor["executeBatch"]>[0]) =>
+      queries.map(() => [{ region: "north" }]));
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root, transport: "stdio", env: fixture.env, store,
+      executor: { execute, executeBatch, close: async () => undefined },
+      inspectDatabaseFn: async () => fixture.inspection,
+    });
+    const query = { kind: "rows", resource: "public.subscriptions", select: ["region"], limit: 1 };
+    try {
+      const error = await runtime.explore(query).catch((caught: unknown) => caught);
+      expect(error).toMatchObject({ code: "EXPLORE_BUDGET_UNAVAILABLE" });
+      expect((error as Error).message).toContain("does not establish");
+      expect((error as Error).message).not.toMatch(/allowance exhausted|Capacity returns|Used \d+ of|private-budget-location|EIO/);
+      expect(executeBatch).not.toHaveBeenCalled();
+      expect(execute).not.toHaveBeenCalled();
+      expect(store.db.prepare("SELECT * FROM explore_budget_reservations").all()).toEqual([]);
+      expect(await runtime.explore(query)).toMatchObject({ ok: true, source_database_changed: false });
+      expect(executeBatch).toHaveBeenCalledTimes(1);
+      expect(store.db.prepare("SELECT * FROM explore_budget_reservations").all()).toHaveLength(1);
+    } finally {
+      await runtime.close();
+      store.close();
+    }
+  });
+
+  it("admits a smaller authorized request immediately after a response-only refusal in the same runtime", async () => {
+    const fixture = await activatedFixture((candidate) => {
+      candidate.budgets.max_response_cells = 4;
+      candidate.budgets.max_extracted_cells_per_session = 100;
+    });
+    const store = new ProposalStore();
+    const executeBatch = vi.fn(async ({ queries }: Parameters<ScopedExploreExecutor["executeBatch"]>[0]) =>
+      queries.map(() => [{ region: "north", reason_category: "price" }]));
+    const runtime = await createScopedExploreRuntime({
+      projectRoot: fixture.root, transport: "stdio", env: fixture.env, store,
+      executor: { execute: async () => [], executeBatch, close: async () => undefined },
+      inspectDatabaseFn: async () => fixture.inspection,
+      clock: () => Date.parse("2026-07-26T12:00:00.000Z"),
+    });
+    const query = { kind: "rows", resource: "public.subscriptions", select: ["region", "reason_category"] };
+    try {
+      await expect(runtime.explore({ ...query, limit: 3 })).rejects.toMatchObject({ code: "EXPLORE_RESPONSE_TOO_LARGE" });
+      expect(executeBatch).not.toHaveBeenCalled();
+      expect(store.db.prepare("SELECT * FROM explore_budget_reservations").all()).toEqual([]);
+      expect(await runtime.explore({ ...query, limit: 2 })).toMatchObject({ ok: true, source_database_changed: false });
+      expect(executeBatch).toHaveBeenCalledTimes(1);
+      expect(store.db.prepare("SELECT * FROM explore_budget_reservations").all()).toHaveLength(1);
+    } finally { await runtime.close(); store.close(); }
   });
 
   it.each([
