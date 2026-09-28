@@ -1,4 +1,8 @@
-# Current supported large-program qualification — delivered at prerequisite stop
+# Current — Lane C reopened by owner136
+
+Only the two sealed equivalent full50 journeys are reopened on unchanged f20/38c189. Continuation T0 2026-09-28T19:42:49Z; fixed deadline 2026-09-30T23:59Z. Practical rolling reservations with 25% contingency, serial egress and retained holds replace the former universal billing prerequisite. Direct actual initial count remains required; OpenRouter may establish admission through its first normal request when no actual overflow is established. See [additive continuation](LANE-C-REOPENED-CONTINUATION.md). Actual installed wiring, clean starts and joint preflight are being completed; no paid GO yet. No product repair or new freeze.
+
+# Historical closeout — delivered at prerequisite stop
 
 Frozen4 unchanged; independent final666 **43 PASS / 9 NOT ESTABLISHED**. P10 finite general Source duty passed586/Main084; N04/N17 remain narrowly signed category B/NE for the same unchanged-source sealed50 tasks only. Final index670 and Main132 bind the appended evidence. All 13 settled product gates remain unchanged. Main131 and independent668 freshly verified the complete installed/archive identity.
 
