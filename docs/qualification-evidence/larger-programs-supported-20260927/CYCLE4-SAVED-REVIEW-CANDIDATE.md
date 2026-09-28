@@ -1,0 +1,15 @@
+# Cycle4 immutable candidate — installed acceptance pending
+
+Frozen2026-09-28T11:31:29.406Z. Product/tests `f20e8633b352528fe216adfca6ca45a47a351e27`; parent `2c9a7267b0c660814a823490dc80aac9dfdd4bc2`. Two-file repair resolves the current initial guided publication only for explicit saved Review, using complete canonical saved Source and current Read/Action semantic proof plus actual repository publication. It retains exact pending edits, Resume and save/currentness checks. No authority, source meaning, receipt, approval or accounting semantics changed.
+
+Main reproduced `POLICY_REVIEW_CANDIDATE_UNAVAILABLE` before the repair and preserved003; matched positive005 passed. Focused006 passed39/skipped29. Test-only type inference failure009 and corrected010 are separate. Independent source396/397 had no further source counterexample; Main verified11 indexed members012. Source inspection does not establish installed acceptance.
+
+One complete settled full001 passed7,663/skipped532, explicit types passed, selected real PostgreSQL five files192passed/4skipped, ten offline/package checks passed. All13 source maps exact/unchanged; source map SHA`aafc1297ba087211c2b534e65af607fa6bc3471d6f7aad60f8d5a5bff2d6bde5`. Independent402 inspected all130 gate members and exact commands/exits without rerunning the heavy suite.
+
+Tree `38c189a1caaa90c54f3926a04187e413990c10bdd989b98905ceb14d1f1d34cf`; manifest `95bae7541902147ab2249331bba2a926d837f9451abe83465a4ac0f19f96dd25`; archive `9a1931af20037740811ec021b3665bc9d00bae11669352e560c30c6778139bc4`;7,604 entries. Main022 checked installation and archive in both directions, content/modes/internal links, bundled Node22.23.3, localSpec1.11.0, locks, dependencies and all five packaged entrypoints against the tested build. Old installations remain immutable.
+
+Actual evidence root `/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-supported-continuation-20260927`. Artifact index `repair-cycle4/ARTIFACT-DELIVERY-023.json` SHA`a53e9d6b17c24abb04f4d40c03f75062b8f4c3d364afd440e26bfd123fa583a8`; gate index016 SHA`bc6930e5ce573c5501f2eedc7a6e0b36ef5a1f96b44c9c60888a07620692be3d`; Main022 SHA`4f0e27f53fc10c04aa84629083d8c74868b6a8f1d2cb40e6d42807c0decb7211`. These records locate exact commands/logs/source maps/manifests/archive. Private credential adapter is excluded from shared gate index.
+
+Main-owned final PostgreSQL was verified empty with no other connections, its final dump/password-free roles/complete available logs/current allocation sealed021, then only that container and its volume removed. Empty gate DB cold restoration is not claimed. Historical uncovered containers remain intact.
+
+Verdicts: gates/identity PASS; independent installed delta and full required technical matrix PENDING; real-provider LaneC NOT RUN. Main upstream inference0. Five total cycles:4allocated/5unused. Original timing/budget/counters remain unchanged. Continue through finite acceptance, conditional journeys and delivery; no acceptance transfers automatically from prior candidates.
