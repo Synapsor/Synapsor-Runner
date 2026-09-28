@@ -1,3 +1,11 @@
+# Current qualification roadmap
+
+Cycle3 final-source gates and immutable artifact are complete; installed changed-diagnostic and remaining applicable matrix acceptance are pending. See [current checkpoint](../larger-programs-supported-20260927/CYCLE3-CHECKPOINT.md). Required mixed50, withdrawal and Read controls retain their personally measured layers; no blanket final candidate PASS. Complete the authorized finite technical gate and actual profile/funding feasibility before both LaneC journeys. The original unsupported inverse-PK/FK fifth shape remains outside this supported four-shape continuation.
+
+No new domain, authenticB effect, permissions/accounting redesign or sixth cycle starts automatically. Track optional broader SDK retrieval and unavailable historical resource peaks separately from mandatory current invariants. A deferred, historicalStageB ATTEMPTED/NOTPASSED. The historical roadmap below retains superseded limits/statuses for provenance and is not the active limit register.
+
+# Historical roadmap from preceding delivery
+
 # Deferred qualification and product questions
 
 No work below starts automatically at this delivery.

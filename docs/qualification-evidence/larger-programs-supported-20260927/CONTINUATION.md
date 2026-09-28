@@ -1,3 +1,13 @@
+# Current supported large-program continuation
+
+Updated 2026-09-28T08:48:11.824165+00:00. Cycle3 is frozen on2c9a7267b0c660814a823490dc80aac9dfdd4bc2; all13settled-source gatesPASS. Independent source316 narrowPASS; final installed acceptance and remaining applicable finite matrix are PENDING. Both paidLaneC NOT RUN. See [exact checkpoint](CYCLE3-CHECKPOINT.md). Continue tester installed checks, joint actual route/funding preflight, both eligible journeys, preservation and private delivery without another routine ownerGO.
+
+Five cycles total:1/2/3allocated,4/5unused contingencies. OriginalT1unchanged. Product cutoff2026-09-30T00:10Z; final deadline2026-09-30T23:59Z. Campaign60USD,20perprovider/40combined,400actualtransports/provider; superseded10USDapprovalstop must not be reinstated. Current handoff carries exact next step and liabilities. Mainprovider0; no authenticB operation.
+
+# Historical boundaries and prior checkpoint prose
+
+The removal decision below was subsequently resolved by owner option2 and tested as an exact rights-reducing withdrawal, preserving pending duties/history. Old deadlines, counts, limits and unresolved statuses below remain historical, not current instructions.
+
 # Current update — owner-authorized withdrawal development
 
 Owner option2 is resolved; cycle2 source049 has independent W00–W16 source acceptance at stated layers, remains unfrozen and installed-unaccepted. The earlier owner-pending stop below is historical. See [EXACT-WITHDRAWAL-REPAIR.md](EXACT-WITHDRAWAL-REPAIR.md) for exact proof/currentness, retained pending duties, authentic118 failure and new independent challenge. No gates/freeze or paid LaneC yet. Original time, money, counters and four-cycle ledger are retained.
