@@ -1,0 +1,15 @@
+# Candidate 4 remaining acceptance update
+
+Recorded 2026-09-28T15:57:44.065546+00:00. Product/tests `f20e8633b352528fe216adfca6ca45a47a351e27` and frozen bytes remain unchanged; all13 settled gates stand. This report-only checkpoint preserves the earlier492/493 verdict in [its report](CYCLE4-FINITE-ACCEPTANCE-PENDING.md).
+
+Independent540/539/541 now records **41 PASS / 11 NOT ESTABLISHED**, with no new product counterexample. ReportSHA `52516376c6fd789bf012a4d497b2774f0effee84db0baa5c88e9d789e46d4f51`; indexSHA `66fead2c4b1e7471ff6de340ff93f98f9d09d1ea6f9aed165c792e426e636756`. Main058 checked all5,215 indexed members,862,544,673 bytes and complete prior493 preservation. Main053/055/057 provide bounded recovery/preparation/complete logical comparisons. Identity verification does not establish missing acceptance.
+
+P07 actual producer adversaries, P09 real native confirmation/locked publication refusal, and N08 actual NULL/ties/scope/suppression reads are established at their recorded layers. P09 is not claimed as a PTY final-Yes journey. Remaining mandatory executable scopes are P10, N02 and N17; actual paired C07/M03 preflight also remains pending. Paid GO false; LaneC0; Main inference0. Four cycles allocated; fifth unused.
+
+Main059 traces real whole-program readiness and the prepared outside-unit prerequisite before receipt-capability checks. Historical372's setup refusal stays distinct; no fake configuration opens it. A proposed other registered global-duty family requires the tester's predeclared fidelity judgment, not Main substitution. Original064 was incorrectly described as a five-Action fixture in Main assistance; its actual zero-Action export545 succeeded before the tester assertion failed, with no authoritysave or provider. That fixture correction is preserved; actual009 legacy five-Action Source and fresh bindings are the next N02 companion. No product defect is inferred.
+
+Only ten owned unindexed generated compile caches were removed after complete archives/cold restoration053; original mode-only harness failure052 remains. Parent fixtures, indexed evidence and five older uncovered resources remain. Fresh prospective resource accounting remains required under4GiB. Prior offline/package gates and frozen dependencies are independent of cleared global ~/.npm.
+
+The controlling039 amendment retains originalT1, cutoff2026-09-30T00:10Z and final2026-09-30T23:59Z. Campaign$60, LaneC$20/provider/$40combined/400transports each, historical costs/holds/counters and actual joint preflight remain. No product change after either paid journey begins. Continue directly through eligible journeys and delivery when independent conditions pass; no additional ownerGO at routine checkpoints.
+
+Raw Main root: `/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-supported-continuation-20260927`. Independent root: `/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-supported-50-20260927`. Actual artifact index: `repair-cycle4/ARTIFACT-DELIVERY-023.json`. Historical A deferral, StageB ATTEMPTED/NOTPASSED and L4 failures remain unchanged.
