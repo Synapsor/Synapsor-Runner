@@ -1,3 +1,4 @@
+import { assessActionWithdrawal, type ActionWithdrawalReview } from "./action-rule-withdrawal.js";
 import { actionRuleEffectLines, actionRuleEffectInventory } from "@synapsor-runner/action-rules";
 import { AUTHORING_PROGRAM_CAPACITY, authoringReviewPage } from "./authoring-program-capacity.js";
 import { actionSubjectCompatibility } from "./action-subject-compatibility.js";
@@ -151,6 +152,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
   let draftReady = !subjectConcerns.length && (input.draft?.authority.rules.every((rule) => activeReads.some((boundary) =>
     boundary.pack.name === rule.read_boundary_name
     && boundary.activation.digest === rule.read_boundary_digest)) ?? false);
+  const dependenciesReady = draftReady;
   const unavailableOutcomes = new Set(input.active?.authority.rules.filter((rule) => !activeReads.some((boundary) =>
     boundary.pack.name === rule.read_boundary_name && boundary.activation.digest === rule.read_boundary_digest))
     .map((rule) => rule.rule.outcome) ?? []);
@@ -207,7 +209,7 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
     : [];
   const requestImpact = await reviewActionRevisionImpact(input);
   const jobReview = await readSavedActionJobReview({ projectRoot: input.projectRoot, boundaryName: input.boundaryName,
-    currentOutcomes: current.authority.rules.map((rule) => rule.rule.outcome), env: input.env, currentDraft: input.draft });
+    currentOutcomes: current.authority.rules.map((rule) => rule.rule.outcome), env: input.env, currentDraft: input.draft, currentActivation: input.active });
   const programConcerns: string[] = [];
   if (input.draft) {
     try { await assertCompleteSelectedActionProgram({ projectRoot: input.projectRoot, draft: input.draft, env: input.env }); }
@@ -215,6 +217,13 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
       if (!(error instanceof Error) || !error.message.startsWith("AUTHORING_PROGRAM_NOT_READY:")) throw error;
       draftReady = false;
       programConcerns.push(error.message);
+    }
+  }
+  let withdrawal: ActionWithdrawalReview | undefined;
+  if (dependenciesReady && !needsReadReview && input.active && input.draft) {
+    try { withdrawal = await assessActionWithdrawal({ projectRoot: input.projectRoot, draft: input.draft, env: input.env, baseConfigPath: input.baseConfigPath }); }
+    catch (error) {
+      if (!["ACTION_RULE_WITHDRAWAL_NOT_CURRENT", "ACTION_RULE_WITHDRAWAL_NOT_EXACT"].includes(String((error as { code?: unknown }).code))) throw error;
     }
   }
   const reviewedNotice = (value: ActionRuleAuthorityDraftV1 | ActionRuleAuthorityActivationV1, active: boolean, configPath?: string) => {
@@ -230,6 +239,8 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
     ...await removalImpact(),
     ...jobReview.summary,
     ...programConcerns,
+    ...(withdrawal ? ["An exact withdrawal is available separately from BUSINESS completion. Original source duties remain pending.",
+      `Withdraw: ${withdrawal.removed_outcomes.join(", ")}. Retained Action semantics and current count bindings were checked.`] : []),
     ...subjectLines,
     ...(needsReadReview ? ["Review the saved read access first; its latest revision is not active.",
       "Your business rules stay saved. Read approval is separate and does not enable changes or execution.",
@@ -319,6 +330,8 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
               disabled: !draftReady,
             }]
           : []),
+        ...(withdrawal ? [{ value: "withdraw", label: `Withdraw ${withdrawal.removed_outcomes.length} Actions; keep original job pending`,
+          detail: "Only removes exact current rights. No BUSINESS completion, source write or execution enablement." }] : []),
         ...(input.draft
           ? [{
               value: "details_draft",
@@ -590,6 +603,31 @@ async function reviewSavedVerifiedActionAuthority(input: Parameters<typeof revie
         title: "Verified Action Boundary deactivated.",
         lines: ["Proposal authority is off. Approval, apply, evidence, and source data are unchanged."],
       };
+    }
+    if (choice === "withdraw" && input.draft && withdrawal) {
+      const confirmed = await input.session.confirm(
+        `Publish this exact Action withdrawal?`,
+        { defaultValue: false, context: [
+          `Remove: ${withdrawal.removed_outcomes.join(", ")}.`,
+          `Retain ${input.draft.authority.rules.length} Actions with exactly unchanged semantics.`,
+          "Original source duties and BUSINESS review remain pending. This records withdrawal only.",
+          "Pending or approved removed work cannot execute. History and source data remain unchanged.",
+          ...await removalImpact(),
+          ...(executionReReviewOutcomes.length ? ["Existing execution bindings require separate re-review."] : []),
+        ], exactDetails: { title: "EXACT WITHDRAWAL", lines: [
+          `Active baseline: ${withdrawal.from_digest}`, `Candidate: ${input.draft.digest}`,
+          `Review context: ${withdrawal.review_context_digest}`,
+          ...verifiedActionAuthorityDetails(input.draft, input.session.terminalColumns),
+        ], summaryTitle: "WITHDRAWAL REVIEW", sections: verifiedActionAuthoritySections(input.draft, input.session.terminalColumns) } });
+      if (!confirmed) continue;
+      const result = await activateSemanticActionRuntime({ projectRoot: input.projectRoot,
+        ...(input.baseConfigPath ? { baseConfigPath: input.baseConfigPath } : {}), draft: input.draft,
+        actor: localInteractiveActor(), env: input.env, withdrawalContext: withdrawal.review_context_digest });
+      return { tone: "success", title: "Action withdrawal published; original job remains pending.",
+        lines: [`Withdrawn: ${result.activation.publication!.removed_outcomes.join(", ")}.`,
+          "Retained Action semantics are unchanged. This publication is not BUSINESS review completion.",
+          "Original source duties, history and receipts remain retained; no source change occurred.",
+          "Execution bindings require their ordinary separate review before use."] };
     }
     if (choice === "activate" && input.draft && draftReady) {
       const confirmed = await (input.session.confirmActivation ?? input.session.confirm)(

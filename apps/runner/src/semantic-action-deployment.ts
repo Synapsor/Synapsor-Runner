@@ -1,3 +1,4 @@
+import { assessActionWithdrawal } from "./action-rule-withdrawal.js";
 import { SEMANTIC_ACTION_RUNTIME_CONFIG, executionConfigForReview, readSemanticSupervisedExecutionState, type SemanticSupervisedExecutionState } from "./semantic-execution-state.js";
 export { SEMANTIC_ACTION_RUNTIME_CONFIG, readSemanticSupervisedExecutionState, type SemanticSupervisedExecutionState } from "./semantic-execution-state.js";
 import { withProjectRuntimeAdmission } from "./project-runtime-admission.js";
@@ -227,6 +228,8 @@ export async function activateSemanticActionRuntime(input: {
   actor: string;
   now?: string;
   env?: NodeJS.ProcessEnv;
+  /** Exact local withdrawal preview, never a model-supplied bypass. */
+  withdrawalContext?: string;
 }): Promise<SemanticActionRuntimeActivation> {
   const draft = parseStoredActionRuleAuthority(input.draft);
   if (draft.state !== "disabled") throw new Error("ACTION_RULE_DRAFT_REQUIRED: review a disabled Action revision before activation.");
@@ -241,7 +244,10 @@ export async function activateSemanticActionRuntime(input: {
 async function activateSemanticActionRuntimeUnlocked(input: Parameters<typeof activateSemanticActionRuntime>[0],
   permit: ProjectAuthorityMutationPermit): Promise<SemanticActionRuntimeActivation> {
   const projectRoot = path.resolve(input.projectRoot);
-  await assertCompleteSelectedActionProgram({ projectRoot, draft: input.draft, env: input.env, permit });
+  const withdrawal = input.withdrawalContext ? await assessActionWithdrawal({ projectRoot, draft: input.draft,
+    env: input.env, baseConfigPath: input.baseConfigPath, outputConfigPath: input.outputConfigPath,
+    expected_context_digest: input.withdrawalContext, permit }) : undefined;
+  if (!withdrawal) await assertCompleteSelectedActionProgram({ projectRoot, draft: input.draft, env: input.env, permit });
   const outputConfigPath = path.resolve(
     input.outputConfigPath ?? path.join(projectRoot, SEMANTIC_ACTION_RUNTIME_CONFIG),
   );
@@ -273,7 +279,7 @@ async function activateSemanticActionRuntimeUnlocked(input: Parameters<typeof ac
       await selected?.close();
       const activation = await activateActionRuleAuthority({ clientContract: "four_tool", projectRoot, name: input.draft.authority.name,
         expected_digest: input.draft.digest, confirmation: `ACTIVATE ${input.draft.digest}`, actor: input.actor,
-        mutationPermit: permit, ...(input.now ? { now: input.now } : {}),
+        mutationPermit: permit, ...(withdrawal ? { withdrawal } : {}), ...(input.now ? { now: input.now } : {}),
         runtimePublication: { binding, configPath: outputConfigPath, before: previous, after: nextText } });
       return { activation, config_path: projectRelativePath(projectRoot, outputConfigPath), config_changed: configChanged };
     }
@@ -286,6 +292,7 @@ async function activateSemanticActionRuntimeUnlocked(input: Parameters<typeof ac
         confirmation: `ACTIVATE ${input.draft.digest}`,
         actor: input.actor,
         mutationPermit: permit,
+        ...(withdrawal ? { withdrawal } : {}),
         ...(input.now ? { now: input.now } : {}),
       });
       return { activation, config_path: projectRelativePath(projectRoot, outputConfigPath), config_changed: configChanged };

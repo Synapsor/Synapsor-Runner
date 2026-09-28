@@ -12,7 +12,9 @@ import { policyReviewReadiness } from "./authoring-review-readiness.js";
 import { withCountingOutcomeDomain } from "./authoring-counting-domain.js";
 import { clientDutyInventory } from "./authoring-client-duties.js";
 
-/** Rechecks saved policy status against the exact current dependencies. Never
+/** dependencies_current describes source/count evidence only, even when a
+ * pending review or edit still prevents BUSINESS completion. It grants no right.
+ * Rechecks saved policy status against the exact current dependencies. Never
  * replaces guided coverage production, exact authority consent or runtime admission. */
 export async function savedAuthoringPolicyReview(input: {
   projectRoot: string; binding: BoundaryAuthoringResumeBinding; readDigest: string;
@@ -20,7 +22,7 @@ export async function savedAuthoringPolicyReview(input: {
   env?: NodeJS.ProcessEnv;
   /** Only supplied under an existing runtime-admission -> mutation scope. */
   permit?: import("./project-authority-mutation.js").ProjectAuthorityMutationPermit;
-}): Promise<ReturnType<typeof policyReviewReadiness> | undefined> {
+}): Promise<(ReturnType<typeof policyReviewReadiness> & { dependencies_current?: true }) | undefined> {
   const pending = (message: string) => ({ ready: false, privacy: false, summary: [message,
     "Resume the saved job to recheck its policy and pending work. Active authority is unchanged."] });
   const loaded = await readBoundaryAuthoringResumeState(input.projectRoot, input.binding);
@@ -95,9 +97,9 @@ export async function savedAuthoringPolicyReview(input: {
     if (saved.pending_policy_review || saved.pending_job_revision || saved.pending_read_revision || saved.pending_action_revision
       || (saved.pending_action_removal && !isPreparedProgramRemoval(saved, input.exactActionDraft)) || saved.pending_action_addition
       || !["authority_review", "client_setup"].includes(saved.stage)) {
-      return { ...review, ready: false, summary: ["A saved edit or unfinished drafting step is still pending.", ...review.summary] };
+      return { ...review, dependencies_current: true, ready: false, summary: ["A saved edit or unfinished drafting step is still pending.", ...review.summary] };
     }
-    return { ...review, summary: [...review.summary,
+    return { ...review, dependencies_current: true, summary: [...review.summary,
       "This is the saved policy interpretation, not a live check or activation. Exact authority and execution reviews remain separate."] };
   } catch {
     return pending("The saved policy review is unavailable; the policy and draft have not been changed.");

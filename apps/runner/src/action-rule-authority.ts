@@ -1,3 +1,5 @@
+import { proveExactActionWithdrawal } from "./action-rule-withdrawal-proof.js";
+import type { ActionWithdrawalReview } from "./action-rule-withdrawal.js";
 import { assertActionSubjectsObtainable } from "./action-subject-compatibility.js";
 import fs from "node:fs/promises";
 import type { Dirent } from "node:fs";
@@ -62,6 +64,8 @@ export type ActionRuleAuthorityActivationV1 = {
   reviews: ActionRuleAuthorityReviewV1[];
   actor: string;
   activated_at: string;
+  /** Attributed rights reduction; never a BUSINESS completion record. */
+  publication?: ActionWithdrawalReview;
 };
 
 export type LoadedActiveActionRuleAuthorityV1 = LoadedActionRuleAuthorityV1 & {
@@ -127,7 +131,7 @@ export async function readActionRuleCoverageLineage(projectRoot: string, selecte
       if (refs.length !== 1) break;
       const event = await binding.repository.event(binding.deployment_id, refs[0]!.event_id);
       const receipt = event?.receipt as Record<string, unknown> | undefined;
-      if (!event || receipt?.operation !== 'activate_action' || receipt.after !== revision.revision_id
+      if (!event || !receipt || !['activate_action', 'withdraw_action'].includes(String(receipt.operation)) || receipt.after !== revision.revision_id
         || receipt.name !== selected.authority.name || receipt.source_database_changed !== false || typeof receipt.before !== 'string') break;
       const priors = history.filter(item => item.revision.revision_id === receipt.before && item.epoch < event.epoch);
       if (priors.length !== 1 || (storedActionContent(priors[0]!.revision) as { state?: unknown }).state !== 'active') break;
@@ -395,11 +399,11 @@ function parseStoredActionActivation(revision: ControlPolicyRevision): ReturnTyp
   assertOperatorPolicyRecord(revision, actionKey(parsed.activation.authority.name), parsed.activation.digest);
   return parsed;
 }
-function actionPolicyEvent(operation: "save_disabled_action" | "activate_action", actor: string,
-  current: ControlPolicyScopeSnapshot, revision: ControlPolicyRevision) {
+function actionPolicyEvent(operation: "save_disabled_action" | "activate_action" | "withdraw_action", actor: string,
+  current: ControlPolicyScopeSnapshot, revision: ControlPolicyRevision, publication?: ActionWithdrawalReview) {
   const previous = operation === "save_disabled_action" ? current.drafts.find((entry) => entry.name === revision.name) : current.active[0];
   return { event_id: randomUUID(), actor, occurred_at: new Date().toISOString(), receipt: { operation,
-    name: revision.name, before: previous?.revision_id ?? null, after: revision.revision_id, source_database_changed: false } };
+    name: revision.name, before: previous?.revision_id ?? null, after: revision.revision_id, source_database_changed: false, ...(publication ? { publication } : {}) } };
 }
 
 async function checkedStoredActionResult(projectRoot: string, binding: BoundProjectPolicyStore, current: ControlPolicyScopeSnapshot,
@@ -570,7 +574,7 @@ export async function readActionRuleReviewSubjects(projectRoot: string): Promise
       const event = eventRef ? await binding.repository.event(binding.deployment_id, eventRef.event_id) : undefined;
       const receipt = event?.receipt as Record<string, unknown> | undefined;
       const material = (value: ExistingActionRuleAuthorityV1) => canonicalJsonDigest({ authority: value.authority, reviews: value.reviews });
-      const prior = receipt?.operation === "activate_action" && receipt.after === revision.revision_id && receipt.name === revision.name
+      const prior = receipt && ["activate_action", "withdraw_action"].includes(String(receipt.operation)) && receipt.after === revision.revision_id && receipt.name === revision.name
         ? history.find(item => item.epoch < event!.epoch && (storedActionContent(item.revision) as { state?: unknown })?.state === "disabled"
           && material(parseStoredActionDraft(item.revision)) === material(activation)) : undefined;
       subjects.push({ authority: activation, identity: { location: "active", record: revision.revision_id, store },
@@ -604,6 +608,7 @@ export async function activateActionRuleAuthority(input: {
   /** Selected by the fixed-tool deployment host, never a model option. Other hosts can issue their own reviewed subjects. */
   clientContract?: "four_tool";
   /** Internal, already-validated runtime binding; never model-supplied authority. */
+  withdrawal?: ActionWithdrawalReview;
   runtimePublication?: { binding: BoundProjectPolicyStore; configPath: string; before: string | undefined; after: string };
 }): Promise<ActionRuleAuthorityActivationV1> {
   return withProjectAuthorityMutation(input.projectRoot, (held) => activateActionRuleAuthorityUnlocked({ ...input,
@@ -616,10 +621,11 @@ async function activateActionRuleAuthorityUnlocked(input: Parameters<typeof acti
     const revision = current.drafts.find((entry) => entry.name === safeName(input.name));
     const draft = revision ? parseStoredActionDraft(revision) : undefined;
     const activation = await reviewedActionActivation(input, draft, () => loadActivatedExplorationBoundaries(projectRoot, binding));
+    attachWithdrawal(activation, draft!, current.active[0] ? parseStoredActionActivation(current.active[0]).activation : undefined, input.withdrawal);
     const active = storedActionRecord(activation);
     const change: Omit<ControlPolicyCommit, "deployment_id"> = { expected_epoch: current.epoch, revisions: [active],
       active: [...current.active.filter((entry) => entry.name !== active.name).map((entry) => ({ ...actionKey(entry.name), revision_id: null })), actionPointer(active)],
-      drafts: [{ ...actionKey(active.name), revision_id: null }], event: actionPolicyEvent("activate_action", activation.actor, current, active) };
+      drafts: [{ ...actionKey(active.name), revision_id: null }], event: actionPolicyEvent(input.withdrawal ? "withdraw_action" : "activate_action", activation.actor, current, active, input.withdrawal) };
     if (input.runtimePublication) {
       await publishPolicyConfiguration({ projectRoot, ...input.runtimePublication, mutationPermit: input.mutationPermit, change });
     } else await commitImmutableControlPolicies(binding, change);
@@ -629,6 +635,7 @@ async function activateActionRuleAuthorityUnlocked(input: Parameters<typeof acti
   if (input.runtimePublication) throw authorityError("POLICY_REPOSITORY_MISSING", "Runtime publication requires this project's governed policy repository.");
   const draft = await readActionRuleAuthorityDraft(projectRoot, input.name);
   const activation = await reviewedActionActivation(input, draft, () => loadActivatedExplorationBoundaries(projectRoot));
+  attachWithdrawal(activation, draft!, await readActionRuleAuthorityActivation(projectRoot), input.withdrawal);
   const active = activePath(projectRoot);
   const revision = revisionPath(projectRoot, activation.digest);
   const previousActive = await readOptionalText(active);
@@ -901,7 +908,8 @@ function parseActivationSnapshot(value: unknown): {
 } {
   const record = exactRecord(
     value,
-    ["schema_version", "state", "authority", "digest", "reviews", "actor", "activated_at"],
+    ["schema_version", "state", "authority", "digest", "reviews", "actor", "activated_at",
+      ...(value && typeof value === "object" && Object.hasOwn(value, "publication") ? ["publication"] : [])],
     invalidActivation,
   );
   if (record.schema_version !== ACTION_RULE_AUTHORITY_ACTIVATION_VERSION
@@ -920,6 +928,7 @@ function parseActivationSnapshot(value: unknown): {
     reviews,
     actor: reviewedActor(record.actor),
     activated_at: record.activated_at,
+    ...(Object.hasOwn(record, "publication") ? { publication: parseWithdrawalPublication(record.publication) } : {}),
   } };
 }
 
@@ -1090,3 +1099,28 @@ function projectRelativePath(projectRoot: string, target: string): string {
 // Keep a direct version reference in the generated declarations and surface
 // accidental package skew during compilation.
 void ACTION_RULE_AUTHORITY_VERSION;
+
+function parseWithdrawalPublication(value: unknown): ActionWithdrawalReview {
+  const record = exactRecord(value, ["kind", "from_digest", "removed_outcomes", "business_review_completed", "review_context_digest", "pending_source_ranges"], invalidActivation);
+  const digest = (v: unknown) => typeof v === "string" && /^sha256:[a-f0-9]{64}$/.test(v);
+  if (record.kind !== "withdrawal" || record.business_review_completed !== false || !digest(record.from_digest)
+    || !digest(record.review_context_digest) || !Array.isArray(record.removed_outcomes) || !record.removed_outcomes.length
+    || record.removed_outcomes.some(v => typeof v !== "string" || !v.length)
+    || new Set(record.removed_outcomes).size !== record.removed_outcomes.length || !Array.isArray(record.pending_source_ranges)) throw invalidActivation();
+  for (const range of record.pending_source_ranges) {
+    const r = exactRecord(range, ["start", "end"], invalidActivation);
+    if (!Number.isSafeInteger(r.start) || !Number.isSafeInteger(r.end) || (r.start as number) < 1 || (r.end as number) < (r.start as number)) throw invalidActivation();
+  }
+  return structuredClone(record) as ActionWithdrawalReview;
+}
+
+function attachWithdrawal(activation: ActionRuleAuthorityActivationV1, draft: ActionRuleAuthorityDraftV1,
+  active: ActionRuleAuthorityActivationV1 | undefined, publication?: ActionWithdrawalReview): void {
+  if (!publication) return;
+  const checked = parseWithdrawalPublication(publication);
+  if (!active || checked.from_digest !== active.digest || canonicalJsonDigest(checked.removed_outcomes)
+    !== canonicalJsonDigest(proveExactActionWithdrawal(active, draft))) {
+    throw authorityError("ACTION_RULE_WITHDRAWAL_NOT_EXACT", "Current authority does not match this exact withdrawal.");
+  }
+  activation.publication = checked;
+}

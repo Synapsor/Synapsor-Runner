@@ -2,7 +2,7 @@ import { AUTHORING_PROGRAM_RESUME_VERSION } from "./authoring-program-capacity.j
 import { explorationBoundaryCandidateDigest } from "./auto-boundary.js";
 import { isPreparedProgramRemoval } from "./authoring-program-completion.js";
 import { savedAuthoringPolicyReview } from "./authoring-saved-review.js";
-import type { ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";
+import type { ActionRuleAuthorityDraftV1, ActionRuleAuthorityActivationV1 } from "./action-rule-authority.js";
 export { readSavedExecutionRequirements } from "./saved-execution-requirements.js";
 import { readBoundaryAuthoringResumeState, type BoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
@@ -38,6 +38,7 @@ export function unfinishedActionIntents(resume: BoundaryAuthoringResumeState, cu
 export async function readSavedActionJobReview(input: {
   projectRoot: string; boundaryName: string; currentOutcomes: readonly string[]; env?: NodeJS.ProcessEnv;
   currentDraft?: ActionRuleAuthorityDraftV1;
+  currentActivation?: ActionRuleAuthorityActivationV1;
 }): Promise<SavedActionJobReview> {
   let selected;
   try {
@@ -66,6 +67,16 @@ export async function readSavedActionJobReview(input: {
     details: [`Saved setup: ${saved.status}. ${saved.reason}`,
       "Reopen model-guided setup to reconcile the saved job with the current review. No saved work or active permission changed."],
   };
+  if (!input.currentDraft && input.currentActivation?.publication?.kind === "withdrawal") {
+    const publication = input.currentActivation.publication;
+    return { completeProgram: { draftsComplete: false },
+      summary: [`Published withdrawal: ${publication.removed_outcomes.join(", ")}. Retained ${input.currentOutcomes.length} Actions remain active; the original job and source duties remain pending.`,
+        "Withdrawal does not establish BUSINESS review completion."],
+      detailsLabel: "View pending original source duties",
+      details: ["Original selected job", saved.value.job_intent,
+        ...publication.pending_source_ranges.map(r => `Pending source lines ${r.start}-${r.end}.`),
+        "The removal and its previous review remain history. Resume current source review to resolve its remaining duties."] };
+  }
   const preparedRemoval = isPreparedProgramRemoval(saved.value, input.currentDraft);
   const pending = unfinishedActionIntents(preparedRemoval ? { ...saved.value, pending_action_removal: undefined } : saved.value, input.currentOutcomes);
   if (saved.value.schema_version === AUTHORING_PROGRAM_RESUME_VERSION) {
@@ -75,7 +86,7 @@ export async function readSavedActionJobReview(input: {
       summary: [ready ? preparedRemoval
         ? `Complete replacement program: all ${saved.value.action?.intents?.length ?? 1} retained Actions are prepared. Removal of ${saved.value.pending_action_removal!.outcome} remains pending until separate publication; exact source and authority validation remain required.`
         : `Complete selected program: all ${saved.value.action?.intents?.length ?? 1} intended Actions are represented in this candidate. Exact source and authority validation remain required.`
-        : `Complete selected program is pending: ${pending.length} intended Actions or saved edits still require review. Publication stays disabled.`],
+        : `Complete selected program is pending: ${pending.length} intended Actions or saved edits, and any unresolved source duties, still require review. Publication stays disabled.`],
       details: ["Complete selected program", ...pending.map((intent, index) => `${index + 1}. ${intent}`),
         "A work unit is saved progress. It cannot be published as completion of the selected program."] };
   }

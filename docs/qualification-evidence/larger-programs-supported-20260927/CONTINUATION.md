@@ -1,3 +1,9 @@
+# Current update — owner-authorized withdrawal development
+
+Owner option2 is resolved; cycle2 source049 has independent W00–W16 source acceptance at stated layers, remains unfrozen and installed-unaccepted. The earlier owner-pending stop below is historical. See [EXACT-WITHDRAWAL-REPAIR.md](EXACT-WITHDRAWAL-REPAIR.md) for exact proof/currentness, retained pending duties, authentic118 failure and new independent challenge. No gates/freeze or paid LaneC yet. Original time, money, counters and four-cycle ledger are retained.
+
+# Historical owner-scope boundary
+
 # Supported large-program continuation — current owner-scope boundary
 
 Updated 2026-09-27 UTC. Original T1 is 2026-09-27T16:10:48Z. Owner amendment034 now permits four repair cycles total, product changes only before **2026-09-29T16:10:00Z**, final operation/delivery deadline **2026-09-30T23:59:00Z**. Old timing/counter prose below is historical. Cycle1 has narrow installed acceptance; cycle2 is developing and **unaccepted**, with no final gates/freeze. Cycles3/4 are unused conditional allowances.
