@@ -1,0 +1,7 @@
+# Lane C harness v3 — independent challenge pending
+
+Versions1/2 and failures610/621/630 remain immutable. Version3 adds owner099's separate100 noninference count-call ceiling per journey, carrying the earlier direct count602 as one historical call; inference retains400. Count fees share the same$20/provider,$40combined,$60campaign ledger. The module cannot perform a countHTTP call: the separately accepted counter must establish count-only behavior, exact projection/profile, permitted inputs and fee/cost upper. No count endpoint is assumed free. Actual602 fee remains separately unquantified; initialization/test ledger is not a settlement or final financial signoff.
+
+Version3 uses the unchanged immutable-plan/hook protection. Capture allowance now includes raw+safe copies and overhead:19MiB/request plus the atomic ledger's current size+256KiB temporary allowance. Raw compressed captures have a64KiB checked expansion cap and exact raw fallback; oversized safe views get a labelled withholding marker with identities, never a wire alteration. Numeric accounting metadata only enters ledger/events. Boundary refusal halts later proxy inference, with existing in-flight observations allowed to finish.
+
+Main20DERIVED inert checks pass. No acceptance transfers from that result or previous tester625/626: changed counter/capture integration requires the existing tester's own probe. Pending resource fit and token/output/privacy/funding hooks remain real pre-paid gates. No product change, provider call or repaircycle consumption occurred.
