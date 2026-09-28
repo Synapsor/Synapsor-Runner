@@ -1,3 +1,13 @@
+# Current qualification roadmap — Lane C measured and closed
+
+See [three-journey results](../larger-programs-supported-20260927/LANE-C-THREE-JOURNEY-RESULTS.md). Initial complete Source admission and serial rolling-budget wiring were exercised on unchanged f20. Universal billing behavior remains unproved; the owner expressly accepted residual risk. None of the three real-model samples completed full50. Earlier deterministic43PASS/9NE is unchanged, not promoted to complete qualification.
+
+Potential future decisions, not authorized work: request-specific reconciliation of the unknown Direct transport; reliable decomposition/retention of full-program intent; truthful distinction between checkpoint preparation and durable save; model fidelity to nonempty-input requirements before whole-program acceptance. Diagnose before proposing product changes: the observed disabled-draft omissions do not establish that the rule language cannot express the requirement. No automatic model retry, product repair or new sample follows.
+
+N04/N17 exceptions remain limited to the same fixed-schema full50 task. Unsupported fifth shape, other unestablished required-path rows and historical B/L4 gaps retain their original scope. No business continuation, new domain or production claim follows. Stop after report-only delivery.
+
+# Historical roadmap before amended real-model measurement
+
 # Current qualification roadmap
 
 The supported continuation closes on unchanged frozen4, product/tests f20e8633b352528fe216adfca6ca45a47a351e27, with independent **43 PASS / 9 NOT ESTABLISHED**. See [final status](../larger-programs-supported-20260927/FINAL-QUALIFICATION-STATUS.md). Both real-model journeys remain NOT RUN at actual M03/C07 pre-send prerequisites. No further work starts automatically at delivery; the unused fifth repair allowance is not a new campaign.

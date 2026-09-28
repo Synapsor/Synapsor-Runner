@@ -1,0 +1,96 @@
+{
+  "utc": "2026-09-28T23:55:07.269285+00:00",
+  "kind": "Report-only closure, not new artifact",
+  "product_tests": "f20e8633b352528fe216adfca6ca45a47a351e27",
+  "installed_tree": "38c189a1caaa90c54f3926a04187e413990c10bdd989b98905ceb14d1f1d34cf",
+  "independent_report": {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-supported-50-20260927/REVIEW-CONTINUATION-852.md",
+    "sha256": "26766028bac82d91d67ccb204360ac0c8f541f1c907a851e8eed139028597ebd"
+  },
+  "independent_index": {
+    "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-supported-50-20260927/REVIEW-EVIDENCE-853-DELTA.json",
+    "sha256": "75dfe1f862f6362aa1deda945e9ae9810afc0ab1ba1567f994e1a41c79f7db8d"
+  },
+  "main_evidence": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-supported-continuation-20260927/MAIN-JOINT-LIVE-PREFLIGHT-184.json",
+      "sha256": "82da330e2d64edffd6a4e8da21165be028a660de0f94515b7e67222c1cbf508c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-supported-continuation-20260927/MAIN-LIVE-AMENDMENT-READBACK-185.json",
+      "sha256": "6f4308d51d3501596f7ea57f204bfafb3672e77eef9b93dd47cb4a6a3f7cfe41"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-supported-continuation-20260927/MAIN-INDEPENDENT-INDEX823-186.json",
+      "sha256": "bd9be1175f7762eb5a10dd90d11d124a5fe193530095d2c288cf88d678d4d238"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-supported-continuation-20260927/MAIN-DIRECT-RESUMED-USAGE-187.json",
+      "sha256": "e234652ec03b0abbda7c91bccd2178f12d376d20e699618786b7d208f15cbea1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-supported-continuation-20260927/MAIN-DIRECT-STOP-PRESERVATION-188.json",
+      "sha256": "9d162f75c137dc41b85c9adeb161f73d3ff4a6e58a3832aacc0a3e138e9d7d6a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-supported-continuation-20260927/MAIN-OR-INITIAL-SOURCE-CAPTURE-189.json",
+      "sha256": "901ca66d6c976ae3db27146ecda4440d63710a05941e982b696be45ffbd1fee3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-supported-continuation-20260927/MAIN-OR-REASON-OMISSION-190.json",
+      "sha256": "3451eb672327547b01755b6da4d834a3fd756af09a1d3e838a3c684de036e038"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-supported-continuation-20260927/MAIN-OR-RAW-ACCOUNTING-191.json",
+      "sha256": "a2554e0c97ce0bd3a6a3aaba88a311f593d8e2ae940e506c8fe8a34bd60e6084"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-supported-continuation-20260927/MAIN-OR-STOP-PRESERVATION-192.json",
+      "sha256": "ce4399927d6b7adf2638580f8236f279c72f055ff33d3d8622da0e6db5342045"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-supported-continuation-20260927/MAIN-MINI-INITIAL-ADMISSION-193.json",
+      "sha256": "98e018abc286991fca2171d383f2a48fc7309f428670663f248cce9917189de7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-supported-continuation-20260927/MAIN-MINI-PLAN-RETENTION-194.json",
+      "sha256": "960cb1e896fd8ff05d6944b01114a743294bc1a2fb9d070d6917786d5446ecd3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-supported-continuation-20260927/MAIN-MINI-RAW-ACCOUNTING-195.json",
+      "sha256": "16f943c66015daafda5edab4801fe85e19dca97ff72d95bb2ef0aaa90f3e3058"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-supported-continuation-20260927/MAIN-THREE-LANE-CLOSING-ACCOUNTING-196.json",
+      "sha256": "81d2abc6b763cc76227f979a2d8dd118f4985d918bb48b4c5b8ed9372a27761a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-supported-continuation-20260927/MAIN-RAW-USAGE-TOTALS-197.json",
+      "sha256": "90e86ab0a9878f03f7b96d289777e4a5a18319d73e74ddd9722c954e4a75c114"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-supported-continuation-20260927/MAIN-MINI-STOP-PRESERVATION-198.json",
+      "sha256": "5390a0f26fc11e2a251ada7720e815886796f88690049be13067faa8f7e35702"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-supported-continuation-20260927/MAIN-FINAL-INSTALLATION-IDENTITY-199.json",
+      "sha256": "ae385536b941b1073904e462e37328662fc90201b64e7cef363f3a752fd84efc"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-supported-continuation-20260927/MAIN-COLDRESTORE-VERIFICATION-200.json",
+      "sha256": "4202d91254a5180ac4bfc3c33666c6ee87e1be48d71cdcfc9d4268b83851efae"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-supported-continuation-20260927/MAIN-FINAL-RESOURCE-READBACK-201.json",
+      "sha256": "33a99375ca35c31c87da64c9989ab17b08319422aa3c2cbb4f90f07d36d1c650"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/larger-programs-supported-continuation-20260927/MAIN-FINAL-INDEPENDENT-INDEX-202.json",
+      "sha256": "ab1924e7780731bad9038d740af4ab6b85ae8cf49122ec5bc2f6089480fe3642"
+    }
+  ],
+  "final_ledger_sha256": "008b084ad848c9c3c730a5c514e2cea3e7173781b07ab0f9a46de30a2ffe1607",
+  "lane_c_accounted_usd": "14.51342345",
+  "campaign_accounted_usd": "19.67934760",
+  "final_status": "STOP; realfull50 completion notestablished; failures preserved"
+}

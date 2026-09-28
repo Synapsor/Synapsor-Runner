@@ -1,3 +1,5 @@
+Current closure: see [three-journey results](LANE-C-THREE-JOURNEY-RESULTS.md) and [exact evidence](LANE-C-CLOSURE-EVIDENCE.json). Paid lanes, preservation and delivery are closed; STOP. The dated records below remain chronological evidence.
+
 # Lane C reopened under practical spending controls
 
 Continuation T0: **2026-09-28T19:42:49Z**. Deadline: **2026-09-30T23:59:00Z**. Preparation progress checkpoint at 23:42:49Z is not an automatic stop.
@@ -84,3 +86,19 @@ The tester is the sole writer applying the exact additive amendment817 to the ex
 The tester applied amendment817 exactly once at **2026-09-28T23:02:18.600Z**. Main185 independently compared the sealed before/after ledgers: all original top-level history and holds, count entries and invocations are unchanged; all26 old inference entries are preserved literally inside the additive event, with only current status, usage-computed cost and event reference updated. Post-amendment ledger SHA `92c6fc054c83bca171d2f5b8f99f07166e853cb06872d8f9dc8b47ee69847cc2`. Accounted campaign liability$15.62609505 and LaneC$10.46017090 at that instant include held/provisional amounts, not just settled spend. Main185 SHA `6f4308d51d3501596f7ea57f204bfafb3672e77eef9b93dd47cb4a6a3f7cfe41`. Direct resumed its original saved job through the public Resume route.
 
 Main186 verified all172 immutable members of independent index823 (file kind, bytes, mode, content hash) and its783 parent hash. Evidence-integrity PASS is separate from model outcomes. Original820 pending-signature wording stays historical;184/825 resolve that checkpoint additively.
+
+
+### Direct main: unresolved financial transport stop after resume
+
+The same Direct job saved seven disabled Action drafts and part of the eighth. In the resumed invocation,24 complete Responses returned reported usage and one additional inference attempt ended with `QUALIFICATION_NETWORK_AMBIGUOUS` without a captured response or usage. Its full$2.77855 reservation remains held. The local503 shown to Runner is not an observed upstream HTTP status. This is an unresolved transport/accounting stop, not an800-call stop, semantic failure, or proof of no charge. No replay is authorized. TotalDirect inference attempts51; count ledger25. Whole-program review/publication/edit/removal were not reached.
+
+Main187 independently parsed and hashed all24 resumed response captures: usage-computed cost$0.6817190; all50 completed Direct inferences$1.3426864. Retained count liabilities$9.7976375 plus unknown inferencehold$2.77855 produce$13.9188739 accountedDirect liability. Usage-computed cost is not an invoice.
+
+Main188 independently compared final789 to stop827: all42 control tables and columns,15configuration members and complete Source bytes. Exactly four management tables and the disabled draft/resume artifacts advanced; prior event/revision rows, original three completed drafts, job and intent list remain intact. All Source20relations/139rows/schema/ACL/roles are byte-identical. Archive827 SHA `626d720fa68d9a0702ebf76b9acba30b421b1da045f90188dc872915acf8f249`; cold restoration remains a closure requirement. OpenRouter continues independently under the signed packet; mini follows if its prerequisites remain valid.
+
+
+### OpenRouter: unresolved model requirement after one disabled draft
+
+The complete sealedSource and job reached the actual planning request unchanged (Main189:26,494bytes,54nonemptySource lines, exact privacy/model settings; request SHA `ec562d56a7542ca2106ad64ec5090509ac378fcc047e6d423c8109fb6a1179db`). OpenRouter prepared one disabled Action, then asked how to enforce the second Action’s nonempty reason. The tester restated the sealed1..64 requirement once, without a new guard, policy change or implementation hint. The model retained that requirement as unresolved. No fresh opinion or rescue prompt followed. Whole-program review/publication/edit/removal remain unestablished.
+
+Main190 inspected the first disabled draft: its reason input has max64 but no lower-bound condition in its complete requirement predicate. Tester831 executed the original frozen input validator in isolation: lengths0/1/64 pass and65 fails. This is a model-draft semantic omission, not accepted business authority. The string primitive’s missing minimum alone does not establish that the full language cannot represent nonempty; exact-string comparisons exist. No product repair or business request was made. Main191 independently matched all14raw provider cost fields to ledger entries: **$0.4395889**, peak request201,914bytes, cumulative1,990,249bytes, zero counts. Both setup narration calls remain included.

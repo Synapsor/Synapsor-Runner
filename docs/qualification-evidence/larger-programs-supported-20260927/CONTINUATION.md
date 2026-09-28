@@ -1,4 +1,12 @@
-# Current — Lane C reopened by owner136
+# Current — three Lane C measurements delivered; STOP
+
+The unchanged f20/38c189 candidate was exercised under owner170/175: 800 inference / 100 count operations per journey; $30 Direct main, $20 OpenRouter, $10 mini, $60 combined / $80 campaign; original T0 retained, deadline2026-10-01T23:59Z. Actual outcomes: Direct7 disabled drafts plus partial8, unresolved transport and retained $2.77855 hold; OpenRouter1 disabled draft and unresolved reason requirement; mini0 completed outcomes and a model retention/narration failure. No full50 BUSINESS acceptance/publication/edit/removal completed. No further sends or repairs are authorized automatically.
+
+All three complete cold restores and unchanged-installation identity checks passed. Independent report852/index853 are hash-bound in [final additive results](LANE-C-THREE-JOURNEY-RESULTS.md). Main verified all466 new indexed members, full raw usage/costs, complete logical preservation and resource cleanup. Lane C accounted liability$14.51342345; campaign$19.67934760 includes all historical/provisional/uncertain holds, not a claimed invoice. Main provider calls0. Earlier43PASS/9NE, StageB ATTEMPTED/NOTPASSED and historicalL4FAIL remain unchanged.
+
+Everything below is historical, not an active instruction to resume.
+
+# Historical — Lane C reopened by owner136
 
 Only the two sealed equivalent full50 journeys are reopened on unchanged f20/38c189. Continuation T0 2026-09-28T19:42:49Z; fixed deadline 2026-09-30T23:59Z. Practical rolling reservations with 25% contingency, serial egress and retained holds replace the former universal billing prerequisite. Direct actual initial count remains required; OpenRouter may establish admission through its first normal request when no actual overflow is established. See [additive continuation](LANE-C-REOPENED-CONTINUATION.md). Actual installed wiring, clean starts and joint preflight are being completed; no paid GO yet. No product repair or new freeze.
 
