@@ -1,8 +1,8 @@
 # Current supported large-program continuation
 
-Updated 2026-09-28T08:48:11.824165+00:00. Cycle3 is frozen on2c9a7267b0c660814a823490dc80aac9dfdd4bc2; all13settled-source gatesPASS. Independent source316 narrowPASS; final installed acceptance and remaining applicable finite matrix are PENDING. Both paidLaneC NOT RUN. See [exact checkpoint](CYCLE3-CHECKPOINT.md). Continue tester installed checks, joint actual route/funding preflight, both eligible journeys, preservation and private delivery without another routine ownerGO.
+Updated 2026-09-28T10:21:41.814983+00:00. Cycle 3 is frozen at `2c9a7267b0c660814a823490dc80aac9dfdd4bc2`; all 13 settled gates passed. Independent installed diagnostic, public last-allowance race and explicitly labelled component checks passed. **Overall finite technical acceptance remains pending; paid GO is false.** See [the independent interim checkpoint](CYCLE3-INDEPENDENT-INTERIM-20260928.md). The existing tester continues the missing coherent source/currentness, supported public workflow and finite runtime/profile checks; Main verifies evidence and supplies actual entrypoints. Both Lane C journeys remain unrun. No routine checkpoint is a STOP.
 
-Five cycles total:1/2/3allocated,4/5unused contingencies. OriginalT1unchanged. Product cutoff2026-09-30T00:10Z; final deadline2026-09-30T23:59Z. Campaign60USD,20perprovider/40combined,400actualtransports/provider; superseded10USDapprovalstop must not be reinstated. Current handoff carries exact next step and liabilities. Mainprovider0; no authenticB operation.
+Five total cycles: 1–3 allocated, 4–5 unused contingencies. Original T1 retained. Product cutoff `2026-09-30T00:10:00Z`; final deadline `2026-09-30T23:59:00Z`. Campaign $60; Lane C $20/provider, $40 combined, 400 actual transports/provider. Main inference zero; no authentic B business operation. Current handoff carries exact artifact, next action, retained liabilities and resource inventory.
 
 # Historical boundaries and prior checkpoint prose
 
