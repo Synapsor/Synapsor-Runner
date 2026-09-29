@@ -6876,7 +6876,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
                   : {}),
                 egressAcknowledged: true,
                 env: process.env,
-                assessInputFidelity: assessInputPolicyDraft,
+                ...(authoringConversation?.policySources?.input_policy_reviews?.length ? { assessInputFidelity: assessInputPolicyDraft } : {}),
                 reviewHistorySelectors: request => reviewHistorySelectorChange(request, input.session, async () => {
                   await assertAuthoringResumeCurrent(actionFreshness, true);
                   const fresh = await loadBoundaryReviewContext(input.projectRoot);
@@ -8949,7 +8949,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           } catch (error) { pendingActionRevision = previousRevision; throw error; }
         },
         builtCatalog: entry.catalog, readBoundary: context.candidate, readBoundaryDigest: committed.candidate_digest,
-        assessInputFidelity: assessInputPolicyDraft,
+        ...(authoringConversation?.policySources?.input_policy_reviews?.length ? { assessInputFidelity: assessInputPolicyDraft } : {}),
         reviewHistorySelectors: request => reviewHistorySelectorChange(request, input.session, async () => {
           await assertAuthoringResumeCurrent({ revision: { outcome: before.rule.outcome, instruction, ...(operatorStatements ? { operator_statements: operatorStatements } : {}), baseline_digest: canonicalJsonDigest(before.draft) } }, true);
           const fresh = await loadBoundaryReviewContext(input.projectRoot);
