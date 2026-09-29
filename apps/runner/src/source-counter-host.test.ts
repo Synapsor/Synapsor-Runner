@@ -122,7 +122,15 @@ describe("existing compiled counter host review before policy coverage", () => {
       confirm: async () => true, confirmActivation: vi.fn(async () => false), confirmReviewedDisabled: async () => true,
       chooseOption: async (title, _choices, options) => {
         if (title === "START BOUNDARY DRAFTING") return "resume";
-        if (title === "SETUP NEEDS ATTENTION" && mode === "confirm_unknown") { messages.push(...options?.context ?? []); return "pause"; }
+        if (title === "SETUP NEEDS ATTENTION" && mode === "confirm_unknown") {
+          // The initial ASK_CANCELLED returns directly. Only the restarted
+          // unresolved generation may reach this default-safe public menu.
+          expect(round).toBe(2);
+          expect(options?.initialValue).toBe("pause");
+          expect(_choices.some(choice => choice.value === "pause")).toBe(true);
+          expect(options?.context?.join("\n")).toContain("unfinished generation");
+          messages.push(...options?.context ?? []); return "pause";
+        }
         if (title === "REVIEW CHANGED-RECORD PROTECTION") {
           events.push("review"); reviewCount++;
           expect(options).toMatchObject({ initialValue: "pending", requireExplicitSelection: true });
