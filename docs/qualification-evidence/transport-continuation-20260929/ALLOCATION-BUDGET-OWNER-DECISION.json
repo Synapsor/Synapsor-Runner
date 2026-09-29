@@ -1,0 +1,28 @@
+{
+  "recorded_at": "2026-09-29T15:16:38.728190+00:00",
+  "provenance": "direct user message in Main task; OWNER AMENDMENT \u2014 REVISED BUDGET: $54 CAMPAIGN / $30 RETEST",
+  "controlling_caps_usd": {
+    "campaign": "54",
+    "same_input_agenda_retest": "30"
+  },
+  "superseded_future_caps_usd": {
+    "campaign": "80",
+    "same_input_agenda_retest": "20"
+  },
+  "includes_all_existing_liabilities": true,
+  "owner_reported_current_API_balance_usd": "54",
+  "provider_attribution": "not specified in this balance statement; not a verified provider reading; use existing separate provider evidence/attestation, do not pool",
+  "not_new_money_or_counter_reset": true,
+  "account_credit_not_cumulative_authorization": true,
+  "holds_retained": true,
+  "deadline": "2026-09-30T18:47:55Z",
+  "no_other_changes": true,
+  "required_disposable_controls": [
+    "financial admission within BOTH caps",
+    "retest exceed refused",
+    "campaign exceed refused",
+    "all existing holds retained",
+    "no double counted reserve/settlement"
+  ],
+  "no_product_change": true
+}

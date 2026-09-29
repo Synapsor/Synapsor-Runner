@@ -1,0 +1,48 @@
+{
+  "utc": "2026-09-29T15:23:08.712Z",
+  "verdict": "APPLIED within both revised limits",
+  "accounting": {
+    "campaign": "30.316284700000",
+    "combined": "25.150360550000",
+    "by_journey": {
+      "direct": "13.918873900000",
+      "or": "0.439588900000",
+      "mini": "0.154960650000",
+      "input_agenda_retest": "10.636937100000"
+    }
+  },
+  "counters": {
+    "direct": {
+      "inference_started": 51,
+      "token_count_started": 25,
+      "token_count_reserved": 0
+    },
+    "or": {
+      "inference_started": 14,
+      "token_count_started": 0,
+      "token_count_reserved": 0
+    },
+    "mini": {
+      "inference_started": 21,
+      "token_count_started": 2,
+      "token_count_reserved": 0
+    },
+    "input_agenda_retest": {
+      "inference_started": 168,
+      "token_count_started": 2,
+      "token_count_reserved": 0
+    }
+  },
+  "entries_sha256": "3a1bf8a9455ee61f9a9e2a5aeae668e4ff8845a31d77938283955ebdbf32c9e8",
+  "ledger_sha256": "ce4f082a1ea61f4d80ba05ef8bf2df764b5f2ef57c7cd8575d1c5e656411165a",
+  "amendment_sha256": "a13c02713367fc9a2262cbef108ea62958915f4a7a2a4698a8b90344be475e35",
+  "ledger_path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/allocation-owner-continuation/harness-181/ledger/SAME-JOURNEY-181.json",
+  "prior_ledger_sha256": "fe4579d740dd355fd1579cd21001ba728ac6caf04154488c5a69394877773366",
+  "only_caps_event_changed": true,
+  "provider_calls": 0,
+  "product_route": "BLOCKED; financial signatures not paid readiness",
+  "remaining": {
+    "campaign": "23.683715300000",
+    "input_agenda_retest": "19.363062900000"
+  }
+}

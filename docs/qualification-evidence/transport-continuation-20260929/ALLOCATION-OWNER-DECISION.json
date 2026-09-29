@@ -1,0 +1,32 @@
+{
+  "utc": "2026-09-29T15:28:15.357211+00:00",
+  "owner_attribution": "prospective user instruction; exact text and original packet are private hash-bound evidence",
+  "scope": "exact twelve allocation outcomes from explicit sealed large.shared_allocation class records",
+  "reviewer_role": "large.manual",
+  "approval_class": "large.shared_allocation",
+  "distinct_approvals": 1,
+  "automatic_shared_count": 3,
+  "automatic_per_outcome_count": 2,
+  "rolling_seconds": 86400,
+  "hard_eligibility_unchanged": true,
+  "execution_disabled": true,
+  "original_packet_sha256": "034b456d5b707add6fd5f45589be3759fe54fb0af94ce0d2e3d1939299c42244",
+  "new_instruction_sha256": "cbd762c07c2951558a52e936657b6846356b790d13ad26b20c4a1cc7999cc3f7",
+  "public_answer_sha256": "5be1aca31de06579a183ffe8ec8de83e051aa0817a8941e008aadce89a57fba6",
+  "entered_product": false,
+  "reason": "actual ordinary Resume refused before question/input opportunity",
+  "outcomes": [
+    "operations.allocate_units_00",
+    "operations.allocate_units_01",
+    "operations.allocate_units_02",
+    "operations.allocate_units_03",
+    "operations.allocate_units_04",
+    "operations.allocate_units_05",
+    "operations.allocate_units_06",
+    "operations.allocate_units_07",
+    "operations.allocate_units_08",
+    "operations.allocate_units_09",
+    "operations.allocate_units_10",
+    "operations.allocate_units_11"
+  ]
+}

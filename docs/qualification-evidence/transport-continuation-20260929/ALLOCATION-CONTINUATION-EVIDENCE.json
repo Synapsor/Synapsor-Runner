@@ -1,0 +1,104 @@
+{
+  "recorded_utc": "2026-09-29T15:35:50.836171+00:00",
+  "disposition": "STOP: installed saved-work continuation refused before provider; no repair authorized",
+  "product_commit": "106c385357951cf72ad15c63cb8c156bc36963e7",
+  "tree_sha256": "73463ec50f05c4f836cf78e0c30511c7e75936350ba7d8a7421fff7d23e478b2",
+  "manifest_sha256": "88fe5b23fe413290532e3265ce4632f6558051ddf52263305920fe2afb2043c8",
+  "archive_sha256": "5c94a86a2093a84e0bbcc8c869fd0be637ac2662b2fce1b636d0b9af1bb66a16",
+  "new_provider_calls": 0,
+  "caps_usd": {
+    "campaign": "54",
+    "same_retest": "30"
+  },
+  "liabilities_usd": {
+    "campaign": "30.31628470",
+    "same_retest": "10.63693710"
+  },
+  "remaining_authorization_usd": {
+    "campaign": "23.68371530",
+    "same_retest": "19.36306290"
+  },
+  "private_evidence_not_copied_to_git": true,
+  "references": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-transport-continuation-20260929/FINAL-OWNER-CLARIFIED-BLOCKED-REVIEW-199.md",
+      "bytes": 12460,
+      "sha256": "026e0855f117642249d5739287737638b7653726bdc0716570ea3f48cc0b6c56"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-transport-continuation-20260929/FINAL-OWNER-CLARIFIED-BLOCKED-EVIDENCE-199.json",
+      "bytes": 130855,
+      "sha256": "70e4ad804fe2fed7d3890320c5be9f6ab9190d30cf948fc83210dbeebc852169"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/allocation-owner-continuation/records/MAIN-TESTER-INDEX-197.json",
+      "bytes": 630,
+      "sha256": "68aabde09967ce1378b232b7d1e4c6a9460132476405517ce64149973aec141c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/allocation-owner-continuation/records/MAIN-RESUME-BLOCKER-186.json",
+      "bytes": 2585,
+      "sha256": "9eb2dcf442da8eb0781789b00748fa331424c892e18b0871fcb42ceb11616fe8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/allocation-owner-continuation/records/MAIN-FINAL-COLD-193.json",
+      "bytes": 1316,
+      "sha256": "355eb1d1959320cafcec78c3637ffbbcff5a367e95ea403a0733cd9de56a96cb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/allocation-owner-continuation/records/ORIGINALS-PRESERVED-194.json",
+      "bytes": 2203,
+      "sha256": "2de939d06fb6c7255104d44d3dff9b8376028464d18bafe08b01e5eee0e0380a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/allocation-owner-continuation/records/MAIN-CLEANUP-195.json",
+      "bytes": 672,
+      "sha256": "2dd7b3de9df4f3ffb8fd0a891397ffe806a7b04d932a17ca9cf27e5488ff9244"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/allocation-owner-continuation/records/inert-budget-185/RESULT.json",
+      "bytes": 1909,
+      "sha256": "3644dd36ff5812466e957843c715baf1304040158dbb27a9a5b03080cc928693"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/allocation-owner-continuation/records/BUDGET-APPLIED-188.json",
+      "bytes": 1640,
+      "sha256": "c013460820aea3560737178e88438434c72580a89924ebbfdeb879f590ae1fb5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/allocation-owner-continuation/harness-181/budget-amendment-185.mjs",
+      "bytes": 3408,
+      "sha256": "b0c585ce14faa2ddc83b03ece8ff11cf81493b6aab632abea36877954d91d056"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/allocation-owner-continuation/harness-181/budget-signoffs-185/Main.json",
+      "bytes": 582,
+      "sha256": "88bd5e3bc455f2856f31a190f00116e590cc82ea7ed23ee28ba6e9df76a074f7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/allocation-owner-continuation/harness-181/budget-signoffs-185/Tester.json",
+      "bytes": 1048,
+      "sha256": "f93f3e2224df8d897979240d4313b60758373f0ebea38dbc67ce9c19e6150292"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-transport-continuation-20260929/records/INDEPENDENT-BUDGET-CONTROLS-194.json",
+      "bytes": 1487,
+      "sha256": "49c3a9dc974965e0262f50e7f63fe64e76ade270155ea4c6bd3a586c9574b297"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-transport-continuation-20260929/records/OWNER-CLARIFIED-BLOCKED-COLD-SEAL-195.json",
+      "bytes": 2120,
+      "sha256": "f90b2d3280591c8a9b202184565c979af8583c844c39b5ca0d0c07902e3504a2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-transport-continuation-20260929/records/ACTUAL-FINANCIAL-AMENDMENT-CONSERVATION-196.json",
+      "bytes": 1722,
+      "sha256": "360f6ef7649c6f68505146106d4e2e757188c17c98082abd2f572bf66b297b84"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-transport-continuation-20260929/records/OWNER-CLARIFIED-RECOVERY-COVERED-CLEANUP-198.json",
+      "bytes": 1438,
+      "sha256": "e299513b23fcb3d6747859390a9bdd601fdd491a9aadb789f0f2415ea7610a7d"
+    }
+  ]
+}
