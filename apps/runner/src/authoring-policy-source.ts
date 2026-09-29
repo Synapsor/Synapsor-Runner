@@ -1,4 +1,4 @@
-import { assertSourceInputReviews, type SourceInputPolicyReview } from "./authoring-input-policy.js";
+import { assertSourceInputReviews, type SourceInputPolicyReview } from "./authoring-input-policy-records.js";
 import { assertScopedDisclosureReviews, type ScopedDisclosureReview, type ScopedDisclosureInventory } from "./authoring-scoped-disclosure-records.js";
 import { assertSourceTransactionReviews, type SourceTransactionReview } from "./authoring-source-transaction-review.js";
 import { assertSourceTransactionScopeReviews, type SourceTransactionScopeReview } from "./authoring-source-transaction-scope.js";
@@ -130,7 +130,7 @@ export type RetainedDutyHistory = {
   disposition: 'outside_current_action_scope'; lineage_digest: string;
   continuing_paths: string[]; verified: false;
 };
-export type PolicyCoverage = { input_fidelity?: {digest:string;review_digests:string[];findings:import("./authoring-input-policy.js").InputFidelityFinding[]}; retained_duty_history?: RetainedDutyHistory[];
+export type PolicyCoverage = { input_fidelity?: {digest:string;review_digests:string[];findings:import("./authoring-input-policy-records.js").InputFidelityFinding[]}; retained_duty_history?: RetainedDutyHistory[];
   scoped_disclosure?: ScopedDisclosureInventory; client_duties?: ClientDutyInventory;
   counting_inventory?: { version: 1; digest: string; paths: string[] };
   source_transaction_requirement_pending?: true;
