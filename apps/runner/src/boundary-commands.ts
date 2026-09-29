@@ -1,4 +1,4 @@
-import { authoringGenerationCurrentnessCode, isAuthoringGenerationStop, withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, authoringTransportCheckpoint, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+import { authoringGenerationCurrentnessCode, isAuthoringGenerationStop, withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, authoringTransportCheckpoint, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { reviewSourceInputPolicy } from "./authoring-input-policy-operation.js";
 import { sourceInputFidelity } from "./authoring-input-policy.js";
 import { AUTHORING_PROGRAM_CAPACITY, AUTHORING_PROGRAM_RESUME_VERSION, authoringProgramProgressLines } from "./authoring-program-capacity.js";
@@ -4563,7 +4563,11 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     activeResume = next; savedResumeRevision = next.revision_digest; generationRecovery = next.generation_recovery;
   };
   configureAuthoringGenerationRecovery({
-    available: () => Boolean(activeResume && selectedResumeModel && modelEgressAcknowledged && !revalidateSavedJob),
+    available: () => Boolean(activeResume && selectedResumeModel && modelEgressAcknowledged
+      && !resumePersistenceBlocked && activeResume.revision_digest === savedResumeRevision),
+    // A rescan can commit a new current draft and durable questions, but it does
+    // not renew retry permission from the old structure during this invocation.
+    allowRetries: () => !revalidateSavedJob,
     read: () => generationRecovery,
     write: writeGenerationRecovery,
     current: async () => {
@@ -6938,17 +6942,22 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
                 builtCatalog: semanticActionCatalog!,
                 ...(partialActionCheckpoint && semanticIndex === partialActionIndex
                   ? { checkpoint: partialActionCheckpoint, revalidateSavedComponents: true } : {}),
-                onCheckpoint: async (checkpoint) => {
+                onCheckpoint: async (checkpoint) => withProjectAuthorityMutation(input.projectRoot, async permit => {
                   assertRunning();
-                  await assertAuthoringResumeCurrent(actionFreshness, true);
-                  const previousAction = resumeAction, previousRevision = pendingActionRevision;
+                  await assertAuthoringResumeCurrent(actionFreshness, true, permit);
+                  if (authoringConversation?.policySources?.snapshots.length && await policySourceSavedDigest(input.projectRoot, authoringConversation.policySources.id)
+                    !== canonicalJsonDigest(authoringConversation.policySources)) throw new PolicySourceChangedError();
+                  const previousAction = resumeAction, previousRevision = pendingActionRevision, previousRecovery = generationRecovery;
                   try {
+                    const previousCheckpoint = preserveProgramRevisionAgenda ? pendingActionRevision?.checkpoint : resumeAction?.checkpoint;
+                    if (checkpoint.pending_question) generationRecovery = authoringQuestionCheckpoint(generationRecovery, checkpoint);
+                    else generationRecovery = authoringQuestionAnswerCheckpoint(generationRecovery, previousCheckpoint, checkpoint);
                     if (preserveProgramRevisionAgenda) pendingActionRevision = { ...pendingActionRevision!, checkpoint };
                     else resumeAction = { ...resumeAction, intent: actionIntents[0]!, intents: actionIntents, strategy: "rule_derived", checkpoint };
-                    await persistAuthoringResume("action_drafting");
+                    await persistAuthoringResume("action_drafting", permit);
                     if (resumePersistenceBlocked) throw checkpointSaveFailure("The checkpoint");
-                  } catch (error) { resumeAction = previousAction; pendingActionRevision = previousRevision; throw error; }
-                },
+                  } catch (error) { resumeAction = previousAction; pendingActionRevision = previousRevision; generationRecovery = previousRecovery; throw error; }
+                }),
                 readBoundary: mappingBoundary,
                 readBoundaryDigest: explorationBoundaryCandidateDigest(mappingBoundary),
                 ...(semanticActionRevisionBaseline
@@ -7080,6 +7089,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
                 },
                 onRelationshipReview: (lines) => input.authoringChat?.rememberDetails("ACTION RELATIONSHIP REVIEW", lines),
                 askClarification: async (question) => {
+                  await assertAuthoringResumeCurrent(actionFreshness);
+                  if (authoringConversation?.policySources?.snapshots.length && await policySourceSavedDigest(input.projectRoot, authoringConversation.policySources.id)
+                    !== canonicalJsonDigest(authoringConversation.policySources)) throw new PolicySourceChangedError();
                   // This is the authoring model's own turn. Follow-up questions
                   // return to the same tool-enabled conversation, not a narrator.
                   let answer: string | undefined;

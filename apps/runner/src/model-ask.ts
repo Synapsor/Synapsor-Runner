@@ -18,7 +18,7 @@ import {
 import type { AskIntentCheckMode } from "./ask-intent-preferences.js";
 import { askPlanSyntaxRepair, matchesAskPlanSyntaxRepair, type AskPlanSyntaxRepair } from "./ask-plan-recovery.js";
 import { isFixedOpenRouterModel, OPENROUTER_CHAT_ENDPOINT } from "./hosted-provider-settings.js";
-import { recoverAuthoringGeneration, authoringGenerationHandled, authoringGenerationFailed } from "./authoring-generation-recovery.js";
+import { recoverAuthoringGeneration, authoringGenerationHandled, authoringGenerationFailed, authoringQuestionCompletion, type AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { coverageToolDeclarationIssue } from "./authoring-coverage-tool-profile.js";
 
 const DEFAULT_REMOTE_TIMEOUT_SECONDS = 30;
@@ -211,6 +211,14 @@ export type AskTurnResult = {
   };
   source_database_changed: boolean;
 };
+
+const questionCompletions = new WeakMap<AskTurnResult, AuthoringQuestionCompletion>();
+/** Available only for a successfully decoded real authoring turn. The typed
+ * Action consumer decides whether this result is an owner-question boundary. */
+export function completedAuthoringQuestion(result: AskTurnResult): AuthoringQuestionCompletion | undefined {
+  const value = questionCompletions.get(result);
+  return value && structuredClone(value);
+}
 
 export type AskSessionStatus = {
   configured: boolean;
@@ -702,7 +710,11 @@ export async function runAskProviderTurn(input: {
     }
     throw error;
   }
-  if (input.gateway.mode === "authoring") await authoringGenerationHandled(generationResults);
+  if (input.gateway.mode === "authoring") {
+    await authoringGenerationHandled(generationResults);
+    const completion = authoringQuestionCompletion(generationResults);
+    if (completion) questionCompletions.set(result, completion);
+  }
   return result;
 }
 

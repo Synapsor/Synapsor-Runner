@@ -22,6 +22,7 @@ import {
   askToolSurfaceDigest,
   resolveAskProviderConfiguration,
   runAskProviderTurn,
+  completedAuthoringQuestion,
   type AskProvider,
   type AskProviderDependencies,
   type AskToolDefinition,
@@ -31,6 +32,7 @@ import {
 import {
   modelAuthoringHistory,
   rememberModelAuthoringTurn,
+  rememberModelAuthoringClarification,
   type ModelAuthoringConversation,
 } from "./model-authoring-conversation.js";
 import {
@@ -391,6 +393,9 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   });
   let inputRepairParent: {draft:ActionRuleModelDraftV1;findings:InputFidelityFinding[]}|undefined;
   let checkpointNeedsRevalidation = false;
+  let pendingQuestion = savedCheckpoint?.pending_question;
+  const policySourceDigest = () => input.session.conversation?.policySources?.snapshots.length
+    ? canonicalJsonDigest(input.session.conversation.policySources) : undefined;
   if (input.checkpoint) {
     const saved = parseActionRuleAuthoringCheckpoint(input.checkpoint);
     operatorMessages = saved.operator_messages ?? [];
@@ -400,6 +405,9 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       throw new Error("ACTION_AUTHORING_CHECKPOINT_STALE: the job or reviewed structure changed. Start a fresh draft; active authority is unchanged.");
     }
     checkpointNeedsRevalidation = recoveredPrivatePrerequisite || saved.context_digest !== contextDigest();
+    if (pendingQuestion && (checkpointNeedsRevalidation || pendingQuestion.policy_source_digest !== policySourceDigest())) {
+      throw new Error("ACTION_AUTHORING_QUESTION_STALE: The saved question belongs to earlier source or draft context. Preserve its history and review the changed context before answering.");
+    }
     for (const name of saved.reviewed_relationships ?? []) {
       if (!context.builtCatalog.catalog.relationships.some((relationship) => relationship.name === name)) {
         throw new Error("ACTION_AUTHORING_CHECKPOINT_STALE: a prepared relationship is no longer supported by this catalog. Re-review the disabled draft; active authority is unchanged.");
@@ -424,6 +432,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     await input.onCheckpoint?.(actionRuleAuthoringCheckpoint({
       intent_digest: canonicalJsonDigest(intent), context_digest: contextDigest(),
       components: structuredClone(submissions) as ActionRuleAuthoringCheckpoint["components"],
+      ...(pendingQuestion ? {pending_question: pendingQuestion} : {}),
       ...(operatorMessages.length ? { operator_messages: operatorMessages } : {}),
       ...(reviewedRelationships.size ? { reviewed_relationships: [...reviewedRelationships].sort() } : {}),
       ...(reviewedPrivateSources.length ? { reviewed_private_sources: reviewedPrivateSources } : {}),
@@ -727,6 +736,29 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   let mechanicalResponseFeedback: string | undefined;
   let continuingDraftInternally = false;
   const history: import("./model-ask.js").AskHistoryTurn[] = [];
+  const askPendingQuestion = async () => {
+    const pending = pendingQuestion!;
+    if (!input.askClarification) throw new Error(`ACTION_RULE_MODEL_CLARIFICATION_REQUIRED: ${pending.question}`);
+    const answer = await input.askClarification(pending.question);
+    if (answer === undefined) throw new Error("ACTION_RULE_MODEL_DRAFT_CANCELLED");
+    if (input.signal?.aborted) throw new AskError("ASK_CANCELLED", "The saved question remains unanswered.", 499);
+    operatorMessage = answer.trim();
+    if (operatorMessage) {
+      operatorMessages = [...operatorMessages, boundedText(operatorMessage, "Business answer", 4_000)].slice(-16);
+      rememberModelAuthoringClarification(input.session.conversation, pending.question, operatorMessage);
+    } else {
+      // A blank entry is not an answer. Keep the committed question and ask
+      // locally again; never spend another generation to recreate it.
+      return;
+    }
+    pendingQuestion = undefined;
+    await saveCheckpoint();
+    clarificationCount += 1;
+  };
+  if (pendingQuestion) {
+    operatorMessage = pendingQuestion.operator_message;
+    while (pendingQuestion) await askPendingQuestion();
+  }
   // Autonomous work is bounded by runAskProviderTurn; deliberate human follow-ups are not a retry budget.
   while (true) {
     if (input.signal?.aborted) throw new Error("ACTION_RULE_MODEL_DRAFT_CANCELLED");
@@ -811,18 +843,13 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     mechanicalResponseFeedback = undefined;
     continuingDraftInternally = false;
     rememberResponse();
-    if (!input.askClarification) throw new Error(`ACTION_RULE_MODEL_CLARIFICATION_REQUIRED: ${response}`);
-    const answer = await input.askClarification(response);
-    if (answer === undefined) throw new Error("ACTION_RULE_MODEL_DRAFT_CANCELLED");
-    operatorMessage = answer.trim();
-    if (operatorMessage) {
-      operatorMessages = [...operatorMessages, boundedText(operatorMessage, "Business answer", 4_000)].slice(-16);
-    } else {
-      // An empty UI acknowledgement is not an operator policy statement.
-      mechanicalResponseFeedback = "The input was empty. This grants no permission and changes none of the recorded business answers. Continue using those answers; validate an already-correct draft unchanged. Ask only if a business decision is still genuinely missing.";
-    }
+    pendingQuestion = {question: response, operator_message: operatorMessage,
+      ...(policySourceDigest() ? {policy_source_digest: policySourceDigest()} : {}),
+      ...(completedAuthoringQuestion(result) ? {completion: completedAuthoringQuestion(result)} : {})};
+    // Commit the typed consumer handoff before waiting. Escape does not answer
+    // the question and cannot turn an uncommitted response into a saved pause.
     await saveCheckpoint();
-    clarificationCount += 1;
+    while (pendingQuestion) await askPendingQuestion();
   }
 }
 

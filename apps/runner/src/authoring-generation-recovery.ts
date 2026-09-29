@@ -4,6 +4,21 @@ import { setTimeout as delay } from "node:timers/promises";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { AskError, authoringTransportObservation, completedProviderContentError, type ProviderHttpInput, type ProviderHttpResult, type AuthoringTransportObservation } from "./model-provider-transport.js";
 
+export type AuthoringQuestionCompletion = {
+  operation_id: string;
+  request_digest: `sha256:${string}`;
+  context_digest: `sha256:${string}`;
+  response_digest: `sha256:${string}`;
+};
+export type AuthoringQuestionHandoff = {
+  consumer: "action_rule_clarification";
+  question: string;
+  answered?: {answer: string; actor: "local_installation_operator"; recorded_at: string; checkpoint_digest: `sha256:${string}`};
+  checkpoint_digest: `sha256:${string}`;
+  question_digest: `sha256:${string}`;
+  response_digest: `sha256:${string}`;
+  recorded_at: string;
+};
 export type AuthoringTransportOperation = {
   id: string;
   request_digest: `sha256:${string}`;
@@ -11,6 +26,7 @@ export type AuthoringTransportOperation = {
   deadline: string;
   state: "in_flight" | "unsent" | "unknown" | "partial" | "received" | "handled" | "checkpointed" | "refused";
   checkpoint_seen?: true;
+  question_handoff?: AuthoringQuestionHandoff;
   attempts: { id: string; started_at: string; outcome: "in_flight" | "A" | "B" | "C" | "response"; phase?: AuthoringTransportObservation["phase"]; code?: string }[];
 };
 export type AuthoringTransportState = {
@@ -32,6 +48,8 @@ export type AuthoringGenerationHost = {
   /** Checks disk Source, authority, consent and the exact acknowledged resume. */
   current(): Promise<`sha256:${string}`>;
   available(): boolean;
+  /** Tracking may become available after a reviewed rescan without renewing retry consent. */
+  allowRetries?(): boolean;
   progress?(message: string): void;
 };
 type Frame = { host?: AuthoringGenerationHost; owned: Set<string>; active: boolean };
@@ -74,10 +92,20 @@ export function validateAuthoringTransportState(value: unknown): asserts value i
   }
   const seen = new Set<string>();
   for (const op of s.operations) {
-    if (!op || typeof op !== "object" || !exactKeys(op,["id","request_digest","context_digest","deadline","state","checkpoint_seen","attempts"]) || !id(op.id) || seen.has(op.id) || !digest(op.request_digest) || !digest(op.context_digest) || !date(op.deadline)
+    if (!op || typeof op !== "object" || !exactKeys(op,["id","request_digest","context_digest","deadline","state","checkpoint_seen","question_handoff","attempts"]) || !id(op.id) || seen.has(op.id) || !digest(op.request_digest) || !digest(op.context_digest) || !date(op.deadline)
       || !["in_flight","unsent","unknown","partial","received","handled","checkpointed","refused"].includes(op.state)
       || op.checkpoint_seen !== undefined && op.checkpoint_seen !== true
       || !Array.isArray(op.attempts) || !op.attempts.length || op.attempts.length > 3) throw invalid();
+    if (op.question_handoff !== undefined) {
+      const h = op.question_handoff;
+      if (!h || typeof h !== "object" || Array.isArray(h) || !exactKeys(h, ["consumer","question","answered","checkpoint_digest","question_digest","response_digest","recorded_at"])
+        || h.consumer !== "action_rule_clarification" || typeof h.question !== "string" || !h.question.trim() || h.question.length > 20_000
+        || canonicalJsonDigest(h.question) !== h.question_digest || !digest(h.checkpoint_digest) || !digest(h.question_digest)
+        || !digest(h.response_digest) || !date(h.recorded_at) || op.attempts.at(-1)?.outcome !== "response" || op.state !== "checkpointed" || op.checkpoint_seen !== true) throw invalid();
+      if (h.answered !== undefined && (!h.answered || typeof h.answered !== "object" || Array.isArray(h.answered) || !exactKeys(h.answered,["answer","actor","recorded_at","checkpoint_digest"])
+        || typeof h.answered.answer !== "string" || !h.answered.answer.trim() || h.answered.answer.length > 4_000
+        || h.answered.actor !== "local_installation_operator" || !date(h.answered.recorded_at) || !digest(h.answered.checkpoint_digest))) throw invalid();
+    }
     seen.add(op.id);
     for (const a of op.attempts) {
       if (!a || typeof a !== "object" || !exactKeys(a,["id","started_at","outcome","phase","code"]) || !id(a.id) || seen.has(a.id) || !date(a.started_at) || !["in_flight","A","B","C","response"].includes(a.outcome)
@@ -93,12 +121,76 @@ export function validateAuthoringTransportState(value: unknown): asserts value i
 export function authoringTransportCheckpoint(state: AuthoringTransportState | undefined): AuthoringTransportState | undefined {
   if (!state) return undefined;
   const copy = structuredClone(state), frame = storage.getStore();
-  for (const op of copy.operations) if (frame?.owned.has(op.id)) {
+  // A typed question handoff proves only its own consumer. Never let a later
+  // generic pause/answer save retroactively acknowledge an earlier operation
+  // that was still uncheckpointed when the question committed. Ordinary B32
+  // component checkpoints (before or after that boundary) keep their behavior.
+  const questionBoundary = copy.operations.reduce((last, op, index) => op.question_handoff !== undefined ? index : last, -1);
+  for (const [index, op] of copy.operations.entries()) if (index >= questionBoundary && frame?.owned.has(op.id)) {
     if (op.state === "received") op.checkpoint_seen = true;
     else if (op.state === "handled") { op.checkpoint_seen = true; op.state = "checkpointed"; }
   }
   return copy;
 }
+/** Called after the real turn decoder/consumer has returned successfully. The
+ * last actual response remains associated by object identity, never by supplied JSON. */
+export function authoringQuestionCompletion(results: readonly ProviderHttpResult[]): AuthoringQuestionCompletion | undefined {
+  const frame = storage.getStore(), host = frame?.host;
+  if (!host?.available()) return undefined;
+  const last = results.at(-1), operationId = last && resultOperations.get(last);
+  const op = host.read()?.operations.find(item => item.id === operationId);
+  if (!last || !op || !frame!.owned.has(op.id) || op.state !== "handled" && op.state !== "checkpointed") {
+    throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The completed question has no current local consumer association.", 409);
+  }
+  return {operation_id: op.id, request_digest: op.request_digest, context_digest: op.context_digest,
+    response_digest: canonicalJsonDigest(last.body)};
+}
+
+/** Prepare one exact question handoff for the SAME coordinated resume write as
+ * its component checkpoint. This does not write a second acknowledgement file. */
+export function authoringQuestionCheckpoint(state: AuthoringTransportState | undefined,
+  checkpoint: {digest: `sha256:${string}`; pending_question?: {question: string; completion?: AuthoringQuestionCompletion}}): AuthoringTransportState | undefined {
+  if (!checkpoint.pending_question) return state;
+  const completion = checkpoint.pending_question.completion, frame = storage.getStore();
+  if (!state || !completion || !frame?.owned.has(completion.operation_id)) throw new AskError(
+    "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The question cannot be committed without its current completed generation. No historical operation was acknowledged.", 409);
+  const copy = structuredClone(state), op = copy.operations.find(item => item.id === completion.operation_id);
+  if (!op || !["handled", "checkpointed"].includes(op.state) || op.request_digest !== completion.request_digest
+    || op.context_digest !== completion.context_digest || op.attempts.at(-1)?.outcome !== "response") throw invalid();
+  op.question_handoff = {consumer: "action_rule_clarification", question: checkpoint.pending_question.question, checkpoint_digest: checkpoint.digest,
+    question_digest: canonicalJsonDigest(checkpoint.pending_question.question), response_digest: completion.response_digest,
+    recorded_at: new Date().toISOString()};
+  op.state = "checkpointed"; op.checkpoint_seen = true;
+  return copy;
+}
+
+export function assertAuthoringQuestionHandoff(state: AuthoringTransportState | undefined,
+  checkpoint: {digest: `sha256:${string}`; pending_question?: {question: string; completion?: AuthoringQuestionCompletion}} | undefined): void {
+  const pending = checkpoint?.pending_question;
+  if (!pending) return;
+  const c = pending.completion, op = c && state?.operations.find(item => item.id === c.operation_id), h = op?.question_handoff;
+  if (!c || !op || !h || op.state !== "checkpointed" || op.checkpoint_seen !== true
+    || op.request_digest !== c.request_digest || op.context_digest !== c.context_digest
+    || h.answered || h.checkpoint_digest !== checkpoint!.digest || h.question_digest !== canonicalJsonDigest(pending.question)
+    || h.response_digest !== c.response_digest) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The pending question has no exact committed consumer handoff. Preserve the saved state for inspection.");
+}
+
+/** The public consumer calls this inside its currentness/CAS checkpoint write.
+ * The old question acknowledgement remains history; this records a separate
+ * attributable answer, not another transport completion or retry allowance. */
+export function authoringQuestionAnswerCheckpoint(state: AuthoringTransportState | undefined,
+  previous: Parameters<typeof assertAuthoringQuestionHandoff>[1],
+  next: {digest: `sha256:${string}`; operator_messages?: string[]; pending_question?: unknown}): AuthoringTransportState | undefined {
+  if (!previous?.pending_question || next.pending_question) return state;
+  assertAuthoringQuestionHandoff(state, previous);
+  const answer = next.operator_messages?.at(-1);
+  if (!answer?.trim()) throw invalid();
+  const copy = structuredClone(state!);
+  const op = copy.operations.find(item => item.id === previous.pending_question!.completion!.operation_id)!;
+  op.question_handoff!.answered = {answer, actor: "local_installation_operator", recorded_at: new Date().toISOString(), checkpoint_digest: next.digest};
+  return copy;
+}
+
 const hostCurrentnessCodes = new Set(["POLICY_SOURCE_CHANGED", "POLICY_REVIEW_CANDIDATE_CHANGED",
   "POLICY_REVIEW_SUBJECT_CHANGED", "BOUNDARY_AUTHORING_RESUME_CHANGED"]);
 /** Safe reason minted only while checking/writing the local recovery host.
@@ -209,7 +301,7 @@ export async function recoverAuthoringGeneration(input: ProviderHttpInput,
   const op: AuthoringTransportOperation = {id: randomUUID(), request_digest: requestDigest, context_digest: context,
     deadline: new Date(Date.now() + (input.timeoutMs ?? 30_000)).toISOString(), state: "in_flight", attempts: []};
   const policy = initial.policy;
-  const allowed = policy && policy.model === body.model && policy.destination_digest === canonicalJsonDigest(input.endpoint.origin)
+  const allowed = host.allowRetries?.() !== false && policy && policy.model === body.model && policy.destination_digest === canonicalJsonDigest(input.endpoint.origin)
     ? policy.maximum_additional_attempts : 0;
   if (frame.active) throw new AskError("ASK_GENERATION_ALREADY_ACTIVE", "Another authoring generation is still active.", 409);
   frame.active = true; frame.owned.add(op.id);

@@ -1,5 +1,5 @@
 import {makeSourceInputReview,sourceInputFidelity} from "./authoring-input-policy.js";
-import {newPolicySourceSession,policyTextSnapshot} from "./authoring-policy-source.js";
+import {authoringDestination,newPolicySourceSession,policyTextSnapshot} from "./authoring-policy-source.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -15,6 +15,7 @@ import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
 import type { BuiltActionRuleAuthoringCatalogV1 } from "./action-rule-authoring.js";
 import { compileActionRuleModelDraft, type ActionRuleModelDraftV1 } from "./action-rule-draft.js";
 import { actionRuleModelDraftJsonSchema, generateFocusedModelActionRuleDraft as generateModelActionRuleDraft, generateModelActionRuleDraft as converseActionRuleDraft } from "./action-rule-model.js";
+import { AskError } from "./model-ask.js";
 import type { AskProviderDependencies } from "./model-ask.js";
 import type { ActionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 import { inspectActionRelationships } from "./action-rule-relationship-review.js";
@@ -110,7 +111,7 @@ describe("conversational Action authoring tools", () => {
     const resumed = [call("runner.submit_effect_envelope_draft"), call("runner.submit_action_rule_draft"),
       call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {}), say("Ready for review.")];
     const actual = await converseActionRuleDraft({ ...requestInput(async () => resumed.shift()!), builtCatalog: initial,
-      reviewVersionField, checkpoint });
+      reviewVersionField, checkpoint, askClarification: async () => "One billing reviewer." });
     expect(reviewVersionField.mock.calls[1]?.[0]).toMatchObject({ previousReview: review });
     expect(actual).toMatchObject({ authority_granted: false, source_database_changed: false });
     expect(actual.compiled.loaded.authority.catalog.resources[0]!.version_field).toBe("version");
@@ -155,8 +156,8 @@ describe("conversational Action authoring tools", () => {
   it("revalidates retained partial components after a host-mediated Read edit without asking answered questions", async () => {
     let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
     const first = [call("runner.submit_verification_boundary_draft"), call("runner.submit_effect_envelope_draft"),
-      call("runner.submit_action_rule_draft"), say("Who reviews this request?")];
-    await expect(converseActionRuleDraft({ ...requestInput(async () => first.shift()!),
+      call("runner.submit_action_rule_draft")];
+    await expect(converseActionRuleDraft({ ...requestInput(async () => { if (!first.length) throw new AskError("ASK_CANCELLED", "ASK_CANCELLED: DERIVED component-only interruption", 499); return first.shift()!; }),
       onCheckpoint: async value => { checkpoint = value; }, askClarification: async () => undefined })).rejects.toThrow("CANCELLED");
     const before = structuredClone(checkpoint);
     const resumed = [call("runner.inspect_action_draft", {}), call("runner.submit_approval_policy_draft"),
@@ -195,7 +196,7 @@ describe("conversational Action authoring tools", () => {
     const resumedSteps = [call("runner.submit_effect_envelope_draft"), call("runner.submit_action_rule_draft"),
       call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {}), say("Draft ready.")];
     const prepareResources = vi.fn(async ({ context }: Parameters<NonNullable<Parameters<typeof converseActionRuleDraft>[0]["prepareResources"]>>[0]) => context);
-    const result = await converseActionRuleDraft({ ...requestInput(async () => resumedSteps.shift()!), reviewPrivateSource, checkpoint, prepareResources });
+    const result = await converseActionRuleDraft({ ...requestInput(async () => resumedSteps.shift()!), reviewPrivateSource, checkpoint, prepareResources, askClarification: async () => "Use the saved admission verification and one billing reviewer." });
     expect(reviewPrivateSource.mock.calls[1]?.[0]).toMatchObject({ previousReview: review });
     expect(prepareResources.mock.calls[0]?.[0].context.builtCatalog).toEqual(expanded);
     expect(result.compiled.loaded.authority.catalog.resources.map(resource => resource.name)).toContain("billing.admission");
@@ -212,8 +213,8 @@ describe("conversational Action authoring tools", () => {
   it("cannot turn a retained checkpoint into authority when the current catalog no longer supports its fields", async () => {
     let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
     const first = [call("runner.submit_verification_boundary_draft"), call("runner.submit_effect_envelope_draft"),
-      call("runner.submit_action_rule_draft"), call("runner.submit_approval_policy_draft"), say("Pause this draft?")];
-    await expect(converseActionRuleDraft({ ...requestInput(async () => first.shift()!),
+      call("runner.submit_action_rule_draft"), call("runner.submit_approval_policy_draft")];
+    await expect(converseActionRuleDraft({ ...requestInput(async () => { if (!first.length) throw new AskError("ASK_CANCELLED", "ASK_CANCELLED: DERIVED component-only interruption", 499); return first.shift()!; }),
       onCheckpoint: async value => { checkpoint = value; }, askClarification: async () => undefined })).rejects.toThrow("CANCELLED");
     const changed = structuredClone(builtCatalog());
     changed.catalog.resources[0]!.fields = changed.catalog.resources[0]!.fields.filter(field => field.name !== "status");
@@ -234,8 +235,8 @@ describe("conversational Action authoring tools", () => {
       proof_digest: canonicalJsonDigest("previous reviewed proof") };
     let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
     const first = [call("runner.review_private_action_source", { resource: review.resource, parent_resource: review.parent_resource }),
-      call("runner.submit_verification_boundary_draft"), say("Who reviews exceptions?")];
-    await expect(converseActionRuleDraft({ ...requestInput(async () => first.shift()!),
+      call("runner.submit_verification_boundary_draft")];
+    await expect(converseActionRuleDraft({ ...requestInput(async () => { if (!first.length) throw new AskError("ASK_CANCELLED", "ASK_CANCELLED: DERIVED component-only interruption", 499); return first.shift()!; }),
       reviewPrivateSource: async ({ context }) => ({ ...context, review }),
       onCheckpoint: async value => { checkpoint = value; }, askClarification: async () => undefined })).rejects.toThrow("CANCELLED");
     const before = structuredClone(checkpoint);
@@ -332,6 +333,133 @@ describe("conversational Action authoring tools", () => {
     body: { output: [{ type: "function_call", call_id: `call_${name}`, name: name.replaceAll(".", "__"), arguments: JSON.stringify(args) }] },
   });
   const say = (text: string) => ({ status: 200, body: { output: [{ type: "message", content: [{ type: "output_text", text }] }] } });
+
+  describe("B33 owner-question consumer boundary", () => {
+    const question = "Who reviews otherwise valid requests above the automatic limit?";
+
+    it.each(["undefined", "thrown cancellation"] as const)("saves the complete pending question before %s at the human boundary", async pause => {
+      const events: string[] = [];
+      let saved: ActionRuleAuthoringCheckpoint | undefined;
+      let snapshotAtPrompt: ActionRuleAuthoringCheckpoint | undefined;
+      const requestJson = vi.fn(async () => { events.push("provider"); return say(question); });
+      await expect(converseActionRuleDraft({ ...requestInput(requestJson),
+        onCheckpoint: async checkpoint => { saved = structuredClone(checkpoint); events.push("save"); },
+        askClarification: async received => {
+          expect(received).toBe(question);
+          snapshotAtPrompt = saved && structuredClone(saved);
+          events.push("ask");
+          if (pause === "thrown cancellation") throw new Error("DERIVED_UI_CANCELLED");
+          return undefined;
+        },
+      })).rejects.toThrow("CANCELLED");
+      expect(requestJson).toHaveBeenCalledOnce();
+      expect(events).toEqual(["provider", "save", "ask"]);
+      // Consumer-facing contract only; exact completion/provenance binding belongs
+      // to the enclosing recovery/checkpoint integration, not this fixture.
+      expect(snapshotAtPrompt).toMatchObject({ pending_question: { question } });
+      expect(saved?.operator_messages ?? []).toEqual([]);
+      expect(saved).toEqual(snapshotAtPrompt);
+    });
+
+    it("does not expose an unsaved question as a successful human handoff", async () => {
+      const askClarification = vi.fn(async () => undefined);
+      const onCheckpoint = vi.fn(async () => { throw new Error("DERIVED_CHECKPOINT_WRITE_FAILED"); });
+      await expect(converseActionRuleDraft({ ...requestInput(async () => say(question)),
+        onCheckpoint, askClarification,
+      })).rejects.toThrow("DERIVED_CHECKPOINT_WRITE_FAILED");
+      expect(onCheckpoint).toHaveBeenCalledOnce();
+      expect(askClarification).not.toHaveBeenCalled();
+    });
+
+    it("redisplays the actual saved unanswered question without another provider request", async () => {
+      let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
+      const replies = [call("runner.submit_verification_boundary_draft"), say(question)];
+      await expect(converseActionRuleDraft({ ...requestInput(async () => replies.shift()!),
+        onCheckpoint: async value => { checkpoint = structuredClone(value); },
+        askClarification: async () => undefined,
+      })).rejects.toThrow("CANCELLED");
+      expect(checkpoint?.components.verification).toBeDefined();
+      const before = structuredClone(checkpoint);
+      const requestJson = vi.fn(async () => { throw new Error("DERIVED_UNEXPECTED_PROVIDER_ON_RESUME"); });
+      const askClarification = vi.fn(async () => undefined);
+      let failure: unknown;
+      try { await converseActionRuleDraft({ ...requestInput(requestJson), checkpoint,
+        onCheckpoint: async value => { checkpoint = structuredClone(value); }, askClarification }); }
+      catch (error) { failure = error; }
+      expect(requestJson).not.toHaveBeenCalled();
+      expect(askClarification).toHaveBeenCalledExactlyOnceWith(question);
+      expect(String(failure)).toContain("CANCELLED");
+      expect(checkpoint).toEqual(before);
+    });
+
+    it("persists one genuine answer before any next provider request", async () => {
+      const answer = "One billing reviewer reviews these otherwise valid requests.";
+      let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
+      let sends = 0;
+      let answersAtNextRequest: string[] | undefined;
+      const requestJson = vi.fn(async () => {
+        if (++sends === 1) return say(question);
+        answersAtNextRequest = structuredClone(checkpoint?.operator_messages);
+        throw new Error("DERIVED_STOP_AFTER_ANSWER_SAVE");
+      });
+      const askClarification = vi.fn(async () => answer);
+      await expect(converseActionRuleDraft({ ...requestInput(requestJson),
+        onCheckpoint: async value => { checkpoint = structuredClone(value); }, askClarification,
+      })).rejects.toThrow(); // The B32 adapter safely masks unclassified dependency failures.
+      expect(answersAtNextRequest).toEqual([answer]);
+      expect(askClarification).toHaveBeenCalledExactlyOnceWith(question);
+      expect(checkpoint?.operator_messages).toEqual([answer]);
+      expect(checkpoint?.components).toEqual({});
+      expect(sends).toBe(2);
+    });
+
+    it.each(["read", "catalog", "source", "outcome", "intent"])("refuses a pending question after changed %s before prompting or egress", async changed => {
+      let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
+      const conversation = { turns: [], policySources: newPolicySourceSession() };
+      conversation.policySources.snapshots = [policyTextSnapshot(Buffer.from("Original source."), "rules.txt")];
+      conversation.policySources.active = 1;
+      const original = requestInput(async () => say(question));
+      conversation.policySources.approvals.push({digest:conversation.policySources.snapshots[0]!.digest,destination:authoringDestination(original.session)});
+      await expect(converseActionRuleDraft({...original, session:{...original.session,conversation},
+        onCheckpoint:async value=>{checkpoint=structuredClone(value);},askClarification:async()=>undefined})).rejects.toThrow("CANCELLED");
+      const requestJson=vi.fn(), askClarification=vi.fn();
+      const resumed=requestInput(requestJson);
+      const current=structuredClone(conversation);
+      if(changed==="source")current.policySources.snapshots.push(policyTextSnapshot(Buffer.from("Changed source."),"rules.txt"));
+      if(changed==="catalog")resumed.builtCatalog.catalog.resources[0]!.table="changed_table";
+      await expect(converseActionRuleDraft({...resumed,checkpoint,revalidateSavedComponents:true,
+        session:{...resumed.session,conversation:current},askClarification,
+        ...(changed==="read"?{readBoundaryDigest:canonicalJsonDigest("changed read")}:{}),
+        ...(changed==="outcome"?{expectedOutcome:"billing.other"}:{}),
+        ...(changed==="intent"?{intent:"Another operation"}:{})})).rejects.toThrow(/QUESTION_STALE|CHECKPOINT_STALE/);
+      expect(requestJson).not.toHaveBeenCalled();expect(askClarification).not.toHaveBeenCalled();
+    });
+
+    it("can redisplay a no-attachment question in a fresh empty source session", async () => {
+      let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
+      const initial=requestInput(async()=>say(question));
+      await expect(converseActionRuleDraft({...initial,session:{...initial.session,conversation:{turns:[],policySources:newPolicySourceSession()}},
+        onCheckpoint:async value=>{checkpoint=value;},askClarification:async()=>undefined})).rejects.toThrow("CANCELLED");
+      const requestJson=vi.fn(),askClarification=vi.fn(async()=>undefined),resumed=requestInput(requestJson);
+      await expect(converseActionRuleDraft({...resumed,checkpoint,
+        session:{...resumed.session,conversation:{turns:[],policySources:newPolicySourceSession()}},askClarification})).rejects.toThrow("CANCELLED");
+      expect(askClarification).toHaveBeenCalledExactlyOnceWith(question);expect(requestJson).not.toHaveBeenCalled();
+    });
+
+    it("a failed answer save cannot enter a later generation", async () => {
+      const answer = "One billing reviewer reviews these otherwise valid requests.";
+      const requestJson = vi.fn(async () => say(question));
+      let durable: ActionRuleAuthoringCheckpoint | undefined;
+      await expect(converseActionRuleDraft({ ...requestInput(requestJson),
+        onCheckpoint: async value => {
+          if (value.operator_messages?.length) throw new Error("DERIVED_ANSWER_SAVE_FAILED");
+          durable = structuredClone(value);
+        }, askClarification: async () => answer,
+      })).rejects.toThrow("DERIVED_ANSWER_SAVE_FAILED");
+      expect(requestJson).toHaveBeenCalledOnce();
+      expect(durable?.operator_messages ?? []).toEqual([]);
+    });
+  });
 
   it.each(["openai", "openrouter"] as const)("delivers a current bound requirement through %s correction before structural readiness", async(provider)=>{
     const source=policyTextSnapshot(Buffer.from("The caller operator_note must contain 1..64 UTF-16 units."),"rules.txt");
@@ -553,7 +681,7 @@ describe("conversational Action authoring tools", () => {
     expect(checkpoint?.operator_messages).toContain(explanation);
     const saved = structuredClone(checkpoint!);
     const resumed = [call("runner.validate_action_draft", {}), say("The original shared limits are ready for review.")];
-    const result = await converseActionRuleDraft({ ...input, checkpoint: saved,
+    const result = await converseActionRuleDraft({ ...input, checkpoint: saved, askClarification: async () => "Continue with the recorded meaning.",
       session: { ...input.session, dependencies: { requestJson: async () => resumed.shift()! } },
     });
     expect(result.compiled.draft.approval.shared_limits).toEqual(approval.shared_limits);
@@ -605,14 +733,14 @@ describe("conversational Action authoring tools", () => {
     const steps = [call("runner.pause_action_draft", { operator_message: answer }), say("An authoritative source is still missing."),
       call("runner.pause_action_draft", { operator_message: answer })];
     const requests: string[] = [];
-    const onCheckpoint = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("checkpoint storage unavailable"));
+    const onCheckpoint = vi.fn().mockResolvedValueOnce(undefined).mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("checkpoint storage unavailable"));
     await expect(converseActionRuleDraft({ ...requestInput(async request => {
       requests.push(JSON.stringify(request.body)); return steps.shift()!;
     }), askClarification: async () => answer, onCheckpoint })).rejects.toMatchObject({ code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION" });
     // The failed save remains an uncertain local outcome; never advertise its
     // raw storage exception as permission to repeat the generation/callback.
     expect(requests.join("\n")).toContain("Quote the actual operator message asking to pause");
-    expect(onCheckpoint).toHaveBeenCalledTimes(2);
+    expect(onCheckpoint).toHaveBeenCalledTimes(3);
     expect(steps).toEqual([]);
   });
 
@@ -969,8 +1097,8 @@ describe("conversational Action authoring tools", () => {
     const componentCalls = [call("runner.submit_verification_boundary_draft"), call("runner.submit_approval_policy_draft"),
       call("runner.submit_action_rule_draft"), call("runner.submit_effect_envelope_draft")];
     if (resume) {
-      const paused = [...componentCalls, say("Pause for now?")];
-      await expect(converseActionRuleDraft({ ...requestInput(async () => paused.shift()!), intent,
+      const paused = [...componentCalls];
+      await expect(converseActionRuleDraft({ ...requestInput(async () => { if (!paused.length) throw new AskError("ASK_CANCELLED", "ASK_CANCELLED: DERIVED component-only interruption", 499); return paused.shift()!; }), intent,
         onCheckpoint: async (value) => { checkpoint = value; }, askClarification: async () => undefined,
       })).rejects.toThrow("CANCELLED");
     }
@@ -1018,7 +1146,7 @@ describe("conversational Action authoring tools", () => {
     const resumed = [call("runner.inspect_action_relationships", args), call("runner.submit_approval_policy_draft"),
       call("runner.submit_action_rule_draft"), call("runner.submit_effect_envelope_draft"), call("runner.validate_action_draft", {}), say("Ready for review.")];
     const requestJson = vi.fn(async (request) => { requests.push(JSON.stringify(request.body)); return resumed.shift()!; });
-    const result = await converseActionRuleDraft({ ...input, session: requestInput(requestJson).session, checkpoint });
+    const result = await converseActionRuleDraft({ ...input, session: requestInput(requestJson).session, checkpoint, askClarification: async () => "Yes, one billing reviewer for every request." });
     expect(result.state).toBe("ready");
     expect(result.authority_granted).toBe(false);
     expect(requests.at(-1)).toContain("already_reviewed");
@@ -1078,7 +1206,6 @@ describe("conversational Action authoring tools", () => {
       say("Should pauses always need a reviewer?"),
       say("A reviewer checks the request before it can proceed. Which team should review?"),
       say("Is one billing reviewer sufficient?"),
-      say("I still need the reviewer count; nothing has been accepted."),
       call("runner.submit_approval_policy_draft"),
       call("runner.submit_action_rule_draft"),
       call("runner.submit_effect_envelope_draft"),
@@ -1089,11 +1216,12 @@ describe("conversational Action authoring tools", () => {
     const answers = ["Why?", "Billing reviewers", "", "Yes, one billing reviewer"];
     const askClarification = vi.fn(async () => answers.shift());
     const result = await converseActionRuleDraft({ ...requestInput(requestJson), askClarification });
-    expect(result.clarification_count).toBe(4);
+    expect(result.clarification_count).toBe(3);
     expect(askClarification).toHaveBeenCalledTimes(4);
     expect(requests[4]).not.toContain("I have not supplied a decision");
-    expect(requests[4]).toContain("The input was empty");
-    expect(requests[4]).toContain("changes none of the recorded business answers");
+    expect(askClarification.mock.calls[2]).toEqual(askClarification.mock.calls[3]);
+    expect(requests).toHaveLength(9);
+    expect(requests[4]).toContain("Yes, one billing reviewer");
     expect(requests[4]).toContain("billing.pause_account_verification");
   });
 
@@ -1200,7 +1328,7 @@ describe("conversational Action authoring tools", () => {
       call("runner.validate_action_draft", {}), say("One pause action, with two billing reviewers. Review activation next.")];
     const result = await converseActionRuleDraft({ ...requestInput(async (request) => {
       requests.push(JSON.stringify(request.body)); return steps.shift()!;
-    }), ...common, ...(resume ? { checkpoint } : {}) });
+    }), ...common, ...(resume ? { checkpoint, askClarification: async () => "Keep the same action with two billing reviewers." } : {}) });
     expect(requests.join("\n")).toContain("ACTION_OUTCOME_COLLISION");
     expect(result.revision).toEqual({ outcome: baseline.outcome, changed_phases: ["approval"], reopened_draft: selection });
     expect(result.compiled.approval_class.required_approvals).toBe(2);
@@ -1291,7 +1419,7 @@ describe("conversational Action authoring tools", () => {
       call("runner.submit_effect_envelope_draft"), call("runner.validate_action_draft", {}), say("The paused draft is ready."),
     ];
     const requestJson = vi.fn(async () => resumedSteps.shift()!);
-    const resumed = await converseActionRuleDraft({ ...requestInput(requestJson), checkpoint });
+    const resumed = await converseActionRuleDraft({ ...requestInput(requestJson), checkpoint, askClarification: async () => "One billing reviewer." });
     expect(resumed.state).toBe("ready");
     expect(requestJson).toHaveBeenCalledTimes(5);
     const staleRequest = vi.fn();

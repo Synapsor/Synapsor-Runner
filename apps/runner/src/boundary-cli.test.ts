@@ -1,3 +1,5 @@
+import { withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, recoverAuthoringGeneration,
+  authoringGenerationHandled, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { nativeAuthoringRefusal } from "./test-fixtures/native-authoring-refusal.js";
 import * as actionAuthorities from "./action-rule-authority.js";
 import { startLocalUiServer } from "./local-ui.js";
@@ -5662,6 +5664,60 @@ describe("boundary operator-plane CLI", () => {
       ]);
     } finally { await fixture.dispose(); }
   }, 20_000);
+
+  it("B33 commits a new question after ordinary stale-job revalidation and redisplays it locally", async () => {
+    const fixture=await staleSemanticRevalidationFixture();
+    const question="Which maintenance role reviews otherwise valid follow-ups?";
+    try {
+      await fixture.writeResume(["maintenance.complete_visit","maintenance.close_visit"], ["Keep first rule.","Keep second rule.","Prepare follow-ups with owner-reviewed approval."]);
+      let sends=0;
+      const prompt=vi.fn(async(text:string)=>{expect(text).toBe(question);return undefined;});
+      fixture.session.promptText=prompt;
+      const generator=vi.fn(async (input:Parameters<typeof generateModelActionRuleDraft>[0])=>generateModelActionRuleDraft({...input,
+        session:{...input.session,dependencies:{requestJson:async()=>{sends++;return {status:200,body:{status:"completed",output:[{type:"message",content:[{type:"output_text",text:question}]}]}};}}}}));
+      await expect(fixture.run(generator)).resolves.toBe(0);
+      expect(sends).toBe(1);expect(prompt).toHaveBeenCalledExactlyOnceWith(question,expect.anything());
+      const saved=JSON.parse(await fs.readFile(path.join(fixture.root,".synapsor/boundary-authoring/resume.json"),"utf8"));
+      expect(saved.action.checkpoint.pending_question.question).toBe(question);
+      expect(saved.generation_recovery.operations.at(-1)).toMatchObject({state:"checkpointed",question_handoff:{question}});
+      await expect(fixture.run(generator)).resolves.toBe(0);
+      expect(sends).toBe(1);expect(prompt).toHaveBeenCalledTimes(2);
+      await fixture.expectRetained(["maintenance.complete_visit","maintenance.close_visit"]);
+    } finally {await fixture.dispose();}
+  },30_000);
+
+  it.each(["handled","unknown"] as const)("B33 revalidation cannot renew old %s generation history",async disposition=>{
+    const fixture=await staleSemanticRevalidationFixture();
+    try {
+      await fixture.writeResume(["maintenance.complete_visit","maintenance.close_visit"],["Keep first rule.","Keep second rule.","Prepare follow-ups with owner-reviewed approval."]);
+      const original=JSON.parse(await fs.readFile(path.join(fixture.root,".synapsor/boundary-authoring/resume.json"),"utf8"));
+      let recovery:AuthoringTransportState={version:1,operations:[]};
+      await withAuthoringGenerationRecovery(async()=>{
+        configureAuthoringGenerationRecovery({available:()=>true,read:()=>recovery,current:async()=>canonicalJsonDigest(original.binding),write:async s=>{recovery=structuredClone(s);}});
+        const run=()=>recoverAuthoringGeneration({endpoint:new URL("http://127.0.0.1:1/v1/responses"),scope:"custom_loopback",headers:{},
+          body:{model:"gpt-test",store:false,input:"DERIVED historical control",max_output_tokens:10,tools:[]},signal:new AbortController().signal},async()=>{
+            if(disposition==="unknown")throw new Error("DERIVED unknown old outcome");
+            return {status:200,body:{status:"completed",output:[]}};
+          });
+        if(disposition==="handled")await authoringGenerationHandled([await run()]);
+        else await expect(run()).rejects.toMatchObject({code:"ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"});
+      });
+      const recorded=buildBoundaryAuthoringResumeState({binding:original.binding,stage:original.stage,jobIntent:original.job_intent,
+        provider:original.model.provider,model:original.model.name,action:original.action,previous:original,generationRecovery:recovery});
+      await writeBoundaryAuthoringResumeState(fixture.root,recorded,{expectedRevisionDigest:original.revision_digest});
+      const choose=fixture.session.chooseOption!;
+      fixture.session.chooseOption=async(title,options,config)=>{
+        if(title==="SETUP NEEDS ATTENTION"){expect(config?.context?.join(" ")).toContain("unfinished generation");return "pause";}
+        return choose(title,options,config);
+      };
+      const requestJson=vi.fn();
+      const generator=vi.fn(async(input:Parameters<typeof generateModelActionRuleDraft>[0])=>generateModelActionRuleDraft({...input,session:{...input.session,dependencies:{requestJson}}}));
+      await expect(fixture.run(generator)).resolves.toBe(0);expect(generator).toHaveBeenCalledOnce();expect(requestJson).not.toHaveBeenCalled();
+      const after=JSON.parse(await fs.readFile(path.join(fixture.root,".synapsor/boundary-authoring/resume.json"),"utf8"));
+      expect(after.generation_recovery).toEqual(recovery);
+      await fixture.expectRetained(["maintenance.complete_visit","maintenance.close_visit"]);
+    } finally {await fixture.dispose();}
+  },30_000);
 
   it("retains private prepared-action dependencies and unfinished components across writer rescan", async () => {
     const fixture = await staleSemanticRevalidationFixture({ privateVerificationResource: true });

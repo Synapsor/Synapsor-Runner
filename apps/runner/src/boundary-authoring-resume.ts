@@ -1,4 +1,4 @@
-import { validateAuthoringTransportState, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+import { assertAuthoringQuestionHandoff, validateAuthoringTransportState, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { AUTHORING_PROGRAM_CAPACITY, AUTHORING_PROGRAM_RESUME_VERSION } from "./authoring-program-capacity.js";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -583,6 +583,10 @@ export function assertBoundaryAuthoringResumeState(
   if (value.reviewed_action_disclosures !== undefined) parseReviewedActionDisclosures(value.reviewed_action_disclosures);
   if (value.reviewed_version_fields !== undefined) parseReviewedActionVersionFields(value.reviewed_version_fields, 32);
   if (value.generation_recovery !== undefined) validateAuthoringTransportState(value.generation_recovery);
+  assertAuthoringQuestionHandoff(value.generation_recovery as AuthoringTransportState | undefined,
+    (value.action as BoundaryAuthoringResumeAction | undefined)?.checkpoint);
+  assertAuthoringQuestionHandoff(value.generation_recovery as AuthoringTransportState | undefined,
+    (value.pending_action_revision as BoundaryAuthoringActionRevision | undefined)?.checkpoint);
   if (value.read_prerequisite_decisions !== undefined) parseReadPrerequisiteBusinessDecisions(value.read_prerequisite_decisions);
   if (value.pending_action_addition !== undefined) normalizeActionAddition(value.pending_action_addition, maximum);
   if (value.stage === "client_setup" && value.client_handoff === undefined) throw new Error("Client continuation requires its exact reviewed authority.");

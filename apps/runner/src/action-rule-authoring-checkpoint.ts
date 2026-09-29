@@ -1,3 +1,4 @@
+import type { AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 
 export type ReviewedPrivateActionSource = {
@@ -37,6 +38,12 @@ export type ActionRuleAuthoringCheckpoint = {
   context_digest: `sha256:${string}`;
   components: Partial<Record<"verification" | "effect" | "rule" | "approval", Record<string, unknown>>>;
   operator_messages?: string[];
+  pending_question?: {
+    question: string;
+    operator_message: string;
+    policy_source_digest?: `sha256:${string}`;
+    completion?: AuthoringQuestionCompletion;
+  };
   reviewed_relationships?: string[];
   reviewed_private_sources?: ReviewedPrivateActionSource[];
   reviewed_version_fields?: ReviewedActionVersionField[];
@@ -56,12 +63,27 @@ export function parseActionRuleAuthoringCheckpoint(value: unknown): ActionRuleAu
   if (!value || typeof value !== "object" || Array.isArray(value)) throw fail();
   const record = value as Record<string, unknown>;
   if (record.schema_version !== "synapsor.action-authoring-checkpoint.v1"
-    || Object.keys(record).some((key) => !["schema_version", "intent_digest", "context_digest", "components", "operator_messages", "reviewed_relationships", "reviewed_private_sources", "reviewed_version_fields", "reopened_draft", "digest"].includes(key))
+    || Object.keys(record).some((key) => !["schema_version", "intent_digest", "context_digest", "components", "operator_messages", "pending_question", "reviewed_relationships", "reviewed_private_sources", "reviewed_version_fields", "reopened_draft", "digest"].includes(key))
     || ![record.intent_digest, record.context_digest, record.digest].every((digest) => typeof digest === "string" && /^sha256:[a-f0-9]{64}$/u.test(digest))
     || !record.components || typeof record.components !== "object" || Array.isArray(record.components)) throw fail();
   if (record.operator_messages !== undefined && (!Array.isArray(record.operator_messages)
     || record.operator_messages.length > 16
     || record.operator_messages.some((message) => typeof message !== "string" || !message.trim() || message.length > 4_000))) throw fail();
+  if (record.pending_question !== undefined) {
+    const q = record.pending_question as ActionRuleAuthoringCheckpoint["pending_question"];
+    const isDigest = (v: unknown) => typeof v === "string" && /^sha256:[a-f0-9]{64}$/u.test(v);
+    if (!q || typeof q !== "object" || Array.isArray(q)
+      || Object.keys(q).some(k => !["question","operator_message","policy_source_digest","completion"].includes(k))
+      || typeof q.question !== "string" || !q.question.trim() || q.question.length > 20_000
+      || typeof q.operator_message !== "string" || !q.operator_message.trim() || q.operator_message.length > 4_000
+      || q.policy_source_digest !== undefined && !isDigest(q.policy_source_digest)) throw fail();
+    if (q.completion !== undefined) {
+      const c = q.completion;
+      if (!c || typeof c !== "object" || Array.isArray(c) || Object.keys(c).some(k => !["operation_id","request_digest","context_digest","response_digest"].includes(k))
+        || typeof c.operation_id !== "string" || !/^[a-f0-9-]{36}$/u.test(c.operation_id)
+        || ![c.request_digest,c.context_digest,c.response_digest].every(isDigest)) throw fail();
+    }
+  }
   if (record.reopened_draft !== undefined) {
     const selected = record.reopened_draft as ActionRuleAuthoringCheckpoint["reopened_draft"];
     if (!selected || typeof selected !== "object" || Array.isArray(selected)

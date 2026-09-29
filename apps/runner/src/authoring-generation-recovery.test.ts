@@ -4,9 +4,9 @@ import { createServer, globalAgent, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it } from "vitest";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { AskError, askToolSurfaceDigest, resolveAskProviderConfiguration, runAskProviderTurn, secureAskJsonRequest,
+import { AskError, completedAuthoringQuestion, askToolSurfaceDigest, resolveAskProviderConfiguration, runAskProviderTurn, secureAskJsonRequest,
   type ProviderHttpInput, type ProviderHttpResult } from "./model-ask.js";
-import { authoringGenerationCurrentnessCode, authoringGenerationHandled, authoringTransportCheckpoint, configureAuthoringGenerationRecovery,
+import { authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, assertAuthoringQuestionHandoff, authoringGenerationCurrentnessCode, authoringGenerationHandled, authoringTransportCheckpoint, configureAuthoringGenerationRecovery,
   recoverAuthoringGeneration, validateAuthoringTransportState, withAuthoringGenerationRecovery,
   type AuthoringGenerationHost, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { runRequiredAuthoringToolCall } from "./authoring-tool-call.js";
@@ -44,6 +44,9 @@ async function fixture(mode: string) {
     }
     if (mode === "402" || mode === "404") {res.writeHead(Number(mode));res.end('{"error":"DERIVED known refusal"}');return;}
     if (mode === "401" || mode === "429" || mode === "400" || mode === "503") { res.writeHead(Number(mode)); res.end('{"error":"DERIVED permanent refusal"}'); return; }
+    if (mode === "narration-chat") {
+      res.setHeader("content-type","application/json");res.end(JSON.stringify({choices:[{finish_reason:"stop",message:{role:"assistant",content:"Which role reviews exceptions?"}}]}));return;
+    }
     res.setHeader("content-type","application/json"); res.end(JSON.stringify({status:"completed",output:mode === "narration" ? [{type:"message",role:"assistant",content:[{type:"output_text",text:"The saved draft is still pending."}]}] : []}));
   });
   servers.push(server); await new Promise<void>(r => server.listen(0,"127.0.0.1",r));
@@ -70,6 +73,16 @@ describe("saved authoring generation transport recovery",()=>{
       await authoringGenerationHandled([r]);expect(m.read().operations[0]!.state).toBe("handled");
       m.set(authoringTransportCheckpoint(m.read())!);});
     expect(f.sends()).toBe(1);expect(m.read().operations[0]!.state).toBe("checkpointed");
+  });
+  it("new current tracking can suppress inherited retries without resetting history or consent",async()=>{
+    const f=await fixture("B-success"),m=memory(f.endpoint,2);
+    const policy=structuredClone(m.read().policy);m.host.allowRetries=()=>false;
+    await expect(enter(m,()=>recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest))).rejects.toMatchObject({code:"ASK_GENERATION_OUTCOME_UNKNOWN"});
+    expect(f.sends()).toBe(1);expect(m.read().policy).toEqual(policy);
+    expect(m.read().operations[0]!.attempts).toHaveLength(1);
+    expect(m.read().operations[0]!.attempts[0]!.outcome).toBe("B");
+    await expect(enter(m,()=>recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest))).rejects.toMatchObject({code:"ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"});
+    expect(f.sends()).toBe(1);
   });
   it("opted-in B repeats only identical generation bytes, retains both attempts and returns once",async()=>{
     const f=await fixture("B-success"),m=memory(f.endpoint);let callbacks=0;
@@ -352,4 +365,85 @@ describe("saved authoring generation transport recovery",()=>{
     expect(f2.sends()).toBe(1);
   });
 
+});
+
+
+describe("B33 exact completed consumer handoff", () => {
+  async function completedQuestion(m: ReturnType<typeof memory>, endpoint: URL, provider: "openai"|"openrouter" = "openai") {
+    const tools = [{name:"runner.inspect",description:"DERIVED",input_schema:{type:"object",properties:{},additionalProperties:false}}];
+    const authorityDigest = askToolSurfaceDigest(tools);
+    const configuration = resolveAskProviderConfiguration({provider,model:provider === "openrouter" ? "openai/gpt-5.6-terra" : "DERIVED",api_key:"DERIVED-key",authority_digest:authorityDigest,egress_acknowledged:true},{},new Date());
+    const result = await runAskProviderTurn({configuration,question:"DERIVED",history:[],tools,authorityDigest,signal:new AbortController().signal,
+      gateway:{mode:"authoring",listTools:()=>tools,close:async()=>{},callTool:async()=>{throw new Error("Unexpected callback");}},
+      dependencies:{requestJson:r=>secureAskJsonRequest({...r,endpoint,scope:"custom_loopback",headers:{}})}});
+    const completion = completedAuthoringQuestion(result)!;
+    expect(completion.operation_id).toBe(m.read().operations.at(-1)!.id);
+    return {digest:canonicalJsonDigest({completion,question:result.answer}),pending_question:{question:result.answer,completion}};
+  }
+  it.each(["openai","openrouter"] as const)("%s actual encoder retains an exact durable question association",async provider=>{
+    const f=await fixture(provider === "openrouter" ? "narration-chat" : "narration"),m=memory(f.endpoint,0);
+    await enter(m,async()=>{
+      const cp=await completedQuestion(m,f.endpoint,provider);
+      m.set(authoringTransportCheckpoint(authoringQuestionCheckpoint(m.read(),cp))!);
+      assertAuthoringQuestionHandoff(m.read(),cp);
+      expect(m.read().operations[0]!.question_handoff!.question).toBe(cp.pending_question.question);
+    });
+    expect(f.sends()).toBe(1);const sent=JSON.parse(f.bodies[0]!);
+    if(provider === "openai"){expect(sent.store).toBe(false);expect(sent.parallel_tool_calls).toBe(false);}
+    else expect(sent.provider).toMatchObject({allow_fallbacks:false,data_collection:"deny"});
+  });
+  it("binds decoded response, exact checkpoint and attributed answer without acknowledging historical work", async () => {
+    const f=await fixture("narration"),m=memory(f.endpoint,0);
+    const cp=await enter(m,async()=>{
+      const cp=await completedQuestion(m,f.endpoint);
+      expect(m.read().operations[0]!.state).toBe("handled");
+      expect(()=>assertAuthoringQuestionHandoff(m.read(),cp)).toThrow("RESUME_INVALID");
+      m.set(authoringQuestionCheckpoint(m.read(),cp)!);
+      validateAuthoringTransportState(m.read());
+      assertAuthoringQuestionHandoff(m.read(),cp);
+      return cp;
+    });
+    await enter(m,async()=>{assertAuthoringQuestionHandoff(m.read(),cp);});
+    expect(f.sends()).toBe(1);
+    const next={digest:canonicalJsonDigest("answered checkpoint"),operator_messages:["One scoped reviewer."]};
+    const answered=authoringQuestionAnswerCheckpoint(m.read(),cp,next)!;
+    expect(answered.operations[0]!.question_handoff).toMatchObject({question:cp.pending_question.question,
+      answered:{answer:"One scoped reviewer.",actor:"local_installation_operator",checkpoint_digest:next.digest}});
+    validateAuthoringTransportState(answered);
+    expect(()=>authoringQuestionAnswerCheckpoint(answered,cp,next)).toThrow("RESUME_INVALID");
+    expect(()=>assertAuthoringQuestionHandoff(m.read(),{...cp,digest:canonicalJsonDigest("competing checkpoint")})).toThrow("RESUME_INVALID");
+    expect(()=>assertAuthoringQuestionHandoff(m.read(),{...cp,pending_question:{...cp.pending_question,question:"Different question"}})).toThrow("RESUME_INVALID");
+    await expect(enter(m,async()=>authoringQuestionCheckpoint(m.read(),cp))).rejects.toMatchObject({code:"ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"});
+    expect(f.sends()).toBe(1);
+  });
+  it("the enclosing generic checkpoint cannot promote an unrelated earlier handled operation",async()=>{
+    const f=await fixture("narration"),m=memory(f.endpoint,0);
+    await enter(m,async()=>{
+      await completedQuestion(m,f.endpoint); // No typed handoff: remains unresolved.
+      const cp=await completedQuestion(m,f.endpoint);
+      m.set(authoringTransportCheckpoint(authoringQuestionCheckpoint(m.read(),cp))!);
+      expect(m.read().operations.map(op=>op.state)).toEqual(["handled","checkpointed"]);
+      const next={digest:canonicalJsonDigest("answer"),operator_messages:["One scoped reviewer."]};
+      m.set(authoringTransportCheckpoint(authoringQuestionAnswerCheckpoint(m.read(),cp,next))!);
+      expect(m.read().operations.map(op=>op.state)).toEqual(["handled","checkpointed"]);
+    });
+    await expect(enter(m,()=>recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest))).rejects.toMatchObject({code:"ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"});
+    expect(f.sends()).toBe(2);
+  });
+  it.each([false,true])("handoff write acknowledgement loss recovers only from an actual committed pair (committed %s)",async committed=>{
+    const f=await fixture("narration"),m=memory(f.endpoint,0);
+    let cp: Awaited<ReturnType<typeof completedQuestion>>|undefined;
+    await expect(enter(m,async()=>{
+      cp=await completedQuestion(m,f.endpoint);
+      const next=authoringQuestionCheckpoint(m.read(),cp)!;
+      if(committed)m.set(next); // DERIVED single-file commit before lost acknowledgement.
+      throw new Error("DERIVED handoff write failed");
+    })).rejects.toThrow("DERIVED handoff write failed");
+    if(committed)assertAuthoringQuestionHandoff(m.read(),cp);
+    else {
+      expect(()=>assertAuthoringQuestionHandoff(m.read(),cp)).toThrow("RESUME_INVALID");
+      await expect(enter(m,()=>recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest))).rejects.toMatchObject({code:"ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"});
+    }
+    expect(f.sends()).toBe(1);
+  });
 });

@@ -10,6 +10,10 @@ import {
   revalidateBoundaryAuthoringResume, writeBoundaryAuthoringResumeState, assertBoundaryAuthoringResumeCurrent,
   type BoundaryAuthoringResumeBinding, type BoundaryAuthoringResumeState,
 } from "./boundary-authoring-resume.js";
+import { actionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
+import { askToolSurfaceDigest, resolveAskProviderConfiguration, runAskProviderTurn, completedAuthoringQuestion } from "./model-ask.js";
+import { withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, authoringQuestionCheckpoint,
+  authoringQuestionAnswerCheckpoint, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 
 const roots: string[] = [];
@@ -215,4 +219,75 @@ describe("authoring resume filesystem compare-and-save", () => {
     const winner = writers.findIndex(writer => writer.messages.includes("saved"));
     expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: drafts[winner] });
   }, 15_000);
+});
+
+
+// Composed real decoder -> exact handoff -> filesystem CAS evidence. The public
+// UI/installed process restart is independently tested; these faults isolate the
+// single-file commit boundary rather than stubbing an outer guard.
+describe("B33 pending-question atomic resume persistence", () => {
+  async function questionPair() {
+    const root=await project();let current=state();
+    await writeBoundaryAuthoringResumeState(root,current);
+    const build=(recovery:AuthoringTransportState,checkpoint?:ReturnType<typeof actionRuleAuthoringCheckpoint>)=>buildBoundaryAuthoringResumeState({
+      binding,stage:"action_drafting",jobIntent:current.job_intent,provider:"openai",model:"test",previous:current,
+      action:{...current.action!,...(checkpoint?{checkpoint}:{})},generationRecovery:recovery});
+    return withAuthoringGenerationRecovery(async()=>{
+      configureAuthoringGenerationRecovery({available:()=>true,read:()=>current.generation_recovery,
+        current:async()=>canonicalJsonDigest(binding),write:async recovery=>{
+          const next=build(recovery);await writeBoundaryAuthoringResumeState(root,next,{expectedRevisionDigest:current.revision_digest});current=next;
+        }});
+      const tools=[{name:"runner.inspect",description:"DERIVED",input_schema:{type:"object",properties:{},additionalProperties:false}}];
+      const authorityDigest=askToolSurfaceDigest(tools);
+      const configuration=resolveAskProviderConfiguration({provider:"openai",model:"test",api_key:"DERIVED-key",authority_digest:authorityDigest,egress_acknowledged:true},{},new Date());
+      const result=await runAskProviderTurn({configuration,question:"DERIVED",history:[],tools,authorityDigest,signal:new AbortController().signal,
+        gateway:{mode:"authoring",listTools:()=>tools,close:async()=>{},callTool:async()=>{throw new Error("No callback allowed");}},
+        dependencies:{requestJson:async()=>({status:200,body:{status:"completed",output:[{type:"message",content:[{type:"output_text",text:"Which reviewed role handles exceptions?"}]}]}})}});
+      const cp=actionRuleAuthoringCheckpoint({intent_digest:canonicalJsonDigest(current.action!.intent),context_digest:canonicalJsonDigest(binding),components:{},
+        pending_question:{question:result.answer,operator_message:current.action!.intent,completion:completedAuthoringQuestion(result)}});
+      const next=build(authoringQuestionCheckpoint(current.generation_recovery,cp)!,cp);
+      return {root,base:current,next,cp};
+    });
+  }
+  it.each([false,true])("lost handoff acknowledgement leaves exactly the old fence or whole committed question (rename %s)",async committed=>{
+    const {root,base,next}=await questionPair();
+    expect(base.generation_recovery!.operations[0]!.state).toBe("handled");
+    const rename=fs.rename;
+    vi.spyOn(fs,"rename").mockImplementationOnce(async(from,to)=>{if(committed)await rename(from,to);throw Object.assign(new Error("DERIVED lost acknowledgement"),{code:"EACCES"});});
+    await expect(writeBoundaryAuthoringResumeState(root,next,{expectedRevisionDigest:base.revision_digest})).rejects.toMatchObject({code:"EACCES"});
+    const restored=await readBoundaryAuthoringResumeState(root,binding);
+    expect(restored).toEqual({status:"ready",value:committed?next:base});
+    if(restored.status!=="ready")throw new Error("Expected preserved state");
+    expect(Boolean(restored.value.action?.checkpoint?.pending_question)).toBe(committed);
+    expect(Boolean(restored.value.generation_recovery!.operations[0]!.question_handoff)).toBe(committed);
+  });
+  it.each([false,true])("lost answer acknowledgement preserves exact committed-or-unanswered state (rename %s)",async committed=>{
+    const {root,base,next,cp}=await questionPair();
+    await writeBoundaryAuthoringResumeState(root,next,{expectedRevisionDigest:base.revision_digest});
+    const answered=actionRuleAuthoringCheckpoint({intent_digest:cp.intent_digest,context_digest:cp.context_digest,components:cp.components,operator_messages:["One scoped reviewer."]});
+    const successor=buildBoundaryAuthoringResumeState({binding,stage:"action_drafting",jobIntent:next.job_intent,provider:"openai",model:"test",previous:next,
+      action:{...next.action!,checkpoint:answered},generationRecovery:authoringQuestionAnswerCheckpoint(next.generation_recovery,cp,answered)});
+    const rename=fs.rename;
+    vi.spyOn(fs,"rename").mockImplementationOnce(async(from,to)=>{if(committed)await rename(from,to);throw Object.assign(new Error("DERIVED answer acknowledgement lost"),{code:"EACCES"});});
+    await expect(writeBoundaryAuthoringResumeState(root,successor,{expectedRevisionDigest:next.revision_digest})).rejects.toMatchObject({code:"EACCES"});
+    expect(await readBoundaryAuthoringResumeState(root,binding)).toEqual({status:"ready",value:committed?successor:next});
+    if(committed)await expect(writeBoundaryAuthoringResumeState(root,successor,{expectedRevisionDigest:next.revision_digest})).rejects.toMatchObject({code:"BOUNDARY_AUTHORING_RESUME_CHANGED"});
+  });
+  it("commits only one of two competing answers with its matching operation history",async()=>{
+    const {root,base,next,cp}=await questionPair();
+    await writeBoundaryAuthoringResumeState(root,next,{expectedRevisionDigest:base.revision_digest});
+    const answers=["One scoped reviewer.","Two scoped reviewers."];
+    const successors=answers.map(answer=>{
+      const answered=actionRuleAuthoringCheckpoint({intent_digest:cp.intent_digest,context_digest:cp.context_digest,components:cp.components,operator_messages:[answer]});
+      return buildBoundaryAuthoringResumeState({binding,stage:"action_drafting",jobIntent:next.job_intent,provider:"openai",model:"test",previous:next,
+        action:{...next.action!,checkpoint:answered},generationRecovery:authoringQuestionAnswerCheckpoint(next.generation_recovery,cp,answered)});
+    });
+    const results=await Promise.allSettled(successors.map(candidate=>writeBoundaryAuthoringResumeState(root,candidate,{expectedRevisionDigest:next.revision_digest})));
+    expect(results.filter(r=>r.status==="fulfilled")).toHaveLength(1);
+    expect(results.filter(r=>r.status==="rejected")).toEqual([expect.objectContaining({reason:expect.objectContaining({code:"BOUNDARY_AUTHORING_RESUME_CHANGED"})})]);
+    const winner=results.findIndex(r=>r.status==="fulfilled");
+    expect(await readBoundaryAuthoringResumeState(root,binding)).toEqual({status:"ready",value:successors[winner]});
+    expect(successors[winner]!.generation_recovery!.operations[0]!.question_handoff!.answered!.answer).toBe(answers[winner]);
+    expect(successors[winner]!.action!.checkpoint!.pending_question).toBeUndefined();
+  });
 });
