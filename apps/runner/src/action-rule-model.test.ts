@@ -333,7 +333,7 @@ describe("conversational Action authoring tools", () => {
   });
   const say = (text: string) => ({ status: 200, body: { output: [{ type: "message", content: [{ type: "output_text", text }] }] } });
 
-  it("delivers a current bound requirement through real conversational correction before structural readiness", async()=>{
+  it.each(["openai", "openrouter"] as const)("delivers a current bound requirement through %s correction before structural readiness", async(provider)=>{
     const source=policyTextSnapshot(Buffer.from("The caller operator_note must contain 1..64 UTF-16 units."),"rules.txt");
     const session=newPolicySourceSession();session.snapshots=[source];session.active=1;const store=canonicalJsonDigest("fixture-store");
     session.input_policy_reviews=[makeSourceInputReview({source,session,store,outcomes:["billing.pause_account"],requirements:[{outcomes:["billing.pause_account"],input:"operator_note",start:1,end:1,min_length:1,max_length:64}],actor:"fixture operator"})];
@@ -341,11 +341,20 @@ describe("conversational Action authoring tools", () => {
     const corrected=structuredClone(original);(corrected.inputs[0]!.type as any).min_length=1;
     const steps=[call("runner.submit_verification_boundary_draft"),call("runner.submit_effect_envelope_draft"),call("runner.submit_action_rule_draft",original),call("runner.submit_approval_policy_draft"),call("runner.validate_action_draft",{}),call("runner.submit_action_rule_draft",corrected),call("runner.validate_action_draft",{}),say("Structured draft prepared; full policy review is pending.")];
     const encoded:string[]=[];
-    const result=await converseActionRuleDraft({...requestInput(async r=>{encoded.push(JSON.stringify(r.body));if(!steps.length)throw new Error("Unexpected extra model attempt");return steps.shift()!;}),assessInputFidelity:async d=>sourceInputFidelity(source,session,store,[d]).findings});
+    const request = requestInput(async r=>{
+      encoded.push(JSON.stringify(r.body));if(!steps.length)throw new Error("Unexpected extra model attempt");
+      const step=steps.shift()!;
+      if(provider==='openai')return step;
+      const output=step.body.output[0] as any;
+      return {status:200,body:{choices:[{finish_reason:output.type==='function_call'?'tool_calls':'stop',message:{role:'assistant',
+        content:output.type==='message'?output.content[0].text:null,
+        ...(output.type==='function_call'?{tool_calls:[{id:output.call_id,type:'function',function:{name:output.name,arguments:output.arguments}}]}:{})}}]}};
+    });
+    const result=await converseActionRuleDraft({...request,session:{...request.session,provider,model:provider==='openrouter'?'openai/gpt-5.6-terra':'gpt-5.6-terra'},env:{...request.env,OPENROUTER_API_KEY:'provider-test-key'},assessInputFidelity:async d=>sourceInputFidelity(source,session,store,[d]).findings});
     expect(result.compiled.draft.inputs![0]!.type).toMatchObject({min_length:1,max_length:64});
     expect(encoded.some(body=>body.includes('SOURCE_INPUT_CONSTRAINT_WEAKER')&&body.includes(session.input_policy_reviews![0]!.digest))).toBe(true);
     expect(encoded.join('\n')).toContain('min_length');expect(result.correction_used).toBe(true);
-    expect(result.compiled.draft.require).toEqual(original.require);expect(result.compiled.draft.effect.set).toEqual(modelDraft().effect.set);
+    expect(result.compiled.draft.require).toEqual(eligiblePredicate());expect(result.compiled.draft.effect.set).toEqual(modelDraft().effect.set);
     expect(original.inputs[0]!.type).not.toHaveProperty('min_length');
   });
 
@@ -492,7 +501,7 @@ describe("conversational Action authoring tools", () => {
         operatorStatements: ["At most 6 automatic approvals across the Action Boundary and 2 per tenant in a rolling 24-hour window.",
           "Each tenant is exactly one league, and each principal is an assigned referee within that league."] });
       expect(result.compiled.draft.approval).toEqual(requested);
-      expect(result.compiled.draft.require).toEqual(original.require);
+      expect(result.compiled.draft.require).toEqual(eligiblePredicate());
       expect(result.compiled.draft.effect).toEqual(original.effect);
       const normalizedOriginal = compileActionRuleModelDraft({ draft: original, builtCatalog: builtCatalog(),
         readBoundary: boundary(), readBoundaryDigest: readDigest }).draft;

@@ -2,7 +2,7 @@ import {describe,it,expect} from 'vitest';
 import fs from 'node:fs/promises';import os from 'node:os';import path from 'node:path';
 import {canonicalJsonDigest} from '@synapsor-runner/protocol';
 import {newPolicySourceSession,policyTextSnapshot,savePolicySources,loadPolicySources} from './authoring-policy-source.js';
-import {makeSourceInputReview,sourceInputFidelity,assertSourceInputReviews,SourceInputFidelityError} from './authoring-input-policy.js';
+import {makeSourceInputReview,sourceInputFidelity,assertSourceInputReviews,SourceInputFidelityError,assertInputFidelityRepair} from './authoring-input-policy.js';
 import {actionRuleDraftDiagnostics} from './action-rule-draft.js';
 import {reviewSourceInputPolicy} from './authoring-input-policy-operation.js';
 const store=canonicalJsonDigest('owned fixture store');
@@ -38,6 +38,30 @@ describe('current attributed input policy fidelity',()=>{
   expect(sourceInputFidelity(changed,f.session,store,[f.action]).findings[0]?.code).toBe('SOURCE_INPUT_REQUIREMENT_PENDING');
   expect(sourceInputFidelity(f.source,f.session,canonicalJsonDigest('other store'),[f.action]).findings[0]?.code).toBe('SOURCE_INPUT_REQUIREMENT_PENDING');
   expect(sourceInputFidelity(f.source,{...f.session,id:'12345678-1234-1234-1234-123456789012'},store,[f.action]).findings[0]?.code).toBe('SOURCE_INPUT_REQUIREMENT_PENDING');
+ });
+ it('does not give another Action a registered fidelity pass',()=>{
+  const f=setup();f.action.outcome='warehouse.other';f.action.inputs[0].type.min_length=1;
+  expect(f.run().findings[0]?.code).toBe('SOURCE_INPUT_REQUIREMENT_PENDING');
+ });
+ it('does not use an impossible interval as a vacuous proof',()=>{
+  const f=setup();f.action.inputs[0].type.min_length=1;
+  f.action.require={kind:'compare',operator:'eq',left:{kind:'input',name:'operator_note'},right:{kind:'literal',value:'x'.repeat(65),value_type:{kind:'string',max_length:100,comparison:'exact'}}};
+  expect(f.run().findings).toHaveLength(1);
+ });
+ it('retains the old source decision while assessing only the new current interpretation',()=>{
+  const f=setup();f.action.inputs[0].type.min_length=1;
+  const source=policyTextSnapshot(Buffer.from(f.source.text+'\nCurrent source amendment.'),'policy.txt',2);
+  const current=makeSourceInputReview({source,session:f.session,store,outcomes:f.r.outcomes,requirements:f.r.requirements,actor:'fixture operator'});
+  f.session.input_policy_reviews!.push(current);
+  const result=sourceInputFidelity(source,f.session,store,[f.action]);
+  expect(result.findings).toEqual([]);expect(result.review_digests).toEqual([current.digest]);expect(f.session.input_policy_reviews![0]).toEqual(f.r);
+ });
+ it('retains the correction parent and refuses unrelated or predicate deletion changes',()=>{
+  const f=setup();const parent=structuredClone(f.action),next=structuredClone(parent);next.inputs[0].type.min_length=1;
+  expect(()=>assertInputFidelityRepair(parent,next,f.run().findings)).not.toThrow();
+  expect(()=>assertInputFidelityRepair(parent,{...next,outcome:'warehouse.other'},f.run().findings)).toThrow('OUTSIDE_SCOPE');
+  parent.require={kind:'compare',operator:'eq',left:{kind:'literal',value:true,value_type:{kind:'boolean'}},right:{kind:'literal',value:true,value_type:{kind:'boolean'}}};
+  expect(()=>assertInputFidelityRepair(parent,next,f.run().findings)).toThrow('Preserve every existing predicate');
  });
  it('cannot fabricate or erase lineage through coordinated save',async()=>{
   const f=setup(),root=await fs.mkdtemp(path.join(os.tmpdir(),'input-policy-cas-'));

@@ -57,7 +57,7 @@ const stateType: ActionRuleScalarTypeSpecV1 = {
 };
 const integer = { kind: "integer" } as const;
 
-function semanticFixture(options: { automaticApproval?: boolean; requiredApprovals?: number; businessInput?: boolean;
+function semanticFixture(options: { automaticApproval?: boolean; requiredApprovals?: number; businessInput?: boolean; textBounds?: {min_length?:number;max_length:number};
   outcome?: string; aliases?: string[]; sharedLimits?: ActionRuleApprovalClassSourceV1["shared_limits"] } = {}) {
   const catalog: ActionRuleCatalogV1 = {
     schema_version: "synapsor.action-rule-catalog.v1",
@@ -150,6 +150,7 @@ function semanticFixture(options: { automaticApproval?: boolean; requiredApprova
     rule.inputs = [{ name: "notification_state", description: "Requested notification preference", type: stateType }];
     rule.effect.set.status = { kind: "input", name: "notification_state" };
   }
+  if(options.textBounds)rule.inputs=[...(rule.inputs??[]),{name:'operator_note',description:'Exact caller note',type:{kind:'string',comparison:'exact',...options.textBounds}}];
   if (options.outcome) { rule.name = options.outcome; rule.outcome = options.outcome; }
   if (options.aliases) rule["x-runner-discovery"] = { title: "Pause notifications", summary: "Stop account notifications", aliases: options.aliases };
   const compiled = compileActionRule({
@@ -221,6 +222,7 @@ function createFixtureRuntime(options: {
   subjectAuthority?: () => SubjectReferenceAuthorityContext;
   unavailableOutcomes?: () => string[];
   businessInput?: boolean;
+  textBounds?: {min_length?:number;max_length:number};
   status?: "active" | "paused";
   automaticApproval?: boolean;
   requiredApprovals?: number;
@@ -237,6 +239,7 @@ function createFixtureRuntime(options: {
   const store = options.store ?? new ProposalStore();
   const { registry, activated } = semanticFixture({
     businessInput: options.businessInput,
+    textBounds:options.textBounds,
     automaticApproval: options.automaticApproval,
     requiredApprovals: options.requiredApprovals,
     sharedLimits: options.sharedLimits,
@@ -882,6 +885,27 @@ describe("fixed semantic Action MCP", () => {
       await expect(f.semanticActions.callTool(DESCRIBE_ACTIONS_TOOL, { outcome: "secret.unpublished" },
         { describeSubjectNavigation })).rejects.toMatchObject({ code: "CATALOG_ENTRY_UNAVAILABLE" });
       expect(describeSubjectNavigation).not.toHaveBeenCalled();
+    } finally { f.store.close(); }
+  });
+
+  it('enforces declared UTF-16 input bounds before query, proposal or reference consumption through real request_change',async()=>{
+    const f=createFixtureRuntime({textBounds:{min_length:1,max_length:64}});
+    try {
+      expect(await f.semanticActions.callTool(DESCRIBE_ACTIONS_TOOL,{outcome:'billing.pause_notifications'})).toMatchObject({actions:[{inputs:[{name:'operator_note',length_units:'utf16_code_units',normalization:'none',type:{min_length:1,max_length:64}}]}]});
+      const ref=await issueSubject(f),request={outcome:'billing.pause_notifications',subject_refs:{preference:ref}};
+      for(const inputs of [{},{operator_note:null},{operator_note:''},{operator_note:'x'.repeat(65)},{operator_note:'😀'.repeat(33)}])
+        await expect(f.semanticActions.callTool(REQUEST_CHANGE_TOOL,{...request,inputs})).rejects.toMatchObject({code:'ARGUMENT_INVALID'});
+      expect(f.queries).toEqual([]);expect(f.store.listProposals()).toEqual([]);
+      const accepted=await f.semanticActions.callTool(REQUEST_CHANGE_TOOL,{...request,inputs:{operator_note:' '}});
+      expect(accepted).toMatchObject({request_disposition:'created',source_database_changed:false});
+      expect(f.store.listProposals()).toHaveLength(1);
+    } finally { f.store.close(); }
+  });
+  it.each([undefined,0])('keeps legacy/explicit-zero empty input admission through real request_change (minimum %s)',async minimum=>{
+    const f=createFixtureRuntime({textBounds:{max_length:64,...(minimum===undefined?{}:{min_length:minimum})}});
+    try {
+      const ref=await issueSubject(f);
+      expect(await f.semanticActions.callTool(REQUEST_CHANGE_TOOL,{outcome:'billing.pause_notifications',subject_refs:{preference:ref},inputs:{operator_note:''}})).toMatchObject({request_disposition:'created',source_database_changed:false});
     } finally { f.store.close(); }
   });
 

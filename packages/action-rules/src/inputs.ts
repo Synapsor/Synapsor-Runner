@@ -19,7 +19,10 @@ export function validateActionRuleInputDefinitions(inputs: ActionRuleInputSpecV1
     if (numeric && (!Number.isSafeInteger(input.minimum) || !Number.isSafeInteger(input.maximum) || input.minimum! > input.maximum!)) invalid(`Input ${input.name} requires a finite integer minimum and maximum.`);
     if (!numeric && (input.minimum !== undefined || input.maximum !== undefined)) invalid(`Input ${input.name} cannot have numeric bounds.`);
     if (input.type.kind === "string" && !actionRuleStringMinimumValid(input.type)) invalid(`Input ${input.name} has invalid UTF-16 string minimum/maximum bounds.`);
-    if (input.type.kind === "string" && input.type.enum?.some(value => !actionRuleStringMatches(value,{max_length: input.type.kind === "string" ? input.type.max_length : 0, min_length: input.type.kind === "string" ? input.type.min_length : undefined}))) invalid(`Input ${input.name} enum must fit its reviewed string bounds.`);
+    if (input.type.kind === "string") {
+      const { max_length, min_length, enum: values } = input.type;
+      if (values?.some(value => !actionRuleStringMatches(value, { max_length, min_length }))) invalid(`Input ${input.name} enum must fit its reviewed string bounds.`);
+    }
     if (input.type.kind === "string" && (input.type.max_length > 4096 || input.type.max_length < 1 || !Number.isSafeInteger(input.type.max_length))) invalid(`Input ${input.name} requires a string length from 1 through 4096.`);
   }
 }

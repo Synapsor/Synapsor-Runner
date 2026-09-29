@@ -1,3 +1,5 @@
+import { reviewSourceInputPolicy } from "./authoring-input-policy-operation.js";
+import { sourceInputFidelity } from "./authoring-input-policy.js";
 import { AUTHORING_PROGRAM_CAPACITY, AUTHORING_PROGRAM_RESUME_VERSION, authoringProgramProgressLines } from "./authoring-program-capacity.js";
 import { scopedDisclosureStoreDigest } from "./authoring-scoped-disclosure.js";
 import { localScopedDisclosureReview } from "./authoring-scoped-disclosure-operation.js";
@@ -4418,13 +4420,33 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   let savedResumeRevision = loadedResume.status === "ready" || loadedResume.status === "stale"
     ? loadedResume.value.revision_digest : null;
   const checkpointSaveFailure = (step: string) => new Error(`ACTION_CHECKPOINT_NOT_SAVED: ${step} could not be saved. ${resumePersistenceFailure ?? "Inspect local storage access and retry the saved job."} Existing drafts and authority are unchanged.`);
-  const assertAuthoringResumeCurrent = async (action: Parameters<typeof assertBoundaryAuthoringResumeCurrent>[2], checkpointWrite = false) => {
+  const assertAuthoringResumeCurrent = async (action: Parameters<typeof assertBoundaryAuthoringResumeCurrent>[2], checkpointWrite = false, permit?: ProjectAuthorityMutationPermit) => {
     if (!input.authoringChat) return;
     assertRunning();
     if ((!checkpointWrite && resumePersistenceBlocked) || !activeResume || activeResume.revision_digest !== savedResumeRevision) {
       throw checkpointSaveFailure("The current saved job");
     }
-    await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, action);
+    await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, action, {permit});
+  };
+  const inputPolicyContext = async () => {
+    const context=await loadBoundaryReviewContext(input.projectRoot);
+    const store=scopedDisclosureStoreDigest(undefined,context.bundle.mutation_bindings.authoring);
+    if(!store)throw new Error('SOURCE_INPUT_REQUIREMENT_PENDING: Establish the current local project binding before reviewing input meaning.');
+    return {context,store};
+  };
+  const ensureInputPolicyAgenda = async () => {
+    const sources=authoringConversation?.policySources,outcomes=resumeAction?.intended_outcomes;
+    if(actionWorkflow!=='program'||!sources||!activePolicySource(sources)||!outcomes?.length)return;
+    const {store}=await inputPolicyContext();
+    await reviewSourceInputPolicy({projectRoot:input.projectRoot,sources,session:input.session,outcomes,store,actor:localInteractiveActor(),
+      assertCurrent:async permit=>{await assertAuthoringResumeCurrent(undefined,true,permit);const fresh=await inputPolicyContext();if(fresh.store!==store)throw new PolicySourceChangedError();}});
+  };
+  const assessInputPolicyDraft = async (draft: ActionRuleModelDraftV1) => {
+    const sources=authoringConversation?.policySources,source=activePolicySource(sources);
+    if(!sources?.input_policy_reviews?.length||!source)return [];
+    if(await policySourceSavedDigest(input.projectRoot,sources.id)!==canonicalJsonDigest(sources))throw new PolicySourceChangedError();
+    const {store}=await inputPolicyContext();
+    return sourceInputFidelity(source,sources,store,[draft]).findings;
   };
   const persistAuthoringResume = async (stage: BoundaryAuthoringResumeStage, permit?: ProjectAuthorityMutationPermit): Promise<void> => {
     assertRunning();
@@ -5816,6 +5838,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         });
         confirmedProgramSource = undefined;
       } else await persistAuthoringResume(plannedStage);
+      await ensureInputPolicyAgenda();
       if ((jobPlan.read_mode === "none" || jobPlan.read_mode === "reuse")
         && (jobPlan.action_mode === "none" || jobPlan.action_mode === "reuse") && !revalidatedActionOutcomes && !pendingReadRevision) {
         if (input.authoringChat) await input.authoringChat.streamModel([jobPlan.summary]);
@@ -6784,6 +6807,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           resources: string[];
           blockers?: string[];
         } | undefined;
+        await ensureInputPolicyAgenda();
         const actionFreshness: Parameters<typeof assertBoundaryAuthoringResumeCurrent>[2] = preserveProgramRevisionAgenda && pendingActionRevision
           ? { revision: { outcome: semanticActionRevisionBaseline!.outcome, instruction: semanticIntent,
             baseline_digest: canonicalJsonDigest(semanticActionRevisionBaseline!),
@@ -6852,6 +6876,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
                   : {}),
                 egressAcknowledged: true,
                 env: process.env,
+                assessInputFidelity: assessInputPolicyDraft,
                 reviewHistorySelectors: request => reviewHistorySelectorChange(request, input.session, async () => {
                   await assertAuthoringResumeCurrent(actionFreshness, true);
                   const fresh = await loadBoundaryReviewContext(input.projectRoot);
@@ -8726,6 +8751,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   let countingDomain: CountingOutcomeDomain | undefined;
   let policySourceInspection: Awaited<ReturnType<typeof inspectPolicyReviewSource>> | undefined;
   const currentPolicyCoverageDraft = () => policyCoverageDraft({ client: intendedClient, read: context.candidate, decisions: context.bundle.decisions,
+    inputStoreDigest:scopedDisclosureStoreDigest(undefined,context.bundle.mutation_bindings.authoring),
     ...(authoringConversation?.policySources?.scoped_disclosure_reviews?.length
       ? {reviewStoreDigest:scopedDisclosureStoreDigest(countingDomain,context.bundle.mutation_bindings.authoring)} : {}),
     reviewedVersionFields, policySources: authoringConversation?.policySources, executionReview: executionReviewEvidence, receiptConfiguration: receiptConfigurationEvidence, countingDomain,
@@ -8923,6 +8949,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           } catch (error) { pendingActionRevision = previousRevision; throw error; }
         },
         builtCatalog: entry.catalog, readBoundary: context.candidate, readBoundaryDigest: committed.candidate_digest,
+        assessInputFidelity: assessInputPolicyDraft,
         reviewHistorySelectors: request => reviewHistorySelectorChange(request, input.session, async () => {
           await assertAuthoringResumeCurrent({ revision: { outcome: before.rule.outcome, instruction, ...(operatorStatements ? { operator_statements: operatorStatements } : {}), baseline_digest: canonicalJsonDigest(before.draft) } }, true);
           const fresh = await loadBoundaryReviewContext(input.projectRoot);
@@ -10918,9 +10945,16 @@ export async function reviewSavedBoundaryPolicy(input: {
       policySources: input.sources, countingDomain: domain, executionReview, receiptConfiguration,
       ...((input.localDisclosure || input.sources.scoped_disclosure_reviews?.length) ? {reviewStoreDigest:selectedStore} : {}),
       transactionStoreDigest:selectedStore,
+      inputStoreDigest:scopedDisclosureStoreDigest(undefined,context.bundle.mutation_bindings.authoring),
       authoringSession: { provider: input.modelSession?.provider ?? resume.model.provider, model: input.modelSession?.model ?? resume.model.name },
       operatorClarifications: resume.conversation.filter(turn => turn.kind === "clarification"
         && input.sources.operator_messages?.includes(turn.answer)).map(turn => ({ question: turn.question, answer: turn.answer })) });
+    if(input.sources.input_policy_reviews?.length){
+      const inputStore=scopedDisclosureStoreDigest(undefined,context.bundle.mutation_bindings.authoring);
+      if(!inputStore)throw new Error('SOURCE_INPUT_REQUIREMENT_PENDING: Current source/project binding unavailable.');
+      await reviewSourceInputPolicy({projectRoot:input.projectRoot,sources:input.sources,session:input.session,
+        outcomes:currentDraft().actions.map(a=>a.outcome),store:inputStore,actor:localInteractiveActor(),assertCurrent});
+    }
     const transactionDraft=currentDraft();
     const transactionNeeded=sourceTransactionReviewNeeded(transactionDraft) || Boolean(input.sources.source_transaction_reviews?.length);
     if(transactionNeeded && (input.revisitTransaction || !currentSourceTransactionReview(source,transactionDraft,input.sources))) {

@@ -29,7 +29,9 @@ export function policyReadinessItems(report?: PolicyCoverage, session?: PolicySo
   if(session?.input_policy_reviews?.length){
     const fidelity=report.input_fidelity;
     const relevant=session.input_policy_reviews.filter(r=>fidelity?.review_digests.includes(r.digest));
-    if(!fidelity||!relevant.length||fidelity.findings.length||relevant.some(r=>r.source_digest!==report.source_digest||r.decision!=='confirmed'))
+    const superseded=relevant.some(record=>session.input_policy_reviews!.slice(session.input_policy_reviews!.indexOf(record)+1)
+      .some(next=>next.outcomes.some(o=>record.outcomes.includes(o)) && !fidelity?.review_digests.includes(next.digest)));
+    if(!fidelity||!relevant.length||fidelity.findings.length||superseded||relevant.some(r=>r.source_digest!==report.source_digest||r.decision!=='confirmed'))
       grouped.set('source-input',{kind:'business_decision',title:'Source-required input bounds remain pending',nextStep:'Review the exact current source input interpretation and correct the disabled input component; no new business meaning or global nonempty default is inferred.',passages:[],blocksReview:true});
   }
   if (report.source_transaction_requirement_pending || session?.source_transaction_reviews?.length

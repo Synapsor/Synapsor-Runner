@@ -870,10 +870,10 @@ export function createBoundaryAuthoringChat(input: {
       await streamRunner(runnerLines[0]!, runnerLines.slice(1));
     }
   };
-  const read = async (prompt: string, speaker: BoundaryAuthoringSpeaker = "runner", defaultValue?: string) => {
+  const read = async (prompt: string, speaker: BoundaryAuthoringSpeaker = "runner", defaultValue?: string, recordPolicyAnswer = true) => {
     writeRole(speaker, [prompt]);
     pendingConversationQuestion = { speaker, lines: [prompt] };
-    const answer = await readAnswer(defaultValue);
+    const answer = await readAnswer(defaultValue, recordPolicyAnswer);
     return answer === "" && defaultValue !== undefined ? defaultValue : answer;
   };
   let sourceCommandHandler: ((command: string, argument: string) => Promise<boolean | "reviewed">) | undefined;
@@ -1225,7 +1225,7 @@ export function createBoundaryAuthoringChat(input: {
         return readAnswer();
       }
       await writeContext(options?.context);
-      return read(prompt.replace(/:\s*$/u, ""), speaker, options?.defaultValue);
+      return read(prompt.replace(/:\s*$/u, ""), speaker, options?.defaultValue, options?.recordPolicyAnswer);
     },
     chooseOption: async (title, choices, options) => {
       const permission = Boolean(options?.exactDetails) || /^(?:ACTIVATE|APPROVE|APPLY|GRANT)\b/iu.test(title.trim());
