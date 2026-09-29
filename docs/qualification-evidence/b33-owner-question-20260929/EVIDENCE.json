@@ -1,0 +1,54 @@
+{
+  "baseline": "87acf0718855d047af6ecdfff5254613b7262ac5",
+  "helper_test_only_commit": "5683489cd24c253c4e7ebbf39e316eb131d6fc83",
+  "product_unchanged": true,
+  "frozen_candidates": 0,
+  "paid_calls": 0,
+  "references": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/OWNER-INSTRUCTION.txt",
+      "bytes": 19467,
+      "sha256": "bbddf85466cafeedf5b77b8925243172d3094d3e4118aa68e01eb11ca5faed6d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/legacy-inspection-001/RESULT.json",
+      "bytes": 15291,
+      "sha256": "abf0c6f5820570b473dfbc2927b610cfd2d92a9c7c5de887ab1dde294e2a7a85"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/forward-controls-002/RESULT.json",
+      "bytes": 634,
+      "sha256": "41f705eef6b69acf84410dbd53df613b359f4026d289cd3ca38671733a72dd9b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/forward-controls-002/OUTPUT.log",
+      "bytes": 3828,
+      "sha256": "84acc5748bc2a3e75e04f232c255639be21ab0d384b39831c8e54d5120f97b9f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/PRESERVATION-003.json",
+      "bytes": 4138,
+      "sha256": "c99973947373f15573c29c9fe2f29a9d840b075490afcb1a9f9b57f5f7a4fff3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/MAIN-INDEX-VERIFICATION-004.json",
+      "bytes": 367,
+      "sha256": "027369b0bfabc5ac76545a117a10e744492f074fe1b82fd29302edfe14b2e46a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b33-pre-freeze-20260929/FINAL-INDEPENDENT-FINDING-202.md",
+      "bytes": 3211,
+      "sha256": "da25a7464a37e5da25a0bb098736979d8beaea5aea367e31dc6902b4fe5ff403"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b33-pre-freeze-20260929/FINAL-EVIDENCE-INDEX-202.json",
+      "bytes": 4899,
+      "sha256": "79167920b5d4cdcf306e7617f52db0d962521ad3a42672496776be79d8bdd746"
+    },
+    {
+      "path": "/var/tmp/synapsor-b33-question-controls-20260929/B33-HELPER-EVIDENCE.json",
+      "bytes": 1827,
+      "sha256": "c76fa67669583a1be10da47190cca1cdf1292733f742c85dc40b0240ec205341"
+    }
+  ]
+}

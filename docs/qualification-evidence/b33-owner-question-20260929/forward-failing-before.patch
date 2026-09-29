@@ -1,0 +1,99 @@
+diff --git a/apps/runner/src/action-rule-model.test.ts b/apps/runner/src/action-rule-model.test.ts
+index 596be5d7..d9d3ad80 100644
+--- a/apps/runner/src/action-rule-model.test.ts
++++ b/apps/runner/src/action-rule-model.test.ts
+@@ -335,0 +336,94 @@ describe("conversational Action authoring tools", () => {
++  describe("B33 owner-question consumer boundary", () => {
++    const question = "Who reviews otherwise valid requests above the automatic limit?";
++
++    it.each(["undefined", "thrown cancellation"] as const)("saves the complete pending question before %s at the human boundary", async pause => {
++      const events: string[] = [];
++      let saved: ActionRuleAuthoringCheckpoint | undefined;
++      let snapshotAtPrompt: ActionRuleAuthoringCheckpoint | undefined;
++      const requestJson = vi.fn(async () => { events.push("provider"); return say(question); });
++      await expect(converseActionRuleDraft({ ...requestInput(requestJson),
++        onCheckpoint: async checkpoint => { saved = structuredClone(checkpoint); events.push("save"); },
++        askClarification: async received => {
++          expect(received).toBe(question);
++          snapshotAtPrompt = saved && structuredClone(saved);
++          events.push("ask");
++          if (pause === "thrown cancellation") throw new Error("DERIVED_UI_CANCELLED");
++          return undefined;
++        },
++      })).rejects.toThrow("CANCELLED");
++      expect(requestJson).toHaveBeenCalledOnce();
++      expect(events).toEqual(["provider", "save", "ask"]);
++      // Consumer-facing contract only; exact completion/provenance binding belongs
++      // to the enclosing recovery/checkpoint integration, not this fixture.
++      expect(snapshotAtPrompt).toMatchObject({ pending_question: { question } });
++      expect(saved?.operator_messages ?? []).toEqual([]);
++      expect(saved).toEqual(snapshotAtPrompt);
++    });
++
++    it("does not expose an unsaved question as a successful human handoff", async () => {
++      const askClarification = vi.fn(async () => undefined);
++      const onCheckpoint = vi.fn(async () => { throw new Error("DERIVED_CHECKPOINT_WRITE_FAILED"); });
++      await expect(converseActionRuleDraft({ ...requestInput(async () => say(question)),
++        onCheckpoint, askClarification,
++      })).rejects.toThrow("DERIVED_CHECKPOINT_WRITE_FAILED");
++      expect(onCheckpoint).toHaveBeenCalledOnce();
++      expect(askClarification).not.toHaveBeenCalled();
++    });
++
++    it("redisplays the actual saved unanswered question without another provider request", async () => {
++      let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
++      const replies = [call("runner.submit_verification_boundary_draft"), say(question)];
++      await expect(converseActionRuleDraft({ ...requestInput(async () => replies.shift()!),
++        onCheckpoint: async value => { checkpoint = structuredClone(value); },
++        askClarification: async () => undefined,
++      })).rejects.toThrow("CANCELLED");
++      expect(checkpoint?.components.verification).toBeDefined();
++      const before = structuredClone(checkpoint);
++      const requestJson = vi.fn(async () => { throw new Error("DERIVED_UNEXPECTED_PROVIDER_ON_RESUME"); });
++      const askClarification = vi.fn(async () => undefined);
++      let failure: unknown;
++      try { await converseActionRuleDraft({ ...requestInput(requestJson), checkpoint,
++        onCheckpoint: async value => { checkpoint = structuredClone(value); }, askClarification }); }
++      catch (error) { failure = error; }
++      expect(requestJson).not.toHaveBeenCalled();
++      expect(askClarification).toHaveBeenCalledExactlyOnceWith(question);
++      expect(String(failure)).toContain("CANCELLED");
++      expect(checkpoint).toEqual(before);
++    });
++
++    it("persists one genuine answer before any next provider request", async () => {
++      const answer = "One billing reviewer reviews these otherwise valid requests.";
++      let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
++      let sends = 0;
++      let answersAtNextRequest: string[] | undefined;
++      const requestJson = vi.fn(async () => {
++        if (++sends === 1) return say(question);
++        answersAtNextRequest = structuredClone(checkpoint?.operator_messages);
++        throw new Error("DERIVED_STOP_AFTER_ANSWER_SAVE");
++      });
++      const askClarification = vi.fn(async () => answer);
++      await expect(converseActionRuleDraft({ ...requestInput(requestJson),
++        onCheckpoint: async value => { checkpoint = structuredClone(value); }, askClarification,
++      })).rejects.toThrow(); // The B32 adapter safely masks unclassified dependency failures.
++      expect(answersAtNextRequest).toEqual([answer]);
++      expect(askClarification).toHaveBeenCalledExactlyOnceWith(question);
++      expect(checkpoint?.operator_messages).toEqual([answer]);
++      expect(checkpoint?.components).toEqual({});
++      expect(sends).toBe(2);
++    });
++
++    it("a failed answer save cannot enter a later generation", async () => {
++      const answer = "One billing reviewer reviews these otherwise valid requests.";
++      const requestJson = vi.fn(async () => say(question));
++      let durable: ActionRuleAuthoringCheckpoint | undefined;
++      await expect(converseActionRuleDraft({ ...requestInput(requestJson),
++        onCheckpoint: async value => {
++          if (value.operator_messages?.length) throw new Error("DERIVED_ANSWER_SAVE_FAILED");
++          durable = structuredClone(value);
++        }, askClarification: async () => answer,
++      })).rejects.toThrow("DERIVED_ANSWER_SAVE_FAILED");
++      expect(requestJson).toHaveBeenCalledOnce();
++      expect(durable?.operator_messages ?? []).toEqual([]);
++    });
++  });
++
