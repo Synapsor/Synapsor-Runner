@@ -1,0 +1,139 @@
+{
+  "recorded_at": "2026-09-29T13:43:01.809816+00:00",
+  "disposition": "OWNER_DECISION_PENDING",
+  "product_tests": "106c385357951cf72ad15c63cb8c156bc36963e7",
+  "scope": "Hash-bound reports and evidence indexes; raw private captures remain private and are not committed",
+  "main_provider_calls": 0,
+  "members": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/GATE-EVIDENCE-083.json",
+      "bytes": 12214,
+      "sha256": "f54774439c4b1a4e3b8cc179419c25afa50b8eaae6ac0a354ccc2621e6b1a99d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/CANDIDATE-ONE-HANDOFF-084.json",
+      "bytes": 4857,
+      "sha256": "aa8331fa89579f53f05b32ebc7fddef00626ce4a42f19eb98adfd63705ea0c67"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-transport-continuation-20260929/FINAL-INDEPENDENT-REVIEW-122.md",
+      "bytes": 7963,
+      "sha256": "43a33e2bddf5b74e8cf280469a280e73130d76abc21b3c224952f3717fc638d1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-transport-continuation-20260929/FINAL-INDEPENDENT-EVIDENCE-122.json",
+      "bytes": 214298,
+      "sha256": "d2ec80cf08e65310d2b2aa227f6a4fb005e0eb6fa3a45effc928795e18af3cd0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-transport-continuation-20260929/FINAL-JOINT-PREFLIGHT-161.json",
+      "bytes": 48802,
+      "sha256": "b7efc77da9fde79f7fb953b44d7c38a7bf6216e788dedcac178a7fb9930059ca"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-transport-continuation-20260929/FINAL-READINESS-REVIEW-162.md",
+      "bytes": 5854,
+      "sha256": "22318016b69d12eb5be995b275909bd82ba39ee2384ece3c4cc9ab03f8d55fdb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-transport-continuation-20260929/FINAL-READINESS-EVIDENCE-162.json",
+      "bytes": 3901,
+      "sha256": "4f550d562005ea62770773eec6bd3f10684c000a890af26e834a1a9d6ec74a53"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-transport-continuation-20260929/FINAL-OWNER-PENDING-REVIEW-179.md",
+      "bytes": 10946,
+      "sha256": "0a3195b6dd441a717165f68aeea4a4521fb6d544e1ccbaa45ff1c39ebe9a2162"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-transport-continuation-20260929/FINAL-OWNER-PENDING-EVIDENCE-179.json",
+      "bytes": 702605,
+      "sha256": "c4a29b7fd2bda95acd5e7db7b06fdba5bac751382049231c62ed2086e80d6b73"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/records/FINAL-PREFLIGHT-MAIN-SIGNOFF-111.json",
+      "bytes": 3048,
+      "sha256": "9f62ccfff55e82d01b3042b67fac7c0486e9d445ba0a81c8bbfe9997a02d7568"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/records/FINAL-READINESS-162-VERIFICATION-113.json",
+      "bytes": 782,
+      "sha256": "d862225e72c6e36f71ddb185e60e497c889f6b245e67a778ca625c728a4aca28"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/records/ACTUAL-CONTINUATION-LEDGER-114.json",
+      "bytes": 618,
+      "sha256": "5da855ed06017f1049870c8183bedebd9dacdcc9e2d13ba376d034e4972e467c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/records/APPROVAL-MEMBERSHIP-PRESERVATION-116.json",
+      "bytes": 1778,
+      "sha256": "cdc22d3ac510cff9616bb511fb29ff66dd05d71f0dcb8c2e068b77c51ae37c12"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/records/CONVERSATION-CACHE-PRESERVATION-119.json",
+      "bytes": 1232,
+      "sha256": "bb446a76048c3bc7d6ecfc68b78588bbe4387952fb96c84b1b91e371ec7caf4a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/records/LIVE-B-RECOVERY-AND-COST-120.json",
+      "bytes": 1340,
+      "sha256": "dbac10ddfffb7015efea8d68eadfe5cb33f8aecc00f4d6d3d14917b604331d85"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/records/OWNER-ALLOCATION-QUESTION-122.json",
+      "bytes": 1136,
+      "sha256": "1f10efe076cd509262cb23a466e95de9d19961e215a763bedae03b251aed431a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/records/POST-LIVE-ARTIFACT-RECHECK-123.json",
+      "bytes": 299,
+      "sha256": "b159a9b119eadb5179a6f4fb8e7ad7088a87b3434128026318a424a58d573a68"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/records/STOP-TWENTY-MAIN-READBACK-124.json",
+      "bytes": 1958,
+      "sha256": "44f94324426dba9aa359dd81bcbcab8a0f5c1d9daedc336e5aa35b0c3fb07077"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/records/RAW-RESPONSE-USAGE-RECOMPUTATION-126.json",
+      "bytes": 27927,
+      "sha256": "c237b5921a40677183517da4bebe1ac5d197bcac47c6032ad25a2fe01cbf1de5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/records/MAIN-FINAL-COLD-VERIFICATION-127.json",
+      "bytes": 2630,
+      "sha256": "ad17e6ae898a20e088a422ad41250348c9a3e001cf4c20965f74d1b79d56eb97"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/records/MAIN-SOURCE-CLEANUP-COVERAGE-128.json",
+      "bytes": 16449,
+      "sha256": "066cc4d847f864d9379c2089acb30b3a778d51e65582a3622481f7ba828443fd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/records/MAIN-OWNED-CLEANUP-129.json",
+      "bytes": 2972,
+      "sha256": "2b7ce9a1a2c1056f60e80c4fdaa134d7886f07bca8ab88adce12a54d4cdc9865"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/records/FINAL-LEDGER-HISTORY-131.json",
+      "bytes": 753,
+      "sha256": "d09d7c0a1d9c2b52d01012b8d34e46b9be82376f789c389625097b23171cf22f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/records/FINAL-INDEPENDENT-INDEX-VERIFICATION-133.json",
+      "bytes": 754,
+      "sha256": "a591407eae0cacc895a3a95a2d428d38958ba2dd8e33ac472df684a818fff5b3"
+    },
+    {
+      "path": "/var/tmp/synapsor-transport-main-20260929/docs/qualification-evidence/transport-continuation-20260929/FINAL-REPORT.md",
+      "bytes": 11613,
+      "sha256": "7cf70f04da3db10c22ef37a086cc23e6ae66be8fafd8bc8430705bda4f326336"
+    },
+    {
+      "path": "/var/tmp/synapsor-transport-main-20260929/docs/qualification-evidence/transport-continuation-20260929/ARTIFACT.json",
+      "bytes": 3007,
+      "sha256": "de1ef4525cf28c2cbdf0d52f6149b09ca761d56c0d1ef8f1d1d67152e1894ed7"
+    }
+  ]
+}
