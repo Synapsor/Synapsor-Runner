@@ -1,0 +1,32 @@
+{
+  "recorded_at": "2026-09-29T22:47:26.784350+00:00",
+  "scope": "Evidence-only current checkpoint, paid J NOT RUN",
+  "members": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/clean-successor-058/MAIN-INDEPENDENT-READINESS-VERIFY-117.json",
+      "sha256": "932151a76bfc68e98fd686fb9b19343ad516bffdd26e9ed8bcbba4cc3c5e2823"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/clean-successor-058/SUCCESSOR-PROFILE-AMENDMENT-118.json",
+      "sha256": "a86c049382f3977d49c7068baedfcb524e2f9690b38b1b62a236a248947eb371"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/clean-successor-058/PROFILE-BINDING-RESULT-120.json",
+      "sha256": "ffbbf21c12c4274de6c4ab7c1ba5ecd05af74c566b413f86f690e893af19f478"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/clean-successor-058/JOINT-PREFLIGHT-058.json",
+      "sha256": "bfd4c3a06a3e50a6e16923d85929dc4145121fafafbb1f7df67fb0cc01d390ce"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/clean-successor-058/FINAL-PACKET-SCOPE-CORRECTION-123.json",
+      "sha256": "7d436bde7d6c022d350b3d1138e6123631844593679a54148a508dad681be9bb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/clean-successor-058/MAIN-FINAL-READINESS-VERIFY-124.json",
+      "sha256": "2adaebe5ba70b6be7f8ed7d4be5d2c5c00518dae85dc2cbb30b60493e4204dcd"
+    }
+  ],
+  "provider_calls_Main": 0,
+  "provider_key_reads_Main": 0
+}
