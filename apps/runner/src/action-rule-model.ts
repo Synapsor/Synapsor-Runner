@@ -227,6 +227,8 @@ export type ModelActionRuleDraftInput = {
   /** Current host-retained agenda; a prerequisite resume must retain its job. */
   pendingIntents?: string[];
   programContext?: ActionAuthoringProgramContext;
+  /** Exact operator-reviewed inventory identity for this work item. */
+  expectedOutcome?: string;
   checkpoint?: ActionRuleAuthoringCheckpoint;
   /** Host-mediated resume of a still-pending job may retain untrusted components
    * after a Read edit. Never pass a checkpoint for a withdrawn source/outcome. */
@@ -383,6 +385,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   };
   const contextDigest = () => canonicalJsonDigest({
     catalog: context.builtCatalog.catalog, read: context.readBoundaryDigest, baseline: baseline ?? null,
+    ...(input.expectedOutcome ? { expected_outcome: input.expectedOutcome } : {}),
     ...(input.operatorStatements ? { operator_statements: originalStatements } : {}),
     ...(reopenedDraft ? { pending_intents: pendingIntents } : {}),
   });
@@ -489,6 +492,11 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   let validationAttempted = false;
   const snapshot = () => ({
     components: structuredClone(submissions),
+    persistence_scope: "component_checkpoint_only",
+    action_save_performed: false,
+    whole_program_review_performed: false,
+    publication_performed: false,
+    ...(input.expectedOutcome ? { intended_outcome: input.expectedOutcome } : {}),
     missing: ACTION_RULE_PHASES.filter((phase) => !submissions[phase]),
     diagnostics,
     reviewed_relationships: [...reviewedRelationships].sort(),
@@ -575,6 +583,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
           return { ok: true, value: { status: "finish_pending_action_drafting", saved_drafts_unchanged: true, authority_granted: false } };
         }
         if (name === "runner.reopen_prepared_action") {
+          if (input.expectedOutcome && args.outcome !== input.expectedOutcome) return phaseRefusal("AUTHORING_PROGRAM_OUTCOME_MISMATCH: This work item has an exact reviewed identity. A different saved Action cannot absorb it; correct the inventory through the operator workflow.");
           const selection = actionRuleAuthoringCheckpoint({
             intent_digest: canonicalJsonDigest(intent), context_digest: contextDigest(), components: {},
             reopened_draft: args as NonNullable<typeof reopenedDraft>,
@@ -609,6 +618,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
           });
           submissions.approval = bindApprovalLimitsToValidatedOutcome(submissions.approval as ApprovalSubmission, submissions.rule as RuleSubmission);
           const draft = assembleDraft(submissions);
+          if (input.expectedOutcome && draft.outcome !== input.expectedOutcome) return phaseRefusal(`AUTHORING_PROGRAM_OUTCOME_MISMATCH: This work item must produce ${input.expectedOutcome}; the submitted outcome differs. Correct only this Action, preserving the rest of the reviewed agenda.`);
           if (input.reservedOutcomes?.includes(draft.outcome) && baseline?.outcome !== draft.outcome) {
             return phaseRefusal("ACTION_OUTCOME_COLLISION: this outcome already has a prepared draft. If the operator is clarifying that SAME action, call runner.reopen_prepared_action with its exact digest, then revise only requested fields. A genuinely different action cannot claim this outcome. Never ask the operator to invent an internal name or repeat the job.");
           }
@@ -636,6 +646,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
           compiled = result;
           checkpointNeedsRevalidation = false;
           return { ok: true, value: { status: result.client_compatibility.compatible ? "ready_for_review" : "incomplete_client_contract", client_compatibility: result.client_compatibility, draft_changed: !unchanged,
+            validation_scope: "structural", action_save_performed: false, whole_program_review_performed: false, publication_performed: false,
             ...(unchanged ? { explanation: "The existing draft validates unchanged. No revision was saved. Explain whether it already represents the clarification; do not request a redundant edit or repeat an answered question." } : {}),
             input_policy_fidelity: input.assessInputFidelity ? "current_registered_requirements_satisfied; whole_source_review_pending" : "not_assessed",
             outcome: result.rule.outcome, review: result.draft.review, inputs: result.draft.inputs ?? [], authority_granted: false, source_database_changed: false } };
@@ -650,6 +661,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
         let submission = baseline
           ? mergeRevisionSubmission({ phase, candidate: parsed.submission, current: submissions[phase]!, baseline, changedFields: parsed.changed_fields, allowPendingSelectorReview: !!input.reviewHistorySelectors })
           : parsed.submission;
+        if (phase === "rule" && input.expectedOutcome && (submission as RuleSubmission).outcome !== input.expectedOutcome) return phaseRefusal(`AUTHORING_PROGRAM_OUTCOME_MISMATCH: Submit the exact current work-item outcome ${input.expectedOutcome}. A different Action cannot replace this checkpoint.`);
         if (phase === "verification" || phase === "effect") {
           const prepared = await preparePhaseResources({ phase, submission, input, activeContext: context }).catch((error) => {
             infrastructureFailure = error;
@@ -739,6 +751,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
           `Generated repair context (not operator intent): ${JSON.stringify(intent)}`,
         ] : [`Current action intent: ${JSON.stringify(intent)}`]),
         `Current normalized structural catalog: ${serializeAuthoringCatalog(context.builtCatalog)}`,
+        ...(input.expectedOutcome ? [`Exact operator-reviewed work-item outcome: ${input.expectedOutcome}. Other program Actions remain separate and unchanged.`] : []),
         `Current disabled draft: ${JSON.stringify(snapshot())}`,
         `Reserved outcomes (creation cannot overwrite): ${JSON.stringify(input.reservedOutcomes ?? [])}`,
         `Prepared drafts available for exact revision: ${JSON.stringify(preparedDrafts.map((draft) => ({ outcome: draft.outcome, digest: canonicalJsonDigest(draft), draft })))}`,

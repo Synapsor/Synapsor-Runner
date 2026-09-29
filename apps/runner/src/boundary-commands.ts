@@ -4391,6 +4391,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
   let readPrerequisiteDecisions = parseReadPrerequisiteBusinessDecisions(availableResume?.read_prerequisite_decisions ?? []);
   let pendingActionAddition = availableResume?.pending_action_addition;
   let resumeAction: BoundaryAuthoringResumeAction | undefined = availableResume?.action;
+  let actionWorkflow = availableResume?.action_workflow;
+  let confirmedProgramSource: { id: string; digest: string } | undefined;
   // An exact late edit uses the existing one-outcome work loop, while the v2
   // saved agenda remains the complete program. Its pending edit checkpoint is
   // separate from any unfinished original Action checkpoint.
@@ -4451,6 +4453,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           ...(clientActions ? { action_digest: clientActions.authority.action_boundary.digest } : {}),
         } } : {}),
         jobIntent: (canonicalJobIntent ?? jobIntent).trim(),
+        ...(actionWorkflow ? { actionWorkflow } : {}),
         provider: selectedResumeModel.provider,
         model: selectedResumeModel.model,
         ...(selectedResumeModel.provider === "openai_compatible"
@@ -4545,6 +4548,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         ? "Keep the saved rules and client choice. The model receives current Read and Action settings, then asks only what should change."
         : "Talk through the job; Runner validates every suggested Read and Action decision.",
     },
+    ...(!availableResume ? [{ value: "program", label: "Draft a complete multi-Action program",
+      detail: "Record and review the complete distinct outcome agenda before drafting bounded work units. No authority is granted." }] : []),
     ...(currentModel
       ? [{
           value: "choose_model",
@@ -4747,6 +4752,10 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
         },
       );
       if (selected === undefined) return boundaryAssistResult(boundaryAssistBackNotice());
+    }
+    if (selected === "program") {
+      actionWorkflow = "program";
+      selected = "model";
     }
     if (selected === "manual") {
       return boundaryAssistResult({
@@ -5249,7 +5258,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             .filter((_intent, index) => index !== removedIndex);
           const outcomes = completed.filter(value => value !== outcome);
           resumeAction = intents.length ? { intent: intents[0]!, intents, strategy: previous?.strategy,
-            completed_outcomes: outcomes, ...(previous?.outcome !== outcome ? { outcome: previous?.outcome, checkpoint: previous?.checkpoint } : {}) }
+            completed_outcomes: outcomes, ...(previous?.intended_outcomes ? { intended_outcomes: previous.intended_outcomes.filter(retained => retained !== outcome) } : {}), ...(previous?.outcome !== outcome ? { outcome: previous?.outcome, checkpoint: previous?.checkpoint } : {}) }
             : undefined;
           await persistAuthoringResume("authority_review");
         }
@@ -5258,13 +5267,17 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       }
       if (!removal.alreadyRemoved) await writeActionRuleAuthorityDraftIfCurrent(input.projectRoot, removal.draft, removal.baseline);
       const previousAction = availableResume?.action;
-      const retainedIntents = removal.retainedOutcomes.map(retained => {
-        const index = previousAction?.completed_outcomes?.indexOf(retained) ?? -1;
+      const retainedAgenda = previousAction?.intended_outcomes?.filter(retained => retained !== outcome);
+      const retainedOrder = retainedAgenda?.filter(retained => removal.retainedOutcomes.includes(retained)) ?? removal.retainedOutcomes;
+      const retainedIntents = (retainedAgenda ?? retainedOrder).map(retained => {
+        const index = (previousAction?.intended_outcomes ?? previousAction?.completed_outcomes)?.indexOf(retained) ?? -1;
         return (index >= 0 ? previousAction?.intents?.[index] : undefined)
           ?? removal.draft.reviews.find(review => review.outcome === retained)!.then;
       });
-      resumeAction = { intent: retainedIntents[0]!, intents: retainedIntents, outcome: removal.retainedOutcomes[0],
-        completed_outcomes: removal.retainedOutcomes, strategy: "rule_derived" };
+      resumeAction = { intent: retainedIntents[0]!, intents: retainedIntents, outcome: retainedOrder[0],
+        completed_outcomes: retainedOrder,
+        ...(retainedAgenda ? { intended_outcomes: retainedAgenda } : {}),
+        strategy: "rule_derived" };
       if (removal.completedActivation) {
         pendingActionRemoval = undefined;
         await persistAuthoringResume("authority_review");
@@ -5467,6 +5480,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             () => (input.modelBoundaryJobPlanner ?? planModelBoundaryJob)({
               session: planningSession,
               jobIntent: jobIntent!.trim(),
+              ...(!editingSavedJob && actionWorkflow === "program" ? { workflow: actionWorkflow,
+                ...(resumeAction?.intended_outcomes ? { expectedActionOutcomes: resumeAction.intended_outcomes } : {}) } : {}),
               currentState: reusableState!.current_state,
               onDiagnostic: async (diagnostic) => {
                 input.session.rememberDetails?.("BOUNDARY JOB PLANNING DIAGNOSTICS", planningDiagnosticLines(diagnostic));
@@ -5580,6 +5595,26 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       additionalAttemptUsed = true;
     }
     if (jobPlan?.state === "planned") {
+      if (!editingSavedJob && actionWorkflow === "program" && jobPlan.action_mode === "create") {
+        if (!jobPlan.action_outcomes || !jobPlan.action_intents || jobPlan.action_outcomes.length !== jobPlan.action_intents.length) {
+          throw new Error("AUTHORING_PROGRAM_INVENTORY_REQUIRED: The selected program has no complete aligned inventory. Component drafting did not start.");
+        }
+        const inventoryIntents = jobPlan.action_intents;
+        const agendaSources = authoringConversation?.policySources;
+        const agendaSourceDigest = agendaSources ? canonicalJsonDigest(agendaSources) : undefined;
+        if (agendaSources && await policySourceSavedDigest(input.projectRoot, agendaSources.id) !== agendaSourceDigest) throw new PolicySourceChangedError();
+        input.session.rememberDetails?.("COMPLETE PROGRAM INVENTORY", jobPlan.action_outcomes.map((outcome, index) => `${index + 1}. ${outcome}: ${inventoryIntents[index]}`));
+        const accepted = await input.session.confirm("Use this complete intended Action inventory?", { defaultValue: false,
+          context: ["Compare every identity and intent with the complete attached policy; a matching count is not proof of completeness.",
+            ...jobPlan.action_outcomes.map((outcome, index) => `${index + 1}. ${outcome}: ${inventoryIntents[index]}`),
+            "This records the planning agenda only. Source-policy fidelity, complete review and publication remain separate and pending."] });
+        if (!accepted) return boundaryAssistResult(boundaryAssistBackNotice("Program inventory was not confirmed. No component drafting or authority change started; reopen the job to correct the inventory."));
+        if (agendaSources) {
+          if (canonicalJsonDigest(authoringConversation?.policySources) !== agendaSourceDigest
+            || await policySourceSavedDigest(input.projectRoot, agendaSources.id) !== agendaSourceDigest) throw new PolicySourceChangedError();
+          confirmedProgramSource = { id: agendaSources.id, digest: agendaSourceDigest! };
+        }
+      }
       // The selected public editor, not model classification, owns edit scope.
       if (input.initialSavedReadRevision) jobPlan = { ...jobPlan, action_mode: "reuse" };
       if (!intendedClient && isAuthoringClientPlan(jobPlan.intended_client)) intendedClient = jobPlan.intended_client;
@@ -5744,6 +5779,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           ? {
               intent: boundedDownstreamActionIntent(jobPlan.action_intent!, jobIntent.trim()),
               intents: jobPlan.action_intents ?? [boundedDownstreamActionIntent(jobPlan.action_intent!, jobIntent.trim())],
+              ...(jobPlan.action_outcomes ? { intended_outcomes: jobPlan.action_outcomes } : {}),
               ...(jobPlan.action_outcome ? { outcome: jobPlan.action_outcome } : {}),
               ...(jobPlan.action_strategy ? { strategy: jobPlan.action_strategy } : {}),
             }
@@ -5770,13 +5806,16 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       // mixed Read/Action revisions as well as access-only changes.
       if (!pendingActionAddition) pendingJobRevision = undefined;
       jobIntent = canonicalJobIntent ?? jobIntent;
-      await persistAuthoringResume(
-        jobPlan.read_mode === "create" || jobPlan.read_mode === "revise"
-          ? "read_mapping"
-          : jobPlan.action_mode === "create" || jobPlan.action_mode === "revise"
-            ? "action_drafting"
-            : "authority_review",
-      );
+      const plannedStage = jobPlan.read_mode === "create" || jobPlan.read_mode === "revise"
+        ? "read_mapping" : jobPlan.action_mode === "create" || jobPlan.action_mode === "revise" ? "action_drafting" : "authority_review";
+      if (confirmedProgramSource) {
+        await withProjectAuthorityMutation(input.projectRoot, async permit => {
+          if (await policySourceSavedDigest(input.projectRoot, confirmedProgramSource!.id) !== confirmedProgramSource!.digest) throw new PolicySourceChangedError();
+          await persistAuthoringResume(plannedStage, permit);
+          if (resumePersistenceBlocked) throw checkpointSaveFailure("The confirmed program inventory");
+        });
+        confirmedProgramSource = undefined;
+      } else await persistAuthoringResume(plannedStage);
       if ((jobPlan.read_mode === "none" || jobPlan.read_mode === "reuse")
         && (jobPlan.action_mode === "none" || jobPlan.action_mode === "reuse") && !revalidatedActionOutcomes && !pendingReadRevision) {
         if (input.authoringChat) await input.authoringChat.streamModel([jobPlan.summary]);
@@ -6765,6 +6804,8 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
                 session: ruleSession,
                 intent: jointApprovalRepair ? "Revise only approval.shared_limits to preserve the original job's joint automatic-approval allowances across its actions. Keep every other component and policy setting unchanged." : semanticIntent,
                 operatorJob: jobIntent.trim(),
+                ...(resumeAction?.intended_outcomes && !preserveProgramRevisionAgenda
+                  ? { expectedOutcome: resumeAction.intended_outcomes[semanticIndex] } : {}),
                 ...(jointApprovalRepair ? { approvalLimitsOnly: true } : {}),
                 deferCompletionMessage: Boolean(activePolicySource(authoringConversation?.policySources)),
                 reservedOutcomes: semanticActionDrafts.map((entry) => entry.result.compiled.rule.outcome),
@@ -7195,6 +7236,10 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
             generatedBoundary: mappingBoundary,
           });
         }
+        if (resumeAction?.intended_outcomes && !preserveProgramRevisionAgenda
+          && semanticActionModelResult.compiled.rule.outcome !== resumeAction.intended_outcomes[semanticIndex]) {
+          throw new Error("AUTHORING_PROGRAM_OUTCOME_MISMATCH: The compiled Action does not match its exact reviewed agenda identity. No replacement was saved.");
+        }
         exactModelDraftLines.push(
           `Verified Action outcome (${semanticIndex + 1}/${actionIntents.length})`,
           ...semanticActionReviewLines(semanticActionModelResult.compiled).map((line) => `- ${line}`),
@@ -7240,6 +7285,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
           semanticActionDrafts.push(preparedEntry);
         }
         resumeAction = retainedReadEdit ? retainedReadEdit.action : {
+          ...(resumeAction?.intended_outcomes ? { intended_outcomes: resumeAction.intended_outcomes } : {}),
           intent: actionIntents[0]!, intents: actionIntents, strategy: "rule_derived",
           completed_outcomes: semanticActionDrafts.map((entry) => entry.result.compiled.rule.outcome),
           ...(partialActionCheckpoint ? { checkpoint: partialActionCheckpoint } : {}),
@@ -7868,6 +7914,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       resumeAction = {
         intent: retainedIntents[0]!,
         intents: [...retainedIntents, ...actionIntents],
+        ...(retained.intended_outcomes ? { intended_outcomes: [...retained.intended_outcomes, ...completedOutcomes] } : {}),
         completed_outcomes: [...retainedOutcomes, ...completedOutcomes],
         outcome: latestCompiled!.rule.outcome,
         strategy: "rule_derived",
@@ -7876,6 +7923,7 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
       pendingJobRevision = undefined;
     } else {
       resumeAction = {
+        ...(resumeAction?.intended_outcomes ? { intended_outcomes: resumeAction.intended_outcomes } : {}),
         intent: actionIntents[0]!,
         intents: actionIntents,
         completed_outcomes: completedOutcomes,

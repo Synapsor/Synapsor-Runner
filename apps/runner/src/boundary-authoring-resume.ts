@@ -106,6 +106,8 @@ export type BoundaryAuthoringResumeAction = {
   strategy?: "discretionary" | "rule_derived";
   checkpoint?: ActionRuleAuthoringCheckpoint;
   intents?: string[];
+  /** Operator-reviewed program identities, not a source-policy verdict. */
+  intended_outcomes?: string[];
   completed_outcomes?: string[];
   /** Explicit operator disposition, never inferred from an unchanged model draft. */
   closed_unchanged?: "confirmed_current" | "cancelled";
@@ -153,6 +155,7 @@ export type BoundaryAuthoringResumeState = {
   };
   conversation: AskHistoryTurn[];
   policy_source_session?: string;
+  action_workflow?: "program";
   /** Concise model-planned Read behavior retained before an analysis exists. */
   read_intent?: string;
   /** Unfinished structural request, rechecked locally before another provider call.
@@ -225,6 +228,7 @@ export function buildBoundaryAuthoringResumeState(input: {
   model: string;
   conversation?: readonly AskHistoryTurn[];
   policySourceSession?: string;
+  actionWorkflow?: "program";
   readIntent?: string;
   pendingJobRevision?: string;
   /** Omission retains a selected operation; null completes it explicitly. */
@@ -263,13 +267,16 @@ export function buildBoundaryAuthoringResumeState(input: {
       && input.previous.job_intent === input.jobIntent.trim() ? boundaryAuthoringVersionReviews(input.previous) : []), 32);
   const readPrerequisiteDecisions = parseReadPrerequisiteBusinessDecisions(input.readPrerequisiteDecisions
     ?? (input.previous?.binding.boundary_name === input.binding.boundary_name ? input.previous.read_prerequisite_decisions ?? [] : []));
-  const programVersion = input.previous?.schema_version === AUTHORING_PROGRAM_RESUME_VERSION
+  const actionWorkflow = input.actionWorkflow ?? input.previous?.action_workflow;
+  if (actionWorkflow !== undefined && actionWorkflow !== "program") throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Unknown Action workflow.");
+  const programVersion = actionWorkflow === "program" || input.previous?.schema_version === AUTHORING_PROGRAM_RESUME_VERSION
     || (action?.intents?.length ?? 0) > AUTHORING_PROGRAM_CAPACITY.recommendedWorkUnitActions
     || (input.pendingActionAddition?.retained_action.intents?.length ?? 0) > AUTHORING_PROGRAM_CAPACITY.recommendedWorkUnitActions;
   const maximum = programVersion ? AUTHORING_PROGRAM_CAPACITY.totalActions : AUTHORING_PROGRAM_CAPACITY.recommendedWorkUnitActions;
   const core = {
     schema_version: programVersion ? AUTHORING_PROGRAM_RESUME_VERSION : BOUNDARY_AUTHORING_RESUME_VERSION,
     state: "in_progress" as const,
+    ...(actionWorkflow ? { action_workflow: actionWorkflow } : {}),
     binding: normalizeBinding(input.binding),
     stage: input.stage,
     job_intent: reviewedText(
@@ -474,6 +481,7 @@ export function revalidateBoundaryAuthoringResume(
     provider: state.model.provider, model: state.model.name,
     conversation: state.conversation, policySourceSession: state.policy_source_session,
     readIntent: state.read_intent,
+    actionWorkflow: state.action_workflow,
     pendingJobRevision: state.pending_job_revision,
     pendingReadRevision: state.pending_read_revision,
     pendingActionRemoval: state.pending_action_removal,
@@ -486,6 +494,7 @@ export function revalidateBoundaryAuthoringResume(
         ...(state.action.outcome ? { outcome: state.action.outcome } : {}),
         ...(state.action.strategy ? { strategy: state.action.strategy } : {}),
         ...(state.action.intents ? { intents: state.action.intents } : {}),
+        ...(state.action.intended_outcomes ? { intended_outcomes: state.action.intended_outcomes } : {}),
         ...(state.action.completed_outcomes ? { completed_outcomes: state.action.completed_outcomes } : {}),
         ...(state.action.closed_unchanged ? { closed_unchanged: state.action.closed_unchanged } : {}),
         ...(state.action.checkpoint ? { checkpoint: state.action.checkpoint } : {}),
@@ -531,6 +540,7 @@ export function assertBoundaryAuthoringResumeState(
   if (canonicalJsonDigest(normalizedConversation) !== canonicalJsonDigest(value.conversation)) {
     throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: saved conversation history exceeds its reviewed bounds.");
   }
+  if (value.action_workflow !== undefined && value.action_workflow !== "program") throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Unknown Action workflow.");
   if (value.read !== undefined) normalizeRead(value.read as BoundaryAuthoringResumeRead);
   if (value.pending_read_relationship !== undefined) normalizePendingReadRelationship(value.pending_read_relationship);
   if (value.policy_source_session !== undefined) normalizeSourceSession(value.policy_source_session);
@@ -543,7 +553,12 @@ export function assertBoundaryAuthoringResumeState(
   }
   const maximum = value.schema_version === AUTHORING_PROGRAM_RESUME_VERSION
     ? AUTHORING_PROGRAM_CAPACITY.totalActions : AUTHORING_PROGRAM_CAPACITY.recommendedWorkUnitActions;
-  if (value.action !== undefined) normalizeAction(value.action as BoundaryAuthoringResumeAction, maximum);
+  if (value.action !== undefined) {
+    normalizeAction(value.action as BoundaryAuthoringResumeAction, maximum);
+    if (value.action_workflow === "program" && value.stage !== "planning" && !(value.action as BoundaryAuthoringResumeAction).intended_outcomes) {
+      throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The selected program cannot lose its exact intended outcome inventory.");
+    }
+  }
   if (value.pending_job_revision !== undefined) {
     if (typeof value.pending_job_revision !== "string") throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Job revision request is invalid.");
     reviewedText(value.pending_job_revision, "Job revision request", MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS);
@@ -751,6 +766,10 @@ function normalizeAction(value: BoundaryAuthoringResumeAction, maximum: number =
     throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: completed outcomes exceed the saved job.");
   }
   const intents = value.intents?.map(intent => reviewedText(intent, "Action intent", MAX_BOUNDARY_ACTION_INTENT_CHARACTERS));
+  const intended = value.intended_outcomes?.map(outcome => reviewedName(outcome, "Intended Action outcome", 200));
+  if (intended && (!intents || intended.length !== intents.length || new Set(intended).size !== intended.length)) {
+    throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Intended outcome identities must align with the complete distinct agenda.");
+  }
   const completed = value.completed_outcomes?.map(outcome => reviewedName(outcome, "Action outcome", 200));
   if (intents && new Set(intents).size !== intents.length) {
     throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: selected Action intents must be distinct.");
@@ -758,7 +777,11 @@ function normalizeAction(value: BoundaryAuthoringResumeAction, maximum: number =
   if (completed && new Set(completed).size !== completed.length) {
     throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: completed Action outcomes must be distinct.");
   }
+  if (intended && completed?.some((outcome, index) => intended[index] !== outcome)) {
+    throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Saved completed outcomes are not the exact reviewed agenda prefix.");
+  }
   return {
+    ...(intended ? { intended_outcomes: intended } : {}),
     intent: reviewedText(value.intent, "Action intent", MAX_BOUNDARY_ACTION_INTENT_CHARACTERS),
     ...(value.outcome ? { outcome: reviewedName(value.outcome, "Action outcome", 200) } : {}),
     ...(value.strategy ? { strategy: value.strategy } : {}),

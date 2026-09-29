@@ -78,6 +78,8 @@ export type BoundaryJobPlan = {
   action_mode: "create" | "reuse" | "revise" | "remove" | "none";
   action_intent?: string;
   action_intents?: string[];
+  /** Exact model-proposed identities, reviewed before program drafting. */
+  action_outcomes?: string[];
   action_outcome?: string;
   /** Fixed outcomes by default; discretionary only for an existing legacy revision. */
   action_strategy?: "discretionary" | "rule_derived";
@@ -112,6 +114,8 @@ type BoundaryJobPlanCore = {
   action_mode: "create" | "reuse" | "revise" | "remove" | "none";
   action_intent?: string;
   action_intents?: string[];
+  /** Exact model-proposed identities, reviewed before program drafting. */
+  action_outcomes?: string[];
   action_outcome?: string;
   action_strategy?: "discretionary" | "rule_derived";
   summary: string;
@@ -132,6 +136,9 @@ type BoundaryJobPlanCore = {
 export async function planModelBoundaryJob(input: {
   session: BoundaryJobPlanningSession;
   jobIntent: string;
+  workflow?: "program";
+  /** Previously reviewed inventory; cannot be silently replanned. */
+  expectedActionOutcomes?: readonly string[];
   currentState: BoundaryJobCurrentState;
   availableResourceIds?: string[];
   clarificationAnswer?: string;
@@ -151,12 +158,12 @@ export async function planModelBoundaryJob(input: {
   const state = normalizeCurrentState(input.currentState);
   const availableResourceIds = normalizeAvailableResourceIds(input.availableResourceIds ?? []);
   const explicitlyRequestedReadResources = requestedReadResourceIds(jobIntent, availableResourceIds);
-  const exactRevisionRoute = exactSoleSemanticActionRevisionRoute(jobIntent, state);
+  const exactRevisionRoute = input.workflow ? undefined : exactSoleSemanticActionRevisionRoute(jobIntent, state);
   if (exactRevisionRoute) {
     rememberModelAuthoringTurn(input.session.conversation, jobIntent, exactRevisionRoute.summary);
     return exactRevisionRoute;
   }
-  const tools: AskToolDefinition[] = [jobPlanToolDefinition(state)];
+  const tools: AskToolDefinition[] = [jobPlanToolDefinition(state, input.workflow)];
   const authorityDigest = askToolSurfaceDigest(tools);
   const configuration = planningConfiguration(
     input.session,
@@ -166,7 +173,7 @@ export async function planModelBoundaryJob(input: {
   );
   const history = structuredClone(modelAuthoringHistory(input.session.conversation, input.session));
   const diagnostic: BoundaryJobPlanningDiagnostic = { version: 1, expected_tool: PLAN_BOUNDARY_JOB_TOOL,
-    context_digest: canonicalJsonDigest({ state, jobIntent, clarificationAnswer: clarificationAnswer ?? null, availableResourceIds, history }),
+    context_digest: canonicalJsonDigest({ state, jobIntent, ...(input.workflow ? { workflow: input.workflow, expected_outcomes: input.expectedActionOutcomes ?? null } : {}), clarificationAnswer: clarificationAnswer ?? null, availableResourceIds, history }),
     ...(activePolicySource(input.session.conversation?.policySources) ? { source_digest: activePolicySource(input.session.conversation?.policySources)!.digest } : {}),
     attempts: [], model_requests: 0, duration_ms: 0, authority_changed: false, source_database_changed: false };
   const started = Date.now();
@@ -184,7 +191,7 @@ export async function planModelBoundaryJob(input: {
         return refusal("Runner accepts one job split and one bounded correction only.");
       }
       try {
-        resolution = parseJobPlan(args, state, explicitlyRequestedReadResources, jobIntent);
+        resolution = parseJobPlan(args, state, explicitlyRequestedReadResources, jobIntent, input.workflow, input.expectedActionOutcomes);
         return {
           ok: true,
           value: {
@@ -203,6 +210,7 @@ export async function planModelBoundaryJob(input: {
   const question = [
     "Split one operator job into Read Boundary work and Action Boundary work before any draft changes.",
     `Operator job: ${JSON.stringify(jobIntent)}`,
+    ...(input.workflow === "program" ? ["Operator selected the complete multi-Action program workflow. action_mode=create must include complete action_intents and aligned action_outcomes, never a broad single intent or first subset. Preserve exact requested identities from the source. Missing or ambiguous identities remain a clarification, not invented names.", ...(input.expectedActionOutcomes ? [`Previously reviewed exact inventory: ${JSON.stringify(input.expectedActionOutcomes)}`] : [])] : []),
     ...(clarificationAnswer
       ? [`Operator clarification: ${JSON.stringify(clarificationAnswer)}`]
       : []),
@@ -350,7 +358,7 @@ function exactSoleSemanticActionRevisionRoute(
   };
 }
 
-function jobPlanToolDefinition(state: BoundaryJobCurrentState): AskToolDefinition {
+function jobPlanToolDefinition(state: BoundaryJobCurrentState, workflow?: "program"): AskToolDefinition {
   const readModes = [
     "create",
     ...((state.read.resumable_draft_count ?? 0) > 0 ? ["resume"] : []),
@@ -360,7 +368,7 @@ function jobPlanToolDefinition(state: BoundaryJobCurrentState): AskToolDefinitio
   ];
   const semanticOutcomes = [...new Set(state.actions.flatMap((action) =>
     action.kind === "rule_derived" && action.outcome ? [action.outcome] : []))].sort();
-  const actionModes = state.actions.length
+  const actionModes = workflow === "program" ? ["create"] : state.actions.length
     ? ["create", "reuse", "revise", "none"]
     : ["create", "none"];
   return {
@@ -385,7 +393,7 @@ function jobPlanToolDefinition(state: BoundaryJobCurrentState): AskToolDefinitio
         ...readModes.map((readMode) => ({
           type: "object",
           additionalProperties: false,
-          required: ["status", "read_mode", "action_mode", "summary", ...(["create", "revise"].includes(readMode) ? ["read_intent"] : [])],
+          required: ["status", "read_mode", "action_mode", "summary", ...(workflow === "program" ? ["action_intent", "action_intents", "action_outcomes", "action_strategy"] : []), ...(["create", "revise"].includes(readMode) ? ["read_intent"] : [])],
           properties: {
             status: { type: "string", enum: ["planned"] },
             intended_client: { type: "string", enum: authoringClientChoices.map((entry) => entry.value),
@@ -413,6 +421,7 @@ function jobPlanToolDefinition(state: BoundaryJobCurrentState): AskToolDefinitio
               items: { type: "string", minLength: 1, maxLength: MAX_BOUNDARY_ACTION_INTENT_CHARACTERS },
               description: "Independent business outcomes for a multi-action create job; each keeps its own requested rules.",
             },
+            ...(workflow === "program" ? { action_outcomes: { type: "array", minItems: 2, maxItems: AUTHORING_PROGRAM_CAPACITY.totalActions, uniqueItems: true, items: { type: "string", pattern: "^[A-Za-z_][A-Za-z0-9_.]*$", maxLength: 200 }, description: "Complete distinct intended outcome identities in the same order as action_intents; preserve exact Source identities. The operator reviews this inventory before component drafting." } } : {}),
             action_outcome: {
               type: "string",
               minLength: 1,
@@ -467,9 +476,11 @@ function parseJobPlan(
   state: BoundaryJobCurrentState,
   explicitlyRequestedReadResources: string[],
   jobIntent: string,
+  workflow?: "program",
+  expectedActionOutcomes?: readonly string[],
 ): BoundaryJobPlanCore {
   const keys = value.status === "clarification" ? ["status", "question"]
-    : ["status", "operation", "read_mode", "read_intent", "action_mode", "action_intent", "action_intents", "action_outcome", "action_strategy", "summary", "intended_client"];
+    : ["status", "operation", "read_mode", "read_intent", "action_mode", "action_intent", "action_intents", "action_outcomes", "action_outcome", "action_strategy", "summary", "intended_client"];
   const extraKeys = Object.keys(value).filter(key => !keys.includes(key));
   if (extraKeys.length) throw new Error(`Planning arguments contain an unexpected property: ${extraKeys.slice(0, 8).map(key => planningFieldShape(key, value[key])).join("; ")}. Return only the fields in the selected tool contract, not schema keywords.`);
   assertReviewOperationShape(value);
@@ -600,6 +611,23 @@ function parseJobPlan(
       throw new Error("action_intents must be distinct and its first entry must match action_intent.");
     }
   }
+  let actionOutcomes: string[] | undefined;
+  if (workflow === "program" && (actionMode !== "create" || !actionIntents || actionIntents.length < 2)) {
+    throw new Error("AUTHORING_PROGRAM_INVENTORY_REQUIRED: The selected program needs its complete distinct Action inventory before drafting; a broad single intent is incomplete. Return aligned action_intents and action_outcomes, or clarify missing identities.");
+  }
+  if (value.action_outcomes !== undefined || workflow === "program") {
+    if (workflow !== "program" || !Array.isArray(value.action_outcomes) || !actionIntents
+      || value.action_outcomes.length !== actionIntents.length
+      || value.action_outcomes.some(outcome => typeof outcome !== "string" || outcome.length > 200 || !/^[A-Za-z_][A-Za-z0-9_.]*$/u.test(outcome))) {
+      throw new Error("AUTHORING_PROGRAM_INVENTORY_INVALID: Each complete program intent needs one exact supported outcome identity; the arrays must align.");
+    }
+    actionOutcomes = value.action_outcomes as string[];
+    if (new Set(actionOutcomes).size !== actionOutcomes.length) throw new Error("AUTHORING_PROGRAM_INVENTORY_INVALID: Intended outcome identities must be distinct.");
+    if (expectedActionOutcomes && (expectedActionOutcomes.length !== actionOutcomes.length || expectedActionOutcomes.some((outcome, index) => actionOutcomes![index] !== outcome))) {
+      throw new Error("AUTHORING_PROGRAM_INVENTORY_CHANGED: The proposed identities differ from the current reviewed inventory. A matching count does not establish completeness.");
+    }
+  }
+
   const submittedActionStrategy = value.action_strategy === undefined
     ? effectiveActionIntent === undefined ? undefined : inferActionStrategy(effectiveActionIntent)
     : boundedMode(value.action_strategy, "action_strategy", ["discretionary", "rule_derived"]);
@@ -670,6 +698,7 @@ function parseJobPlan(
     action_mode: actionMode,
     ...(effectiveActionIntent ? { action_intent: effectiveActionIntent } : {}),
     ...(actionIntents ? { action_intents: actionIntents } : {}),
+    ...(actionOutcomes ? { action_outcomes: actionOutcomes } : {}),
     ...(actionOutcome ? { action_outcome: actionOutcome } : {}),
     ...(actionStrategy ? { action_strategy: actionStrategy } : {}),
     summary: boundedText(value.summary, "Boundary job summary", 700),

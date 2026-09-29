@@ -10,13 +10,14 @@ import { start } from "./guided-start.js";
 import { boundaryReviewCommand, loadBoundaryReviewContext } from "./boundary-commands.js";
 import { createBoundaryAuthoringChat } from "./boundary-authoring-chat.js";
 import { listActionRuleAuthorityDrafts, readActionRuleAuthorityActivation, loadActiveActionRuleAuthority } from "./action-rule-authority.js";
+import { loadPolicySources, savePolicySources, policyTextSnapshot } from "./authoring-policy-source.js";
 import { AskError, secureAskJsonRequest } from "./model-ask.js";
 import { ownedProgramDraft, ownedProgramInspection } from "./test-fixtures/owned-authoring-program.js";
 
 /** Implementer DERIVED source regression. Only transport replies and terminal IO
  * are simulated. Production planners/parsers/saves/reviews/publication run normally.
  * No imported authority, ready flag, state injection, DB, key, or provider call. */
-const evidence = process.env.OWNED_CONVERSATIONAL_EVIDENCE ?? path.join(process.env.SYNAPSOR_TEST_EVIDENCE_DIR ?? os.tmpdir(), `owned-public-conversational-${randomUUID()}`);
+const evidenceRoot = process.env.OWNED_CONVERSATIONAL_EVIDENCE ?? path.join(process.env.SYNAPSOR_TEST_EVIDENCE_DIR ?? os.tmpdir(), `owned-public-conversational-${randomUUID()}`);
 const count = Number(process.env.OWNED_CONVERSATIONAL_ACTIONS ?? 13);
 const existingProject = process.env.OWNED_CONVERSATIONAL_EXISTING_PROJECT;
 const editIndex = count === 50 ? 37 : count;
@@ -37,7 +38,9 @@ const intentFor = (index: number) => `Action ${index}: workshop.adjust_card_${in
 const editRequest = `Revise workshop.adjust_card_${editIndex} ttl_seconds from 300 to 240; preserve every original exception, global responsibility, unit input bound, effect, and human approval requirement in the complete selected program.`;
 const removeRequest = "Remove workshop.adjust_card_50 from the selected program and explicitly withdraw its requested Action 50 source clause. Retain every other source clause, early exception and global responsibility.";
 
-it(`runs the normal public conversational DERIVED ${count}-Action source route`, async () => {
+async function runPublicConversational(testControl?: "no" | "escape" | "source_drift") {
+  const agendaControl = testControl ?? process.env.OWNED_CONVERSATIONAL_AGENDA_CONTROL;
+  const evidence = testControl ? `${evidenceRoot}-${testControl}` : evidenceRoot;
   if (![13, 32, 50].includes(count)) throw new Error("A finite public count is required.");
   await fs.mkdir(evidence, { recursive: false });
   const root = existingProject ?? path.join(evidence, "project");
@@ -77,11 +80,24 @@ it(`runs the normal public conversational DERIVED ${count}-Action source route`,
       appendFileSync(path.join(evidence, "live-menus.jsonl"), `${JSON.stringify(choice)}\n`);
       const values = choice.options.map((o: any) => o.value);
       let selected: string | undefined;
-      if (choice.title === "START BOUNDARY DRAFTING") selected = ["create", "edit_prepare", "remove_request"].includes(stage) ? "model" : stage === "remove_review" ? "review_rules" : "resume";
+      if (choice.title === "START BOUNDARY DRAFTING") selected = stage === "create" ? "program" : ["edit_prepare", "remove_request"].includes(stage) ? "model" : stage === "remove_review" ? "review_rules" : "resume";
       else if (choice.title === "VERIFIED ACTION BOUNDARY") selected = stage === "remove_resume" && values.includes("activate") ? "activate" : "back";
       else if (choice.title === "CLIENT FOR THIS JOB") selected = "later";
       else if (choice.title === "SEND ATTACHED RULES") { expect(choice.initialValue).toBe("cancel"); selected = "send"; }
       else if (choice.title === "USE THE SAVED ATTACHMENT") selected = "continue";
+      else if (choice.message === "Use this complete intended Action inventory?") {
+        expect(choice.initialValue).toBe("no");
+        for (let i = 1; i <= count; i++) expect(transcript).toContain(`workshop.adjust_card_${i}`);
+        if (agendaControl === "source_drift") {
+          const saved = JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
+          const sources = await loadPolicySources(root, saved.policy_source_session);
+          const next = policyTextSnapshot(Buffer.from(sourceText + "\nA new exception needs review."), "workshop-rules.txt", sources.snapshots.length + 1);
+          sources.snapshots.push(next); sources.active = next.version;
+          await savePolicySources(root, sources);
+        }
+        selected = agendaControl === "no" ? "no" : "yes";
+        if (agendaControl === "escape") return undefined;
+      }
       else if (choice.message === "Save this exact disabled Action edit?") {
         expect(choice.initialValue).toBe("no"); expect(choice.options.find((o: any) => o.value === "yes")).toBeDefined();
         expect(transcript.replace(/\s+/gu, " ")).toContain(editRequest);
@@ -122,7 +138,7 @@ it(`runs the normal public conversational DERIVED ${count}-Action source route`,
         action_outcome: `workshop.adjust_card_${editIndex}`, action_intent: editRequest, summary: "Revise only Action 37 request lifetime, retaining the complete program." }
         : stage === "remove_request" ? { status: "planned", read_mode: "reuse", action_mode: "remove", action_outcome: "workshop.adjust_card_50", summary: "Withdraw only the explicitly removed Action 50; retain all outside responsibilities." }
         : { status: "planned", read_mode: "create", read_intent: "Read card labels and unit counts from workshop.cards.",
-        action_mode: "create", action_strategy: "rule_derived", action_intent: intents[0], action_intents: intents, summary: `Prepare the complete selected ${count}-Action program.` };
+        action_mode: "create", action_strategy: "rule_derived", action_intent: intents[0], action_intents: intents, action_outcomes: Array.from({ length: count }, (_, i) => `workshop.adjust_card_${i + 1}`), summary: `Prepare the complete selected ${count}-Action program.` };
     } else if (names.includes("runner__submit_read_workloads")) {
       name = "runner__submit_read_workloads";
       args = { allowed: [{ id: "card_labels_units", description: "Read card labels and requested unit counts.", plan: { kind: "rows", resource: "workshop.cards", select: ["label", "units"] } }], forbidden: [],
@@ -215,7 +231,7 @@ it(`runs the normal public conversational DERIVED ${count}-Action source route`,
     return secureAskJsonRequest({ ...request, endpoint, scope: "custom_loopback", headers: {} });
   };
   const outer: any = { chooseResource: async () => fail("Manual resource route entered"), editFieldTiers: async () => fail("Manual field route entered"),
-    promptText: async () => fail("Outer operator text bypass"), confirm: async () => fail("Outer confirmation bypass") };
+    promptText: async () => agendaControl === "source_drift" ? undefined : fail("Outer operator text bypass"), confirm: async () => fail("Outer confirmation bypass") };
   const options: any = { startWithAgentJob: true, exitAfterAgentJob: true,
     modelAuthoringSession: { provider: "openai", model: "owned-offline", apiKey: "offline-placeholder", dependencies: { requestJson,
       contextMeasurement: { meter, onProfile: (profile: any) => profiles.push({ stage, ...profile }) } } },
@@ -232,12 +248,19 @@ it(`runs the normal public conversational DERIVED ${count}-Action source route`,
       { interactive: true, schemaInspector: inspection,
         runBoundaryReview: (args, inspect) => boundaryReviewCommand(args, inspect, outer, undefined, options) });
     let context = await loadBoundaryReviewContext(root);
+    if (agendaControl) {
+      expect(await listActionRuleAuthorityDrafts(root)).toHaveLength(0);
+      expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+      expect(bodies.some(record => record.body.tools?.some((tool: any) => tool.name === "runner__submit_action_rule_draft"))).toBe(false);
+      expect(transcript).toContain(agendaControl === "source_drift" ? "changed" : "not confirmed");
+      return;
+    }
     if (count === 50 && !existingProject) {
       const [partial] = await listActionRuleAuthorityDrafts(root);
       expect(partial?.authority.rules).toHaveLength(24);
       expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
       const saved = JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
-      expect(saved.action.intents).toHaveLength(50); expect(saved.action.completed_outcomes).toHaveLength(24);
+      expect(saved.action.intents).toHaveLength(50); expect(saved.action.intended_outcomes).toEqual(Array.from({ length: 50 }, (_, i) => `workshop.adjust_card_${i + 1}`)); expect(saved.action.completed_outcomes).toHaveLength(24);
       await fs.writeFile(path.join(evidence, "midpoint-resume.json"), JSON.stringify(saved, null, 2));
       stage = "resume_create";
       result = await boundaryReviewCommand(["--project-root", root, "--access", "--job-first"], inspection, outer, undefined, options);
@@ -327,4 +350,9 @@ it(`runs the normal public conversational DERIVED ${count}-Action source route`,
     await fs.writeFile(path.join(evidence, "actual-loopback-requests.jsonl"), wireRecords.map(record => JSON.stringify(record)).join("\n"));
     await fs.writeFile(path.join(evidence, "actual-encoder-profiles.json"), JSON.stringify(profiles, null, 2));
   }
-}, 120000);
+ }
+
+it(`runs the normal public conversational DERIVED ${count}-Action source route`, () => runPublicConversational(), 120000);
+if (!process.env.OWNED_CONVERSATIONAL_AGENDA_CONTROL && !existingProject) {
+  it.each(["no", "escape", "source_drift"] as const)("keeps the real program entry unmutated on %s", control => runPublicConversational(control), 30000);
+}

@@ -349,6 +349,23 @@ describe("conversational Action authoring tools", () => {
     expect(original.inputs[0]!.type).not.toHaveProperty('min_length');
   });
 
+  it("keeps an exact program work item when the model submits a sibling identity", async () => {
+    const expected = modelDraft().outcome;
+    const checkpoints: ActionRuleAuthoringCheckpoint[] = [];
+    const requests: string[] = [];
+    const steps = [call("runner.submit_verification_boundary_draft"), call("runner.submit_effect_envelope_draft"),
+      call("runner.submit_action_rule_draft", { ...payloadFor("runner.submit_action_rule_draft"), outcome: "billing.other_account" }),
+      call("runner.submit_action_rule_draft"), call("runner.submit_approval_policy_draft"),
+      call("runner.validate_action_draft", {}), say("The structural draft still needs source review and durable save.")];
+    const result = await converseActionRuleDraft({ ...requestInput(async request => { requests.push(JSON.stringify(request.body)); return steps.shift()!; }),
+      expectedOutcome: expected, onCheckpoint: async checkpoint => { checkpoints.push(structuredClone(checkpoint)); } });
+    expect(result.compiled.rule.outcome).toBe(expected);
+    expect(requests.join("\n")).toContain("AUTHORING_PROGRAM_OUTCOME_MISMATCH");
+    expect(requests.join("\n")).toContain("action_save_performed");
+    expect(requests.join("\n")).toContain("component_checkpoint_only");
+    expect(checkpoints.every(checkpoint => !checkpoint.components.rule || checkpoint.components.rule.outcome === expected)).toBe(true);
+  });
+
   it.each([true, false])("requires exact host operator review for a guided history-selector change (%s)", async accepted => {
     const baseline = policyModelDraft();
     baseline.approval.shared_limits = [{ id: "overall", kind: "count", scope: "boundary", maximum: 6, window_seconds: 86400 }, { id: "tenant", kind: "count", scope: "tenant", maximum: 2, window_seconds: 86400 }];

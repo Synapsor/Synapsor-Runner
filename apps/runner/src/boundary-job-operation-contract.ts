@@ -1,6 +1,6 @@
 /** Shared public field inventory. Unknown names and all values stay private. */
 export const PLANNING_FIELDS = ["status", "operation", "read_mode", "read_intent", "action_mode", "action_intent",
-  "action_intents", "action_outcome", "action_strategy", "summary", "question", "intended_client"] as const;
+  "action_intents", "action_outcomes", "action_outcome", "action_strategy", "summary", "question", "intended_client"] as const;
 export const REVIEW_PLAN_FIELDS = ["status", "operation", "read_mode", "action_mode", "summary", "intended_client"] as const;
 export const REVIEW_OPERATION_GUIDANCE = "For review/recheck without requested changes, use the separate review_rules branch: status=planned, operation=review_rules, read_mode=reuse or none, action_mode=reuse or none, summary; optionally retain an explicitly selected intended_client. Omit read_intent, action_intent, action_intents, action_outcome and action_strategy entirely, including null or empty placeholders. The existing candidate is selected by the host; action_outcome is not a review target selector. Edit branches have no operation field. A request combining review and changes needs the clarification branch {status:clarification,question}; preserve the whole request and do not discard its change to obtain a review plan.";
 
