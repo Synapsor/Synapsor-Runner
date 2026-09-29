@@ -7221,6 +7221,7 @@ describe("boundary operator-plane CLI", () => {
       expect(permissionNarration?.validatedFacts.join("\n")).not.toMatch(/deadbeef|northstar-mobile|secret_internal_note|password_hash/iu);
       expect(mappingChoices).toEqual([
         "model",
+        "program",
         "choose_model",
         "cards",
         "manual",
