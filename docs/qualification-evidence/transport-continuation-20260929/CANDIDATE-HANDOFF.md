@@ -1,4 +1,4 @@
-# Candidate 1: frozen, independent installed acceptance pending
+# Candidate 1: accepted for the exercised transport contract
 
 Source/tests: `106c385357951cf72ad15c63cb8c156bc36963e7`. Complete identity is in [ARTIFACT.json](ARTIFACT.json). The old installation and original historical captures are unchanged. No paid continuation has begun; Main has made zero provider calls.
 
@@ -11,7 +11,7 @@ Source/tests: `106c385357951cf72ad15c63cb8c156bc36963e7`. Complete identity is i
 | Ten offline/package checks003 | All exit0, including public commands and the complete packed offline installation using local pinned Spec. |
 | Unchanged source/build | All13 records carry the same source digest and five identical before/after entrypoint hashes. Independent095–097 inspect all records and1273 source hashes without duplicating the suite. |
 | Main artifact verification | All7607 installed and archive entries match in both directions, including content, modes and internal symlinks; root sealed read-only and five entrypoints match tested bytes. |
-| Final independent installation | Pending exact-candidate direct/native and composed guard tests, consent/cancellation/currentness/restart, saved-work continuation and privacy. No prior development verdict automatically transfers. |
+| Final independent installation | PASS for the exercised exact-candidate direct/native and composed guard tests, consent/cancellation/currentness/restart and synthetic saved-work continuation. See [INDEPENDENT-ACCEPTANCE.md](INDEPENDENT-ACCEPTANCE.md) for immutable report/index hashes and limits. Disabled Read remains pending/unfaithful. |
 | Real full50 continuation | NOT RUN on this candidate. Requires independent acceptance plus exact authentic restore/privacy/financial preflight and current public recovery consent. |
 
 The raw `GATE-EVIDENCE-083.json` indexes all42 gate members. `CANDIDATE-ONE-HANDOFF-084.json` binds the artifact, gate summary and source clearance. Raw root: `/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929`.

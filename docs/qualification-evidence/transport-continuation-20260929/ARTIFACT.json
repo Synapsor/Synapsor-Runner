@@ -1,6 +1,6 @@
 {
   "candidate": 1,
-  "status": "FROZEN \u2014 independent installed acceptance PENDING",
+  "status": "FROZEN \u2014 independent exercised installed transport contract PASS; paid preflight PENDING",
   "product_and_test_commit": "106c385357951cf72ad15c63cb8c156bc36963e7",
   "source_lock_sha256": "4094d296fd96e56cc946d4e9f0705d20c638428ce2e1726613407f01b6adc069",
   "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/freeze-plan/installed",
@@ -28,5 +28,7 @@
   "frozen_count": 1,
   "maximum_frozen_candidates": 2,
   "paid_start": null,
-  "deadline": "2026-09-30T18:47:55Z"
+  "deadline": "2026-09-30T18:47:55Z",
+  "independent_report_sha256": "43a33e2bddf5b74e8cf280469a280e73130d76abc21b3c224952f3717fc638d1",
+  "independent_index_sha256": "d2ec80cf08e65310d2b2aa227f6a4fb005e0eb6fa3a45effc928795e18af3cd0"
 }

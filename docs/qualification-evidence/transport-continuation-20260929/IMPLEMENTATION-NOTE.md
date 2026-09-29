@@ -1,6 +1,6 @@
-# B32 transport boundary — implementation under independent challenge
+# B32 transport boundary — candidate 1 frozen
 
-Status: first candidate is not frozen or accepted. Main makes no real provider requests. The old installed artifact and historical 81 ms failure remain unchanged; its original exception is still unavailable. Controlled installed partial-stream evidence establishes the new repair's failing-before case, not the old root cause.
+Current status: candidate 1 is frozen from source/tests `106c385357951cf72ad15c63cb8c156bc36963e7`; independent final installed acceptance passed for the exercised transport contract. The authentic paid continuation preflight remains pending. The complete stable suite, types, selected PostgreSQL gates and ten offline/package checks passed. See [CANDIDATE-HANDOFF.md](CANDIDATE-HANDOFF.md) for exact results and [ARTIFACT.json](ARTIFACT.json) for identity. Main makes no real provider requests. The old installed artifact and historical 81 ms failure remain unchanged; its original exception is still unavailable. Controlled installed partial-stream evidence establishes the repair's failing-before case, not the old root cause. The dated source and gate accounts below describe preserved earlier checkpoints, not the current acceptance status.
 
 The existing native HTTP client observes connection establishment, request completion, headers, body progress and closure. Only native observations establish A/B eligibility. Default Agent reuse and TLS/endpoint checks remain intact; failed requests are closed before retry. A complete HTTP/content refusal is separate from an interrupted stream. SSE completion follows each existing adapter, and actual HTTP truncation overrides a terminal-looking event.
 
