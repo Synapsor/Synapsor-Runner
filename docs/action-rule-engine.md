@@ -44,6 +44,15 @@ disabled job; it does not restage the broad catalog or reinterpret the entire
 job as one Explore question. Older incomplete checkpoints that lack this
 separation are replanned safely.
 
+For a program with multiple Actions, choose **Draft a complete multi-Action
+program**. Review the complete intended inventory against the attached policy
+before component drafting. An omitted inventory receives a bounded correction;
+it does not silently select a one-Action replacement workflow. Saved progress
+retains each intended identity and unfinished work across Resume. An inventory
+confirmation establishes the work list, not source-policy completion. Component
+checkpoints, structurally validated drafts, whole-program review and publication
+remain separate stages.
+
 Low-confidence tenant or principal names remain default-deny. A confirmation
 asks the concrete business question, such as whether `principal_id` on the
 listed resources stores the authenticated principal supplied by the
