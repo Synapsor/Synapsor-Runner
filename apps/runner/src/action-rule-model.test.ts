@@ -608,7 +608,9 @@ describe("conversational Action authoring tools", () => {
     const onCheckpoint = vi.fn().mockResolvedValueOnce(undefined).mockRejectedValueOnce(new Error("checkpoint storage unavailable"));
     await expect(converseActionRuleDraft({ ...requestInput(async request => {
       requests.push(JSON.stringify(request.body)); return steps.shift()!;
-    }), askClarification: async () => answer, onCheckpoint })).rejects.toThrow("checkpoint storage unavailable");
+    }), askClarification: async () => answer, onCheckpoint })).rejects.toMatchObject({ code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION" });
+    // The failed save remains an uncertain local outcome; never advertise its
+    // raw storage exception as permission to repeat the generation/callback.
     expect(requests.join("\n")).toContain("Quote the actual operator message asking to pause");
     expect(onCheckpoint).toHaveBeenCalledTimes(2);
     expect(steps).toEqual([]);

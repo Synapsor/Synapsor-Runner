@@ -1,3 +1,4 @@
+import { isAuthoringGenerationStop } from "./authoring-generation-recovery.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import {
   AskError,
@@ -154,6 +155,7 @@ export async function narrateValidatedAuthoringStep(input: {
     // Narration is presentation only. A provider failure must not discard an
     // already validated disabled draft or change authority state.
     input.onFailure?.(authoringExplanationFailure(error));
+    if (isAuthoringGenerationStop(error)) throw error;
     return undefined;
   } finally {
     await gateway.close().catch(() => undefined);

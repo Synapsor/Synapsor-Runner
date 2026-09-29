@@ -538,8 +538,10 @@ describe("model-assisted Read workload mapping", () => {
     }).catch((error) => error);
     expect(error.diagnostics).toEqual([
       expect.objectContaining({ phase: "initial", category: "validation" }),
-      expect.objectContaining({ phase: "correction", category: "provider_request", code: "ASK_PROVIDER_TIMEOUT" }),
+      expect.objectContaining({ phase: "correction", category: "provider_request", code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION" }),
     ]);
+    expect(error.code).toBe("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION");
+    expect(error).not.toBeInstanceOf(ReadWorkloadDraftError);
     expect(requestJson).toHaveBeenCalledTimes(2);
   });
   it("carries prior authoring history into mapping and returns actual validated model prose", async () => {

@@ -1,3 +1,4 @@
+import { isAuthoringGenerationStop } from "./authoring-generation-recovery.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { CompiledActionRuleV1 } from "@synapsor-runner/action-rules";
@@ -142,6 +143,7 @@ export async function draftOperatorParentPolicy(input: {
         }
         return { ok: true, value: { state: pendingResolution.state, authority_granted: false, source_database_changed: false } };
       } catch (error) {
+        if (isAuthoringGenerationStop(error)) throw error;
         issue = sanitizedIssue(error);
         return refused(issue);
       }
@@ -190,6 +192,7 @@ export async function draftOperatorParentPolicy(input: {
         }
         if (!isCorrectableDraftIssue(issue)) break;
       } catch (error) {
+        if (isAuthoringGenerationStop(error)) throw error;
         issue = sanitizedIssue(error);
         pendingResolution = undefined;
         if (!isCorrectableDraftIssue(issue)) break;

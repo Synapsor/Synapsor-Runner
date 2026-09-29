@@ -1,3 +1,4 @@
+import { validateAuthoringTransportState, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { AUTHORING_PROGRAM_CAPACITY, AUTHORING_PROGRAM_RESUME_VERSION } from "./authoring-program-capacity.js";
 import fs from "node:fs/promises";
 import path from "node:path";
@@ -154,6 +155,7 @@ export type BoundaryAuthoringResumeState = {
     structural_metadata_egress_acknowledged: true;
   };
   conversation: AskHistoryTurn[];
+  generation_recovery?: AuthoringTransportState;
   policy_source_session?: string;
   action_workflow?: "program";
   /** Concise model-planned Read behavior retained before an analysis exists. */
@@ -227,6 +229,7 @@ export function buildBoundaryAuthoringResumeState(input: {
   provider: BoundaryAuthoringResumeState["model"]["provider"];
   model: string;
   conversation?: readonly AskHistoryTurn[];
+  generationRecovery?: AuthoringTransportState;
   policySourceSession?: string;
   actionWorkflow?: "program";
   readIntent?: string;
@@ -290,6 +293,7 @@ export function buildBoundaryAuthoringResumeState(input: {
       structural_metadata_egress_acknowledged: true as const,
     },
     conversation,
+    ...((input.generationRecovery ?? input.previous?.generation_recovery) ? { generation_recovery: structuredClone(input.generationRecovery ?? input.previous!.generation_recovery!) } : {}),
     ...(input.policySourceSession ? { policy_source_session: normalizeSourceSession(input.policySourceSession) } : {}),
     ...(input.readIntent
       ? {
@@ -578,6 +582,7 @@ export function assertBoundaryAuthoringResumeState(
   if (value.reconciled_action_revisions !== undefined) normalizeActionReconciliations(value.reconciled_action_revisions);
   if (value.reviewed_action_disclosures !== undefined) parseReviewedActionDisclosures(value.reviewed_action_disclosures);
   if (value.reviewed_version_fields !== undefined) parseReviewedActionVersionFields(value.reviewed_version_fields, 32);
+  if (value.generation_recovery !== undefined) validateAuthoringTransportState(value.generation_recovery);
   if (value.read_prerequisite_decisions !== undefined) parseReadPrerequisiteBusinessDecisions(value.read_prerequisite_decisions);
   if (value.pending_action_addition !== undefined) normalizeActionAddition(value.pending_action_addition, maximum);
   if (value.stage === "client_setup" && value.client_handoff === undefined) throw new Error("Client continuation requires its exact reviewed authority.");

@@ -13,6 +13,14 @@ export type AuthoringExplanationFailure = {
 export function authoringExplanationFailure(error?: unknown): AuthoringExplanationFailure {
   const code = error instanceof AskError ? error.code : "NARRATION_UNAVAILABLE";
   const known: Record<string, [string, boolean, string]> = {
+    ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION: ["Incomplete generation or uncertain local result", false, "Inspect the saved job and its recorded attempts. No automatic generation or tool replay is permitted; local details remain available."],
+    ASK_GENERATION_OUTCOME_UNKNOWN: ["Provider generation outcome unknown", false, "Saved progress is retained. The provider may have charged for this attempt; inspect its finite recovery history before continuing."],
+    ASK_GENERATION_NOT_SENT: ["Generation not sent", false, "Inspect connection settings and the saved job's recovery policy; no source authority changed."],
+    ASK_GENERATION_CONTEXT_CHANGED: ["Saved generation context changed", false, "Reopen the current saved job; the previous generation will not be silently retargeted."],
+    ASK_GENERATION_DEADLINE: ["Generation deadline reached", false, "Inspect the retained attempt and saved progress; its deadline and allowance were not reset."],
+    ASK_GENERATION_RECOVERY_EXHAUSTED: ["Generation retries exhausted", false, "Preserve and inspect the current job and its attempts. No further automatic generation is permitted."],
+    ASK_GENERATION_ALREADY_ACTIVE: ["Generation still active", false, "Wait for the current operation to finish or cancel it; do not start another request."],
+    ASK_GENERATION_HISTORY_LIMIT: ["Saved generation record bound reached", false, "Preserve and inspect the saved recovery history. No automatic new request is permitted."],
     ASK_KEY_REQUIRED: ["Provider credential unavailable", false, "Restore the configured credential before retrying; local review remains available."],
     ASK_KEY_INVALID: ["Provider credential invalid", false, "Correct the provider credential before retrying; local review remains available."],
     ASK_EGRESS_ACKNOWLEDGEMENT_REQUIRED: ["Provider permission required", false, "Review provider egress before asking the model; local review needs no provider permission."],

@@ -14,6 +14,7 @@ import {
 import type { AskIntentCheckMode } from "./ask-intent-preferences.js";
 import { askPlanSyntaxRepair, matchesAskPlanSyntaxRepair, type AskPlanSyntaxRepair } from "./ask-plan-recovery.js";
 import { isFixedOpenRouterModel, OPENROUTER_CHAT_ENDPOINT } from "./hosted-provider-settings.js";
+import { recoverAuthoringGeneration, authoringGenerationHandled, authoringGenerationFailed } from "./authoring-generation-recovery.js";
 import { coverageToolDeclarationIssue } from "./authoring-coverage-tool-profile.js";
 
 const DEFAULT_REMOTE_TIMEOUT_SECONDS = 30;
@@ -249,7 +250,7 @@ type ProviderHistoryEntry = {
 
 const providerHistoryByResult = new WeakMap<AskTurnResult, string>();
 
-type ProviderHttpInput = {
+export type ProviderHttpInput = {
   endpoint: URL;
   scope: AskProviderPublicConfiguration["endpoint_scope"];
   headers: Record<string, string>;
@@ -264,7 +265,7 @@ type ProviderHttpInput = {
   };
 };
 
-type ProviderHttpResult = {
+export type ProviderHttpResult = {
   body: Record<string, unknown>;
   status: number;
 };
@@ -679,7 +680,17 @@ export async function runAskProviderTurn(input: {
   const contextMeasurement = input.dependencies?.contextMeasurement
     ? { ...input.dependencies.contextMeasurement, meter: input.dependencies.contextMeasurement.meter ?? createTaskContextMeter() }
     : undefined;
-  const requestJson: NonNullable<AskProviderDependencies["requestJson"]> = (requestInput) => checked(() => request({ ...requestInput, signal, contextMeasurement }));
+  const generationResults: ProviderHttpResult[] = [];
+  let currentCallbackMayHaveRun = false;
+  const requestJson: NonNullable<AskProviderDependencies["requestJson"]> = (requestInput) => checked(async () => {
+    const preparedInput = { ...requestInput, signal, contextMeasurement };
+    if (input.gateway.mode !== "authoring") return request(preparedInput);
+    await authoringGenerationHandled(generationResults);
+    currentCallbackMayHaveRun = false;
+    const result = await recoverAuthoringGeneration(preparedInput, request);
+    generationResults.push(result);
+    return result;
+  });
   const gateway: AskToolGateway = {
     get mode() { return input.gateway.mode; },
     get ownerPolicyReview() { return input.gateway.ownerPolicyReview; },
@@ -687,12 +698,16 @@ export async function runAskProviderTurn(input: {
     get ownerSettingsOnly() { return input.gateway.ownerSettingsOnly; },
     listTools: () => input.gateway.listTools(),
     close: () => input.gateway.close(),
-    callTool: (name, args) => checked(() => input.gateway.callTool(name, args)),
+    callTool: (name, args) => checked(() => {
+      currentCallbackMayHaveRun = true;
+      return input.gateway.callTool(name, args);
+    }),
     ...(input.gateway.describeOperatorMetadata ? { describeOperatorMetadata: input.gateway.describeOperatorMetadata.bind(input.gateway) } : {}),
     ...(input.gateway.resolveAskIntentCheck ? { resolveAskIntentCheck: input.gateway.resolveAskIntentCheck.bind(input.gateway) } : {}),
   };
   const currentUtcDate = (input.dependencies?.now?.() ?? new Date()).toISOString().slice(0, 10);
-  return checked(() => input.configuration.provider === "anthropic"
+  let result: AskTurnResult;
+  try { result = await checked(() => input.configuration.provider === "anthropic"
     ? runAnthropicTurn({
         ...input,
         signal,
@@ -713,7 +728,46 @@ export async function runAskProviderTurn(input: {
         onProgress: input.dependencies?.onProgress,
         onStream: input.dependencies?.onStream,
       }));
+  } catch (error) {
+    if (input.gateway.mode === "authoring") {
+      await authoringGenerationFailed(generationResults, currentCallbackMayHaveRun);
+      if (error instanceof AskError && error.code === "ASK_CANCELLED") throw error;
+      if (currentCallbackMayHaveRun) throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION",
+        "Local handling did not complete with a known outcome. Inspect the current saved job before continuing; no generation or callback replay is permitted.", 409);
+    }
+    throw error;
+  }
+  if (input.gateway.mode === "authoring") await authoringGenerationHandled(generationResults);
+  return result;
 }
+
+/** Minted only at the owning HTTP boundary, never inferred from error prose. */
+export type AuthoringTransportObservation = {
+  classification: "A" | "B" | "C";
+  transient: boolean;
+  phase: "resolution" | "connection" | "request" | "headers" | "response";
+  headers_received: boolean;
+  request_finished: boolean;
+  cleanup_complete: boolean;
+  code?: string;
+};
+const transportObservations = new WeakMap<object, AuthoringTransportObservation>();
+const completedProviderContentErrors = new WeakSet<object>();
+export function completedProviderContentError(error: unknown): boolean {
+  return Boolean(error && typeof error === "object" && completedProviderContentErrors.has(error));
+}
+/** Internal adapters may mark only an error derived from a fully returned response. */
+export function completedContentError(error: AskError): AskError {
+  completedProviderContentErrors.add(error); return error;
+}
+export function authoringTransportObservation(error: unknown): AuthoringTransportObservation | undefined {
+  return error && typeof error === "object" ? transportObservations.get(error) : undefined;
+}
+const transientTransportCodes = new Set(["ECONNRESET", "ECONNREFUSED", "EAI_AGAIN", "ETIMEDOUT", "EPIPE"]);
+const safeTransportCode = (error: unknown): string | undefined => {
+  const code = error && typeof error === "object" ? (error as {code?: unknown}).code : undefined;
+  return typeof code === "string" && /^(?:E[A-Z0-9_]{1,48}|ERR_[A-Z0-9_]{1,48})$/u.test(code) ? code : undefined;
+};
 
 export async function secureAskJsonRequest(input: ProviderHttpInput): Promise<ProviderHttpResult> {
   assertAskNotCancelled(input.signal);
@@ -739,6 +793,8 @@ export async function secureAskJsonRequest(input: ProviderHttpInput): Promise<Pr
     const started = performance.now();
     let settled = false;
     let deadline: NodeJS.Timeout | undefined;
+    let transportReady = false, connectingObserved = false, headersReceived = false, requestFinished = false;
+    let responsePhase = false;
     const finishResolve = (body: Record<string, unknown>, status: number) => {
       if (settled) return;
       if (input.contextMeasurement) {
@@ -757,7 +813,25 @@ export async function secureAskJsonRequest(input: ProviderHttpInput): Promise<Pr
       if (settled) return;
       settled = true;
       if (deadline) clearTimeout(deadline);
-      reject(safeProviderError(error, input.signal.aborted));
+      const safe = safeProviderError(error, input.signal.aborted);
+      const code = safeTransportCode(error);
+      // Close/quarantine this request before exposing retry evidence. A rejected
+      // promise alone is not proof that the old connection cannot deliver later.
+      const observation: AuthoringTransportObservation = {
+        classification: input.signal.aborted || headersReceived ? "C" : connectingObserved && !transportReady && code === "ECONNREFUSED" ? "A" : "B",
+        transient: !input.signal.aborted && !headersReceived && Boolean(code && transientTransportCodes.has(code)),
+        phase: responsePhase ? "response" : headersReceived ? "headers" : transportReady ? "request" : "connection",
+        headers_received: headersReceived, request_finished: requestFinished, cleanup_complete: false,
+        ...(code ? {code} : {}),
+      };
+      const closed = () => {
+        observation.cleanup_complete = true;
+        if (completedProviderContentError(error)) completedProviderContentErrors.add(safe);
+        else transportObservations.set(safe, observation);
+        reject(safe);
+      };
+      if (request.closed) closed();
+      else { request.once("close", closed); request.destroy(); }
     };
     const request = transport.request({
       protocol: input.endpoint.protocol,
@@ -783,6 +857,9 @@ export async function secureAskJsonRequest(input: ProviderHttpInput): Promise<Pr
         ? { servername: input.endpoint.hostname }
         : {}),
     }, (response) => {
+      if (settled) { response.destroy(); return; }
+      headersReceived = true;
+      response.once("data", () => { responsePhase = true; });
       if ((response.statusCode ?? 500) >= 300 && (response.statusCode ?? 500) < 400) {
         response.resume();
         finishReject(new AskError("ASK_PROVIDER_REDIRECT_REFUSED", "Provider redirects are disabled so credentials cannot cross origins.", 502));
@@ -809,6 +886,22 @@ export async function secureAskJsonRequest(input: ProviderHttpInput): Promise<Pr
       void readResponse.then((body) => finishResolve(body, status), finishReject);
     });
 
+    request.once("socket", socket => {
+      connectingObserved = socket.connecting;
+      // Reused sockets may already have dispatched. Never infer A from their
+      // lifetime byte counters, or from a missing connect event.
+      transportReady = request.reusedSocket;
+      if (!request.reusedSocket) {
+        const event = input.endpoint.protocol === "https:" ? "secureConnect" : "connect";
+        const ready = () => { transportReady = true; };
+        if (input.endpoint.protocol === "http:" && !socket.connecting) transportReady = true;
+        else socket.once(event, ready);
+        // A pooled socket has already emitted its connect event. Do not leave
+        // one never-fired listener behind for every subsequent generation.
+        request.once("close", () => socket.removeListener(event, ready));
+      }
+    });
+    request.once("finish", () => { requestFinished = true; });
     const abort = () => request.destroy(new AskError("ASK_CANCELLED", "The Ask request was cancelled.", 499));
     input.signal.addEventListener("abort", abort, { once: true });
     deadline = setTimeout(
@@ -845,15 +938,25 @@ async function readProviderJsonResponse(
     chunks.push(buffer);
   }
   const text = Buffer.concat(chunks).toString("utf8");
-  if (status < 200 || status >= 300) throw providerHttpError(status, text);
+  if (status < 200 || status >= 300) {
+    const error = providerHttpError(status, text);
+    // Only the owning reader has observed a fully drained known refusal.
+    // A generic guard/proxy status (including503), or a truncated error body,
+    // supplies no equivalent evidence about the upstream generation outcome.
+    if (["ASK_PROVIDER_TOOL_SCHEMA_REJECTED", "ASK_PROVIDER_CREDIT_REQUIRED", "ASK_PROVIDER_MODEL_UNAVAILABLE",
+      "ASK_PROVIDER_AUTHENTICATION_FAILED", "ASK_PROVIDER_PERMISSION_DENIED", "ASK_PROVIDER_RATE_LIMITED"].includes(error.code)) {
+      throw completedContentError(error);
+    }
+    throw error;
+  }
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
-    throw new AskError("ASK_PROVIDER_RESPONSE_INVALID", "The provider returned malformed JSON.", 502);
+    throw completedContentError(new AskError("ASK_PROVIDER_RESPONSE_INVALID", "The provider returned malformed JSON.", 502));
   }
   if (!isRecord(parsed)) {
-    throw new AskError("ASK_PROVIDER_RESPONSE_INVALID", "The provider response was not a JSON object.", 502);
+    throw completedContentError(new AskError("ASK_PROVIDER_RESPONSE_INVALID", "The provider response was not a JSON object.", 502));
   }
   return parsed;
 }
@@ -861,6 +964,7 @@ async function readProviderJsonResponse(
 type ProviderStreamAssembler = {
   push(data: string): void;
   finish(): Record<string, unknown>;
+  complete(): boolean;
 };
 
 async function readProviderEventStream(
@@ -871,6 +975,17 @@ async function readProviderEventStream(
   const decoder = new StringDecoder("utf8");
   let pending = "";
   let total = 0;
+  let contentError: AskError | undefined;
+  const consume = (block: string) => {
+    try { consumeProviderSseBlock(block, assembler); }
+    catch (error) {
+      if (!(error instanceof AskError) || !["ASK_PROVIDER_RESPONSE_INVALID", "ASK_PROVIDER_RESPONSE_INCOMPLETE"].includes(error.code)) throw error;
+      // Drain within the existing byte/deadline bounds. Only the adapter's real
+      // completion condition can distinguish malformed complete content from
+      // an interrupted transfer. A later socket error takes precedence.
+      contentError ??= error;
+    }
+  };
   for await (const chunk of response) {
     const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk as string);
     total += buffer.length;
@@ -883,7 +998,7 @@ async function readProviderEventStream(
     while (separator >= 0) {
       const block = pending.slice(0, separator);
       pending = pending.slice(separator + 2);
-      consumeProviderSseBlock(block, assembler);
+      consume(block);
       separator = pending.indexOf("\n\n");
     }
     if (Buffer.byteLength(pending) > MAX_PROVIDER_RESPONSE_BYTES) {
@@ -891,8 +1006,14 @@ async function readProviderEventStream(
     }
   }
   pending += decoder.end();
-  if (pending.trim()) consumeProviderSseBlock(pending, assembler);
-  const result = assembler.finish();
+  if (pending.trim()) consume(pending);
+  if (contentError) throw assembler.complete() ? completedContentError(contentError) : contentError;
+  let result: Record<string, unknown>;
+  try { result = assembler.finish(); }
+  catch (error) {
+    if (assembler.complete() && error instanceof AskError) throw completedContentError(error);
+    throw error;
+  }
   if (Buffer.byteLength(JSON.stringify(result)) > MAX_PROVIDER_RESPONSE_BYTES) {
     throw new AskError("ASK_PROVIDER_RESPONSE_TOO_LARGE", "The provider response exceeded the bounded Ask response size.", 502);
   }
@@ -955,6 +1076,7 @@ function openAiResponsesStreamAssembler(
     emitProviderStream(onEvent, { phase: "started" });
   };
   return {
+    complete: () => completed,
     push(data) {
       const event = parsedProviderStreamEvent(data);
       if (!event) return;
@@ -970,6 +1092,9 @@ function openAiResponsesStreamAssembler(
       } else if (type === "response.completed" && isRecord(event.response)) {
         response = event.response;
         completed = true;
+      } else if (type === "response.incomplete" && isRecord(event.response)) {
+        completed = true;
+        throw new AskError("ASK_PROVIDER_RESPONSE_INCOMPLETE", "The provider returned a terminal incomplete response. No incomplete tool call was accepted.", 502);
       } else if (type === "response.failed" || type === "error") {
         throw new AskError("ASK_PROVIDER_STREAM_FAILED", "The provider stopped before completing its streamed response.", 502);
       }
@@ -1000,6 +1125,7 @@ function openAiChatStreamAssembler(
     emitProviderStream(onEvent, { phase: "started" });
   };
   return {
+    complete: () => done,
     push(data) {
       if (data === "[DONE]") {
         done = true;
@@ -1015,10 +1141,10 @@ function openAiChatStreamAssembler(
       if (!Array.isArray(event.choices)) return;
       for (const choice of event.choices) {
         if (!isRecord(choice)) continue;
+        if (choice.finish_reason !== undefined && choice.finish_reason !== null) done = true;
         if (choice.error || ["error", "length", "content_filter"].includes(String(choice.finish_reason))) {
           throw new AskError("ASK_PROVIDER_RESPONSE_INCOMPLETE", "The provider stopped or refused the response before completion. No incomplete tool call was accepted; retry or choose a compatible model.", 502);
         }
-        if (choice.finish_reason !== undefined && choice.finish_reason !== null) done = true;
         if (!isRecord(choice.delta)) continue;
         if (choice.delta.reasoning_details !== undefined) {
           const fragment = choice.delta.reasoning_details;
@@ -1102,6 +1228,7 @@ function anthropicStreamAssembler(
     emitProviderStream(onEvent, { phase: "started" });
   };
   return {
+    complete: () => stopped,
     push(data) {
       const event = parsedProviderStreamEvent(data);
       if (!event) return;
@@ -4771,8 +4898,12 @@ async function resolveAskDestination(
   } else {
     try {
       addresses = await dns.lookup(hostname, { all: true, verbatim: true });
-    } catch {
-      throw new AskError("ASK_PROVIDER_DNS_FAILED", "The provider hostname could not be resolved.", 502);
+    } catch (cause) {
+      const error = new AskError("ASK_PROVIDER_DNS_FAILED", "The provider hostname could not be resolved.", 502);
+      const code = safeTransportCode(cause);
+      transportObservations.set(error, {classification: "A", transient: code === "EAI_AGAIN", phase: "resolution",
+        headers_received: false, request_finished: false, cleanup_complete: true, ...(code ? {code} : {})});
+      throw error;
     }
   }
   if (addresses.length === 0 || addresses.length > 16) {

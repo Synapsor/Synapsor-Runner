@@ -1,3 +1,5 @@
+import { localProviderRefusal } from "./test-fixtures/provider-refusal.js";
+import { AskError } from "./model-ask.js";
 import { describe, expect, it, vi } from "vitest";
 import { validateOwnerPolicyParent, type PolicyManagementParent } from "@synapsor-runner/mcp-server";
 import { ownerPolicyTestFixture } from "../../../packages/mcp-server/src/owner-policy-test-fixture.js";
@@ -39,6 +41,13 @@ function request(input: TestDraftInput) {
 }
 
 describe("operator parent model drafting", () => {
+  it("preserves the shared terminal generation stop instead of wrapping it as another draft opportunity",async()=>{
+    const x=fixture(),failure=new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION","DERIVED interruption");
+    const requestJson=vi.fn(async()=>{throw failure;});
+    await expect(request({session:{dependencies:{requestJson}},currentParent:x.current,identityBindings:x.bindings,catalog:x.catalog,compiledRules:[x.f.compiled]})).rejects.toBe(failure);
+    expect(requestJson).toHaveBeenCalledOnce();
+  });
+
   it("lets the operator correct an unactivated approval choice without treating it as the parent ceiling", async () => {
     const x = fixture();
     const candidate = structuredClone(x.current);
@@ -214,9 +223,7 @@ describe("operator parent model drafting", () => {
 
   it("does not retry provider authentication failures and preserves their sanitized category", async () => {
     const x = fixture();
-    const requestJson = vi.fn(async (_request: unknown) => {
-      throw Object.assign(new Error("credential=do-not-display"), { code: "ASK_PROVIDER_AUTHENTICATION_FAILED" });
-    });
+    const requestJson = vi.fn(localProviderRefusal);
     await expect(request({ session: { dependencies: { requestJson } }, currentParent: x.current,
       identityBindings: x.bindings, catalog: x.catalog, compiledRules: [x.f.compiled] }))
       .rejects.toMatchObject({ code: "ASK_PROVIDER_AUTHENTICATION_FAILED" });

@@ -1,3 +1,4 @@
+import { isAuthoringGenerationStop } from "./authoring-generation-recovery.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { assertReviewOperationShape, planningFieldShape, REVIEW_OPERATION_GUIDANCE, REVIEW_PLAN_FIELDS } from "./boundary-job-operation-contract.js";
@@ -7,6 +8,7 @@ import { activePolicySource } from "./authoring-policy-source.js";
 import { authoringClientChoices, isAuthoringClientPlan, type AuthoringClientPlan } from "./authoring-client-plan.js";
 import {
   askToolSurfaceDigest,
+  completedContentError,
   resolveAskProviderConfiguration,
   runAskProviderTurn,
   secureAskJsonRequest,
@@ -257,7 +259,7 @@ export async function planModelBoundaryJob(input: {
       const response = await requestJson(request);
       responseDiagnostic = planningResponseDiagnostic(response);
       if (responseDiagnostic.status === "incomplete" || ["length", "max_tokens"].includes(responseDiagnostic.stop_reason)) {
-        throw new AskError("ASK_PROVIDER_RESPONSE_INCOMPLETE", "The planning response stopped before completion. No partial tool output was accepted.", 502);
+        throw completedContentError(new AskError("ASK_PROVIDER_RESPONSE_INCOMPLETE", "The planning response stopped before completion. No partial tool output was accepted.", 502));
       }
       return response;
     } },
@@ -278,6 +280,7 @@ export async function planModelBoundaryJob(input: {
       : canonicalJsonDigest({ stale: true }),
   });
   let correctionUsed = false;
+  let generationStop: AskError | undefined;
   try {
     for (let attempt = 0; attempt < 2; attempt++) {
       responseDiagnostic = undefined;
@@ -295,6 +298,7 @@ export async function planModelBoundaryJob(input: {
         ].join("\n") : question);
         if (!resolution) failure = planningErrorDiagnostic(new Error(issue));
       } catch (error) {
+        if (isAuthoringGenerationStop(error)) generationStop = error;
         resolution = undefined;
         failure = planningErrorDiagnostic(error);
         retryable = error instanceof AskError && ["ASK_REQUIRED_TOOL_NOT_CALLED", "ASK_PROVIDER_RESPONSE_INVALID", "ASK_TOOL_ARGUMENTS_INVALID", "ASK_PROVIDER_RESPONSE_INCOMPLETE"].includes(error.code);
@@ -308,6 +312,7 @@ export async function planModelBoundaryJob(input: {
     diagnostic.duration_ms = Date.now() - started;
     await input.onDiagnostic?.(diagnostic);
   } finally { await gateway.close().catch(() => undefined); }
+  if (generationStop) throw generationStop;
   if (!resolution) throw new BoundaryJobPlanningError(diagnostic);
   const result = { ...resolution, correction_used: correctionUsed } as BoundaryJobPlan;
   const remembered = result.state === "clarification"

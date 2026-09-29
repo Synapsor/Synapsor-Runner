@@ -1,3 +1,5 @@
+import { localProviderRefusal } from "./test-fixtures/provider-refusal.js";
+import { AskError } from "./model-ask.js";
 import { expect, it } from "vitest";
 import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
 import { createModelAuthoringConversation } from "./model-authoring-conversation.js";
@@ -45,7 +47,7 @@ it.each(["short", "verbose", "two_questions", "provider_failure"])("keeps clarif
     session: { provider: "openai", model: "gpt-test", apiKey: "memory-key", conversation: createModelAuthoringConversation(),
       dependencies: { requestJson: async (request) => {
         body = JSON.stringify(request.body);
-        if (kind === "provider_failure") throw new Error("Provider unavailable");
+        if (kind === "provider_failure") return localProviderRefusal(request);
         return { status: 200, body: { output: [{ type: "message", role: "assistant", content: [{ type: "output_text", text: response }] }] } };
       } } }, egressAcknowledged: true, responseStyle: "clarification",
     operatorMessage: "Ask the missing business meaning only.",
@@ -54,4 +56,21 @@ it.each(["short", "verbose", "two_questions", "provider_failure"])("keeps clarif
   });
   expect(body).toContain("Ask exactly ONE short business question");
   expect(result).toBe(kind === "short" ? question : undefined);
+});
+
+it("propagates a transport inspection stop instead of silently continuing the producer",async()=>{
+  const failure=new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION","DERIVED interrupted response");let calls=0,diagnostic:unknown;
+  await expect(narrateValidatedAuthoringStep({session:{provider:"openai",model:"gpt-test",apiKey:"memory-key",conversation:createModelAuthoringConversation(),
+    dependencies:{requestJson:async()=>{calls++;throw failure;}}},egressAcknowledged:true,responseStyle:"inspection",operatorMessage:"Explain the saved draft.",
+    validatedFacts:["Saved work is pending; authority unchanged."],onFailure:d=>{diagnostic=d;}})).rejects.toBe(failure);
+  expect(calls).toBe(1);expect(diagnostic).toMatchObject({code:failure.code,retryable:false});
+});
+
+it("unknown provider failure stops narration instead of treating it as optional prose", async () => {
+  let calls = 0;
+  await expect(narrateValidatedAuthoringStep({ session: { provider: "openai", model: "gpt-test", apiKey: "memory-key", conversation: createModelAuthoringConversation(),
+    dependencies: { requestJson: async () => { calls++; throw new Error("Provider unavailable"); } } },
+    egressAcknowledged: true, operatorMessage: "Explain the current draft.", validatedFacts: ["Draft remains pending."],
+  })).rejects.toMatchObject({ code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION" });
+  expect(calls).toBe(1);
 });

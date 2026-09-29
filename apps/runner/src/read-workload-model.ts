@@ -1,3 +1,4 @@
+import { isAuthoringGenerationStop } from "./authoring-generation-recovery.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
@@ -26,7 +27,7 @@ import {
   type ModelAuthoringConversation,
 } from "./model-authoring-conversation.js";
 import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
-import { ReadWorkloadDraftError, safeReadWorkloadDiagnostic, type ReadWorkloadDiagnostic } from "./read-workload-diagnostics.js";
+import { ReadWorkloadDraftError, safeReadWorkloadDiagnostic, readWorkloadDiagnosticLines, type ReadWorkloadDiagnostic } from "./read-workload-diagnostics.js";
 import { activePolicySource, policySourceHistory } from "./authoring-policy-source.js";
 
 const SUBMIT_READ_WORKLOAD_TOOL = "runner.submit_read_workloads";
@@ -565,7 +566,7 @@ export async function generateModelReadWorkload(input: {
         },
       });
     } catch (error) {
-      if (isReadProviderFailure(error)) {
+      if (isReadProviderFailure(error) || isAuthoringGenerationStop(error)) {
         recordFailure(error.code === "ASK_REQUIRED_TOOL_NOT_CALLED" ? "required_tool"
           : ["ASK_PROVIDER_RESPONSE_INVALID", "ASK_TOOL_ARGUMENTS_INVALID"].includes(error.code)
             ? "provider_response" : "provider_request",
@@ -575,6 +576,14 @@ export async function generateModelReadWorkload(input: {
     }
   };
   const rethrowDiagnostic = (error: unknown): never => {
+    if (isAuthoringGenerationStop(error)) {
+      const safe = diagnostics.slice(0, 6).map(safeReadWorkloadDiagnostic);
+      // Keep the original validation history without converting a transport
+      // stop into ReadWorkloadDraftError (which offers another model attempt).
+      const stopped = new AskError(error.code, [error.message, ...readWorkloadDiagnosticLines(safe)].join("\n"), error.httpStatus);
+      Object.defineProperty(stopped, "diagnostics", { value: safe });
+      throw stopped;
+    }
     if (isReadProviderFailure(error) && diagnostics.length) throw new ReadWorkloadDraftError(diagnostics);
     throw error;
   };

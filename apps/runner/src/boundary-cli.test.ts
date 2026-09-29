@@ -3,6 +3,8 @@ import { startLocalUiServer } from "./local-ui.js";
 import { readActivationImpact, readActivationImpactLines } from "./read-activation-impact.js";
 import { createOptionalActionRuleRuntimeServices } from "./semantic-action-runtime.js";
 import crypto from "node:crypto";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -88,7 +90,7 @@ import {
 import { generateModelReadWorkload } from "./read-workload-model.js";
 import { ReadWorkloadDraftError } from "./read-workload-diagnostics.js";
 import { generateModelReadBoundaryRevision, readBoundaryRevisionCatalog } from "./read-boundary-revision-model.js";
-import { AskError } from "./model-ask.js";
+import { AskError, secureAskJsonRequest } from "./model-ask.js";
 import { reviewedModelAnalysisOperations } from "./read-field-privacy.js";
 import {
   generateModelActionSuggestionSet,
@@ -4860,7 +4862,7 @@ describe("boundary operator-plane CLI", () => {
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
 
-  it.each(["confirmed_noop", "cancelled_checkpoint", "declined", "save_failure"] as const)("persists host counter reviews through an unchanged atomic Action and public policy resume (%s)", async posture => {
+  it.each(["confirmed_noop", "cancelled_coverage", "cancelled_checkpoint", "declined", "save_failure"] as const)("persists host counter reviews through an unchanged atomic Action and public policy resume (%s)", async posture => {
     const outcome = "maintenance.complete_visit";
     const fixture = await staleSemanticRevalidationFixture({ atomicUpdates: true, outcomes: [outcome] });
     const { root, inspection } = fixture;
@@ -4919,6 +4921,7 @@ describe("boundary operator-plane CLI", () => {
             return posture === "declined" ? "pending" : "confirm";
           }
           if (title === "FINISH ATTACHED RULES REVIEW") return "pause";
+          if (title === "SETUP NEEDS ATTENTION" && posture === "cancelled_coverage") return "pause";
           throw new Error(`Unexpected counter-review menu: ${title}; ${JSON.stringify(options?.context)}; ${JSON.stringify(chats.flatMap(chat => vi.mocked(chat.rememberDetails).mock.calls))}`);
         }), confirmActivation: vi.fn(async () => false),
       };
@@ -4967,7 +4970,9 @@ describe("boundary operator-plane CLI", () => {
             .toMatchObject({ actual_values_returned: false, model_analysis: [], private_action_verification: true });
           const records = [effect.source_counter_maintenance, effect.atomic_updates[0].source_counter_maintenance];
           coverage.push({ records, saved: (await savedResume()).reviewed_version_fields ?? [], run: runNumber });
-          if (records.every(record => record !== null)) {
+          // Preserve the original interrupted-coverage schedule as a negative.
+          // The positive retains the same report and pauses after full handling.
+          if (posture === "cancelled_coverage" && records.every(record => record !== null)) {
             cancellation.abort();
             throw new AskError("ASK_CANCELLED", "Pause after inspecting exact current coverage evidence.", 499);
           }
@@ -5023,6 +5028,15 @@ describe("boundary operator-plane CLI", () => {
         expect(confirmationCount).toBe(2);
         expect(generator).not.toHaveBeenCalled();
         const resumed = coverage.filter(entry => entry.run === 2);
+        if (posture === "cancelled_coverage") {
+          expect(coverage).toHaveLength(1);
+          expect(resumed).toHaveLength(0);
+          expect((await savedResume()).generation_recovery?.operations).toEqual(paused.generation_recovery?.operations);
+          expect(paused.generation_recovery?.operations.some(operation => operation.state === "partial")).toBe(true);
+          expect((await savedResume()).reviewed_version_fields).toEqual(paused.reviewed_version_fields);
+          await assertUnchanged();
+          return;
+        }
         expect(resumed.length).toBeGreaterThan(0);
         for (const record of resumed.at(-1)!.records) expect(record).toMatchObject({ status: "owner_confirmed_operating_prerequisite",
           field: "c09", external_writers_verified: false, production_integration_verified: false });
@@ -7761,7 +7775,13 @@ describe("boundary operator-plane CLI", () => {
           expect(options.map((option) => option.value)).toContain("manual_editor");
           return "privacy";
         }
-        if (title === "SETUP NEEDS ATTENTION" && posture === "concurrent_action_read_rebind") return "pause";
+        if (title === "SETUP NEEDS ATTENTION" && (posture === "concurrent_action_read_rebind" || coverageFailure)) {
+          if (coverageFailure) {
+            expect(choiceOptions?.initialValue).toBe("pause");
+            expect(choiceOptions?.context?.join(" ")).toContain("No automatic generation or callback replay is permitted.");
+          }
+          return "pause";
+        }
         throw new Error(`Unexpected semantic Action choice: ${title}`);
       },
       confirm: async () => true,
@@ -7929,7 +7949,20 @@ describe("boundary operator-plane CLI", () => {
 
       if (posture === "cancel_action" || posture === "cancel_coverage") {
         expect(beforeCancellation).toBeDefined();
-        expect(await snapshot()).toEqual(beforeCancellation);
+        const after = await snapshot();
+        if (posture === "cancel_coverage") {
+          // The provider was entered before cancellation: preserve all business
+          // fields, plus the required transport uncertainty. Byte equality of
+          // the old inflight record would erase the new cancellation evidence.
+          const prior = JSON.parse(beforeCancellation!.resume), next = JSON.parse(after.resume);
+          expect(next.generation_recovery.operations).toHaveLength(prior.generation_recovery.operations.length);
+          const previousAttempt = prior.generation_recovery.operations.at(-1), cancelled = next.generation_recovery.operations.at(-1);
+          expect(previousAttempt.state).toBe("in_flight"); expect(cancelled.state).toBe("partial");
+          expect(cancelled).toEqual({...previousAttempt,state:"partial",attempts:previousAttempt.attempts.map((a:Record<string,unknown>,i:number)=>
+            i===previousAttempt.attempts.length-1?{...a,outcome:"C"}:a)});
+          expect({...next,updated_at:prior.updated_at,revision_digest:prior.revision_digest,generation_recovery:prior.generation_recovery}).toEqual(prior);
+          expect({...after,resume:beforeCancellation!.resume}).toEqual(beforeCancellation);
+        } else expect(after).toEqual(beforeCancellation);
         expect(semanticChat.streamCheckpoint).toHaveBeenLastCalledWith("Boundary conversation paused.",
           ["Existing authority is unchanged by interruption; saved steps are retained."], "warning");
         expect(semanticChat.close).toHaveBeenCalledOnce();
@@ -8012,10 +8045,12 @@ describe("boundary operator-plane CLI", () => {
           return;
         }
         if (coverageFailure) {
-          expect(sourceReviews.flat().join("\n")).toContain("REVIEW_DIAGNOSTIC_ONLY");
-          expect(sourceReviews.flat().join("\n")).toContain("Viewing this record makes no model request");
+          // The original opaque failure supplies no completed-response evidence.
+          // It stays pending/C, rather than opening a model retry/coverage menu.
           expect(coverageRequests).toHaveLength(1);
-          expect(rulesMenuVisits).toBe(2);
+          expect(rulesMenuVisits).toBe(0);
+          const recoveryState = JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
+          expect(recoveryState.generation_recovery.operations).toContainEqual(expect.objectContaining({ state: "partial" }));
           expect(await readActionRuleAuthorityDraft(root, "reviewed_staging_rules")).toBeDefined();
           await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
           return;
@@ -8416,6 +8451,11 @@ describe("boundary operator-plane CLI", () => {
               return "boundary";
             }
             if (title === "START BOUNDARY DRAFTING") return "resume";
+            if (title === "SETUP NEEDS ATTENTION" && (posture === "policy_target_explained_failure" || posture === "policy_target_counter_clarified_failure")) {
+              expect(options?.initialValue).toBe("pause");
+              expect(options?.context?.join(" ")).toContain("No automatic generation or callback replay is permitted.");
+              return "pause";
+            }
             if (title === "SETUP NEEDS ATTENTION" && posture === "policy_target_reconcile_concurrent") {
               expect(options?.context?.join(" ")).toContain("BOUNDARY_AUTHORING_RESUME_CHANGED");
               return "pause";
@@ -8587,7 +8627,19 @@ describe("boundary operator-plane CLI", () => {
               const body = JSON.stringify(request.body);
               expect(body).toContain("history_selector");
               for (const outcome of outcomes) expect(body).toContain(outcome);
-              if (phase === "fail") throw new Error("POLICY_TEST_PROVIDER_UNAVAILABLE");
+              if (phase === "fail") {
+                // This positive tests a completed provider refusal, not an
+                // unobserved/interrupted transport. Mint real phase evidence.
+                const server = createServer((_req, res) => { res.writeHead(401); res.end('{"error":"DERIVED authentication refusal"}'); });
+                await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+                try {
+                  return await secureAskJsonRequest({ ...request, headers: {}, scope: "custom_loopback",
+                    endpoint: new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/responses`) });
+                } finally {
+                  server.closeAllConnections();
+                  await new Promise<void>(resolve => server.close(() => resolve()));
+                }
+              }
               if (reconciliation) return { status: 200, body: { output: [{ type: "function_call", call_id: `later_${calls}`,
                 name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: [{ start: 1, end: 1,
                   disposition: "needs_decision", responsibility: "application", issue_kind: "missing_configuration",
@@ -8862,8 +8914,8 @@ describe("boundary operator-plane CLI", () => {
           expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
           if (posture === "policy_target_explained_failure" || posture === "policy_target_counter_clarified_failure") {
             expect(confirmAction).not.toHaveBeenCalled();
-            expect(chat.rememberDetails).toHaveBeenCalledWith("RULES COVERAGE UNAVAILABLE",
-              expect.arrayContaining([expect.stringContaining("REVIEW_DIAGNOSTIC_ONLY")]));
+            const recoveryState = JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
+            expect(recoveryState.generation_recovery.operations).toContainEqual(expect.objectContaining({ state: "partial" }));
           }
           const state = JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
           expect(state.conversation).toContainEqual(expect.objectContaining({ answer: clarifiedNoChange, kind: "clarification" }));
@@ -17270,5 +17322,58 @@ describe("saved post-edit review uses reader evidence after writer setup", () =>
         if (after.status === "ready") expect(after.value.completed_policy_reviews?.at(-1)?.activity).toBe("validated_reuse");
       }
     } finally { await fixture.dispose(); }
+  });
+});
+
+
+describe("public saved-job connection recovery control", () => {
+  it.each(["keep", "no", "yes", "off", "competing"] as const)("default-safe finite policy through Boundary command: %s", async mode => {
+    const f = await staleSemanticRevalidationFixture();
+    try {
+      const context = await loadBoundaryReviewContext(f.root);
+      const binding = {boundary_name: context.candidate.pack.name,
+        generation_lock_fingerprint: context.bundle.authority.generation_lock_fingerprint,
+        schema_fingerprint: context.lock.schema_fingerprint, role_posture_fingerprint: context.lock.role_posture_fingerprint};
+      const before = buildBoundaryAuthoringResumeState({binding, stage: "action_drafting", jobIntent: "Keep the exact existing job.",
+        provider: "openai", model: "gpt-test", action: {intent: "Keep the current work.", strategy: "rule_derived"}});
+      await writeBoundaryAuthoringResumeState(f.root, before);
+      const authority = await readActionRuleAuthorityDraft(f.root, "reviewed_staging_rules");
+      const generator = vi.fn(async () => {throw new Error("No model is permitted in recovery settings.");});
+      let confirmations=0;
+      f.session.chooseOption = async (title, options, config) => {
+        if (title === "START BOUNDARY DRAFTING") {
+          expect(options.some(x=>x.value === "transport_recovery")).toBe(true); return "transport_recovery";
+        }
+        if (title === "SAVED JOB CONNECTION RECOVERY") {
+          expect(config?.initialValue).toBe("keep");
+          return mode === "keep" ? undefined : mode === "off" ? "off" : "two";
+        }
+        if (mode === "competing" && title === "SETUP NEEDS ATTENTION") {
+          expect(JSON.stringify(config?.context)).toContain("BOUNDARY_AUTHORING_RESUME_CHANGED");
+          expect(config?.initialValue).toBe("pause"); return "pause";
+        }
+        throw new Error(`Unexpected menu ${title}`);
+      };
+      f.session.confirm = async (_question, config) => {
+        confirmations++;expect(config?.defaultValue).toBe(false);
+        if (mode === "competing") await writeBoundaryAuthoringResumeState(f.root,
+          buildBoundaryAuthoringResumeState({binding,stage:before.stage,jobIntent:before.job_intent,provider:"openai",model:"gpt-test",
+            previous:before,pendingJobRevision:"A competing explicit edit."}), {expectedRevisionDigest:before.revision_digest});
+        return mode !== "no";
+      };
+      await f.run(generator);
+      const after = await readBoundaryAuthoringResumeState(f.root,binding);
+      expect(after.status).toBe("ready");if(after.status !== "ready")throw new Error("Expected current resume");
+      if(mode === "yes" || mode === "off") {
+        expect(after.value.generation_recovery?.policy).toMatchObject({maximum_additional_attempts: mode === "yes" ? 2 : 0,
+          duplicate_generation_charges:mode === "yes",actor:"local_installation_operator",provider:"openai",model:"gpt-test"});
+        expect(after.value.job_intent).toBe(before.job_intent);expect(after.value.action).toEqual(before.action);
+      } else if(mode === "competing") {
+        expect(after.value.pending_job_revision).toBe("A competing explicit edit.");expect(after.value.generation_recovery).toBeUndefined();
+      } else expect(after.value).toEqual(before);
+      expect(confirmations).toBe(mode === "keep" ? 0 : 1);
+      expect(generator).not.toHaveBeenCalled();expect(f.planner).not.toHaveBeenCalled();
+      expect(await readActionRuleAuthorityDraft(f.root,"reviewed_staging_rules")).toEqual(authority);
+    } finally {await f.dispose();}
   });
 });

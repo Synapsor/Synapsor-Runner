@@ -1,3 +1,4 @@
+import { localProviderRefusal } from "./test-fixtures/provider-refusal.js";
 import { describe, expect, it, vi } from "vitest";
 import { BoundaryJobPlanningError, planningDiagnosticLines, type BoundaryJobPlanningDiagnostic } from "./boundary-job-diagnostics.js";
 import { AskError } from "./model-ask.js";
@@ -25,6 +26,14 @@ const reusableState: BoundaryJobCurrentState = {
 };
 
 describe("model Boundary job planning", () => {
+  it.each(["ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION","ASK_GENERATION_OUTCOME_UNKNOWN","ASK_GENERATION_NOT_SENT"])("preserves %s after planning diagnostics without a semantic retry",async code=>{
+    const failure=new AskError(code,"DERIVED transport stop"),requestJson=vi.fn(async()=>{throw failure;});
+    let diagnostic:BoundaryJobPlanningDiagnostic|undefined;
+    await expect(planModelBoundaryJob({session:{provider:"openai",model:"gpt-test",apiKey:"memory-key",dependencies:{requestJson}},
+      jobIntent:"Read my services.",currentState:reusableState,egressAcknowledged:true,onDiagnostic:d=>{diagnostic=d;}})).rejects.toBe(failure);
+    expect(requestJson).toHaveBeenCalledOnce();expect(diagnostic?.attempts).toHaveLength(1);expect(diagnostic?.attempts[0]?.code).toBe(code);
+  });
+
   it.each(["claude-code", "cursor", "vscode", "later", undefined])("carries an already selected client as a bounded setup preference (%s)", async intendedClient => {
     const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "plan",
       name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", read_mode: "reuse", action_mode: "none",
@@ -266,12 +275,12 @@ describe("model Boundary job planning", () => {
   });
 
   it("retains a provider failure category without retrying a rejected credential", async () => {
-    const requestJson = vi.fn(async () => { throw new AskError("ASK_PROVIDER_AUTH_FAILED", "Provider authentication failed.", 401); });
+    const requestJson = vi.fn(localProviderRefusal);
     let diagnostic: BoundaryJobPlanningDiagnostic | undefined;
     await expect(planModelBoundaryJob({ session: { provider: "openai", model: "gpt-test", apiKey: "memory-key", dependencies: { requestJson } },
       jobIntent: "Read my services.", currentState: reusableState, egressAcknowledged: true,
       onDiagnostic: (value) => { diagnostic = value; } })).rejects.toBeInstanceOf(BoundaryJobPlanningError);
-    expect(diagnostic?.attempts[0]).toMatchObject({ category: "provider_request", code: "ASK_PROVIDER_AUTH_FAILED" });
+    expect(diagnostic?.attempts[0]).toMatchObject({ category: "provider_request", code: "ASK_PROVIDER_AUTHENTICATION_FAILED" });
     expect(requestJson).toHaveBeenCalledOnce();
   });
 

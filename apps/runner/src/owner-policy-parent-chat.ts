@@ -1,3 +1,4 @@
+import { isAuthoringGenerationStop } from "./authoring-generation-recovery.js";
 import type { PolicyManagementParent, RuntimeConfig } from "@synapsor-runner/mcp-server";
 import { createBoundaryAuthoringChat, type BoundaryAuthoringChat } from "./boundary-authoring-chat.js";
 import { promptBoundaryMappingModel } from "./boundary-commands.js";
@@ -74,6 +75,7 @@ export async function runOperatorParentChat(input: Input, dependencies: {
         session: model, operatorMessage: message, currentParent: current, activeParent: context.current, identityBindings: identities,
         catalog, compiledRules: context.rules, egressAcknowledged: true, env: input.env,
       })).catch((error: unknown) => {
+        if (isAuthoringGenerationStop(error)) throw error;
         const raw = (error as { code?: unknown })?.code;
         const code = typeof raw === "string" && /^[A-Z_]{1,100}$/u.test(raw) ? raw : "PARENT_DRAFT_UNAVAILABLE";
         chat.rememberDetails("Delegation draft not saved", [code, "Current active authority and source data are unchanged."]);
