@@ -51,25 +51,37 @@ export class SourceInputFidelityError extends Error {
   readonly code='SOURCE_INPUT_CONSTRAINT_WEAKER';readonly path='draft.inputs';
   constructor(readonly findings:InputFidelityFinding[]){super(`${findings[0]?.code??'SOURCE_INPUT_REQUIREMENT_PENDING'}: ${JSON.stringify(findings)}`);}
 }
-/** Deliberately finite implication: conjunctive != empty and exact nonempty
- * equality/in-list. An OR only proves what every branch proves. No arbitrary
- * predicate solver, field-name inference or policy-text parsing. */
-function excludesEmpty(e:ActionRuleBooleanExpressionV1,input:string):boolean {
-  if(e.kind==='all')return e.expressions.some(x=>excludesEmpty(x,input));
-  if(e.kind==='any')return e.expressions.length>0&&e.expressions.every(x=>excludesEmpty(x,input));
-  if(e.kind==='compare'){
-    const pair=e.left.kind==='input'&&e.left.name===input?[e.left,e.right]:e.right.kind==='input'&&e.right.name===input?[e.right,e.left]:undefined;
-    return !!pair&&pair[1]!.kind==='literal'&&typeof pair[1]!.value==='string'
-      &&(e.operator==='neq'&&pair[1]!.value===''||e.operator==='eq'&&pair[1]!.value!=='');
+/** Finite length implication only, applied after real compilation. Unknown
+ * expressions supply no evidence; this is not arbitrary predicate equivalence. */
+function predicateInterval(e:ActionRuleBooleanExpressionV1,input:string):{min:number;max:number;proved:boolean} {
+ const unknown={min:0,max:Infinity,proved:false};
+ if(e.kind==='all'||e.kind==='any'){
+  if(!e.expressions.length)return unknown;
+  const p=e.expressions.map(x=>predicateInterval(x,input));
+  return e.kind==='all'?{min:Math.max(...p.map(x=>x.min)),max:Math.min(...p.map(x=>x.max)),proved:p.some(x=>x.proved)}
+    :{min:Math.min(...p.map(x=>x.min)),max:Math.max(...p.map(x=>x.max)),proved:p.every(x=>x.proved)};
+ }
+ if(e.kind==='compare'){
+  const literal=e.left.kind==='input'&&e.left.name===input?e.right:e.right.kind==='input'&&e.right.name===input?e.left:undefined;
+  if(literal?.kind==='literal'&&typeof literal.value==='string'){
+   if(e.operator==='eq')return {min:literal.value.length,max:literal.value.length,proved:true};
+   if(e.operator==='neq'&&literal.value==='')return {min:1,max:Infinity,proved:true};
   }
-  return false;
+ }
+ if(e.kind==='not'&&e.expression.kind==='compare'&&e.expression.operator==='eq')return predicateInterval({...e.expression,operator:'neq'},input);
+ if(e.kind==='in'&&e.value.kind==='input'&&e.value.name===input&&e.values.length&&e.values.every(v=>v.kind==='literal'&&typeof v.value==='string')){
+  const lengths=e.values.map(v=>(v as {value:string}).value.length);return {min:Math.min(...lengths),max:Math.max(...lengths),proved:true};
+ }
+ return unknown;
 }
+function excludesEmpty(e:ActionRuleBooleanExpressionV1,input:string):boolean{return predicateInterval(e,input).min>=1;}
 export function establishedInputInterval(def:ActionRuleInputSpecV1,require:ActionRuleBooleanExpressionV1){
-  if(def.type.kind!=='string')return undefined;
-  let min=def.type.min_length??0,max=def.type.max_length,enforcement='typed_bounds';
-  if(def.type.enum?.length){min=Math.max(min,Math.min(...def.type.enum.map(s=>s.length)));max=Math.min(max,Math.max(...def.type.enum.map(s=>s.length)));enforcement='typed_bounds_and_enum';}
-  if(min<1&&excludesEmpty(require,def.name)){min=1;enforcement+=' and conjunctive_nonempty_predicate';}
-  return {min_length:min,max_length:max,enforcement};
+ if(def.type.kind!=='string')return undefined;
+ let min=def.type.min_length??0,max=def.type.max_length,enforcement='typed_bounds';
+ if(def.type.enum?.length){min=Math.max(min,Math.min(...def.type.enum.map(s=>s.length)));max=Math.min(max,Math.max(...def.type.enum.map(s=>s.length)));enforcement='typed_bounds_and_enum';}
+ const predicate=predicateInterval(require,def.name);
+ if(predicate.proved){min=Math.max(min,predicate.min);max=Math.min(max,predicate.max);enforcement+=' and finite_input_predicate';}
+ return {min_length:min,max_length:max,enforcement};
 }
 export function sourceInputFidelity(source:PolicyTextSnapshot,session:Pick<PolicySourceSession,'id'|'input_policy_reviews'>,store:string,
   actions:Array<{outcome:string;inputs?:ActionRuleInputSpecV1[];require:ActionRuleBooleanExpressionV1}>):{findings:InputFidelityFinding[];digest:string;review_digests:string[]} {
