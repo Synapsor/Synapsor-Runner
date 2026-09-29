@@ -2,7 +2,7 @@ import { AsyncLocalStorage } from "node:async_hooks";
 import { randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { AskError, authoringTransportObservation, completedProviderContentError, type ProviderHttpInput, type ProviderHttpResult, type AuthoringTransportObservation } from "./model-ask.js";
+import { AskError, authoringTransportObservation, completedProviderContentError, type ProviderHttpInput, type ProviderHttpResult, type AuthoringTransportObservation } from "./model-provider-transport.js";
 
 export type AuthoringTransportOperation = {
   id: string;

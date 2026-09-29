@@ -1,3 +1,7 @@
+import { AskError, completedContentError, completedProviderContentError, recordAuthoringTransportObservation,
+  type AuthoringTransportObservation, type ProviderHttpInput, type ProviderHttpResult, type AskProviderStreamEvent } from "./model-provider-transport.js";
+export { AskError, completedContentError, completedProviderContentError, authoringTransportObservation,
+  type AuthoringTransportObservation, type ProviderHttpInput, type ProviderHttpResult, type AskProviderStreamEvent } from "./model-provider-transport.js";
 import crypto from "node:crypto";
 import dns from "node:dns/promises";
 import http, { type IncomingMessage } from "node:http";
@@ -250,34 +254,6 @@ type ProviderHistoryEntry = {
 
 const providerHistoryByResult = new WeakMap<AskTurnResult, string>();
 
-export type ProviderHttpInput = {
-  endpoint: URL;
-  scope: AskProviderPublicConfiguration["endpoint_scope"];
-  headers: Record<string, string>;
-  body: Record<string, unknown>;
-  signal: AbortSignal;
-  timeoutMs?: number;
-  /** Trusted optional numerical observer; never included in provider input. */
-  contextMeasurement?: { meter: TaskContextMeter; onProfile: (profile: TaskContextProfile) => void };
-  stream?: {
-    format: "openai_responses" | "openai_chat" | "anthropic";
-    onEvent?: (event: AskProviderStreamEvent) => void;
-  };
-};
-
-export type ProviderHttpResult = {
-  body: Record<string, unknown>;
-  status: number;
-};
-
-export type AskProviderStreamEvent = {
-  phase: "started" | "text_delta" | "tool_started" | "tool_delta" | "completed";
-  characters?: number;
-  tool?: string;
-  text?: string;
-  operator_text?: boolean;
-};
-
 export type AskProviderDependencies = {
   /** Trusted caller lifetime, independent of each provider turn's own signal. */
   signal?: AbortSignal;
@@ -291,17 +267,6 @@ export type AskProviderDependencies = {
   /** Reuse one meter across a measured journey; no raw prompt/response is emitted. */
   contextMeasurement?: { meter?: TaskContextMeter; onProfile: (profile: TaskContextProfile) => void };
 };
-
-export class AskError extends Error {
-  constructor(
-    public readonly code: string,
-    message: string,
-    public readonly httpStatus = 400,
-  ) {
-    super(message);
-    this.name = "AskError";
-  }
-}
 
 export class WorkbenchAskSession {
   #configuration?: ResolvedAskProviderConfiguration;
@@ -741,28 +706,6 @@ export async function runAskProviderTurn(input: {
   return result;
 }
 
-/** Minted only at the owning HTTP boundary, never inferred from error prose. */
-export type AuthoringTransportObservation = {
-  classification: "A" | "B" | "C";
-  transient: boolean;
-  phase: "resolution" | "connection" | "request" | "headers" | "response";
-  headers_received: boolean;
-  request_finished: boolean;
-  cleanup_complete: boolean;
-  code?: string;
-};
-const transportObservations = new WeakMap<object, AuthoringTransportObservation>();
-const completedProviderContentErrors = new WeakSet<object>();
-export function completedProviderContentError(error: unknown): boolean {
-  return Boolean(error && typeof error === "object" && completedProviderContentErrors.has(error));
-}
-/** Internal adapters may mark only an error derived from a fully returned response. */
-export function completedContentError(error: AskError): AskError {
-  completedProviderContentErrors.add(error); return error;
-}
-export function authoringTransportObservation(error: unknown): AuthoringTransportObservation | undefined {
-  return error && typeof error === "object" ? transportObservations.get(error) : undefined;
-}
 const transientTransportCodes = new Set(["ECONNRESET", "ECONNREFUSED", "EAI_AGAIN", "ETIMEDOUT", "EPIPE"]);
 const safeTransportCode = (error: unknown): string | undefined => {
   const code = error && typeof error === "object" ? (error as {code?: unknown}).code : undefined;
@@ -826,8 +769,8 @@ export async function secureAskJsonRequest(input: ProviderHttpInput): Promise<Pr
       };
       const closed = () => {
         observation.cleanup_complete = true;
-        if (completedProviderContentError(error)) completedProviderContentErrors.add(safe);
-        else transportObservations.set(safe, observation);
+        if (completedProviderContentError(error)) completedContentError(safe);
+        else recordAuthoringTransportObservation(safe, observation);
         reject(safe);
       };
       if (request.closed) closed();
@@ -4901,7 +4844,7 @@ async function resolveAskDestination(
     } catch (cause) {
       const error = new AskError("ASK_PROVIDER_DNS_FAILED", "The provider hostname could not be resolved.", 502);
       const code = safeTransportCode(cause);
-      transportObservations.set(error, {classification: "A", transient: code === "EAI_AGAIN", phase: "resolution",
+      recordAuthoringTransportObservation(error, {classification: "A", transient: code === "EAI_AGAIN", phase: "resolution",
         headers_received: false, request_finished: false, cleanup_complete: true, ...(code ? {code} : {})});
       throw error;
     }
