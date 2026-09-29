@@ -450,14 +450,21 @@ describe("conversational Action authoring tools", () => {
       const answer = "One billing reviewer reviews these otherwise valid requests.";
       const requestJson = vi.fn(async () => say(question));
       let durable: ActionRuleAuthoringCheckpoint | undefined;
-      await expect(converseActionRuleDraft({ ...requestInput(requestJson),
+      const conversation = { turns: [] as import("./model-ask.js").AskHistoryTurn[] };
+      let committedTurns: typeof conversation.turns = [];
+      const input = requestInput(requestJson);
+      await expect(converseActionRuleDraft({ ...input, session: { ...input.session, conversation },
         onCheckpoint: async value => {
           if (value.operator_messages?.length) throw new Error("DERIVED_ANSWER_SAVE_FAILED");
           durable = structuredClone(value);
+          committedTurns = structuredClone(conversation.turns);
         }, askClarification: async () => answer,
       })).rejects.toThrow("DERIVED_ANSWER_SAVE_FAILED");
       expect(requestJson).toHaveBeenCalledOnce();
       expect(durable?.operator_messages ?? []).toEqual([]);
+      expect(durable?.pending_question?.question).toBe(question);
+      expect(committedTurns).toHaveLength(1);
+      expect(conversation.turns).toEqual(committedTurns);
     });
   });
 

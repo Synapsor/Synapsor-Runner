@@ -742,6 +742,9 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     const answer = await input.askClarification(pending.question);
     if (answer === undefined) throw new Error("ACTION_RULE_MODEL_DRAFT_CANCELLED");
     if (input.signal?.aborted) throw new AskError("ASK_CANCELLED", "The saved question remains unanswered.", 499);
+    const previousOperatorMessage = operatorMessage;
+    const previousOperatorMessages = operatorMessages;
+    const previousTurns = input.session.conversation ? structuredClone(input.session.conversation.turns) : undefined;
     operatorMessage = answer.trim();
     if (operatorMessage) {
       operatorMessages = [...operatorMessages, boundedText(operatorMessage, "Business answer", 4_000)].slice(-16);
@@ -752,7 +755,14 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       return;
     }
     pendingQuestion = undefined;
-    await saveCheckpoint();
+    try { await saveCheckpoint(); }
+    catch (error) {
+      pendingQuestion = pending;
+      operatorMessage = previousOperatorMessage;
+      operatorMessages = previousOperatorMessages;
+      if (previousTurns && input.session.conversation) input.session.conversation.turns.splice(0, input.session.conversation.turns.length, ...previousTurns);
+      throw error;
+    }
     clarificationCount += 1;
   };
   if (pendingQuestion) {

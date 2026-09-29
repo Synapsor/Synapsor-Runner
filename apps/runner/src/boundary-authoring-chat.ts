@@ -53,7 +53,7 @@ export type BoundaryAuthoringChat = {
   streamRunner(title: string, lines?: string[], tone?: BoundaryAuthoringTone): Promise<void>;
   streamCheckpoint(title: string, lines?: string[], tone?: BoundaryAuthoringTone): Promise<void>;
   streamModel(lines: string[]): Promise<void>;
-  readOperator?(defaultValue?: string): Promise<string | undefined>;
+  readOperator?(defaultValue?: string, assertAnswerCurrent?: () => Promise<void>): Promise<string | undefined>;
   rememberDetails(title: string, lines: string[]): void;
   showDetails(): void;
   providerStream(event: AskProviderStreamEvent): void;
@@ -879,7 +879,7 @@ export function createBoundaryAuthoringChat(input: {
   let sourceCommandHandler: ((command: string, argument: string) => Promise<boolean | "reviewed">) | undefined;
   let sourceHasDraft: (() => boolean) | undefined;
   let sourceAnswerRecorder: ((answer: string) => Promise<void>) | undefined;
-  const readAnswer = async (defaultValue?: string, recordPolicyAnswer = true) => {
+  const readAnswer = async (defaultValue?: string, recordPolicyAnswer = true, assertAnswerCurrent?: () => Promise<void>) => {
     finishLiveResponse();
     await livePending;
     io.clearStatus?.();
@@ -956,6 +956,9 @@ export function createBoundaryAuthoringChat(input: {
         restorePendingQuestion();
         continue;
       }
+      // Validate the displayed question before recording an answer as source meaning.
+      // Cancellation and blank input are not answers. No lock spans human input.
+      if (answer?.trim()) await assertAnswerCurrent?.();
       pendingConversationQuestion = undefined;
       if (answer?.trim() && sourceAnswerRecorder && (recordPolicyAnswer || sourceChanged)) {
         try { await sourceAnswerRecorder(answer); }
@@ -1372,7 +1375,7 @@ export function createBoundaryAuthoringChat(input: {
     streamRunner,
     streamCheckpoint,
     streamModel,
-    readOperator: readAnswer,
+    readOperator: (defaultValue, assertAnswerCurrent) => readAnswer(defaultValue, true, assertAnswerCurrent),
     rememberDetails,
     showDetails,
     providerStream: (event) => {

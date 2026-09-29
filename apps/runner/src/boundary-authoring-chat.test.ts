@@ -282,6 +282,31 @@ describe("Boundary authoring chat", () => {
       expect(guide).not.toHaveBeenCalled();
     } finally { chat.close(); readable.destroy(); writable.destroy(); terminal.dispose(); }
   });
+  it.each([false, true])("B33 checks answer applicability before source recording (stale=%s)", async stale => {
+    const memory = memoryIo({ reads: ["Existing reviewer"] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    const order: string[] = [];
+    chat.setSourceAnswerRecorder!(async () => { order.push("record"); });
+    const check = async () => { order.push("check"); if (stale) throw new Error("ACTION_AUTHORING_QUESTION_STALE"); };
+    try {
+      // The installed chat must enforce this before its policy-source recorder.
+      const result = chat.readOperator!(undefined, check);
+      if (stale) await expect(result).rejects.toThrow("ACTION_AUTHORING_QUESTION_STALE");
+      else await expect(result).resolves.toBe("Existing reviewer");
+      expect(order).toEqual(stale ? ["check"] : ["check", "record"]);
+    } finally { chat.close(); }
+  });
+
+  it.each([undefined, "", "   "])("B33 does not validate or record unanswered input %s", async answer => {
+    const memory = memoryIo({ reads: [answer] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    const check = vi.fn(async () => { throw new Error("not an answer"); });
+    const record = vi.fn(async () => undefined);
+    chat.setSourceAnswerRecorder!(record);
+    try { await chat.readOperator!(undefined, check); expect(check).not.toHaveBeenCalled(); expect(record).not.toHaveBeenCalled(); }
+    finally { chat.close(); }
+  });
+
   it("renders exact Action facts once and leaves explanation optional", async () => {
     const memory = memoryIo({ choices: ["no"] });
     const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });

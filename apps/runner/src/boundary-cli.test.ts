@@ -5686,6 +5686,54 @@ describe("boundary operator-plane CLI", () => {
     } finally {await fixture.dispose();}
   },30_000);
 
+  it.each(["schema", "role", "unchanged"] as const)("B33 checks live %s after a visible owner question before answering", async drift => {
+    const fixture = await staleSemanticRevalidationFixture();
+    const question = "Which maintenance role reviews otherwise valid follow-ups?";
+    const answer = "The existing maintenance reviewer.";
+    let sends = 0;
+    let atPrompt: any;
+    try {
+      await fixture.writeResume(["maintenance.complete_visit", "maintenance.close_visit"], ["Keep first rule.", "Keep second rule.", "Prepare follow-ups with owner-reviewed approval."]);
+      fixture.session.promptText = async text => {
+        expect(text).toBe(question);
+        atPrompt = JSON.parse(await fs.readFile(path.join(fixture.root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
+        if (drift === "schema") fixture.inspection.tables[0]!.columns.push({
+          ...structuredClone(fixture.inspection.tables[0]!.columns[0]!), name: "question_drift_marker", ordinal_position: 999,
+        });
+        if (drift === "role") fixture.inspection.tables[0]!.row_level_security_policies!.push({
+          name: "question_drift_policy", command: "SELECT", permissive: true, roles: ["new_reader"], using_expression: "true",
+        });
+        return answer;
+      };
+      const generator = async (input: Parameters<typeof generateModelActionRuleDraft>[0]) => generateModelActionRuleDraft({ ...input,
+        session: { ...input.session, dependencies: { requestJson: async () => {
+          sends++;
+          if (sends > 1) {
+            const saved = JSON.parse(await fs.readFile(path.join(fixture.root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
+            expect(saved.action.checkpoint.pending_question).toBeUndefined();
+            expect(saved.action.checkpoint.operator_messages).toContain(answer);
+            throw new Error("DERIVED stop after observing saved answer");
+          }
+          return { status: 200, body: { status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: question }] }] } };
+        } } },
+      });
+      const choose = fixture.session.chooseOption!;
+      fixture.session.chooseOption = async (title, options, config) => title === "SETUP NEEDS ATTENTION" ? "pause" : choose(title, options, config);
+      await fixture.run(generator).catch(error => {
+        expect(String(error)).toMatch(/QUESTION_STALE|DERIVED stop|OUTCOME_REQUIRES_INSPECTION/);
+      });
+      const saved = JSON.parse(await fs.readFile(path.join(fixture.root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
+      if (drift === "unchanged") expect(sends).toBe(2);
+      else {
+        expect(sends).toBe(1);
+        expect(saved.action.checkpoint).toEqual(atPrompt.action.checkpoint);
+        expect(saved.generation_recovery).toEqual(atPrompt.generation_recovery);
+        expect(saved.conversation).toEqual(atPrompt.conversation);
+      }
+      await fixture.expectRetained(["maintenance.complete_visit", "maintenance.close_visit"]);
+    } finally { await fixture.dispose(); }
+  }, 30_000);
+
   it.each(["handled","unknown"] as const)("B33 revalidation cannot renew old %s generation history",async disposition=>{
     const fixture=await staleSemanticRevalidationFixture();
     try {

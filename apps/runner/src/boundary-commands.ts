@@ -6897,6 +6897,17 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             baseline_digest: canonicalJsonDigest(semanticActionRevisionBaseline!),
             ...(pendingActionRevision.operator_statements ? { operator_statements: pendingActionRevision.operator_statements } : {}) } }
           : { intent: semanticIntent, outcome: semanticActionRevisionBaseline?.outcome };
+        // Keep scalar fingerprints: an inspector/test seam may reuse a mutable
+        // object. These bind the question to the live metadata used to prepare it.
+        const questionSourceSchema = schemaFingerprintForInspection(actionInspection!);
+        const questionSourceRole = rolePostureFingerprint(actionInspection!);
+        const assertQuestionSourceCurrent = async () => {
+          const fresh = await (input.actionProjectInspector ?? inspectActionProject)(input.projectRoot, process.env);
+          if (schemaFingerprintForInspection(fresh) !== questionSourceSchema
+            || rolePostureFingerprint(fresh) !== questionSourceRole) {
+            throw new Error("ACTION_AUTHORING_QUESTION_STALE: Source structure or access changed while answering. The saved question remains pending; review the current context before continuing.");
+          }
+        };
         while (!semanticActionModelResult) {
           let failure: BoundaryModelDraftFailure | undefined;
           try {
@@ -6945,6 +6956,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
                 onCheckpoint: async (checkpoint) => withProjectAuthorityMutation(input.projectRoot, async permit => {
                   assertRunning();
                   await assertAuthoringResumeCurrent(actionFreshness, true, permit);
+                  const priorQuestion = (preserveProgramRevisionAgenda ? pendingActionRevision?.checkpoint : resumeAction?.checkpoint)?.pending_question;
+                  if (checkpoint.pending_question || priorQuestion) await assertQuestionSourceCurrent();
                   if (authoringConversation?.policySources?.snapshots.length && await policySourceSavedDigest(input.projectRoot, authoringConversation.policySources.id)
                     !== canonicalJsonDigest(authoringConversation.policySources)) throw new PolicySourceChangedError();
                   const previousAction = resumeAction, previousRevision = pendingActionRevision, previousRecovery = generationRecovery;
@@ -7092,6 +7105,16 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
                   await assertAuthoringResumeCurrent(actionFreshness);
                   if (authoringConversation?.policySources?.snapshots.length && await policySourceSavedDigest(input.projectRoot, authoringConversation.policySources.id)
                     !== canonicalJsonDigest(authoringConversation.policySources)) throw new PolicySourceChangedError();
+                  const displayedPolicyDigest = authoringConversation?.policySources
+                    ? canonicalJsonDigest(authoringConversation.policySources) : undefined;
+                  const assertAnswerCurrent = async () => {
+                    await assertAuthoringResumeCurrent(actionFreshness);
+                    await assertQuestionSourceCurrent();
+                    if ((authoringConversation?.policySources ? canonicalJsonDigest(authoringConversation.policySources) : undefined) !== displayedPolicyDigest
+                      || (authoringConversation?.policySources?.snapshots.length && await policySourceSavedDigest(input.projectRoot, authoringConversation.policySources.id) !== displayedPolicyDigest)) {
+                      throw new PolicySourceChangedError();
+                    }
+                  };
                   // This is the authoring model's own turn. Follow-up questions
                   // return to the same tool-enabled conversation, not a narrator.
                   let answer: string | undefined;
@@ -7099,9 +7122,10 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
                     "This question has not changed a saved draft. The model can prepare supported metadata relationships itself; source rows are not available here."]);
                   if (input.authoringChat?.readOperator) {
                     await input.authoringChat.streamModel(question.split(/\r?\n/u));
-                    answer = await input.authoringChat.readOperator();
+                    answer = await input.authoringChat.readOperator(undefined, assertAnswerCurrent);
                   } else {
                     answer = await input.session.promptText(question, { context: ["MODEL QUESTION"] });
+                    if (answer?.trim()) await assertAnswerCurrent();
                   }
                   return answer;
                 },
