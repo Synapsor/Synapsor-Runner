@@ -1,3 +1,4 @@
+import { actionRuleStringMatches, actionRuleStringMinimumValid } from "@synapsor/spec";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type {
   ActionRuleBooleanExpressionV1,
@@ -101,6 +102,7 @@ function compatibleTypes(left: ActionRuleScalarTypeSpecV1, right: ActionRuleScal
 function exactTypes(left: ActionRuleScalarTypeSpecV1, right: ActionRuleScalarTypeSpecV1): boolean {
   if (!compatibleTypes(left, right)) return false;
   if (left.kind !== "string" || right.kind !== "string") return true;
+  if ((left.min_length ?? 0) !== (right.min_length ?? 0)) return false;
   if (left.max_length !== right.max_length) return false;
   return JSON.stringify([...(left.enum ?? [])].sort()) === JSON.stringify([...(right.enum ?? [])].sort());
 }
@@ -125,7 +127,7 @@ function assertLiteralMatchesType(expression: Extract<ActionRuleScalarExpression
   if (type.kind === "boolean" && typeof value !== "boolean") fail("ACTION_RULE_TYPE_MISMATCH", `${path} is not boolean.`, path);
   if ((type.kind === "integer" || type.kind === "money_minor") && !Number.isSafeInteger(value)) fail("ACTION_RULE_TYPE_MISMATCH", `${path} must be a safe integer.`, path);
   if (type.kind === "string") {
-    if (typeof value !== "string" || value.length > type.max_length) fail("ACTION_RULE_TYPE_MISMATCH", `${path} is not a bounded string.`, path);
+    if (!actionRuleStringMatches(value,type)) fail("ACTION_RULE_TYPE_MISMATCH", `${path} is not a bounded string.`, path);
     if (type.enum !== undefined && !type.enum.includes(value)) fail("ACTION_RULE_TYPE_MISMATCH", `${path} is outside its reviewed enum.`, path);
   }
   if (type.kind === "date" && (typeof value !== "string" || !isCanonicalDate(value))) fail("ACTION_RULE_TYPE_MISMATCH", `${path} must be a real ISO calendar date.`, path);

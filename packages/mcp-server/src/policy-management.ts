@@ -1,3 +1,4 @@
+import { actionRuleStringMatches } from "@synapsor/spec";
 import { randomBytes, randomUUID } from "node:crypto";
 import type { CompiledActionRuleV1 } from "@synapsor-runner/action-rules";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -171,7 +172,7 @@ export function createPolicyManagementService(options: {
         if (values?.some((value) => typeof value !== "number" || !Number.isSafeInteger(value))) throw new PolicyManagementError("POLICY_DELEGATION_PARENT_CHANGED");
         return { ...base, ...(fact.literal_range ? { literal_range: { ...fact.literal_range } } : {}), ...literalValues };
       case "string": {
-        if (fact.literal_range || values?.some((value) => typeof value !== "string" || value.length > type.max_length || (type.enum && !type.enum.includes(value)))) {
+        if (fact.literal_range || values?.some((value) => !actionRuleStringMatches(value,type))) {
           throw new PolicyManagementError("POLICY_DELEGATION_PARENT_CHANGED");
         }
         const allowed = type.enum ? type.enum.filter((value) => !values || values.includes(value)) : values;

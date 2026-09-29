@@ -1,3 +1,4 @@
+import { actionRuleStringMatches, actionRuleStringMinimumValid } from "@synapsor/spec";
 import { canonicalJsonDigest, canonicalJsonStringify } from "@synapsor-runner/protocol";
 import type {
   ActionRuleBooleanExpressionV1,
@@ -120,7 +121,7 @@ function scalarMatchesType(value: JsonScalar, type: ActionRuleScalarTypeSpecV1, 
     case "boolean": return typeof value === "boolean";
     case "integer":
     case "money_minor": return Number.isSafeInteger(value);
-    case "string": return typeof value === "string" && value.length <= type.max_length && (type.enum === undefined || type.enum.includes(value));
+    case "string": return actionRuleStringMatches(value,type);
     case "date": return typeof value === "string" && isCanonicalDate(value);
     case "timestamp": return typeof value === "string" && isCanonicalTimestamp(value);
   }

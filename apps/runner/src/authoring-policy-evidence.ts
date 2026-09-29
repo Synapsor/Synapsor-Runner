@@ -314,6 +314,7 @@ export function policyCoverageDraft(input: {
         read_digest: readDigest, store_digest: input.reviewStoreDigest ?? input.countingDomain?.store_binding_digest ?? null,
         reviews: input.policySources?.scoped_disclosure_reviews ?? [],
       }} : {}),
+      ...(input.policySources?.input_policy_reviews?.length ? {input_policy_requirement:{source_session:input.policySources.id,store_digest:input.transactionStoreDigest ?? input.countingDomain?.store_binding_digest ?? null,reviews:input.policySources.input_policy_reviews}} : {}),
       ...(input.policySources ? {source_transaction_requirement: sourceTransactionPreparedContext(input.policySources,
         input.transactionStoreDigest ?? input.countingDomain?.store_binding_digest ?? null,policySource?.digest)} : {}),
       ...(sourceConstraints ? { source_constraints: sourceConstraints } : {}),

@@ -160,6 +160,7 @@ export async function ensurePreparedPolicyCoverage(input: {
   const key = canonicalJsonDigest({ source: source.digest, draft: draftRecord, messages: sources.operator_messages ?? [],
     clarifications: input.clarifications, interpretations: sources.read_interpretations ?? [],
     source_transaction_scope_reviews:sources.source_transaction_scope_reviews?.map(record=>record.digest)??[],
+    ...(sources.input_policy_reviews?.length?{input_policy_reviews:sources.input_policy_reviews.map(record=>record.digest)}:{}),
     ...(lineage ? {retained_duty_lineage:canonicalJsonDigest(lineage)} : {}) });
   let reused: PolicyCoverage | undefined;
   if (!input.force && (state.attemptKey === key && state.report?.key === key

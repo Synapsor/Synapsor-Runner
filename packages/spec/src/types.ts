@@ -121,7 +121,7 @@ export type ActionRuleScalarTypeSpecV1 = ExtensionFields & (
   | { kind: "boolean" }
   | { kind: "integer"; unit?: string }
   | { kind: "money_minor"; currency: string }
-  | { kind: "string"; max_length: number; enum?: string[]; comparison: "exact" }
+  | { kind: "string"; max_length: number; min_length?: number; enum?: string[]; comparison: "exact" }
   | { kind: "date" }
   | { kind: "timestamp" }
 );

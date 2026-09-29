@@ -1,3 +1,4 @@
+import { actionRuleStringMinimumValid, actionRuleStringMatches, type ActionRuleTextBounds } from "./action-rule-string.js";
 import { SPEC_VERSION } from "./version.js";
 import type { CapabilitySpec, JsonScalar, ProposalActionSpec, SynapsorContract, ValidationIssue, ValidationResult } from "./types.js";
 import { SynapsorSpecValidationError } from "./errors.js";
@@ -169,14 +170,14 @@ const EFFECT_WRITEBACK_KEYS = new Set(["mode", "supervised_worker"]);
 const ACTION_RULE_KEYS = new Set(["schema_version", "name", "outcome", "context", "source", "verification_boundary_ref", "effect_envelope_ref", "subjects", "inputs", "require", "derive", "effect", "atomic_updates", "approval_class", "ttl_seconds"]);
 const ACTION_RULE_SUBJECT_KEYS = new Set(["binding", "resource", "input"]);
 const ACTION_RULE_EFFECT_KEYS = new Set(["operation", "target_resource", "target_binding", "set"]);
-const ACTION_RULE_SCALAR_TYPE_KEYS = new Set(["kind", "unit", "currency", "max_length", "enum", "comparison"]);
+const ACTION_RULE_SCALAR_TYPE_KEYS = new Set(["kind", "unit", "currency", "max_length", "min_length", "enum", "comparison"]);
 const ACTION_RULE_SCALAR_EXPR_KEYS = new Set(["kind", "value", "value_type", "binding", "field", "name", "operation", "inputs", "input", "constant", "rounding", "minimum", "maximum", "timestamp", "seconds", "where", "timezone"]);
 const ACTION_RULE_BOOLEAN_EXPR_KEYS = new Set(["kind", "expressions", "expression", "operator", "left", "right", "value", "values", "binding", "where"]);
 const ACTION_RULE_SCALAR_TYPE_VARIANT_KEYS = {
   boolean: new Set(["kind"]),
   integer: new Set(["kind", "unit"]),
   money_minor: new Set(["kind", "currency"]),
-  string: new Set(["kind", "max_length", "enum", "comparison"]),
+  string: new Set(["kind", "max_length", "min_length", "enum", "comparison"]),
   date: new Set(["kind"]),
   timestamp: new Set(["kind"]),
 } as const;
@@ -2593,11 +2594,12 @@ function validateRuleScalarType(value: unknown, path: string, errors: Validation
   if (value.kind === "money_minor" && (typeof value.currency !== "string" || !/^[A-Z]{3}$/.test(value.currency))) errors.push({ path: `${path}.currency`, code: "ACTION_RULE_CURRENCY_REQUIRED", message: "money_minor requires an ISO-style three-letter currency." });
   if (value.kind === "string") {
     if (!Number.isSafeInteger(value.max_length) || Number(value.max_length) < 1 || Number(value.max_length) > 4096) errors.push({ path: `${path}.max_length`, code: "ACTION_RULE_STRING_BOUND_REQUIRED", message: "string max_length must be 1 through 4096." });
+    if (!actionRuleStringMinimumValid({max_length:value.max_length,min_length:value.min_length})) errors.push({ path: `${path}.min_length`, code: "ACTION_RULE_STRING_MINIMUM_INVALID", message: "min_length must be a nonnegative safe integer no greater than max_length (UTF-16 code units)." });
     if (value.comparison !== "exact") errors.push({ path: `${path}.comparison`, code: "ACTION_RULE_EXACT_STRING_REQUIRED", message: "first-release string comparisons are exact." });
     if (value.enum !== undefined && (!Array.isArray(value.enum)
       || value.enum.length === 0
       || value.enum.length > 256
-      || value.enum.some((item) => typeof item !== "string" || item.length > Number(value.max_length))
+      || value.enum.some((item) => !actionRuleStringMatches(item, { max_length: Number(value.max_length), min_length: value.min_length as number | undefined }))
       || new Set(value.enum).size !== value.enum.length)) {
       errors.push({ path: `${path}.enum`, code: "INVALID_ACTION_RULE_ENUM", message: "enum must be a bounded, unique string allowlist whose values fit max_length." });
     }
@@ -2611,10 +2613,7 @@ function validateRuleLiteralValue(value: unknown, type: unknown, path: string, e
     case "boolean": valid = typeof value === "boolean"; break;
     case "integer":
     case "money_minor": valid = Number.isSafeInteger(value); break;
-    case "string": valid = typeof value === "string"
-      && Number.isSafeInteger(type.max_length)
-      && value.length <= Number(type.max_length)
-      && (!Array.isArray(type.enum) || type.enum.includes(value)); break;
+    case "string": valid = Number.isSafeInteger(type.max_length) && actionRuleStringMatches(value, type as unknown as ActionRuleTextBounds); break;
     case "date": valid = isCanonicalDate(value); break;
     case "timestamp": valid = isCanonicalUtcInstant(value); break;
     default: return;

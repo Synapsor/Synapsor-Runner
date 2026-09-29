@@ -54,7 +54,7 @@ function portableRequiredField(table: TableInfo, name: string) {
 
 function displayType(type: ActionRuleScalarTypeSpecV1): string {
   switch (type.kind) {
-    case "string": return `string(max_length=${type.max_length}, comparison=${type.comparison}${type.enum ? `, enum=${JSON.stringify(type.enum)}` : ""})`;
+    case "string": return `string(max_length=${type.max_length}${type.min_length === undefined ? "" : `, min_length=${type.min_length}`}, comparison=${type.comparison}${type.enum ? `, enum=${JSON.stringify(type.enum)}` : ""})`;
     case "integer": return `integer${type.unit ? `(unit=${JSON.stringify(type.unit)})` : ""}`;
     case "money_minor": return `money_minor(currency=${JSON.stringify(type.currency)})`;
     default: return type.kind;

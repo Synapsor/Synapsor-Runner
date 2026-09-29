@@ -60,3 +60,5 @@ export type {
   ValidationResult,
   WorkflowSpec,
 } from "./types.js";
+
+export { actionRuleStringMinimumValid, actionRuleStringMatches, type ActionRuleTextBounds } from "./action-rule-string.js";

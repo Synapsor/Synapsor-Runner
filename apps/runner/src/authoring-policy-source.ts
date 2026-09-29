@@ -1,3 +1,4 @@
+import { assertSourceInputReviews, type SourceInputPolicyReview } from "./authoring-input-policy.js";
 import { assertScopedDisclosureReviews, type ScopedDisclosureReview, type ScopedDisclosureInventory } from "./authoring-scoped-disclosure-records.js";
 import { assertSourceTransactionReviews, type SourceTransactionReview } from "./authoring-source-transaction-review.js";
 import { assertSourceTransactionScopeReviews, type SourceTransactionScopeReview } from "./authoring-source-transaction-scope.js";
@@ -129,7 +130,7 @@ export type RetainedDutyHistory = {
   disposition: 'outside_current_action_scope'; lineage_digest: string;
   continuing_paths: string[]; verified: false;
 };
-export type PolicyCoverage = { retained_duty_history?: RetainedDutyHistory[];
+export type PolicyCoverage = { input_fidelity?: {digest:string;review_digests:string[];findings:import("./authoring-input-policy.js").InputFidelityFinding[]}; retained_duty_history?: RetainedDutyHistory[];
   scoped_disclosure?: ScopedDisclosureInventory; client_duties?: ClientDutyInventory;
   counting_inventory?: { version: 1; digest: string; paths: string[] };
   source_transaction_requirement_pending?: true;
@@ -250,6 +251,7 @@ export type PolicySourceSession = {
   scoped_disclosure_reviews?: ScopedDisclosureReview[];
   /** Attributed source meaning, separate from compiled transaction capability. */
   source_transaction_reviews?: SourceTransactionReview[];
+  input_policy_reviews?: SourceInputPolicyReview[];
   /** Outcome-specific applicability answers within the saved source session. */
   source_transaction_scope_reviews?: SourceTransactionScopeReview[];
   coverage_episodes?: CoverageReviewEpisode[];
@@ -411,6 +413,7 @@ export async function savePolicySources(root: string, session: PolicySourceSessi
   options?: { expectedDigest?: string | null; permit?: ProjectAuthorityMutationPermit }): Promise<void> {
   return withProjectAuthorityMutation(root, async () => {
     const file = sourcePath(root, session.id), temporary = `${file}.${randomUUID()}.tmp`;
+    assertSourceInputReviews(session.input_policy_reviews);
     assertScopedDisclosureReviews(session.scoped_disclosure_reviews);
     assertSourceTransactionReviews(session.source_transaction_reviews);
     assertSourceTransactionScopeReviews(session.source_transaction_scope_reviews);
@@ -426,6 +429,9 @@ export async function savePolicySources(root: string, session: PolicySourceSessi
       assertScopedDisclosureReviews(prior);
       if (prior.some((r,i)=>r.digest!==session.scoped_disclosure_reviews?.[i]?.digest))
         throw new Error("SCOPED_DISCLOSURE_HISTORY_CHANGED: Existing requirements and decisions must be retained; no review was overwritten.");
+      const priorInputs=existing.input_policy_reviews??[];
+      assertSourceInputReviews(priorInputs);
+      if(priorInputs.some((r,i)=>r.digest!==session.input_policy_reviews?.[i]?.digest))throw new Error('SOURCE_INPUT_HISTORY_CHANGED: Retain prior input requirements; no record was overwritten.');
       const priorTransactions=existing.source_transaction_reviews??[];
       assertSourceTransactionReviews(priorTransactions);
       if (priorTransactions.some((r,i)=>r.digest!==session.source_transaction_reviews?.[i]?.digest))
@@ -480,6 +486,7 @@ export async function loadPolicySources(root: string, id: string): Promise<Polic
     throw new Error("POLICY_COVERAGE_EPISODE_INVALID: Saved review attempt accounting is invalid; no provider call or retry was started.");
   }
   assertScopedDisclosureReviews(value.scoped_disclosure_reviews);
+  assertSourceInputReviews(value.input_policy_reviews);
   assertSourceTransactionReviews(value.source_transaction_reviews);
   assertSourceTransactionScopeReviews(value.source_transaction_scope_reviews);
   if (value.counting_decisions && (!Array.isArray(value.counting_decisions) || value.counting_decisions.length > 120
@@ -584,7 +591,7 @@ function validStoredCoverage(report: PolicyCoverage, sources: PolicyTextSnapshot
 
 export async function removePolicySources(root: string, session: PolicySourceSession): Promise<void> {
   await fs.unlink(sourcePath(root, session.id)).catch((error: NodeJS.ErrnoException) => { if (error.code !== "ENOENT") throw error; });
-  session.snapshots = []; session.approvals = []; delete session.active; delete session.operator_messages; delete session.coverage; delete session.coverage_authority_digest; delete session.application_assignments; delete session.read_interpretations; delete session.counting_decisions; delete session.scoped_disclosure_reviews; delete session.source_transaction_reviews; delete session.source_transaction_scope_reviews;
+  session.snapshots = []; session.approvals = []; delete session.active; delete session.operator_messages; delete session.coverage; delete session.coverage_authority_digest; delete session.application_assignments; delete session.read_interpretations; delete session.counting_decisions; delete session.scoped_disclosure_reviews; delete session.source_transaction_reviews; delete session.input_policy_reviews; delete session.source_transaction_scope_reviews;
 }
 
 export type CountingDecision = {

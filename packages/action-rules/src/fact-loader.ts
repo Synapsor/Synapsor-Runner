@@ -1,3 +1,4 @@
+import { actionRuleStringMatches, actionRuleStringMinimumValid } from "@synapsor/spec";
 import { canonicalJsonDigest, canonicalJsonStringify } from "@synapsor-runner/protocol";
 import type { ActionRuleScalarTypeSpecV1, JsonScalar } from "@synapsor/spec";
 import { ActionRuleError, type ActionRuleErrorCode } from "./errors.js";
@@ -111,9 +112,7 @@ export function normalizeActionRuleDatabaseValue(
       break;
     }
     case "string":
-      if (typeof value === "string"
-        && value.length <= type.max_length
-        && (type.enum === undefined || type.enum.includes(value))) return value;
+      if (actionRuleStringMatches(value,type)) return value;
       break;
     case "date": {
       const date = value instanceof Date ? value.toISOString().slice(0, 10) : value;

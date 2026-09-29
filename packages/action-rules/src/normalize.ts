@@ -1,3 +1,4 @@
+import { actionRuleStringMatches, actionRuleStringMinimumValid } from "@synapsor/spec";
 import {
   canonicalJsonDigest,
   canonicalJsonStringify,
@@ -27,7 +28,7 @@ const SCALAR_TYPE_KEYS = {
   boolean: new Set(["kind"]),
   integer: new Set(["kind", "unit"]),
   money_minor: new Set(["kind", "currency"]),
-  string: new Set(["kind", "max_length", "enum", "comparison"]),
+  string: new Set(["kind", "max_length", "min_length", "enum", "comparison"]),
   date: new Set(["kind"]),
   timestamp: new Set(["kind"]),
 } as const;
@@ -125,8 +126,12 @@ function assertScalarTypeShape(value: unknown, path: string): void {
     if (!Number.isSafeInteger(maximum) || Number(maximum) < 1) {
       invalid(`${path}.max_length`, `${path}.max_length must be a positive safe integer.`);
     }
+    if (!actionRuleStringMinimumValid({max_length:maximum,min_length:type.min_length})) invalid(`${path}.min_length`, "min_length must be a nonnegative safe integer no greater than max_length (UTF-16 units).");
     if (type.enum !== undefined) {
-      array(type.enum, `${path}.enum`, 1, 256).forEach((item, index) => string(item, `${path}.enum[${index}]`));
+      array(type.enum, `${path}.enum`, 1, 256).forEach((item, index) => {
+        if (type.min_length === undefined && item === "") invalid(`${path}.enum[${index}]`, "Legacy enum values must be non-empty strings.");
+        if (!actionRuleStringMatches(item,{max_length:Number(maximum),min_length:type.min_length as number | undefined})) invalid(`${path}.enum[${index}]`, "Enum values must fit the reviewed UTF-16 text bounds.");
+      });
     }
     oneOf(own(type, "comparison", path), ["exact"] as const, `${path}.comparison`);
   }

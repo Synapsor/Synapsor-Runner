@@ -1,3 +1,4 @@
+import { sourceInputFidelity } from "./authoring-input-policy.js";
 import {prepareRetainedDutyReview, assembleRetainedDutyReview, RetainedDutyApplicabilityError, type RetainedDutyPlan} from './authoring-retained-duties.js';
 import {createCoverageRepairScope, assembleScopedCoverageReplacement, scopeToolSchema, portableScopeToolSchema, CoverageScopedCorrectionError, type CoverageRepairScope} from "./authoring-scoped-correction.js";
 import {constrainReceiptComponentSchema, validateScopedReceiptComponents, receiptComponentMeanings} from "./authoring-scoped-receipt-components.js";
@@ -798,8 +799,13 @@ export function parsePolicyCoverage(args: Record<string, unknown>, source: Polic
     const assessment = assessReviewObligation(component, source, draft);
     passages.push({ ...component, ...(assessment ? { obligation_assessment: assessment } : {}) });
   }
+  const inputContext=(draft as any)?.runner_evidence?.input_policy_requirement;
+  const inputFidelity=sourceSession?.input_policy_reviews?.length
+    ? sourceInputFidelity(source,sourceSession,inputContext?.store_digest??"unavailable",(draft as any)?.actions??[]) : undefined;
+  if(inputFidelity && canonicalJsonDigest(inputContext?.reviews??[])!==canonicalJsonDigest(sourceSession?.input_policy_reviews??[]))
+    throw new Error('SOURCE_INPUT_REQUIREMENT_PENDING: Prepared requirement history is not current.');
   const inventory = configuredCountingLimits(draft);
-  return { scoped_disclosure: scopedDisclosureInventory(source, draft), source_digest: source.digest, draft_digest: canonicalJsonDigest(draft), passages, client_duties: clientDutyInventory(draft),
+  return { ...(inputFidelity?{input_fidelity:inputFidelity}:{}), scoped_disclosure: scopedDisclosureInventory(source, draft), source_digest: source.digest, draft_digest: canonicalJsonDigest(draft), passages, client_duties: clientDutyInventory(draft),
     ...((sourceTransactionReviewNeeded(draft) || sourceSession?.source_transaction_reviews?.length) && !(reviewedTransaction && capability)
       ? {source_transaction_requirement_pending:true as const} : {}),
     ...(reviewedTransaction && capability ? {source_transaction_association:{origin:'HOST-REVIEW-ASSOCIATION' as const,

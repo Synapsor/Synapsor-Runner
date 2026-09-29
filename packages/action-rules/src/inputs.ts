@@ -1,3 +1,4 @@
+import { actionRuleStringMatches, actionRuleStringMinimumValid } from "@synapsor/spec";
 import type { ActionRuleInputSpecV1, ActionRuleSpecV1, JsonScalar } from "@synapsor/spec";
 import { ActionRuleError } from "./errors.js";
 
@@ -17,6 +18,8 @@ export function validateActionRuleInputDefinitions(inputs: ActionRuleInputSpecV1
     const numeric = input.type.kind === "integer" || input.type.kind === "money_minor";
     if (numeric && (!Number.isSafeInteger(input.minimum) || !Number.isSafeInteger(input.maximum) || input.minimum! > input.maximum!)) invalid(`Input ${input.name} requires a finite integer minimum and maximum.`);
     if (!numeric && (input.minimum !== undefined || input.maximum !== undefined)) invalid(`Input ${input.name} cannot have numeric bounds.`);
+    if (input.type.kind === "string" && !actionRuleStringMinimumValid(input.type)) invalid(`Input ${input.name} has invalid UTF-16 string minimum/maximum bounds.`);
+    if (input.type.kind === "string" && input.type.enum?.some(value => !actionRuleStringMatches(value,{max_length: input.type.kind === "string" ? input.type.max_length : 0, min_length: input.type.kind === "string" ? input.type.min_length : undefined}))) invalid(`Input ${input.name} enum must fit its reviewed string bounds.`);
     if (input.type.kind === "string" && (input.type.max_length > 4096 || input.type.max_length < 1 || !Number.isSafeInteger(input.type.max_length))) invalid(`Input ${input.name} requires a string length from 1 through 4096.`);
   }
 }
@@ -39,7 +42,7 @@ export function validateActionRuleInputs(rule: Pick<ActionRuleSpecV1, "inputs">,
         if (typeof candidate !== "number" || !Number.isSafeInteger(candidate) || candidate < input.minimum! || candidate > input.maximum!) invalid(`Input ${input.name} must be an integer from ${input.minimum} through ${input.maximum}.`);
         break;
       case "string":
-        if (typeof candidate !== "string" || candidate.length > input.type.max_length || (input.type.enum && !input.type.enum.includes(candidate))) invalid(`Input ${input.name} must match its reviewed text bounds and allowed values.`);
+        if (!actionRuleStringMatches(candidate, input.type)) invalid(`Input ${input.name} must match its reviewed text bounds and allowed values.`);
         break;
       case "boolean":
         if (typeof candidate !== "boolean") invalid(`Input ${input.name} must be true or false.`);

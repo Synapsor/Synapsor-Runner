@@ -1,3 +1,4 @@
+import { assertInputFidelityRepair, SourceInputFidelityError, type InputFidelityFinding } from "./authoring-input-policy.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { historySelectorChanges, type HistorySelectorReview } from "./action-history-selector-review.js";
 import { Buffer } from "node:buffer";
@@ -230,6 +231,7 @@ export type ModelActionRuleDraftInput = {
   /** Host-mediated resume of a still-pending job may retain untrusted components
    * after a Read edit. Never pass a checkpoint for a withdrawn source/outcome. */
   revalidateSavedComponents?: boolean;
+  assessInputFidelity?: (draft: ActionRuleModelDraftV1) => Promise<InputFidelityFinding[]>;
   onCheckpoint?: (checkpoint: ActionRuleAuthoringCheckpoint) => Promise<void>;
   onRelationshipReview?: (lines: string[]) => void;
   /** The enclosing policy review owns the next visible turn once compilation succeeds. */
@@ -384,6 +386,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     ...(input.operatorStatements ? { operator_statements: originalStatements } : {}),
     ...(reopenedDraft ? { pending_intents: pendingIntents } : {}),
   });
+  let inputRepairParent: {draft:ActionRuleModelDraftV1;findings:InputFidelityFinding[]}|undefined;
   let checkpointNeedsRevalidation = false;
   if (input.checkpoint) {
     const saved = parseActionRuleAuthoringCheckpoint(input.checkpoint);
@@ -625,12 +628,16 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
           }
           if (input.approvalLimitsOnly) assertOnlyApprovalLimitsChanged(baseline, draft);
           assertActionExecutionIntentPreserved(statements, draft.effect.writeback);
+          if(inputRepairParent) assertInputFidelityRepair(inputRepairParent.draft,draft,inputRepairParent.findings);
           const result = compileActionRuleModelDraft({ draft, ...context });
+          const inputFindings=await input.assessInputFidelity?.(result.draft);
+          if(inputFindings?.length){inputRepairParent??={draft:structuredClone(draft),findings:inputFindings};throw new SourceInputFidelityError(inputFindings);}
           const unchanged = initial && ACTION_RULE_PHASES.every((phase) => canonicalJsonDigest(initial![phase]) === canonicalJsonDigest(submissions[phase]));
           compiled = result;
           checkpointNeedsRevalidation = false;
           return { ok: true, value: { status: result.client_compatibility.compatible ? "ready_for_review" : "incomplete_client_contract", client_compatibility: result.client_compatibility, draft_changed: !unchanged,
             ...(unchanged ? { explanation: "The existing draft validates unchanged. No revision was saved. Explain whether it already represents the clarification; do not request a redundant edit or repeat an answered question." } : {}),
+            input_policy_fidelity: input.assessInputFidelity ? "current_registered_requirements_satisfied; whole_source_review_pending" : "not_assessed",
             outcome: result.rule.outcome, review: result.draft.review, inputs: result.draft.inputs ?? [], authority_granted: false, source_database_changed: false } };
         }
         const phase = ACTION_RULE_PHASES.find((candidate) => phaseTool(candidate).name === name);
@@ -658,6 +665,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
         await saveCheckpoint().catch((error) => { infrastructureFailure = error; throw error; });
         return { ok: true, value: { status: "disabled_component_saved", component: phase, ...snapshot() } };
       } catch (error) {
+        if(error instanceof SourceInputFidelityError && error.findings.some(f=>f.code==='SOURCE_INPUT_REQUIREMENT_PENDING')) throw error;
         if (infrastructureFailure) throw infrastructureFailure;
         correctionUsed = true;
         diagnostics = actionRuleDraftDiagnostics(error, {
@@ -681,7 +689,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     "For a supporting or target row, inspect existing links with runner.inspect_action_relationships and prepare the exact link with runner.review_action_relationship. Composite field_pairs are fully supported: Runner carries every key equality, privately, into validation and execution. Do not ask the operator to expose a relationship, write a join, add a foreign key or identify an internal binding. If multiple links differ in business meaning ask one plain-language question; unsupported/missing means a capability limit, not a permission the operator can grant. Relationship review only prepares disabled authority and never changes Read exposure.",
     "Relationship inspection also returns candidate_paths when there is no direct link. Prepare each step and chain Verification source.from_binding through intermediate resources; the engine supports this. An inverse many-row step requires a bounded collection and explicit exists/correlation predicates, not an invented unique relationship. For example, reaching prerequisite facts through a student or course still requires matching BOTH that student and that course. Do not drop a current-term or eligibility gate merely because it needs an intermediate resource. A limited search is not proof that a relationship is missing.",
     "If the operator identifies an inspected authoritative source outside this catalog, use runner.review_private_action_source when available. Runner will review exact private metadata and preserve public Read unchanged. Do not ask the operator to add a public Read resource or expose an internal ID as a workaround. Verification-only sources cannot be effect targets. After mapping, validate the complete policy; Action conditions do not automatically constrain Read access.",
-    "For caller-selected business values declare bounded inputs on the rule and reference them with {kind:'input',name:'...'}. Numeric inputs require integer minimum and maximum, money uses minor units with explicit currency, strings require max_length and schema enums when available. Inputs cannot select target keys, relationship keys, trusted identity, SQL, arbitrary patches or approval decisions. Effects remain derived from exact input expressions and verified facts.",
+    "For caller-selected business values declare bounded inputs on the rule and reference them with {kind:'input',name:'...'}. Numeric inputs require integer minimum and maximum, money uses minor units with explicit currency, strings declare min_length when policy bounds require it, max_length, and schema enums when available. Lengths count UTF-16 code units, not trimmed text: required presence alone allows empty; nonempty requires min_length:1 or a proved semantic condition. Inputs cannot select target keys, relationship keys, trusted identity, SQL, arbitrary patches or approval decisions. Effects remain derived from exact input expressions and verified facts.",
     "Do not create a caller input for a fixed requested effect such as closing a case or submitting a dispute, or for a value already derived from the selected verified offer. Use the exact literal or verified field expression. Inputs represent genuine customer choices, never a redundant confirmation flag or a copy of an existing rule decision.",
     "Never declare expected_version or another input to match a private record version, identity or scope. Runner's opaque subject service captures the observed version and enforces staleness; the worker rechecks it at execution. Configure the reviewed version field in Verification, not a customer-supplied equality predicate in require.",
     "A version field is required for an UPDATE target, not every verification-only resource. Runner reloads and locks all reviewed verification rows in the execution transaction and compares the exact dependency facts to the proposal proof. A verification-only offer without a version column can still be checked for current state and validity; do not demand a schema change or a writer grant merely to read it. If the policy requires consuming the offer itself, it becomes a separate mutation target and needs its own supported conflict guard.",
@@ -899,6 +907,7 @@ export async function generateFocusedModelActionRuleDraft(input: ModelActionRule
   let draft = assembleDraft(submissions);
   let compiled: CompiledActionRuleModelDraftV1 | undefined;
   let lastCompileError: unknown;
+  let inputRepairParent: {draft:ActionRuleModelDraftV1;findings:InputFidelityFinding[]}|undefined;
   for (let repairCount = 0; repairCount <= MAX_FINAL_COMPILER_REPAIRS; repairCount += 1) {
     try {
       const statements = [input.operatorJob ?? "", ...originalStatements];
@@ -906,12 +915,16 @@ export async function generateFocusedModelActionRuleDraft(input: ModelActionRule
       assertExplicitApprovalIntentPreserved(originalStatements, draft.approval, explicitJointApprovalLimits(statements).length > 0);
       if (input.approvalLimitsOnly) assertOnlyApprovalLimitsChanged(existingDraft, draft);
       assertActionExecutionIntentPreserved(originalStatements, draft.effect.writeback);
+      if(inputRepairParent) assertInputFidelityRepair(inputRepairParent.draft,draft,inputRepairParent.findings);
       compiled = compileActionRuleModelDraft({
         draft,
         ...activeContext,
       });
+      const inputFindings=await input.assessInputFidelity?.(compiled.draft);
+      if(inputFindings?.length){inputRepairParent??={draft:structuredClone(draft),findings:inputFindings};compiled=undefined;throw new SourceInputFidelityError(inputFindings);}
       break;
     } catch (error) {
+      if(error instanceof SourceInputFidelityError && error.findings.some(f=>f.code==='SOURCE_INPUT_REQUIREMENT_PENDING'))throw error;
       lastCompileError = error;
       if (repairCount >= MAX_FINAL_COMPILER_REPAIRS) break;
       const diagnostics = actionRuleDraftDiagnostics(error, { builtCatalog: activeContext.builtCatalog, verification: draft.verification });
@@ -2056,6 +2069,7 @@ function actionRuleExpressionDefinitions(): Record<string, unknown> {
         objectVariant(["kind", "max_length", "comparison"], {
           kind: { const: "string" },
           max_length: { type: "integer", minimum: 1, maximum: 4_096 },
+          min_length: { type: "integer", minimum: 0, maximum: 4_096, description: "Optional explicit minimum in UTF-16 code units; must be <= max_length. Omission preserves legacy zero minimum. No trimming or normalization." },
           enum: { type: "array", minItems: 1, maxItems: 256, uniqueItems: true, items: { type: "string" } },
           comparison: { const: "exact" },
         }),
@@ -2420,6 +2434,7 @@ function mergeRevisionSubmission(input: {
 function phaseForDiagnostics(
   diagnostics: ReturnType<typeof actionRuleDraftDiagnostics>,
 ): PhaseName {
+  if(diagnostics.some(d=>d.code.startsWith("SOURCE_INPUT_"))) return "rule";
   const paths = diagnostics.map((item) => item.path ?? "");
   if (paths.some((path) => /^approval(?:\.|$)/u.test(path))) return "approval";
   if (paths.some((path) => /^(?:rule\.effect|effect_envelope)(?:\.|$)/u.test(path))) return "effect";

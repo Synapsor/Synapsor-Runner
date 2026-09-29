@@ -1,3 +1,5 @@
+import {makeSourceInputReview,sourceInputFidelity} from "./authoring-input-policy.js";
+import {newPolicySourceSession,policyTextSnapshot} from "./authoring-policy-source.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -330,6 +332,22 @@ describe("conversational Action authoring tools", () => {
     body: { output: [{ type: "function_call", call_id: `call_${name}`, name: name.replaceAll(".", "__"), arguments: JSON.stringify(args) }] },
   });
   const say = (text: string) => ({ status: 200, body: { output: [{ type: "message", content: [{ type: "output_text", text }] }] } });
+
+  it("delivers a current bound requirement through real conversational correction before structural readiness", async()=>{
+    const source=policyTextSnapshot(Buffer.from("The caller operator_note must contain 1..64 UTF-16 units."),"rules.txt");
+    const session=newPolicySourceSession();session.snapshots=[source];session.active=1;const store=canonicalJsonDigest("fixture-store");
+    session.input_policy_reviews=[makeSourceInputReview({source,session,store,outcomes:["billing.pause_account"],requirements:[{outcomes:["billing.pause_account"],input:"operator_note",start:1,end:1,min_length:1,max_length:64}],actor:"fixture operator"})];
+    const original={...rulePayload(eligiblePredicate()),inputs:[{name:"operator_note",description:"Caller supplied note",type:{kind:"string",max_length:64,comparison:"exact"}}]};
+    const corrected=structuredClone(original);(corrected.inputs[0]!.type as any).min_length=1;
+    const steps=[call("runner.submit_verification_boundary_draft"),call("runner.submit_effect_envelope_draft"),call("runner.submit_action_rule_draft",original),call("runner.submit_approval_policy_draft"),call("runner.validate_action_draft",{}),call("runner.submit_action_rule_draft",corrected),call("runner.validate_action_draft",{}),say("Structured draft prepared; full policy review is pending.")];
+    const encoded:string[]=[];
+    const result=await converseActionRuleDraft({...requestInput(async r=>{encoded.push(JSON.stringify(r.body));if(!steps.length)throw new Error("Unexpected extra model attempt");return steps.shift()!;}),assessInputFidelity:async d=>sourceInputFidelity(source,session,store,[d]).findings});
+    expect(result.compiled.draft.inputs![0]!.type).toMatchObject({min_length:1,max_length:64});
+    expect(encoded.some(body=>body.includes('SOURCE_INPUT_CONSTRAINT_WEAKER')&&body.includes(session.input_policy_reviews![0]!.digest))).toBe(true);
+    expect(encoded.join('\n')).toContain('min_length');expect(result.correction_used).toBe(true);
+    expect(result.compiled.draft.require).toEqual(original.require);expect(result.compiled.draft.effect.set).toEqual(modelDraft().effect.set);
+    expect(original.inputs[0]!.type).not.toHaveProperty('min_length');
+  });
 
   it.each([true, false])("requires exact host operator review for a guided history-selector change (%s)", async accepted => {
     const baseline = policyModelDraft();

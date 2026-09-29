@@ -8,6 +8,7 @@ export const ACTION_DISCOVERY_CONTRACT_BYTES = 12_288;
 /** Inputs are caller intent, not access to private verification facts. */
 export function actionRulePublicInputs(rule: ActionRuleSpecV1) {
   return (rule.inputs ?? []).map((definition) => ({ ...definition, required: true,
+    ...(definition.type.kind === "string" && definition.type.min_length !== undefined ? {length_units:"utf16_code_units",normalization:"none"} : {}),
     origin: "caller_business_input" as const,
     acquisition: { source: "authorized_caller", public_lookup: "not_established_by_action_contract",
       guidance: "Use a value explicitly supplied by the authorized caller or their established business process. If missing, ask for it before requesting. Do not guess from private verification, an earlier request or current posted values." },

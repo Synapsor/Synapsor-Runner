@@ -1,3 +1,4 @@
+import { SourceInputFidelityError } from "./authoring-input-policy.js";
 import { actionSubjectCompatibility, type ActionSubjectCompatibility } from "./action-subject-compatibility.js";
 import {
   ActionRuleError,
@@ -593,6 +594,7 @@ export function actionRuleDraftDiagnostics(error: unknown, context?: ActionRuleR
   message: string;
   repair: "model" | "operator";
 } & Partial<ActionRuleDiagnosticRepair>> {
+  if(error instanceof SourceInputFidelityError) return error.findings.map(f=>({code:f.code,path:f.path,message:JSON.stringify(f),repair:f.code==="SOURCE_INPUT_CONSTRAINT_WEAKER"?"model" as const:"operator" as const}));
   if (error instanceof ActionRuleError) {
     return [{
       code: error.code,
