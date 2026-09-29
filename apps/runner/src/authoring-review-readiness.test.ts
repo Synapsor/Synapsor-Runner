@@ -1,3 +1,5 @@
+import {makeSourceInputReview,sourceInputFidelity} from './authoring-input-policy.js';
+import {canonicalJsonDigest} from '@synapsor-runner/protocol';
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -22,6 +24,17 @@ function report(): PolicyCoverage {
 }
 
 describe("one authoritative guided review readiness model", () => {
+  it('classifies current input representation mismatch as host mechanical work, never a fresh owner question',()=>{
+    const session=newPolicySourceSession();session.snapshots=[source];session.active=1;
+    const store=canonicalJsonDigest('readiness fixture');
+    session.input_policy_reviews=[makeSourceInputReview({source,session,store,outcomes:['warehouse.release'],requirements:[{outcomes:['warehouse.release'],input:'note',start:1,end:1,min_length:1,max_length:64}],actor:'DERIVED fixture operator'})];
+    const coverage=report();coverage.input_fidelity=sourceInputFidelity(source,session,store,[{outcome:'warehouse.release',inputs:[{name:'note',description:'Caller note',type:{kind:'string',max_length:64,comparison:'exact'}}],require:{kind:'all',expressions:[]}}]);
+    expect(policyReadinessItems(coverage,session).find(i=>i.sourceInputPolicy)).toMatchObject({kind:'mechanical_correction',blocksReview:true,nextStep:expect.stringContaining('already established')});
+    const deferred=makeSourceInputReview({source,session,store,outcomes:['warehouse.release'],requirements:[],actor:'DERIVED fixture operator',decision:'deferred'});
+    session.input_policy_reviews.push(deferred);
+    expect(policyReadinessItems(coverage,session).find(i=>i.sourceInputPolicy)).toMatchObject({kind:'business_decision',blocksReview:true});
+  });
+
   it("keeps client installation separate from identity, application choices and privacy even under one topic", () => {
     const coverage = report();
     const deployments = ["runner_client_connection", "authenticated_identity"] as const;

@@ -9,7 +9,7 @@ import type { CompiledActionRuleModelDraftV1 } from "./action-rule-draft.js";
 
 export type AuthoringReadinessItem = {
   kind: "business_decision" | "mechanical_correction" | "unsupported_runtime" | "deployment_prerequisite" | "provider_failure";
-  clientDuty?: ClientDuty; title: string; nextStep: string; passages: PolicyPassage[]; blocksReview: boolean;
+  sourceInputPolicy?: true; clientDuty?: ClientDuty; title: string; nextStep: string; passages: PolicyPassage[]; blocksReview: boolean;
 };
 
 export function applicationObligationAssigned(report: PolicyCoverage, passage: PolicyPassage, session?: PolicySourceSession): boolean {
@@ -31,8 +31,16 @@ export function policyReadinessItems(report?: PolicyCoverage, session?: PolicySo
     const relevant=session.input_policy_reviews.filter(r=>fidelity?.review_digests.includes(r.digest));
     const superseded=relevant.some(record=>session.input_policy_reviews!.slice(session.input_policy_reviews!.indexOf(record)+1)
       .some(next=>next.outcomes.some(o=>record.outcomes.includes(o)) && !fidelity?.review_digests.includes(next.digest)));
-    if(!fidelity||!relevant.length||fidelity.findings.length||superseded||relevant.some(r=>r.source_digest!==report.source_digest||r.decision!=='confirmed'))
-      grouped.set('source-input',{kind:'business_decision',title:'Source-required input bounds remain pending',nextStep:'Review the exact current source input interpretation and correct the disabled input component; no new business meaning or global nonempty default is inferred.',passages:[],blocksReview:true});
+    const meaningPending=!fidelity||!relevant.length||superseded||relevant.some(r=>r.source_digest!==report.source_digest||r.decision!=='confirmed')
+      ||fidelity.findings.some(f=>f.code==='SOURCE_INPUT_REQUIREMENT_PENDING');
+    if(meaningPending||fidelity?.findings.length) {
+      const targets=[...new Set(fidelity?.findings.map(f=>f.outcome)??[])];
+      grouped.set('source-input',{sourceInputPolicy:true,kind:meaningPending?'business_decision':'mechanical_correction',
+        title:meaningPending?'Source input interpretation needs current review':'Declared input bounds need a draft correction',
+        nextStep:meaningPending?'Use the local saved Review to inspect the exact current source and input interpretation. Prior decisions remain history; no meaning is inferred.':
+          `Use the ordinary model-assisted edit for ${targets.join(', ')} to correct the named input bounds. The recorded source meaning is already established; preserve other components and complete normal whole-program review.`,
+        passages:[],blocksReview:true});
+    }
   }
   if (report.source_transaction_requirement_pending || session?.source_transaction_reviews?.length
     || report.passages.some(p=>p.receipt_component==='source_transaction_coupling')) {

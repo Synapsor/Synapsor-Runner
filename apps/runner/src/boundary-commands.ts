@@ -9247,6 +9247,13 @@ async function interactiveReadWorkloadAssistSession(input: InteractiveReadWorklo
     current = await ensurePolicyCoverage();
     if (!current?.report) return;
     let pending = policyReadinessItems(current.report, authoringConversation?.policySources).filter((item) => item.blocksReview);
+    const inputPolicyItem=pending.find(item=>item.sourceInputPolicy);
+    if(inputPolicyItem){
+      // These are host findings, never empty model passages or a new business question.
+      chat.checkpoint(inputPolicyItem.title,[inputPolicyItem.nextStep,
+        ...(current.report.input_fidelity?.findings??[]).map(f=>`${f.outcome} / ${f.input||'current interpretation'}: ${f.repair}`)],'warning');
+      return;
+    }
     if (pending.some((item) => item.passages.some(isMechanicalApprovalCounterPassage))) {
       // Counter references need mechanical reconciliation, not a new business
       // choice or a rule edit based on an untrusted model's grouping claim.
