@@ -1,0 +1,11 @@
+{
+  "utc": "2026-09-29T05:56:25.283216+00:00",
+  "tester_record_sha256": "7effde58b48f75a81cb80c8c7947cbd87df7433a5d96ca3121497a12f1957e03",
+  "actual_inventory_sha256": "58483ec3194be81d9d71dfa8d5c364c864ae5a4e33cdec8e87934e096be5cb30",
+  "exact_source_ordered_unique_identities": 50,
+  "corresponding_nonempty_intents": 50,
+  "actual_saved_actions_at_checkpoint": 0,
+  "only_startup_management_active": true,
+  "business_tables_empty": true,
+  "claim": "Executed planner inventory and operator review only; no executable-fidelity or whole-review inference."
+}

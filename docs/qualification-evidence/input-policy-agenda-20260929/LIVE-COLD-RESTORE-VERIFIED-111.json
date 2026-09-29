@@ -1,0 +1,18 @@
+{
+  "utc": "2026-09-29T06:19:25.327082+00:00",
+  "fixture": "live-retest-140",
+  "cold_root": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140",
+  "complete_source_seed_before_cold_equal": true,
+  "source_relations": 20,
+  "source_rows": 139,
+  "source_complete_acl_roles_memberships_equal": true,
+  "cold_project_HOME_entries": 35,
+  "file_content_modes_kinds_links_membership_equal": true,
+  "actual_cold_SQLite_all_tables": 42,
+  "all_table_membership_values_equal": true,
+  "archive_sha256": "66d1f03f17aac864c993e7adcb136568a2cadf3ad1cf700f1d20f7587e314d1a",
+  "source_dump_sha256": "05331949dd59a7ea1612e3e1f0ffeeab4c0826da3caf0a6f33a199c4d7e3af23",
+  "provider_calls": 0,
+  "classification": "Main independently read immutable actual restored files and SQLite, and complete Source snapshots; no runtime/source mutation",
+  "prior_comparator_corrections": "Two failed scripts compared wrapper/object encodings before PASS. Actual cold primary rows are JSON strings, catalog rows typed objects; corrected with lossless JSON decode and canonical unordered row comparison, plus exact catalog and current/expected ACL category equality. Original failed tool outputs retained; no fixture, values or oracle modified."
+}

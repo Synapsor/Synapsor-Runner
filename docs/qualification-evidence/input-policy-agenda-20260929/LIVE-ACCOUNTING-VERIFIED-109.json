@@ -1,0 +1,26 @@
+{
+  "utc": "2026-09-29T06:09:50.968476+00:00",
+  "ledger_sha256": "4c45a5a1d840354041e0c2ca51fc996f5c89bf878482b0819f4c850136806483",
+  "inference_started": 34,
+  "known_usage_responses": 33,
+  "count_started": 2,
+  "usage_totals_known_only": {
+    "input_tokens": 1128589,
+    "output_tokens": 11321,
+    "reasoning_tokens": 3134,
+    "cached_tokens": 893093,
+    "cache_write_tokens": 234298
+  },
+  "reasoning": "Included within output; not charged twice. Unknown34 has no measured usage.",
+  "peak_inference_request_bytes": 199843,
+  "cumulative_inference_request_bytes": 5557935,
+  "new_accounted_liability_usd": "3.768661600000",
+  "inference_usage_computed_usd": "0.902611600000",
+  "count_provisional_usd": "0.075987500000",
+  "new_unknown_hold_usd": "2.790062500000",
+  "historical_accounted_retained_usd": "19.679347600000",
+  "campaign_accounted_usd": "23.448009200000",
+  "remaining_retest_authorization_usd": "16.231338400000",
+  "remaining_campaign_authorization_usd": "56.551990800000",
+  "classification": "Main independent read-only aggregate; usage-computed is not provider invoice, unused budget does not reopen terminal lane."
+}

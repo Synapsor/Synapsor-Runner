@@ -1,0 +1,15 @@
+{
+  "utc": "2026-09-29T06:12:21.792324+00:00",
+  "removed_container": "main-input-agenda-pg-20260929",
+  "container_id": "837e30eb279bcb057a4b84f93fc9e2023aed386a4952f55ae579203aafa126dc",
+  "removed_anonymous_volumes": [
+    "fdd2e4f769869a04e6750dab9696346243c7a153d983df776515a3dd31e68229"
+  ],
+  "evidence_coverage": "Empty synthetic gate DBs, full gate logs and Main051/059/108 retained; no unique data requiring recovery. Tester confirmed no ongoing gate/resource dependency.",
+  "all_user_databases_checked": [
+    "large_gate",
+    "postgres"
+  ],
+  "all_user_tables": [],
+  "retained": "All frozen installations, worktrees, indexed evidence, tester live/cold containers and five older uncovered resources untouched."
+}

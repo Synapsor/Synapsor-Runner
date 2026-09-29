@@ -1,3 +1,9 @@
+# Input-policy/agenda repair delivered; sole retest stopped
+
+The named repair is independently accepted on candidate1 (product579416ed, source/tests b7f01aac). The one fresh Direct original-main full50 retest produced the exact50 intended agenda and four faithful disabled text Actions, then stopped at transport34 with unknown outcome. Whole-program review/publication and later lifecycle remain unestablished. Known disabled private-Read mismatch and missed exact1-time checkpoint remain explicit. No further sample or repair is authorized by unused money/time. Historical three-provider and43/9 results remain unchanged. See [final report](../input-policy-agenda-20260929/FINAL-REPORT.md) and its finite findings. No new domain, B execution or production claim follows.
+
+# Historical preceding delivery
+
 # Current qualification roadmap — Lane C measured and closed
 
 See [three-journey results](../larger-programs-supported-20260927/LANE-C-THREE-JOURNEY-RESULTS.md). Initial complete Source admission and serial rolling-budget wiring were exercised on unchanged f20. Universal billing behavior remains unproved; the owner expressly accepted residual risk. None of the three real-model samples completed full50. Earlier deterministic43PASS/9NE is unchanged, not promoted to complete qualification.

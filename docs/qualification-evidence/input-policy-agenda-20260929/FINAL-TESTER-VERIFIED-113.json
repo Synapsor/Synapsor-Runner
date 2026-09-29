@@ -1,0 +1,12 @@
+{
+  "utc": "2026-09-29T06:23:49.807806+00:00",
+  "report": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/FINAL-REVIEW-193.md",
+  "report_sha256": "2dd24840eb106ac11449152ed29a6c3c3dc0563bc03c00c76ca1c4ec18fb238b",
+  "index": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/FINAL-EVIDENCE-194.json",
+  "index_sha256": "8b8c8764d591c3eac36d71dcfd81ad8f01e81710782a1892ee9239bce95a5b65",
+  "all_member_hashes_verified": 369,
+  "cold_state_values_personally_verified": "LIVE-COLD-RESTORE-VERIFIED-111.json",
+  "accounting_personally_verified": "LIVE-ACCOUNTING-VERIFIED-109.json",
+  "fresh_original_and_owned_installations": "Main reran read-only exact checker159:7607 each PASS after terminal stop, zero provider",
+  "main_provider_calls": 0
+}

@@ -1,0 +1,15 @@
+{
+  "verified_at": "2026-09-29T02:28:09.548253+00:00",
+  "candidate": 1,
+  "product": "579416edf3b555129f9f464f04682f63007fc0f7",
+  "tests": "b7f01aaccf334de56ec2cbef4ce10062d93f13f5",
+  "source": "b7f01aaccf334de56ec2cbef4ce10062d93f13f5",
+  "installed_tree_sha256": "b71055cd82742bd91c66b2863f6c7624a7ad48f8b56a11735ae5c5eadaed89da",
+  "manifest_sha256": "3fa25536c174a7c426754af6f6dce9233e9545c4fef9bbcea9dc248c617d563e",
+  "archive_sha256": "2f42351e94d7ee1c9d5a33b28eab2070e4d254d4fb0b883c9d12b8b2533c743c",
+  "entries": 7607,
+  "archive_bidirectional_membership_content_modes_symlinks": true,
+  "installed_tree_verified": "freeze.mjs --verify matches all records and exact Node",
+  "independent_installed": "pending",
+  "main_provider_calls": 0
+}

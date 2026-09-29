@@ -1,0 +1,2632 @@
+{
+  "utc": "2026-09-29T06:22:59.619046+00:00",
+  "classification": "Independent tester final closure; installed scopedPASS, live full50 ATTEMPTED/NOT PASSED; terminal unknown liability kept; no further inference/testing",
+  "report": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/FINAL-REVIEW-193.md",
+  "report_sha256": "2dd24840eb106ac11449152ed29a6c3c3dc0563bc03c00c76ca1c4ec18fb238b",
+  "members": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-L1-L4-readiness-20260927/continuation-20260929/INERT-WATCHER-READBACK.json",
+      "kind": "file",
+      "mode": 256,
+      "bytes": 1849,
+      "sha256": "daf85055f5466d5e68c1d17d8188851c5e0962b3f2b35809730813b63afbdf9d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-L1-L4-readiness-20260927/continuation-20260929/REVIEW.md",
+      "kind": "file",
+      "mode": 256,
+      "bytes": 4710,
+      "sha256": "72591f99b938e25a80ea14af76c80eb5a41e68c088c4105e31f6bba64fc6e424"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/FINAL-REVIEW-193.md",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 10213,
+      "sha256": "2dd24840eb106ac11449152ed29a6c3c3dc0563bc03c00c76ca1c4ec18fb238b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/INSTALLED-ACCEPTANCE-137.md",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 7240,
+      "sha256": "474500cda2477f6e3ddae4486b256c53ace52f1834bab09dc0eab1fc6478cf2c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/INSTALLED-ACCEPTANCE-EVIDENCE-138.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 26104,
+      "sha256": "73db7d4f08f888ea761a4e8dbe8ff306c485ab9686a61f266758ed3e708f81f4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/READINESS-EVIDENCE-165.json",
+      "kind": "file",
+      "mode": 256,
+      "bytes": 20864,
+      "sha256": "48fc998085dce1f7d400c331baf9bb0ca9b3e7c08a3422a8edc1901f94873c42"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/READINESS-REVIEW-164.md",
+      "kind": "file",
+      "mode": 256,
+      "bytes": 5774,
+      "sha256": "472cea44b1f7218139e20ae1393251d6e120367d890d19adcb80ee1b394f589f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-184/COLD-RESOURCE.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 196,
+      "sha256": "3a1365bb7cec68e7dc45f6687047486ac63bfb244da3936883b423ea4b43c10d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-184/roles-password-free.sql",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 794,
+      "sha256": "66769dc957f083120949f4d25fa9b7999799ab96d0d8380f764e71fd17c96815"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/COLD-RESOURCE.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 196,
+      "sha256": "3a1365bb7cec68e7dc45f6687047486ac63bfb244da3936883b423ea4b43c10d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/CONTROL-all42-before.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 991298,
+      "sha256": "eaae165b8e6c324419116956704a37d5a82ff183b521ee4b5270f5eff1cde3e8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/FILES-before.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 5536,
+      "sha256": "50c26924d299bf54ac026967748e8cca2a016a29d305d7ddaf5a78472d08085d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/SOURCE-before.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 425745,
+      "sha256": "2224954f4809ec9baa5ce4bd199c772e77c795fbeabfb58fd1aac02ab45666c4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/SOURCE-cold-restored.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 425745,
+      "sha256": "2224954f4809ec9baa5ce4bd199c772e77c795fbeabfb58fd1aac02ab45666c4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/Source.dump",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 49485,
+      "sha256": "05331949dd59a7ea1612e3e1f0ffeeab4c0826da3caf0a6f33a199c4d7e3af23"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/project-HOME.tgz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 125805,
+      "sha256": "66d1f03f17aac864c993e7adcb136568a2cadf3ad1cf700f1d20f7587e314d1a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/.env.example",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 247,
+      "sha256": "2b30a7bd5066bfda2cacc26ea268175eae5accdee67b7fd2d7ae4220fb81667c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/.synapsor/action-rules/drafts/reviewed_staging_rules/authority.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 97564,
+      "sha256": "5a2ab01c5093202901aafe6839eff8c4b5183a4da1896ddc7556d08c7ca6ed39"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/.synapsor/authority-write-lock.sqlite",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/.synapsor/boundary-authoring/diagnostics/planning-520ec78e-b938-431a-8c96-8aec59189d91.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 814,
+      "sha256": "9bcffefff796ad6d9dedfae99e6865e1c20910d7f301524abf26cf938d412df0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/.synapsor/boundary-authoring/diagnostics/planning-9dbdbd64-95d2-4c41-a093-5eb7d34a8b6e.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 814,
+      "sha256": "37c91f341333e05bc3f0ae4c91f9a3497f780705b599ea38984fb7808cbc4b00"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/.synapsor/boundary-authoring/diagnostics/planning-edc384fd-6a60-4d9e-8806-39dab2fa9157.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 1139,
+      "sha256": "34f1845483b09ce04ff59d61851c8f9256107b8a0c96455417fbed3e520d0d87"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/.synapsor/boundary-authoring/policy-sources/2d685800-3061-460b-a084-18348d22007f.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 14044,
+      "sha256": "4c1af9da5a0830b3ec543a9d623adcd8d641783b959eaa9e275f7118382365f0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/.synapsor/boundary-authoring/resume.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 24736,
+      "sha256": "a1091e9d1400aa5f4f5ea55359e41ea5a7a664a79260f5da48375a8114471761"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/.synapsor/control-policy/bd329846445d6bbcda06c4c6b944b7280ef3121fe1a8a4bc8da97f1d49cd313e.snapshot.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 340778,
+      "sha256": "bd329846445d6bbcda06c4c6b944b7280ef3121fe1a8a4bc8da97f1d49cd313e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/.synapsor/control-policy/migration.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 445,
+      "sha256": "039e181ca4258dbb23d7c6b2918e17e7d97027fae55b22880705146af4a586c3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/.synapsor/fresh-governed-authoring.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 340938,
+      "sha256": "7fbb758baf3dd0550441d5d5a732f114db8ef5a4efc2e2613a64f633c9e6d0a0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/.synapsor/guided-action-drafts.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 223,
+      "sha256": "89337d65f591dc161db2fd208c3bb10c1f4fce9b6a308d3bfcedd960e98f911b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/.synapsor/guided-onboarding.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 1142,
+      "sha256": "df8938a3b09a9ab59aadf14e84ed710a5037d140e42e50a08e22932d053a50b4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/.synapsor/local.db",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 1585152,
+      "sha256": "6e90a4bc67bc779d6d15786b6e185a119fb506cc918672dc80e2345d34aef489"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/.synapsor/mcp/claude.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 249,
+      "sha256": "f6573c39b842f46813c64b2ec1140c71ed0f2a27bdfab92af11c89a6aabcbe4f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/.synapsor/mcp/codex.toml",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 137,
+      "sha256": "a6a7c4246556014a37d4d439e9b605517c4e556384a34801cd86104845bf184c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/.synapsor/mcp/cursor.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 249,
+      "sha256": "f6573c39b842f46813c64b2ec1140c71ed0f2a27bdfab92af11c89a6aabcbe4f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/.synapsor/mcp/generic-stdio.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 249,
+      "sha256": "f6573c39b842f46813c64b2ec1140c71ed0f2a27bdfab92af11c89a6aabcbe4f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/.synapsor/read-workloads/rw_978db02a7e881d8715666e9e8d0a666c.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 14409,
+      "sha256": "4cbfca432b6d7bef59d00509bc119851bd6327160e2ecc2eaee42091da8acfd6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/.synapsor/runtime-admission.sqlite",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/.synapsor/writeback-setup-plan.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 286,
+      "sha256": "80565f0cdba2266ab5653b999e266426df7bf7ef32ffef56916e52776ae10d3d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/package.json",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 69,
+      "sha256": "7d87b8154865afa09885c6523de55e066d2271d783ce72be2c6cecc2466b4176"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/rules.txt",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 9707,
+      "sha256": "4a9bd0b207f94575b3c45151b656d35f7258f14b2824a52ca392cb9ad0234807"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/schema.sql",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 49448,
+      "sha256": "d9afe51811166a0a9ac901f12a62c7d91c1e1c31448d67d64a8c6659a961ae37"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/live-retest-140/restored/project/synapsor.runner.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 706,
+      "sha256": "0525cc73b2a63ead11b721d3e2d341d302c8254d625245fa2ed076226dde7488"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/cold-preservation-185/roles-password-free.sql",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 794,
+      "sha256": "75ae850650f4729ff4baaaa150ddf60cd723b8407565eb6a45cea563248c97b9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/ALLOCATION-166.json",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 838,
+      "sha256": "b14ddacab6e244fbee7a14e7cf2db20f9ca8d76e4cc0aa7d7d2ce902c75240d7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/CLI-LIVE-175.input",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 3269,
+      "sha256": "95f48c5b5ab56789e743f7fb845aa5faac357a543418ca6e283aa5d85c5f1ea8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/CLI-LIVE-175.output",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 287250,
+      "sha256": "188a214f55dcefdff8d44cb7387ddbbaafe623417de2d86601d3fe99847ef3fc"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/CLI-LIVE-175.timing",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 133733,
+      "sha256": "73389efaf61740b0123d21f118ebe6e512dd9cf06548075cc4012ad363a5219a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/HOST-167.log",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 963,
+      "sha256": "cfffee9425408c205c3187446a5b4da67a585419dbfc1346fba3e7fe36264a36"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/HOST-174.log",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 278,
+      "sha256": "6f0d0775db2da7122802f3f970f9eeb1b1527c3d26086ae2d54d7ec7047f70d0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/LIVE-CURRENT-FIRST-181.json",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 1079689,
+      "sha256": "53388c2c0082eaf244f04d97599b10c094790e92576e675037a63545d15ab9fd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/LIVE-REVIEWED-INVENTORY-177.json",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 16123,
+      "sha256": "58483ec3194be81d9d71dfa8d5c364c864ae5a4e33cdec8e87934e096be5cb30"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/SOURCE-ALL-ACL-MEMBERSHIPS-141.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 115332,
+      "sha256": "b7600903a46f93ec9054d4dccc47538ec9c7a137bcbbb2c4232a33a3a5137a1a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/SOURCE-BEFORE-140.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 231393,
+      "sha256": "75bfe6c7c0b0e9a430c4e88e4da73ef0c13a0cb3b70aefbc53529a8ed8ccc425"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/SOURCE-READINESS-REFRESH-163.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 304971,
+      "sha256": "ba16974966c97ef2887db354027250c896c0a1ab7efe75b5e2863d21f873bed6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054014770/resources/RESOURCE-0001.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2144,
+      "sha256": "d6a63ba477373639ae5831d37964c3cbd2991b2dceb57b64c1826560590cb416"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/CLOSE.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 132,
+      "sha256": "ae3364843cda1e790cbd0e8fbb6b73361258875a6b5593618b2750d50d704957"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/HOST-EVENTS.jsonl",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 31168,
+      "sha256": "d343a6f44539852a52b8dc185e98379d49495facbd8152cb8e2b20fab511efca"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/HOST-READY.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 1020,
+      "sha256": "e8643793d3562947f41af7b39ee0e61f30cb09927c39dab863f59fbce67e1690"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/counts/input_agenda_retest-20260929054420511-count-0001/RESULT.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2267,
+      "sha256": "874901840ee9d78fc63bbc157eed84bf7190fdb09ccc8cafef842c203b5d6797"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/counts/input_agenda_retest-20260929054420511-count-0001/request.raw.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 3239,
+      "sha256": "8c5552c4ba87193dfdba792e0b498081d2c1476462a0e3d7a4b6f9e156574f1a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/counts/input_agenda_retest-20260929054420511-count-0001/request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 3239,
+      "sha256": "8c5552c4ba87193dfdba792e0b498081d2c1476462a0e3d7a4b6f9e156574f1a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/counts/input_agenda_retest-20260929054420511-count-0001/response.raw.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 62,
+      "sha256": "2aa8e349be79451852c0410d9108be868379c0c00e1ecf346833e918432975d6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/counts/input_agenda_retest-20260929054420511-count-0002/RESULT.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2270,
+      "sha256": "d488d3d3681cccc8a22ac9aff2c3670ccaf59534f914d35ab5053376423f41f4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/counts/input_agenda_retest-20260929054420511-count-0002/request.raw.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 27542,
+      "sha256": "70ded503907bde26b5c12076b98a2dbc3d27ad4c0256cd475bc5581b1051de42"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/counts/input_agenda_retest-20260929054420511-count-0002/request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 27542,
+      "sha256": "70ded503907bde26b5c12076b98a2dbc3d27ad4c0256cd475bc5581b1051de42"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/counts/input_agenda_retest-20260929054420511-count-0002/response.raw.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 63,
+      "sha256": "8c88e7749315a3675eb3a0c4ec9ecd1254952dc703cf3a824e3c227601a63eb6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-0401ebabdec8dd9861ab6dcaa9fa83019522178581c54e158e941d6bd7caa6e7.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 184386,
+      "sha256": "0401ebabdec8dd9861ab6dcaa9fa83019522178581c54e158e941d6bd7caa6e7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-141b8c8605524dd3e053461bebd49f69f79ac6553047348b1641cc3588a1adf3.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 3291,
+      "sha256": "141b8c8605524dd3e053461bebd49f69f79ac6553047348b1641cc3588a1adf3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-174f318c0698aef34d1c7535b3aa82d38754cdb0ab961c202e75ec4bc91d4e32.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 178219,
+      "sha256": "174f318c0698aef34d1c7535b3aa82d38754cdb0ab961c202e75ec4bc91d4e32"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-1f98f0e77c25f9943d97e032f9883501d74c391451979442e4804e2d315a5bb9.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 197664,
+      "sha256": "1f98f0e77c25f9943d97e032f9883501d74c391451979442e4804e2d315a5bb9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-2daeec43f07f4b3898d3c13a68dee16e3cfbc609dfda6649c7a7ef8b22fc9879.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 196283,
+      "sha256": "2daeec43f07f4b3898d3c13a68dee16e3cfbc609dfda6649c7a7ef8b22fc9879"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-3002cef27b0d44f4d736af83320e83f03da76a23838a58be8002a73e116864c2.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 173731,
+      "sha256": "3002cef27b0d44f4d736af83320e83f03da76a23838a58be8002a73e116864c2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-4eb828864dbf7f2c06f4f4c24e166bd26668d660ebf19467f7b77c8cf20624c1.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 188089,
+      "sha256": "4eb828864dbf7f2c06f4f4c24e166bd26668d660ebf19467f7b77c8cf20624c1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-5413f1a7f2777225d17aa7431c35b10badebddb1f76c086b646baa02d305b59d.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 190593,
+      "sha256": "5413f1a7f2777225d17aa7431c35b10badebddb1f76c086b646baa02d305b59d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-5614a8cb31b7ab0a13eebc29eb20cd546d2bd2911708f2606e44f6df46d401f1.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 194116,
+      "sha256": "5614a8cb31b7ab0a13eebc29eb20cd546d2bd2911708f2606e44f6df46d401f1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-57bb91f85beff16e7823dc12e31ae853ba884a71b049dcbe37a66366f33cbaeb.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 196295,
+      "sha256": "57bb91f85beff16e7823dc12e31ae853ba884a71b049dcbe37a66366f33cbaeb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-6396f0bc773cc8e52a6e7fffba05309490a6f3fd26ab4de70535757ffce92a74.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 190094,
+      "sha256": "6396f0bc773cc8e52a6e7fffba05309490a6f3fd26ab4de70535757ffce92a74"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-66207a6a6d48b568bd91b99126ef8b89392382d035d5236eed1e0372b5005bf8.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 178525,
+      "sha256": "66207a6a6d48b568bd91b99126ef8b89392382d035d5236eed1e0372b5005bf8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-6e0e923da2557332c6fc20fbd9ce2da9b23cf82b648b88eb3b0ed77e1a3d5edf.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 180530,
+      "sha256": "6e0e923da2557332c6fc20fbd9ce2da9b23cf82b648b88eb3b0ed77e1a3d5edf"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-7dc4266bcec006293698979f2a0a4db9777c19c727903e8ae5aad59bbe9c2351.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 33018,
+      "sha256": "7dc4266bcec006293698979f2a0a4db9777c19c727903e8ae5aad59bbe9c2351"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-802cd024c19877172aeddf5c738569699e91c54915d3958f9a7905e94c349a61.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 30011,
+      "sha256": "802cd024c19877172aeddf5c738569699e91c54915d3958f9a7905e94c349a61"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-87504daf27f90041edc71124148abfe34869e9f9361a377d0b33d9998d17dee0.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 65993,
+      "sha256": "87504daf27f90041edc71124148abfe34869e9f9361a377d0b33d9998d17dee0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-897dfc9ed196763fe3c253a5aaa066a67e298c4fd57a7e704cfb8d50bf1bea74.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 187601,
+      "sha256": "897dfc9ed196763fe3c253a5aaa066a67e298c4fd57a7e704cfb8d50bf1bea74"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-9a38271931d7112a9b2a433be5639768f5bbc07bacc1aa427bd69e1b38ceead8.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 199843,
+      "sha256": "9a38271931d7112a9b2a433be5639768f5bbc07bacc1aa427bd69e1b38ceead8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-9b8cbc95118d3d4a8e993dc75b222d4afaf6a23a217adac42061d88cd7e17ed9.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 176253,
+      "sha256": "9b8cbc95118d3d4a8e993dc75b222d4afaf6a23a217adac42061d88cd7e17ed9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-a05baa856bf432b57e8a587c7353bd1fc291409b3bb28151ec1fb9c10faf2daf.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 184041,
+      "sha256": "a05baa856bf432b57e8a587c7353bd1fc291409b3bb28151ec1fb9c10faf2daf"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-a1b202084944850862536d2b989532e10405f086afaa2478aa19c17cb7d9959a.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 189205,
+      "sha256": "a1b202084944850862536d2b989532e10405f086afaa2478aa19c17cb7d9959a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-a9d21ffcf62b9f0dc5bfd09e22e0a4de30602c207a0649256637915750100bc3.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 182036,
+      "sha256": "a9d21ffcf62b9f0dc5bfd09e22e0a4de30602c207a0649256637915750100bc3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-afa8413f4387108a2588bab82a3db8a7a60f69d03253130d58bcf2780c9b1c9f.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 187975,
+      "sha256": "afa8413f4387108a2588bab82a3db8a7a60f69d03253130d58bcf2780c9b1c9f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-b22d5cf11e988d2ef22b33c96b949ccca1c2a64514249006e0ce86b706fc22bc.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 180826,
+      "sha256": "b22d5cf11e988d2ef22b33c96b949ccca1c2a64514249006e0ce86b706fc22bc"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-b876416aafdf3edbd11b369650451bc0f51cd94e7fd74b11203bf23ab77e4900.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 194104,
+      "sha256": "b876416aafdf3edbd11b369650451bc0f51cd94e7fd74b11203bf23ab77e4900"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-c04e866d89f431e0f8975c8f822d90593bb9208238629328125c2e1ba5922128.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 185596,
+      "sha256": "c04e866d89f431e0f8975c8f822d90593bb9208238629328125c2e1ba5922128"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-c0ae8ecc5d01e5c5be959d259e0d6466c6c338a9ad7183626715cb151ff69c76.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 193654,
+      "sha256": "c0ae8ecc5d01e5c5be959d259e0d6466c6c338a9ad7183626715cb151ff69c76"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-cadde8b7a50eab2e5dcbcb0801dadbb9ca27f59c0c0aa558c6e6a0a1c3b3a52c.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 172501,
+      "sha256": "cadde8b7a50eab2e5dcbcb0801dadbb9ca27f59c0c0aa558c6e6a0a1c3b3a52c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-d812f10faf78b5a5313491c15d56e191c2cacf3b17fdf1069a98440fc92659f6.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 175062,
+      "sha256": "d812f10faf78b5a5313491c15d56e191c2cacf3b17fdf1069a98440fc92659f6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-da3a3c0e5974cdacab2039992ec17336194e1c1ef86d9fa0cc0a5a9208cb57e9.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 177315,
+      "sha256": "da3a3c0e5974cdacab2039992ec17336194e1c1ef86d9fa0cc0a5a9208cb57e9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-e53aacbfbd8d913658a48ae35fddb1b2dbbed156270fd57a2361dbe4837c3776.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 186583,
+      "sha256": "e53aacbfbd8d913658a48ae35fddb1b2dbbed156270fd57a2361dbe4837c3776"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-f6a22db5f24aa225a3632aa13223e8659452ce27086e7693e66bd56e3c8abaac.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 192772,
+      "sha256": "f6a22db5f24aa225a3632aa13223e8659452ce27086e7693e66bd56e3c8abaac"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-fc96782994d01990849b835a6f5a1d53dc0719b0a9ad14f3bdc44a73458bc7a1.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 27595,
+      "sha256": "fc96782994d01990849b835a6f5a1d53dc0719b0a9ad14f3bdc44a73458bc7a1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/installed-native-request-ffb562edba3c0aa031184bcdc1b093ffb505f1657b869c704a3a8e24291ecd1f.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 184135,
+      "sha256": "ffb562edba3c0aa031184bcdc1b093ffb505f1657b869c704a3a8e24291ecd1f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/events.jsonl",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 43497,
+      "sha256": "c3b6c5f74e32d98cc4024ea2f9d0747a7429c9185712a5e3ded3257b178e9a22"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0001-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 1564,
+      "sha256": "b52e476e8c85231f756b16f7f87b7bb219e3f85762c16278d49f3e37f6292fa1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0001-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 3291,
+      "sha256": "141b8c8605524dd3e053461bebd49f69f79ac6553047348b1641cc3588a1adf3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0001-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2002,
+      "sha256": "1f15517fa593e743a46cd1aae97874ec3ee4aaa056427cfad7b3ffccd74a757c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0001-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 15205,
+      "sha256": "dc7c6df96c60ddf6d87cff6070dcee9b6ca49adfbc4b9fb1c85aa37f8c29c82d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0002-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 6543,
+      "sha256": "5fccdd0d7c3fa916164c48439051957d8a1bb77c4d2687bf9f91586322a10a68"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0002-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 27595,
+      "sha256": "fc96782994d01990849b835a6f5a1d53dc0719b0a9ad14f3bdc44a73458bc7a1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0002-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 4520,
+      "sha256": "5589c39eeae4b6b988e3168c44709ef49f8554e6d0921a6cfdc93d53b33f8083"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0002-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 45639,
+      "sha256": "14e58e956bfb9933cf560f5cfd4d2710eba85a55f2fa61ce46b97ad5122f330b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0003-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 6830,
+      "sha256": "bd5b4b331ad293175c7cb1c40f5e83f4f4d0753c66b6293ed0ecdc55628c8b5d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0003-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 30011,
+      "sha256": "802cd024c19877172aeddf5c738569699e91c54915d3958f9a7905e94c349a61"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0003-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 12039,
+      "sha256": "09cfb9425dad9377b64e0c6bf58485e024ff4db8b18894fb7c9082b8e27e3bde"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0003-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 43681,
+      "sha256": "1b11013c5e17c07911369f1163bf4912803b842f34375094bee3598cacbabd04"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0004-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 7180,
+      "sha256": "c2a0a12bf21693bc52e8d3d23af029a2268fc42b6d96a51cd18693d0d7034877"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0004-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 33018,
+      "sha256": "7dc4266bcec006293698979f2a0a4db9777c19c727903e8ae5aad59bbe9c2351"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0004-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 76545,
+      "sha256": "d5855472845abfd0573d5ad1b2dc49a7902cf6a1bf52ebc11a27a0da47aa06ac"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0004-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 997438,
+      "sha256": "f8c989dd3a6961b2f71892b49bc90dec3bdea44508f260101de4e416bcd4c7bf"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0005-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 8343,
+      "sha256": "72944c0587aa9b15bb92d08165cc1f1d8e6430599217cbb067d8c0caf5b6b419"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0005-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 65993,
+      "sha256": "87504daf27f90041edc71124148abfe34869e9f9361a377d0b33d9998d17dee0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0005-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 32784,
+      "sha256": "786529d54c01e54358af896d6ef81875e07eea86dcfc19ae9b008c3474b84f62"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0005-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 74302,
+      "sha256": "d1431ae29a5cfb789aad82b1a18b3b2fc324d2160e34fb371432885c3e700888"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0006-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 22040,
+      "sha256": "cca8372872e448a230b6b233ffb8aafed6e64d86ee258ca7c2f63daff654d26c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0006-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 172501,
+      "sha256": "cadde8b7a50eab2e5dcbcb0801dadbb9ca27f59c0c0aa558c6e6a0a1c3b3a52c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0006-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 42979,
+      "sha256": "106573de7c1fc3632003e2cd192af2eb6ce46b523417071c998d55fa25db3abb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0006-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 177776,
+      "sha256": "4ed24c9a98b5a5e9f4ddb5de64b3d139bf95d5b7cef5ad411e236369c3c5a56a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0007-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 22357,
+      "sha256": "79d9586ca26052910a4bc9a6efac90f4bc7bef4b599bbc2c9b059b2d443b266c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0007-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 173731,
+      "sha256": "3002cef27b0d44f4d736af83320e83f03da76a23838a58be8002a73e116864c2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0007-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 37995,
+      "sha256": "fb31ad3652f9478c4169120170fe7338829a33a104d4a38a7e0461fa88d2d727"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0007-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 179274,
+      "sha256": "5692184b38be2cfde92e896d42ea07329c61a12e3940c3dd121b8164d89e7290"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0008-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 22481,
+      "sha256": "7ccd683c69032cbcc787cc25bec323a3a9488bebb54359442a4d55814f93b285"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0008-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 175062,
+      "sha256": "d812f10faf78b5a5313491c15d56e191c2cacf3b17fdf1069a98440fc92659f6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0008-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 47563,
+      "sha256": "d405507ccd67bdcfa6a0e5af2ac3856e25491fff8eb06800de2d24e03c558cb7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0008-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 186340,
+      "sha256": "f51e35af0252188b6137788a6d52a5c62d13c121eb66546e92e20d7c5231578d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0009-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 22625,
+      "sha256": "96f0aeec2fdc289a80b9dc9bebe6bbd98beaec430d755c4da93be89722f69aad"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0009-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 176253,
+      "sha256": "9b8cbc95118d3d4a8e993dc75b222d4afaf6a23a217adac42061d88cd7e17ed9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0009-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 48794,
+      "sha256": "c011b615cd2457ecb86a0350b2f517dbe76fdca482e6f5ae34c2b7abe6e95fd3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0009-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 201532,
+      "sha256": "7fc8dad93dab1ae620cec3408b73bce9a774171235f40e8e73ce94e44effc518"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0010-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 22819,
+      "sha256": "eeaa6c8ad7bac5bc795efc374ee92ae0efcc5a9cf2dc383c39bf1964071c5aee"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0010-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 178219,
+      "sha256": "174f318c0698aef34d1c7535b3aa82d38754cdb0ab961c202e75ec4bc91d4e32"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0010-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 48728,
+      "sha256": "3464f7ab03c639e10f4bb4695687df1ecf737d75a973abdb8b91372c4c7c4acf"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0010-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 297709,
+      "sha256": "7bd7a0dc864ee3261b71359f60c42d76e376816c773daf8b7b1cd2eaf67836cd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0011-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 23422,
+      "sha256": "f6a2d7113de8660a857d378d0056f78108bd9dff2d60cc93008e141f3b8fe6b6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0011-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 184135,
+      "sha256": "ffb562edba3c0aa031184bcdc1b093ffb505f1657b869c704a3a8e24291ecd1f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0011-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 43799,
+      "sha256": "626540201d87b409db5c98e8d15bf6c31d506b5e72948028371d2e72f8db6915"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0011-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 182259,
+      "sha256": "7a109595b033850fafc2a42ce0af37215fb70cc9c347b864989ef0d774fe64e3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0012-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 23558,
+      "sha256": "608367c27417ec7a2279701e8bc35aec8371a0b786054e836a6e120abb3e4c86"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0012-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 188089,
+      "sha256": "4eb828864dbf7f2c06f4f4c24e166bd26668d660ebf19467f7b77c8cf20624c1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0012-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 54398,
+      "sha256": "a45e82d48f2420256a0bcd1e5ca7316c53ded926035da350f50b916a6dac083b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0012-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 297809,
+      "sha256": "e181ce1004dc34821bd4c5280f7f6b18d411a6ac81eecb83fef61f58fa6af15a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0013-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 23675,
+      "sha256": "6a2ae4430e904e2ebb2919fd4f2ed4a7eb940bbd1357a7fe1146982479a131e6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0013-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 194116,
+      "sha256": "5614a8cb31b7ab0a13eebc29eb20cd546d2bd2911708f2606e44f6df46d401f1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0013-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 37274,
+      "sha256": "1bff9caba87fe81faa4b01e4fdee79041a1642669ace7a020325705c9d60cd8a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0013-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 173363,
+      "sha256": "459c2f27eafbbcfdf233bc1a788b1b7fd72a095d021625e2946fec41c3efc55c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0014-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 23978,
+      "sha256": "8c2c5777cd87fe14c4501ac51265ffc85330fc14ddb6ab5577a287638ee98398"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0014-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 196295,
+      "sha256": "57bb91f85beff16e7823dc12e31ae853ba884a71b049dcbe37a66366f33cbaeb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0014-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 40356,
+      "sha256": "325287f6ba992f6344f256b5e670a7f5c6848f51041de11cd2608a70db29f2cd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0014-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 197902,
+      "sha256": "b6a6bb9f4d155b2161ae2214a4507194174e42920943500559e7544d92e5cdf9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0015-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 23197,
+      "sha256": "0ad6b6c10f02c6f54cec6898f896591318606ca3a086ad67e1fe8665bb9d45d2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0015-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 177315,
+      "sha256": "da3a3c0e5974cdacab2039992ec17336194e1c1ef86d9fa0cc0a5a9208cb57e9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0015-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 44352,
+      "sha256": "af117ac6ce13720ee848ea0ac2d00d815a635f95918300a14e7aaef0a90b48c2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0015-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 193919,
+      "sha256": "41a767bc9e653dfbd7deeb47fcfd6f68263f546f47ed25c09b006cdad7ad1699"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0016-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 23317,
+      "sha256": "7b3e28431579ff715704a2c994cfd5ef8ef89350774f2d2a235cb4b95adb271d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0016-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 178525,
+      "sha256": "66207a6a6d48b568bd91b99126ef8b89392382d035d5236eed1e0372b5005bf8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0016-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 42087,
+      "sha256": "331c54a5e1d533f155a1fa8994c46547eadea65bc1f7db815ed1df1a50b4c8fb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0016-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 209558,
+      "sha256": "7affb0e731f3add87d349d4ca36b0878b5e02a9e3143682ef8b9325107ba4b29"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0017-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 23414,
+      "sha256": "2340e89c9628b44cfc0ac473289121710b9d28089e23d042800c65b48f94a299"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0017-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 180530,
+      "sha256": "6e0e923da2557332c6fc20fbd9ce2da9b23cf82b648b88eb3b0ed77e1a3d5edf"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0017-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 50351,
+      "sha256": "aeb0a235c3af0f56334dfed6584d68153712115a1d702b0349257377492f8558"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0017-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 311747,
+      "sha256": "9a0399193b60d1e6d70ee343c9db8bb920f3f2ded48a205877af4f78b9476092"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0018-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 23604,
+      "sha256": "1f49f8535e8b332f3a2d5e1e40603e12be8aedd0bd9cb472ece557f925c30df3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0018-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 186583,
+      "sha256": "e53aacbfbd8d913658a48ae35fddb1b2dbbed156270fd57a2361dbe4837c3776"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0018-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 39699,
+      "sha256": "07f07383500bb34c77c4901c30ba761386e356a80d0a531ade052980644ffc5f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0018-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 191612,
+      "sha256": "0ecae04498b80bcba2f2e40a9b4093765be24d6c88e8bca199ef27fc7b594dbf"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0019-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 23705,
+      "sha256": "c2b2ee8a5c75d1066f3af3f1e0eb0bd1da3ebece52ecb0e7e04fb171f12f4e07"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0019-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 190593,
+      "sha256": "5413f1a7f2777225d17aa7431c35b10badebddb1f76c086b646baa02d305b59d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0019-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 38292,
+      "sha256": "def9555a5bc350944024ab38cff296c2b1b2ada4462a12b6561e82affa5a4ff2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0019-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 178804,
+      "sha256": "5543b4769d1cd04a7c2f63dda408edc9d7447ff4171e1f8a02169fe2d3bee62a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0020-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 24019,
+      "sha256": "07eb339469c7b13d697fcc0638e970629a50e7d405063349b64f7418dd8eea7d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0020-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 192772,
+      "sha256": "f6a22db5f24aa225a3632aa13223e8659452ce27086e7693e66bd56e3c8abaac"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0020-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 41677,
+      "sha256": "c02ea0d04c61fbd5603ed40eb815355de5b28567779ddbd9b5c73bad30d56f45"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0020-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 206170,
+      "sha256": "eeb599c3a5cae8e5e9a04158c2bc40fb7b9161db193aa193092a4bbce3be74f1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0021-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 23450,
+      "sha256": "d910a8328c0b4a564e9457b12b31d1e5518517429c5fc877d48ba5dd30748363"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0021-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 180826,
+      "sha256": "b22d5cf11e988d2ef22b33c96b949ccca1c2a64514249006e0ce86b706fc22bc"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0021-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 44580,
+      "sha256": "c98663db6e4f007ddbc61c9c7141b29390089a05e06cf690f2f61dbb3bb076ec"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0021-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 194000,
+      "sha256": "13fa0aec115c0c75bf5f34d5839b7f5e6aa32f34a616efcc6d8c858915e7ed08"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0022-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 23566,
+      "sha256": "3acc9ea79a59d5a650994ec580cec6e366cb4b32274fff71d69de61e39eba393"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0022-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 182036,
+      "sha256": "a9d21ffcf62b9f0dc5bfd09e22e0a4de30602c207a0649256637915750100bc3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0022-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 42100,
+      "sha256": "4874dcf3e60fbc6dc70d38abbcddfb5b66e60a76c5117da42293183ad841f4c0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0022-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 209639,
+      "sha256": "9e4fdd377711e7243b3053e9f0dc756debf2afdb4c25766db15126202f29b684"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0023-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 23663,
+      "sha256": "57e281ecdb42a60a511e792299353cee417f4664c339096c88fd01850ecfdccd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0023-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 184041,
+      "sha256": "a05baa856bf432b57e8a587c7353bd1fc291409b3bb28151ec1fb9c10faf2daf"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0023-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 50369,
+      "sha256": "b3ae449f4ef5643659d45333fa3bf06838ca0cc220d4d39dc4d4e62213dc38e9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0023-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 311828,
+      "sha256": "17a8906827ae371f35a14cb213edfe7151c228fd1a0846722c2b3c3a2d3b5777"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0024-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 23838,
+      "sha256": "631b6757b3114bc5d2d7e657ee29f217d8cad9937420afaef87f39b95d70b3c3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0024-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 190094,
+      "sha256": "6396f0bc773cc8e52a6e7fffba05309490a6f3fd26ab4de70535757ffce92a74"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0024-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 39728,
+      "sha256": "9a28215b52c03f36d6b4b90d699a4e702defddd5bca690b946b293214dd950b8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0024-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 191693,
+      "sha256": "99cb4b4ebdf99eb8cd8e5588d10a18cd733ad6b3d838579cf197b36947bc47a9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0025-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 23951,
+      "sha256": "2782d2f4dc8a827f8f88929fe5aff0f2be2924827660571a785db42fdb15c1b6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0025-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 194104,
+      "sha256": "b876416aafdf3edbd11b369650451bc0f51cd94e7fd74b11203bf23ab77e4900"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0025-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 38314,
+      "sha256": "b0833af400d5c57890a12c54bf44decd76fb716a1358cb78ecda9c78f957d420"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0025-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 178885,
+      "sha256": "91a4158222d1ac238d1802f57d4a24585e3e463cfe20031f7cf1a1a189493d79"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0026-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 24259,
+      "sha256": "18466ea08d7683cc44658451c33f1118ae500a4806772719157f8349d3e890de"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0026-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 196283,
+      "sha256": "2daeec43f07f4b3898d3c13a68dee16e3cfbc609dfda6649c7a7ef8b22fc9879"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0026-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 41078,
+      "sha256": "3dcc715f650e9a8ef8306a9fa1a053102fa9312f08d4bd3cfa5ae82739426c44"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0026-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 200427,
+      "sha256": "f09dbf4996dcb43705a59de6fcf98c58b3fd14d2df0b4e4d691007eb7a63f475"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0027-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 23668,
+      "sha256": "31bcac62be360f01eef5d79f1bfdfa5ba3f5d72a901b566967d2e54edaa34988"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0027-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 184386,
+      "sha256": "0401ebabdec8dd9861ab6dcaa9fa83019522178581c54e158e941d6bd7caa6e7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0027-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 44263,
+      "sha256": "944873130913e449ee3504317ec63f6499b288e8d8f584bfbbdd06e4f10d1c33"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0027-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 194081,
+      "sha256": "4f0681f698927d41016035b73eed762c3a141209b3de7333da19b4c641b61ba6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0028-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 23788,
+      "sha256": "c2249d167bb2e95efba52c9a49f421026bb53f382fd517b82efadc4c4765bb71"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0028-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 185596,
+      "sha256": "c04e866d89f431e0f8975c8f822d90593bb9208238629328125c2e1ba5922128"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0028-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 42115,
+      "sha256": "80e8ea14bbf04c09e5fa74a3c65b88b5c48d4972c4bfa3595bd797656d1236e5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0028-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 209720,
+      "sha256": "c860250043c4adf450f6849a71f185b71b4feb120f297e74b4b335ccfbe73a54"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0029-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 23876,
+      "sha256": "e1f6cdd45f109d796c0273aac40117d5253c3f61d32f738c2797c334937f77d1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0029-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 187601,
+      "sha256": "897dfc9ed196763fe3c253a5aaa066a67e298c4fd57a7e704cfb8d50bf1bea74"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0029-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 50380,
+      "sha256": "955e562cfdafea072157513609db8f2e32285d285a693d01886df162424ec358"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0029-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 311909,
+      "sha256": "8654ef486337d2eb784e1819aeaace8d70dc0535fedcafd104e65ce96284f5e5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0030-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 24056,
+      "sha256": "bd79d4f3d7f4a3ea7aef84b2552216be5b319cda302abcf35e58edbb176546bb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0030-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 193654,
+      "sha256": "c0ae8ecc5d01e5c5be959d259e0d6466c6c338a9ad7183626715cb151ff69c76"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0030-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 39731,
+      "sha256": "b84193e8ff07204082b57bd13fdd2365c983c585655b8eed89c47b8b61f46054"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0030-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 191774,
+      "sha256": "9404311dd97d71a651abf87f526cb5535b7fb6585398ffdee0fa464d9de2b1d6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0031-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 24159,
+      "sha256": "5aee294cdce521311eeedea4bff8cd50aba1b0258e36b4d3173d2870c6aef5af"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0031-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 197664,
+      "sha256": "1f98f0e77c25f9943d97e032f9883501d74c391451979442e4804e2d315a5bb9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0031-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 38325,
+      "sha256": "1305bf1b1569952feae930cf88aa3ecaac1205d7d037019176918c3e088f38a0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0031-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 178966,
+      "sha256": "47c5cc74b2d40e417e8151dd2a97c8313e3ac79f97d981c81c539cffde6b5eb3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0032-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 24471,
+      "sha256": "352adfcb3ef79ae031a97ae053b26a8bc5e81a0dc73f67af8b076310d48d73f7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0032-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 199843,
+      "sha256": "9a38271931d7112a9b2a433be5639768f5bbc07bacc1aa427bd69e1b38ceead8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0032-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 41455,
+      "sha256": "33e7b934ada5936efad0c0eab9670889e7b33e86bf143245c40847a34ee99d18"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0032-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 203746,
+      "sha256": "19da2ec8bd13edf3b0b3b895b8f2c85fa66e809a11ed463278d461ad8371cef9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0033-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 23869,
+      "sha256": "75f532c1766e5f1a692b61f2c4f48453c6474684120a5a2b8134e5a6a1fefbda"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0033-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 187975,
+      "sha256": "afa8413f4387108a2588bab82a3db8a7a60f69d03253130d58bcf2780c9b1c9f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0033-response.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 43057,
+      "sha256": "7bbcaf39f7bea9a60b75200c2fbd181f77f6d228ee67fac6eb3417a7e1e0811f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0033-response.safe.txt",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 183459,
+      "sha256": "e35c820b239684ea8bf8ea386913f0bb4ee61ce76033e407b7e401ee5e549201"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0034-request.raw.gz",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 24245,
+      "sha256": "33327626598438597b335ea9410f5264efa7beea44be82a700a360961c38aadf"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/proxy/input_agenda_retest-20260929054420511-0034-request.safe.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 189205,
+      "sha256": "a1b202084944850862536d2b989532e10405f086afaa2478aa19c17cb7d9959a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0001.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2282,
+      "sha256": "4e76a588092cbb6086edf92dfe0aa80f73cdd002bf61623946f5dc0ecc407035"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0002.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2281,
+      "sha256": "cf02df27b948f3aabb238ac9ca0f278b3bb17f30e9bc164f0faa9c4faa97a583"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0003.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2282,
+      "sha256": "460f1aef6fcae653631a84c25d57fd279bb11dd8db7471ad7920532f3ad142a5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0004.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2281,
+      "sha256": "658a84e3241b99cb7e20c17d4422a2935fd090f0f957f88a7eba8617cf05c4f1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0005.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2282,
+      "sha256": "f1c941061b916d398cb3f334753e22165c45f11ad9aae8211d1e70f7458bc4c8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0006.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2282,
+      "sha256": "a81efd171930fe6bdef560e5698d9c4950dd70679774680874f08b2941cfe5d3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0007.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2282,
+      "sha256": "10d220e83281760d2d3505e61c6a1db1f49ac481f8c2e0d0745227073fb1dab8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0008.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2282,
+      "sha256": "047fe6e0ad63539b2a1e33c0ed477c5fefcc21893d33529a8fb7334d7d7274db"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0009.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2282,
+      "sha256": "adbbb73062550b8ebd2086970aef0f469a61f61267ebb50354dd07277c5c05e1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0010.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2282,
+      "sha256": "cd0f53e12663c6f10470a03f1e5ac3230a787f51fa6b73bf6e99b517a03cae7c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0011.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2282,
+      "sha256": "b59f3cc574b52c0e29b090078c27ff8c89c51b93e023423bc07b317417963aa4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0012.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2282,
+      "sha256": "e4118599bf27652e39a0d72912ea05e56f0b1de4e875b1b2b3eace3b04f6acab"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0013.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2282,
+      "sha256": "24c673250a7c9859268af9ed86f29454a59d7e8d20db1309ce050761347431e8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0014.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2283,
+      "sha256": "cc9d303054401de7c4fecb701b7d55ccdbc91762f56f5c114de0eb71b9d98009"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0015.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2283,
+      "sha256": "227b75892bb32ff9e4cbfb609ed284926f80c1ecd2024bd0d7732cbef994d8fb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0016.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2283,
+      "sha256": "6f8b6c8ac145e6b2fee67f4deafa81203fc60d6dac3543961fb8e008dbc2e328"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0017.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2283,
+      "sha256": "1bf9ba22bc8ea82a84f75105d94387fc6b37de5e37b83afb74410e93a1cfcf04"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0018.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2283,
+      "sha256": "e2af13bef8f7df879f2ff295b9e10a712f8a495f623d2e32e4c0aaf2108aaa79"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0019.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2283,
+      "sha256": "d25520a8267ed7ab3b6283bd297ee761be1a4de6388a9cecb757557374141e20"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0020.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2283,
+      "sha256": "fd20900e847676480d0262650f2f0079820eb4cc5fef50c010ef877267de4b22"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0021.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2283,
+      "sha256": "059f3b9e12703ab7689cacd72fa2bb5ad8fa18137b14a1979a72a298a6734fdd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0022.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2283,
+      "sha256": "91da77f1dfd6d2ab0e6f22b58691753c0f064ce128f77c87512cef2a4caa6c2d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0023.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2283,
+      "sha256": "9a4d52f16e6ffe37b4ae04b38008ae0233b78b308aabb02512174cc752e2f5b5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0024.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2283,
+      "sha256": "8777ef832b315bae6f760023df0ff6061c990a916c12ec6d42630e99dfc7dde9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0025.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2283,
+      "sha256": "c9a7df953b076b1959650bfa046e93485f71251db01c9708b0f9ae55a32fbdcb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0026.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2283,
+      "sha256": "4fb19f29f629b4006d2b88d32d5ca9f0cf636eafb5529d4bef800854ab737777"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0027.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2283,
+      "sha256": "3e4e70fd69ce23c5073eec5f02ea2158236cb431be917e6cfc689be8dbee057d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0028.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2283,
+      "sha256": "ff18231f74edd71c2af040c0cc299ee07a498ae673f771a0681811fd523e0f31"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0029.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2283,
+      "sha256": "0b987ddde43e60f1fc328d9c49add855174d2373dca808c086143bf4198c9f01"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0030.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2283,
+      "sha256": "4b3388b5bac4329b45047fc429f1e6dfeb8f0f929fec2e193e29cc6671dad619"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0031.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2283,
+      "sha256": "d0b0761fda486e5d87280871638865a0db02110cbcce9525d3fa1b0d10efbe20"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0032.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2283,
+      "sha256": "9ed68c374ae32015b6332c7a376d6e869e6ca8cb7361badf6badd52f5fa997aa"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0033.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2283,
+      "sha256": "74a58147d69a2bae70b31eef64f251d79fc0a5201ba712b8a94383785b4485b9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0034.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2283,
+      "sha256": "3cbea838f44087d7eb0197bcf79085c149f217ff7d253d29a7ffbe995e3abe57"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0035.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2283,
+      "sha256": "057d2eb3b07aed27d95c61abc462b472d1026ad96a40e2508db92b554cab0e2a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0036.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2283,
+      "sha256": "e459e4bbbf855a717894487c715ad7dbf2db5c495fdb67e1bf7f0db98e541e63"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/captures/guarded/input_agenda_retest-20260929054420511/resources/RESOURCE-0037.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2283,
+      "sha256": "61a5ca77b5955ece907fadabf6cc38b671404bfd9ecf12202c9dd9627254a9f6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/host-tools/apply-allocation-160.mjs",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 1517,
+      "sha256": "7c898a795a7d917b26882ca54b1e494812cc45b4493ac55e214b4f8e33729f8a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/host-tools/live-client-158.py",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2701,
+      "sha256": "7117d4dc40643006c033b654671b92fb315e09733f0378385a8d6e4073d89240"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/host-tools/live-hooks-148.mjs",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 10978,
+      "sha256": "9cfa2f5c8e74eece58587c10f6a897d97637e29d2ea6132c4372c8333fe1b6fa"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/host-tools/live-hooks-154.mjs",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 10975,
+      "sha256": "e9435ea8fc3a4e9540013432c7aaf4de2670023330ba53fb97afda8314937ea8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/host-tools/live-host-158.mjs",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 8836,
+      "sha256": "7f2718f6b2c1020721b8ff549ec27992b3d532a2cea0f043a601beec68403baf"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/host-tools/resource-hook-148.mjs",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 947,
+      "sha256": "c3d0055e7939b7cb9624f8508063ef05b8c9ab359783d411836ac62d354881e6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/host-tools/resource-hook-154.mjs",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 947,
+      "sha256": "c3d0055e7939b7cb9624f8508063ef05b8c9ab359783d411836ac62d354881e6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/ledger/INPUT-AGENDA-RETEST-161.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 817672,
+      "sha256": "4c45a5a1d840354041e0c2ca51fc996f5c89bf878482b0819f4c850136806483"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/plans/ALLOCATION-AMENDMENT-161.json",
+      "kind": "file",
+      "mode": 256,
+      "bytes": 909,
+      "sha256": "ed2ccc8a8f8b9c3237d046e7a5120fd31b0e502b31b0da1d2a3d6fd58bf73cea"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/plans/DIRECT-PLAN-153.json",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 5354,
+      "sha256": "66565285339bc70af86580651eb6d39b00239edc50e0d3e696d79f29c1b88544"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/plans/DIRECT-PLAN-161.json",
+      "kind": "file",
+      "mode": 256,
+      "bytes": 5914,
+      "sha256": "28dcb343cb0923a68878cb7f7e22fde9a46335f15aa0eabe9fb4b9348f62b3f1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/plans/JOINT-PREFLIGHT-PACKET-161.json",
+      "kind": "file",
+      "mode": 256,
+      "bytes": 24308,
+      "sha256": "fe9925c8d4718e5364bc2594e8f9c21d263627469208ad0abc9eb16e5d8067e8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/plans/JOINT-PREFLIGHT-PACKET-172.json",
+      "kind": "file",
+      "mode": 256,
+      "bytes": 26639,
+      "sha256": "a892d909cb629ef7397f62f9889ce7eca541890aebd59225bdb74dc18a22be1f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/.env.example",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 247,
+      "sha256": "2b30a7bd5066bfda2cacc26ea268175eae5accdee67b7fd2d7ae4220fb81667c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/.synapsor/action-rules/drafts/reviewed_staging_rules/authority.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 97564,
+      "sha256": "5a2ab01c5093202901aafe6839eff8c4b5183a4da1896ddc7556d08c7ca6ed39"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/.synapsor/authority-write-lock.sqlite",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/.synapsor/boundary-authoring/diagnostics/planning-520ec78e-b938-431a-8c96-8aec59189d91.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 814,
+      "sha256": "9bcffefff796ad6d9dedfae99e6865e1c20910d7f301524abf26cf938d412df0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/.synapsor/boundary-authoring/diagnostics/planning-9dbdbd64-95d2-4c41-a093-5eb7d34a8b6e.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 814,
+      "sha256": "37c91f341333e05bc3f0ae4c91f9a3497f780705b599ea38984fb7808cbc4b00"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/.synapsor/boundary-authoring/diagnostics/planning-edc384fd-6a60-4d9e-8806-39dab2fa9157.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 1139,
+      "sha256": "34f1845483b09ce04ff59d61851c8f9256107b8a0c96455417fbed3e520d0d87"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/.synapsor/boundary-authoring/policy-sources/2d685800-3061-460b-a084-18348d22007f.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 14044,
+      "sha256": "4c1af9da5a0830b3ec543a9d623adcd8d641783b959eaa9e275f7118382365f0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/.synapsor/boundary-authoring/resume.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 24736,
+      "sha256": "a1091e9d1400aa5f4f5ea55359e41ea5a7a664a79260f5da48375a8114471761"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/.synapsor/control-policy/bd329846445d6bbcda06c4c6b944b7280ef3121fe1a8a4bc8da97f1d49cd313e.snapshot.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 340778,
+      "sha256": "bd329846445d6bbcda06c4c6b944b7280ef3121fe1a8a4bc8da97f1d49cd313e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/.synapsor/control-policy/migration.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 445,
+      "sha256": "039e181ca4258dbb23d7c6b2918e17e7d97027fae55b22880705146af4a586c3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/.synapsor/fresh-governed-authoring.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 340938,
+      "sha256": "7fbb758baf3dd0550441d5d5a732f114db8ef5a4efc2e2613a64f633c9e6d0a0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/.synapsor/guided-action-drafts.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 223,
+      "sha256": "89337d65f591dc161db2fd208c3bb10c1f4fce9b6a308d3bfcedd960e98f911b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/.synapsor/guided-onboarding.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 1142,
+      "sha256": "df8938a3b09a9ab59aadf14e84ed710a5037d140e42e50a08e22932d053a50b4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/.synapsor/local.db",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 1585152,
+      "sha256": "6e90a4bc67bc779d6d15786b6e185a119fb506cc918672dc80e2345d34aef489"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/.synapsor/mcp/claude.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 249,
+      "sha256": "f6573c39b842f46813c64b2ec1140c71ed0f2a27bdfab92af11c89a6aabcbe4f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/.synapsor/mcp/codex.toml",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 137,
+      "sha256": "a6a7c4246556014a37d4d439e9b605517c4e556384a34801cd86104845bf184c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/.synapsor/mcp/cursor.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 249,
+      "sha256": "f6573c39b842f46813c64b2ec1140c71ed0f2a27bdfab92af11c89a6aabcbe4f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/.synapsor/mcp/generic-stdio.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 249,
+      "sha256": "f6573c39b842f46813c64b2ec1140c71ed0f2a27bdfab92af11c89a6aabcbe4f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/.synapsor/read-workloads/rw_978db02a7e881d8715666e9e8d0a666c.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 14409,
+      "sha256": "4cbfca432b6d7bef59d00509bc119851bd6327160e2ecc2eaee42091da8acfd6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/.synapsor/runtime-admission.sqlite",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 0,
+      "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/.synapsor/writeback-setup-plan.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 286,
+      "sha256": "80565f0cdba2266ab5653b999e266426df7bf7ef32ffef56916e52776ae10d3d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/package.json",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 69,
+      "sha256": "7d87b8154865afa09885c6523de55e066d2271d783ce72be2c6cecc2466b4176"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/rules.txt",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 9707,
+      "sha256": "4a9bd0b207f94575b3c45151b656d35f7258f14b2824a52ca392cb9ad0234807"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/schema.sql",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 49448,
+      "sha256": "d9afe51811166a0a9ac901f12a62c7d91c1e1c31448d67d64a8c6659a961ae37"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/project/synapsor.runner.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 706,
+      "sha256": "0525cc73b2a63ead11b721d3e2d341d302c8254d625245fa2ed076226dde7488"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/runtime-tools/local-installed-driver.py",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 854,
+      "sha256": "8fdfbfd90fb3d9290da38dddce4f375dd916a259792149671424f7aa26d20f69"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/runtime-tools/native-ingress.public.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 393,
+      "sha256": "30508626427e4d421b2f9fe9b30a0cb274a27f2d91eb7b5367641bf133acd24c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/runtime-tools/native-transport-preload-694.mjs",
+      "kind": "file",
+      "mode": 256,
+      "bytes": 3047,
+      "sha256": "ce3aa35536a9ea8a2d30dd6ced2c6d4bb2c00cae8aaa79bda87497f2dd2ed9f1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/runtime-tools/socket-bindings.private.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 294,
+      "sha256": "c77236f436b9e82d077f6b9fdb36831d5107015b3807338fb6ead41ddac4e766"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/signoffs-172/Main-input_agenda_retest.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 768,
+      "sha256": "5e8d9fb5b44ccb1aa6e3a1c1b4e408b55aa423ff7044198722c9f80ae9e7c4b3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/signoffs-172/Tester-input_agenda_retest.json",
+      "kind": "file",
+      "mode": 256,
+      "bytes": 831,
+      "sha256": "1dceff2cbc38668b6fa44185720705b7253629884ba1602122210f162c8dbc7a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/signoffs/Main-input_agenda_retest.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 1107,
+      "sha256": "6d5dc6c53a594e77cb64c2aedebbbf49a849eba1eeaec205062f8742262fe3f0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/signoffs/Tester-input_agenda_retest.json",
+      "kind": "file",
+      "mode": 256,
+      "bytes": 1317,
+      "sha256": "bb8e4adc785599745da9877e04d7a6f94aa484c2aff63c6b1c6fcb15f4405e01"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/tools/socket-bindings.private.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 605,
+      "sha256": "373b96bb91844e2b47f267814018a9d69052125d40331c7c723dfc4b0bdf9605"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/terminal-closure-183/CLEANUP-191.log",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 607,
+      "sha256": "d041662a622dbcd437033f93769fcffcbadd8ae0570709edf9b16d1f1b8affe4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/terminal-closure-183/COLD-184.log",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 1550,
+      "sha256": "337787be3ca72b66173a9a0b0e9e809553824eaca09698883329d9017f7c8863"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/terminal-closure-183/COLD-185.log",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 694,
+      "sha256": "8a9c2b569041fa7008c366d356be5befff15e218c93353cf5c37be454047f1bf"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/terminal-closure-183/CURRENT-STATE-final.json",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 1079689,
+      "sha256": "53388c2c0082eaf244f04d97599b10c094790e92576e675037a63545d15ab9fd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/terminal-closure-183/INSTALLED-REHASH-188.json",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 96,
+      "sha256": "0c31271f04d193de895df9a449c038a0f2e96892c5a0809f0f419a45d0df779e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/terminal-closure-183/LEDGER-sealed.json",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 817672,
+      "sha256": "4c45a5a1d840354041e0c2ca51fc996f5c89bf878482b0819f4c850136806483"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/terminal-closure-183/SHORT-INGRESS-OWNER-preserved.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 150,
+      "sha256": "bd5a269be6013733997004b854b986778a8f9bfdcda255937d420deb769250a2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/terminal-closure-183/SHUTDOWN-start.json",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 883,
+      "sha256": "c4d0d5c7c461cc6526b32fb601fd2643d0ea4b610483d77ae1b0cea564debf41"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/terminal-closure-183/STATE-COMPARISON-189.log",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 2135,
+      "sha256": "a2878ea70d1e4c162c541139f29130ac2e5feda47afd0c54183ec07de98efd2a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/tools/check-installed-159.py",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 1448,
+      "sha256": "53cad5f5a339ea1d812787c3fccb46630d7a02581b68ad294b40ad87820be823"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/tools/current-snapshot-155.py",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2010,
+      "sha256": "dbe1ad0d0fae7ba4a66fc51df7eddeba0287db2959637f7e3fc3c5ace2043a78"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/tools/current-watcher-156.cjs",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 3790,
+      "sha256": "1658b17a6c87cd7cefce25ea919a906d6544bfca577de336c6173a0e8e818ea5"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/tools/exact-terminal-cleanup-191.py",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 3964,
+      "sha256": "52e625ee64c0c6cdc3288bbfd53a2ed3b09aaea64b0839b60088c516ca46c86e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/tools/inert-general-check-156.cjs",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 4743,
+      "sha256": "60e79484bbae37d2b251c25d1540684ddd89cc7ae3c8a6e713fdb8bfd5f4cb6f"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/tools/preserve-live-terminal-184.py",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 8360,
+      "sha256": "5451bc2150df76ee276a123aa69ce18eff362d8cfa3d165efa033e4ea8536ebb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/tools/preserve-live-terminal-185.py",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 7925,
+      "sha256": "8ab2178467e7c9c13777aaf9845335ff8c3ee64226edd53c823582b527952aca"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/tools/terminal-state-comparison-189.py",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 4563,
+      "sha256": "db9b8eefd3a60389d1e0a3db81f2a4c998b720148b94e6aae536b4493a4df756"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/CLEAN-RETEST-SETUP-140.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 14060,
+      "sha256": "418ee05f5c97fb86fbe99c874939299be5d9d1b209e312be08c38d461d1942b1"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/CLEAN-SOURCE-ACL-141.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 12425,
+      "sha256": "7569408727dab33fa5e3514b01ab71fe5fe8593617a06c0f7ba5ae4d53865aed"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/CLEAN-START-SEAL-147.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 5187,
+      "sha256": "fee247d3d36647411b827d5af5b33d52e0c3e130f6b4902b1076a21f0535e06a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/COLD-PRESERVATION-185.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 55834,
+      "sha256": "773f6d204550f38a02454cbd3f5eee25b3af5f3ecc4238b6f5f3496e2e0c468e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/CURRENT-SOURCE-READINESS-163.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 16740,
+      "sha256": "796bd5f810ed705e4bf1b7ecc0a4e281543659ce886e973206f4a3dadd28e9bb"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/CURRENT-WATCHER-CONTROLS-157.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 3223,
+      "sha256": "23122b26100c4dc89f97c8da19666ea8faf589e609e7849b2dd656ec5faf5ef4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/EXACT-TERMINAL-CLEANUP-192.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 4439,
+      "sha256": "e7b464baae6515265d67ea00bf1a6bd07b56a4ca6b4f05fc5205857ec8b54fa4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/EXTERNAL-HARNESS-ACCEPTANCE-143.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 890,
+      "sha256": "eee1026bd851f816d951d33c6f6f428f9952c2b54093190c2d28e22d6fd45b14"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/FROZEN-WATCHER-BUILD-149.json",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 823,
+      "sha256": "f913bb86510563b54ca0182191dcad735e46cc4527718c1f66e5a33e95f34c6e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/FULL50-PRESERVED-EVIDENCE-131.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 328984,
+      "sha256": "100a9bb95d75e4f64606f00015e8222a7e3d3de942ec3c4b740ef5bd5e5fb36a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/HOOK-PATH-CORRECTION-154.json",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 310,
+      "sha256": "f76f8033efeba9ab0fb0774771c467d709f46640dde553f7f5f3fb362c409260"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/INERT-ALTERNATIVE-CONTROLS-152.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 256,
+      "sha256": "9631617ec322f2aea247845b6caddd93b42c0fd2d5e254ea3a18ec7504128cfa"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/INERT-CHECKPOINT-CONTROLS-151.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 20646,
+      "sha256": "bc4c92ac63cc493dc617fc513ecdb06f029152bf943cd33c70e7eab123733a77"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/INERT-WATCHER-SETUP-FAILURE-150.json",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 349,
+      "sha256": "3d5f7d676e31dc2c310ce2dd8d7b1263e191b28d4683be1d846fb9163d8a6023"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/LAUNCH-PREFLIGHT-CONTROLS-162.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2300,
+      "sha256": "3f03e07ef965814fd8ae1e38678806baa0e327728e5fef1c7b085694a66d1efa"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/LAUNCH-SOCKET-BLOCKER-168.json",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 1047,
+      "sha256": "9ba596ebfcb601a1ae51a4bb5aa80a0e8d8fa77e82d4aa4d939e30f245da3eba"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/LIVE-ADMISSION-179.json",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 1830,
+      "sha256": "2f5b2585cade2a5a4bbf4de841d07ddfab8159dc1cbfcec2ff824d132758a419"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/LIVE-AGENDA-PENDING-176.json",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 783,
+      "sha256": "1b48a889ddea513ea1019cf432125dabe378942c8b01e63a9dc715901d2db62e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/LIVE-FIRST-COMPILED-181.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 1215,
+      "sha256": "f1e4de600f63cc0d9e8f0bc79bdc8fa86e07059c00ca8280aba2fd8e257d631d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/LIVE-INPUT-INTERPRETATION-180.json",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 4401,
+      "sha256": "384b59df1fa6485973f41127dce8c943dcd61f11b54f00470c8f2077bbee2f74"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/LIVE-INVENTORY-CHECKPOINT-178.json",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 380749,
+      "sha256": "7effde58b48f75a81cb80c8c7947cbd87df7433a5d96ca3121497a12f1957e03"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/LIVE-PRIVATE-READ-PENDING-182.json",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 17148,
+      "sha256": "30ee955b08915e01b8ac5b2db5255f8e93af7378e5d95f4e86a47c95d616ec04"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/READINESS-SOCKET-UPDATE-173.json",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 1026,
+      "sha256": "433458645f89995c1a9cbd40c786ee424b5702e5f61e63e300069f3d35a5cbf8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/RESOURCE-PREFLIGHT-146.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2145,
+      "sha256": "2be17a2abaa1cbfe738ba0b6728b87a57d463066b0dc5d92c6e684f05e756b96"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/RESOURCE-PREFLIGHT-159.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2146,
+      "sha256": "243f3f6110fb9278864235dea64189afa93c6aa1acd5e9d0d60216276d2dd4ee"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/RESOURCE-SHORT-SOCKET-171.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 2284,
+      "sha256": "20f9a320e0bc335c16181379fe4e555afc6026a8ba7945502ca38a95ff891baa"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/SHORT-INGRESS-CONTROLS-171.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 526,
+      "sha256": "7f1decf84662ff6ae31d30c0dd41128ac8c7a840658eaa8c12b47e338a6ce30e"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/TERMINAL-CURRENT-WATCHER-186.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 966,
+      "sha256": "1b4d751870b55cb219e2abf105ad6baf997d4f28e7913e3cbbc698510c516b51"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/TERMINAL-FINANCIAL-SEAL-187.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 12410,
+      "sha256": "1231b6cb6c4a212cfa1fdb34962b48186d7aa0f536565f09b5b06801a99f7b30"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/TERMINAL-PRESERVATION-INDEX-190.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 139749,
+      "sha256": "b69ae9eb5755fa031f9c79dbc232e4eb0735c2576f1c93f8f6cda89f51cf419a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/TERMINAL-STATE-COMPARISON-189.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 1367139,
+      "sha256": "fd9a4241cbfb3b4412d7c490c838c1603586cd8f35285c3eb4df71d5d01d8fcd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/TRUNCATED-SOCKET-CLEANUP-169.json",
+      "kind": "file",
+      "mode": 436,
+      "bytes": 490,
+      "sha256": "69a0a60c41c7380dec6ca3dc01e803936f5982ba6aa4252274c620d58003d750"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-supported-50-20260927/private/lane-c-live-735/ledger/LIVE-SHARED-LEDGER-762.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 699125,
+      "sha256": "008b084ad848c9c3c730a5c514e2cea3e7173781b07ab0f9a46de30a2ffe1607"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-supported-50-20260927/private/lane-c-live-735/ledger/LIVE-SHARED-LEDGER-762.json.input-agenda-retest-allocation.json",
+      "kind": "file",
+      "mode": 384,
+      "bytes": 340,
+      "sha256": "a9b7c72178d2add86883de38e8e110346c1faf7fef168b9b6676e5cdbd7f3b98"
+    }
+  ],
+  "prior_indices": {
+    "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/FULL50-PRESERVED-EVIDENCE-131.json": {
+      "sha256": "100a9bb95d75e4f64606f00015e8222a7e3d3de942ec3c4b740ef5bd5e5fb36a",
+      "members": 1089,
+      "changed_approved_dynamic_members": []
+    },
+    "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/INSTALLED-ACCEPTANCE-EVIDENCE-138.json": {
+      "sha256": "73db7d4f08f888ea761a4e8dbe8ff306c485ab9686a61f266758ed3e708f81f4",
+      "members": 97,
+      "changed_approved_dynamic_members": []
+    },
+    "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/READINESS-EVIDENCE-165.json": {
+      "sha256": "48fc998085dce1f7d400c331baf9bb0ca9b3e7c08a3422a8edc1901f94873c42",
+      "members": 69,
+      "changed_approved_dynamic_members": []
+    }
+  },
+  "precleanup_index_sha256": "b69ae9eb5755fa031f9c79dbc232e4eb0735c2576f1c93f8f6cda89f51cf419a",
+  "cold_restoration": "personally verified185 all42CONTROL/projectHOME/all20Source139rows/full8ACLrolesmemberships; Main independently crosschecked111",
+  "cleanup_record": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/EXACT-TERMINAL-CLEANUP-192.json",
+  "ledger_authoritative_path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/ledger/INPUT-AGENDA-RETEST-161.json",
+  "ledger_sha256": "4c45a5a1d840354041e0c2ca51fc996f5c89bf878482b0819f4c850136806483",
+  "terminal_egress": "0034 QUALIFICATION_NETWORK_AMBIGUOUS, UNKNOWN_COST_RESERVED $2.7900625; 34inference+2counts; no laterpaidstart",
+  "old_unknown_Direct_hold_usd": "2.77855",
+  "genuine_business_execution_enable_worker_or_Source_effects": 0,
+  "new_provider_calls_during_closure": 0,
+  "no_product_edits": true,
+  "heavy_suite": "Main exact gates inspected, no tester whole-suite rerun",
+  "five_uncovered_resources": "all beforeafter IDs/status/labels identical; untouched",
+  "StageB": "ATTEMPTED / NOT PASSED",
+  "scope": "Not externalhuman audit, universal safety proof, paidB/business authorization, deployment or unrelated backlog acceptance",
+  "ephemeral_exclusions": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/socket",
+      "meaning": "ephemeral PG/old ingress socket directory only; exact resource IDs and logical source cold records retained"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/private/live-retest-140/ingress",
+      "meaning": "ephemeral PG/old ingress socket directory only; exact resource IDs and logical source cold records retained"
+    }
+  ]
+}

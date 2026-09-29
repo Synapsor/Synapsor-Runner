@@ -1,3 +1,9 @@
+# Current continuation closed — input-policy fidelity/agenda
+
+The separate owner-authorized repair/retest assignment is complete at its preserved terminal boundary. Candidate1 passes scoped independent installed controls; the sole Direct full50 live journey is ATTEMPTED / NOT PASSED, with four disabled Actions and no whole-Source review/publication.34inference/2counts; newaccounted$3.76866160 includingunknown$2.79006250; campaign$23.44800920 with oldunknown$2.77855 retained. No retry or new product work follows. [Final report](../input-policy-agenda-20260929/FINAL-REPORT.md) binds gates, artifact, independent verdict, cold state and costs. Earlier instructions below are historical, not live authorization.
+
+# Historical preceding delivery
+
 # Current — three Lane C measurements delivered; STOP
 
 The unchanged f20/38c189 candidate was exercised under owner170/175: 800 inference / 100 count operations per journey; $30 Direct main, $20 OpenRouter, $10 mini, $60 combined / $80 campaign; original T0 retained, deadline2026-10-01T23:59Z. Actual outcomes: Direct7 disabled drafts plus partial8, unresolved transport and retained $2.77855 hold; OpenRouter1 disabled draft and unresolved reason requirement; mini0 completed outcomes and a model retention/narration failure. No full50 BUSINESS acceptance/publication/edit/removal completed. No further sends or repairs are authorized automatically.

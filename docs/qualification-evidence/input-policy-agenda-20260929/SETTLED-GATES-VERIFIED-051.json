@@ -1,0 +1,222 @@
+{
+  "verified_at": "2026-09-29T02:27:16.194683+00:00",
+  "source": {
+    "source_commit": "b7f01aaccf334de56ec2cbef4ce10062d93f13f5",
+    "product_tests_commit": "b7f01aaccf334de56ec2cbef4ce10062d93f13f5",
+    "independent_source_accepted": true,
+    "independent_verification": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/PRE-FREEZE-MENU-VERIFIED-049.json",
+    "provider_calls": 0,
+    "installed_accepted": false,
+    "product_commit": "579416edf3b555129f9f464f04682f63007fc0f7"
+  },
+  "source_digest": "63b9d397c77c799599f595ef153b77819c89b102edbc2c6dcfd938a1fca2a367",
+  "gates": [
+    {
+      "name": "stable-full-003",
+      "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/stable-full-003-exit.json",
+      "record_sha256": "430892a6154cfd4c12a825dbffd1ef23040d2eb3970bc2e2f8ebf3c1c983c3f0",
+      "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/stable-full-003.log",
+      "log_sha256": "10ebd61f8fecbd730793fd57b09ed831607b067a6c04e3a6e91fa8f1d5d387d4",
+      "command": [
+        "corepack",
+        "pnpm",
+        "test"
+      ],
+      "exit": 0,
+      "source_unchanged": true,
+      "summary_lines": [
+        " Test Files  374 passed | 21 skipped (395)",
+        "      Tests  7723 passed | 532 skipped (8255)",
+        "   Duration  1723.59s (transform 24.54s, setup 0ms, collect 586.50s, tests 5556.97s, environment 147ms, prepare 50.29s)"
+      ]
+    },
+    {
+      "name": "types-003",
+      "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/types-003-exit.json",
+      "record_sha256": "bacc6ac5e0f828a1b61972562b570c5f5d91ff9333fbe3a2a22e7f11de626ff4",
+      "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/types-003.log",
+      "log_sha256": "6fb1bda9cae0d0514344c1ba90cc6736a2a77780c385a2a80f92a6f22f4230ff",
+      "command": [
+        "corepack",
+        "pnpm",
+        "typecheck"
+      ],
+      "exit": 0,
+      "source_unchanged": true,
+      "summary_lines": []
+    },
+    {
+      "name": "selected-postgres-003",
+      "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/selected-postgres-003-exit.json",
+      "record_sha256": "a8fdbe3dc63905a486ead9c63a679dcabbc20aeef8273c5bb0b1f43d6adc7c8d",
+      "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/selected-postgres-003.log",
+      "log_sha256": "d294717b88db810c40de7fe750e5b3855da92c82e20a377605f0a3c214d60bc8",
+      "command": [
+        "corepack",
+        "pnpm",
+        "exec",
+        "vitest",
+        "run",
+        "packages/proposal-store/src/production-explore-postgres.test.ts",
+        "apps/runner/src/scoped-explore-composite-postgres.test.ts",
+        "apps/runner/src/owner-policy-connection.test.ts",
+        "apps/runner/src/semantic-writeback-authority.test.ts",
+        "apps/runner/src/authoring-review-subject.test.ts",
+        "--maxWorkers=1",
+        "--minWorkers=1",
+        "--testTimeout=20000",
+        "--hookTimeout=20000"
+      ],
+      "exit": 0,
+      "source_unchanged": true,
+      "summary_lines": [
+        " Test Files  5 passed (5)",
+        "      Tests  192 passed | 4 skipped (196)",
+        "   Duration  387.95s (transform 3.26s, setup 0ms, collect 7.66s, tests 379.35s, environment 1ms, prepare 223ms)"
+      ]
+    },
+    {
+      "name": "trusted-core-003",
+      "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/trusted-core-003-exit.json",
+      "record_sha256": "c96098ac159134418a2c3c8605208020eaa7acded5e71acc1d79323170bc78c4",
+      "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/trusted-core-003.log",
+      "log_sha256": "12854f4bc85a1ef44165ee0b610bc9a790fc7bd1b6751ad845d6438028463aa4",
+      "command": [
+        "node",
+        "scripts/check-trusted-core-dependencies.mjs"
+      ],
+      "exit": 0,
+      "source_unchanged": true,
+      "summary_lines": []
+    },
+    {
+      "name": "licenses-003",
+      "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/licenses-003-exit.json",
+      "record_sha256": "7e7d36b966573abe76744fe058e744a1df2779c7ee5b3c85f44e29bb4ee05bd3",
+      "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/licenses-003.log",
+      "log_sha256": "81c81f063c5391a1e9f237b114a7ba197da9b6cece450fa3fd851f6fcac80bac",
+      "command": [
+        "node",
+        "scripts/check-license-content.mjs"
+      ],
+      "exit": 0,
+      "source_unchanged": true,
+      "summary_lines": []
+    },
+    {
+      "name": "human-commands-003",
+      "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/human-commands-003-exit.json",
+      "record_sha256": "56aacddca5fc0e397a052252dce530be2015c138042ccd1ff0567e5011d4c58c",
+      "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/human-commands-003.log",
+      "log_sha256": "4ca02cff1d23604455f2707b16fc58bea2d0beb7f6adff085887cbdae1379222",
+      "command": [
+        "node",
+        "scripts/verify-human-command-surface.mjs"
+      ],
+      "exit": 0,
+      "source_unchanged": true,
+      "summary_lines": []
+    },
+    {
+      "name": "dsl-sources-003",
+      "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/dsl-sources-003-exit.json",
+      "record_sha256": "2e69c8e945f4294edae898283a900e96fa8d350a2cfb3a8dab215b2576c7a985",
+      "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/dsl-sources-003.log",
+      "log_sha256": "3bd663b10b211bb9dbfa01117dd164a3a851d9936e4be1568a6bd5f9ccf7d50a",
+      "command": [
+        "bash",
+        "scripts/verify-dsl-source-paths.sh"
+      ],
+      "exit": 0,
+      "source_unchanged": true,
+      "summary_lines": []
+    },
+    {
+      "name": "cursor-plugin-003",
+      "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/cursor-plugin-003-exit.json",
+      "record_sha256": "daede582b882a851cd14c335917b4602b4d6e9a4e341c4f673a7e60c3fbdf10a",
+      "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/cursor-plugin-003.log",
+      "log_sha256": "cc12e22d29ebd660345c60ee249826505ffccb62bb45e1b39590202b7ee7135f",
+      "command": [
+        "node",
+        "scripts/verify-cursor-plugin.mjs"
+      ],
+      "exit": 0,
+      "source_unchanged": true,
+      "summary_lines": []
+    },
+    {
+      "name": "mcp-client-configs-003",
+      "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/mcp-client-configs-003-exit.json",
+      "record_sha256": "96e6b9d11dc474fd3836d1e8b93803877ea5c1633719c25b48a82ef7bb2f5869",
+      "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/mcp-client-configs-003.log",
+      "log_sha256": "546d2de7d54f8cf5e42f357d777262dc01ff0239576ce186cf51962135989265",
+      "command": [
+        "node",
+        "scripts/verify-mcp-client-configs.mjs"
+      ],
+      "exit": 0,
+      "source_unchanged": true,
+      "summary_lines": []
+    },
+    {
+      "name": "local-package-003",
+      "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/local-package-003-exit.json",
+      "record_sha256": "c1281f0f700c35f927a2c4326ea9f0cdd037e93d4a7de5b20abf86b1bc1b54ae",
+      "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/local-package-003.log",
+      "log_sha256": "65b8b2fb50d91f6f1974b773271ed6c5e78d125a1765047e5de907249e2a59ec",
+      "command": [
+        "bash",
+        "scripts/verify-local-runner.sh"
+      ],
+      "exit": 0,
+      "source_unchanged": true,
+      "summary_lines": []
+    },
+    {
+      "name": "bundle-freshness-003",
+      "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/bundle-freshness-003-exit.json",
+      "record_sha256": "43c76c9441f28c7447c6607451972ab9d217eb4a097021e10bc7331d27dfb6b6",
+      "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/bundle-freshness-003.log",
+      "log_sha256": "4534215e15034b5b5391ab51d71121ebc119c68a2226f6194462a8558e9489b7",
+      "command": [
+        "node",
+        "scripts/verify-local-runner-bundle-freshness.mjs"
+      ],
+      "exit": 0,
+      "source_unchanged": true,
+      "summary_lines": []
+    },
+    {
+      "name": "public-commands-003",
+      "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/public-commands-003-exit.json",
+      "record_sha256": "e79673e2c7e018190329e2d44d9543489c42b2a56a19f6e6304fed0cb071d5ab",
+      "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/public-commands-003.log",
+      "log_sha256": "2121e7f079daf2f2826853340dcdbf7349aeb7e7ed01ffc464e8202cec41e559",
+      "command": [
+        "bash",
+        "scripts/verify-public-commands.sh"
+      ],
+      "exit": 0,
+      "source_unchanged": true,
+      "summary_lines": []
+    },
+    {
+      "name": "packed-offline-003",
+      "record": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/packed-offline-003-exit.json",
+      "record_sha256": "3118ff906343539e8a4043e31a9effae4813c6516d098be45719fe68508e3449",
+      "log": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/input-agenda-fidelity-20260929/final-gates/packed-offline-003.log",
+      "log_sha256": "e2aaf3e85b0e7e1e977cea723a330d713a6a48ec402db6079aef305c2fd667eb",
+      "command": [
+        "bash",
+        "scripts/verify-packed-runner.sh"
+      ],
+      "exit": 0,
+      "source_unchanged": true,
+      "summary_lines": []
+    }
+  ],
+  "failed_attempt_retained": "stable-full-001 prerequisite failure; full002 7722PASS/532SKIP/1FAIL outdated menu expectation; both retained",
+  "scope": "one unfiltered final full suite, explicit types, five selected real PostgreSQL files, ten offline/package checks",
+  "installed_acceptance": false
+}

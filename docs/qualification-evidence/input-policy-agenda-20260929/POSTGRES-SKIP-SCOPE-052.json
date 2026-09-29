@@ -1,0 +1,17 @@
+{
+  "at": "2026-09-29T02:23:31.831764+00:00",
+  "selected_gate": "selected-postgres-003",
+  "result": {
+    "passed": 192,
+    "skipped": 4,
+    "files_passed": 5
+  },
+  "skip_source": "apps/runner/src/owner-policy-connection.test.ts",
+  "four_explicit_pg_skips": [
+    "installed CLI default-No/apply enrollment at line274",
+    "RSA signed approval CLI variant at line497",
+    "Ed25519 signed approval CLI variant at line497",
+    "unsupported approver key CLI variant at line555"
+  ],
+  "note": "These are hardcoded postgres skips for CLI controls exercised in the SQLite variants; PostgreSQL connection was supplied and all selected connected groups ran. No claim of complete database/vendor coverage."
+}

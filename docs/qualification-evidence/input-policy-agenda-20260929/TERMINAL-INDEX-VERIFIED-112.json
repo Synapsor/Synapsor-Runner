@@ -1,0 +1,8 @@
+{
+  "utc": "2026-09-29T06:20:53.273621+00:00",
+  "index": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-input-agenda-20260929/records/TERMINAL-PRESERVATION-INDEX-190.json",
+  "index_sha256": "b69ae9eb5755fa031f9c79dbc232e4eb0735c2576f1c93f8f6cda89f51cf419a",
+  "verified_members": 359,
+  "all_member_bytes_match": true,
+  "scope": "Tester terminal preservation index; independently verified Main111 actual coldvalues in addition to hash membership"
+}
