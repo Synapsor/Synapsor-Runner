@@ -8,6 +8,7 @@ import {
 import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
 import { AskError, type AskProviderDependencies } from "./model-ask.js";
 import { authoringExplanationFailure } from "./authoring-explanation-failure.js";
+import { nativeAuthoringRefusal } from "./test-fixtures/native-authoring-refusal.js";
 
 describe("model-assisted Boundary authoring conversation", () => {
   it("retains supported clarification turns and refuses unknown turn kinds", () => {
@@ -136,7 +137,7 @@ describe("model-assisted Boundary authoring conversation", () => {
       operatorMessage: "Continue.",
       validatedFacts: ["The disabled draft remains unchanged."],
       egressAcknowledged: true,
-    })).resolves.toBeUndefined();
+    })).rejects.toMatchObject({ code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION" });
     expect(modelAuthoringHistory(conversation)).toEqual([]);
   });
 
@@ -146,17 +147,18 @@ describe("model-assisted Boundary authoring conversation", () => {
     ["ASK_PROVIDER_RATE_LIMITED", true],
     ["ASK_PROVIDER_RESPONSE_INVALID", true],
     ["ASK_PROVIDER_STREAM_FAILED", true],
-  ])("preserves sanitized narration failure %s without changing history", async (code, retryable) => {
+  ])("does not turn an unobserved narration error %s into fallback or change history", async (code, _retryable) => {
     const conversation = createModelAuthoringConversation();
     const onFailure = vi.fn();
-    const result = await narrateValidatedAuthoringStep({
+    const result = narrateValidatedAuthoringStep({
       session: { provider: "openai", model: "gpt-5.6-terra", apiKey: "memory-key", conversation,
         dependencies: { requestJson: async () => { throw new AskError(String(code), "secret-token https://private-provider.example/"); } } },
       operatorMessage: "Explain the pending authority.", validatedFacts: ["Read authority is disabled."],
       egressAcknowledged: true, onFailure,
     });
-    expect(result).toBeUndefined();
-    expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({ code, retryable }));
+    await expect(result).rejects.toMatchObject({ code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION" });
+    expect(onFailure).toHaveBeenCalledOnce();
+    expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({ code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", retryable: false }));
     expect(JSON.stringify(onFailure.mock.calls)).not.toMatch(/secret-token|private-provider/);
     expect(modelAuthoringHistory(conversation)).toEqual([]);
   });
@@ -166,6 +168,21 @@ describe("model-assisted Boundary authoring conversation", () => {
       code: "NARRATION_UNAVAILABLE", retryable: true,
     });
     expect(JSON.stringify(authoringExplanationFailure(new Error("secret-token")))).not.toContain("secret-token");
+  });
+
+  it("retains optional narration fallback for a fully read native authentication refusal", async () => {
+    const conversation = createModelAuthoringConversation();
+    const onFailure = vi.fn();
+    const requestJson = vi.fn(nativeAuthoringRefusal);
+    await expect(narrateValidatedAuthoringStep({
+      session: { provider: "openai", model: "gpt-5.6-terra", apiKey: "synthetic", conversation,
+        dependencies: { requestJson } },
+      operatorMessage: "Explain the pending authority.", validatedFacts: ["Read authority is disabled."],
+      egressAcknowledged: true, onFailure,
+    })).resolves.toBeUndefined();
+    expect(requestJson).toHaveBeenCalledOnce();
+    expect(onFailure).toHaveBeenCalledWith(expect.objectContaining({ code: "ASK_PROVIDER_AUTHENTICATION_FAILED", retryable: false }));
+    expect(modelAuthoringHistory(conversation)).toEqual([]);
   });
 
   it("keeps local review available when the saved provider credential is missing", async () => {

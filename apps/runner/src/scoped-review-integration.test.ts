@@ -424,7 +424,7 @@ describe('latest scoped report through real HTTP/SSE and coordinated persistence
   it('interruption retains spent attempts; cancelled restart sends nothing and preserves the unaccepted parent', async () => {
     const x = await prepared(f => [f.arguments, new Error('Local SSE interruption')]);
     try {
-      await expect(ensurePreparedPolicyCoverage(x.input)).rejects.toThrow('Local SSE interruption');
+      await expect(ensurePreparedPolicyCoverage(x.input)).rejects.toMatchObject({ code: 'ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION' });
       const saved = await loadPolicySources(x.root, x.f.sources.id), episodes = structuredClone(saved.coverage_episodes);
       expect(episodes!.at(-1)!.submissions).toHaveLength(2); expect(episodes!.at(-1)!.submissions[0]!.validated).toBe(false);
       expect(episodes!.at(-1)!.submissions[1]!.completed_at).toBeUndefined();

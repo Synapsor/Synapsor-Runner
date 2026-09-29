@@ -593,7 +593,7 @@ describe("host-confirmed model Read prerequisite mapping", () => {
         confirmSemanticSelection: mapping => reviewReadPrerequisiteSelection({ mapping, session: chat.session, rememberAnswer,
           assertCurrent: async () => { if (stale) throw new Error("READ_BOUNDARY_REVISION_CHANGED"); } }),
       });
-      if (path === "provider_failure") await expect(run).rejects.toThrow("TEST_PROVIDER_UNAVAILABLE");
+      if (path === "provider_failure") await expect(run).rejects.toMatchObject({ code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION" });
       else if (path === "stale_question") await expect(run).rejects.toThrow("READ_BOUNDARY_REVISION_CHANGED");
       else if (path === "explain_decline") expect(await run).toMatchObject({ state: "pending", authority_granted: false });
       else expect(await run).toMatchObject({ state: "reviewed", authority_granted: false,

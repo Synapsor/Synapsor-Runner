@@ -1,3 +1,4 @@
+import { nativeAuthoringRefusal } from "./test-fixtures/native-authoring-refusal.js";
 import fs from "node:fs/promises";
 import { appendFileSync } from "node:fs";
 import path from "node:path";
@@ -38,10 +39,10 @@ const intentFor = (index: number) => `Action ${index}: workshop.adjust_card_${in
 const editRequest = `Revise workshop.adjust_card_${editIndex} ttl_seconds from 300 to 240; preserve every original exception, global responsibility, unit input bound, effect, and human approval requirement in the complete selected program.`;
 const removeRequest = "Remove workshop.adjust_card_50 from the selected program and explicitly withdraw its requested Action 50 source clause. Retain every other source clause, early exception and global responsibility.";
 
-async function runPublicConversational(testControl?: "no" | "escape" | "source_drift", inputBounds = false) {
+async function runPublicConversational(testControl?: "no" | "escape" | "source_drift", inputBounds = false, interruption?: "edit_cancel" | "midpoint_cancel") {
   const draftFor = (index:number) => { const draft=baseDraftFor(index); if(inputBounds)draft.inputs!.push({name:"operator_note",description:"The caller note required by the source.",type:{kind:"string",min_length:1,max_length:64,comparison:"exact"}}); return draft; };
   const agendaControl = testControl ?? process.env.OWNED_CONVERSATIONAL_AGENDA_CONTROL;
-  const evidence = testControl ? `${evidenceRoot}-${testControl}` : inputBounds ? `${evidenceRoot}-input-bounds` : evidenceRoot;
+  const evidence = interruption ? `${evidenceRoot}-${interruption}` : testControl ? `${evidenceRoot}-${testControl}` : inputBounds ? `${evidenceRoot}-input-bounds` : evidenceRoot;
   if (![13, 32, 50].includes(count)) throw new Error("A finite public count is required.");
   await fs.mkdir(evidence, { recursive: false });
   const root = existingProject ?? path.join(evidence, "project");
@@ -90,6 +91,7 @@ async function runPublicConversational(testControl?: "no" | "escape" | "source_d
         expect(choice.initialValue).toBe("no"); selected = "yes";
       }
       else if (choice.title === "VERIFIED ACTION BOUNDARY") selected = stage === "remove_resume" && values.includes("activate") ? "activate" : "back";
+      else if (choice.title === "SETUP NEEDS ATTENTION" && interruption) selected = "pause";
       else if (choice.title === "CLIENT FOR THIS JOB") selected = "later";
       else if (choice.title === "SEND ATTACHED RULES") { expect(choice.initialValue).toBe("cancel"); selected = "send"; }
       else if (choice.title === "USE THE SAVED ATTACHMENT") selected = "continue";
@@ -134,7 +136,8 @@ async function runPublicConversational(testControl?: "no" | "escape" | "source_d
   };
   const deriveReply = async (request: any) => {
     const body = request.body;
-    expect(body.parallel_tool_calls).toBe(false);
+    if (Array.isArray(body.tools) && body.tools.length) expect(body.parallel_tool_calls).toBe(false);
+    else { expect(body).not.toHaveProperty("tools"); expect(body).not.toHaveProperty("tool_choice"); expect(body).not.toHaveProperty("parallel_tool_calls"); }
     const text = strings(body).join("\n");
     const names = (body.tools ?? []).map((tool: any) => tool.name ?? tool.function?.name);
     if (++requests > 600) fail("Finite DERIVED request bound exceeded.");
@@ -160,7 +163,9 @@ async function runPublicConversational(testControl?: "no" | "escape" | "source_d
       for (const line of sourceLines) expect(text).toContain(line);
       expect(text).toContain(boundedJob);
       if (count === 50 && index === 25 && !midpointPaused) {
-        midpointPaused = true; interrupt?.(); throw new AskError("ASK_CANCELLED", "DERIVED operator interrupted at the ordinary saved program midpoint.", 499);
+        midpointPaused = true;
+        if (interruption === "midpoint_cancel") { interrupt?.(); throw new AskError("ASK_CANCELLED", "DERIVED operator interrupted at the ordinary saved program midpoint.", 499); }
+        return { status: 401, body: { error: { message: "DERIVED complete refusal at the saved midpoint, not cancellation." } } };
       }
       const current = draftFor(index);
       if (stage.startsWith("edit") && index === editIndex) {
@@ -184,7 +189,9 @@ async function runPublicConversational(testControl?: "no" | "escape" | "source_d
       }
       const key = `${stage}:${index}`; const phase = actionReplyIndex.get(key) ?? 0; actionReplyIndex.set(key, phase + 1);
       if (stage === "edit_prepare" && phase === 1 && !editInterrupted) {
-        editInterrupted = true; interrupt?.(); throw new AskError("ASK_CANCELLED", "DERIVED interruption after the exact pending edit checkpoint.", 499);
+        editInterrupted = true;
+        if (interruption === "edit_cancel") { interrupt?.(); throw new AskError("ASK_CANCELLED", "DERIVED interruption after the exact pending edit checkpoint.", 499); }
+        return { status: 401, body: { error: { message: "DERIVED complete refusal after the exact pending edit checkpoint, not cancellation." } } };
       }
       if(inputBounds && index===1 && stage==='create' && phase===5) expect(text).toContain('SOURCE_INPUT_CONSTRAINT_WEAKER');
       if (phase < phases.length) [name, args] = phases[phase] as any;
@@ -234,18 +241,28 @@ async function runPublicConversational(testControl?: "no" | "escape" | "source_d
     wireRecords.push({ origin: "ACTUAL_OWNED_LOOPBACK_TRANSPORT_DERIVED_REPLY", stage, index: wireRecords.length + 1,
       utf8_body_bytes: encoded.length, encoded_utf8: encoded.toString("utf8"), time: new Date().toISOString(), body,
       completed_response_utf8_bytes: Buffer.byteLength(response), completed_response_encoded_utf8: response });
-    outgoing.writeHead(200, { "content-type": "application/json" }); outgoing.end(response);
+    outgoing.writeHead(queuedReply.status, { "content-type": "application/json" }); outgoing.end(response);
   });
   if (count === 50) await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
   const endpoint = count === 50 ? new URL(`http://127.0.0.1:${(server.address() as any).port}/responses`) : undefined;
   const requestJson = async (request: any) => {
     const reply = await deriveReply(request);
-    if (!endpoint) return reply;
+    if (!endpoint) return reply.status === 200 ? reply : nativeAuthoringRefusal(request, reply.status);
     queuedReply = reply;
     return secureAskJsonRequest({ ...request, endpoint, scope: "custom_loopback", headers: {} });
   };
   const outer: any = { chooseResource: async () => fail("Manual resource route entered"), editFieldTiers: async () => fail("Manual field route entered"),
-    promptText: async () => agendaControl === "source_drift" ? undefined : fail("Outer operator text bypass"), confirm: async () => fail("Outer confirmation bypass") };
+    chooseOption: async (title: string, choices: Array<{ value: string }>, options: { context?: string[]; initialValue?: string }) => {
+      if (title !== "SETUP NEEDS ATTENTION" || !(editInterrupted || midpointPaused || agendaControl === "source_drift")) fail(`Unexpected outer choice: ${title}`);
+      expect(choices.some(choice => choice.value === "pause")).toBe(true);
+      expect(options.initialValue).toBe("pause");
+      const expectedFailure = agendaControl === "source_drift" ? "changed" : interruption ? "unfinished generation" : "rejected the configured API key";
+      expect(options.context?.join("\n")).toContain(expectedFailure);
+      write(options.context!.join("\n"));
+      decisions.push({ kind: "explicit_outer_safe_pause", title, stage, interruption: interruption ?? "complete_native_refusal" });
+      return "pause";
+    },
+    promptText: async () => agendaControl === "source_drift" || interruption ? undefined : fail("Outer operator text bypass"), confirm: async () => fail("Outer confirmation bypass") };
   const options: any = { startWithAgentJob: true, exitAfterAgentJob: true,
     modelAuthoringSession: { provider: "openai", model: "owned-offline", apiKey: "offline-placeholder", dependencies: { requestJson,
       contextMeasurement: { meter, onProfile: (profile: any) => profiles.push({ stage, ...profile }) } } },
@@ -276,9 +293,20 @@ async function runPublicConversational(testControl?: "no" | "escape" | "source_d
       const saved = JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
       expect(saved.action.intents).toHaveLength(50); expect(saved.action.intended_outcomes).toEqual(Array.from({ length: 50 }, (_, i) => `workshop.adjust_card_${i + 1}`)); expect(saved.action.completed_outcomes).toHaveLength(24);
       await fs.writeFile(path.join(evidence, "midpoint-resume.json"), JSON.stringify(saved, null, 2));
+      const savedRequestsAtMidpoint = requests;
       stage = "resume_create";
       result = await boundaryReviewCommand(["--project-root", root, "--access", "--job-first"], inspection, outer, undefined, options);
       context = await loadBoundaryReviewContext(root);
+      if (interruption === "midpoint_cancel") {
+        const retained = JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
+        expect(requests).toBe(savedRequestsAtMidpoint);
+        expect(retained.action).toEqual(saved.action);
+        expect(retained.generation_recovery).toEqual(saved.generation_recovery);
+        expect(retained.generation_recovery.operations.some((op: any) => op.state === "partial")).toBe(true);
+        expect((await listActionRuleAuthorityDrafts(root))[0]).toEqual(partial);
+        expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+        return;
+      }
     }
     const [declinedDraft] = await listActionRuleAuthorityDrafts(root);
     expect(declinedDraft?.authority.rules).toHaveLength(count);
@@ -317,8 +345,20 @@ async function runPublicConversational(testControl?: "no" | "escape" | "source_d
       expect(pendingEdit.pending_action_revision.checkpoint).toBeDefined(); expect(pendingEdit.action.checkpoint).toBeUndefined();
       expect((await loadActiveActionRuleAuthority(root)).activation.digest).toBe(active.activation.digest);
       await fs.writeFile(path.join(evidence, "pending-edit-checkpoint.json"), JSON.stringify(pendingEdit, null, 2));
+      const savedRequestsAtEdit = requests;
       stage = "edit_resume";
       expect(await boundaryReviewCommand(["--project-root", root, "--access", "--job-first"], inspection, outer, undefined, options)).toBe(0);
+      if (interruption === "edit_cancel") {
+        const retained = JSON.parse(await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"), "utf8"));
+        expect(requests).toBe(savedRequestsAtEdit);
+        expect(retained.pending_action_revision).toEqual(pendingEdit.pending_action_revision);
+        expect(retained.action).toEqual(pendingEdit.action);
+        expect(retained.generation_recovery).toEqual(pendingEdit.generation_recovery);
+        expect(retained.generation_recovery.operations.some((op: any) => op.state === "partial")).toBe(true);
+        expect(await loadActiveActionRuleAuthority(root)).toEqual(active);
+        expect(editSaveDeclined).toBe(false);
+        return;
+      }
       expect(editSaveDeclined).toBe(true);
       expect(await listActionRuleAuthorityDrafts(root)).toEqual([]);
       expect((await loadActiveActionRuleAuthority(root)).activation.digest).toBe(active.activation.digest);
@@ -367,8 +407,13 @@ async function runPublicConversational(testControl?: "no" | "escape" | "source_d
   }
  }
 
-it(`runs the normal public conversational DERIVED ${count}-Action source route`, () => runPublicConversational(), 120000);
+it(`runs the public DERIVED ${count}-Action route with complete native refusal and reprepare`, () => runPublicConversational(), 120000);
 if (!process.env.OWNED_CONVERSATIONAL_AGENDA_CONTROL && !existingProject) {
   if(count===13)it("delivers a declared input-bound correction through public save, whole review and restart",()=>runPublicConversational(undefined,true),120000);
   it.each(["no", "escape", "source_drift"] as const)("keeps the real program entry unmutated on %s", control => runPublicConversational(control), 30000);
+}
+
+if (!existingProject && !process.env.OWNED_CONVERSATIONAL_AGENDA_CONTROL) {
+  it("retains the original in-generation edit cancellation and refuses blind restarted generation", () => runPublicConversational(undefined, false, "edit_cancel"), 120000);
+  if (count === 50) it("retains the original midpoint cancellation and refuses blind restarted generation", () => runPublicConversational(undefined, false, "midpoint_cancel"), 120000);
 }

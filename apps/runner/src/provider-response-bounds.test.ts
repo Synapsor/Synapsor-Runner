@@ -104,7 +104,8 @@ describe("stream and replay boundary controls", () => {
       [argumentsOfSize(ARGUMENT_BYTES), true, "accepted"],
       [argumentsOfSize(ARGUMENT_BYTES + 1), true, "ASK_TOOL_ARGUMENTS_INVALID"],
       [JSON.stringify({ name: "界".repeat(44000) }), true, "ASK_TOOL_ARGUMENTS_INVALID"],
-      [argumentsOfSize(70000), false, "ASK_PROVIDER_RESPONSE_INVALID"],
+      [argumentsOfSize(70000), false, "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"],
+      [argumentsOfSize(ARGUMENT_BYTES + 1), false, "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"],
     ] as const) {
       await serverRun(async endpoint => {
         const run = turn(request => secureAskJsonRequest({ ...request, endpoint, scope: "custom_loopback", headers: {} }),

@@ -1,3 +1,4 @@
+import { nativeAuthoringRefusal } from "./test-fixtures/native-authoring-refusal.js";
 import * as actionAuthorities from "./action-rule-authority.js";
 import { startLocalUiServer } from "./local-ui.js";
 import { readActivationImpact, readActivationImpactLines } from "./read-activation-impact.js";
@@ -3670,6 +3671,7 @@ describe("boundary operator-plane CLI", () => {
             apiKey: "session-secret",
           },
           modelReadWorkloadGenerator,
+          modelAuthoringNarrator: async () => "Review the exact local Read decision.",
           actionProjectInspector,
           boundaryAuthoringChatFactory: () => chat,
         },
@@ -3971,6 +3973,7 @@ describe("boundary operator-plane CLI", () => {
             baseUrl: "http://127.0.0.1:11434/v1",
           },
           modelReadWorkloadGenerator,
+          modelAuthoringNarrator: async () => "Review the exact local Read decision.",
           boundaryAuthoringChatFactory: () => testBoundaryAuthoringChat(session),
         },
       )).resolves.toBe(0);
@@ -6814,7 +6817,7 @@ describe("boundary operator-plane CLI", () => {
       };
       const chat = testBoundaryAuthoringChat(session, "claude-code");
       const run = () => boundaryReviewCommandInternal(["--project-root", root, "--access", "--job-first"], async () => inspection,
-        session, undefined, { startWithAgentJob: true, modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "test-key" },
+        session, undefined, { startWithAgentJob: true, modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "test-key", dependencies: { requestJson: nativeAuthoringRefusal } },
           modelBoundaryJobPlanner: planner, modelReadWorkloadGenerator: readGenerator, modelActionRuleGenerator: actionGenerator,
           modelAuthoringNarrator: async () => "Review the exact requested outcome removal.", actionProjectInspector: async () => inspection,
           boundaryAuthoringChatFactory: () => chat });
@@ -9801,6 +9804,7 @@ describe("boundary operator-plane CLI", () => {
             baseUrl: "http://127.0.0.1:11434/v1",
           },
           modelReadWorkloadGenerator,
+          modelAuthoringNarrator: async () => "Review the exact local Read decision.",
           actionProjectInspector: async () => inspection,
           runDelegationActionReview,
           boundaryAuthoringChatFactory: () => ({

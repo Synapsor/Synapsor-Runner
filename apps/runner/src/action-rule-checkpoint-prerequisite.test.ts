@@ -1,3 +1,5 @@
+import { nativeAuthoringRefusal } from "./test-fixtures/native-authoring-refusal.js";
+import type { AskProviderDependencies } from "./model-ask.js";
 import { describe, expect, it, vi } from "vitest";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { rolePostureFingerprint, type SchemaInspection, type TableInfo } from "@synapsor-runner/schema-inspector";
@@ -131,7 +133,7 @@ function runInput(f = savedJob()) {
     { status: 200, body: { output: [{ type: "function_call", call_id: "validate", name: "runner__validate_action_draft", arguments: "{}" }] } },
     { status: 200, body: { output: [{ type: "message", content: [{ type: "output_text", text: "The unchanged disabled draft validates." }] }] } },
   ];
-  const requestJson = vi.fn(async (request: { body?: unknown }) => { bodies.push(JSON.stringify(request.body)); return responses.shift()!; });
+  const requestJson = vi.fn<NonNullable<AskProviderDependencies["requestJson"]>>(async request => { bodies.push(JSON.stringify(request.body)); return responses.shift()!; });
   const chooseOption = vi.fn(async () => "allow" as string | undefined);
   const assertCurrent = vi.fn(async () => {});
   const sourceReviews: Parameters<NonNullable<ModelActionRuleDraftInput["reviewPrivateSource"]>>[0][] = [];
@@ -184,6 +186,18 @@ describe("retained public-origin collection checkpoint prerequisites", () => {
     expect(result.compiled.verification_boundary.resources.find(resource => resource.resource === child)!.fields.every(field => !field.model_visible)).toBe(true);
   });
 
+  it.each(["TEST_TRANSPORT_INTERRUPTED", "TEST_INTERRUPTED"])("retains the original unobserved %s schedule as a no-retry negative", async message => {
+    const h = runInput();
+    h.requestJson.mockImplementation(async () => { throw new Error(message); });
+    await expect(generateModelActionRuleDraft(h.input)).rejects.toMatchObject({ code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION" });
+    expect(h.requestJson).toHaveBeenCalledOnce();
+    expect(h.stored().reviewed_private_sources).toHaveLength(1);
+    expect(h.stored().components).toEqual(h.f.checkpoint.components);
+    expect(h.stored().operator_messages).toEqual(h.f.checkpoint.operator_messages);
+    // This component fixture has no saved-job transport host. Public restart
+    // fencing is exercised with the actual resume host in the recovery suite.
+  });
+
   it("keeps the strict stale guard when the host did not authorize retained-component revalidation", async () => {
     const h = runInput();
     h.input.revalidateSavedComponents = false;
@@ -203,10 +217,10 @@ describe("retained public-origin collection checkpoint prerequisites", () => {
     expect(h.requestJson).not.toHaveBeenCalled();
   });
 
-  it("persists fresh consent before model exchange, then resumes without asking it or accepted business answers again", async () => {
+  it("persists fresh consent before a complete native refusal, then reuses consent and accepted business answers", async () => {
     const h = runInput();
-    h.requestJson.mockImplementation(async () => { throw new Error("TEST_TRANSPORT_INTERRUPTED"); });
-    await expect(generateModelActionRuleDraft(h.input)).rejects.toThrow("TEST_TRANSPORT_INTERRUPTED");
+    h.requestJson.mockImplementation(nativeAuthoringRefusal);
+    await expect(generateModelActionRuleDraft(h.input)).rejects.toMatchObject({ code: "ASK_PROVIDER_AUTHENTICATION_FAILED" });
     const retained = h.stored();
     expect(retained.reviewed_private_sources).toHaveLength(1);
     expect(retained.context_digest).toBe(h.f.checkpoint.context_digest);
@@ -378,8 +392,8 @@ describe("retained public-origin collection checkpoint prerequisites", () => {
 
   it("asks fresh consent for new metadata on resume, rather than reusing an old private proof", async () => {
     const first = runInput();
-    first.requestJson.mockImplementation(async () => { throw new Error("TEST_INTERRUPTED"); });
-    await expect(generateModelActionRuleDraft(first.input)).rejects.toThrow("TEST_INTERRUPTED");
+    first.requestJson.mockImplementation(nativeAuthoringRefusal);
+    await expect(generateModelActionRuleDraft(first.input)).rejects.toMatchObject({ code: "ASK_PROVIDER_AUTHENTICATION_FAILED" });
     const resumed = runInput();
     resumed.f.freezes.columns.push({ ...resumed.f.freezes.columns.find(field => field.name === "active")!, name: "additional_private_flag", ordinal_position: 7 });
     resumed.input.checkpoint = first.stored();
@@ -392,16 +406,17 @@ describe("retained public-origin collection checkpoint prerequisites", () => {
     expect(JSON.stringify(options?.explanationContext)).not.toContain("additional_private_flag");
   });
 
-  it.each([false, true])("renewed prerequisite consent is durable before interruption or failed save (save fails=%s)", async saveFails => {
+  it.each([false, true])("renewed prerequisite consent is durable before complete native refusal or failed save (save fails=%s)", async saveFails => {
     const first = runInput();
-    first.requestJson.mockImplementation(async () => { throw new Error("TEST_INTERRUPTED"); });
-    await expect(generateModelActionRuleDraft(first.input)).rejects.toThrow("TEST_INTERRUPTED");
+    first.requestJson.mockImplementation(nativeAuthoringRefusal);
+    await expect(generateModelActionRuleDraft(first.input)).rejects.toMatchObject({ code: "ASK_PROVIDER_AUTHENTICATION_FAILED" });
     const resumed = runInput();
     resumed.f.freezes.columns.push({ ...resumed.f.freezes.columns.find(field => field.name === "active")!, name: "additional_private_flag", ordinal_position: 7 });
     resumed.input.checkpoint = first.stored();
     if (saveFails) resumed.input.onCheckpoint = async () => { throw new Error("TEST_RENEWAL_SAVE_FAILED"); };
-    resumed.requestJson.mockImplementation(async () => { throw new Error("TEST_INTERRUPTED"); });
-    await expect(generateModelActionRuleDraft(resumed.input)).rejects.toThrow(saveFails ? "TEST_RENEWAL_SAVE_FAILED" : "TEST_INTERRUPTED");
+    resumed.requestJson.mockImplementation(nativeAuthoringRefusal);
+    if (saveFails) await expect(generateModelActionRuleDraft(resumed.input)).rejects.toThrow("TEST_RENEWAL_SAVE_FAILED");
+    else await expect(generateModelActionRuleDraft(resumed.input)).rejects.toMatchObject({ code: "ASK_PROVIDER_AUTHENTICATION_FAILED" });
     if (saveFails) expect(resumed.requestJson).not.toHaveBeenCalled();
     else {
       const next = runInput(resumed.f);

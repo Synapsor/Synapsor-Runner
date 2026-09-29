@@ -922,7 +922,7 @@ async function readProviderEventStream(
   const consume = (block: string) => {
     try { consumeProviderSseBlock(block, assembler); }
     catch (error) {
-      if (!(error instanceof AskError) || !["ASK_PROVIDER_RESPONSE_INVALID", "ASK_PROVIDER_RESPONSE_INCOMPLETE"].includes(error.code)) throw error;
+      if (!(error instanceof AskError) || !["ASK_PROVIDER_RESPONSE_INVALID", "ASK_PROVIDER_RESPONSE_INCOMPLETE", "ASK_TOOL_ARGUMENTS_INVALID"].includes(error.code)) throw error;
       // Drain within the existing byte/deadline bounds. Only the adapter's real
       // completion condition can distinguish malformed complete content from
       // an interrupted transfer. A later socket error takes precedence.
@@ -1118,8 +1118,9 @@ function openAiChatStreamAssembler(
               current.name = raw.function.name;
             }
             if (typeof raw.function.arguments === "string" && raw.function.arguments) {
-              current.arguments += raw.function.arguments;
-              assertToolArgumentSize(current.arguments);
+              const nextArguments = current.arguments + raw.function.arguments;
+              assertToolArgumentSize(nextArguments);
+              current.arguments = nextArguments;
               emitProviderStream(onEvent, { phase: "tool_delta", characters: raw.function.arguments.length });
             }
           }

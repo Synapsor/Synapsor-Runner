@@ -178,7 +178,7 @@ describe('receipt review association through exact final complete captures',()=>
    expect(correction).not.toContain('opaque-test-continuation');expect(JSON.stringify(events)).not.toContain('opaque-test-continuation');
    expect(receipt(report).obligation_assessment.verified).toBe(false);
    incomplete=true;let submitted=0;
-   await expect(reviewPolicyCoverage({session,source:f.source,draft:f.draft,sourceSession:f.sources,episode:{beforeSubmission:async()=>{},afterSubmission:async()=>{submitted++;}}})).rejects.toMatchObject({code:provider==='openai'?'ASK_PROVIDER_RESPONSE_INVALID':'ASK_PROVIDER_RESPONSE_INCOMPLETE'});
+   await expect(reviewPolicyCoverage({session,source:f.source,draft:f.draft,sourceSession:f.sources,episode:{beforeSubmission:async()=>{},afterSubmission:async()=>{submitted++;}}})).rejects.toMatchObject({code:'ASK_PROVIDER_RESPONSE_INCOMPLETE'});
    expect(submitted).toBe(0);
   }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));}
  });

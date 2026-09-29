@@ -1,3 +1,5 @@
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { nativeAuthoringRefusal } from "./test-fixtures/native-authoring-refusal.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -92,7 +94,7 @@ async function fixture() {
 
 describe("existing compiled counter host review before policy coverage", () => {
   afterEach(() => vi.restoreAllMocks());
-  it.each(["confirm", "decline", "save_failed", "save_noop", "cancel_after_save", "concurrent_read", "concurrent_action"] as const)("retains exact authority and durable confirmation semantics (%s)", async mode => {
+  it.each(["confirm", "confirm_unknown", "decline", "save_failed", "save_noop", "cancel_after_save", "concurrent_read", "concurrent_action"] as const)("retains exact authority and durable confirmation semantics (%s)", async mode => {
     const f = await fixture(), { root } = f, resumePath = path.join(root, ".synapsor/boundary-authoring/resume.json");
     let round = 1, reviewCount = 0, failSave = false, cancellation = new AbortController();
     const events: string[] = [], records: Array<{ round: number; reviews: unknown[]; saved: unknown[] }> = [];
@@ -120,6 +122,7 @@ describe("existing compiled counter host review before policy coverage", () => {
       confirm: async () => true, confirmActivation: vi.fn(async () => false), confirmReviewedDisabled: async () => true,
       chooseOption: async (title, _choices, options) => {
         if (title === "START BOUNDARY DRAFTING") return "resume";
+        if (title === "SETUP NEEDS ATTENTION" && mode === "confirm_unknown") { messages.push(...options?.context ?? []); return "pause"; }
         if (title === "REVIEW CHANGED-RECORD PROTECTION") {
           events.push("review"); reviewCount++;
           expect(options).toMatchObject({ initialValue: "pending", requireExplicitSelection: true });
@@ -155,7 +158,8 @@ describe("existing compiled counter host review before policy coverage", () => {
         expect(draft.runner_evidence.runtime_contract.authoring_provider).toMatchObject({ provider: "openai", model: "gpt-test" });
         for (const item of reviews.filter(Boolean)) expect(records.at(-1)!.saved).toContainEqual({ resource: item.resource,
           field: item.field, maintenance: item.maintenance, proof_digest: item.proof_digest });
-        cancellation.abort(); throw new AskError("ASK_CANCELLED", "Stop after actual host coverage input was inspected.", 499);
+        if (mode === "confirm_unknown") { cancellation.abort(); throw new AskError("ASK_CANCELLED", "Stop after actual host coverage input was inspected.", 499); }
+        return nativeAuthoringRefusal(request);
       } } },
       modelBoundaryJobPlanner: planner, modelActionRuleGenerator: generator,
       modelReadWorkloadGenerator: async () => { throw new Error("Current saved Read must not be regenerated."); },
@@ -182,8 +186,8 @@ describe("existing compiled counter host review before policy coverage", () => {
         expect(await readActionRuleAuthorityDraft(root, f.authority.authority.name)).toEqual(f.authority);
         const first = await saved();
         expect(first.job_intent).toContain("unanswered separate allocation limit");
-        expect(first.reviewed_version_fields ?? []).toHaveLength(mode === "confirm" ? 2 : mode === "decline" ? 0 : 1);
-        if (mode === "confirm") {
+        expect(first.reviewed_version_fields ?? []).toHaveLength(mode.startsWith("confirm") ? 2 : mode === "decline" ? 0 : 1);
+        if (mode.startsWith("confirm")) {
           expect(events.slice(0, 3)).toEqual(["review", "review", "coverage"]);
           expect(records[0]!.reviews.every(Boolean)).toBe(true);
         } else expect(records).toHaveLength(0);
@@ -192,9 +196,28 @@ describe("existing compiled counter host review before policy coverage", () => {
           expect(messages).toContain("Attached rules review could not complete.");
           expect(messages.join("\n")).toContain(mode === "decline" ? "ACTION_COUNTER_REVIEW_PENDING" : "ACTION_CHECKPOINT_NOT_SAVED");
         }
+        if (mode === "confirm_unknown") {
+          const beforeRestart = await saved();
+          expect(beforeRestart.generation_recovery?.operations.some(op => op.state === "partial")).toBe(true);
+          round++; cancellation = new AbortController();
+          await expect(run()).resolves.toBe(0);
+          expect(records).toHaveLength(1); // No second provider callback.
+          expect(reviewCount).toBe(2);
+          const reopened = await saved();
+          expect(Date.parse(reopened.updated_at)).toBeGreaterThanOrEqual(Date.parse(beforeRestart.updated_at));
+    expect(Date.parse(reopened.updated_at)).toBeLessThanOrEqual(Date.now());
+    const { revision_digest: reopenedDigest, ...reopenedCore } = reopened;
+    expect(reopenedDigest).toBe(canonicalJsonDigest(reopenedCore));
+          expect(reopened).toEqual({ ...beforeRestart, updated_at: reopened.updated_at, revision_digest: reopened.revision_digest });
+          expect(await loadActivatedExplorationBoundaries(root)).toEqual(initialRead);
+          expect(await readActionRuleAuthorityActivation(root)).toEqual(initialAction);
+          expect((await loadBoundaryReviewContext(root)).candidate).toEqual(baselineRead);
+          expect(await readActionRuleAuthorityDraft(root, f.authority.authority.name)).toEqual(f.authority);
+          return;
+        }
         round++; failSave = false; cancellation = new AbortController();
         await expect(run()).resolves.toBe(0);
-        expect(reviewCount).toBe(mode === "confirm" || mode === "cancel_after_save" ? 2 : mode === "decline" ? 4 : 3);
+        expect(reviewCount).toBe(mode.startsWith("confirm") || mode === "cancel_after_save" ? 2 : mode === "decline" ? 4 : 3);
         expect((await saved()).reviewed_version_fields).toHaveLength(2);
         expect(records.at(-1)!.reviews.every(Boolean)).toBe(true);
         expect(await readActionRuleAuthorityDraft(root, f.authority.authority.name)).toEqual(f.authority);

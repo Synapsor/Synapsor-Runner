@@ -1,3 +1,4 @@
+import { nativeAuthoringRefusal } from "./test-fixtures/native-authoring-refusal.js";
 import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
@@ -26,6 +27,7 @@ function fixture() {
   for(const p of corrected.passages) for(const c of p.counter_requirements ?? []) delete c.operator_message_id;
   return {sources,draft,replies,source,corrected};
 }
+const completeRefusal = Symbol('DERIVED fully consumed native HTTP401');
 function transport(f:ReturnType<typeof fixture>, submissions:any[], provider:'openai'|'openrouter'='openai') {
   if(provider==='openrouter') f.sources.approvals.push({digest:f.source.digest,destination:'openrouter[x-ai/grok-4.6] at https://openrouter.ai/api/v1'}); // local transport fixture consent, not a provider trial
   const conversation=createModelAuthoringConversation(); conversation.policySources=f.sources;
@@ -33,6 +35,7 @@ function transport(f:ReturnType<typeof fixture>, submissions:any[], provider:'op
   const requestJson=vi.fn(async(r:any)=>{
     requests.push(structuredClone(r.body));const submitted=submissions[requests.length-1],explicit=typeof submitted==='function';let args=explicit?submitted(r.body):submitted;
     if(args instanceof Error) throw args;
+    if(args === completeRefusal) return nativeAuthoringRefusal(r);
     if(!explicit&&requests.length>1&&!f.replies.some((raw:any)=>canonicalJsonDigest(raw)===canonicalJsonDigest(args)))args=derivedScopedResponse(r.body,args);
     return {status:200,body:provider==='openai'?{output:[{type:'function_call',call_id:'captured',name:'runner__review_policy_coverage',arguments:JSON.stringify(args)}]}:
       {choices:[{finish_reason:'tool_calls',message:{role:'assistant',content:null,tool_calls:[{id:'captured',type:'function',function:{name:'runner__review_policy_coverage',arguments:JSON.stringify(args)}}]}}]}};
@@ -92,7 +95,7 @@ describe('captured coverage correction round trip',()=>{
       await t.run();expect(wire).toHaveLength(2);expect(correction(wire[1])).toContain('COUNTING_SUPPORT_MISMATCH');expect(correction(wire[1])).toContain('COVERAGE_REFERENCE_MISSING');
       expect(JSON.stringify(events)).not.toContain('opaque-private-continuation');
       incomplete=true;const after=vi.fn();
-      await expect(reviewPolicyCoverage({source:f.source,draft:f.draft,session:t.session,episode:{beforeSubmission:async()=>{},afterSubmission:after}})).rejects.toMatchObject({code:provider==='openai'?'ASK_PROVIDER_RESPONSE_INVALID':'ASK_PROVIDER_RESPONSE_INCOMPLETE'});
+      await expect(reviewPolicyCoverage({source:f.source,draft:f.draft,session:t.session,episode:{beforeSubmission:async()=>{},afterSubmission:after}})).rejects.toMatchObject({code:'ASK_PROVIDER_RESPONSE_INCOMPLETE'});
       expect(after).not.toHaveBeenCalled();
       if(process.env.SYNAPSOR_TEST_EVIDENCE_DIR) await fs.writeFile(`${process.env.SYNAPSOR_TEST_EVIDENCE_DIR}/${provider}-actual-http-wire.json`,JSON.stringify(wire,null,2));
     }finally{await new Promise<void>(resolve=>server.close(()=>resolve()));}
@@ -201,7 +204,7 @@ describe('durable bounded review episodes and actual prepared save',()=>{
       f.sources.coverage=parsePolicyCoverage(f.corrected,f.source,f.draft,f.sources.operator_messages,f.sources);
       delete f.sources.coverage_context_digest;
     }
-    const t=transport(f,mode==='interrupted'?[new Error('transport stopped')]:[f.replies[0],f.corrected]);
+    const t=transport(f,mode==='interrupted'?[new Error('transport stopped')]:mode==='complete_refusal'?[completeRefusal]:[f.replies[0],f.corrected]);
     vi.spyOn(receiptConfiguration,'authoringReceiptConfiguration').mockResolvedValue(f.draft.runner_evidence.runtime_contract.receipt_configuration);
     const chooseOption=vi.fn(async()=> 'assign'),confirm=vi.fn(async()=>false),onValidated=vi.fn();
     await savePolicySources(root,f.sources);
@@ -230,9 +233,10 @@ describe('durable bounded review episodes and actual prepared save',()=>{
       expect(x.t.requests).toHaveLength(2);expect(x.chooseOption).toHaveBeenCalledTimes(1);expect(x.confirm).not.toHaveBeenCalled();
     }finally{vi.restoreAllMocks();await fs.rm(x.root,{recursive:true,force:true});}
   });
-  it('interruption persists the reserved call; restart requires explicit new-episode authorization',async()=>{
+  // Component episode persistence only; public Resume must additionally honor durable generation recovery.
+  it('interruption persists the reserved call and the episode layer refuses unconfirmed new work',async()=>{
     const x=await prepared('interrupted');try{
-      const before=structuredClone(x.f.sources);await expect(ensurePreparedPolicyCoverage(x.input)).rejects.toThrow('transport stopped');
+      const before=structuredClone(x.f.sources);await expect(ensurePreparedPolicyCoverage(x.input)).rejects.toMatchObject({code:'ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION'});
       const saved=await loadPolicySources(x.root,x.f.sources.id);expect(saved.coverage_episodes?.[0]?.submissions).toHaveLength(1);
       expect(saved.application_assignments).toEqual(before.application_assignments);expect(saved.coverage).toEqual(before.coverage);
       await expect(ensurePreparedPolicyCoverage({...x.input,sources:saved,state:{}})).rejects.toThrow('POLICY_COVERAGE_EPISODE_PENDING');
@@ -249,9 +253,9 @@ describe('durable bounded review episodes and actual prepared save',()=>{
       expect((await loadPolicySources(x.root,x.f.sources.id)).application_assignments).toEqual(x.f.sources.application_assignments);
     }finally{vi.restoreAllMocks();await fs.rm(x.root,{recursive:true,force:true});}
   });
-  it('records a separately confirmed new episode without erasing the interrupted one',async()=>{
-    const x=await prepared('interrupted');try{
-      await expect(ensurePreparedPolicyCoverage(x.input)).rejects.toThrow('transport stopped');
+  it('records a separately confirmed component episode after a complete native refusal without erasing history',async()=>{
+    const x=await prepared('complete_refusal');try{
+      await expect(ensurePreparedPolicyCoverage(x.input)).rejects.toMatchObject({code:'ASK_PROVIDER_AUTHENTICATION_FAILED'});
       const saved=await loadPolicySources(x.root,x.f.sources.id),old=structuredClone(saved.coverage_episodes);
       const t=transport({...x.f,sources:saved},[x.f.corrected]);
       const result=await ensurePreparedPolicyCoverage({...x.input,sources:saved,modelSession:t.session,state:{},operatorSession:{...x.input.operatorSession,confirm:async()=>true}});

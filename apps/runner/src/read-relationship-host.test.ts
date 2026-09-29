@@ -1,3 +1,4 @@
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -360,18 +361,54 @@ describe("public host Read relationship preparation", () => {
     await expect(loadActivatedExplorationBoundaries(f.root)).rejects.toMatchObject({ code: "ENOENT" });
   }, 30_000);
 
-  it("restarts the public command with the saved exact path and reviews only the remaining one", async () => {
+  it("retains the exact saved path and refuses restart after an unobserved generation failure", async () => {
     const f = await fixture();
     const first = await runHost(f, { beforeRequest: async call => {
       if (call === 2) throw new Error("TEST_PAUSE_AFTER_ONE_SAVED_RELATIONSHIP");
     } });
     await expect(first.operation).resolves.toBe(0);
     expect(first.choices).toHaveLength(1);
-    expect(first.failures.join("\n")).toContain("TEST_PAUSE_AFTER_ONE_SAVED_RELATIONSHIP");
+    expect(first.failures.join("\n")).toContain("without sufficient transport-phase evidence");
+    expect(first.failures.join("\n")).not.toContain("TEST_PAUSE_AFTER_ONE_SAVED_RELATIONSHIP");
+    expect(first.requestJson).toHaveBeenCalledTimes(2);
     const paused = await loadBoundaryReviewContext(f.root);
     const accepted = paused.candidate.pack.resources.find(r => r.id === f.from)!.relationships;
     expect(accepted).toHaveLength(1);
     expect(await resumeState(f)).toMatchObject({ status: "ready", value: { stage: "read_mapping", job_intent: job } });
+    const saved = await resumeState(f);
+    expect(saved).toMatchObject({ status: "ready", value: { generation_recovery: { operations: expect.arrayContaining([
+      expect.objectContaining({ state: "partial" }),
+    ]) } } });
+    const restarted = await runHost(f);
+    await expect(restarted.operation).resolves.toBe(0);
+    expect(restarted.requestJson).not.toHaveBeenCalled();
+    expect(restarted.choices).toEqual([]);
+    expect(restarted.failures.join("\n")).toContain("unfinished generation");
+    const reopened = await resumeState(f);
+    expect(reopened.status).toBe("ready");
+    if (saved.status !== "ready" || reopened.status !== "ready") throw new Error("Expected retained current job.");
+    expect(Date.parse(reopened.value.updated_at)).toBeGreaterThanOrEqual(Date.parse(saved.value.updated_at));
+    expect(Date.parse(reopened.value.updated_at)).toBeLessThanOrEqual(Date.now());
+    const { revision_digest: reopenedDigest, ...reopenedCore } = reopened.value;
+    expect(reopenedDigest).toBe(canonicalJsonDigest(reopenedCore));
+    expect(reopened).toEqual({ ...saved, value: { ...saved.value,
+      updated_at: reopened.value.updated_at, revision_digest: reopened.value.revision_digest } });
+    expect((await loadBoundaryReviewContext(f.root)).candidate).toEqual(paused.candidate);
+    await expect(loadActivatedExplorationBoundaries(f.root)).rejects.toMatchObject({ code: "ENOENT" });
+  }, 30_000);
+
+  it("restarts an ordinarily paused exact-path review and reviews only the remaining one", async () => {
+    const f = await fixture();
+    let selections = 0;
+    const first = await runHost(f, { choose: async (_title, choices) => ++selections === 1
+      ? choices.find(choice => choice.value !== "pending")!.value : "pending" });
+    await expect(first.operation).resolves.toBe(0);
+    expect(first.requestJson).toHaveBeenCalledTimes(2);
+    expect(first.failures.join("\n")).toContain("READ_RELATIONSHIP_REVIEW_PENDING");
+    const paused = await loadBoundaryReviewContext(f.root);
+    const accepted = paused.candidate.pack.resources.find(r => r.id === f.from)!.relationships;
+    expect(accepted).toHaveLength(1);
+    expect(await resumeState(f)).toMatchObject({ status: "ready", value: { pending_read_relationship: { resource: f.from } } });
     const restarted = await runHost(f, { choose: async (_title, choices) => {
       expect(choices.filter(choice => choice.value !== "pending")).toHaveLength(1);
       expect(choices.every(choice => !choice.detail?.includes(accepted[0]!.id))).toBe(true);
@@ -379,11 +416,17 @@ describe("public host Read relationship preparation", () => {
     } });
     await expect(restarted.operation).resolves.toBe(0);
     expect(restarted.failures).toEqual([]);
-    expect(restarted.requestJson).toHaveBeenCalledTimes(2);
+    expect(restarted.requestJson).toHaveBeenCalledOnce();
     expect(restarted.choices).toHaveLength(1);
-    expect(restarted.snapshots.map(s => s.candidate.pack.resources.find(r => r.id === f.from)!.relationships.length)).toEqual([1, 2]);
+    expect(restarted.snapshots.map(s => s.candidate.pack.resources.find(r => r.id === f.from)!.relationships.length)).toEqual([2]);
     const current = await loadBoundaryReviewContext(f.root);
     expect(current.candidate.pack.resources.find(r => r.id === f.from)!.relationships).toEqual(expect.arrayContaining(accepted));
+    for (const resource of current.candidate.pack.resources) {
+      const before = f.before.candidate.pack.resources.find(r => r.id === resource.id)!;
+      expect(resource.kept_out_fields).toEqual(before.kept_out_fields);
+      expect(resource.model_withheld_fields).toEqual(before.model_withheld_fields);
+      expect(resource.tenant_key).toBe(before.tenant_key);
+    }
     await expect(loadActivatedExplorationBoundaries(f.root)).rejects.toMatchObject({ code: "ENOENT" });
   }, 30_000);
 });
