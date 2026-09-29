@@ -1,0 +1,32 @@
+{
+  "candidate": 1,
+  "status": "FROZEN \u2014 independent installed acceptance PENDING",
+  "product_and_test_commit": "106c385357951cf72ad15c63cb8c156bc36963e7",
+  "source_lock_sha256": "4094d296fd96e56cc946d4e9f0705d20c638428ce2e1726613407f01b6adc069",
+  "installed_root": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/freeze-plan/installed",
+  "installed_tree_sha256": "73463ec50f05c4f836cf78e0c30511c7e75936350ba7d8a7421fff7d23e478b2",
+  "manifest": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/freeze-plan/installed-artifact-manifest.json",
+  "manifest_sha256": "88fe5b23fe413290532e3265ce4632f6558051ddf52263305920fe2afb2043c8",
+  "archive": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/freeze-plan/installed-artifact.tar.gz",
+  "archive_sha256": "5c94a86a2093a84e0bbcc8c869fd0be637ac2662b2fce1b636d0b9af1bb66a16",
+  "actual_entries": 7607,
+  "node": {
+    "version": "v22.23.3",
+    "executable": "/usr/bin/node",
+    "sha256": "fde6a4bf8d0562f7751d1a2d6cb9b417c4cfe107bbcb0aa3e9a24e125e348f48",
+    "bundled_path": "runtime/node",
+    "bundled_sha256": "fde6a4bf8d0562f7751d1a2d6cb9b417c4cfe107bbcb0aa3e9a24e125e348f48"
+  },
+  "runner_version": "1.8.0",
+  "spec_version": "1.11.0",
+  "package_lock_sha256": "551ac3f9afee6d10aa2cb175afdf7b448e021228405fd7ac111d80af0f18a60b",
+  "gate_index": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/GATE-EVIDENCE-083.json",
+  "gate_index_sha256": "f54774439c4b1a4e3b8cc179419c25afa50b8eaae6ac0a354ccc2621e6b1a99d",
+  "handoff_index": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/transport-continuation-20260929/CANDIDATE-ONE-HANDOFF-084.json",
+  "handoff_index_sha256": "aa8331fa89579f53f05b32ebc7fddef00626ce4a42f19eb98adfd63705ea0c67",
+  "main_provider_calls": 0,
+  "frozen_count": 1,
+  "maximum_frozen_candidates": 2,
+  "paid_start": null,
+  "deadline": "2026-09-30T18:47:55Z"
+}
