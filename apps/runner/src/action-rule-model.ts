@@ -324,7 +324,8 @@ async function restoredSourceRepair(input: ModelActionRuleDraftInput, context: A
     const correction = validateActionWorkUnitAssessment(context, original, assessment).correction;
     if (!correction || canonicalJsonDigest(correction) !== canonicalJsonDigest(saved.correction)
       || assessment.source_review.report.draft_digest !== saved.prepared_draft_digest
-      || canonicalJsonDigest(assessment.source_review.passage_indexes) !== canonicalJsonDigest(saved.passage_indexes))
+      || canonicalJsonDigest(assessment.source_review.passage_indexes) !== canonicalJsonDigest(saved.passage_indexes)
+      || canonicalJsonDigest(assessment.source_review.coverage_provenance ?? null) !== canonicalJsonDigest(saved.coverage_provenance ?? null))
       throw new ActionWorkUnitSourcePendingError("currentness");
     const supplied = restoredWorkUnitCorrection(input, context);
     if (supplied && (canonicalJsonDigest(supplied.draft) !== canonicalJsonDigest(original)
@@ -340,6 +341,7 @@ async function restoredSourceRepair(input: ModelActionRuleDraftInput, context: A
     original_parent: structuredClone(parent.draft), correction: structuredClone(parent.correction),
     passage_indexes: [...assessment.source_review.passage_indexes], prepared_draft_digest: assessment.source_review.report.draft_digest as `sha256:${string}`,
     corrections_used: 0,
+    ...(assessment.source_review.coverage_provenance ? { coverage_provenance: structuredClone(assessment.source_review.coverage_provenance) } : {}),
   } satisfies ActionRuleSourceRepairCheckpoint : undefined };
 }
 

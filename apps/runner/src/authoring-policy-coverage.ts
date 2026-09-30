@@ -167,7 +167,7 @@ function fieldPrivacyEvidence(draft: unknown) {
   return fields;
 }
 
-function coverageReferences(draft: unknown): string[] {
+export function coverageReferences(draft: unknown): string[] {
   const references = new Set<string>();
   const escape = (key: string) => key.replace(/~/gu, "~0").replace(/\//gu, "~1");
   const children = (pointer: string) => {

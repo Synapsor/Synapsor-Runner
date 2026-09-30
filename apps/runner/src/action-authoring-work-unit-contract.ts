@@ -1,4 +1,5 @@
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { parseActionWorkUnitCoverageProvenance, type ActionWorkUnitCoverageProvenance } from "./action-rule-authoring-checkpoint.js";
 import { Buffer } from "node:buffer";
 import { assertSourceInputReviews } from "./authoring-input-policy-records.js";
 import type { BuiltActionRuleAuthoringCatalogV1 } from "./action-rule-authoring.js";
@@ -23,6 +24,8 @@ export type ActionWorkUnitSourceReview = {
   report: PolicyCoverage;
   passage_indexes: number[];
   source_answer_history_digest: Digest;
+  /** Exact original coverage episode identity; only its host can authenticate it. */
+  coverage_provenance?: ActionWorkUnitCoverageProvenance;
 };
 export type ActionWorkUnitContext = {
   readBoundary: ExplorationBoundaryDraft;
@@ -64,6 +67,8 @@ export class ActionWorkUnitSourcePendingError extends Error {
 }
 
 function checkedSourceReview(context: ActionWorkUnitContext, draft: ActionRuleModelDraftV1, review: ActionWorkUnitSourceReview): PolicyPassage[] {
+  if (review?.coverage_provenance !== undefined) try { parseActionWorkUnitCoverageProvenance(review.coverage_provenance); }
+  catch { throw new ActionWorkUnitSourcePendingError("assessment_incomplete"); }
   if (!review || !object(review.draft) || !Array.isArray(review.draft.actions) || !object(review.report)
     || !Array.isArray(review.report.passages) || !Array.isArray(review.passage_indexes))
     throw new ActionWorkUnitSourcePendingError("assessment_incomplete");

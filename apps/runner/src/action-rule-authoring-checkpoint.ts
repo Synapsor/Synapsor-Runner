@@ -3,6 +3,22 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { ActionRuleModelDraftV1 } from "./action-rule-draft.js";
 import type { ActionWorkUnitCorrection } from "./action-authoring-work-unit-contract.js";
 
+/** Identity of an actual completed coverage submission, not a verdict. */
+export type ActionWorkUnitCoverageProvenance = {
+  context_key: `sha256:${string}`; episode_id: string; submission_number: number;
+};
+export function parseActionWorkUnitCoverageProvenance(value: unknown): ActionWorkUnitCoverageProvenance {
+  const v = value as ActionWorkUnitCoverageProvenance;
+  // ensurePreparedPolicyCoverage allocates its episode with node:crypto randomUUID.
+  if (!v || typeof v !== "object" || Array.isArray(v)
+    || Object.keys(v).some(k => !["context_key", "episode_id", "submission_number"].includes(k))
+    || typeof v.context_key !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(v.context_key)
+    || typeof v.episode_id !== "string" || !/^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/u.test(v.episode_id)
+    || !Number.isInteger(v.submission_number) || v.submission_number < 1 || v.submission_number > 3)
+    throw new Error("ACTION_AUTHORING_CHECKPOINT_INVALID: Original coverage submission provenance is unavailable or malformed.");
+  return structuredClone(v);
+}
+
 /** A nomination reference, never a stored semantic verdict. The original report
  * must be reconstructed and canonically revalidated by the host on reopen. */
 export type ActionRuleSourceRepairCheckpoint = {
@@ -11,6 +27,7 @@ export type ActionRuleSourceRepairCheckpoint = {
   passage_indexes: number[];
   prepared_draft_digest: `sha256:${string}`;
   corrections_used: number;
+  coverage_provenance?: ActionWorkUnitCoverageProvenance;
 };
 
 export type ReviewedPrivateActionSource = {
@@ -138,7 +155,7 @@ export function parseActionRuleAuthoringCheckpoint(value: unknown): ActionRuleAu
     const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
     const digest = (v: unknown) => typeof v === "string" && /^sha256:[a-f0-9]{64}$/u.test(v);
     const exact = (v: Record<string, unknown>, keys: string[]) => Object.keys(v).every(k => keys.includes(k));
-    if (!object(repair) || !exact(repair, ["original_parent", "correction", "passage_indexes", "prepared_draft_digest", "corrections_used"])
+    if (!object(repair) || !exact(repair, ["original_parent", "correction", "passage_indexes", "prepared_draft_digest", "corrections_used", "coverage_provenance"])
       || !object(repair.original_parent) || !object(repair.correction) || !digest(repair.prepared_draft_digest)
       || !Number.isSafeInteger(repair.corrections_used) || repair.corrections_used < 0 || repair.corrections_used > 2
       || !Array.isArray(repair.passage_indexes) || !repair.passage_indexes.length || repair.passage_indexes.length > 120
@@ -156,6 +173,7 @@ export function parseActionRuleAuthoringCheckpoint(value: unknown): ActionRuleAu
       || !Array.isArray(c.source_ranges) || !c.source_ranges.length || c.source_ranges.length > 120
       || c.source_ranges.some(r => !object(r) || !exact(r, ["start", "end"]) || !Number.isSafeInteger(r.start)
         || !Number.isSafeInteger(r.end) || r.start < 1 || r.end < r.start)) throw fail();
+    if (repair.coverage_provenance !== undefined) parseActionWorkUnitCoverageProvenance(repair.coverage_provenance);
   }
   if (Buffer.byteLength(JSON.stringify(record), "utf8") > 96 * 1024) throw fail();
   const { digest, ...core } = record;
