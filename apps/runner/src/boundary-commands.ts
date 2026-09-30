@@ -1,4 +1,4 @@
-import { authoringGenerationCurrentnessCode, isAuthoringGenerationStop, withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, authoringTransportCheckpoint, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+import { authoringGenerationCurrentnessCode, isAuthoringGenerationStop, withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, authoringTransportCheckpoint, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, prepareAuthoringManualRecovery, permitAuthoringManualRecovery, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { reviewSourceInputPolicy } from "./authoring-input-policy-operation.js";
 import { sourceInputFidelity } from "./authoring-input-policy.js";
 import { AUTHORING_PROGRAM_CAPACITY, AUTHORING_PROGRAM_RESUME_VERSION, authoringProgramProgressLines } from "./authoring-program-capacity.js";
@@ -4592,6 +4592,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       ...(savedTransactionDecisionAvailable ? [{value:"review_transaction",
         label:"Revisit source transaction meaning (no model)",
         detail:"Revise or withdraw the current attributed interpretation without changing Action authority."}] : [])] : []),
+    ...(availableResume && !revalidateSavedJob && generationRecovery?.operations.some(op => op.state === "unknown")
+      ? [{value: "manual_transport_recovery", label: "Review a stopped generation (no model)",
+        detail: "Inspect whether one explicit replacement is eligible. The original unknown outcome and possible charge remain recorded."}] : []),
     ...(availableResume && !revalidateSavedJob ? [{value: "transport_recovery", label: "Review connection retry settings (no model)",
       detail: "Default off. Review finite generation retries and possible duplicate provider charges for this saved job."}] : []),
     ...(availableResume
@@ -4779,6 +4782,31 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       },
     );
     if (selected === undefined) return boundaryAssistResult(boundaryAssistBackNotice());
+    if (selected === "manual_transport_recovery" && activeResume && !revalidateSavedJob) {
+      let preview: Awaited<ReturnType<typeof prepareAuthoringManualRecovery>>;
+      try { preview = await prepareAuthoringManualRecovery(activeResume.revision_digest); }
+      catch (error) {
+        if (!isAuthoringGenerationStop(error)) throw error;
+        return {...boundaryAssistResult({tone: "warning", title: "Replacement generation is not eligible.",
+          lines: [error.code, error.message, "Saved drafts, the original attempt and possible charge remain unchanged. No provider request or acknowledgement was made."]}), navigation: "pause" as const};
+      }
+      const confirmed = await input.session.confirm(
+        "The provider outcome is unknown and the request may have been charged. Runner has not accepted a response from this attempt. Preserve the saved work and permit one replacement generation?",
+        {defaultValue: false, context: [
+          `Saved job: ${activeResume.job_intent}`,
+          `Provider/model: ${activeResume.model.provider}[${activeResume.model.name}]`,
+          `Pending step: ${formatBoundaryAuthoringStage(activeResume.stage)}`,
+          `Operation: ${preview.operation_id}; attempt: ${preview.attempt_id}`,
+          `Retained prepared Action drafts: ${activeResume.action?.completed_outcomes?.length ?? 0}. Prepared drafts still require complete business review; this does not certify correctness.`,
+          "The ended pure-generation attempt has no accepted headers, content or response consumer. Its unknown provider outcome and possible charge remain history.",
+          "One replacement uses the same operation and finite attempt allowance. It may incur an additional charge; normal funding/currentness admission still applies.",
+          "This does not enable future automatic retries, acknowledge old output, or grant publication, approval or execution authority.",
+        ]});
+      if (confirmed) await permitAuthoringManualRecovery(preview);
+      return {...boundaryAssistResult({tone: confirmed ? "success" : "warning", title: confirmed ? "One replacement permission saved." : "Stopped generation retained.",
+        lines: [confirmed ? "Resume the same saved job to attempt its exact pending generation. No provider request was made by this review." : "No replacement permission was granted.",
+          "The original attempt and possible charge remain recorded; saved drafts and business authority are unchanged."]}), navigation: "pause" as const};
+    }
     if (selected === "transport_recovery" && availableResume && !revalidateSavedJob) {
       const permissionContext = async () => canonicalJsonDigest({
         bundle: (await loadBoundaryReviewContext(input.projectRoot)).bundle,

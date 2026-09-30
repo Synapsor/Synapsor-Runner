@@ -2,17 +2,18 @@ import { narrateValidatedAuthoringStep } from "./model-authoring-narration.js";
 import { createModelAuthoringConversation } from "./model-authoring-conversation.js";
 import { createServer, globalAgent, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { AskError, completedAuthoringQuestion, askToolSurfaceDigest, resolveAskProviderConfiguration, runAskProviderTurn, secureAskJsonRequest,
   type ProviderHttpInput, type ProviderHttpResult } from "./model-ask.js";
 import { authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, assertAuthoringQuestionHandoff, authoringGenerationCurrentnessCode, authoringGenerationHandled, authoringTransportCheckpoint, configureAuthoringGenerationRecovery,
-  recoverAuthoringGeneration, validateAuthoringTransportState, withAuthoringGenerationRecovery,
+  recoverAuthoringGeneration, prepareAuthoringManualRecovery, permitAuthoringManualRecovery,
+  validateAuthoringTransportState, withAuthoringGenerationRecovery,
   type AuthoringGenerationHost, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { runRequiredAuthoringToolCall } from "./authoring-tool-call.js";
 
 const servers: Server[] = [];
-afterEach(async () => { for (const s of servers.splice(0)) { s.closeAllConnections(); await new Promise<void>(r => s.close(() => r())); } });
+afterEach(async () => { vi.restoreAllMocks(); for (const s of servers.splice(0)) { s.closeAllConnections(); await new Promise<void>(r => s.close(() => r())); } });
 async function fixture(mode: string) {
   const bodies: string[] = []; let sends = 0;
   const server = createServer(async (req,res) => {
@@ -66,6 +67,140 @@ const input = (endpoint:URL, signal = new AbortController().signal):ProviderHttp
 const enter = <T>(m:ReturnType<typeof memory>, run:()=>Promise<T>) => withAuthoringGenerationRecovery(()=>{configureAuthoringGenerationRecovery(m.host);return run();});
 
 describe("saved authoring generation transport recovery",()=>{
+  it("retains a native no-response boundary for explicit manual recovery without automatic opt-in", async () => {
+    const f = await fixture("B-success"), m = memory(f.endpoint, 0);
+    m.set({version: 1, operations: []});
+    await expect(enter(m, () => recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest)))
+      .rejects.toMatchObject({code: "ASK_GENERATION_OUTCOME_UNKNOWN"});
+    expect(f.sends()).toBe(1);
+    expect(m.read().policy).toBeUndefined();
+    expect((m.read().operations[0]!.attempts[0] as any).no_response_boundary).toMatchObject({
+      version: 1, transport_closed: true, headers_received: false, content_received: false,
+      response_consumer: "not_started", pure_local_generation: true, owner_cancelled: false,
+    });
+  });
+  it("explicit manual permission survives restart and replaces exactly the same operation without acknowledging the old attempt", async () => {
+    const f = await fixture("B-success"), m = memory(f.endpoint, 0);
+    m.set({version: 1, operations: []});
+    await expect(enter(m, () => recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest)))
+      .rejects.toMatchObject({code: "ASK_GENERATION_OUTCOME_UNKNOWN"});
+    const old = structuredClone(m.read().operations[0]!);
+    vi.spyOn(Date, "now").mockReturnValue(Date.parse(old.deadline) + 1000);
+    const preview = await enter(m, () => prepareAuthoringManualRecovery(canonicalJsonDigest("exact saved checkpoint")));
+    expect(m.read().operations[0]).toEqual(old); // Inspecting is not consent.
+    await enter(m, () => permitAuthoringManualRecovery(preview));
+    expect(f.sends()).toBe(1);
+    expect(m.read().policy).toBeUndefined();
+    expect(m.read().operations[0]).toMatchObject({state: "unknown", attempts: old.attempts,
+      manual_recovery: {actor: "local_installation_operator", status: "permitted", prior_attempt_id: old.attempts[0]!.id}});
+    let consumers = 0;
+    await enter(m, async () => {
+      const response = await recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest);
+      consumers++;
+      await authoringGenerationHandled([response]);
+      m.set(authoringTransportCheckpoint(m.read())!);
+    });
+    const after = m.read().operations[0]!;
+    expect(f.sends()).toBe(2); expect(consumers).toBe(1); expect(f.bodies[1]).toBe(f.bodies[0]);
+    expect(m.read().operations).toHaveLength(1);
+    expect(after).toMatchObject({id: old.id, deadline: old.deadline, state: "checkpointed",
+      manual_recovery: {status: "admitted", replacement_attempt_id: after.attempts[1]!.id}});
+    expect(after.attempts[0]).toEqual(old.attempts[0]);
+    expect(after.attempts.map(a => a.outcome)).toEqual(["B", "response"]);
+    validateAuthoringTransportState(m.read());
+    await expect(enter(m, () => prepareAuthoringManualRecovery(preview.checkpoint_digest)))
+      .rejects.toMatchObject({code: "ASK_GENERATION_MANUAL_RECOVERY_UNAVAILABLE"});
+    expect(f.sends()).toBe(2);
+  });
+  it("a manual replacement that fails again is terminal even with a later automatic opt-in", async () => {
+    const f = await fixture("B-always"), m = memory(f.endpoint, 0);
+    await expect(enter(m, () => recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest)))
+      .rejects.toMatchObject({code: "ASK_GENERATION_OUTCOME_UNKNOWN"});
+    const preview = await enter(m, () => prepareAuthoringManualRecovery(canonicalJsonDigest("checkpoint")));
+    await enter(m, () => permitAuthoringManualRecovery(preview));
+    m.set({...m.read(), policy: {...m.read().policy!, maximum_additional_attempts: 2}});
+    await expect(enter(m, () => recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest)))
+      .rejects.toMatchObject({code: "ASK_GENERATION_OUTCOME_UNKNOWN"});
+    const stopped = structuredClone(m.read());
+    expect(stopped.operations[0]!.attempts.map(a => a.outcome)).toEqual(["B", "B"]);
+    await expect(enter(m, () => prepareAuthoringManualRecovery(preview.checkpoint_digest)))
+      .rejects.toMatchObject({code: "ASK_GENERATION_MANUAL_RECOVERY_UNAVAILABLE"});
+    await expect(enter(m, () => recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest)))
+      .rejects.toMatchObject({code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"});
+    expect(f.sends()).toBe(2); expect(m.read()).toEqual(stopped);
+  });
+  it.each(["headers", "partial", "schema400", "bad-json", "503"])("manual review cannot reopen %s", async mode => {
+    const f = await fixture(mode), m = memory(f.endpoint, 0);
+    await expect(enter(m, () => recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest))).rejects.toBeDefined();
+    const stopped = structuredClone(m.read());
+    await expect(enter(m, () => prepareAuthoringManualRecovery(canonicalJsonDigest("checkpoint"))))
+      .rejects.toMatchObject({code: "ASK_GENERATION_MANUAL_RECOVERY_UNAVAILABLE"});
+    expect(m.read()).toEqual(stopped); expect(f.sends()).toBe(1);
+  });
+  it.each(["missing", "background", "conversation", "remote_tool", "stored_responses"])("manual eligibility does not invent proof for %s", async mode => {
+    const f = await fixture("B-success"), m = memory(f.endpoint, 0), request = input(f.endpoint);
+    if (mode === "background") request.body.background = true;
+    if (mode === "conversation") request.body.conversation = "remote-shared-state";
+    if (mode === "remote_tool") request.body.tools = [{type: "web_search_preview"}];
+    if (mode === "stored_responses") delete request.body.store;
+    await expect(enter(m, () => recoverAuthoringGeneration(request, secureAskJsonRequest)))
+      .rejects.toMatchObject({code: "ASK_GENERATION_OUTCOME_UNKNOWN"});
+    if (mode === "missing") delete m.read().operations[0]!.attempts[0]!.no_response_boundary;
+    const stopped = structuredClone(m.read());
+    await expect(enter(m, () => prepareAuthoringManualRecovery(canonicalJsonDigest("checkpoint"))))
+      .rejects.toMatchObject({code: "ASK_GENERATION_MANUAL_RECOVERY_UNAVAILABLE"});
+    expect(f.sends()).toBe(1); expect(m.read()).toEqual(stopped);
+  });
+  it.each(["source", "pending_state", "competing_permission", "lost_permission_ack"])("manual confirmation refuses %s without a new send", async change => {
+    const f = await fixture("B-success"), m = memory(f.endpoint, 0);
+    await expect(enter(m, () => recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest))).rejects.toBeDefined();
+    const preview = await enter(m, () => prepareAuthoringManualRecovery(canonicalJsonDigest("checkpoint")));
+    if (change === "source") m.drift();
+    if (change === "pending_state") m.set({...m.read(), policy: {...m.read().policy!, maximum_additional_attempts: 1}});
+    if (change === "competing_permission") await enter(m, () => permitAuthoringManualRecovery(preview));
+    if (change === "lost_permission_ack") {
+      const original = m.host.write;
+      m.host.write = async state => {await original(state); throw new Error("DERIVED lost permission acknowledgement");};
+    }
+    await expect(enter(m, () => permitAuthoringManualRecovery(preview))).rejects.toBeDefined();
+    expect(f.sends()).toBe(1);
+    if (change === "lost_permission_ack") {
+      expect(m.read().operations[0]!.manual_recovery?.status).toBe("permitted");
+      await expect(enter(m, () => prepareAuthoringManualRecovery(preview.checkpoint_digest)))
+        .rejects.toMatchObject({code: "ASK_GENERATION_MANUAL_RECOVERY_UNAVAILABLE"});
+    }
+  });
+  it.each(["different_body", "different_route", "different_context", "unavailable"])("replacement cannot retarget %s", async change => {
+    const f = await fixture("B-success"), m = memory(f.endpoint, 0);
+    await expect(enter(m, () => recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest))).rejects.toBeDefined();
+    const preview = await enter(m, () => prepareAuthoringManualRecovery(canonicalJsonDigest("checkpoint")));
+    await enter(m, () => permitAuthoringManualRecovery(preview));
+    const before = structuredClone(m.read()), request = input(f.endpoint);
+    if (change === "different_body") request.body.input = "Different operation";
+    if (change === "different_route") request.endpoint = new URL("/v2/responses", f.endpoint);
+    if (change === "different_context") m.drift();
+    if (change === "unavailable") m.host.available = () => false;
+    await expect(enter(m, () => recoverAuthoringGeneration(request, secureAskJsonRequest)))
+      .rejects.toMatchObject({code: change === "unavailable" ? "ASK_GENERATION_MANUAL_RECOVERY_UNAVAILABLE" : "ASK_GENERATION_CONTEXT_CHANGED"});
+    expect(f.sends()).toBe(1); expect(m.read()).toEqual(before);
+  });
+  it.each(["admission", "response"])("crash after replacement %s cannot reset its consumed attempt", async phase => {
+    const f = await fixture("B-success"), m = memory(f.endpoint, 0);
+    await expect(enter(m, () => recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest))).rejects.toBeDefined();
+    const preview = await enter(m, () => prepareAuthoringManualRecovery(canonicalJsonDigest("checkpoint")));
+    await enter(m, () => permitAuthoringManualRecovery(preview));
+    const original = m.host.write; let writes = 0;
+    m.host.write = async s => {await original(s); if (++writes === (phase === "admission" ? 1 : 2)) throw new Error("DERIVED crash acknowledgement lost");};
+    await expect(enter(m, () => recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest)))
+      .rejects.toMatchObject({code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"});
+    expect(f.sends()).toBe(phase === "admission" ? 1 : 2);
+    expect(m.read().operations[0]!.manual_recovery?.status).toBe("admitted");
+    m.host.write = original;
+    const before = structuredClone(m.read());
+    await expect(enter(m, () => recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest)))
+      .rejects.toMatchObject({code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"});
+    expect(m.read()).toEqual(before); expect(m.read().operations).toHaveLength(1);
+  });
   it("retains healthy zero-retry baseline and marks only acknowledged local completion",async()=>{
     const f=await fixture("healthy"),m=memory(f.endpoint,0);
     await enter(m,async()=>{const r=await recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest);
@@ -249,7 +384,7 @@ describe("saved authoring generation transport recovery",()=>{
     await enter(m,()=>recoverAuthoringGeneration(input(f.endpoint),secureAskJsonRequest));
     expect(f.sends()).toBe(1);expect(m.read().operations[0]!.attempts.map(a=>a.outcome)).toEqual(["A","response"]);
   });
-  it.each(["openai","openrouter"] as const)("actual %s encoder/HTTP/callback schedule accepts only one local result after B",async provider=>{
+  it.each([["openai", "automatic"], ["openrouter", "automatic"], ["openai", "manual"], ["openrouter", "manual"]] as const)("actual %s encoder/HTTP/callback schedule accepts only one local result after B (%s)",async(provider, recovery)=>{
     let sends=0,callbacks=0;const bodies:Record<string,unknown>[]=[];
     const server=createServer(async(req,res)=>{
       const chunks:Buffer[]=[];for await(const c of req)chunks.push(Buffer.from(c));
@@ -259,7 +394,7 @@ describe("saved authoring generation transport recovery",()=>{
       res.end(JSON.stringify(provider==="openai"?{id:"DERIVED",status:"completed",output:[{type:"function_call",call_id:"local",name:"runner__inspect",arguments:"{}"}]}
         :{choices:[{message:{role:"assistant",content:null,tool_calls:[{id:"local",type:"function",function:{name:"runner__inspect",arguments:"{}"}}]},finish_reason:"tool_calls"}]}));
     });servers.push(server);await new Promise<void>(r=>server.listen(0,"127.0.0.1",r));
-    const endpoint=new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/responses`),m=memory(endpoint);
+    const endpoint=new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/responses`),m=memory(endpoint, recovery === "manual" ? 0 : 2);
     const tools=[{name:"runner.inspect",description:"DERIVED local inspection",input_schema:{type:"object",properties:{},additionalProperties:false}}];
     const authorityDigest=askToolSurfaceDigest(tools);
     const configuration=resolveAskProviderConfiguration({provider,model:provider==="openai"?"DERIVED":"openai/DERIVED",api_key:"DERIVED-key",
@@ -267,12 +402,28 @@ describe("saved authoring generation transport recovery",()=>{
     // Endpoint-only dependency retains the exact product encoder and real native
     // client. It neither retries nor substitutes model output after transport.
     m.set({...m.read(),policy:{...m.read().policy!,model:provider==="openai"?"DERIVED":"openai/DERIVED",destination_digest:canonicalJsonDigest(provider==="openai"?"https://api.openai.com":"https://openrouter.ai")}});
-    const result=await enter(m,()=>runAskProviderTurn({configuration,question:"DERIVED",history:[],tools,authorityDigest,
+    const run=()=>runAskProviderTurn({configuration,question:"DERIVED",history:[],tools,authorityDigest,
       gateway:{mode:"authoring",listTools:()=>tools,close:async()=>undefined,callTool:async()=>{callbacks++;m.set(authoringTransportCheckpoint(m.read())!);return {ok:true,value:{accepted:true}};}},
       signal:new AbortController().signal,requiredInitialToolName:"runner.inspect",completeAfterRequiredTool:true,
-      dependencies:{requestJson:i=>secureAskJsonRequest({...i,endpoint,scope:"custom_loopback"})}}));
+      dependencies:{requestJson:i=>secureAskJsonRequest({...i,endpoint,scope:"custom_loopback"})}});
+    let original: AuthoringTransportState | undefined;
+    if (recovery === "manual") {
+      delete m.read().policy;
+      await expect(enter(m, run)).rejects.toMatchObject({code: "ASK_GENERATION_OUTCOME_UNKNOWN"});
+      expect(callbacks).toBe(0); expect(sends).toBe(1);
+      original = structuredClone(m.read());
+      await enter(m, async () => permitAuthoringManualRecovery(await prepareAuthoringManualRecovery(canonicalJsonDigest("actual encoder saved checkpoint"))));
+    }
+    const result=await enter(m,run);
     expect(result.tool_calls).toHaveLength(1);expect(callbacks).toBe(1);expect(sends).toBe(2);expect(bodies[0]).toEqual(bodies[1]);
     expect(m.read().operations[0]!.state).toBe("checkpointed");
+    if (original) {
+      expect(m.read().operations).toHaveLength(1);
+      expect(m.read().operations[0]!.id).toBe(original.operations[0]!.id);
+      expect(m.read().operations[0]!.attempts[0]).toEqual(original.operations[0]!.attempts[0]);
+      expect(m.read().operations[0]!.manual_recovery?.status).toBe("admitted");
+      expect(m.read().policy).toBeUndefined();
+    }
     if(provider==="openai"){expect(bodies[0]!.store).toBe(false);expect(bodies[0]!.parallel_tool_calls).toBe(false);}
     else expect(bodies[0]!.provider).toMatchObject({allow_fallbacks:false,data_collection:"deny"});
   });

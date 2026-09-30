@@ -48,6 +48,7 @@ import {
   actionBoundaryHasDeterministicPolicy,
   boundaryActivateCommand as boundaryActivateCommandInternal,
   boundaryReviewCommand as boundaryReviewCommandInternal,
+  boundaryAuthoringResumeBinding,
   formatBoundaryChatReviewSummary,
   formatCurrentBoundaryAuthoritySummary,
   formatFocusedBoundaryActivationReview,
@@ -17435,6 +17436,78 @@ describe("saved post-edit review uses reader evidence after writer setup", () =>
 
 
 describe("public saved-job connection recovery control", () => {
+  it.each(["no", "yes", "legacy", "competing", "cancel"] as const)("public manual replacement review is current, explicit and non-generating: %s", async mode => {
+    const f = await staleSemanticRevalidationFixture();
+    const server = createServer(req => {req.resume(); req.socket.destroy();});
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    try {
+      const context = await loadBoundaryReviewContext(f.root), binding = boundaryAuthoringResumeBinding(context.bundle);
+      const before = buildBoundaryAuthoringResumeState({binding, stage: "action_drafting", jobIntent: "Keep the exact existing job.",
+        provider: "openai", model: "gpt-test", action: {intent: "Keep the current work.", strategy: "rule_derived"}});
+      const current = canonicalJsonDigest({binding, candidate: context.candidate, source: null, model: before.model,
+        permission: null, action: before.action, revision: null, request: null, removal: null});
+      let recovery: AuthoringTransportState = {version: 1, operations: []};
+      await withAuthoringGenerationRecovery(async () => {
+        configureAuthoringGenerationRecovery({available: () => true, read: () => recovery,
+          current: async () => current, write: async s => {recovery = structuredClone(s);}});
+        await expect(recoverAuthoringGeneration({endpoint: new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/responses`),
+          scope: "custom_loopback", headers: {}, body: {model: "gpt-test", store: false, input: "DERIVED public recovery control", tools: []},
+          signal: new AbortController().signal, timeoutMs: 10_000, stream: {format: "openai_responses"}}, secureAskJsonRequest))
+          .rejects.toMatchObject({code: "ASK_GENERATION_OUTCOME_UNKNOWN"});
+      });
+      if (mode === "legacy") delete recovery.operations[0]!.attempts[0]!.no_response_boundary;
+      const recorded = buildBoundaryAuthoringResumeState({binding, stage: before.stage, jobIntent: before.job_intent,
+        provider: "openai", model: "gpt-test", action: before.action, previous: before, generationRecovery: recovery});
+      await writeBoundaryAuthoringResumeState(f.root, recorded);
+      const authority = await readActionRuleAuthorityDraft(f.root, "reviewed_staging_rules");
+      const generator = vi.fn(async () => {throw new Error("No generation is permitted by manual review.");});
+      let confirmations = 0;
+      f.session.chooseOption = async (title, options, config) => {
+        if (title === "START BOUNDARY DRAFTING") {
+          expect(options.some(x => x.value === "manual_transport_recovery")).toBe(true);
+          return "manual_transport_recovery";
+        }
+        if (mode === "competing" && title === "SETUP NEEDS ATTENTION") {
+          expect(config?.initialValue).toBe("pause"); return "pause";
+        }
+        throw new Error(`Unexpected manual recovery menu ${title}`);
+      };
+      f.session.confirm = async (question, config) => {
+        confirmations++; expect(config?.defaultValue).toBe(false);
+        expect(question).toContain("may have been charged");
+        expect(config?.context?.join(" ")).toContain(recovery.operations[0]!.id);
+        if (mode === "competing") await writeBoundaryAuthoringResumeState(f.root,
+          buildBoundaryAuthoringResumeState({binding, stage: recorded.stage, jobIntent: recorded.job_intent,
+            provider: "openai", model: "gpt-test", action: recorded.action, previous: recorded,
+            generationRecovery: recovery, pendingJobRevision: "A competing explicit edit."}),
+          {expectedRevisionDigest: recorded.revision_digest});
+        if (mode === "cancel") throw new AskError("ASK_CANCELLED", "DERIVED cancellation", 499);
+        return mode !== "no";
+      };
+      // The command's ordinary cancellation adapter returns to the menu. Its
+      // contract is no permission/save/send, not a rejected process exit.
+      await expect(f.run(generator)).resolves.toBe(0);
+      const after = await readBoundaryAuthoringResumeState(f.root, binding);
+      expect(after.status).toBe("ready"); if (after.status !== "ready") throw new Error("Expected current saved job");
+      expect(after.value.generation_recovery?.policy).toBeUndefined();
+      if (mode === "yes") {
+        expect(after.value.generation_recovery!.operations[0]!.manual_recovery).toMatchObject({status: "permitted",
+          prior_attempt_id: recovery.operations[0]!.attempts[0]!.id, checkpoint_digest: recorded.revision_digest});
+        expect(after.value.generation_recovery!.operations[0]!.attempts).toEqual(recovery.operations[0]!.attempts);
+        await f.run(generator); // A repeated/restarted confirmation cannot create another permission.
+        const reloaded = await readBoundaryAuthoringResumeState(f.root, binding);
+        expect(reloaded).toEqual(after);
+      } else if (mode === "competing") {
+        expect(after.value.pending_job_revision).toBe("A competing explicit edit.");
+        expect(after.value.generation_recovery).toEqual(recovery);
+      } else expect(after.value).toEqual(recorded);
+      expect(confirmations).toBe(mode === "legacy" ? 0 : 1);
+      expect(generator).not.toHaveBeenCalled(); expect(f.planner).not.toHaveBeenCalled();
+      expect(await readActionRuleAuthorityDraft(f.root, "reviewed_staging_rules")).toEqual(authority);
+    } finally {
+      server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); await f.dispose();
+    }
+  });
   it.each(["keep", "no", "yes", "off", "competing"] as const)("default-safe finite policy through Boundary command: %s", async mode => {
     const f = await staleSemanticRevalidationFixture();
     try {

@@ -27,7 +27,34 @@ export type AuthoringTransportOperation = {
   state: "in_flight" | "unsent" | "unknown" | "partial" | "received" | "handled" | "checkpointed" | "refused";
   checkpoint_seen?: true;
   question_handoff?: AuthoringQuestionHandoff;
-  attempts: { id: string; started_at: string; outcome: "in_flight" | "A" | "B" | "C" | "response"; phase?: AuthoringTransportObservation["phase"]; code?: string }[];
+  manual_recovery?: {
+    id: string;
+    actor: "local_installation_operator";
+    reviewed_at: string;
+    prior_attempt_id: string;
+    checkpoint_digest: `sha256:${string}`;
+    state_digest: `sha256:${string}`;
+    status: "permitted" | "admitted";
+    replacement_attempt_id?: string;
+    attempt_deadline?: string;
+  };
+  attempts: { id: string; started_at: string; outcome: "in_flight" | "A" | "B" | "C" | "response"; phase?: AuthoringTransportObservation["phase"]; code?: string;
+    /** Minted at the owning generation boundary only after native close and
+     * before any result is returned to an adapter/consumer. Older records do
+     * not acquire these facts from error prose or protected capture imports. */
+    no_response_boundary?: {
+      version: 1;
+      transport_closed: true;
+      headers_received: false;
+      content_received: false;
+      response_consumer: "not_started";
+      pure_local_generation: true;
+      owner_cancelled: false;
+      destination_digest: `sha256:${string}`;
+      model: string;
+      recorded_at: string;
+    };
+  }[];
 };
 export type AuthoringTransportState = {
   version: 1;
@@ -58,7 +85,8 @@ const resultOperations = new WeakMap<ProviderHttpResult, string>();
 export function isAuthoringGenerationStop(error: unknown): error is AskError {
   return error instanceof AskError && ["ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "ASK_GENERATION_OUTCOME_UNKNOWN",
     "ASK_GENERATION_NOT_SENT", "ASK_GENERATION_CONTEXT_CHANGED", "ASK_GENERATION_DEADLINE",
-    "ASK_GENERATION_RECOVERY_EXHAUSTED", "ASK_GENERATION_ALREADY_ACTIVE", "ASK_GENERATION_HISTORY_LIMIT"].includes(error.code);
+    "ASK_GENERATION_RECOVERY_EXHAUSTED", "ASK_GENERATION_ALREADY_ACTIVE", "ASK_GENERATION_HISTORY_LIMIT",
+    "ASK_GENERATION_MANUAL_RECOVERY_UNAVAILABLE"].includes(error.code);
 }
 
 export function withAuthoringGenerationRecovery<T>(run: () => T, inheritCompletedOperations = false): T {
@@ -92,7 +120,7 @@ export function validateAuthoringTransportState(value: unknown): asserts value i
   }
   const seen = new Set<string>();
   for (const op of s.operations) {
-    if (!op || typeof op !== "object" || !exactKeys(op,["id","request_digest","context_digest","deadline","state","checkpoint_seen","question_handoff","attempts"]) || !id(op.id) || seen.has(op.id) || !digest(op.request_digest) || !digest(op.context_digest) || !date(op.deadline)
+    if (!op || typeof op !== "object" || !exactKeys(op,["id","request_digest","context_digest","deadline","state","checkpoint_seen","question_handoff","manual_recovery","attempts"]) || !id(op.id) || seen.has(op.id) || !digest(op.request_digest) || !digest(op.context_digest) || !date(op.deadline)
       || !["in_flight","unsent","unknown","partial","received","handled","checkpointed","refused"].includes(op.state)
       || op.checkpoint_seen !== undefined && op.checkpoint_seen !== true
       || !Array.isArray(op.attempts) || !op.attempts.length || op.attempts.length > 3) throw invalid();
@@ -108,12 +136,77 @@ export function validateAuthoringTransportState(value: unknown): asserts value i
     }
     seen.add(op.id);
     for (const a of op.attempts) {
-      if (!a || typeof a !== "object" || !exactKeys(a,["id","started_at","outcome","phase","code"]) || !id(a.id) || seen.has(a.id) || !date(a.started_at) || !["in_flight","A","B","C","response"].includes(a.outcome)
+      if (!a || typeof a !== "object" || !exactKeys(a,["id","started_at","outcome","phase","code","no_response_boundary"]) || !id(a.id) || seen.has(a.id) || !date(a.started_at) || !["in_flight","A","B","C","response"].includes(a.outcome)
         || a.phase !== undefined && !["resolution","connection","request","headers","response"].includes(a.phase)
         || a.code !== undefined && !/^(?:E[A-Z0-9_]{1,48}|ERR_[A-Z0-9_]{1,48})$/u.test(a.code)) throw invalid();
       seen.add(a.id);
+      if (a.no_response_boundary !== undefined) {
+        const b = a.no_response_boundary;
+        if (!b || typeof b !== "object" || !exactKeys(b,["version","transport_closed","headers_received","content_received","response_consumer","pure_local_generation","owner_cancelled","destination_digest","model","recorded_at"])
+          || a.outcome !== "B" || !["connection","request"].includes(a.phase ?? "") || b.version !== 1
+          || b.transport_closed !== true || b.headers_received !== false || b.content_received !== false
+          || b.response_consumer !== "not_started" || b.pure_local_generation !== true || b.owner_cancelled !== false
+          || !digest(b.destination_digest) || typeof b.model !== "string" || !b.model.length || b.model.length > 128 || !date(b.recorded_at)) throw invalid();
+      }
+    }
+    if (op.manual_recovery !== undefined) {
+      const m = op.manual_recovery, prior = op.attempts.findIndex(a => a.id === m?.prior_attempt_id);
+      if (!m || typeof m !== "object" || !exactKeys(m,["id","actor","reviewed_at","prior_attempt_id","checkpoint_digest","state_digest","status","replacement_attempt_id","attempt_deadline"])
+        || !id(m.id) || seen.has(m.id) || m.actor !== "local_installation_operator" || !date(m.reviewed_at)
+        || !digest(m.checkpoint_digest) || !digest(m.state_digest) || prior < 0 || !op.attempts[prior]!.no_response_boundary
+        || op.attempts.slice(0, prior).some(a => a.outcome === "B") || prior >= 2
+        || !["permitted","admitted"].includes(m.status)
+        || m.status === "permitted" && (op.state !== "unknown" || prior !== op.attempts.length - 1 || m.replacement_attempt_id !== undefined || m.attempt_deadline !== undefined)
+        || m.status === "admitted" && (!id(m.replacement_attempt_id) || !date(m.attempt_deadline) || op.attempts[prior + 1]?.id !== m.replacement_attempt_id)) throw invalid();
+      seen.add(m.id);
     }
   }
+}
+
+export type AuthoringManualRecoveryPreview = {
+  operation_id: string;
+  attempt_id: string;
+  checkpoint_digest: `sha256:${string}`;
+  state_digest: `sha256:${string}`;
+  context_digest: `sha256:${string}`;
+};
+function manualRecoveryUnavailable(message: string): never {
+  throw new AskError("ASK_GENERATION_MANUAL_RECOVERY_UNAVAILABLE", message, 409);
+}
+function manualRecoveryTarget(state: AuthoringTransportState): AuthoringTransportOperation {
+  const unresolved = state.operations.filter(op => ["in_flight","unsent","unknown","partial","received","handled"].includes(op.state));
+  if (unresolved.length !== 1) return manualRecoveryUnavailable("One exact unresolved generation is required. Other unfinished or unacknowledged work remains fenced; no response was acknowledged.");
+  const op = unresolved[0]!, attempt = op.attempts.at(-1)!;
+  if (op.state !== "unknown" || attempt.outcome !== "B" || !attempt.no_response_boundary)
+    return manualRecoveryUnavailable("The saved attempt lacks the complete durable no-response, closed-transport and pure-generation boundary. Partial output, unknown consumption and historical records without those facts remain fenced.");
+  if (op.manual_recovery || op.attempts.length >= 3 || op.attempts.slice(0, -1).some(a => a.outcome === "B"))
+    return manualRecoveryUnavailable("The finite replacement permission or generation-attempt allowance is already used. Resume cannot reset it; the original attempts remain recorded.");
+  return op;
+}
+/** Public local operator review only; no generation, acknowledgement, automatic
+ * policy change or provider-cost reconciliation occurs in either function. */
+export async function prepareAuthoringManualRecovery(checkpointDigest: `sha256:${string}`): Promise<AuthoringManualRecoveryPreview> {
+  const frame = storage.getStore(), host = frame?.host;
+  if (!host || frame!.active || !digest(checkpointDigest)) return manualRecoveryUnavailable("The current saved job is unavailable or a generation is still active. No replacement permission was created.");
+  const state = structuredClone(host.read() ?? {version: 1 as const, operations: []});
+  validateAuthoringTransportState(state);
+  const op = manualRecoveryTarget(state), context = await currentRecoveryContext(host);
+  if (context !== op.context_digest) throw currentnessFailure("BOUNDARY_AUTHORING_RESUME_CHANGED");
+  return {operation_id: op.id, attempt_id: op.attempts.at(-1)!.id, checkpoint_digest: checkpointDigest,
+    state_digest: canonicalJsonDigest(state), context_digest: context};
+}
+export async function permitAuthoringManualRecovery(preview: AuthoringManualRecoveryPreview): Promise<void> {
+  const frame = storage.getStore(), host = frame?.host;
+  if (!host || frame!.active) return manualRecoveryUnavailable("Another generation is active or this saved job is unavailable.");
+  const state = structuredClone(host.read() ?? {version: 1 as const, operations: []});
+  validateAuthoringTransportState(state);
+  const op = manualRecoveryTarget(state);
+  if (!digest(preview.checkpoint_digest) || canonicalJsonDigest(state) !== preview.state_digest || op.id !== preview.operation_id
+    || op.attempts.at(-1)!.id !== preview.attempt_id || await currentRecoveryContext(host) !== preview.context_digest
+    || op.context_digest !== preview.context_digest) throw currentnessFailure("BOUNDARY_AUTHORING_RESUME_CHANGED");
+  op.manual_recovery = {id: randomUUID(), actor: "local_installation_operator", reviewed_at: new Date().toISOString(),
+    prior_attempt_id: preview.attempt_id, checkpoint_digest: preview.checkpoint_digest, state_digest: preview.state_digest, status: "permitted"};
+  await writeRecoveryState(host, state);
 }
 
 /** Called only by the existing acknowledged business-checkpoint writer. A
@@ -251,7 +344,7 @@ export async function authoringGenerationFailed(results: readonly ProviderHttpRe
 function pureLocalGeneration(input: ProviderHttpInput): boolean {
   const b = input.body;
   if (["background","conversation","previous_response_id","webhook","webhooks"].some(k => k in b)) return false;
-  if (input.stream?.format === "openai_responses" && b.store !== false) return false;
+  if ((input.stream?.format === "openai_responses" || /\/responses\/?$/u.test(input.endpoint.pathname)) && b.store !== false) return false;
   if (!Array.isArray(b.tools) && b.tools !== undefined) return false;
   return (b.tools as Record<string, unknown>[] | undefined ?? []).every(t => input.stream?.format === "anthropic"
     ? typeof t.name === "string" && t.input_schema !== undefined && t.type === undefined
@@ -287,21 +380,29 @@ export async function recoverAuthoringGeneration(input: ProviderHttpInput,
   if (frame.active) throw new AskError("ASK_GENERATION_ALREADY_ACTIVE", "Another authoring generation is still active.", 409);
   const initial = structuredClone(host.read() ?? {version: 1 as const, operations: []});
   validateAuthoringTransportState(initial);
-  if (initial.operations.some(op => ["in_flight", "unsent", "unknown", "partial"].includes(op.state)
-    || !frame.owned.has(op.id) && op.state !== "checkpointed" && op.state !== "refused")) {
+  const manual = initial.operations.find(op => op.manual_recovery?.status === "permitted");
+  if (initial.operations.some(op => op.id !== manual?.id && (["in_flight", "unsent", "unknown", "partial"].includes(op.state)
+    || !frame.owned.has(op.id) && op.state !== "checkpointed" && op.state !== "refused"))) {
     throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The saved job contains an unfinished generation or unacknowledged local result. Inspect/reconcile its exact saved progress; restart cannot reset the attempt allowance.", 409);
   }
   if (!host.available()) {
+    if (manual) return manualRecoveryUnavailable("The saved generation boundary is not current and available. No replacement request was sent.");
     try { return await request(input); }
     catch (e) { throw transportStop(authoringTransportObservation(e), e); }
   }
-  if (initial.operations.length >= 4096) throw new AskError("ASK_GENERATION_HISTORY_LIMIT", "The saved generation history reached its local record bound. Preserve and inspect it before continuing.", 409);
+  if (!manual && initial.operations.length >= 4096) throw new AskError("ASK_GENERATION_HISTORY_LIMIT", "The saved generation history reached its local record bound. Preserve and inspect it before continuing.", 409);
   const context = await currentRecoveryContext(host);
   const body = structuredClone(input.body), requestDigest = canonicalJsonDigest({body, endpoint: input.endpoint.href, stream: input.stream?.format ?? null});
-  const op: AuthoringTransportOperation = {id: randomUUID(), request_digest: requestDigest, context_digest: context,
+  if (manual && (manual.context_digest !== context || manual.request_digest !== requestDigest || !pureLocalGeneration(input)
+    || manual.attempts.at(-1)!.no_response_boundary?.destination_digest !== canonicalJsonDigest(input.endpoint.origin)
+    || manual.attempts.at(-1)!.no_response_boundary?.model !== body.model)) throw currentnessFailure("BOUNDARY_AUTHORING_RESUME_CHANGED");
+  const op: AuthoringTransportOperation = manual ?? {id: randomUUID(), request_digest: requestDigest, context_digest: context,
     deadline: new Date(Date.now() + (input.timeoutMs ?? 30_000)).toISOString(), state: "in_flight", attempts: []};
+  // Explicit replacement has its own finite request deadline. Never extend or
+  // rewrite the original operation's expired deadline or failed attempt.
+  const operationDeadline = manual ? new Date(Date.now() + (input.timeoutMs ?? 30_000)).toISOString() : op.deadline;
   const policy = initial.policy;
-  const allowed = host.allowRetries?.() !== false && policy && policy.model === body.model && policy.destination_digest === canonicalJsonDigest(input.endpoint.origin)
+  const allowed = !manual && host.allowRetries?.() !== false && policy && policy.model === body.model && policy.destination_digest === canonicalJsonDigest(input.endpoint.origin)
     ? policy.maximum_additional_attempts : 0;
   if (frame.active) throw new AskError("ASK_GENERATION_ALREADY_ACTIVE", "Another authoring generation is still active.", 409);
   frame.active = true; frame.owned.add(op.id);
@@ -310,10 +411,11 @@ export async function recoverAuthoringGeneration(input: ProviderHttpInput,
     for (let ordinal = 0; ordinal <= allowed; ordinal++) {
       input.signal.throwIfAborted();
       if (await currentRecoveryContext(host) !== context) throw new AskError("ASK_GENERATION_CONTEXT_CHANGED", "The saved source, permissions or parent changed. This generation will not be retargeted.", 409);
-      let remaining = Date.parse(op.deadline) - Date.now();
+      let remaining = Date.parse(operationDeadline) - Date.now();
       if (remaining <= 0) throw new AskError("ASK_GENERATION_DEADLINE", "The original generation deadline expired. Saved progress is retained.", 504);
       const attempt = {id: randomUUID(), started_at: new Date().toISOString(), outcome: "in_flight" as AuthoringTransportOperation["attempts"][number]["outcome"]};
       op.attempts.push(attempt); op.state = "in_flight";
+      if (manual) Object.assign(op.manual_recovery!, {status: "admitted", replacement_attempt_id: attempt.id, attempt_deadline: operationDeadline});
       const save = async () => {
         const s = structuredClone(host.read() ?? initial), index = s.operations.findIndex(x => x.id === op.id);
         if (index < 0) s.operations.push(structuredClone(op)); else s.operations[index] = structuredClone(op);
@@ -321,7 +423,7 @@ export async function recoverAuthoringGeneration(input: ProviderHttpInput,
       };
       await save();
       input.signal.throwIfAborted();
-      remaining = Date.parse(op.deadline) - Date.now();
+      remaining = Date.parse(operationDeadline) - Date.now();
       if (remaining <= 0) throw new AskError("ASK_GENERATION_DEADLINE", "The original generation deadline expired before dispatch. No new request was sent; preserve the saved attempt record.", 504);
       const deadline = AbortSignal.timeout(remaining), signal = AbortSignal.any([input.signal, deadline]);
       let result: ProviderHttpResult;
@@ -334,6 +436,13 @@ export async function recoverAuthoringGeneration(input: ProviderHttpInput,
         const observation = authoringTransportObservation(e);
         attempt.outcome = completedProviderContentError(e) ? "response" : observation?.classification ?? "C";
         if (observation) Object.assign(attempt, {phase: observation.phase, ...(observation.code ? {code: observation.code} : {})});
+        if (!completedProviderContentError(e) && observation?.classification === "B" && observation.transient
+          && observation.cleanup_complete && !observation.headers_received && !input.signal.aborted && !deadline.aborted
+          && pureLocalGeneration(input) && typeof body.model === "string") {
+          Object.assign(attempt, {no_response_boundary: {version: 1, transport_closed: true, headers_received: false,
+            content_received: false, response_consumer: "not_started", pure_local_generation: true, owner_cancelled: false,
+            destination_digest: canonicalJsonDigest(input.endpoint.origin), model: body.model, recorded_at: new Date().toISOString()}});
+        }
         const permanent = e instanceof AskError && ["ASK_PROVIDER_REQUEST_INVALID", "ASK_PROVIDER_REDIRECT_REFUSED", "ASK_PROVIDER_DESTINATION_REFUSED"].includes(e.code);
         op.state = permanent || completedProviderContentError(e) ? "refused" : observation?.classification === "A" ? "unsent" : observation?.classification === "B" ? "unknown" : "partial";
         await save();
@@ -344,7 +453,7 @@ export async function recoverAuthoringGeneration(input: ProviderHttpInput,
         if (!retry) throw transportStop(observation, e);
         if (b) priorB++;
         host.progress?.("Connection interrupted; one permitted generation retry is underway. Provider charges may apply twice; saved Actions are retained.");
-        await delay(Math.min(ordinal === 0 ? 2000 : 5000, Math.max(0, Date.parse(op.deadline) - Date.now())), undefined, {signal: input.signal});
+        await delay(Math.min(ordinal === 0 ? 2000 : 5000, Math.max(0, Date.parse(operationDeadline) - Date.now())), undefined, {signal: input.signal});
         continue;
       }
       op.state = "received"; attempt.outcome = "response";
