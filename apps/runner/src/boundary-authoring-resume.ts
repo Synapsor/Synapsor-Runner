@@ -127,6 +127,8 @@ export type BoundaryAuthoringReadRevision = {
   checkpoint?: ReadBoundaryRevisionCheckpoint;
   /** Complete locally consumed result; no saved revision or resend permission. */
   result_received?: true;
+  /** Complete invalid replies exhausted this exact revision, not transport recovery. */
+  terminal_reason?: "READ_BOUNDARY_REVISION_NOT_SUBMITTED";
 };
 
 /** Review operation identity, separate from the job's business edit agenda. */
@@ -703,10 +705,12 @@ function assertReadAssistanceHandoff(value: {
 }
 
 function normalizeReadRevisionState(value: unknown): BoundaryAuthoringReadRevision {
-  if (!isRecord(value) || Object.keys(value).some(key => !["instruction", "provenance", "privacy_only", "vocabulary_only", "interpretation_instruction", "checkpoint", "result_received"].includes(key))
+  if (!isRecord(value) || Object.keys(value).some(key => !["instruction", "provenance", "privacy_only", "vocabulary_only", "interpretation_instruction", "checkpoint", "result_received", "terminal_reason"].includes(key))
     || typeof value.instruction !== "string" || !["operator", "guided"].includes(value.provenance as string) || typeof value.privacy_only !== "boolean"
     || value.vocabulary_only !== undefined && value.vocabulary_only !== true
-    || value.result_received !== undefined && value.result_received !== true) {
+    || value.result_received !== undefined && value.result_received !== true
+    || value.terminal_reason !== undefined && value.terminal_reason !== "READ_BOUNDARY_REVISION_NOT_SUBMITTED"
+    || value.terminal_reason !== undefined && value.result_received !== undefined) {
     throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The pending Read revision request is invalid.");
   }
   reviewedReadRequestText(value.instruction, "Read revision request");

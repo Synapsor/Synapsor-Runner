@@ -6509,15 +6509,15 @@ describe("boundary operator-plane CLI", () => {
         expect(input.instruction).toBe(change);
         expect(input.privacyOnly).not.toBe(true);
         if (retry && revisionGenerator.mock.calls.length === 1) throw new Error("TEST_REVISION_PROVIDER_UNAVAILABLE");
-        if (posture === "clarification") {
-          await input.clarificationHandler!({ question: "Which visit status should stay private?", reason: "Confirm the business meaning of status." });
-        }
+        let responses = 0;
         return generateModelReadBoundaryRevision({ ...input, dependencies: { requestJson: async () => ({ status: 200,
           body: { output: [{ type: "function_call", call_id: "visibility", name: "runner__submit_read_boundary_revision",
-            arguments: JSON.stringify({ status: "revision", resource_changes: [{ resource: "public.service_visits",
-              field_exposure: [{ field: "status", exposure: "runner_only" }] }] }) }] } }) } });
+            arguments: JSON.stringify(posture === "clarification" && ++responses === 1
+              ? { clarification_request: { question: "Which visit status should stay private?", reason: "Confirm the business meaning of status." } }
+              : { status: "revision", resource_changes: [{ resource: "public.service_visits",
+                  field_exposure: [{ field: "status", exposure: "runner_only" }] }] }) }] } }) } });
       });
-      let actionVisits = 0, actionReviews = 0, readReviews = 0;
+      let actionVisits = 0, actionReviews = 0, readReviews = 0, planningQuestionReads = 0;
       const session: BoundaryReviewInteractiveSession = { ...fixture.session,
         ...(viaSavedActions ? { presentationMode: "conversation" as const,
           chooseResource: async () => actionVisits++ === 0 ? { action: "actions" as const, boundary_name: context.candidate.pack.name } : undefined,
@@ -6529,7 +6529,9 @@ describe("boundary operator-plane CLI", () => {
               `Read revision: ${digest}`, "This question does not save access, change active permissions or read source rows.",
             ]));
           }
-          return question === "Which business detail should change?" ? undefined : change;
+          // EOF preserves the first exact planning question. Its ordinary
+          // reopening needs a current answer, not another planning attempt.
+          return question === "Which business detail should change?" && ++planningQuestionReads === 1 ? undefined : change;
         },
         chooseOption: async (title, choices, config) => {
           if (title === "VERIFIED ACTION BOUNDARY" && viaSavedActions) return actionReviews++ === 0 ? "review_read" : "back";
@@ -7724,13 +7726,11 @@ describe("boundary operator-plane CLI", () => {
       if (failedReadCorrection && modelReadBoundaryRevisionGenerator.mock.calls.length === 1) {
         throw new Error("READ_CORRECTION_TEST_UNAVAILABLE");
       }
-      if (posture === "privacy_retry" && modelReadBoundaryRevisionGenerator.mock.calls.length === 2) {
-        const clarificationHandler = input.clarificationHandler;
-        if (!clarificationHandler) throw new Error("Read revision clarification handler missing");
-        await expect(clarificationHandler({
-          question: "Is visit status internal eligibility state?",
-          reason: "The revision needs the operator's exact privacy meaning.",
-        })).resolves.toEqual({ state: "answered", answer: "Visit status is internal eligibility state." });
+      // Matched recoverable control: no request was sent by this failed
+      // fixture invocation. Complete semantic exhaustion is separately tested
+      // through the real public producer and must not be retried on Resume.
+      if (posture === "privacy_retry" && modelReadBoundaryRevisionGenerator.mock.calls.length === 1) {
+        throw new Error("TEST_REVISION_PROVIDER_UNAVAILABLE_BEFORE_EGRESS");
       }
       if (confirmedCurrent) {
         const result = await generateModelReadBoundaryRevision({ ...input,
@@ -7749,11 +7749,16 @@ describe("boundary operator-plane CLI", () => {
         expect(await fs.readFile(path.join(root, ".synapsor/boundary-review-progress.json"), "utf8")).toBe(before);
         return result;
       }
-      let attempt = 0;
+      let attempt = 0, responses = 0;
       expect(input.validateRevision).toBeTypeOf("function");
       const result = await generateModelReadBoundaryRevision({
         ...input,
         dependencies: { requestJson: async (request) => {
+          if (posture === "privacy_retry" && modelReadBoundaryRevisionGenerator.mock.calls.length === 2 && ++responses === 1) {
+            return { status: 200, body: { output: [{ type: "function_call", call_id: "privacy_question", name: "runner__submit_read_boundary_revision",
+              arguments: JSON.stringify({ clarification_request: { question: "Is visit status internal eligibility state?",
+                reason: "The revision needs the operator's exact privacy meaning." } }) }] } };
+          }
           attempt += 1;
           expect(await fs.readFile(path.join(root, ".synapsor/boundary-review-progress.json"), "utf8")).toBe(before);
           if (attempt === 2) expect(JSON.stringify(request)).toContain(input.privacyOnly
@@ -8287,7 +8292,9 @@ describe("boundary operator-plane CLI", () => {
         if (resume.status !== "ready") throw new Error("Manual retry resume missing");
         const conversation = resume.value.conversation.flatMap((turn) => [turn.question, turn.answer]).join("\n");
         expect(conversation).not.toContain("Keep the service visit status private for eligibility verification.");
-        expect(conversation).not.toContain("retry");
+        expect(resume.value.owner_handoffs?.at(-1)).toMatchObject({ consumer: "read_revision_instruction", state: "answered", answer: "retry" });
+        expect(resume.value.conversation).toContainEqual(expect.objectContaining({ kind: "clarification", answer: "retry" }));
+        expect(resume.value.conversation.some(turn => turn.answer.includes("Reduce model disclosure of internal database IDs"))).toBe(false);
         return;
       }
 
@@ -8309,7 +8316,7 @@ describe("boundary operator-plane CLI", () => {
           "Keep the service visit status private for eligibility verification.",
         );
         expect(semanticChat.rememberDetails).toHaveBeenCalledWith("READ BOUNDARY REVISION NOT SAVED", expect.arrayContaining([
-          expect.stringContaining("settings.selectable_fields removes Runner's access"),
+          expect.stringContaining("TEST_REVISION_PROVIDER_UNAVAILABLE_BEFORE_EGRESS"),
           "The exact disabled Read and Action drafts are unchanged.",
         ]));
         const context = await loadBoundaryReviewContext(root);

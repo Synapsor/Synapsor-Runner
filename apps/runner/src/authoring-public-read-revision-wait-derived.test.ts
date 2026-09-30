@@ -20,7 +20,7 @@ const strings=(value:any):string[]=>typeof value==="string" ? [value] : Array.is
   : value && typeof value==="object" ? Object.values(value).flatMap(strings) : [];
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllEnvs();});
 
-async function publicReadRevisionWait(control:"healthy"|"pause_restart") {
+async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"terminal_invalid") {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),`owned-public-read-revision-wait-${control}-`));
   const inspection=ownedProgramInspection(),inspect=async()=>structuredClone(inspection);
   const resumeFile=path.join(root,".synapsor/boundary-authoring/resume.json");
@@ -69,7 +69,9 @@ async function publicReadRevisionWait(control:"healthy"|"pause_restart") {
         operator_meanings:[{resource:"studio.parcels",operator_quote:"studio.parcels is the parcel register"},{resource:"studio.parcels",field:"label",operator_quote:"studio.parcels.label is the public parcel name"},{resource:"studio.parcels",field:"units",operator_quote:"studio.parcels.units is the unit count"}]};
     } else if(names.includes("runner__submit_read_boundary_revision")) {
       name="runner__submit_read_boundary_revision";revisionRequests++;
-      if(revisionRequests===1) {awaitingClarification=true;args={clarification_request:{question,reason:"The requested existing units exposure remains a current owner choice."}};}
+      if(control==="terminal_invalid") {
+        args={resource_changes:[{resource:"studio.absent",field_exposure:[{field:"units",exposure:"runner_only"}]}]};
+      } else if(revisionRequests===1) {awaitingClarification=true;args={clarification_request:{question,reason:"The requested existing units exposure remains a current owner choice."}};}
       else {
         expect(text).toContain(answer);expect(text).toContain(question);
         const saved=await readResume();expect(saved?.conversation).toContainEqual(expect.objectContaining({kind:"clarification",question,answer}));
@@ -98,7 +100,21 @@ async function publicReadRevisionWait(control:"healthy"|"pause_restart") {
     await start(["--project-root",root,"--from-env","OWNED_READ_REVISION_WAIT_URL","--schema","studio","--cli"],{interactive:true,schemaInspector:inspect,
       runBoundaryReview:(args,inspector)=>boundaryReviewCommand(args,inspector,outer,undefined,options)});
     paused={requests,resume:await readResume(),context:await loadBoundaryReviewContext(root)};
-    expect(chosenRevision,transcript).toBe(true);expect(questionReads,transcript).toBe(1);expect(before).toBeDefined();
+    expect(chosenRevision,transcript).toBe(true);expect(before).toBeDefined();
+    if(control==="terminal_invalid") {
+      expect(revisionRequests).toBe(2);expect(questionReads).toBe(0);
+      expect(paused.resume.pending_read_revision_state.terminal_reason).toBe("READ_BOUNDARY_REVISION_NOT_SUBMITTED");
+      expect(paused.context.bundle.candidate_digest).toBe(before.bundle.candidate_digest);
+      stage="reopen";reopenOffset=transcript.length;
+      await boundaryReviewCommand(["--project-root",root,"--access","--job-first"],inspect,outer,undefined,options);
+      reopened={requests,resume:await readResume(),context:await loadBoundaryReviewContext(root)};
+      expect(reopened.requests).toBe(paused.requests);expect(revisionRequests).toBe(2);
+      expect(reopened.context.bundle.candidate_digest).toBe(before.bundle.candidate_digest);
+      expect(reopened.resume.pending_read_revision_state).toEqual(paused.resume.pending_read_revision_state);
+      expect(JSON.stringify(failures)).toContain("READ_BOUNDARY_REVISION_NOT_SUBMITTED");
+      return;
+    }
+    expect(questionReads,transcript).toBe(1);
     expect(waiting?.policy_source_session).toBeUndefined();
     if(control==="pause_restart") {
       expect(paused.context.bundle.candidate_digest).toBe(before.bundle.candidate_digest);
@@ -129,6 +145,6 @@ async function publicReadRevisionWait(control:"healthy"|"pause_restart") {
   }
 }
 
-it.each(["healthy","pause_restart"] as const)("public Read revision preserves the exact model owner question before its consumer: %s",async control=>{
+it.each(["healthy","pause_restart","terminal_invalid"] as const)("public Read revision preserves the exact model owner question before its consumer: %s",async control=>{
   await publicReadRevisionWait(control);
 },30_000);

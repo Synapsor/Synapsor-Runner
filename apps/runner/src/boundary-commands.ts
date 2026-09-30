@@ -4651,7 +4651,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     if (resumePersistenceBlocked) throw checkpointSaveFailure("The owner question");
     return handoff;
   });
-  const recordOwnerAnswer = async (handoff: AuthoringOwnerHandoff, answer: string) => mutateOwnerHandoff(async permit => {
+  const recordOwnerAnswer = async (handoff: AuthoringOwnerHandoff, answer: string,
+    options?: { policyMeaning: false }) => mutateOwnerHandoff(async permit => {
     const current = await ownerQuestionContext(permit, handoff.consumer);
     const pending = ownerHandoffs.at(-1);
     if (handoff.state !== "waiting" || pending?.state !== "waiting" || pending.id !== handoff.id || pending.digest !== handoff.digest
@@ -4663,7 +4664,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     // A cross-file save failure stays fenced; it does not erase a committed
     // Source append or acknowledge an unsaved answer on reopen.
     const sources = authoringConversation?.policySources;
-    if (sources && activePolicySource(sources)) await appendPolicySourceOperatorMessage(input.projectRoot, sources,
+    if (options?.policyMeaning !== false && sources && activePolicySource(sources)) await appendPolicySourceOperatorMessage(input.projectRoot, sources,
       answer, { permit, expectedDigest: canonicalJsonDigest(sources) });
     const acceptedContext = await ownerQuestionContext(permit, handoff.consumer);
     const next = answerOwnerHandoff(handoff, answer, acceptedContext);
@@ -8982,6 +8983,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         generalReadRestriction?: boolean;
       }): Promise<boolean> => {
         const chat = input.authoringChat!;
+        if (pendingReadRevisionState?.terminal_reason) {
+          throw new Error("READ_BOUNDARY_REVISION_NOT_SUBMITTED: This exact retained Read revision exhausted its semantic correction. Inspect the unchanged disabled draft and original response evidence; ordinary Resume cannot renew the allowance or resend it.");
+        }
         if (pendingReadRevisionState?.result_received) {
           throw new Error("READ_BOUNDARY_REVISION_RESULT_NOT_SAVED: A complete revision response was consumed but its exact guarded save was not confirmed. Inspect current disabled Read/Action records and the saved request; Resume cannot regenerate or replay that result.");
         }
@@ -9069,7 +9073,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         const answer = guidedInstruction ?? await readModelAnswer(instructionHandoff?.state === "waiting" && instructionHandoff.consumer === "read_revision_instruction"
           ? instructionHandoff.question : revisionQuestion, instructionHandoff?.state === "waiting" && instructionHandoff.consumer === "read_revision_instruction" ? instructionHandoff : undefined);
         const retryingRetainedRequest = answer?.trim().toLowerCase() === "retry" && failedReadRevision;
-        const request: RetainedReadRevisionRequest | undefined = pendingReadRevisionState?.checkpoint && guidedInstruction === pendingReadRevisionState.instruction
+        const request: RetainedReadRevisionRequest | undefined = pendingReadRevisionState && guidedInstruction === pendingReadRevisionState.instruction
           ? { instruction: pendingReadRevisionState.instruction, provenance: pendingReadRevisionState.provenance,
               privacyOnly: pendingReadRevisionState.privacy_only,
               ...(pendingReadRevisionState.vocabulary_only ? { vocabularyOnly: true } : {}),
@@ -9096,7 +9100,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         // Guided repair instructions are Runner orchestration, not a new
         // operator policy decision. The actual business answer is already saved.
         if (!preparedRevision && !guidedInstruction && instructionHandoff?.state === "waiting" && instructionHandoff.consumer === "read_revision_instruction") {
-          await recordOwnerAnswer(instructionHandoff, request.instruction);
+          // Preserve the actual control answer. Runner's retained repair text
+          // must not become an attributed business meaning merely on "retry".
+          await recordOwnerAnswer(instructionHandoff, answer!.trim(), retryingRetainedRequest ? { policyMeaning: false } : undefined);
         } else if (!preparedRevision && request.provenance === "operator" && !retryingRetainedRequest && !pendingReadRevisionState?.checkpoint) {
           rememberModelAuthoringClarification(authoringConversation, revisionQuestion, request.instruction);
         }
@@ -9531,6 +9537,15 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           assertRunning(error);
           failedReadRevision = request;
           const message = redactCliErrorMessage(error instanceof Error ? error.message : String(error));
+          if (!readRevisionSaved && message.startsWith("READ_BOUNDARY_REVISION_NOT_SUBMITTED:")) {
+            await mutateOwnerHandoff(async permit => {
+              await ownerQuestionContext(permit, "read_revision_clarification");
+              if (!pendingReadRevisionState || pendingReadRevisionState.instruction !== request.instruction) throw checkpointSaveFailure("The exhausted Read revision");
+              pendingReadRevisionState = { ...pendingReadRevisionState, terminal_reason: "READ_BOUNDARY_REVISION_NOT_SUBMITTED" };
+              await persistAuthoringResume("authority_review", permit);
+              if (resumePersistenceBlocked) throw checkpointSaveFailure("The exhausted Read revision");
+            });
+          }
           const failureTitle = readRevisionSaved ? "Read revision saved; review needs recovery" : "Read revision not saved";
           const preservedState = readRevisionSaved
             ? "The disabled Read revision was saved, but its review did not finish. Resume this job to validate the latest Action dependency before activation."
