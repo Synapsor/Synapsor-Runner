@@ -10,7 +10,7 @@ import type { OperatorAuthorityState } from "./control-policy-operator-repositor
 import type { ReadAuthoringBindings } from "./control-policy-record.js";
 import { AUTHORING_PROGRAM_CAPACITY as limits } from "./authoring-program-capacity.js";
 import { MAX_BOUNDARY_ACTION_INTENT_CHARACTERS } from "./boundary-authoring-limits.js";
-import { policyTextSnapshot, type PolicySourceSession } from "./authoring-policy-source.js";
+import { activePolicySource, policyTextSnapshot, type PolicySourceSession } from "./authoring-policy-source.js";
 import { publishPrivateAuthoringJson, readPrivateAuthoringJson } from "./boundary-draft-bundle.js";
 
 const VERSION = "synapsor.structured-draft-successor.v1" as const;
@@ -119,9 +119,10 @@ export async function readStructuredDraftSuccessorInventory(projectRoot: string)
  * Source review/coverage APIs to assess actual revalidation and readiness. */
 export function structuredDraftSuccessorSourceMatches(inventory: StructuredDraftSuccessorInventory,
   currentSources: PolicySourceSession | undefined): Array<{ name: string; digest: string; attached_current: boolean }> {
+  const active = activePolicySource(currentSources);
   return inventory.sources.map(source => ({ name: source.name, digest: source.digest,
-    attached_current: Boolean(currentSources?.snapshots.some(current => current.name === source.name
-      && current.text === source.text && current.digest === source.digest)) }));
+    attached_current: Boolean(active && active.name === source.name
+      && active.text === source.text && active.digest === source.digest) }));
 }
 
 export async function assertStructuredDraftSuccessorDestination(input: {

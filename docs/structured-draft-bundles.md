@@ -89,8 +89,9 @@ declarations and reports matching/pending outcomes and intent indexes. Exact
 matching is not a commit acknowledgement, Source fidelity or English intent
 proof. Unprepared intents remain explicit; Runner never invents outcome links.
 Normal current authoring and Source/private review must resolve them. Fresh
-attachment applicability compares exact Source name/text/digest against normal
-current Source records; only the normal review APIs can assess coverage and
+attachment applicability compares exact Source name/text/digest against the
+explicitly selected active current Source; retained history remains inert.
+Only the normal review APIs can assess coverage and
 readiness. The imported material's origin remains untrusted.
 
 Repeated pages with exactly matching current declarations leave the repository

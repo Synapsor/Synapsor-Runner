@@ -94,7 +94,7 @@ describe("explicit disabled successor pages", () => {
     expect(jobReview.completeProgram?.draftsComplete).toBe(false);
     expect(jobReview.summary.join(" ")).toContain("64 retained intents");
     expect(inspected.status === "present" && structuredDraftSuccessorSourceMatches(inspected.inventory, undefined)).toEqual([{ name: f.source.name, digest: f.source.digest, attached_current: false }]);
-    const fresh = newPolicySourceSession(); fresh.snapshots = [policyTextSnapshot(Buffer.from(f.source.text), f.source.name, 3)];
+    const fresh = newPolicySourceSession(); fresh.snapshots = [policyTextSnapshot(Buffer.from(f.source.text), f.source.name, 3)]; fresh.active = 3;
     expect(inspected.status === "present" && structuredDraftSuccessorSourceMatches(inspected.inventory, fresh)).toEqual([{ name: f.source.name, digest: f.source.digest, attached_current: true }]);
     await expect(fs.lstat(path.join(f.root, ".synapsor/boundary-authoring/resume.json"))).rejects.toMatchObject({ code: "ENOENT" });
   }, 120_000);
