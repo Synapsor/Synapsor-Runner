@@ -303,7 +303,7 @@ it.skipIf(process.env.SYNAPSOR_TEST_DERIVED_FIFTY_REAL_PG !== "1")("authors the 
     expect(partialAuthority[0]!.authority.rules).toHaveLength(20);
     const beforeExportResume = await fs.readFile(path.join(root, ".synapsor/boundary-authoring/resume.json"));
     const partialFile = path.join(root, "partial20.draft.json");
-    expect(await boundaryAssistCommand(["--project-root", root, "--export-draft", partialFile, "--json"], physical.inspect)).toBe(0);
+    expect(await start(["--project-root", root, "--export-draft", partialFile, "--json"], { interactive: false, schemaInspector: physical.inspect })).toBe(0);
     const partialExchange: any = await readBoundaryDraftExchange(root, partialFile);
     expect(partialExchange.actions).toHaveLength(20); expect(partialExchange.action_skeletons).toHaveLength(50);
     expect(partialExchange.notes.source_material_state).toBe("untrusted_not_attached");
@@ -333,7 +333,7 @@ it.skipIf(process.env.SYNAPSOR_TEST_DERIVED_FIFTY_REAL_PG !== "1")("authors the 
     await fs.writeFile(path.join(evidence, "actual-progress-50.json"), JSON.stringify(resume, null, 2));
     stage = "full50-declarative-export";
     const completeFile = path.join(root, "full50.draft.json");
-    expect(await boundaryAssistCommand(["--project-root", root, "--export-draft", completeFile, "--json"], physical.inspect)).toBe(0);
+    expect(await start(["--project-root", root, "--export-draft", completeFile, "--json"], { interactive: false, schemaInspector: physical.inspect })).toBe(0);
     const completeExchange: any = await readBoundaryDraftExchange(root, completeFile);
     expect(completeExchange.actions).toHaveLength(50); expect(completeExchange.action_skeletons).toHaveLength(50);
     expect(completeExchange.notes.source_material_state).toBe("untrusted_not_attached");
