@@ -184,6 +184,18 @@ describe("saved authoring generation transport recovery",()=>{
       .rejects.toMatchObject({code: change === "unavailable" ? "ASK_GENERATION_MANUAL_RECOVERY_UNAVAILABLE" : "ASK_GENERATION_CONTEXT_CHANGED"});
     expect(f.sends()).toBe(1); expect(m.read()).toEqual(before);
   });
+  it("simultaneous confirmations in one owner append at most one permission", async () => {
+    const f = await fixture("B-success"), m = memory(f.endpoint, 0);
+    await expect(enter(m, () => recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest))).rejects.toBeDefined();
+    await enter(m, async () => {
+      const preview = await prepareAuthoringManualRecovery(canonicalJsonDigest("checkpoint")), beforeWrites = m.saved.length;
+      const results = await Promise.allSettled([permitAuthoringManualRecovery(preview), permitAuthoringManualRecovery(preview)]);
+      expect(results.filter(r => r.status === "fulfilled")).toHaveLength(1);
+      expect(results.filter(r => r.status === "rejected")).toHaveLength(1);
+      expect(m.saved.length - beforeWrites).toBe(1);
+    });
+    expect(f.sends()).toBe(1); expect(m.read().operations[0]!.manual_recovery?.status).toBe("permitted");
+  });
   it.each(["admission", "response"])("crash after replacement %s cannot reset its consumed attempt", async phase => {
     const f = await fixture("B-success"), m = memory(f.endpoint, 0);
     await expect(enter(m, () => recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest))).rejects.toBeDefined();

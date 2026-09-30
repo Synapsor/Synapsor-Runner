@@ -179,6 +179,8 @@ function manualRecoveryTarget(state: AuthoringTransportState): AuthoringTranspor
   const op = unresolved[0]!, attempt = op.attempts.at(-1)!;
   if (op.state !== "unknown" || attempt.outcome !== "B" || !attempt.no_response_boundary)
     return manualRecoveryUnavailable("The saved attempt lacks the complete durable no-response, closed-transport and pure-generation boundary. Partial output, unknown consumption and historical records without those facts remain fenced.");
+  if (op.manual_recovery?.status === "permitted")
+    return manualRecoveryUnavailable("One replacement permission is already saved. Resume may use it once for the exact operation; another confirmation cannot replace it.");
   if (op.manual_recovery || op.attempts.length >= 3 || op.attempts.slice(0, -1).some(a => a.outcome === "B"))
     return manualRecoveryUnavailable("The finite replacement permission or generation-attempt allowance is already used. Resume cannot reset it; the original attempts remain recorded.");
   return op;
@@ -198,15 +200,20 @@ export async function prepareAuthoringManualRecovery(checkpointDigest: `sha256:$
 export async function permitAuthoringManualRecovery(preview: AuthoringManualRecoveryPreview): Promise<void> {
   const frame = storage.getStore(), host = frame?.host;
   if (!host || frame!.active) return manualRecoveryUnavailable("Another generation is active or this saved job is unavailable.");
-  const state = structuredClone(host.read() ?? {version: 1 as const, operations: []});
-  validateAuthoringTransportState(state);
-  const op = manualRecoveryTarget(state);
-  if (!digest(preview.checkpoint_digest) || canonicalJsonDigest(state) !== preview.state_digest || op.id !== preview.operation_id
-    || op.attempts.at(-1)!.id !== preview.attempt_id || await currentRecoveryContext(host) !== preview.context_digest
-    || op.context_digest !== preview.context_digest) throw currentnessFailure("BOUNDARY_AUTHORING_RESUME_CHANGED");
-  op.manual_recovery = {id: randomUUID(), actor: "local_installation_operator", reviewed_at: new Date().toISOString(),
-    prior_attempt_id: preview.attempt_id, checkpoint_digest: preview.checkpoint_digest, state_digest: preview.state_digest, status: "permitted"};
-  await writeRecoveryState(host, state);
+  // Serialize confirmation with generation/admission in this live owner. A
+  // separate process still needs the existing saved-checkpoint CAS at write.
+  frame!.active = true;
+  try {
+    const state = structuredClone(host.read() ?? {version: 1 as const, operations: []});
+    validateAuthoringTransportState(state);
+    const op = manualRecoveryTarget(state);
+    if (!digest(preview.checkpoint_digest) || canonicalJsonDigest(state) !== preview.state_digest || op.id !== preview.operation_id
+      || op.attempts.at(-1)!.id !== preview.attempt_id || await currentRecoveryContext(host) !== preview.context_digest
+      || op.context_digest !== preview.context_digest) throw currentnessFailure("BOUNDARY_AUTHORING_RESUME_CHANGED");
+    op.manual_recovery = {id: randomUUID(), actor: "local_installation_operator", reviewed_at: new Date().toISOString(),
+      prior_attempt_id: preview.attempt_id, checkpoint_digest: preview.checkpoint_digest, state_digest: preview.state_digest, status: "permitted"};
+    await writeRecoveryState(host, state);
+  } finally { frame!.active = false; }
 }
 
 /** Called only by the existing acknowledged business-checkpoint writer. A
