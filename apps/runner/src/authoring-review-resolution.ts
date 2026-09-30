@@ -186,7 +186,7 @@ export const AUTHORING_REFUSAL_INVENTORY = {
   STRUCTURED_DRAFT_PRIVATE_MATERIAL_BLOCKED: authoringRefusal('authoring_integrity',
     'Remove credentials or private keys from the external declarative proposal and validate again. Preserve the original job and all normal private-boundary reviews; do not auto-redact canonical Source or import rejected material.'),
   STRUCTURED_DRAFT_STALE: authoringRefusal('authoring_currentness',
-    'Inspect or rescan the current disabled setup, then export a fresh coherent draft for its exact current review bundle and validate that input. Historical bindings and old approvals are not current proof.'),
+    'Inspect or rescan the current disabled setup. Export a new structured draft for its exact current review bundle and validate that input. Historical bindings and old approvals are not current proof.'),
   STRUCTURED_DRAFT_SUCCESSOR_CONFIRMATION_REQUIRED: authoringRefusal('authoring_prerequisite',
     'Review the exact selected page with --draft FILE --successor --action-page N --dry-run. Saving that disabled proposal requires explicit --yes through the same public command; it is not provider consent or activation.'),
   STRUCTURED_DRAFT_SUCCESSOR_INVALID: successorInvalid,
