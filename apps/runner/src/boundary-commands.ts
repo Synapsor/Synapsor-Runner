@@ -11715,10 +11715,14 @@ async function reviewSavedBoundaryPolicyInner(input: {
         subject: authority ? `${authority.state === "active" ? "active published" : "disabled candidate"} Action ${authority.authority.name} with Read ${context.candidate.pack.name}`
           : `Read-only candidate ${context.candidate.pack.name}` },
       onValidated: async (result, permit) => {
-        if (!policyReviewReadiness(source, result.report, result.sources).ready) return;
-        let next = updateBoundaryPolicyReview(resume, { pending: null, completion: { request,
+        // A canonical report can be saved with unresolved duties. Its response
+        // was still consumed and persisted, so acknowledge that checkpoint
+        // without claiming BUSINESS completion or clearing the pending review.
+        let next = policyReviewReadiness(source, result.report, result.sources).ready
+          ? updateBoundaryPolicyReview(resume, { pending: null, completion: { request,
           report_digest: canonicalJsonDigest(result.report), context_digest: result.key as `sha256:${string}`,
-          activity: result.activity, completed_at: new Date().toISOString() } });
+          activity: result.activity, completed_at: new Date().toISOString() } })
+          : resume;
         if (next.generation_recovery) {
           const {revision_digest: _old, ...core} = {...next, generation_recovery: authoringTransportCheckpoint(next.generation_recovery)};
           next = {...core, revision_digest: canonicalJsonDigest(core)};
