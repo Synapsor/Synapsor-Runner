@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { answerOwnerHandoff, createOwnerHandoff, parseOwnerHandoffs } from "./authoring-owner-handoff.js";
 
 describe("bounded host owner handoffs", () => {
-  it.each(["planning", "read_clarification", "read_value_context"] as const)("retains the original question and separate attributed answer: %s", consumer => {
+  it.each(["planning", "read_clarification", "read_value_context", "policy_clarification"] as const)("retains the original question and separate attributed answer: %s", consumer => {
     const question = createOwnerHandoff({ consumer, question: "Which current business meaning applies?",
       scope_digest: canonicalJsonDigest("same job"), context_digest: canonicalJsonDigest("current Source") });
     const answer = answerOwnerHandoff(question, "The selected record only.", canonicalJsonDigest("accepted current Source"));

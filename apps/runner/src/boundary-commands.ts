@@ -322,7 +322,7 @@ import { renderReviewFacts } from "./review-facts.js";
 import { renderRunnerResultPanel } from "./runner-result-panel.js";
 import { newPolicySourceSession, loadPolicySources, activePolicySource, authoringDestination, savePolicySources, policySourceSavedDigest, bindPolicyCoverage, recordReadInterpretation, confirmedReadFieldMeanings, PolicySourceChangedError } from "./authoring-policy-source.js";
 import { BoundaryJobPlanningError, planningDiagnosticLines, saveBoundaryJobPlanningDiagnostic } from "./boundary-job-diagnostics.js";
-import { installPolicySourceCommands } from "./authoring-policy-source-ui.js";
+import { appendPolicySourceOperatorMessage, installPolicySourceCommands } from "./authoring-policy-source-ui.js";
 import { reviewPolicyCoverage, parsePolicyCoverage, policyCoverageSection, policyCoverageSummary, unresolvedPolicyPassages, isMechanicalApprovalCounterPassage, isReadOnlyPolicyPassage, referencesReadPolicy, actionablePolicyRequirements, prioritizePolicyRepairs, type PolicyCoverage } from "./authoring-policy-coverage.js";
 import { inspectPolicyReviewSource, policyCoverageDraft, policyCoverageActionTargets } from "./authoring-policy-evidence.js";
 import { hasReviewedCustomerReadEntry } from "./read-relationship-access.js";
@@ -4576,15 +4576,31 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     request: pendingJobRevision ?? null, read_revision: pendingReadRevision ?? null,
     model: selectedResumeModel && { provider: selectedResumeModel.provider, model: selectedResumeModel.model,
       destination: authoringDestination(selectedResumeModel) } });
-  const ownerQuestionContext = async (permit?: ProjectAuthorityMutationPermit) => {
+  const ownerQuestionContext = async (permit?: ProjectAuthorityMutationPermit,
+    consumer?: AuthoringOwnerHandoff["consumer"]) => {
     await assertAuthoringResumeCurrent(undefined, false, permit);
     const current = await loadBoundaryReviewContext(input.projectRoot);
     const sources = authoringConversation?.policySources;
     if (sources?.snapshots.length && await policySourceSavedDigest(input.projectRoot, sources.id) !== canonicalJsonDigest(sources)) {
       throw new PolicySourceChangedError();
     }
+    const reader = await inspectPolicyReviewSource(current.lock, input.schemaInspector);
+    // Policy clarification is bound to the complete saved program and freshly
+    // inspected reader/Action posture. An old coverage result is not current
+    // Source meaning after an Action, role or attachment change.
+    let policyContext: unknown;
+    if (consumer === "policy_clarification") {
+      await reloadReadReviewForModelRevision(input.projectRoot, current, semanticActionAuthorityDraft);
+      const action = semanticActionAuthorityDraft
+        ? await (input.actionProjectInspector ?? inspectActionProject)(input.projectRoot, process.env) : undefined;
+      policyContext = { authority: semanticActionAuthorityDraft?.digest ?? null,
+        action_schema: action ? schemaFingerprintForInspection(action) : null,
+        action_role: action ? rolePostureFingerprint(action) : null };
+    }
     return canonicalJsonDigest({ scope: ownerQuestionScope(), binding: boundaryAuthoringResumeBinding(current.bundle),
-      candidate: current.candidate, source: sources?.snapshots.length ? sources : null });
+      candidate: current.candidate, source: sources?.snapshots.length ? sources : null,
+      reader_schema: schemaFingerprintForInspection(reader.inspection), reader_role: rolePostureFingerprint(reader.inspection),
+      ...(policyContext ? { policy: policyContext } : {}) });
   };
   const mutateOwnerHandoff = async <T,>(operation: (permit: ProjectAuthorityMutationPermit) => Promise<T>): Promise<T> => {
     // Never retain this exclusion while a human or provider is outstanding.
@@ -4606,32 +4622,43 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     }
   };
   const persistOwnerQuestion = async (question: string, consumer: AuthoringOwnerHandoff["consumer"],
-    completion?: AuthoringOwnerHandoff["completion"]) => mutateOwnerHandoff(async permit => {
+    completion?: AuthoringOwnerHandoff["completion"], expectedContext?: `sha256:${string}`) => mutateOwnerHandoff(async permit => {
+    const currentContext = await ownerQuestionContext(permit, consumer);
+    if (expectedContext && currentContext !== expectedContext) throw new PolicySourceChangedError();
     const handoff = createOwnerHandoff({ consumer, question, scope_digest: ownerQuestionScope(),
-      context_digest: await ownerQuestionContext(permit), ...(completion ? { completion } : {}) });
+      context_digest: currentContext, ...(completion ? { completion } : {}) });
     if (ownerHandoffs.at(-1)?.state === "waiting") throw new Error("AUTHORING_OWNER_QUESTION_PENDING: Answer or inspect the saved question before another question can replace it.");
     if (completion) generationRecovery = authoringQuestionCheckpoint(generationRecovery, ownerHandoffCheckpoint(handoff));
     else if (generationRecovery?.operations.some(op => ["in_flight", "received", "handled", "unknown", "partial"].includes(op.state))) {
       throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "A question without an acknowledged completed turn cannot clear an unresolved generation. Preserve the current job for inspection.", 409);
     }
     ownerHandoffs.push(handoff);
-    await persistAuthoringResume(consumer === "planning" ? "planning" : "read_mapping", permit);
+    await persistAuthoringResume(consumer === "planning" ? "planning" : consumer === "policy_clarification" ? "authority_review" : "read_mapping", permit);
     if (resumePersistenceBlocked) throw checkpointSaveFailure("The owner question");
     return handoff;
   });
   const recordOwnerAnswer = async (handoff: AuthoringOwnerHandoff, answer: string) => mutateOwnerHandoff(async permit => {
-    const current = await ownerQuestionContext(permit);
+    const current = await ownerQuestionContext(permit, handoff.consumer);
     const pending = ownerHandoffs.at(-1);
     if (handoff.state !== "waiting" || pending?.state !== "waiting" || pending.id !== handoff.id || pending.digest !== handoff.digest
       || handoff.scope_digest !== ownerQuestionScope() || handoff.context_digest !== current) {
       throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: The question's Source, permissions or job changed. Its answer was not accepted; inspect the saved context before continuing.");
     }
-    const next = answerOwnerHandoff(handoff, answer, current);
+    // The recorder must not run before this applicability check. Append the
+    // accepted statement under the SAME exclusion and the displayed Source CAS.
+    // A cross-file save failure stays fenced; it does not erase a committed
+    // Source append or acknowledge an unsaved answer on reopen.
+    const sources = authoringConversation?.policySources;
+    if (sources && activePolicySource(sources)) await appendPolicySourceOperatorMessage(input.projectRoot, sources,
+      answer, { permit, expectedDigest: canonicalJsonDigest(sources) });
+    const acceptedContext = await ownerQuestionContext(permit, handoff.consumer);
+    const next = answerOwnerHandoff(handoff, answer, acceptedContext);
     if (handoff.completion) generationRecovery = authoringQuestionAnswerCheckpoint(generationRecovery,
       ownerHandoffCheckpoint(handoff), { digest: canonicalJsonDigest(next), operator_messages: [answer] });
     ownerHandoffs[ownerHandoffs.length - 1] = next;
-    rememberModelAuthoringTurn(authoringConversation, handoff.question, answer);
-    await persistAuthoringResume(handoff.consumer === "planning" ? "planning" : "read_mapping", permit);
+    if (handoff.consumer === "policy_clarification") rememberModelAuthoringClarification(authoringConversation, handoff.question, answer);
+    else rememberModelAuthoringTurn(authoringConversation, handoff.question, answer);
+    await persistAuthoringResume(handoff.consumer === "planning" ? "planning" : handoff.consumer === "policy_clarification" ? "authority_review" : "read_mapping", permit);
     if (resumePersistenceBlocked) throw checkpointSaveFailure("The owner answer");
   });
   // The model conversation is populated only after this menu. Read the saved
@@ -4785,6 +4812,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   let selectCurrentReviewContext = input.initialPolicyReview === true;
   let sourceReviewOutcome: BoundaryAssistOutcome | undefined;
   const runSavedPolicyReview = async (request = "Review attached rules and unresolved decisions", confirmedReviewRequest?: string) => {
+    if (ownerHandoffs.at(-1)?.state === "waiting") return boundaryAssistResult({ tone: "warning", title: "Saved owner question is still pending.",
+      lines: [ownerHandoffs.at(-1)!.question, "Use Resume the interrupted job to inspect and answer this exact question in its current context. A new Review cannot replace its meaning or clear the wait."] });
     if (!activeResume || !authoringConversation?.policySources || !selectedResumeModel || revalidateSavedJob) {
       return boundaryAssistResult({ tone: "warning", title: "Saved review context is unavailable.",
         lines: ["Restore or revalidate this job's saved source, candidate and model permission before review. No edit was started."] });
@@ -5023,7 +5052,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     // Resume completes an actual edit/revalidation before attempting an older
     // pinned review. Explicit Review retains its own current-candidate checks.
     selectCurrentReviewContext ||= selected === "review_rules";
-    selectedPolicyReview ||= selected === "review_rules" || selected === "resume" && !revalidateSavedJob
+    selectedPolicyReview ||= selected === "review_rules" || selected === "resume" && !revalidateSavedJob && ownerHandoffs.at(-1)?.state !== "waiting"
       && !availableResume?.pending_job_revision && !availableResume?.pending_read_revision && !availableResume?.pending_action_revision
       && Boolean(availableResume?.pending_policy_review);
     resumeSelected = selected === "resume" || selected === "review_rules";
@@ -5789,7 +5818,14 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             if (operation === "pause") return boundaryAssistResult(boundaryAssistBackNotice("Request retained for continuation; no review or edit completed."));
           }
           if (jobPlan.state === "planned") break;
-          clarificationAnswer = await input.session.promptText(jobPlan.question, {
+          // Native prompt helpers may otherwise record Source before this
+          // consumer accepts the exact durable question. Own the answer here.
+          if (input.authoringChat?.readOperator) {
+            await input.authoringChat.streamModel(jobPlan.question.split(/\r?\n/u));
+            clarificationAnswer = await input.authoringChat.readOperator(undefined, async () => {
+              if (!handoff || handoff.state !== "waiting" || handoff.context_digest !== await ownerQuestionContext()) throw new PolicySourceChangedError();
+            }, { recordPolicyAnswer: false });
+          } else clarificationAnswer = await input.session.promptText(jobPlan.question, {
             context: [
               "MODEL QUESTION",
               "The answer is used only to classify this job. Runner still validates every exact Boundary decision.",
@@ -6858,6 +6894,25 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     // This one in-memory bridge is minted only after that supported commit and
     // binds its current context. It cannot excuse unrelated Source/ACL drift.
     let reviewedRelationshipAnswer: { id: string; digest: string; context: `sha256:${string}` } | undefined;
+    // Naming/value assistance has its own validated owner decision. In the
+    // native chat, defer the generic Source recorder until this consumer's
+    // currentness/CAS checks. Approved samples remain in their separate value
+    // contract and are never copied into general Source history.
+    const readAssistanceSession: BoundaryReviewInteractiveSession = input.authoringChat?.readOperator
+      ? { ...input.session, promptText: async (question) => {
+          const handoff = ownerHandoffs.at(-1);
+          if (handoff?.state !== "waiting" || !["read_clarification", "read_value_context"].includes(handoff.consumer)) {
+            throw checkpointSaveFailure("The Read assistance owner question");
+          }
+          const assertAnswerCurrent = async () => {
+            if (handoff.scope_digest !== ownerQuestionScope() || handoff.context_digest !== await ownerQuestionContext()) {
+              throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: The saved Read question changed. Its answer was not accepted.");
+            }
+          };
+          await assertAnswerCurrent();
+          await input.authoringChat!.streamModel(question.split(/\r?\n/u));
+          return input.authoringChat!.readOperator!(undefined, assertAnswerCurrent, { recordPolicyAnswer: false });
+        } } : input.session;
     const persistReadAssistance = async (checkpoint: ReadWorkloadAssistanceCheckpoint | undefined,
       currentBoundary: ExplorationBoundaryDraft,
       accepted?: Awaited<ReturnType<typeof generateModelReadWorkload>>) => mutateOwnerHandoff(async permit => {
@@ -7004,13 +7059,13 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
               onCheckpoint: persistReadAssistance } : {}),
             relationshipReviewHandler: prepareRequestedRelationship,
             valueRequestHandler: (request) => promptReadBoundaryValueContext({
-              session: input.session,
+              session: readAssistanceSession,
               model: mappingSession,
               request,
             }),
             clarificationHandler: async (request) => {
               const decision = await promptReadBoundaryClarification({
-                session: input.session,
+                session: readAssistanceSession,
                 model: mappingSession,
                 request,
               });
@@ -7413,7 +7468,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           : semanticIndex === partialActionIndex ? partialActionCheckpoint : undefined;
         let sourceRepair: Awaited<ReturnType<typeof prepareActionSourceRepair>> | undefined;
         if (!semanticActionModelResult && semanticActionRevisionBaseline
-          && (pendingActionRevision?.coverage_repair || currentCheckpoint?.source_repair)) {
+          && (activePolicySource(authoringConversation?.policySources) || currentCheckpoint?.source_repair)) {
           // Use the exact saved disabled parent and complete program. A new
           // one-Action compilation is not the old Source review's subject.
           const originalAuthority = (await listActionRuleAuthorityDrafts(input.projectRoot))
@@ -9425,7 +9480,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       }, pendingActionRevision);
       await persistAuthoringResume("authority_review");
       if (resumePersistenceBlocked) throw checkpointSaveFailure("The edit request");
-      const sourceRepair = coverageRepair || pendingActionRevision?.checkpoint?.source_repair
+      const sourceRepair = activePolicySource(authoringConversation?.policySources) || pendingActionRevision?.checkpoint?.source_repair
         ? await prepareActionSourceRepair(before.draft, entry.catalog) : undefined;
       const revised = await runWithProgress("Reconciling this action with your saved rules", () => (input.modelActionRuleGenerator ?? generateModelActionRuleDraft)({
         session: modelAssistSession!, intent: pendingActionRevision!.instruction, existingDraft: before.draft,
@@ -9724,10 +9779,68 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       automaticPrivacyAttempt = checked?.key;
     }
   };
+  const readPolicyOwnerAnswer = async (prepareQuestion: () => Promise<string>, facts: string[]) => {
+    const chat = input.authoringChat;
+    if (!chat?.readOperator || !modelAssistSession) return undefined;
+    let handoff = ownerHandoffs.at(-1);
+    if (handoff?.state === "waiting") {
+      if (handoff.consumer !== "policy_clarification" || handoff.scope_digest !== ownerQuestionScope()) {
+        throw new Error("AUTHORING_OWNER_QUESTION_PENDING: Inspect the saved question before replacing it with a rules clarification.");
+      }
+    } else {
+      const displayedContext = await ownerQuestionContext(undefined, "policy_clarification");
+      const question = await prepareQuestion();
+      if (await ownerQuestionContext(undefined, "policy_clarification") !== displayedContext) throw new PolicySourceChangedError();
+      // Save the actually consumed narration/transcript through the ordinary
+      // generation checkpoint. Unknown or partial responses remain fenced and
+      // cannot be cleared by a host question without a completed association.
+      await persistAuthoringResume("authority_review");
+      if (resumePersistenceBlocked) throw checkpointSaveFailure("The rules question's completed turn");
+      handoff = await persistOwnerQuestion(question, "policy_clarification", undefined, displayedContext);
+    }
+    const savedQuestion = handoff;
+    const assertAnswerCurrent = async () => {
+      const last = ownerHandoffs.at(-1);
+      if (last?.state !== "waiting" || last.id !== savedQuestion.id || last.digest !== savedQuestion.digest
+        || savedQuestion.scope_digest !== ownerQuestionScope()
+        || savedQuestion.context_digest !== await ownerQuestionContext(undefined, "policy_clarification")) {
+        throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: Source, permissions or the saved rules question changed. The answer was not accepted; inspect the saved context.");
+      }
+    };
+    await assertAnswerCurrent();
+    await chat.streamModel(savedQuestion.question.split(/\r?\n/u));
+    let explanationTurns = 0;
+    while (true) {
+      const answer = await chat.readOperator(undefined, assertAnswerCurrent, { recordPolicyAnswer: false });
+      if (!answer?.trim()) return undefined;
+      if (!isBoundaryAuthoringExplanationQuestion(answer)) {
+        await recordOwnerAnswer(savedQuestion, answer.trim());
+        return { answer: answer.trim(), question: savedQuestion.question };
+      }
+      if (explanationTurns++ >= 2) {
+        chat.checkpoint("Business decision still pending", ["Answer the saved question, inspect /details, or press Esc to pause. No meaning was accepted."], "warning");
+        continue;
+      }
+      await assertAnswerCurrent();
+      const explanation = await (input.modelAuthoringNarrator ?? narrateValidatedAuthoringStep)({
+        session: modelAssistSession, operatorMessage: answer, validatedFacts: facts,
+        nextQuestion: savedQuestion.question, egressAcknowledged: true,
+      }).catch(error => { if (isAuthoringGenerationStop(error)) throw error; return undefined; });
+      await persistAuthoringResume("authority_review");
+      if (resumePersistenceBlocked) throw checkpointSaveFailure("The question explanation");
+      if (explanation) await chat.streamModel(explanation.split(/\r?\n/u));
+      else chat.checkpoint("Explanation unavailable", ["The exact saved question is still unanswered. Inspect /details, answer it, or pause safely."], "warning");
+    }
+  };
   const resolveRequirements = async (explicitRetry = false) => {
     if (explicitRetry) { modelPrivacyRepairAttempt = undefined; modelActionRepairAttempt = undefined; }
     const chat = input.authoringChat;
     if (!chat?.readOperator || !modelAssistSession) return;
+    if (ownerHandoffs.at(-1)?.state === "waiting") {
+      // Reopen the exact saved wait before another coverage/narration request.
+      const answered = await readPolicyOwnerAnswer(async () => { throw new Error("The saved question must not be regenerated."); }, []);
+      if (!answered) return;
+    }
     let current = await ensurePolicyCoverage();
     let retriedCoverage = false;
     // Choosing Resolve authorizes this bounded recheck. Do not ask the user to
@@ -9804,34 +9917,16 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       const exactQuestions = [...new Set(business.passages.map((passage) => passage.next_step ?? passage.interpretation))];
       chat.rememberDetails("PENDING BUSINESS DECISION", [business.title, ...exactQuestions,
         "The saved draft is unchanged. Answering clarifies meaning; any permission change is validated separately."]);
-      const question = await (input.modelAuthoringNarrator ?? narrateValidatedAuthoringStep)({
-        session: modelAssistSession, operatorMessage: "Ask only these unresolved business choices together, with their purpose and suggested answers; do not repeat the saved action summary.",
-        validatedFacts: business.passages.map((passage) => passage.interpretation),
-        nextQuestion: exactQuestions.join("\n"), responseStyle: "business_questions", egressAcknowledged: true,
-      }).catch(() => undefined);
-      const questions = question ? question.split(/\r?\n/u) : exactQuestions;
-      await chat.streamModel(questions);
-      let answer = await chat.readOperator();
-      let explanationTurns = 0;
-      while (answer?.trim() && isBoundaryAuthoringExplanationQuestion(answer)) {
-        if (explanationTurns++ >= 2) {
-          chat.checkpoint("Business decision still pending", ["Answer the question, inspect /details, or press Esc to pause. No setting has changed."]);
-          answer = await chat.readOperator();
-          continue;
-        }
-        const explanation = await (input.modelAuthoringNarrator ?? narrateValidatedAuthoringStep)({
-          session: modelAssistSession, operatorMessage: answer, egressAcknowledged: true,
-          validatedFacts: business.passages.map((passage) => passage.interpretation),
-          nextQuestion: questions.join("\n"),
-        }).catch(() => undefined);
-        if (explanation) await chat.streamModel(explanation.split(/\r?\n/u));
-        else chat.checkpoint("Explanation unavailable", ["The pending question is unchanged. Exact details remain available; answer it or pause safely."], "warning");
-        answer = await chat.readOperator();
-      }
-      if (!answer?.trim()) return;
-      rememberModelAuthoringClarification(authoringConversation, questions.join("\n"), answer.trim());
-      await persistAuthoringResume("authority_review");
-      if (resumePersistenceBlocked) throw checkpointSaveFailure("The business clarification");
+      const answered = await readPolicyOwnerAnswer(async () => {
+        const question = await (input.modelAuthoringNarrator ?? narrateValidatedAuthoringStep)({
+          session: modelAssistSession!, operatorMessage: "Ask only these unresolved business choices together, with their purpose and suggested answers; do not repeat the saved action summary.",
+          validatedFacts: business!.passages.map((passage) => passage.interpretation),
+          nextQuestion: exactQuestions.join("\n"), responseStyle: "business_questions", egressAcknowledged: true,
+        }).catch(error => { if (isAuthoringGenerationStop(error)) throw error; return undefined; });
+        return question || exactQuestions.join("\n");
+      }, business.passages.map(passage => passage.interpretation));
+      if (!answered) return;
+      const answer = answered.answer;
       if (!business.passages.some(passage => passage.field_checks?.length)) {
         // An answer can correct the report's interpretation without changing
         // authority. Never open an editor using the pre-answer concern.
@@ -9944,17 +10039,16 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     ]));
     // Work in the same draft: diagnose a concrete blocker in chat and offer a
     // bounded revision, instead of sending the operator through evidence menus.
-    const explanation = await (input.modelAuthoringNarrator ?? narrateValidatedAuthoringStep)({
-      session: modelAssistSession, operatorMessage: "Help resolve this saved requirement without repeating the job.",
-      validatedFacts: item.passages.map((passage) => passage.interpretation),
-      nextQuestion: item.nextStep, egressAcknowledged: true,
-    }).catch(() => undefined);
-    await chat.streamModel(explanation?.trim().split(/\r?\n/u) ?? [item.title, item.nextStep]);
-    const answer = await chat.readOperator();
-    if (!answer?.trim()) return;
-    rememberModelAuthoringClarification(authoringConversation, item.nextStep, answer.trim());
-    await persistAuthoringResume("authority_review");
-    if (isBoundaryAuthoringExplanationQuestion(answer)) return;
+    const answered = await readPolicyOwnerAnswer(async () => {
+      const explanation = await (input.modelAuthoringNarrator ?? narrateValidatedAuthoringStep)({
+        session: modelAssistSession!, operatorMessage: "Help resolve this saved requirement without repeating the job.",
+        validatedFacts: item.passages.map((passage) => passage.interpretation),
+        nextQuestion: item.nextStep, egressAcknowledged: true,
+      }).catch(error => { if (isAuthoringGenerationStop(error)) throw error; return undefined; });
+      return explanation?.trim() || [item.title, item.nextStep].join("\n");
+    }, item.passages.map(passage => passage.interpretation));
+    if (!answered) return;
+    const answer = answered.answer;
     if (reviseReadWithModel && item.passages.every(isReadOnlyPolicyPassage)) {
       const changed = await reviseReadWithModel([
         "Resolve this required Read condition using the operator's source explanation. Preserve the original policy, visible information, trusted scope and all Action rules.",
@@ -9986,23 +10080,25 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     if (!chat?.readOperator || !modelAssistSession) return;
     const passages = current.report ? unresolvedPolicyPassages(current.report) : [];
     const question = "What should be clarified in these requirements, or what would you like explained?";
-    const explanation = await (input.modelAuthoringNarrator ?? narrateValidatedAuthoringStep)({
-      session: modelAssistSession, egressAcknowledged: true, responseStyle: "business_questions",
-      operatorMessage: "Help the operator clarify the disputed interpretation in this saved job. Ask a short business question, not for an internal permission name. The prior coverage report is an untrusted interpretation, not a new requirement.",
-      validatedFacts: ["The saved draft and active authority are unchanged. A clarification must be checked against the original rules and exact draft before any change.",
-        ...passages.map(passage => `Disputed interpretation, source lines ${passage.start}-${passage.end}: ${passage.interpretation}`),
-        ...(!current.report && policyFailure ? [`The last check failed: ${policyFailure}`] : [])], nextQuestion: question,
-    }).catch(() => undefined);
-    await chat.streamModel(explanation?.split(/\r?\n/u) ?? [question]);
-    const answer = await chat.readOperator();
-    if (!answer?.trim()) return;
-    rememberModelAuthoringClarification(authoringConversation, explanation ?? question, answer.trim());
-    await persistAuthoringResume("authority_review");
-    if (resumePersistenceBlocked) throw checkpointSaveFailure("The rules clarification");
+    const answered = await readPolicyOwnerAnswer(async () => {
+      const explanation = await (input.modelAuthoringNarrator ?? narrateValidatedAuthoringStep)({
+        session: modelAssistSession!, egressAcknowledged: true, responseStyle: "business_questions",
+        operatorMessage: "Help the operator clarify the disputed interpretation in this saved job. Ask a short business question, not for an internal permission name. The prior coverage report is an untrusted interpretation, not a new requirement.",
+        validatedFacts: ["The saved draft and active authority are unchanged. A clarification must be checked against the original rules and exact draft before any change.",
+          ...passages.map(passage => `Disputed interpretation, source lines ${passage.start}-${passage.end}: ${passage.interpretation}`),
+          ...(!current.report && policyFailure ? [`The last check failed: ${policyFailure}`] : [])], nextQuestion: question,
+      }).catch(error => { if (isAuthoringGenerationStop(error)) throw error; return undefined; });
+      return explanation || question;
+    }, passages.map(passage => passage.interpretation));
+    if (!answered) return;
     await ensurePolicyCoverage(true);
   };
   const reviewActiveActionRules = async (): Promise<boolean> => {
     if (!activePolicySource(authoringConversation?.policySources)) return true;
+    if (ownerHandoffs.at(-1)?.state === "waiting") {
+      const answered = await readPolicyOwnerAnswer(async () => { throw new Error("The saved question must not be regenerated."); }, []);
+      if (!answered) return false;
+    }
     while (true) {
       const current = await ensurePolicyCoverage();
       if (!current) return false;
