@@ -33,6 +33,56 @@ const jsonLine = (text: string, prefix: string): any => {
   const value = text.split("\n").find(line => line.startsWith(prefix));
   return value ? JSON.parse(value.slice(prefix.length)) : undefined;
 };
+const publishedDraft = (value: any): any => {
+  const object = (v: any) => v !== null && typeof v === "object" && !Array.isArray(v);
+  if (!object(value)) throw new Error("Unsupported published draft representation.");
+  if (!Object.hasOwn(value, "encoding")) {
+    if (Object.hasOwn(value, "draft") || Object.hasOwn(value, "scoped_binding_groups")) throw new Error("Incomplete published draft envelope.");
+    return value;
+  }
+  if (value.encoding !== "scoped_binding_groups_v1"
+    || JSON.stringify(Object.keys(value).sort()) !== JSON.stringify(["draft", "encoding", "scoped_binding_groups"])
+    || !object(value.draft) || !object(value.draft.runner_evidence?.actions)
+    || !Array.isArray(value.scoped_binding_groups) || !value.scoped_binding_groups.length
+    || value.scoped_binding_groups.length > 32) throw new Error("Unsupported published draft envelope.");
+  const draft = structuredClone(value.draft), actions = draft.runner_evidence.actions;
+  const configured = Object.keys(actions);
+  if (configured.length > 64) throw new Error("Published binding groups exceed the configured outcome bound.");
+  const seen = new Set<string>(); let priorGroup = -1;
+  for (const group of value.scoped_binding_groups) {
+    if (!object(group) || JSON.stringify(Object.keys(group).sort()) !== JSON.stringify(["outcomes", "value"])
+      || !object(group.value) || !Array.isArray(group.outcomes) || group.outcomes.length < 2
+      || group.outcomes.length > 64) throw new Error("Malformed published binding group.");
+    let prior = -1;
+    for (const outcome of group.outcomes) {
+      const index = typeof outcome === "string" ? configured.indexOf(outcome) : -1;
+      if (index < 0 || index <= prior || seen.has(outcome) || !object(actions[outcome])
+        || Object.hasOwn(actions[outcome], "scoped_bindings")) throw new Error("Published binding group collision or foreign outcome.");
+      if (prior === -1) {
+        if (index <= priorGroup) throw new Error("Unordered published binding groups.");
+        priorGroup = index;
+      }
+      prior = index; seen.add(outcome);
+      // This is opaque untrusted publication data. Expanding it records no
+      // observation, scope proof, accepted Source report or readiness.
+      actions[outcome].scoped_bindings = structuredClone(group.value);
+    }
+  }
+  return draft;
+};
+const boundedSourcePassages = (passages: any[]): any[] => passages.flatMap(passage => {
+  expect(Array.isArray(passage.draft_paths)).toBe(true);
+  if (passage.draft_paths.length <= 32) return [passage];
+  // The seven original040 long associations contain only this base shape.
+  // Never duplicate or detach a counter, field or other typed claim here.
+  expect(Object.keys(passage).sort()).toEqual(["disposition", "draft_paths", "end", "interpretation", "start"]);
+  const parts = [];
+  for (let offset = 0; offset < passage.draft_paths.length; offset += 32) {
+    parts.push({ ...passage, draft_paths: passage.draft_paths.slice(offset, offset + 32) });
+  }
+  expect(parts.flatMap(part => part.draft_paths)).toEqual(passage.draft_paths);
+  return parts;
+});
 const publishedReferencePaths = (inventory: any): string[] => {
   if (Array.isArray(inventory)) {
     expect(inventory.every(value => typeof value === "string")).toBe(true);
@@ -50,6 +100,69 @@ const publishedReferencePaths = (inventory: any): string[] => {
     return group.suffixes.map((suffix: string) => group.prefix + suffix);
   });
 };
+
+it("expands only exact published binding groups as untrusted encoding data", () => {
+  const first = { unit: { region: "opaque-first", fields: ["id", "status"] } };
+  const second = { unit: { region: "opaque-second", fields: ["id", "status"] } };
+  const root = { read: { literal: true }, actions: ["a", "b", "c", "d"], runner_evidence: { actions: {
+    a: { retained: 1 }, b: { retained: 2 }, c: { retained: 3 }, d: { retained: 4 },
+    singleton: { scoped_bindings: { exact: "literal" } }, absent: {}, nullable: { scoped_bindings: null },
+  } } };
+  const envelope = { encoding: "scoped_binding_groups_v1", draft: root,
+    scoped_binding_groups: [{ outcomes: ["a", "c"], value: first }, { outcomes: ["b", "d"], value: second }] };
+  const before = JSON.stringify(envelope), expanded = publishedDraft(envelope);
+  expect(expanded).toEqual({ ...root, runner_evidence: { actions: {
+    a: { retained: 1, scoped_bindings: first }, b: { retained: 2, scoped_bindings: second },
+    c: { retained: 3, scoped_bindings: first }, d: { retained: 4, scoped_bindings: second },
+    singleton: { scoped_bindings: { exact: "literal" } }, absent: {}, nullable: { scoped_bindings: null },
+  } } });
+  expect(JSON.stringify(envelope)).toBe(before); expect(publishedDraft(root)).toBe(root);
+  expect(expanded.runner_evidence.actions.a.scoped_bindings).not.toBe(expanded.runner_evidence.actions.c.scoped_bindings);
+});
+it("refuses unsupported, malformed, foreign or colliding publication groups", () => {
+  const base = () => ({ encoding: "scoped_binding_groups_v1", draft: { runner_evidence: { actions: { a: {}, b: {}, c: {} } } },
+    scoped_binding_groups: [{ outcomes: ["a", "b"], value: { opaque: true } }] });
+  const malformed: any[] = [null, [], { encoding: "unknown" }, { draft: {} }, { scoped_binding_groups: [] }];
+  for (const edit of [
+    (x: any) => { x.extra = true; }, (x: any) => { x.scoped_binding_groups = []; },
+    (x: any) => { x.scoped_binding_groups[0].value = null; }, (x: any) => { x.scoped_binding_groups[0].value = []; },
+    (x: any) => { x.scoped_binding_groups[0].outcomes = ["a"]; },
+    (x: any) => { x.scoped_binding_groups[0].outcomes = ["a", "foreign"]; },
+    (x: any) => { x.scoped_binding_groups[0].outcomes = ["a", "a"]; },
+    (x: any) => { x.scoped_binding_groups[0].outcomes = ["b", "a"]; },
+    (x: any) => { x.scoped_binding_groups.push({ outcomes: ["b", "c"], value: { other: true } }); },
+    (x: any) => { x.draft.runner_evidence.actions.a.scoped_bindings = null; },
+    (x: any) => { x.draft.runner_evidence.actions.b = null; },
+    (x: any) => { x.draft.runner_evidence.actions = Object.fromEntries(Array.from({ length: 65 }, (_, i) => [String(i), {}])); },
+  ]) { const value = base(); edit(value); malformed.push(value); }
+  for (const value of malformed) expect(() => publishedDraft(value)).toThrow();
+});
+it("expands the finite64-outcome publication bound without adding outcomes or authority", () => {
+  const outcomes = Array.from({ length: 64 }, (_, i) => `opaque_${i}`);
+  const actions = Object.fromEntries(outcomes.map(outcome => [outcome, { retained: outcome }]));
+  const value = { opaque_binding: { observed: false, permitted: false } };
+  const expanded = publishedDraft({ encoding: "scoped_binding_groups_v1", draft: { runner_evidence: { actions } },
+    scoped_binding_groups: [{ outcomes, value }] });
+  expect(Object.keys(expanded.runner_evidence.actions)).toEqual(outcomes);
+  for (const outcome of outcomes) expect(expanded.runner_evidence.actions[outcome]).toEqual({ retained: outcome, scoped_bindings: value });
+  expect(Object.values(actions).every(action => !Object.hasOwn(action, "scoped_bindings"))).toBe(true);
+});
+it("bounds overlapping Source associations without changing their exact claims or ordered path union", () => {
+  const paths = Array.from({ length: 50 }, (_, i) => `/actions/${i}/require`);
+  const original = [
+    { start: 2, end: 2, disposition: "implemented", interpretation: "Opaque original exact Source claim.", draft_paths: paths },
+    { start: 56, end: 56, disposition: "implemented", interpretation: "Opaque original conjunction is retained.", draft_paths: ["/read", ...paths] },
+  ];
+  const before = JSON.stringify(original), parts = boundedSourcePassages(original);
+  expect(parts.map(part => part.draft_paths.length)).toEqual([32, 18, 32, 19]);
+  for (const parent of original) {
+    const children = parts.filter(part => part.start === parent.start);
+    expect(children.flatMap(part => part.draft_paths)).toEqual(parent.draft_paths);
+    for (const child of children) expect({ ...child, draft_paths: parent.draft_paths }).toEqual(parent);
+  }
+  expect(JSON.stringify(original)).toBe(before);
+  expect(() => boundedSourcePassages([{ ...original[0], counter_requirements: [{ opaque: true }] }])).toThrow();
+});
 
 it.skipIf(process.env.SYNAPSOR_TEST_DERIVED_FIFTY_REAL_PG !== "1")("authors the DERIVED ordered fifty agenda through actual public pause, export, restart and complete Source review", async () => {
   const evidence = process.env.OWNED_DERIVED_FIFTY_EVIDENCE ?? path.join(os.tmpdir(), `derived-fifty-${randomUUID()}`);
@@ -242,19 +355,20 @@ it.skipIf(process.env.SYNAPSOR_TEST_DERIVED_FIFTY_REAL_PG !== "1")("authors the 
       }
     } else if (names.includes("runner__review_policy_coverage")) {
       name = "runner__review_policy_coverage";
-      const draft = jsonLine(text, "Current draft (JSON pointer root): "), referenceInventory = jsonLine(text, "Exact coverage references (select, do not invent paths): ");
+      const publication = jsonLine(text, "Current draft (JSON pointer root): "), draft = publishedDraft(publication);
+      const referenceInventory = jsonLine(text, "Exact coverage references (select, do not invent paths): ");
       const references = publishedReferencePaths(referenceInventory);
-      reports.push({ draft, reference_inventory: referenceInventory, references });
+      reports.push({ draft, draft_publication: publication, reference_inventory: referenceInventory, references });
       const paths = (part: string) => draft.actions.map((_: any, i: number) => `/actions/${i}/${part}`);
       const actionAtLine = new Map(descriptors.map(d => [d.sourceLine, d]));
-      args = { passages: sourceLines.map((line, i) => {
+      args = { passages: boundedSourcePassages(sourceLines.map((line, i) => {
         const action = actionAtLine.get(i + 1);
         const actionIndex = action ? draft.actions.findIndex((a: any) => a.outcome === action.outcome) : undefined;
         return { start: i + 1, end: i + 1, disposition: i === 0 ? "background" : "implemented", interpretation: line,
           draft_paths: i === 0 ? [] : action ? [`/actions/${actionIndex}`] : i === 1 ? paths("require") : i === 2 ? paths("approval")
             : i === sourceLines.length - 2 ? draft.actions.map((a: any) => `/runner_evidence/actions/${a.outcome}/effect/source_counter_maintenance`)
             : i === sourceLines.length - 3 ? ["/read", ...paths("effect")] : i === sourceLines.length - 1 ? paths("approval") : paths("effect") };
-      }) };
+      })) };
       expect(draft.actions.map((a: any) => a.outcome).sort()).toEqual([...outcomes].sort());
       const counters = Object.entries(draft.runner_evidence.actions).flatMap(([outcome, value]: [string, any]) =>
         (value.automatic_limits ?? []).map((limit: any, index: number) => ({
@@ -273,6 +387,8 @@ it.skipIf(process.env.SYNAPSOR_TEST_DERIVED_FIFTY_REAL_PG !== "1")("authors the 
       expect(counterPassages.flatMap(passage => passage.counter_requirements)).toEqual(counters);
       expect(counterPassages.every(passage => passage.counter_requirements.length <= 16)).toBe(true);
       args.passages.push(...counterPassages);
+      expect(args.passages.length).toBeLessThanOrEqual(120);
+      expect(args.passages.every((passage: any) => passage.draft_paths.length <= 32)).toBe(true);
       for (const passage of args.passages) for (const pointer of passage.draft_paths) expect(references).toContain(pointer);
     } else if (!names.length) answer = jsonLine(text, "Exact next question: ") ?? "The exact current record needs its normal operator review; no execution is claimed.";
     else fail(`Unexpected actual tool surface: ${names.join(",")}`);
