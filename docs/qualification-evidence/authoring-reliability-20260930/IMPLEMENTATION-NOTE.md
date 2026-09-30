@@ -112,14 +112,47 @@ persisted baseline. Source, schema, role, Read, current job and coordinated
 save checks remain mandatory. No disabled parent is fabricated and no
 business meaning or correction eligibility is relaxed. A genuine published
 fixture fails before the repair; current/consumed-draft, competing publication,
-withdrawal and existing Source-repair controls pass after it. The full045
-continuation, independent challenge and installed verdict remain pending.
+withdrawal and existing Source-repair controls pass after it. The remaining
+lifecycle composition and installed verdict remain pending.
 
-Continue the saved exact37 max25-to20 instruction through ordinary Resume,
-then the predeclared43 withdrawal and survivor restart checks. All prior
-responses count:1053 of1400 local responses, with198 left in the original
-200-response M3 allowance. No fresh full50 sample, history reset or paid-limit
-change follows from this pre-freeze repair.
+The046 local continuation completed its preliminary118-passage Source review,
+then stopped before Save No when the fixture searched only the other prepared
+drafts inventory. The actual request already advertised all four components
+of the selected Action37; their canonical reconstruction matches its saved
+pending parent. This is a fixture extraction error, not an established missing
+parent product defect. Both actual responses and the unanswered third operation
+remain preserved, including its conservative partial-transport fence. The
+complete stopped state has been cold-restored and independently read back.
+
+A separately labelled047 fixture experiment may use a fresh copy of the sealed
+045 input after its concrete restoration and current-source preflight passes.
+It cannot recover or reopen046. Its decoder uses only the actual advertised
+components and retains the exact parent or the single authorized maximum25-to20
+change. The original Save No/Resume/save/publication,43 withdrawal and survivor
+restart oracle is unchanged. Source-only decoder/proposal acceptance is not
+application or installed acceptance. All prior attempts count:1056 of1400 local
+responses, with195 left in the original200-response M3 allowance. No fresh
+full50 sample, history reset or paid-limit change follows.
+
+Independent readback also established a misleading failure message: it claimed
+a retained disabled Action draft even when no draft had been saved. The generic
+catch now directs the operator to the supported `boundary status` command to
+inspect actual saved work and authority. It makes no inferred preservation or
+readiness claim. Transport classification, redaction, consent, retry routing
+and unresolved-operation fences are unchanged. Two real public review/status
+entrypoint controls fail on the old message and pass after this one-line
+change, preserving actual Source, subject and resume records without any
+provider send. Main records248/249 retain those before/after results. The full
+affected file passes32 tests with29 PostgreSQL controls explicitly skipped;
+explicit typecheck passes251. Earlier fixture setup and test-typing failures
+remain historical. Final-source PostgreSQL and installed evidence remain
+separate requirements.
+
+The F3 finite actual-SQL/MCP privacy and shared-published-Read composition is
+also pending. Its independently sealed oracle requires real private-value
+projection checks, inert disabled privacy changes, currentness invalidation
+for both published Actions and separate replacement publication. A component
+fixture does not establish an installed CLI journey or cold Source restoration.
 
 Settled-source full/types/selected real PostgreSQL/ten offline gates, immutable
 freeze and the existing tester's installed verdict are pending. Main cannot

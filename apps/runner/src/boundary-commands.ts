@@ -1914,7 +1914,7 @@ async function interactiveBoundaryReviewLoop(input: {
       } catch (error) {
         input.onAuthoringResult?.({ tone: "warning", title: "Model-guided edit blocked or interrupted.",
           lines: [redactCliErrorMessage(error instanceof Error ? error.message : String(error)),
-            "Inspect the retained disabled draft; active authority and source data are unchanged."] });
+            "Inspect the current saved-work and authority state with boundary status before continuing."] });
         const recovery = await showBoundaryAuthoringFailure(input.session, error, true);
         if (recovery === "pause") return 0;
         startWithAgentJob = recovery === "resume";

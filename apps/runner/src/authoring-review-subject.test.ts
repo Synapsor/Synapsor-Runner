@@ -17,17 +17,22 @@ import {recommendedBoundaryReviewCandidate} from "./boundary-candidate.js";
 import {buildActionRuleAuthorityDraft, writeActionRuleAuthorityDraft, activateActionRuleAuthority, readActionRuleReviewSubjects, readActionRuleAuthorityDraft, deactivateActionRuleAuthority,
   readActionRuleCoverageLineage, removeOutcomeActionRuleAuthorityDraft} from "./action-rule-authority.js";
 import {encodeOperatorAuthority, validateOperatorPolicySnapshot} from "./control-policy-authority-codec.js";
-import {migrateProjectControlPolicies} from "./control-policy-store.js";
+import {migrateProjectControlPolicies, type ControlPolicyMigrationSnapshot} from "./control-policy-store.js";
 import { newPolicySourceSession, policyTextSnapshot, bindPolicyCoverage, savePolicySources, loadPolicySources } from "./authoring-policy-source.js";
+import {boundaryReviewCommand} from "./boundary-commands.js";
+import {boundaryCommand} from "./guided-start.js";
+import {previewProjectControlPolicyMigration} from "./control-policy-project-migration.js";
+import {createBoundaryReviewProgress} from "./boundary-review-domain.js";
+import {saveBoundaryReviewProgress} from "./boundary-review-persistence.js";
 let generationLock = `sha256:${"a".repeat(64)}` as const;
 const stateType: ActionRuleScalarTypeSpecV1 = {kind: "string", max_length: 16, comparison: "exact", enum: ["active", "paused"]};
 const cleanup: Array<() => Promise<void>> = [];
 afterEach(async () => { vi.restoreAllMocks(); for (const close of cleanup.splice(0).reverse()) await close(); });
 
-async function fixture(backend: "sqlite" | "postgres" | "legacy" = "sqlite") {
+async function fixture(backend: "sqlite" | "postgres" | "legacy" = "sqlite", publicReadReview = false) {
   const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-review-subject-"));
   cleanup.push(() => fs.rm(root, {recursive: true, force: true}));
-  const {read, build, candidate} = await reviewedRead(root), source = authoritySource();
+  const {read, build, candidate, inspection} = await reviewedRead(root), source = authoritySource();
   const schema = `review_subject_${randomUUID().replaceAll("-", "")}`;
   const storePath = path.join(root, ".synapsor/control.db");
   const config: RuntimeConfig = {version: 1, mode: "review", storage: backend !== "postgres" ? {sqlite_path: storePath} : {
@@ -36,8 +41,16 @@ async function fixture(backend: "sqlite" | "postgres" | "legacy" = "sqlite") {
     trusted_context: {provider: "static_dev", values: {tenant_id: "fixture", principal: "fixture"}}, action_rules: {project_root: root}};
   const records = [encodeOperatorAuthority({type: "read", boundary: read, generation_lock: build.lock}),
     encodeOperatorAuthority({type: "read_selection", selected_name: read.pack.name})];
+  let publicSnapshot: ControlPolicyMigrationSnapshot | undefined;
+  if (publicReadReview) {
+    await saveBoundaryReviewProgress(root, createBoundaryReviewProgress({draft: build.exploration_boundary, candidate,
+      confirmedDecisions: candidate.unresolved_decisions, actor: 'fixture_operator', reason: 'Exact owned Read review for public failure inspection.', revision: 1}));
+    const preview = await previewProjectControlPolicyMigration({projectRoot: root, config, storePath});
+    if (preview.status !== 'ready') throw new Error('Complete legacy Read authoring preview unavailable');
+    publicSnapshot = preview.snapshot;
+  }
   const binding = backend === "legacy" ? undefined : (await migrateProjectControlPolicies({projectRoot: root, config, storePath, actor: "fixture reviewer",
-    readLegacySnapshot: async () => ({revisions: records, active: records.map(r => ({scope: r.scope, kind: r.kind, name: r.name, revision_id: r.revision_id})), drafts: [], provenance: []}),
+    readLegacySnapshot: async () => publicSnapshot ?? ({revisions: records, active: records.map(r => ({scope: r.scope, kind: r.kind, name: r.name, revision_id: r.revision_id})), drafts: [], provenance: []}),
     validateSnapshot: async snapshot => validateOperatorPolicySnapshot(snapshot, {runtimeConfig: config})})).binding;
   cleanup.push(async () => { await binding?.close(); if(backend === "postgres") { const pool = new Pool({connectionString: process.env.SYNAPSOR_TEST_POSTGRES_URL});
     try { await pool.query(`DROP SCHEMA "${schema}" CASCADE`); } finally { await pool.end(); } } });
@@ -66,7 +79,7 @@ async function fixture(backend: "sqlite" | "postgres" | "legacy" = "sqlite") {
   const chooseOption = vi.fn(async () => "0");
   const resolve = (state = resume, selectedContext = context, explicit = true) => resolveAuthoringReviewSubject({projectRoot: root,
     resume: state, context: selectedContext, session: {chooseOption}, selectCurrentContext: explicit});
-  return {root, binding, read, build, candidate, draft, make, publish, resolve, resume, resumeBinding, context, request, chooseOption};
+  return {root, binding, read, build, candidate, inspection, draft, make, publish, resolve, resume, resumeBinding, context, request, chooseOption};
 }
 
 for (const backend of ["sqlite", "postgres"] as const) describe.skipIf(backend === "postgres" && !process.env.SYNAPSOR_TEST_POSTGRES_URL)(`published authoring review (${backend})`, () => {
@@ -352,6 +365,49 @@ it("does not infer publication lineage from an active legacy file or a same-valu
 });
 import { resolveAuthoringReviewSubject } from "./authoring-review-subject.js";
 import { buildBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState, readBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
+describe('truthful model-guided failure inspection', () => {
+  it.each(['published', 'disabled'] as const)('does not infer a retained Action draft after interruption (%s)', async location => {
+    const f = await fixture('sqlite', true), initial = await initialGuidedJob(f);
+    await writeBoundaryAuthoringResumeState(f.root, initial.resume, {expectedRevisionDigest: null});
+    if (location === 'published') await f.publish();
+    const subjectsBefore = await readActionRuleReviewSubjects(f.root);
+    expect(subjectsBefore.map(subject => subject.identity.location)).toEqual([location === 'published' ? 'active' : 'disabled']);
+    const sourceBefore = await loadPolicySources(f.root, initial.sources.id);
+    const resumeBefore = await readBoundaryAuthoringResumeState(f.root, f.resumeBinding);
+    const notices: Array<{title: string; lines: string[]}> = [];
+    const requestJson = vi.fn(async () => { throw new Error('A provider must not be reached by this inspection control'); });
+    const chatFactory = vi.fn(() => { throw new Error('LOCAL_AUTHORING_CHAT_INTERRUPTED: controlled fixture setup interruption'); });
+    await boundaryReviewCommand(['--project-root', f.root, '--access', '--job-first'], async () => f.inspection, {
+      chooseResource: async () => undefined, editFieldTiers: async () => undefined,
+      promptText: async () => undefined, confirm: async () => true,
+      chooseOption: async (title, choices) => {
+        if (title === 'START BOUNDARY DRAFTING' || title === 'RESUME BOUNDARY DRAFTING') return 'resume';
+        return choices.some(choice => choice.value === 'pause') ? 'pause' : undefined;
+      },
+    }, undefined, {
+      startWithAgentJob: true, exitAfterAgentJob: true,
+      modelAuthoringSession: {provider: 'openai', model: 'fixture', apiKey: 'inert-fixture-only', dependencies: {requestJson}},
+      boundaryAuthoringChatFactory: chatFactory,
+      onAuthoringResult: notice => notices.push(notice),
+    });
+    expect(chatFactory).toHaveBeenCalledOnce();
+    expect(requestJson).not.toHaveBeenCalled();
+    const notice = notices.find(item => item.title === 'Model-guided edit blocked or interrupted.')!;
+    expect(notice).toBeDefined();
+    expect(notice.lines.join('\n')).not.toContain('retained disabled draft');
+    expect(notice.lines.join('\n')).toContain('boundary status');
+    expect(await readActionRuleReviewSubjects(f.root)).toEqual(subjectsBefore);
+    expect(await loadPolicySources(f.root, initial.sources.id)).toEqual(sourceBefore);
+    expect(await readBoundaryAuthoringResumeState(f.root, f.resumeBinding)).toEqual(resumeBefore);
+    let output = '';
+    vi.spyOn(process.stdout, 'write').mockImplementation(chunk => { output += String(chunk); return true; });
+    expect(await boundaryCommand(['status', '--project-root', f.root, '--json'])).toBe(0);
+    expect(JSON.parse(output)).toMatchObject({ok: true, source_database_changed: false});
+    expect(await readActionRuleReviewSubjects(f.root)).toEqual(subjectsBefore);
+    expect(await loadPolicySources(f.root, initial.sources.id)).toEqual(sourceBefore);
+    expect(await readBoundaryAuthoringResumeState(f.root, f.resumeBinding)).toEqual(resumeBefore);
+  });
+});
 async function initialGuidedJob(f: Awaited<ReturnType<typeof fixture>>) {
   const sources = newPolicySourceSession(), source = policyTextSnapshot(Buffer.from('Propose pausing an active preference with human approval.'), 'rules.txt');
   sources.snapshots = [source]; sources.active = source.version;
@@ -398,7 +454,7 @@ async function reviewedRead(root: string) {
     confirmation: `ACTIVATE ${explorationBoundaryCandidateDigest(candidate)}`, confirmedDecisions: candidate.unresolved_decisions,
     currentInspection: inspection});
   generationLock = read.generation_lock_fingerprint;
-  return {read, build, candidate};
+  return {read, build, candidate, inspection};
 }
 
 function authoritySource(): {
