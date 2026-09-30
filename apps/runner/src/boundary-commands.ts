@@ -6635,13 +6635,19 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       const checked = await ensurePolicyCoverage();
       if (!checked?.report) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
       originalPrepared = structuredClone(checked.draftRecord); originalKey = checked.key as `sha256:${string}`;
+      const assessmentInput = { context: workContext(), currentAction: before, preparedDraft: originalPrepared,
+        report: checked.report, expectedReportDigest: canonicalJsonDigest(checked.report),
+        sourceAnswerHistoryDigest: canonicalJsonDigest(sources.operator_messages ?? []) };
+      // Report-level applicability is not durable correction provenance.
+      // Ordinary approval/requirement edits need their existing whole-review
+      // path, even when more than one current complete report is retained.
+      const classified = assessActionWorkUnitSource(assessmentInput);
+      if (classified.assessment.state !== "representation_mismatch") return undefined;
       const matches = (sources.coverage_episodes ?? []).filter(e => e.context === originalKey)
         .flatMap(e => e.submissions.filter(s => s.validated && s.completed_at).map(s => ({ context_key: originalKey,
           episode_id: e.id, submission_number: s.number })));
       if (matches.length !== 1) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
-      const result = assessActionWorkUnitSource({ context: workContext(), currentAction: before, preparedDraft: originalPrepared,
-        report: checked.report, expectedReportDigest: canonicalJsonDigest(checked.report),
-        sourceAnswerHistoryDigest: canonicalJsonDigest(sources.operator_messages ?? []), coverageProvenance: matches[0]! });
+      const result = assessActionWorkUnitSource({ ...assessmentInput, coverageProvenance: matches[0]! });
       // Only this finite, canonically nominated subject/predicate repair uses
       // the confined work-unit publisher. Other existing requirement editors
       // retain their ordinary whole-review validation and operator diff review;
@@ -9656,7 +9662,22 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     if (!chat || !modelAssistSession || !input.session.chooseOption) return false;
     let savedRevision: string | undefined;
     try {
-      const before = entry.result.compiled;
+      let before = entry.result.compiled;
+      if (activePolicySource(authoringConversation?.policySources) || pendingActionRevision?.checkpoint?.source_repair) {
+        // Full policy preparation reconstructs the selected stored authority.
+        // Use that same exact parent for the edit, rather than a differently
+        // ordered earlier producer draft. Validate the factory round-trip;
+        // never relax the adapter's parent/mask equality to hide a mismatch.
+        const parent = await loadActionRuleRevisionBaseline({ projectRoot: input.projectRoot,
+          boundaryName: context.candidate.pack.name, outcome: before.rule.outcome,
+          preserveVerificationFields: true, expectedReadDigest: committed.candidate_digest });
+        if (!parent || parent.authorityDigest !== semanticActionAuthorityDraft?.digest) throw new ActionWorkUnitSourcePendingError("currentness");
+        const canonical = compileActionRuleModelDraft({ draft: parent.draft, builtCatalog: entry.catalog,
+          readBoundary: context.candidate, readBoundaryDigest: committed.candidate_digest, activatedAt: parent.activatedAt });
+        const sourceRule = canonical.loaded.authority.rules.find(rule => rule.rule.outcome === parent.draft.outcome);
+        if (!sourceRule || canonicalJsonDigest(sourceRule) !== canonicalJsonDigest(parent.sourceRule)) throw new ActionWorkUnitSourcePendingError("currentness");
+        before = canonical;
+      }
       pendingActionRevision = prepareBoundaryActionRevision({
         outcome: before.rule.outcome, instruction, baseline_digest: canonicalJsonDigest(before.draft),
         ...(operatorStatements ? { operator_statements: operatorStatements } : {}),
