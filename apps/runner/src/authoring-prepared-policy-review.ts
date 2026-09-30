@@ -17,9 +17,11 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { ActionRuleAuthorityReviewSubjectV1 } from "./action-rule-authority.js";
 import { withCountingOutcomeDomain, type CountingOutcomeDomain } from "./authoring-counting-domain.js";
 import { reviewUnestablishedCounting } from "./authoring-counting-decision-review.js";
+import { countingSourceRequirements } from "./authoring-counting-requirements.js";
 import { parsePolicyCoverage, reviewPolicyCoverage } from "./authoring-policy-coverage.js";
 import { policyCoverageDraft } from "./authoring-policy-evidence.js";
 import { activePolicySource, authoringDestination, bindPolicyCoverage, loadPolicySources, policySourceSavedDigest, savePolicySources,
+  MAX_COUNTING_DECISIONS,
   type PolicyCoverage, type PolicySourceSession } from "./authoring-policy-source.js";
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
@@ -124,6 +126,11 @@ export async function ensurePreparedPolicyCoverage(input: {
   if (scopedDisclosureInventory(source, draftRecord).items.some(f => f.state !== "confirmed_non_sensitive"))
     pending('scoped_disclosure','SCOPED_DISCLOSURE_REVIEW_PENDING',
       'The source-required classification remains pending. Open the local source-required disclosure review; no provider call was made.');
+  const neededCountingDecisions = countingSourceRequirements(source, draftRecord, sources.operator_messages ?? [])
+    .filter(requirement => requirement.state !== 'established').length;
+  if ((sources.counting_decisions?.length ?? 0) + neededCountingDecisions > MAX_COUNTING_DECISIONS)
+    pending('history_full', 'POLICY_COUNTING_HISTORY_FULL',
+      'The complete new interpretation set cannot fit the supported counting-history limit. Prior decisions remain saved; no question, provider call or partial decision was started. Preserve and inspect the exact Source and history locally; no pruning or replacement review is authorized.');
   const decisions = await reviewUnestablishedCounting({ source, draft: draftRecord,
     messages: sources.operator_messages ?? [], session: input.operatorSession, assertCurrent });
   if (decisions === undefined && input.requireCountingChoice) pending('counting_review','POLICY_COUNTING_REVIEW_PENDING',

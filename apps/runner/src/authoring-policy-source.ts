@@ -417,10 +417,16 @@ export async function savePolicySources(root: string, session: PolicySourceSessi
     assertScopedDisclosureReviews(session.scoped_disclosure_reviews);
     assertSourceTransactionReviews(session.source_transaction_reviews);
     assertSourceTransactionScopeReviews(session.source_transaction_scope_reviews);
+    assertCountingDecisions(session);
     // Once represented, omission by an older writer cannot delete a source
     // requirement. Explicit removal of the source uses removePolicySources.
     try {
       const existing=JSON.parse(await fs.readFile(file,"utf8")) as PolicySourceSession;
+      assertCountingDecisions(existing);
+      if ((existing.counting_decisions ?? []).some((record, index) =>
+        canonicalJsonDigest(record) !== canonicalJsonDigest(session.counting_decisions?.[index] ?? null)))
+        throw new CountingHistoryError('POLICY_COUNTING_HISTORY_CHANGED',
+          'Existing attributed counting interpretations must remain in order and unchanged. No partial history or newer meaning was overwritten.');
       const priorDutyHistory = existing.coverage?.retained_duty_history ?? [];
       if (priorDutyHistory.some(record => !session.coverage?.retained_duty_history?.some(current =>
         canonicalJsonDigest(current) === canonicalJsonDigest(record))))
@@ -489,13 +495,7 @@ export async function loadPolicySources(root: string, id: string): Promise<Polic
   assertSourceInputReviews(value.input_policy_reviews);
   assertSourceTransactionReviews(value.source_transaction_reviews);
   assertSourceTransactionScopeReviews(value.source_transaction_scope_reviews);
-  if (value.counting_decisions && (!Array.isArray(value.counting_decisions) || value.counting_decisions.length > 120
-    || value.counting_decisions.some(d => !d || d.origin !== "OPERATOR-COUNTING-REVIEW"
-      || !value.snapshots.some(s => s.digest === d.source_digest) || typeof d.path !== "string"
-      || !/^\/runner_evidence\/actions\/[^/]+\/automatic_limits\/\d+\/history_selector\/capability$/u.test(d.path)
-      || !/^sha256:[a-f0-9]{64}$/u.test(d.configuration_digest) || !/^sha256:[a-f0-9]{64}$/u.test(d.operator_history_digest)
-      || !(d.required_capability === null || typeof d.required_capability === "string" && d.required_capability.length <= 256)
-      || !Number.isFinite(Date.parse(d.reviewed_at))))) delete value.counting_decisions;
+  assertCountingDecisions(value);
   // Optional explanation records are not authority. Corruption must not make the intact source unreadable.
   if (value.coverage && !validStoredCoverage(value.coverage, value.snapshots)) {
     if (value.coverage.retained_duty_history !== undefined)
@@ -599,6 +599,27 @@ export type CountingDecision = {
   configuration_digest: string; required_capability: string | null;
   operator_history_digest: string; reviewed_at: string;
 };
+
+export const MAX_COUNTING_DECISIONS = 120;
+export class CountingHistoryError extends Error {
+  constructor(readonly code: 'POLICY_COUNTING_HISTORY_FULL' | 'POLICY_COUNTING_HISTORY_INVALID' | 'POLICY_COUNTING_HISTORY_CHANGED', message: string) {
+    super(`${code}: ${message}`);
+  }
+}
+function assertCountingDecisions(session: PolicySourceSession): void {
+  const decisions = session.counting_decisions;
+  if (Array.isArray(decisions) && decisions.length > MAX_COUNTING_DECISIONS)
+    throw new CountingHistoryError('POLICY_COUNTING_HISTORY_FULL',
+      'The supported counting-history limit is reached. Preserve the complete saved Source and decisions for local inspection; no history was pruned or replacement review authorized.');
+  if (decisions !== undefined && (!Array.isArray(decisions) || decisions.some(d => !d || d.origin !== 'OPERATOR-COUNTING-REVIEW'
+    || !session.snapshots.some(s => s.digest === d.source_digest) || typeof d.path !== 'string'
+    || !/^\/runner_evidence\/actions\/[^/]+\/automatic_limits\/\d+\/history_selector\/capability$/u.test(d.path)
+    || !/^sha256:[a-f0-9]{64}$/u.test(d.configuration_digest) || !/^sha256:[a-f0-9]{64}$/u.test(d.operator_history_digest)
+    || !(d.required_capability === null || typeof d.required_capability === 'string' && d.required_capability.length <= 256)
+    || !Number.isFinite(Date.parse(d.reviewed_at)))))
+    throw new CountingHistoryError('POLICY_COUNTING_HISTORY_INVALID',
+      'Saved counting interpretations are invalid. Preserve and inspect their original records; they were not discarded or treated as fresh current meaning.');
+}
 export type CountingRequirementBinding = {
   origin: "HOST-SOURCE-ASSOCIATION";
   path: string; source_digest: string; start: number; end: number;

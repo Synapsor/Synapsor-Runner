@@ -119,6 +119,12 @@ const fencedGeneration = authoringRefusal('authoring_integrity',
  * their existing correction path. These entries declare no executable repair,
  * resume, rebind or recovery handler and adopt no unregistered Source meaning. */
 export const AUTHORING_REFUSAL_INVENTORY = {
+  POLICY_COUNTING_HISTORY_FULL: authoringRefusal('authoring_exhausted',
+    'Preserve the complete Source and attributed counting history for local inspection. The existing history limit remains controlling; no supported continuation may prune history, split this confirmation set, infer missing meaning or renew model attempts.'),
+  POLICY_COUNTING_HISTORY_INVALID: authoringRefusal('authoring_integrity',
+    'Preserve and inspect the original saved counting records. Invalid records are not current interpretations and cannot be dropped, repaired by a new model answer or silently replaced through Resume.'),
+  POLICY_COUNTING_HISTORY_CHANGED: authoringRefusal('authoring_integrity',
+    'Reopen the current saved Source and inspect the proposed history change. Existing attributed decisions must remain ordered and unchanged; no partial save or silent replacement is permitted.'),
   ASK_GENERATION_OUTCOME_UNKNOWN: fencedGeneration,
   ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION: fencedGeneration,
   ASK_GENERATION_MANUAL_RECOVERY_UNAVAILABLE: fencedGeneration,
