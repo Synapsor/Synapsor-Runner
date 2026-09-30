@@ -1,4 +1,6 @@
 import { isAuthoringGenerationStop } from "./authoring-generation-recovery.js";
+import { readWorkloadAssistanceCheckpoint, parseReadWorkloadAssistanceCheckpoint, ReadWorkloadAssistancePausedError,
+  type ReadWorkloadAssistanceCheckpoint, type ReadWorkloadAssistanceQuestion } from "./read-workload-assistance-checkpoint.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
@@ -6,6 +8,7 @@ import {
   askToolSurfaceDigest,
   resolveAskProviderConfiguration,
   runAskProviderTurn,
+  completedAuthoringQuestion,
   type AskProvider,
   type AskProviderDependencies,
   type AskToolDefinition,
@@ -88,7 +91,7 @@ export type ModelReadClarificationDecision =
  * exact candidate plans. The returned plans still pass the deterministic
  * workload compiler and never activate authority.
  */
-export async function generateModelReadWorkload(input: {
+export type ModelReadWorkloadInput = {
   name: string;
   allowedQuestions: string[];
   /** Original operator wording, not a model-generated summary or answer. */
@@ -106,10 +109,10 @@ export async function generateModelReadWorkload(input: {
   egressAcknowledged: boolean;
   valueRequestHandler?: (
     request: ModelReadValueRequest,
-  ) => Promise<ModelReadValueContextDecision>;
+  ) => Promise<ModelReadValueContextDecision | undefined>;
   clarificationHandler?: (
     request: ModelReadClarificationRequest,
-  ) => Promise<ModelReadClarificationDecision>;
+  ) => Promise<ModelReadClarificationDecision | undefined>;
   /** Host exact-path review and disabled save; never a model-supplied candidate. */
   relationshipReviewHandler?: (
     request: ModelReadClarificationRequest,
@@ -119,8 +122,15 @@ export async function generateModelReadWorkload(input: {
   conversation?: ModelAuthoringConversation;
   /** The outer authoring session will narrate the combined validated draft. */
   deferNarration?: boolean;
+  resumeCheckpoint?: ReadWorkloadAssistanceCheckpoint;
+  /** Main commits this and the real completion sidecar with existing Source/
+   * generation/resume CAS. The current boundary is needed after an exact link review. */
+  onCheckpoint?: (checkpoint: ReadWorkloadAssistanceCheckpoint | undefined, currentBoundary: ExplorationBoundaryDraft,
+    acceptedResult?: ModelReadWorkloadResult) => Promise<void>;
   signal?: AbortSignal;
-}): Promise<ModelReadWorkloadResult> {
+};
+
+export async function generateModelReadWorkload(input: ModelReadWorkloadInput): Promise<ModelReadWorkloadResult> {
   const name = boundedText(input.name, "workload name", 80);
   const allowedQuestions = boundedQuestions(input.allowedQuestions, "allowed questions", true);
   const forbiddenQuestions = boundedQuestions(input.forbiddenQuestions ?? [], "forbidden questions", false);
@@ -184,7 +194,7 @@ export async function generateModelReadWorkload(input: {
   let repeatedAssistanceRequest = false;
   let namingEvidenceCorrectionUsed = false;
   let lastSubmission: Record<string, unknown> | undefined;
-  let namingCorrectionWorkload: string | undefined;
+  let namingCorrectionWorkload: ReturnType<typeof canonicalJsonDigest> | undefined;
   let callCount = 0;
   const relationshipReviewLimit = input.relationshipReviewHandler ? MAX_READ_RELATIONSHIP_REVIEWS : 0;
   const gateway: AskToolGateway = {
@@ -587,14 +597,97 @@ export async function generateModelReadWorkload(input: {
     if (isReadProviderFailure(error) && diagnostics.length) throw new ReadWorkloadDraftError(diagnostics);
     throw error;
   };
-  const initial = await runRequiredAuthoringToolCall({
-    run,
-    question: baseQuestion(),
-    toolName: SUBMIT_READ_WORKLOAD_TOOL,
-    onCorrection: () => { phase = "correction"; },
-  }).catch(rethrowDiagnostic);
-  let usage = initial.result.usage;
-  let correctionUsed = initial.correction_used;
+  const inputDigest = () => canonicalJsonDigest({ name, allowedQuestions, forbiddenQuestions, originalNamingSources, namingSources,
+    principal_roots: input.principalScopedRootResources ?? null, provider: configuration.provider, model: configuration.model,
+    endpoint: configuration.endpoint.href, base_question: baseQuestion(), provider_system_prompt: providerSystemPrompt,
+    relationship_review_limit: relationshipReviewLimit });
+  const clarificationLine = (request: ModelReadClarificationRequest, answer: string) =>
+    `Reviewed business clarification for ${request.resource}${request.field ? `.${request.field}` : ""}: question ${JSON.stringify(request.question)}, operator answer ${JSON.stringify(answer)}. This is naming context, not database values or authority.`;
+  let usage: ModelReadWorkloadResult["usage"];
+  let correctionUsed = false;
+  let completion: ReturnType<typeof completedAuthoringQuestion>;
+  let pendingAssistance: ReadWorkloadAssistanceQuestion | undefined;
+  const assertAssistanceContext = () => {
+    if (explorationBoundaryCandidateDigest(mappingBoundary) !== expectedBoundaryDigest
+      || readWorkloadCatalog(mappingBoundary, input.principalScopedRootResources).digest !== catalog.digest)
+      throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_STALE: The Read metadata changed while assistance was pending. Preserve the question and revalidate; no new mapping was sent.");
+  };
+  const saveAssistance = async (question: ReadWorkloadAssistanceQuestion, stage: "waiting" | "decided") => {
+    pendingAssistance = structuredClone(question);
+    if (!input.onCheckpoint) return;
+    assertAssistanceContext();
+    await input.onCheckpoint(readWorkloadAssistanceCheckpoint({ input_digest: inputDigest(), boundary_digest: expectedBoundaryDigest,
+      catalog_digest: catalog.digest, tool_digest: authorityDigest, stage, pending_question: question, state: {
+        call_count: callCount, attempt, phase, correction_used: correctionUsed, relationship_reviews: relationshipReviews,
+        relationship_review_limit: relationshipReviewLimit, clarified_targets: clarifiedTargets, clarification_answers: clarificationAnswers,
+        clarification_from_invalid_naming: clarificationFromInvalidNaming, clarification_resolved: clarificationResolved,
+        mechanical_clarification_resolved: mechanicalClarificationResolved, value_request_resolved: valueRequestResolved,
+        repeated_assistance_request: repeatedAssistanceRequest, naming_evidence_correction_used: namingEvidenceCorrectionUsed,
+        ...(resolvedMechanicalRequest ? { resolved_mechanical_request: resolvedMechanicalRequest } : {}),
+        ...(namingCorrectionWorkload ? { naming_correction_workload: namingCorrectionWorkload } : {}),
+        ...(approvedValueContext ? { approved_value_context: approvedValueContext } : {}),
+        diagnostics: diagnostics.slice(0, 6).map(safeReadWorkloadDiagnostic), ...(usage ? { usage } : {}),
+      } }), structuredClone(mappingBoundary));
+  };
+  if (input.resumeCheckpoint) {
+    const saved = parseReadWorkloadAssistanceCheckpoint(input.resumeCheckpoint);
+    if (saved.input_digest !== inputDigest() || saved.boundary_digest !== expectedBoundaryDigest || saved.catalog_digest !== catalog.digest
+      || saved.tool_digest !== authorityDigest || saved.state.relationship_review_limit !== relationshipReviewLimit)
+      throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_STALE: The original mapping input, boundary, catalog or provider changed. Preserve the pending question and revalidate; no replacement was sent.");
+    const canonicalRequest = (request: ModelReadClarificationRequest) => {
+      const parsed = parseReadClarificationRequest(request as unknown as Record<string, unknown>, catalog);
+      if (canonicalJsonDigest(parsed) !== canonicalJsonDigest(request)) throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_INVALID: The retained request is not canonical for this catalog.");
+      return parsed;
+    };
+    const s = saved.state, q = saved.pending_question;
+    if (!s.call_count || !s.attempt || s.call_count > MAX_READ_CLARIFICATIONS + relationshipReviewLimit + 4
+      || q.kind === "clarification" && (s.clarified_targets.length >= MAX_READ_CLARIFICATIONS
+        || s.clarified_targets.some(prior => clarificationKey(prior) === clarificationKey(q.request)))
+      || q.kind === "value" && s.value_request_resolved
+      || q.kind === "relationship" && (q.request.category !== "relationship_support" || !s.relationship_reviews
+        || !s.mechanical_clarification_resolved || !input.relationshipReviewHandler))
+      throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_INVALID: The retained request violates the existing assistance limits or flags.");
+    for (const prior of s.clarified_targets) {
+      const { answer, ...request } = prior;
+      canonicalRequest(request);
+      const decision = validateReadClarificationDecision({ state: "answered", answer });
+      if (decision.state !== "answered" || decision.answer !== answer) throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_INVALID: The retained answer is not canonical.");
+    }
+    if (new Set(s.clarified_targets.map(clarificationKey)).size !== s.clarified_targets.length
+      || canonicalJsonDigest(s.clarification_answers) !== canonicalJsonDigest(s.clarified_targets.map(r => clarificationLine(r, r.answer))))
+      throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_INVALID: Retained targets and their answers disagree.");
+    if (q.kind === "value") {
+      const parsed = parseReadValueRequest(q.request as unknown as Record<string, unknown>, catalog);
+      if (canonicalJsonDigest(parsed) !== canonicalJsonDigest(q.request)) throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_INVALID: The retained value request is not canonical.");
+      if (q.decision && canonicalJsonDigest(validateReadValueContextDecision(q.decision, q.request)) !== canonicalJsonDigest(q.decision))
+        throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_INVALID: The retained value decision is not canonical.");
+      valueRequest = parsed;
+    } else {
+      canonicalRequest(q.request);
+      if (q.kind === "clarification") {
+        if (q.decision && canonicalJsonDigest(validateReadClarificationDecision(q.decision)) !== canonicalJsonDigest(q.decision)) throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_INVALID: The retained answer decision is not canonical.");
+        clarificationRequest = q.request;
+      } else mechanicalClarificationRequest = q.request;
+    }
+    if (s.resolved_mechanical_request) canonicalRequest(s.resolved_mechanical_request);
+    if (s.approved_value_context) {
+      const c = s.approved_value_context;
+      const request = parseReadValueRequest({ resource: c.resource, field: c.field, reason: "Retained separately approved context", question: "Retained separately approved context" }, catalog);
+      if (canonicalJsonDigest(validateReadValueContextDecision(c, request)) !== canonicalJsonDigest(c)) throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_INVALID: Retained approved values changed.");
+    }
+    callCount = s.call_count; attempt = s.attempt; phase = s.phase; correctionUsed = s.correction_used; relationshipReviews = s.relationship_reviews;
+    clarifiedTargets.push(...s.clarified_targets); clarificationAnswers.push(...s.clarification_answers);
+    clarificationFromInvalidNaming = s.clarification_from_invalid_naming; clarificationResolved = s.clarification_resolved;
+    mechanicalClarificationResolved = s.mechanical_clarification_resolved; valueRequestResolved = s.value_request_resolved;
+    repeatedAssistanceRequest = s.repeated_assistance_request; namingEvidenceCorrectionUsed = s.naming_evidence_correction_used;
+    resolvedMechanicalRequest = s.resolved_mechanical_request; namingCorrectionWorkload = s.naming_correction_workload;
+    approvedValueContext = s.approved_value_context; diagnostics.push(...s.diagnostics); usage = s.usage;
+    pendingAssistance = q; completion = q.completion;
+  } else {
+    const initial = await runRequiredAuthoringToolCall({ run, question: baseQuestion(), toolName: SUBMIT_READ_WORKLOAD_TOOL,
+      onCorrection: () => { phase = "correction"; } }).catch(rethrowDiagnostic);
+    usage = initial.result.usage; correctionUsed = initial.correction_used; completion = completedAuthoringQuestion(initial.result);
+  }
   const remap = async (question: string, nextPhase: ReadWorkloadDiagnostic["phase"] = "follow-up"): Promise<void> => {
     phase = nextPhase;
     const result = await (correctionUsed
@@ -607,6 +700,8 @@ export async function generateModelReadWorkload(input: {
         })).catch(rethrowDiagnostic);
     usage = mergeUsage(usage, result.result.usage);
     correctionUsed = correctionUsed || result.correction_used;
+    completion = completedAuthoringQuestion(result.result);
+    pendingAssistance = undefined;
   };
   const resolveRequestedAssistance = async () => {
     while (!workload && (mechanicalClarificationRequest || clarificationRequest || valueRequest)) {
@@ -617,22 +712,25 @@ export async function generateModelReadWorkload(input: {
         resolvedMechanicalRequest = request;
         correctionUsed = true;
         if (request.category === "relationship_support" && input.relationshipReviewHandler) {
-          if (++relationshipReviews > MAX_READ_RELATIONSHIP_REVIEWS) {
+          const retained = pendingAssistance?.kind === "relationship" && canonicalJsonDigest(pendingAssistance.request) === canonicalJsonDigest(request)
+            ? pendingAssistance : undefined;
+          if (!retained && ++relationshipReviews > MAX_READ_RELATIONSHIP_REVIEWS) {
             throw new Error("READ_RELATIONSHIP_REVIEW_LIMIT: Resume the saved job after reviewing the remaining relationship requirement.");
           }
+          if (!retained?.decision) await saveAssistance({ kind: "relationship", request, question: request.question, ...(completion ? { completion } : {}) }, "waiting");
+          if (input.signal?.aborted) throw new ReadWorkloadAssistancePausedError();
           const requestedResource = request.resource;
-          const prepared = await input.relationshipReviewHandler(request, mappingBoundary);
-          if (!prepared) throw new Error("READ_RELATIONSHIP_REVIEW_PENDING: No exact path was saved. Keep the Read mapping pending without omitting the requested information.");
-          if (prepared.reviewed_relationship.resource !== requestedResource) {
-            throw new Error("READ_RELATIONSHIP_REVIEW_MISMATCH: The exact reviewed path belongs to another requested root.");
+          if (!retained?.decision) {
+            const prepared = await input.relationshipReviewHandler(request, mappingBoundary);
+            if (!prepared) throw new Error("READ_RELATIONSHIP_REVIEW_PENDING: No exact path was saved. Keep the Read mapping pending without omitting the requested information.");
+            if (prepared.reviewed_relationship.resource !== requestedResource) throw new Error("READ_RELATIONSHIP_REVIEW_MISMATCH: The exact reviewed path belongs to another requested root.");
+            if (explorationBoundaryCandidateDigest(mappingBoundary) !== expectedBoundaryDigest) throw new Error("READ_RELATIONSHIP_CANDIDATE_STALE: The Read mapping changed during relationship review.");
+            mappingBoundary = validateReadWorkloadRelationshipPreparation(prepared, mappingBoundary);
+            expectedBoundaryDigest = explorationBoundaryCandidateDigest(mappingBoundary);
+            catalog = readWorkloadCatalog(mappingBoundary, input.principalScopedRootResources);
+            serializeCatalog();
+            await saveAssistance({ kind: "relationship", request, question: request.question, ...(completion ? { completion } : {}), decision: { state: "relationship_reviewed" } }, "decided");
           }
-          if (explorationBoundaryCandidateDigest(mappingBoundary) !== expectedBoundaryDigest) {
-            throw new Error("READ_RELATIONSHIP_CANDIDATE_STALE: The Read mapping changed during relationship review.");
-          }
-          mappingBoundary = validateReadWorkloadRelationshipPreparation(prepared, mappingBoundary);
-          expectedBoundaryDigest = explorationBoundaryCandidateDigest(mappingBoundary);
-          catalog = readWorkloadCatalog(mappingBoundary, input.principalScopedRootResources);
-          serializeCatalog();
         }
         await remap([
           runnerResolvedReadMechanicalGuidance(request),
@@ -673,14 +771,17 @@ export async function generateModelReadWorkload(input: {
           }
           continue;
         }
-        if (!input.clarificationHandler) {
+        const retained = pendingAssistance?.kind === "clarification" && canonicalJsonDigest(pendingAssistance.request) === canonicalJsonDigest(request)
+          ? pendingAssistance : undefined;
+        if (!retained?.decision) await saveAssistance({ kind: "clarification", request, question: request.question, ...(completion ? { completion } : {}) }, "waiting");
+        if (input.signal?.aborted) throw new ReadWorkloadAssistancePausedError();
+        if (!input.clarificationHandler && !retained?.decision) {
           throw new Error(
             `READ_WORKLOAD_CLARIFICATION_REQUIRED: the model or Runner stopped at ${clarificationRequest.resource}${clarificationRequest.field ? `.${clarificationRequest.field}` : ""}. Use interactive Boundary review to answer or decline. No source query ran.`,
           );
         }
-        const decision = validateReadClarificationDecision(
-          await input.clarificationHandler(request),
-        );
+        const decision = retained?.decision ?? validateReadClarificationDecision(await input.clarificationHandler!(request));
+        if (!retained?.decision) await saveAssistance({ kind: "clarification", request, question: request.question, ...(completion ? { completion } : {}), decision }, "decided");
         clarificationRequest = undefined;
         clarificationResolved = true;
         opaqueGuessBlockers = [];
@@ -690,7 +791,7 @@ export async function generateModelReadWorkload(input: {
           );
         }
         clarifiedTargets.push({ ...request, answer: decision.answer });
-        clarificationAnswers.push(`Reviewed business clarification for ${request.resource}${request.field ? `.${request.field}` : ""}: question ${JSON.stringify(request.question)}, operator answer ${JSON.stringify(decision.answer)}. This is naming context, not database values or authority.`);
+        clarificationAnswers.push(clarificationLine(request, decision.answer));
         await remap([
           `The operator answered the exact metadata clarification for ${request.resource}${request.field ? `.${request.field}` : ""}: ${JSON.stringify(decision.answer)}.`,
           "Use that answer only as a naming explanation for this bounded mapping. It is not database data or authority.",
@@ -707,16 +808,18 @@ export async function generateModelReadWorkload(input: {
         continue;
       }
       if (!valueRequest) break;
-      if (!input.valueRequestHandler) {
+      const request = valueRequest;
+      const retained = pendingAssistance?.kind === "value" && canonicalJsonDigest(pendingAssistance.request) === canonicalJsonDigest(request)
+        ? pendingAssistance : undefined;
+      if (!retained?.decision) await saveAssistance({ kind: "value", request, question: request.question, ...(completion ? { completion } : {}) }, "waiting");
+      if (input.signal?.aborted) throw new ReadWorkloadAssistancePausedError();
+      if (!input.valueRequestHandler && !retained?.decision) {
         throw new Error(
           `READ_WORKLOAD_VALUE_CONTEXT_REQUIRED: the model requested ${valueRequest.resource}.${valueRequest.field}. Use interactive Boundary review to approve or decline exact value context. No source query ran.`,
         );
       }
-      const request = valueRequest;
-      const decision = validateReadValueContextDecision(
-        await input.valueRequestHandler(request),
-        request,
-      );
+      const decision = retained?.decision ?? validateReadValueContextDecision(await input.valueRequestHandler!(request), request);
+      if (!retained?.decision) await saveAssistance({ kind: "value", request, question: request.question, ...(completion ? { completion } : {}), decision }, "decided");
       valueRequest = undefined;
       valueRequestResolved = true;
       approvedValueContext = decision.state === "provided" ? decision : undefined;
@@ -799,7 +902,7 @@ export async function generateModelReadWorkload(input: {
         egressAcknowledged: input.egressAcknowledged,
         signal: input.signal,
       });
-  return {
+  const result: ModelReadWorkloadResult = {
     workload,
     ...(diagnostics.length ? { diagnostics } : {}),
     analysis,
@@ -812,6 +915,13 @@ export async function generateModelReadWorkload(input: {
     ...(modelMessage ? { model_message: modelMessage } : {}),
     ...(usage ? { usage } : {}),
   };
+  // Main can commit the actual accepted disabled artifact and clear its wait in
+  // the same CAS. A blocked mapping or narration failure never clears it.
+  if (analysis.status === "ready" && input.onCheckpoint) {
+    assertAssistanceContext();
+    await input.onCheckpoint(undefined, structuredClone(mappingBoundary), result);
+  }
+  return result;
 }
 
 export function readWorkloadCatalog(boundary: ExplorationBoundaryDraft, principalScopedRootResources?: readonly string[]) {
@@ -1385,9 +1495,11 @@ function approvedValueContextIssue(
 }
 
 function validateReadClarificationDecision(
-  decision: ModelReadClarificationDecision,
+  decision: ModelReadClarificationDecision | undefined,
 ): ModelReadClarificationDecision {
-  if (decision.state === "declined") return decision;
+  if (decision === undefined) throw new ReadWorkloadAssistancePausedError();
+  if (!isRecord(decision) || !["answered", "declined"].includes(decision.state as string)) throw new Error("READ_WORKLOAD_CLARIFICATION_DECISION_INVALID: Use a canonical answer or deliberate decline; keep cancellation pending.");
+  if (decision.state === "declined") return { state: "declined" };
   return {
     state: "answered",
     answer: boundedText(decision.answer, "clarification answer", 1_000),
@@ -1413,10 +1525,12 @@ function parseReadValueRequest(
 }
 
 function validateReadValueContextDecision(
-  decision: ModelReadValueContextDecision,
+  decision: ModelReadValueContextDecision | undefined,
   request: ModelReadValueRequest,
 ): ModelReadValueContextDecision {
-  if (decision.state === "without_values") return decision;
+  if (decision === undefined) throw new ReadWorkloadAssistancePausedError();
+  if (!isRecord(decision) || !["provided", "without_values"].includes(decision.state as string)) throw new Error("READ_WORKLOAD_VALUE_CONTEXT_INVALID: Use separately approved values or a deliberate without_values decision; keep cancellation pending.");
+  if (decision.state === "without_values") return { state: "without_values" };
   if (decision.egressAcknowledged !== true
     || decision.resource !== request.resource
     || decision.field !== request.field) {
@@ -1432,7 +1546,7 @@ function validateReadValueContextDecision(
   if (values.some((value) => /(?:postgres(?:ql)?|mysql):\/\/|BEGIN [A-Z ]*PRIVATE KEY|api[_-]?key\s*[:=]|bearer\s+[A-Za-z0-9._-]+/i.test(value))) {
     throw new Error("READ_WORKLOAD_VALUE_CONTEXT_INVALID: approved value context appears to contain secret material.");
   }
-  return { ...decision, values };
+  return { state: "provided", resource: decision.resource, field: decision.field, values, egressAcknowledged: true };
 }
 
 function mergeUsage(

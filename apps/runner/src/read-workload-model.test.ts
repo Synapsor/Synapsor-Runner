@@ -1,10 +1,14 @@
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery, validateAuthoringTransportState, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+import { parseReadWorkloadAssistanceCheckpoint, readWorkloadAssistanceCheckpoint, type ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
 import { describe, expect, it, vi } from "vitest";
 import {
   DEFAULT_REVIEWED_EXPLORATION_BUDGETS,
   type ExplorationBoundaryDraft,
 } from "./auto-boundary.js";
-import { AskError, type AskProviderDependencies } from "./model-ask.js";
+import { AskError, secureAskJsonRequest, type AskProviderDependencies } from "./model-ask.js";
 import {
   createModelAuthoringConversation,
   rememberModelAuthoringClarification,
@@ -30,6 +34,188 @@ function diagnosticResponse(kind: "invalid_id" | "valid" | "missing" | "malforme
     }),
   }] } };
 }
+
+describe("durable Read assistance producer checkpoint", () => {
+  const response = (args: unknown) => ({ status: 200, body: { output: [{ type: "function_call", call_id: "owned_read_assistance", name: "runner__submit_read_workloads", arguments: JSON.stringify(args) }] } });
+  const request = { resource: "public.orders", field: "status", reason: "Missing business explanation for this view", question: "Which fulfillment stages should this view describe?" };
+  const setup = (requestJson: NonNullable<AskProviderDependencies["requestJson"]>) => ({ name: "owned_assistance", allowedQuestions: ["List my orders"],
+    provider: "openai" as const, model: "owned-local-fixture", generatedBoundary: generatedBoundary(), apiKey: "test-key", egressAcknowledged: true,
+    deferNarration: true, dependencies: { requestJson } });
+
+  it("saves the completed question before pause and reopens its wait without an initial provider resend", async () => {
+    let checkpoint: any;
+    const events: string[] = [], requestJson = vi.fn(async () => { events.push("provider"); return response({ clarification_request: request }); });
+    await expect(generateModelReadWorkload({ ...setup(requestJson), onCheckpoint: async (value: any) => { checkpoint = structuredClone(value); events.push(value.stage); },
+      clarificationHandler: async () => { events.push("handler"); expect(checkpoint?.stage).toBe("waiting"); return undefined; } } as any)).rejects.toThrow("READ_WORKLOAD_AUTHORING_PAUSED");
+    expect(events).toEqual(["provider", "waiting", "handler"]);
+    expect(checkpoint.pending_question.request).toEqual(request);
+    expect(checkpoint.state.call_count).toBe(1);
+    const noSend = vi.fn();
+    await expect(generateModelReadWorkload({ ...setup(noSend), resumeCheckpoint: checkpoint, onCheckpoint: async (value: any) => { checkpoint = structuredClone(value); },
+      clarificationHandler: async () => undefined } as any)).rejects.toThrow("READ_WORKLOAD_AUTHORING_PAUSED");
+    expect(noSend).not.toHaveBeenCalled();
+  });
+
+  it("saves a canonical answer separately and resumes its real next mapping without reprompting", async () => {
+    let checkpoint: any;
+    const firstSend = vi.fn(async () => response({ clarification_request: request }));
+    const answer = "Show the current purchase fulfillment stage";
+    await expect(generateModelReadWorkload({ ...setup(firstSend), onCheckpoint: async (value: any) => { checkpoint = structuredClone(value);
+      if (value.stage === "decided") throw new Error("OWNED_CRASH_AFTER_DECISION_COMMIT"); },
+      clarificationHandler: async () => ({ state: "answered", answer }) } as any)).rejects.toThrow("OWNED_CRASH_AFTER_DECISION_COMMIT");
+    expect(checkpoint.stage).toBe("decided"); expect(checkpoint.pending_question.decision).toEqual({ state: "answered", answer });
+    const bodies: unknown[] = [], requestJson = vi.fn(async r => { bodies.push(r.body); return diagnosticResponse("valid"); }), handler = vi.fn();
+    const result = await generateModelReadWorkload({ ...setup(requestJson), resumeCheckpoint: checkpoint, onCheckpoint: async () => {}, clarificationHandler: handler } as any);
+    expect(handler).not.toHaveBeenCalled(); expect(firstSend).toHaveBeenCalledOnce(); expect(requestJson).toHaveBeenCalledOnce();
+    expect(JSON.stringify(bodies[0])).toContain(answer); expect(JSON.stringify(bodies[0])).toContain("Reviewed business clarification");
+    expect(result.analysis.status).toBe("ready"); expect(result.authority_granted).toBe(false);
+  });
+
+  it("leaves Escape or EOF at the value wait pending and accepts intentional without_values only as its typed decision", async () => {
+    let checkpoint: any;
+    const valueRequest = { ...request, reason: "Exact status vocabulary is indispensable", question: "May Runner use the separately reviewed status vocabulary?" };
+    const first = vi.fn(async () => response({ value_request: valueRequest }));
+    const boundary = generatedBoundaryWithoutStatusEnum();
+    await expect(generateModelReadWorkload({ ...setup(first), generatedBoundary: boundary, onCheckpoint: async (value: any) => { checkpoint = structuredClone(value); }, valueRequestHandler: async () => undefined } as any)).rejects.toThrow("READ_WORKLOAD_AUTHORING_PAUSED");
+    expect(checkpoint.stage).toBe("waiting"); expect(checkpoint.pending_question).not.toHaveProperty("decision"); expect(first).toHaveBeenCalledOnce();
+    const bodies: unknown[] = [], next = vi.fn(async r => { bodies.push(r.body); return diagnosticResponse("valid"); });
+    await generateModelReadWorkload({ ...setup(next), generatedBoundary: boundary, resumeCheckpoint: checkpoint, onCheckpoint: async (value: any) => { if (value) checkpoint = structuredClone(value); },
+      valueRequestHandler: async () => ({ state: "without_values" }) } as any);
+    expect(checkpoint.stage).toBe("decided"); expect(checkpoint.pending_question.decision).toEqual({ state: "without_values" }); expect(next).toHaveBeenCalledOnce();
+    expect(JSON.stringify(bodies[0])).toContain("declined observed-value context");
+  });
+
+  it("stops at a failed coordinated checkpoint save before dispatching the human handler or another generation", async () => {
+    const requestJson = vi.fn(async () => response({ clarification_request: request })), handler = vi.fn();
+    await expect(generateModelReadWorkload({ ...setup(requestJson), onCheckpoint: async () => { throw new Error("BOUNDARY_AUTHORING_RESUME_CHANGED"); }, clarificationHandler: handler } as any)).rejects.toThrow("BOUNDARY_AUTHORING_RESUME_CHANGED");
+    expect(handler).not.toHaveBeenCalled(); expect(requestJson).toHaveBeenCalledOnce();
+  });
+
+  it.each(["name", "questions", "catalog", "roots", "model"] as const)("refuses changed canonical %s before reopened handler or provider dispatch", async change => {
+    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
+    const first = setup(async () => response({ clarification_request: request }));
+    await expect(generateModelReadWorkload({ ...first, onCheckpoint: async value => { checkpoint = value; }, clarificationHandler: async () => undefined })).rejects.toThrow("AUTHORING_PAUSED");
+    const noSend = vi.fn(), handler = vi.fn(), resumed = { ...setup(noSend), resumeCheckpoint: checkpoint, clarificationHandler: handler };
+    if (change === "name") resumed.name = "different_read_job";
+    if (change === "questions") resumed.allowedQuestions = ["A different business read"];
+    if (change === "catalog") resumed.generatedBoundary.pack.resources[0]!.label = "Changed meaning";
+    if (change === "model") resumed.model = "different-local-fixture";
+    const extra = change === "roots" ? { principalScopedRootResources: [] } : {};
+    await expect(generateModelReadWorkload({ ...resumed, ...extra })).rejects.toThrow("CHECKPOINT_STALE");
+    expect(noSend).not.toHaveBeenCalled(); expect(handler).not.toHaveBeenCalled();
+  });
+
+  it("reparses a retained target against the actual current catalog even when storage hashes are well formed", async () => {
+    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
+    await expect(generateModelReadWorkload({ ...setup(async () => response({ clarification_request: request })), onCheckpoint: async value => { checkpoint = value; }, clarificationHandler: async () => undefined })).rejects.toThrow("AUTHORING_PAUSED");
+    const { digest: _digest, schema_version: _schema, ...core } = checkpoint!;
+    core.pending_question.request.field = "never_inspected_field";
+    const changed = readWorkloadAssistanceCheckpoint(core), noSend = vi.fn(), handler = vi.fn();
+    await expect(generateModelReadWorkload({ ...setup(noSend), resumeCheckpoint: changed, clarificationHandler: handler })).rejects.toThrow("exact model-visible field");
+    expect(noSend).not.toHaveBeenCalled(); expect(handler).not.toHaveBeenCalled();
+    expect(() => parseReadWorkloadAssistanceCheckpoint({ ...changed, state: { ...changed.state, arbitrary_failed_args: { secret: "not_persisted" } } })).toThrow("CHECKPOINT_INVALID");
+  });
+
+  it("keeps a used correction across resume and does not buy another invalid mapping attempt", async () => {
+    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
+    const first = vi.fn().mockResolvedValueOnce(diagnosticResponse("missing")).mockResolvedValueOnce(response({ clarification_request: request }));
+    await expect(generateModelReadWorkload({ ...setup(first), onCheckpoint: async value => { checkpoint = value; }, clarificationHandler: async () => undefined })).rejects.toThrow("AUTHORING_PAUSED");
+    expect(first).toHaveBeenCalledTimes(2); expect(checkpoint?.state.correction_used).toBe(true); expect(checkpoint?.state.attempt).toBe(2);
+    const next = vi.fn(async () => diagnosticResponse("blocked"));
+    const result = await generateModelReadWorkload({ ...setup(next), resumeCheckpoint: checkpoint, onCheckpoint: async value => { checkpoint = value; },
+      clarificationHandler: async () => ({ state: "answered", answer: "The purchase fulfillment stage" }) });
+    expect(result.analysis.status).toBe("blocked"); expect(checkpoint?.stage).toBe("decided");
+    expect(next).toHaveBeenCalledOnce();
+  });
+
+  it("exposes a cleared checkpoint only with the actual accepted Read result and stops if its CAS commit fails", async () => {
+    const seen: Array<{ checkpoint: ReadWorkloadAssistanceCheckpoint | undefined; result: unknown }> = [];
+    const valid = vi.fn(async () => diagnosticResponse("valid"));
+    await expect(generateModelReadWorkload({ ...setup(valid), onCheckpoint: async (checkpoint, _boundary, result) => {
+      seen.push({ checkpoint, result }); throw new Error("OWNED_ACCEPTED_READ_CAS_CHANGED");
+    } })).rejects.toThrow("OWNED_ACCEPTED_READ_CAS_CHANGED");
+    expect(seen).toHaveLength(1); expect(seen[0]!.checkpoint).toBeUndefined();
+    expect(seen[0]!.result).toHaveProperty("analysis.status", "ready"); expect(valid).toHaveBeenCalledOnce();
+  });
+
+  it("retains approved values and the one-value-request limit when a later business question pauses", async () => {
+    const boundary = generatedBoundaryWithoutStatusEnum(); let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
+    const first = vi.fn().mockResolvedValueOnce(response({ value_request: { ...request, question: "Use the separately approved exact vocabulary?" } })).mockResolvedValueOnce(response({ clarification_request: request }));
+    await expect(generateModelReadWorkload({ ...setup(first), generatedBoundary: boundary, onCheckpoint: async value => { checkpoint = value; },
+      valueRequestHandler: async () => ({ state: "provided", resource: request.resource, field: request.field, values: ["queued"], egressAcknowledged: true }),
+      clarificationHandler: async () => undefined })).rejects.toThrow("AUTHORING_PAUSED");
+    expect(checkpoint?.state.value_request_resolved).toBe(true); expect(checkpoint?.state.approved_value_context?.values).toEqual(["queued"]);
+    const values = vi.fn(), next = vi.fn(async () => response({ value_request: request }));
+    await expect(generateModelReadWorkload({ ...setup(next), generatedBoundary: boundary, resumeCheckpoint: checkpoint, onCheckpoint: async value => { checkpoint = value; },
+      clarificationHandler: async () => ({ state: "answered", answer: "The fulfillment stage" }), valueRequestHandler: values })).rejects.toThrow("READ_WORKLOAD_DRAFT_FAILED");
+    expect(values).not.toHaveBeenCalled(); expect(next).toHaveBeenCalledOnce();
+  });
+
+  it("retains four business answers and stops a fifth request across pauses without re-asking accepted targets", async () => {
+    const boundary = generatedBoundary();
+    for (const field of ["region", "category", "description"]) { boundary.pack.resources[0]!.field_types[field] = "text"; boundary.pack.resources[0]!.selectable_fields.push(field); }
+    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
+    const fields = ["status", "amount", "region", "category", "description"];
+    const questionFor = (field: string) => ({ ...request, field, question: `Which business explanation belongs to ${field}?` });
+    let sent = 0;
+    const sends = vi.fn(async () => response({ clarification_request: questionFor(fields[sent++]!) }));
+    let answers = 0;
+    await expect(generateModelReadWorkload({ ...setup(sends), generatedBoundary: boundary, onCheckpoint: async value => { checkpoint = value; },
+      clarificationHandler: async () => ++answers <= 2 ? { state: "answered", answer: "Reviewed business meaning" } : undefined })).rejects.toThrow("AUTHORING_PAUSED");
+    expect(checkpoint?.state.clarified_targets.map(t => t.field)).toEqual(["status", "amount"]); expect(sent).toBe(3);
+    const nextHandler = vi.fn(async () => ({ state: "answered" as const, answer: "Reviewed business meaning" }));
+    await expect(generateModelReadWorkload({ ...setup(sends), generatedBoundary: boundary, resumeCheckpoint: checkpoint, onCheckpoint: async value => { checkpoint = value; }, clarificationHandler: nextHandler })).rejects.toThrow("READ_WORKLOAD_DRAFT_FAILED");
+    expect(nextHandler.mock.calls).toHaveLength(2); expect(sent).toBe(5);
+    expect(checkpoint?.state.clarified_targets.map(t => t.field)).toEqual(["status", "amount", "region"]); // Decided fourth, before its mapping.
+  });
+
+  it.each(["initial", "remap"] as const)("carries the real completed %s transport sidecar into the waiting checkpoint before its owner handler", async mode => {
+    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined, state: AuthoringTransportState = { version: 1, operations: [] };
+    let sends = 0;
+    const followupRequest = { ...request, field: "amount", question: "Which business meaning belongs to this amount?" };
+    const server = createServer(async (req, res) => { for await (const _chunk of req) {} sends++; res.setHeader("content-type", "application/json"); res.end(JSON.stringify(response({ clarification_request: sends === 1 ? request : followupRequest }).body)); });
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    const endpoint = new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/responses`);
+    const host = { available: () => true, read: () => state, current: async () => canonicalJsonDigest(checkpoint ?? "owned_read_origin"),
+      write: async (value: AuthoringTransportState) => { validateAuthoringTransportState(value); state = structuredClone(value); } };
+    const entering = () => withAuthoringGenerationRecovery(() => { configureAuthoringGenerationRecovery(host); return generateModelReadWorkload({
+      ...setup(r => secureAskJsonRequest({ ...r, endpoint, scope: "custom_loopback" })), onCheckpoint: async value => { checkpoint = structuredClone(value); },
+      clarificationHandler: async asked => { const op = state.operations.at(-1)!;
+        expect(checkpoint?.pending_question.completion).toMatchObject({ operation_id: op.id, request_digest: op.request_digest,
+          response_digest: canonicalJsonDigest(response({ clarification_request: asked }).body) });
+        if (mode === "remap" && asked.field === "status") return { state: "answered", answer: "The purchase fulfillment stage" };
+        return undefined; } }); });
+    try { await expect(entering()).rejects.toThrow("AUTHORING_PAUSED"); expect(sends).toBe(mode === "initial" ? 1 : 2); expect(state.operations.at(-1)?.state).toBe("handled"); }
+    finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+  });
+
+  it("restores the pending relationship review counter without resending or charging the same review slot twice", async () => {
+    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
+    const linkRequest = { resource: request.resource, category: "relationship_support" as const, reason: "The related business detail needs an inspected link", question: "Prepare the missing related business detail path." };
+    const first = vi.fn(async () => response({ clarification_request: linkRequest })), review = vi.fn(async () => undefined);
+    await expect(generateModelReadWorkload({ ...setup(first), relationshipReviewHandler: review,
+      onCheckpoint: async value => { checkpoint = value; } })).rejects.toThrow("READ_RELATIONSHIP_REVIEW_PENDING");
+    expect(checkpoint?.pending_question.kind).toBe("relationship"); expect(checkpoint?.state.relationship_reviews).toBe(1);
+    const noSend = vi.fn();
+    await expect(generateModelReadWorkload({ ...setup(noSend), resumeCheckpoint: checkpoint, relationshipReviewHandler: review,
+      onCheckpoint: async value => { checkpoint = value; } })).rejects.toThrow("READ_RELATIONSHIP_REVIEW_PENDING");
+    expect(checkpoint?.state.relationship_reviews).toBe(1); expect(noSend).not.toHaveBeenCalled(); expect(review).toHaveBeenCalledTimes(2);
+    const { digest: _digest, schema_version: _schema, ...core } = checkpoint!;
+    expect(() => readWorkloadAssistanceCheckpoint({ ...core, state: { ...core.state, relationship_reviews: 4 } })).toThrow("CHECKPOINT_INVALID");
+  });
+
+  it("preserves its one mechanical redirect after a later business wait resumes", async () => {
+    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
+    const mechanical = { resource: request.resource, reason: "Need the opaque selection reference", question: "Which column supplies the opaque selection reference?" };
+    const first = vi.fn().mockResolvedValueOnce(response({ clarification_request: mechanical })).mockResolvedValueOnce(response({ clarification_request: request }));
+    await expect(generateModelReadWorkload({ ...setup(first), onCheckpoint: async value => { checkpoint = value; }, clarificationHandler: async () => undefined })).rejects.toThrow("AUTHORING_PAUSED");
+    expect(checkpoint?.state.mechanical_clarification_resolved).toBe(true); expect(checkpoint?.state.correction_used).toBe(true);
+    const next = vi.fn(async () => response({ clarification_request: mechanical }));
+    await expect(generateModelReadWorkload({ ...setup(next), resumeCheckpoint: checkpoint, onCheckpoint: async value => { checkpoint = value; },
+      clarificationHandler: async () => ({ state: "answered", answer: "The fulfillment stage" }) })).rejects.toThrow("READ_WORKLOAD_MECHANICAL_QUESTION_REPEATED");
+    expect(next).toHaveBeenCalledOnce();
+  });
+});
 
 describe("model-assisted Read workload mapping", () => {
   it.each(["corrected", "fabricated", "changed_workload"])("repairs quoted meanings for ordinary fields before asking the operator (%s)", async mode => {
