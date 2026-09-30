@@ -475,6 +475,118 @@ describe("conversational Action authoring tools", () => {
       expect(requests[0]).toContain("correction_nomination"); expect(requests[0]).toContain(canonicalJsonDigest(parent));
     });
 
+    describe("durable Source repair restart", () => {
+      const retained = () => {
+        const f = fixture(), parent = modelDraft();
+        parent.require = { kind: "all", expressions: [...(eligiblePredicate() as Extract<ActionRuleBooleanExpressionV1, {kind: "all" | "any"}>).expressions, f.extraPredicate()] };
+        const compiledParent = compileActionRuleModelDraft({ ...f.context, draft: parent }).draft;
+        const assessment = { state: "representation_mismatch" as const, source_review: f.review(compiledParent, "conflict"), component: "predicate" as const, editable_paths: ["/require/expressions/2"] };
+        const correction = validateActionWorkUnitAssessment(f.context, compiledParent, assessment).correction!;
+        const source_repair = { original_parent: compiledParent, correction, passage_indexes: [0], prepared_draft_digest: assessment.source_review.report.draft_digest as `sha256:${string}`, corrections_used: 0 };
+        const core = { schema_version: "synapsor.action-authoring-checkpoint.v1" as const, intent_digest: canonicalJsonDigest(requestInput(vi.fn()).intent),
+          context_digest: canonicalJsonDigest({ catalog: f.context.builtCatalog.catalog, read: readDigest, baseline: null }), components: {}, source_repair };
+        const checkpoint = { ...core, digest: canonicalJsonDigest(core) } as unknown as ActionRuleAuthoringCheckpoint;
+        return { ...f, parent: compiledParent, assessment, source_repair, checkpoint };
+      };
+      const resumed = (f: ReturnType<typeof retained>, requestJson: NonNullable<AskProviderDependencies["requestJson"]>) => {
+        const input = requestInput(requestJson);
+        return { ...input, checkpoint: f.checkpoint, session: { ...input.session, conversation: { turns: [], policySources: f.sources } },
+          revalidateSourceRepair: vi.fn(async () => f.assessment) };
+      };
+      it("commits one repair invocation before sending and retains it on pause/reopen without resend", async () => {
+        const f = retained(), steps = [say("Which team owns the existing policy label?")];
+        const requestJson = vi.fn(async () => steps.shift()!); let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
+        await expect(converseActionRuleDraft({ ...resumed(f, requestJson), onCheckpoint: async value => {
+          checkpoint = value; if (!requestJson.mock.calls.length) expect((value as typeof f.checkpoint & {source_repair: typeof f.source_repair}).source_repair.corrections_used).toBe(1);
+        }, askClarification: async () => undefined })).rejects.toThrow("CANCELLED");
+        expect(requestJson).toHaveBeenCalledTimes(1);
+        expect((checkpoint as typeof f.checkpoint & {source_repair: typeof f.source_repair}).source_repair).toMatchObject({ original_parent: f.parent, correction: f.source_repair.correction, corrections_used: 1 });
+        f.checkpoint = checkpoint!;
+        const reopenedProvider = vi.fn();
+        await expect(converseActionRuleDraft({ ...resumed(f, reopenedProvider), askClarification: async () => undefined,
+          onCheckpoint: async value => { checkpoint = value; } })).rejects.toThrow("CANCELLED");
+        expect(reopenedProvider).not.toHaveBeenCalled();
+        expect((checkpoint as typeof f.checkpoint & {source_repair: typeof f.source_repair}).source_repair.corrections_used).toBe(1);
+      });
+      it("keeps the original parent after an outside-scope attempt and accepts the exact next repair", async () => {
+        const f = retained(); let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
+        const rejected = [...[call("runner.submit_action_rule_draft", { ...rulePayload(eligiblePredicate()), ttl_seconds: 301 }), call("runner.validate_action_draft", {})], say("Save pending?")];
+        await expect(converseActionRuleDraft({ ...resumed(f, async () => rejected.shift()!), askClarification: async () => undefined,
+          onCheckpoint: async value => { checkpoint = value; } })).rejects.toThrow("CANCELLED");
+        expect((checkpoint as typeof f.checkpoint & {source_repair: typeof f.source_repair}).source_repair.original_parent).toEqual(f.parent);
+        f.checkpoint = checkpoint!;
+        const encoded: string[] = [], steps = [call("runner.submit_action_rule_draft"), call("runner.validate_action_draft", {}), say("Structured repair ready; Source review pending.")];
+        const result = await converseActionRuleDraft({ ...resumed(f, async request => { encoded.push(JSON.stringify(request.body)); return steps.shift()!; }),
+          askClarification: async () => "Repair the nominated predicate", onCheckpoint: async value => { checkpoint = value; } });
+        expect(result.compiled.draft.require).toEqual(eligiblePredicate()); expect(result.compiled.draft.ttl_seconds).toBe(f.parent.ttl_seconds);
+        expect((checkpoint as typeof f.checkpoint & {source_repair: typeof f.source_repair}).source_repair.corrections_used).toBe(2);
+        expect(encoded[0]).toContain(canonicalJsonDigest(f.parent)); expect(result.work_unit_source_review?.whole_source_review_pending).toBe(true);
+      });
+      it("refuses an exhausted saved Source repair before any send", async () => {
+        const f = retained(); f.source_repair.corrections_used = 2;
+        const { digest: _digest, ...body } = f.checkpoint; f.checkpoint = { ...body, source_repair: f.source_repair, digest: canonicalJsonDigest({ ...body, source_repair: f.source_repair }) } as ActionRuleAuthoringCheckpoint;
+        const requestJson = vi.fn(); const onCheckpoint = vi.fn(async () => {});
+        await expect(converseActionRuleDraft({ ...resumed(f, requestJson), onCheckpoint })).rejects.toThrow("SOURCE_REPAIR_EXHAUSTED");
+        expect(requestJson).not.toHaveBeenCalled(); expect(onCheckpoint).toHaveBeenCalled();
+      });
+      it.each(["proper", "outside_then_proper"] as const)("confines focused fallback to nominated phases with the same saved allowance: %s", async change => {
+        const f = retained(), calls: string[] = [], encoded: string[] = []; let checkpoint: ActionRuleAuthoringCheckpoint | undefined, rules = 0;
+        const provider = phaseResponder(calls, name => name.endsWith("submit_action_rule_draft") && change === "outside_then_proper" && rules++ === 0
+          ? { ...rulePayload(eligiblePredicate()), ttl_seconds: 301 } : undefined, encoded);
+        const result = await generateModelActionRuleDraft({ ...resumed(f, provider), onCheckpoint: async value => { checkpoint = value; } });
+        expect(calls.every(name => name.endsWith("submit_action_rule_draft"))).toBe(true);
+        expect(calls).toHaveLength(change === "proper" ? 1 : 2);
+        expect(result.compiled.draft.require).toEqual(eligiblePredicate()); expect(result.compiled.draft.ttl_seconds).toBe(f.parent.ttl_seconds);
+        const saved = (checkpoint as typeof f.checkpoint & {source_repair: typeof f.source_repair}).source_repair;
+        expect(saved.original_parent).toEqual(f.parent); expect(saved.correction).toEqual(f.source_repair.correction);
+        expect(saved.corrections_used).toBe(change === "proper" ? 1 : 2); expect(encoded.every(request => request.includes(canonicalJsonDigest(f.parent)))).toBe(true);
+      });
+      it("cannot reset exhaustion by switching to the focused fallback", async () => {
+        const f = retained(); f.source_repair.corrections_used = 2;
+        const { digest: _digest, ...body } = f.checkpoint; f.checkpoint = { ...body, source_repair: f.source_repair, digest: canonicalJsonDigest({ ...body, source_repair: f.source_repair }) } as ActionRuleAuthoringCheckpoint;
+        const provider = vi.fn(); await expect(generateModelActionRuleDraft({ ...resumed(f, provider), onCheckpoint: async () => {} })).rejects.toThrow("SOURCE_REPAIR_EXHAUSTED");
+        expect(provider).not.toHaveBeenCalled();
+      });
+      it("saves a fresh host nomination before generation and refuses dispatch if its save fails", async () => {
+        const f = retained(), provider = vi.fn(), input = resumed(f, provider), onCheckpoint = vi.fn(async (_value: ActionRuleAuthoringCheckpoint) => { throw new Error("BOUNDARY_AUTHORING_RESUME_CHANGED"); });
+        await expect(converseActionRuleDraft({ ...input, checkpoint: undefined, workUnitCorrection: { draft: f.parent, assessment: f.assessment }, onCheckpoint })).rejects.toThrow("BOUNDARY_AUTHORING_RESUME_CHANGED");
+        expect(provider).not.toHaveBeenCalled(); const saved = onCheckpoint.mock.calls[0]![0] as ActionRuleAuthoringCheckpoint & {source_repair: typeof f.source_repair};
+        expect(saved.source_repair).toMatchObject({ original_parent: f.parent, correction: f.source_repair.correction, corrections_used: 1 });
+        console.info("Source repair real producer byte counts", JSON.stringify({ checkpoint_bytes: Buffer.byteLength(JSON.stringify(saved)), source_repair_bytes: Buffer.byteLength(JSON.stringify(saved.source_repair)), maximum_bytes: 96 * 1024 }));
+      });
+      it.each(["baseline", "outcome", "intent"] as const)("refuses a focused repair whose saved producer context changed before dispatch: %s", async change => {
+        const f = retained(), provider = vi.fn(), input = resumed(f, provider);
+        const changed = change === "baseline" ? { ...input, existingDraft: { ...modelDraft(), ttl_seconds: 301 } }
+          : change === "outcome" ? { ...input, expectedOutcome: "billing.another_action" }
+            : { ...input, intent: "A changed operator instruction" };
+        await expect(generateModelActionRuleDraft({ ...changed, onCheckpoint: async () => {} })).rejects.toThrow("ACTION_WORK_UNIT_SOURCE_");
+        expect(provider).not.toHaveBeenCalled();
+      });
+      it("keeps the compact nomination under 96 KiB and rejects oversized parents and arbitrary proof fields", () => {
+        const f = retained(); const { schema_version: _schema, digest: _digest, ...body } = f.checkpoint;
+        const saved = actionRuleAuthoringCheckpoint(body);
+        const sizes = { checkpoint_bytes: Buffer.byteLength(JSON.stringify(saved)), source_repair_bytes: Buffer.byteLength(JSON.stringify(saved.source_repair)), maximum_bytes: 96 * 1024 };
+        expect(sizes.checkpoint_bytes).toBeLessThan(sizes.maximum_bytes);
+        console.info("Source repair fixture byte counts", JSON.stringify(sizes));
+        expect(saved.source_repair).not.toHaveProperty("report"); expect(saved.source_repair).not.toHaveProperty("read"); expect(saved.source_repair).not.toHaveProperty("catalog");
+        expect(() => actionRuleAuthoringCheckpoint({ ...body, source_repair: { ...f.source_repair, raw_reply: "untrusted" } } as unknown as typeof body)).toThrow("CHECKPOINT_INVALID");
+        const parent = structuredClone(f.parent); parent.review.when = "x".repeat(96 * 1024);
+        expect(() => actionRuleAuthoringCheckpoint({ ...body, source_repair: { ...f.source_repair, original_parent: parent,
+          correction: { ...f.source_repair.correction, parent_digest: canonicalJsonDigest(parent) } } })).toThrow("CHECKPOINT_INVALID");
+      });
+      it.each(["missing", "report", "nomination", "answers", "read", "catalog"] as const)("requires actual current host reassessment before a saved repair send: %s", async change => {
+        const f = retained(), requestJson = vi.fn(), input = resumed(f, requestJson);
+        if (change === "missing") Object.assign(input, { revalidateSourceRepair: undefined });
+        if (change === "report") f.assessment.source_review.report.passages[0]!.interpretation += " changed";
+        if (change === "nomination") f.assessment.editable_paths = ["/require"];
+        if (change === "answers") f.sources.operator_messages = ["Current owner answer changed"];
+        if (change === "read") input.readBoundaryDigest = canonicalJsonDigest("Changed current Read");
+        if (change === "catalog") input.builtCatalog.catalog.resources[0]!.fields = [...input.builtCatalog.catalog.resources[0]!.fields].reverse();
+        await expect(converseActionRuleDraft({ ...input, onCheckpoint: async () => {} })).rejects.toThrow("ACTION_WORK_UNIT_SOURCE_");
+        expect(requestJson).not.toHaveBeenCalled();
+      });
+    });
+
     it("rejects a stale retained Source correction before any provider request", async () => {
       const f = fixture(), parent = modelDraft(), requestJson = vi.fn();
       const sourceReview = f.review(parent, "conflict", "/actions/0/require"); sourceReview.report.source_digest = canonicalJsonDigest("earlier Source");

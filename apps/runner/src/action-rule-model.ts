@@ -18,7 +18,7 @@ import type {
 } from "@synapsor/spec";
 import { runRequiredAuthoringToolCall } from "./authoring-tool-call.js";
 import { actionRelationshipTools, inspectActionRelationships, actionRelationshipReviewDetails } from "./action-rule-relationship-review.js";
-import { actionRuleAuthoringCheckpoint, parseActionRuleAuthoringCheckpoint, type ActionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
+import { actionRuleAuthoringCheckpoint, parseActionRuleAuthoringCheckpoint, type ActionRuleAuthoringCheckpoint, type ActionRuleSourceRepairCheckpoint } from "./action-rule-authoring-checkpoint.js";
 import { checkpointPrivateCollectionPrerequisite, checkpointPrivateSourcePrerequisites } from "./action-rule-checkpoint-prerequisite.js";
 import { ACTION_RULE_SOURCE_CONSTRAINT_GUIDANCE } from "./action-rule-source-evidence.js";
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
@@ -251,6 +251,9 @@ export type ModelActionRuleDraftInput = {
   /** Reconstruct this from the existing durable Source review and its exact
    * disabled parent on resume; never invent a new semantic decision here. */
   workUnitCorrection?: { draft: ActionRuleModelDraftV1; assessment: Extract<ActionWorkUnitFidelityAssessment, { state: "representation_mismatch" }> };
+  /** Reconstruct the original prepared report from the real retained Source
+   * episode and current evidence. A checkpoint's own hashes are not proof. */
+  revalidateSourceRepair?: (saved: ActionRuleSourceRepairCheckpoint, context: ActionWorkUnitContext) => Promise<Extract<ActionWorkUnitFidelityAssessment, { state: "representation_mismatch" }>>;
   onCheckpoint?: (checkpoint: ActionRuleAuthoringCheckpoint) => Promise<void>;
   onRelationshipReview?: (lines: string[]) => void;
   /** The enclosing policy review owns the next visible turn once compilation succeeds. */
@@ -305,6 +308,39 @@ function restoredWorkUnitCorrection(input: ModelActionRuleDraftInput, context: A
   const correction = validateActionWorkUnitAssessment(context, draft, assessment).correction;
   if (!correction) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
   return { draft: structuredClone(draft), correction };
+}
+
+async function restoredSourceRepair(input: ModelActionRuleDraftInput, context: ActionWorkUnitContext) {
+  const saved = input.checkpoint ? parseActionRuleAuthoringCheckpoint(input.checkpoint).source_repair : undefined;
+  if (saved) {
+    if (!input.revalidateSourceRepair) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
+    const original = compileActionRuleModelDraft({ ...context, draft: saved.original_parent }).draft;
+    if (canonicalJsonDigest(original) !== saved.correction.parent_digest
+      || original.outcome !== (input.expectedOutcome ?? input.existingDraft?.outcome ?? original.outcome))
+      throw new ActionWorkUnitSourcePendingError("currentness");
+    let assessment: Extract<ActionWorkUnitFidelityAssessment, { state: "representation_mismatch" }>;
+    try { assessment = await input.revalidateSourceRepair(structuredClone(saved), context); }
+    catch (error) { if (error instanceof ActionWorkUnitSourcePendingError) throw error; throw new ActionWorkUnitSourcePendingError("assessment_incomplete"); }
+    const correction = validateActionWorkUnitAssessment(context, original, assessment).correction;
+    if (!correction || canonicalJsonDigest(correction) !== canonicalJsonDigest(saved.correction)
+      || assessment.source_review.report.draft_digest !== saved.prepared_draft_digest
+      || canonicalJsonDigest(assessment.source_review.passage_indexes) !== canonicalJsonDigest(saved.passage_indexes))
+      throw new ActionWorkUnitSourcePendingError("currentness");
+    const supplied = restoredWorkUnitCorrection(input, context);
+    if (supplied && (canonicalJsonDigest(supplied.draft) !== canonicalJsonDigest(original)
+      || canonicalJsonDigest(supplied.correction) !== canonicalJsonDigest(correction))) throw new ActionWorkUnitSourcePendingError("currentness");
+    return { parent: { draft: original, correction }, checkpoint: structuredClone(saved) };
+  }
+  const parent = restoredWorkUnitCorrection(input, context);
+  const assessment = input.workUnitCorrection?.assessment;
+  if (parent && assessment && input.onCheckpoint
+    && canonicalJsonDigest(compileActionRuleModelDraft({ ...context, draft: parent.draft }).draft) !== parent.correction.parent_digest)
+    throw new ActionWorkUnitSourcePendingError("currentness");
+  return { parent, checkpoint: parent && assessment && input.onCheckpoint ? {
+    original_parent: structuredClone(parent.draft), correction: structuredClone(parent.correction),
+    passage_indexes: [...assessment.source_review.passage_indexes], prepared_draft_digest: assessment.source_review.report.draft_digest as `sha256:${string}`,
+    corrections_used: 0,
+  } satisfies ActionRuleSourceRepairCheckpoint : undefined };
 }
 
 /** The model edits disabled components; the compiler establishes structural readiness. */
@@ -428,7 +464,9 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   let inputRepairParent: {draft:ActionRuleModelDraftV1;findings:InputFidelityFinding[]}|undefined;
   let workUnitSourceReview = input.workUnitSourceReview;
   const workUnitContext = (): ActionWorkUnitContext => ({ ...context, policySources: input.session.conversation?.policySources });
-  let workUnitRepairParent = restoredWorkUnitCorrection(input, workUnitContext());
+  const restoredRepair = await restoredSourceRepair(input, workUnitContext());
+  let workUnitRepairParent = restoredRepair.parent;
+  let sourceRepair = restoredRepair.checkpoint;
   let workUnitSourceStatus = pendingActionWorkUnitSourceReview(workUnitContext());
   let checkpointNeedsRevalidation = false;
   let pendingQuestion = savedCheckpoint?.pending_question;
@@ -462,6 +500,10 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
         : parsed.submission;
     }
   }
+  if (sourceRepair) {
+    const original = phaseSubmissionsFromDraft(sourceRepair.original_parent);
+    for (const phase of ACTION_RULE_PHASES) submissions[phase] ??= original[phase];
+  }
   const draftProgressDigest = () => canonicalJsonDigest({ components: submissions,
     relationships: [...reviewedRelationships].sort(), sources: reviewedPrivateSources, versions: reviewedVersionFields, reopened: reopenedDraft ?? null });
   let savedProgressDigest = draftProgressDigest();
@@ -476,6 +518,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       ...(reviewedPrivateSources.length ? { reviewed_private_sources: reviewedPrivateSources } : {}),
       ...(reviewedVersionFields.length ? { reviewed_version_fields: reviewedVersionFields } : {}),
       ...(reopenedDraft ? { reopened_draft: reopenedDraft } : {}),
+      ...(sourceRepair ? { source_repair: sourceRepair } : {}),
     }));
     const next = draftProgressDigest();
     if (next !== savedProgressDigest) { savedProgressDigest = next; draftProgressRevision += 1; }
@@ -786,6 +829,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   let mechanicalResponseRepairs = 0;
   let mechanicalResponseFeedback: string | undefined;
   let continuingDraftInternally = false;
+  let sourceInvocationReserved = false;
   const history: import("./model-ask.js").AskHistoryTurn[] = [];
   const askPendingQuestion = async () => {
     const pending = pendingQuestion!;
@@ -835,6 +879,17 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
           "ASK_GENERATION_CONTEXT_CHANGED", "The exact pending producer input is no longer current. No replacement was sent.", 409);
       operatorMessage = origin.operator_message;
       if (program) program = {...program, resume_revision: origin.program_resume_revision!};
+    }
+    if (sourceRepair && !sourceInvocationReserved) {
+      if (!input.onCheckpoint) throw new Error("ACTION_SOURCE_REPAIR_NOT_SAVED: Preserve the original nomination; no correction was sent.");
+      if (sourceRepair.corrections_used >= MAX_FINAL_COMPILER_REPAIRS) {
+        await saveCheckpoint();
+        throw new Error("ACTION_SOURCE_REPAIR_EXHAUSTED: The two final Source correction invocations are consumed. Preserve the original parent and inspect the current draft; no replacement was sent.");
+      }
+      sourceRepair = { ...sourceRepair, corrections_used: sourceRepair.corrections_used + 1 };
+      await saveCheckpoint();
+      sourceInvocationReserved = true;
+      correctionUsed = true;
     }
     const result = await runAskProviderTurn({
       authoringInput: {consumer: "action_rule_components", operator_message: operatorMessage,
@@ -939,6 +994,10 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
 export async function generateFocusedModelActionRuleDraft(input: ModelActionRuleDraftInput): Promise<ModelActionRuleDraftResult> {
   const intent = boundedText(input.intent, "Action Rule intent", 2_000);
   const originalStatements = actionOperatorStatements(input);
+  const savedCheckpoint = input.checkpoint ? parseActionRuleAuthoringCheckpoint(input.checkpoint) : undefined;
+  if (savedCheckpoint?.source_repair && (savedCheckpoint.intent_digest !== canonicalJsonDigest(intent)
+    || savedCheckpoint.pending_question || savedCheckpoint.reopened_draft))
+    throw new ActionWorkUnitSourcePendingError("currentness"); // Pending owner questions retain the conversational consumer.
   let activeContext: ActionRuleModelPreparedContext = {
     builtCatalog: input.builtCatalog,
     readBoundary: input.readBoundary,
@@ -951,6 +1010,11 @@ export async function generateFocusedModelActionRuleDraft(input: ModelActionRule
         draft: input.existingDraft,
         ...activeContext,
       }).draft;
+  if (savedCheckpoint?.source_repair && savedCheckpoint.context_digest !== canonicalJsonDigest({ catalog: activeContext.builtCatalog.catalog,
+    read: activeContext.readBoundaryDigest, baseline: validatedExistingDraft ?? null,
+    ...(input.expectedOutcome ? { expected_outcome: input.expectedOutcome } : {}),
+    ...(input.operatorStatements ? { operator_statements: originalStatements } : {}) }))
+    throw new ActionWorkUnitSourcePendingError("currentness");
   const existingSubmissions = validatedExistingDraft === undefined
     ? undefined
     : phaseSubmissionsFromDraft(validatedExistingDraft);
@@ -974,9 +1038,48 @@ export async function generateFocusedModelActionRuleDraft(input: ModelActionRule
   let clarificationCount = 0;
   let correctionUsed = false;
   const revisionFocus = modelActionRuleRevisionFocus(intent, existingDraft);
-  const phases: readonly PhaseName[] = revisionFocus ? [revisionFocus] : ACTION_RULE_PHASES;
+  let phases: readonly PhaseName[] = revisionFocus ? [revisionFocus] : ACTION_RULE_PHASES;
   const workUnitContext = (): ActionWorkUnitContext => ({ ...activeContext, policySources: input.session.conversation?.policySources });
-  let workUnitRepairParent = restoredWorkUnitCorrection(input, workUnitContext());
+  const restoredRepair = await restoredSourceRepair(input, workUnitContext());
+  let workUnitRepairParent = restoredRepair.parent;
+  let sourceRepair = restoredRepair.checkpoint;
+  const saveSourceRepair = async () => {
+    if (!sourceRepair) return;
+    if (!input.onCheckpoint) throw new Error("ACTION_SOURCE_REPAIR_NOT_SAVED: Preserve the original nomination; no correction was sent.");
+    const { schema_version: _schema, digest: _digest, ...previous } = savedCheckpoint ?? {};
+    await input.onCheckpoint(actionRuleAuthoringCheckpoint({ ...previous,
+      intent_digest: canonicalJsonDigest(intent), context_digest: canonicalJsonDigest({ catalog: activeContext.builtCatalog.catalog,
+        read: activeContext.readBoundaryDigest, baseline: validatedExistingDraft ?? null,
+        ...(input.expectedOutcome ? { expected_outcome: input.expectedOutcome } : {}),
+        ...(input.operatorStatements ? { operator_statements: originalStatements } : {}) }),
+      components: structuredClone(submissions) as ActionRuleAuthoringCheckpoint["components"], source_repair: sourceRepair,
+    }));
+  };
+  const reserveSourceRepair = async () => {
+    if (!sourceRepair) return;
+    if (sourceRepair.corrections_used >= MAX_FINAL_COMPILER_REPAIRS) {
+      await saveSourceRepair();
+      throw new Error("ACTION_SOURCE_REPAIR_EXHAUSTED: The two final Source correction invocations are consumed. Preserve the original parent and inspect the current draft; no replacement was sent.");
+    }
+    sourceRepair = { ...sourceRepair, corrections_used: sourceRepair.corrections_used + 1 };
+    await saveSourceRepair();
+    correctionUsed = true;
+  };
+  if (sourceRepair) {
+    const original = phaseSubmissionsFromDraft(sourceRepair.original_parent);
+    for (const phase of ACTION_RULE_PHASES) {
+      const saved = savedCheckpoint?.components[phase];
+      const parsed = saved ? parsePhaseSubmission(phase, { ...saved, status: "draft" }) : undefined;
+      if (parsed && parsed.state !== "submitted") throw new Error("ACTION_AUTHORING_CHECKPOINT_INVALID");
+      submissions[phase] = parsed?.state === "submitted" ? parsed.submission : submissions[phase] ?? original[phase];
+    }
+    const nominatedPhases = sourceRepair.correction.editable_paths.map(pointer => {
+      const top = pointer.split("/")[1];
+      return (top === "verification" || top === "effect" || top === "approval" ? top : "rule") as PhaseName;
+    });
+    phases = ACTION_RULE_PHASES.filter(phase => nominatedPhases.includes(phase));
+    await reserveSourceRepair();
+  }
 
   for (const phase of phases) {
     const result = await runPhaseWithClarification({
@@ -1026,6 +1129,7 @@ export async function generateFocusedModelActionRuleDraft(input: ModelActionRule
     usage = mergeUsage(usage, result.usage);
     clarificationCount += result.clarification_count;
     correctionUsed ||= result.correction_used;
+    await saveSourceRepair();
   }
 
   let draft = assembleDraft(submissions);
@@ -1065,6 +1169,7 @@ export async function generateFocusedModelActionRuleDraft(input: ModelActionRule
       const diagnostics = error instanceof ActionWorkUnitFidelityError ? actionWorkUnitFidelityDiagnostics(error)
         : actionRuleDraftDiagnostics(error, { builtCatalog: activeContext.builtCatalog, verification: draft.verification });
       const repairPhase = phaseForDiagnostics(diagnostics);
+      await reserveSourceRepair();
       const repaired = await runPhaseWithClarification({
         phase: repairPhase,
         intent,
@@ -1115,6 +1220,7 @@ export async function generateFocusedModelActionRuleDraft(input: ModelActionRule
       clarificationCount += repaired.clarification_count;
       correctionUsed = true;
       draft = assembleDraft(submissions);
+      await saveSourceRepair();
     }
   }
   if (!compiled) throw lastCompileError;
@@ -1691,7 +1797,7 @@ async function runFocusedPhase(input: {
     `Current work-unit contract: ${JSON.stringify(buildActionAuthoringWorkUnitContract({ builtCatalog: input.input.builtCatalog,
       readBoundary: input.input.readBoundary, readBoundaryDigest: input.input.readBoundaryDigest,
       policySources: input.input.session.conversation?.policySources, intent: input.intent, expectedOutcome: input.input.expectedOutcome,
-      correction: restoredWorkUnitCorrection(input.input, { builtCatalog: input.input.builtCatalog, readBoundary: input.input.readBoundary,
+      correction: input.input.checkpoint?.source_repair?.correction ?? restoredWorkUnitCorrection(input.input, { builtCatalog: input.input.builtCatalog, readBoundary: input.input.readBoundary,
         readBoundaryDigest: input.input.readBoundaryDigest, policySources: input.input.session.conversation?.policySources })?.correction,
       components: { verification: input.submissions.verification as VerificationSubmission | undefined, effect: input.submissions.effect as EffectSubmission | undefined },
       ...(ACTION_RULE_PHASES.every(phase => input.submissions[phase]) ? { draft: assembleDraft(input.submissions) } : {}),

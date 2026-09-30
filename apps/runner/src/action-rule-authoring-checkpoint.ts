@@ -1,5 +1,17 @@
 import type { AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import type { ActionRuleModelDraftV1 } from "./action-rule-draft.js";
+import type { ActionWorkUnitCorrection } from "./action-authoring-work-unit-contract.js";
+
+/** A nomination reference, never a stored semantic verdict. The original report
+ * must be reconstructed and canonically revalidated by the host on reopen. */
+export type ActionRuleSourceRepairCheckpoint = {
+  original_parent: ActionRuleModelDraftV1;
+  correction: ActionWorkUnitCorrection;
+  passage_indexes: number[];
+  prepared_draft_digest: `sha256:${string}`;
+  corrections_used: number;
+};
 
 export type ReviewedPrivateActionSource = {
   resource: string;
@@ -48,6 +60,7 @@ export type ActionRuleAuthoringCheckpoint = {
   reviewed_private_sources?: ReviewedPrivateActionSource[];
   reviewed_version_fields?: ReviewedActionVersionField[];
   reopened_draft?: { outcome: string; digest: `sha256:${string}`; covered_intent_indexes: number[] };
+  source_repair?: ActionRuleSourceRepairCheckpoint;
   digest: `sha256:${string}`;
 };
 
@@ -63,7 +76,7 @@ export function parseActionRuleAuthoringCheckpoint(value: unknown): ActionRuleAu
   if (!value || typeof value !== "object" || Array.isArray(value)) throw fail();
   const record = value as Record<string, unknown>;
   if (record.schema_version !== "synapsor.action-authoring-checkpoint.v1"
-    || Object.keys(record).some((key) => !["schema_version", "intent_digest", "context_digest", "components", "operator_messages", "pending_question", "reviewed_relationships", "reviewed_private_sources", "reviewed_version_fields", "reopened_draft", "digest"].includes(key))
+    || Object.keys(record).some((key) => !["schema_version", "intent_digest", "context_digest", "components", "operator_messages", "pending_question", "reviewed_relationships", "reviewed_private_sources", "reviewed_version_fields", "reopened_draft", "source_repair", "digest"].includes(key))
     || ![record.intent_digest, record.context_digest, record.digest].every((digest) => typeof digest === "string" && /^sha256:[a-f0-9]{64}$/u.test(digest))
     || !record.components || typeof record.components !== "object" || Array.isArray(record.components)) throw fail();
   if (record.operator_messages !== undefined && (!Array.isArray(record.operator_messages)
@@ -119,6 +132,30 @@ export function parseActionRuleAuthoringCheckpoint(value: unknown): ActionRuleAu
   }
   if (record.reviewed_version_fields !== undefined) {
     parseReviewedActionVersionFields(record.reviewed_version_fields);
+  }
+  if (record.source_repair !== undefined) {
+    const repair = record.source_repair as ActionRuleSourceRepairCheckpoint;
+    const object = (v: unknown): v is Record<string, unknown> => !!v && typeof v === "object" && !Array.isArray(v);
+    const digest = (v: unknown) => typeof v === "string" && /^sha256:[a-f0-9]{64}$/u.test(v);
+    const exact = (v: Record<string, unknown>, keys: string[]) => Object.keys(v).every(k => keys.includes(k));
+    if (!object(repair) || !exact(repair, ["original_parent", "correction", "passage_indexes", "prepared_draft_digest", "corrections_used"])
+      || !object(repair.original_parent) || !object(repair.correction) || !digest(repair.prepared_draft_digest)
+      || !Number.isSafeInteger(repair.corrections_used) || repair.corrections_used < 0 || repair.corrections_used > 2
+      || !Array.isArray(repair.passage_indexes) || !repair.passage_indexes.length || repair.passage_indexes.length > 120
+      || new Set(repair.passage_indexes).size !== repair.passage_indexes.length
+      || repair.passage_indexes.some(i => !Number.isSafeInteger(i) || i < 0 || i > 119)) throw fail();
+    const c = repair.correction;
+    if (!exact(c, ["source_digest", "read_digest", "catalog_digest", "parent_digest", "outcome", "source_answer_history_digest", "interpretation_digest", "source_ranges", "component", "editable_paths"])
+      || ![c.read_digest, c.catalog_digest, c.parent_digest, c.source_answer_history_digest, c.interpretation_digest].every(digest)
+      || typeof c.source_digest !== "string" || !c.source_digest.trim() || c.source_digest.length > 256
+      || typeof c.outcome !== "string" || !c.outcome.trim() || c.outcome.length > 256 || c.outcome !== repair.original_parent.outcome
+      || canonicalJsonDigest(repair.original_parent) !== c.parent_digest || !["subject", "predicate", "private_role"].includes(c.component)
+      || !Array.isArray(c.editable_paths) || !c.editable_paths.length || c.editable_paths.length > 32
+      || new Set(c.editable_paths).size !== c.editable_paths.length
+      || c.editable_paths.some(p => typeof p !== "string" || !p.startsWith("/") || p.length > 1_000)
+      || !Array.isArray(c.source_ranges) || !c.source_ranges.length || c.source_ranges.length > 120
+      || c.source_ranges.some(r => !object(r) || !exact(r, ["start", "end"]) || !Number.isSafeInteger(r.start)
+        || !Number.isSafeInteger(r.end) || r.start < 1 || r.end < r.start)) throw fail();
   }
   if (Buffer.byteLength(JSON.stringify(record), "utf8") > 96 * 1024) throw fail();
   const { digest, ...core } = record;
