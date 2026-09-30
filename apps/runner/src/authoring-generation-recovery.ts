@@ -83,7 +83,11 @@ export type AuthoringGenerationHost = {
   allowRetries?(): boolean;
   progress?(message: string): void;
 };
-type Frame = { host?: AuthoringGenerationHost; owned: Set<string>; active: boolean };
+type CompletedTurnOperation = { id: string; request_digest: `sha256:${string}`; context_digest: `sha256:${string}`; attempt_id: string };
+type Frame = { host?: AuthoringGenerationHost; owned: Set<string>; active: boolean;
+  /** Ephemeral associations minted from real response identities only after a
+   * decoder/callback turn completes. Never loaded from a saved checkpoint. */
+  completedTurns: Map<string, CompletedTurnOperation[]> };
 const storage = new AsyncLocalStorage<Frame>();
 const resultOperations = new WeakMap<ProviderHttpResult, string>();
 const manualReplacementStops = new WeakSet<object>();
@@ -106,7 +110,7 @@ export function withAuthoringGenerationRecovery<T>(run: () => T, inheritComplete
   const owned = new Set(inheritCompletedOperations && parent && !parent.active
     ? (parent.host?.read()?.operations ?? []).filter(op => parent.owned.has(op.id)
       && ["handled","checkpointed","refused"].includes(op.state)).map(op => op.id) : []);
-  return storage.run({owned, active: false}, run);
+  return storage.run({owned, active: false, completedTurns: new Map()}, run);
 }
 export function configureAuthoringGenerationRecovery(host: AuthoringGenerationHost): void {
   const frame = storage.getStore();
@@ -273,8 +277,18 @@ export function authoringQuestionCompletion(results: readonly ProviderHttpResult
   if (!last || !op || !frame!.owned.has(op.id) || op.state !== "handled" && op.state !== "checkpointed") {
     throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The completed question has no current local consumer association.", 409);
   }
-  return {operation_id: op.id, request_digest: op.request_digest, context_digest: op.context_digest,
+  const completion = {operation_id: op.id, request_digest: op.request_digest, context_digest: op.context_digest,
     response_digest: canonicalJsonDigest(last.body)};
+  const completed = results.map(result => {
+    const id = resultOperations.get(result), sibling = host.read()?.operations.find(item => item.id === id);
+    if (!sibling || !frame!.owned.has(sibling.id) || !["handled", "checkpointed", "refused"].includes(sibling.state)
+      || sibling.attempts.at(-1)?.outcome !== "response") throw new AskError(
+        "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The completed turn has an unacknowledged consumer. No historical operation was acknowledged.", 409);
+    return {id: sibling.id, request_digest: sibling.request_digest, context_digest: sibling.context_digest,
+      attempt_id: sibling.attempts.at(-1)!.id};
+  });
+  frame!.completedTurns.set(canonicalJsonDigest(completion), completed);
+  return completion;
 }
 
 /** Prepare one exact question handoff for the SAME coordinated resume write as
@@ -288,6 +302,16 @@ export function authoringQuestionCheckpoint(state: AuthoringTransportState | und
   const copy = structuredClone(state), op = copy.operations.find(item => item.id === completion.operation_id);
   if (!op || !["handled", "checkpointed"].includes(op.state) || op.request_digest !== completion.request_digest
     || op.context_digest !== completion.context_digest || op.attempts.at(-1)?.outcome !== "response") throw invalid();
+  // The final question may follow successfully handled tools in the SAME turn.
+  // Bind their known consumption to this atomic checkpoint, not to a later
+  // generic save that could also promote unrelated/historical handled output.
+  for (const ref of frame.completedTurns.get(canonicalJsonDigest(completion)) ?? []) {
+    const sibling = copy.operations.find(item => item.id === ref.id);
+    if (!sibling || !frame.owned.has(sibling.id) || sibling.request_digest !== ref.request_digest
+      || sibling.context_digest !== ref.context_digest || sibling.attempts.at(-1)?.id !== ref.attempt_id
+      || sibling.attempts.at(-1)?.outcome !== "response" || !["handled", "checkpointed", "refused"].includes(sibling.state)) throw invalid();
+    if (sibling.state === "handled") { sibling.state = "checkpointed"; sibling.checkpoint_seen = true; }
+  }
   op.question_handoff = {consumer: "action_rule_clarification", question: checkpoint.pending_question.question, checkpoint_digest: checkpoint.digest,
     question_digest: canonicalJsonDigest(checkpoint.pending_question.question), response_digest: completion.response_digest,
     recorded_at: new Date().toISOString()};

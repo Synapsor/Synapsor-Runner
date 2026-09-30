@@ -5,7 +5,7 @@ import type { AddressInfo } from "node:net";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { AskError, completedAuthoringQuestion, askToolSurfaceDigest, resolveAskProviderConfiguration, runAskProviderTurn, secureAskJsonRequest,
-  type ProviderHttpInput, type ProviderHttpResult } from "./model-ask.js";
+  type ProviderHttpInput, type ProviderHttpResult, type AskToolCallResult } from "./model-ask.js";
 import { authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, assertAuthoringQuestionHandoff, authoringGenerationCurrentnessCode, authoringGenerationHandled, authoringTransportCheckpoint, configureAuthoringGenerationRecovery,
   recoverAuthoringGeneration, prepareAuthoringManualRecovery, permitAuthoringManualRecovery,
   validateAuthoringTransportState, withAuthoringGenerationRecovery,
@@ -20,6 +20,15 @@ async function fixture(mode: string) {
     const chunks: Buffer[] = []; for await (const c of req) chunks.push(Buffer.from(c));
     bodies.push(Buffer.concat(chunks).toString()); sends++;
     if ((["B-success", "B-credit"].includes(mode) || mode.startsWith("B-refusal-")) && sends === 1 || mode === "B-always") { req.socket.destroy(); return; }
+    if (mode === "B-tool-question" && sends === 1) { req.socket.destroy(); return; }
+    if (mode === "tool-question" && sends === 1 || mode === "B-tool-question" && sends === 2) {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({status: "completed", output: [{type: "function_call", call_id: "DERIVED-call", name: "runner__inspect", arguments: "{}"}]})); return;
+    }
+    if (mode === "tool-question" && sends === 2 || mode === "B-tool-question" && sends === 3) {
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({status: "completed", output: [{type: "message", role: "assistant", content: [{type: "output_text", text: "Which role reviews exceptions?"}]}]})); return;
+    }
     if (mode.startsWith("B-refusal-")) mode = mode.slice("B-refusal-".length);
     if (mode === "B-credit") {res.writeHead(402); res.end('{"error":"DERIVED credit refusal"}'); return;}
     if (mode === "headers") { res.writeHead(200, {"content-type":"text/event-stream"}); res.flushHeaders(); setTimeout(() => res.destroy(),10); return; }
@@ -587,6 +596,73 @@ describe("saved authoring generation transport recovery",()=>{
 
 
 describe("B33 exact completed consumer handoff", () => {
+  async function toolQuestion(endpoint: URL, callback: () => Promise<AskToolCallResult>) {
+    const tools = [{name: "runner.inspect", description: "DERIVED", input_schema: {type: "object", properties: {}, additionalProperties: false}}];
+    const authorityDigest = askToolSurfaceDigest(tools);
+    const configuration = resolveAskProviderConfiguration({provider: "openai", model: "DERIVED", api_key: "DERIVED-key",
+      authority_digest: authorityDigest, egress_acknowledged: true}, {}, new Date());
+    const result = await runAskProviderTurn({configuration, question: "DERIVED", history: [], tools, authorityDigest,
+      signal: new AbortController().signal, gateway: {mode: "authoring", listTools: () => tools, close: async () => {}, callTool: callback},
+      dependencies: {requestJson: r => secureAskJsonRequest({...r, endpoint, scope: "custom_loopback", headers: {}})}});
+    const completion = completedAuthoringQuestion(result)!;
+    return {digest: canonicalJsonDigest({completion, question: result.answer}), pending_question: {question: result.answer, completion}};
+  }
+  it("a recovered tool and question from one completed turn remain resumable after the saved answer", async () => {
+    const f = await fixture("B-tool-question"), m = memory(f.endpoint, 0); let callbacks = 0;
+    const call = () => toolQuestion(f.endpoint, async () => { callbacks++; return {ok: true, value: {status: "clarification"}}; });
+    await expect(enter(m, call)).rejects.toMatchObject({code: "ASK_GENERATION_OUTCOME_UNKNOWN"});
+    await enter(m, async () => { await permitAuthoringManualRecovery(await prepareAuthoringManualRecovery(canonicalJsonDigest("saved B"))); });
+    const cp = await enter(m, async () => {
+      const cp = await call();
+      m.set(authoringTransportCheckpoint(authoringQuestionCheckpoint(m.read(), cp))!);
+      return cp;
+    });
+    expect(f.sends()).toBe(3); expect(callbacks).toBe(1); expect(f.bodies[1]).toBe(f.bodies[0]);
+    const original = m.read().operations[0]!;
+    expect(original.attempts.map(a => a.outcome)).toEqual(["B", "response"]);
+    expect(original.manual_recovery?.status).toBe("admitted");
+    await enter(m, async () => {
+      assertAuthoringQuestionHandoff(m.read(), cp);
+      const next = {digest: canonicalJsonDigest("answered current question"), operator_messages: ["One scoped reviewer."]};
+      m.set(authoringQuestionAnswerCheckpoint(m.read(), cp, next)!);
+      await expect(recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest)).resolves.toMatchObject({status: 200});
+    });
+    expect(f.sends()).toBe(4); expect(callbacks).toBe(1);
+    expect(m.read().operations[0]!.state).toBe("checkpointed");
+  });
+  it("the same-turn question acknowledgement excludes an unrelated earlier handled response", async () => {
+    const prior = await fixture("narration"), f = await fixture("tool-question"), m = memory(f.endpoint, 0); let callbacks = 0;
+    await enter(m, async () => {
+      await completedQuestion(m, prior.endpoint); // No committed handoff for this separate turn.
+      const cp = await toolQuestion(f.endpoint, async () => { callbacks++; return {ok: true, value: {status: "inspected"}}; });
+      m.set(authoringTransportCheckpoint(authoringQuestionCheckpoint(m.read(), cp))!);
+      expect(m.read().operations.map(op => op.state)).toEqual(["handled", "checkpointed", "checkpointed"]);
+    });
+    await expect(enter(m, () => recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest)))
+      .rejects.toMatchObject({code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"});
+    expect(prior.sends()).toBe(1); expect(f.sends()).toBe(2); expect(callbacks).toBe(1);
+  });
+  it("a failed tool consumer cannot mint a same-turn question acknowledgement", async () => {
+    const f = await fixture("tool-question"), m = memory(f.endpoint, 0);
+    await expect(enter(m, () => toolQuestion(f.endpoint, async () => { throw new Error("DERIVED uncertain callback acknowledgement"); })))
+      .rejects.toMatchObject({code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"});
+    expect(m.read().operations[0]!.state).toBe("partial");
+    await expect(enter(m, () => recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest)))
+      .rejects.toMatchObject({code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"});
+    expect(f.sends()).toBe(1);
+  });
+  it("same-turn checkpoint refuses a changed sibling and cannot reload its private association", async () => {
+    const f = await fixture("tool-question"), m = memory(f.endpoint, 0); let cp: Awaited<ReturnType<typeof toolQuestion>>;
+    await enter(m, async () => {
+      cp = await toolQuestion(f.endpoint, async () => ({ok: true, value: {status: "inspected"}}));
+      const changed = structuredClone(m.read()); changed.operations[0]!.request_digest = canonicalJsonDigest("competing request");
+      expect(() => authoringQuestionCheckpoint(changed, cp)).toThrow("RESUME_INVALID");
+      expect(m.read().operations.every(op => op.state === "handled")).toBe(true);
+    });
+    await expect(enter(m, async () => authoringQuestionCheckpoint(m.read(), cp!)))
+      .rejects.toMatchObject({code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"});
+    expect(m.read().operations.every(op => op.state === "handled")).toBe(true); expect(f.sends()).toBe(2);
+  });
   async function completedQuestion(m: ReturnType<typeof memory>, endpoint: URL, provider: "openai"|"openrouter" = "openai") {
     const tools = [{name:"runner.inspect",description:"DERIVED",input_schema:{type:"object",properties:{},additionalProperties:false}}];
     const authorityDigest = askToolSurfaceDigest(tools);
