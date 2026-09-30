@@ -85,7 +85,8 @@ it.skipIf(process.env.SYNAPSOR_TEST_DERIVED_FIFTY_REAL_PG !== "1")("authors the 
   const menus: any[] = [], exchanges: any[] = [], reports: any[] = [], wire: any[] = [], notices: any[] = [], dependencyFailures: any[] = [];
   const phases = new Map<string, number>(); let privateReviewed = false, versionReviewed = false;
   const textDescriptors = descriptors.filter(d => ["mark_ready", "defer_item"].includes(d.shape));
-  let answers: Array<string | undefined> = [`/attach ${sourceFile}`, job, textDescriptors.map(d => d.position).join(","), "reason", "1..64", textDescriptors.map(d => d.sourceLine).join(",")];
+  const textSourceRange = `${textDescriptors[0]!.sourceLine}-${textDescriptors.at(-1)!.sourceLine}`;
+  let answers: Array<string | undefined> = [`/attach ${sourceFile}`, job, textDescriptors.map(d => d.position).join(","), "reason", "1..64", textSourceRange];
   const observations = new Map<number, Buffer>(); let pausedAtTwenty = false;
   const write = (s: string) => {
     transcript += s;
