@@ -1,3 +1,17 @@
+# Final result: J stopped; sealed and independently verified
+
+See [J-CONTINUATION-20260929.md](J-CONTINUATION-20260929.md) and its hash-bound evidence index. Forward F is accepted at its stated scope; the one real J saved eleven unreviewed drafts and partial12, then stopped at an uncertain transport with no current-job retry opt-in. Cold restore and Main verification completed. No full50 publication or paid retry is claimed. The older preparation statuses below are historical.
+
+---
+
+# Current result: scope received; same-state continuation accepted
+
+See [J-CONTINUATION-20260929.md](J-CONTINUATION-20260929.md) for the additive current record. The direct owner scope, actual signatures and versioned no-egress adapter correction are established. The same one full50 J is continuing on unchanged candidate2; its live outcome is separate.
+
+The preparation/checkpoint statuses below retain their historical scope.
+
+---
+
 # Current result: technical readiness accepted, paid scope pending
 
 The exact current result and identities are in [J-READINESS-CHECKPOINT-20260929.md](J-READINESS-CHECKPOINT-20260929.md). The corrected123 packet passed independent264 technical verification; the once-only profile binding passed exhaustive Main/Tester ledger comparison. Paid J remains NOT RUN because the tester withheld its launch signature under its direct-human readiness-only scope. Main requested direct owner communication to that chat; no product/model/funding failure is inferred.

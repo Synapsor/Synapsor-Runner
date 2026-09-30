@@ -1,0 +1,217 @@
+{
+  "utc": "2026-09-30T00:21:30.183591+00:00",
+  "scope": "Additive report-only closure; raw private captures remain outside Git; no product refreeze",
+  "candidate_source_tests": "be24e91aeceb8d48e42e719feb8132f323391ed3",
+  "tree_sha256": "4b32bafc61a2484dabc0519bcc5846db7bbad62e1874109f0cbc91ac65606af8",
+  "verdicts": {
+    "F": "independent PASS at F220 scope plus measured real question restart",
+    "L": "NOT ESTABLISHED; old history fenced",
+    "J": "ATTEMPTED / NOT PASSED; uncertain transport with absent product retry opt-in",
+    "preservation": "full logical/final cold restore verified; two CONTROL baseline windows distinguished",
+    "candidate3": "unused"
+  },
+  "members": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/OWNER-FORWARD-INDEPENDENT-AMENDMENT.txt",
+      "bytes": 22079,
+      "sha256": "b38ebea1455ff9e47532c27ed093e78943e4eab8ab596f6c4a5d0a6a7917c5b3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/OWNER-CANDIDATE3-AMENDMENT-060.txt",
+      "bytes": 14417,
+      "sha256": "6c089bac914a4f1dad4d8c66de0a288ad2e2933d447d857afac73aecfbbe65a9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/candidate2/freeze-plan/installed-artifact-manifest.json",
+      "bytes": 1630761,
+      "sha256": "7954639bb0d9fa7801b1850df68171b107945ff0f047c977c316e072f4a4018a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/candidate2/freeze-plan/installed-artifact.tar.gz",
+      "bytes": 62082137,
+      "sha256": "1679e84ae0631405ddc76f93a2603a442960233f538a416e56cbca7d9a7366bd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/candidate2/GATE-EVIDENCE-INDEX-068.json",
+      "bytes": 12898,
+      "sha256": "09479900a1357993aaeb6240e7aeeb7c3ac05516f0e90823436e2f62a94ae922"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b33-pre-freeze-20260929/forward-amendment-203/installed-f2-211/REVIEW-220.md",
+      "bytes": 6746,
+      "sha256": "704374916c501fa4dcdd35f56f7ca8cb526c352096c8058c95fcc73ea15b04c7"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b33-pre-freeze-20260929/forward-amendment-203/installed-f2-211/EVIDENCE-INDEX-220.json",
+      "bytes": 68462,
+      "sha256": "834190ad6e1842383cbb5654908f48f8dd4dfd85f0b71fed88b2223d3656289d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b33-pre-freeze-20260929/forward-amendment-203/j-clean-start-057/REVIEW-298.md",
+      "bytes": 9868,
+      "sha256": "5c381df0d8b4bd921a87f881b31bacdf137d129abb0324ba486d145b7d7afad9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b33-pre-freeze-20260929/forward-amendment-203/j-clean-start-057/EVIDENCE-INDEX-FINAL-297.json",
+      "bytes": 426995,
+      "sha256": "ee4a0861d1b8265769e2e9f76d679d736c378b4de1c6f8bd18337a3cf116cfce"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b33-pre-freeze-20260929/forward-amendment-203/j-clean-start-057/EVIDENCE-INDEX-QUESTION-RESTART-283.json",
+      "bytes": 7115,
+      "sha256": "d2a324453c16a9eac4c8b34c305a22562d9e8a2f81f91790dff5172faecfd70b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/clean-successor-058/JOINT-RESUME-PREFLIGHT-139.json",
+      "bytes": 86009,
+      "sha256": "3cfd72d9ed82f6dc73c3829e4945524295fa531538055b2c840caf9b75d4de61"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/clean-successor-058/MAIN-ACTUAL-QUESTION-RESTART-VERIFY-142.json",
+      "bytes": 9498,
+      "sha256": "a0dea23439d9c9ddf0a08d046e416cb0922acbc7395755eb82b8725313b0f2c8"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/clean-successor-058/MAIN-TRANSPORT-STOP-144.json",
+      "bytes": 4878,
+      "sha256": "a1175b53b5d52d656eaa8caa8cf0a32b74ed48a08d0721d93bbe39489f8fcd60"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/clean-successor-058/MAIN-STOP-CALLSITE-LOCATIONS-144A.json",
+      "bytes": 750,
+      "sha256": "08cee7bfd6ac5c548beb990e2b9c0786296c65aa7fc784e269fd08afeb5f4366"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/clean-successor-058/MAIN-CLOSE-ARTIFACT-VERIFY-145.json",
+      "bytes": 3352,
+      "sha256": "900922208c1cdec1afe9061f2739c6f783e2fb6a735b3108c4eccf9bedc62a06"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/clean-successor-058/MAIN-CLOSE-STATE-VERIFY-147V2.json",
+      "bytes": 67334,
+      "sha256": "e2f0b3146d915c2aaf3f65d22fb3528492ef3e698774c40ae0fde0286fe9f568"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/clean-successor-058/CONTROL-LOGICAL-DELTA-147V2.json",
+      "bytes": 2137831,
+      "sha256": "187a65ddcb46e1b6e320d1acf92e8a4a68ec6c73576bbc03c0814e264784ac01"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/clean-successor-058/MAIN-FINAL-INDEX-VERIFY-148.json",
+      "bytes": 812,
+      "sha256": "f14e27864bc175d98710e90eed0c9e53066be5fa1372565091cc5d073f481f83"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/clean-successor-058/MAIN-FINAL-FINANCIAL-149.json",
+      "bytes": 2153,
+      "sha256": "c7059ef614a3ec05418e270adbac12e2a0f1917a1fedfff03150dc119812cd38"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/clean-successor-058/MAIN-FINAL-INDEPENDENT-VERIFY-150.json",
+      "bytes": 2396,
+      "sha256": "0a30ebc488f5b918e2dca1e209110304dbe1a0884ccbba1d5397d2152b46fcdd"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/clean-successor-058/MAIN-CLEANUP-VERIFY-151.json",
+      "bytes": 1189,
+      "sha256": "fe9cbd950688ad96a4bca248496af931c8560c2820130b68ccf977a126dd1922"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/clean-successor-058/TRANSPORT-STOP-LEDGER-144.json",
+      "bytes": 1666079,
+      "sha256": "0c27f9873d9a6b93f8210bbfa88e9ae8f889aff10001875d7ed6d29a255df7e6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b33-pre-freeze-20260929/forward-amendment-203/j-clean-start-057/captures/FINAL-STATE-SEAL-288.json",
+      "bytes": 16102,
+      "sha256": "042d6977ea1b402fd444a7c7233f81475e114370cebfcffed27193d2e3680fa2"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b33-pre-freeze-20260929/forward-amendment-203/j-clean-start-057/captures/PROJECT-HOME-FINAL-288.tgz",
+      "bytes": 178289,
+      "sha256": "4bdae32dc664d96cb203c8c7f00751aa6f5d5c867a52af78ddad932d74f3f362"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b33-pre-freeze-20260929/forward-amendment-203/j-clean-start-057/captures/PROJECT-HOME-FINAL-INVENTORY-288.json",
+      "bytes": 5822,
+      "sha256": "1ecf2efaec7296608853592c31fe2c2a44ff0a9705d6ee045cacb08f8dcbe1da"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b33-pre-freeze-20260929/forward-amendment-203/j-clean-start-057/captures/CONTROL-FINAL-288.json",
+      "bytes": 1688333,
+      "sha256": "834c872269bcf217c5679073db31d8c0a3c6168b0be4870f342216fb6aaa7c78"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b33-pre-freeze-20260929/forward-amendment-203/j-clean-start-057/captures/SOURCE-FINAL-288.dump",
+      "bytes": 49485,
+      "sha256": "9a0952ccaa7a16c582307a45e770dbfda8fdec47699617a57f56ece79ffdc9c0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b33-pre-freeze-20260929/forward-amendment-203/j-clean-start-057/captures/SOURCE-FINAL-288.json",
+      "bytes": 231393,
+      "sha256": "f0a4960d3ea02b157a2eb6d696df2acc9954d49a7d441b8121b3267bde0663de"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b33-pre-freeze-20260929/forward-amendment-203/j-clean-start-057/captures/SOURCE-ACL-FINAL-288.json",
+      "bytes": 53010,
+      "sha256": "8c61b4ce938c44ef190961c193d42d3a6ed0746521560df13df251e6fa67e57a"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b33-pre-freeze-20260929/forward-amendment-203/j-clean-start-057/captures/ROLES-NO-PASSWORD-288.sql",
+      "bytes": 794,
+      "sha256": "e34582c39958545c26dfb7ee51c12ecab406c8cc8198e318104fa4d9cc161684"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b33-pre-freeze-20260929/forward-amendment-203/j-clean-start-057/captures/COLD-RESTORE-VERIFY-290.json",
+      "bytes": 17148,
+      "sha256": "4362f91b3f0a63c3826e4e4968bc5a5a66abba5019ce40a9952851e7a0bcad42"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b33-pre-freeze-20260929/forward-amendment-203/j-clean-start-057/captures/PRESERVATION-DIFFERENCES-291.json",
+      "bytes": 873,
+      "sha256": "e1fb7021afa99d2235e67217ac351952d2ab9428f4d02ccc7949279d9b5b9ccf"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b33-pre-freeze-20260929/forward-amendment-203/j-clean-start-057/captures/FINAL-ARTIFACT-DRAFT-REVIEW-293.json",
+      "bytes": 37363,
+      "sha256": "fbb039c8b89518bc4ea416c77cb83ced450097f83b466ea3978c4ff73c4e5969"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b33-pre-freeze-20260929/forward-amendment-203/j-clean-start-057/captures/MANAGEMENT-AUTHORITY-BASELINE-296.json",
+      "bytes": 5571,
+      "sha256": "4a27abd6bfbc3757c2815128f63b1d3e47041c9e865e5469ee6a10dd2d661c16"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b33-pre-freeze-20260929/forward-amendment-203/j-clean-start-057/captures/CLEANUP-294.json",
+      "bytes": 1833,
+      "sha256": "837bfdc70906b22b2c5cca0bdb2866cc9cc6e025d2ec6244de1bd89697d2ec65"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b33-pre-freeze-20260929/forward-amendment-203/j-clean-start-057/captures/STAGE-CALL-COST-TIME-287.json",
+      "bytes": 33098,
+      "sha256": "4c7411a0dbecca407e40c0b86b1491f333db819918f218783070ab71de547932"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b33-pre-freeze-20260929/forward-amendment-203/j-clean-start-057/captures/LEDGER-AFTER-TRANSPORT-FAILURE-287.json",
+      "bytes": 1666079,
+      "sha256": "0c27f9873d9a6b93f8210bbfa88e9ae8f889aff10001875d7ed6d29a255df7e6"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/clean-successor-058/EXECUTABLE-DEPENDENCY-CLOSURE-138.json",
+      "bytes": 16283,
+      "sha256": "855033c261163b824d49d11b48e1de449adb5b69452d07e1cbf45788f37f984b"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/clean-successor-058/resume-launcher-137.mjs",
+      "bytes": 14307,
+      "sha256": "612e1096e35eda7477a721b437c70e045552f250796ab36857baaa87e5badeef"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/candidate2/MAIN-INDEPENDENT-F-VERIFY-082.json",
+      "bytes": 5889,
+      "sha256": "554f42dd54f8de6fc2ac1e4d00b02c7251e1ae71b4c0b2abdd8506e394f11a1c"
+    }
+  ],
+  "main_provider_inference": 0,
+  "historical_reports_unchanged": true
+}
