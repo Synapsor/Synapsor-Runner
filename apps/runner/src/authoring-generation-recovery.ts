@@ -351,6 +351,9 @@ export async function authoringGenerationFailed(results: readonly ProviderHttpRe
 function pureLocalGeneration(input: ProviderHttpInput): boolean {
   const b = input.body;
   if (["background","conversation","previous_response_id","webhook","webhooks"].some(k => k in b)) return false;
+  // Explicit provider-hosted storage is outside this local replacement
+  // contract, including chat routes where storage is otherwise optional.
+  if (b.store === true) return false;
   if ((input.stream?.format === "openai_responses" || /\/responses\/?$/u.test(input.endpoint.pathname)) && b.store !== false) return false;
   if (!Array.isArray(b.tools) && b.tools !== undefined) return false;
   return (b.tools as Record<string, unknown>[] | undefined ?? []).every(t => input.stream?.format === "anthropic"

@@ -137,12 +137,16 @@ describe("saved authoring generation transport recovery",()=>{
       .rejects.toMatchObject({code: "ASK_GENERATION_MANUAL_RECOVERY_UNAVAILABLE"});
     expect(m.read()).toEqual(stopped); expect(f.sends()).toBe(1);
   });
-  it.each(["missing", "background", "conversation", "remote_tool", "stored_responses"])("manual eligibility does not invent proof for %s", async mode => {
+  it.each(["missing", "background", "conversation", "remote_tool", "stored_responses", "stored_chat"])("manual eligibility does not invent proof for %s", async mode => {
     const f = await fixture("B-success"), m = memory(f.endpoint, 0), request = input(f.endpoint);
     if (mode === "background") request.body.background = true;
     if (mode === "conversation") request.body.conversation = "remote-shared-state";
     if (mode === "remote_tool") request.body.tools = [{type: "web_search_preview"}];
     if (mode === "stored_responses") delete request.body.store;
+    if (mode === "stored_chat") {
+      request.endpoint = new URL("/v1/chat/completions", f.endpoint);
+      request.stream = {format: "openai_chat"}; request.body.store = true;
+    }
     await expect(enter(m, () => recoverAuthoringGeneration(request, secureAskJsonRequest)))
       .rejects.toMatchObject({code: "ASK_GENERATION_OUTCOME_UNKNOWN"});
     if (mode === "missing") delete m.read().operations[0]!.attempts[0]!.no_response_boundary;
