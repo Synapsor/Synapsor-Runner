@@ -567,6 +567,22 @@ describe("Boundary authoring resume state", () => {
     })).toThrow("BOUNDARY_AUTHORING_RESUME_TRUSTED_IDENTITY_BLOCKED");
   });
 
+  it("retains bounded B35 producer origin without exempting it from saved-state privacy checks", () => {
+    const generationRecovery = {version: 1 as const, operations: [{id: "11111111-1111-4111-8111-111111111111",
+      request_digest: canonicalJsonDigest("encoded request"), context_digest: canonicalJsonDigest("current context"),
+      deadline: new Date().toISOString(), state: "checkpointed" as const,
+      attempts: [{id: "22222222-2222-4222-8222-222222222222", started_at: new Date().toISOString(), outcome: "response" as const}],
+      producer_input: {consumer: "action_rule_components" as const, operator_message: "One billing reviewer.", program_resume_revision: canonicalJsonDigest("original frame")}}]};
+    const input = {binding, stage: "planning" as const, jobIntent: "Retain the exact saved work.", provider: "openai" as const, model: "gpt-test", generationRecovery};
+    expect(buildBoundaryAuthoringResumeState(input).generation_recovery?.operations[0]!.producer_input).toEqual(generationRecovery.operations[0]!.producer_input);
+    for (const text of ["api_key=private-value", "https://private.example/endpoint", "BEGIN PRIVATE KEY", "tenant_id: concrete-customer"]) {
+      const changed = structuredClone(input);changed.generationRecovery.operations[0]!.producer_input.operator_message = text;
+      expect(() => buildBoundaryAuthoringResumeState(changed)).toThrow(/BLOCKED/);
+    }
+    const oversized = structuredClone(input);oversized.generationRecovery.operations[0]!.producer_input.operator_message = "a".repeat(4_001);
+    expect(() => revalidateBoundaryAuthoringResume(buildBoundaryAuthoringResumeState(oversized), binding)).toThrow(/INVALID/);
+  });
+
   it("permits symbolic trusted-scope explanations without persisting a concrete identity", () => {
     const state = buildBoundaryAuthoringResumeState({
       binding,

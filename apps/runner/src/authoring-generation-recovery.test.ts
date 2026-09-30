@@ -9,7 +9,7 @@ import { AskError, completedAuthoringQuestion, askToolSurfaceDigest, resolveAskP
 import { authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, assertAuthoringQuestionHandoff, authoringGenerationCurrentnessCode, authoringGenerationHandled, authoringTransportCheckpoint, configureAuthoringGenerationRecovery,
   recoverAuthoringGeneration, prepareAuthoringManualRecovery, permitAuthoringManualRecovery,
   validateAuthoringTransportState, withAuthoringGenerationRecovery,
-  type AuthoringGenerationHost, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+  isAuthoringGenerationStop, type AuthoringGenerationHost, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { runRequiredAuthoringToolCall } from "./authoring-tool-call.js";
 
 const servers: Server[] = [];
@@ -19,7 +19,9 @@ async function fixture(mode: string) {
   const server = createServer(async (req,res) => {
     const chunks: Buffer[] = []; for await (const c of req) chunks.push(Buffer.from(c));
     bodies.push(Buffer.concat(chunks).toString()); sends++;
-    if ((mode === "B-success" && sends === 1) || mode === "B-always") { req.socket.destroy(); return; }
+    if ((["B-success", "B-credit"].includes(mode) || mode.startsWith("B-refusal-")) && sends === 1 || mode === "B-always") { req.socket.destroy(); return; }
+    if (mode.startsWith("B-refusal-")) mode = mode.slice("B-refusal-".length);
+    if (mode === "B-credit") {res.writeHead(402); res.end('{"error":"DERIVED credit refusal"}'); return;}
     if (mode === "headers") { res.writeHead(200, {"content-type":"text/event-stream"}); res.flushHeaders(); setTimeout(() => res.destroy(),10); return; }
     if (mode === "partial" || mode === "complete-tool-no-end") {
       res.writeHead(200, {"content-type":"text/event-stream"});
@@ -128,6 +130,55 @@ describe("saved authoring generation transport recovery",()=>{
     await expect(enter(m, () => recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest)))
       .rejects.toMatchObject({code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"});
     expect(f.sends()).toBe(2); expect(m.read()).toEqual(stopped);
+  });
+  it("a refused manual replacement cannot become a new logical operation on restart", async () => {
+    const f = await fixture("B-credit"), m = memory(f.endpoint, 0);
+    await expect(enter(m, () => recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest)))
+      .rejects.toMatchObject({code: "ASK_GENERATION_OUTCOME_UNKNOWN"});
+    await enter(m, async () => permitAuthoringManualRecovery(await prepareAuthoringManualRecovery(canonicalJsonDigest("checkpoint"))));
+    await expect(enter(m, () => recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest)))
+      .rejects.toMatchObject({code: "ASK_PROVIDER_CREDIT_REQUIRED"});
+    expect(f.sends()).toBe(2);
+    const stopped = structuredClone(m.read());
+    await expect(enter(m, () => recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest)))
+      .rejects.toMatchObject({code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"});
+    expect(f.sends()).toBe(2); expect(m.read()).toEqual(stopped);
+  });
+  it.each([["402", "ASK_PROVIDER_CREDIT_REQUIRED"], ["404", "ASK_PROVIDER_MODEL_UNAVAILABLE"],
+    ["schema400", "ASK_PROVIDER_TOOL_SCHEMA_REJECTED"], ["401", "ASK_PROVIDER_AUTHENTICATION_FAILED"],
+    ["429", "ASK_PROVIDER_RATE_LIMITED"]])("manual %s refusal retains its known reason and cannot escape through fallback or restart", async (mode, code) => {
+    const f = await fixture(`B-refusal-${mode}`), m = memory(f.endpoint, 0);
+    await expect(enter(m, () => recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest))).rejects.toMatchObject({code: "ASK_GENERATION_OUTCOME_UNKNOWN"});
+    await enter(m, async () => permitAuthoringManualRecovery(await prepareAuthoringManualRecovery(canonicalJsonDigest("checkpoint"))));
+    const error = await enter(m, () => recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest)).catch(e => e);
+    expect(error.code).toBe(code);expect(isAuthoringGenerationStop(error)).toBe(true);
+    expect(m.read().operations[0]!.manual_recovery?.failure_code).toBe(code);
+    const before = structuredClone(m.read());
+    await expect(enter(m, () => recoverAuthoringGeneration(input(f.endpoint), secureAskJsonRequest))).rejects.toMatchObject({code: "ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION"});
+    expect(f.sends()).toBe(2);expect(m.read()).toEqual(before);
+  });
+  it("a complete invalid model answer after manual replacement retains ordinary bounded correction", async () => {
+    let sends = 0, callbacks = 0;
+    const server = createServer(async (req, res) => {
+      for await (const _ of req) { /* consume actual encoded request */ }
+      if (++sends === 1) {req.socket.destroy();return;}
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({output: [{type: "function_call", call_id: "DERIVED", name: "runner__inspect", arguments: sends === 2 ? "{" : "{}"}]}));
+    });servers.push(server);await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    const endpoint = new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/responses`), m = memory(endpoint, 0);
+    const tools = [{name: "runner.inspect", description: "DERIVED", input_schema: {type: "object", properties: {}, additionalProperties: false}}];
+    const authorityDigest = askToolSurfaceDigest(tools), configuration = resolveAskProviderConfiguration({provider: "openai", model: "DERIVED", api_key: "dummy-local-only", authority_digest: authorityDigest, egress_acknowledged: true}, {}, new Date());
+    const run = () => runRequiredAuthoringToolCall({question: "DERIVED", toolName: "runner.inspect", run: question => runAskProviderTurn({configuration, tools, question, history: [], authorityDigest,
+      gateway: {mode: "authoring", listTools: () => tools, close: async () => undefined, callTool: async () => {callbacks++;m.set(authoringTransportCheckpoint(m.read())!);return {ok: true, value: {accepted: true}};}},
+      signal: new AbortController().signal, requiredInitialToolName: "runner.inspect", completeAfterRequiredTool: true,
+      dependencies: {requestJson: i => secureAskJsonRequest({...i, endpoint, scope: "custom_loopback"})}})});
+    await expect(enter(m, run)).rejects.toMatchObject({code: "ASK_GENERATION_OUTCOME_UNKNOWN"});
+    await enter(m, async () => permitAuthoringManualRecovery(await prepareAuthoringManualRecovery(canonicalJsonDigest("checkpoint"))));
+    const result = await enter(m, run);
+    expect(result.correction_used).toBe(true);expect(sends).toBe(3);expect(callbacks).toBe(1);
+    expect(m.read().operations[0]!.attempts.map(a => a.outcome)).toEqual(["B", "response"]);
+    expect(m.read().operations[0]!.manual_recovery?.failure_code).toBeUndefined();
+    expect(m.read().operations[0]!.state).toBe("refused");
   });
   it.each(["headers", "partial", "schema400", "bad-json", "503"])("manual review cannot reopen %s", async mode => {
     const f = await fixture(mode), m = memory(f.endpoint, 0);

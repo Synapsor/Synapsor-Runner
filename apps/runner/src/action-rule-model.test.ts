@@ -3,6 +3,11 @@ import {authoringDestination,newPolicySourceSession,policyTextSnapshot} from "./
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery, prepareAuthoringManualRecovery,
+  permitAuthoringManualRecovery, authoringTransportCheckpoint, validateAuthoringTransportState,
+  type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { buildActionRuleAuthorityDraft, writeActionRuleAuthorityDraft, readActionRuleAuthorityDraft, readActionRuleAuthorityRevisionBaseline, writeActionRuleAuthorityDraftIfCurrent } from "./action-rule-authority.js";
 import type { ActionRuleCatalogV1 } from "@synapsor-runner/action-rules";
 import type {
@@ -15,9 +20,10 @@ import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
 import type { BuiltActionRuleAuthoringCatalogV1 } from "./action-rule-authoring.js";
 import { compileActionRuleModelDraft, type ActionRuleModelDraftV1 } from "./action-rule-draft.js";
 import { actionRuleModelDraftJsonSchema, generateFocusedModelActionRuleDraft as generateModelActionRuleDraft, generateModelActionRuleDraft as converseActionRuleDraft } from "./action-rule-model.js";
-import { AskError } from "./model-ask.js";
+import { AskError, secureAskJsonRequest } from "./model-ask.js";
 import type { AskProviderDependencies } from "./model-ask.js";
 import type { ActionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
+import { actionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 import { inspectActionRelationships } from "./action-rule-relationship-review.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { evaluateActionRule, evaluateActionRuleApprovalPredicate } from "@synapsor-runner/action-rules";
@@ -336,6 +342,64 @@ describe("conversational Action authoring tools", () => {
 
   describe("B33 owner-question consumer boundary", () => {
     const question = "Who reviews otherwise valid requests above the automatic limit?";
+
+    it.each(["same", "changed_answer", "missing_origin", "changed_program"])("B35 restores the originating owner answer and program frame through the real producer after restart: %s", async mode => {
+      let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
+      const conversation = {turns: [] as import("./model-ask.js").AskHistoryTurn[]};
+      const setup = requestInput(async () => say(question));
+      await expect(converseActionRuleDraft({...setup, session: {...setup.session, conversation},
+        onCheckpoint: async c => {checkpoint = structuredClone(c);}, askClarification: async () => undefined})).rejects.toThrow("CANCELLED");
+      let state: AuthoringTransportState = {version: 1, operations: []};
+      const bodies: unknown[] = [], responses = [call("runner.submit_verification_boundary_draft"), call("runner.submit_effect_envelope_draft"),
+        call("runner.submit_action_rule_draft"), call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {}), say("Disabled draft prepared.")];
+      let sends = 0;
+      const server = createServer(async (req, res) => {
+        const parts: Buffer[] = []; for await (const part of req) parts.push(Buffer.from(part));
+        bodies.push(JSON.parse(Buffer.concat(parts).toString()));
+        if (++sends === 1) {req.socket.destroy();return;}
+        res.setHeader("content-type", "application/json");res.end(JSON.stringify(responses.shift()!.body));
+      });
+      await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+      const endpoint = new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/responses`);
+      const host = {available: () => true, read: () => state, current: async () => canonicalJsonDigest(checkpoint),
+        write: async (s: AuthoringTransportState) => {validateAuthoringTransportState(s);state = structuredClone(s);}};
+      const enter = <T>(run: () => Promise<T>) => withAuthoringGenerationRecovery(() => {configureAuthoringGenerationRecovery(host);return run();});
+      const request = requestInput(i => secureAskJsonRequest({...i, endpoint, scope: "custom_loopback"}));
+      const program = {selected_intents: [request.intent], current_intent_index: 0, binding: {boundary_name: "fixture", generation_lock_fingerprint: lock,
+        schema_fingerprint: lock, role_posture_fingerprint: lock},
+        resume_revision: canonicalJsonDigest("original prompt frame"), owner_decisions: [], counter_owner_reviews: [], disclosure_reviews: [], source_decisions: {}, unresolved: [request.intent]};
+      const run = (resume = false) => converseActionRuleDraft({...request, session: {...request.session, conversation},
+        checkpoint, programContext: {...program, ...(resume ? {resume_revision: canonicalJsonDigest("journal and permission bookkeeping")} : {}),
+          ...(resume && mode === "changed_program" ? {unresolved: [...program.unresolved, "A different unresolved business choice."]} : {})},
+        revalidateSavedComponents: resume, askClarification: async () => "One billing reviewer.",
+        onCheckpoint: async c => {checkpoint = structuredClone(c);state = authoringTransportCheckpoint(state)!;}});
+      try {
+        await expect(enter(() => run())).rejects.toMatchObject({code: "ASK_GENERATION_OUTCOME_UNKNOWN"});
+        expect(checkpoint?.operator_messages).toEqual(["One billing reviewer."]);
+        const original = structuredClone(state.operations[0]!);
+        expect(original.producer_input).toEqual({consumer: "action_rule_components", operator_message: "One billing reviewer.", program_resume_revision: program.resume_revision});
+        await enter(async () => permitAuthoringManualRecovery(await prepareAuthoringManualRecovery(checkpoint!.digest)));
+        if (mode === "changed_answer") {
+          const {digest: _digest, schema_version: _version, ...core} = checkpoint!;
+          checkpoint = actionRuleAuthoringCheckpoint({...core, operator_messages: ["Two billing reviewers."]});
+        }
+        if (mode === "missing_origin") delete state.operations[0]!.producer_input;
+        if (mode !== "same") {
+          const stopped = structuredClone(state);
+          await expect(enter(() => run(true))).rejects.toMatchObject({code: "ASK_GENERATION_CONTEXT_CHANGED"});
+          expect(sends).toBe(1);expect(state).toEqual(stopped);return;
+        }
+        const result = await enter(() => run(true));
+        expect(result.compiled.rule.outcome).toBe(modelDraft().outcome);
+        expect(bodies[1]).toEqual(bodies[0]); // Entire encoded body, not masked fields.
+        expect(state.operations[0]!.id).toBe(original.id);
+        expect(state.operations[0]!.attempts[0]).toEqual(original.attempts[0]);
+        expect(state.operations[0]!.attempts).toHaveLength(2);
+        expect(state.operations[0]!.manual_recovery?.status).toBe("admitted");
+        expect(responses).toEqual([]);
+        expect(result.authority_granted).toBe(false);expect(result.source_database_changed).toBe(false);
+      } finally {server.closeAllConnections();await new Promise<void>(resolve => server.close(() => resolve()));}
+    });
 
     it.each(["undefined", "thrown cancellation"] as const)("saves the complete pending question before %s at the human boundary", async pause => {
       const events: string[] = [];

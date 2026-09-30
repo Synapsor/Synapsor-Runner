@@ -22,6 +22,8 @@ export type ProviderHttpInput = {
   timeoutMs?: number;
   /** Trusted optional numerical observer; never included in provider input. */
   contextMeasurement?: { meter: TaskContextMeter; onProfile: (profile: TaskContextProfile) => void };
+  /** Host-only producer origin, never part of the wire body or credentials. */
+  authoringInput?: { consumer: "action_rule_components"; operator_message: string; program_resume_revision?: `sha256:${string}` };
   stream?: {
     format: "openai_responses" | "openai_chat" | "anthropic";
     onEvent?: (event: AskProviderStreamEvent) => void;

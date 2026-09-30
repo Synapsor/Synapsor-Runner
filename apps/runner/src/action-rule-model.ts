@@ -1,4 +1,5 @@
 import { assertInputFidelityRepair, SourceInputFidelityError, type InputFidelityFinding } from "./authoring-input-policy.js";
+import { authoringManualProducerInput } from "./authoring-generation-recovery.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { historySelectorChanges, type HistorySelectorReview } from "./action-history-selector-review.js";
 import { Buffer } from "node:buffer";
@@ -276,7 +277,7 @@ export type ModelActionRuleDraftInput = {
 /** The model edits disabled components; only the compiler can mark a draft ready. */
 export async function generateModelActionRuleDraft(input: ModelActionRuleDraftInput): Promise<ModelActionRuleDraftResult> {
   const intent = boundedText(input.intent, "Action Rule intent", 2_000);
-  const program = input.programContext;
+  let program = input.programContext;
   const progress = program ? authoringProgramWorkUnit(program.selected_intents.length, program.current_intent_index) : undefined;
   if (program && (!progress?.unit || new Set(program.selected_intents).size !== program.selected_intents.length)) {
     throw new Error("AUTHORING_PROGRAM_CONTEXT_INVALID: the current saved work unit needs reconciliation before drafting.");
@@ -775,7 +776,19 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     clarification = undefined;
     validationAttempted = false;
     const progressBefore = draftProgressRevision;
+    const origin = await authoringManualProducerInput("action_rule_components");
+    if (origin) {
+      // Only an original instruction or a currently retained, attributed answer
+      // is usable. Restore the origin frame, not the current disk/CAS revision.
+      if (origin.operator_message !== intent && origin.operator_message !== operatorMessages.at(-1)
+        || Boolean(program) !== Boolean(origin.program_resume_revision)) throw new AskError(
+          "ASK_GENERATION_CONTEXT_CHANGED", "The exact pending producer input is no longer current. No replacement was sent.", 409);
+      operatorMessage = origin.operator_message;
+      if (program) program = {...program, resume_revision: origin.program_resume_revision!};
+    }
     const result = await runAskProviderTurn({
+      authoringInput: {consumer: "action_rule_components", operator_message: operatorMessage,
+        ...(program ? {program_resume_revision: program.resume_revision as `sha256:${string}`} : {})},
       configuration, tools, gateway, authorityDigest,
       signal: input.signal ?? new AbortController().signal,
       dependencies: {

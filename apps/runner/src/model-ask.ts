@@ -606,6 +606,7 @@ export async function runAskProviderTurn(input: {
   completeAfterRequiredTool?: boolean;
   allowToolFreeAuthoringResponse?: boolean;
   conversationalAuthoring?: boolean;
+  authoringInput?: ProviderHttpInput["authoringInput"];
 }): Promise<AskTurnResult> {
   if (input.conversationalAuthoring && (input.gateway.mode !== "authoring" || input.tools.some((tool) => !tool.name.startsWith("runner.")))) {
     throw new AskError("ASK_AUTHORING_SURFACE_INVALID", "Conversational drafting requires an operator-only authoring tool surface.", 400);
@@ -656,7 +657,8 @@ export async function runAskProviderTurn(input: {
   const generationResults: ProviderHttpResult[] = [];
   let currentCallbackMayHaveRun = false;
   const requestJson: NonNullable<AskProviderDependencies["requestJson"]> = (requestInput) => checked(async () => {
-    const preparedInput = { ...requestInput, signal, contextMeasurement };
+    const preparedInput = { ...requestInput, signal, contextMeasurement,
+      ...(input.authoringInput ? {authoringInput: input.authoringInput} : {}) };
     if (input.gateway.mode !== "authoring") return request(preparedInput);
     await authoringGenerationHandled(generationResults);
     currentCallbackMayHaveRun = false;

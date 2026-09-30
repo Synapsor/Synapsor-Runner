@@ -27,6 +27,7 @@ export type AuthoringTransportOperation = {
   state: "in_flight" | "unsent" | "unknown" | "partial" | "received" | "handled" | "checkpointed" | "refused";
   checkpoint_seen?: true;
   question_handoff?: AuthoringQuestionHandoff;
+  producer_input?: ProviderHttpInput["authoringInput"];
   manual_recovery?: {
     id: string;
     actor: "local_installation_operator";
@@ -37,6 +38,9 @@ export type AuthoringTransportOperation = {
     status: "permitted" | "admitted";
     replacement_attempt_id?: string;
     attempt_deadline?: string;
+    /** A known nonsemantic refusal consumes this one replacement; it must not
+     * reopen the same pending step under a new generation ID. */
+    failure_code?: string;
   };
   attempts: { id: string; started_at: string; outcome: "in_flight" | "A" | "B" | "C" | "response"; phase?: AuthoringTransportObservation["phase"]; code?: string;
     /** Minted at the owning generation boundary only after native close and
@@ -82,11 +86,16 @@ export type AuthoringGenerationHost = {
 type Frame = { host?: AuthoringGenerationHost; owned: Set<string>; active: boolean };
 const storage = new AsyncLocalStorage<Frame>();
 const resultOperations = new WeakMap<ProviderHttpResult, string>();
+const manualReplacementStops = new WeakSet<object>();
+const manualReplacementRefusals = new Set(["ASK_PROVIDER_TOOL_SCHEMA_REJECTED", "ASK_PROVIDER_CREDIT_REQUIRED",
+  "ASK_PROVIDER_MODEL_UNAVAILABLE", "ASK_PROVIDER_AUTHENTICATION_FAILED", "ASK_PROVIDER_PERMISSION_DENIED",
+  "ASK_PROVIDER_RATE_LIMITED", "ASK_PROVIDER_REQUEST_INVALID", "ASK_PROVIDER_REDIRECT_REFUSED",
+  "ASK_PROVIDER_DESTINATION_REFUSED", "ASK_PROVIDER_REQUEST_TOO_LARGE"]);
 export function isAuthoringGenerationStop(error: unknown): error is AskError {
-  return error instanceof AskError && ["ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "ASK_GENERATION_OUTCOME_UNKNOWN",
+  return error instanceof AskError && (manualReplacementStops.has(error) || ["ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "ASK_GENERATION_OUTCOME_UNKNOWN",
     "ASK_GENERATION_NOT_SENT", "ASK_GENERATION_CONTEXT_CHANGED", "ASK_GENERATION_DEADLINE",
     "ASK_GENERATION_RECOVERY_EXHAUSTED", "ASK_GENERATION_ALREADY_ACTIVE", "ASK_GENERATION_HISTORY_LIMIT",
-    "ASK_GENERATION_MANUAL_RECOVERY_UNAVAILABLE"].includes(error.code);
+    "ASK_GENERATION_MANUAL_RECOVERY_UNAVAILABLE"].includes(error.code));
 }
 
 export function withAuthoringGenerationRecovery<T>(run: () => T, inheritCompletedOperations = false): T {
@@ -120,10 +129,16 @@ export function validateAuthoringTransportState(value: unknown): asserts value i
   }
   const seen = new Set<string>();
   for (const op of s.operations) {
-    if (!op || typeof op !== "object" || !exactKeys(op,["id","request_digest","context_digest","deadline","state","checkpoint_seen","question_handoff","manual_recovery","attempts"]) || !id(op.id) || seen.has(op.id) || !digest(op.request_digest) || !digest(op.context_digest) || !date(op.deadline)
+    if (!op || typeof op !== "object" || !exactKeys(op,["id","request_digest","context_digest","deadline","state","checkpoint_seen","question_handoff","producer_input","manual_recovery","attempts"]) || !id(op.id) || seen.has(op.id) || !digest(op.request_digest) || !digest(op.context_digest) || !date(op.deadline)
       || !["in_flight","unsent","unknown","partial","received","handled","checkpointed","refused"].includes(op.state)
       || op.checkpoint_seen !== undefined && op.checkpoint_seen !== true
       || !Array.isArray(op.attempts) || !op.attempts.length || op.attempts.length > 3) throw invalid();
+    if (op.producer_input !== undefined) {
+      const p = op.producer_input;
+      if (!p || typeof p !== "object" || !exactKeys(p,["consumer","operator_message","program_resume_revision"])
+        || p.consumer !== "action_rule_components" || typeof p.operator_message !== "string" || !p.operator_message.trim()
+        || p.operator_message.length > 4_000 || p.program_resume_revision !== undefined && !digest(p.program_resume_revision)) throw invalid();
+    }
     if (op.question_handoff !== undefined) {
       const h = op.question_handoff;
       if (!h || typeof h !== "object" || Array.isArray(h) || !exactKeys(h, ["consumer","question","answered","checkpoint_digest","question_digest","response_digest","recorded_at"])
@@ -151,13 +166,15 @@ export function validateAuthoringTransportState(value: unknown): asserts value i
     }
     if (op.manual_recovery !== undefined) {
       const m = op.manual_recovery, prior = op.attempts.findIndex(a => a.id === m?.prior_attempt_id);
-      if (!m || typeof m !== "object" || !exactKeys(m,["id","actor","reviewed_at","prior_attempt_id","checkpoint_digest","state_digest","status","replacement_attempt_id","attempt_deadline"])
+      if (!m || typeof m !== "object" || !exactKeys(m,["id","actor","reviewed_at","prior_attempt_id","checkpoint_digest","state_digest","status","replacement_attempt_id","attempt_deadline","failure_code"])
         || !id(m.id) || seen.has(m.id) || m.actor !== "local_installation_operator" || !date(m.reviewed_at)
         || !digest(m.checkpoint_digest) || !digest(m.state_digest) || prior < 0 || !op.attempts[prior]!.no_response_boundary
         || op.attempts.slice(0, prior).some(a => a.outcome === "B") || prior >= 2
         || !["permitted","admitted"].includes(m.status)
         || m.status === "permitted" && (op.state !== "unknown" || prior !== op.attempts.length - 1 || m.replacement_attempt_id !== undefined || m.attempt_deadline !== undefined)
-        || m.status === "admitted" && (!id(m.replacement_attempt_id) || !date(m.attempt_deadline) || op.attempts[prior + 1]?.id !== m.replacement_attempt_id)) throw invalid();
+        || m.status === "admitted" && (!id(m.replacement_attempt_id) || !date(m.attempt_deadline) || op.attempts[prior + 1]?.id !== m.replacement_attempt_id)
+        || m.failure_code !== undefined && (m.status !== "admitted" || op.state !== "refused"
+          || !manualReplacementRefusals.has(m.failure_code) || op.attempts.at(-1)?.id !== m.replacement_attempt_id)) throw invalid();
       seen.add(m.id);
     }
   }
@@ -170,6 +187,20 @@ export type AuthoringManualRecoveryPreview = {
   state_digest: `sha256:${string}`;
   context_digest: `sha256:${string}`;
 };
+/** Restore only product-authored producer inputs for the exact permitted step.
+ * The caller still constructs the complete request normally; its final digest
+ * must match at admission. This neither imports a response nor ignores CAS. */
+export async function authoringManualProducerInput(consumer: NonNullable<ProviderHttpInput["authoringInput"]>["consumer"]): Promise<ProviderHttpInput["authoringInput"]> {
+  const host = storage.getStore()?.host;
+  if (!host) return undefined;
+  const state = structuredClone(host.read() ?? {version: 1 as const, operations: []});
+  validateAuthoringTransportState(state);
+  const op = state.operations.find(item => item.manual_recovery?.status === "permitted");
+  if (!op?.producer_input) return undefined; // Never fabricate origin for historical records.
+  if (op.producer_input.consumer !== consumer || await currentRecoveryContext(host) !== op.context_digest)
+    throw currentnessFailure("BOUNDARY_AUTHORING_RESUME_CHANGED");
+  return structuredClone(op.producer_input);
+}
 function manualRecoveryUnavailable(message: string): never {
   throw new AskError("ASK_GENERATION_MANUAL_RECOVERY_UNAVAILABLE", message, 409);
 }
@@ -390,6 +421,9 @@ export async function recoverAuthoringGeneration(input: ProviderHttpInput,
   if (frame.active) throw new AskError("ASK_GENERATION_ALREADY_ACTIVE", "Another authoring generation is still active.", 409);
   const initial = structuredClone(host.read() ?? {version: 1 as const, operations: []});
   validateAuthoringTransportState(initial);
+  const stoppedReplacement = initial.operations.find(op => op.manual_recovery?.failure_code);
+  if (stoppedReplacement) throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION",
+    `${stoppedReplacement.manual_recovery!.failure_code}: The permitted replacement was refused. Its finite permission is used; the original unknown attempt and saved progress remain recorded. Resume cannot open another generation for this pending step.`, 409);
   const manual = initial.operations.find(op => op.manual_recovery?.status === "permitted");
   if (initial.operations.some(op => op.id !== manual?.id && (["in_flight", "unsent", "unknown", "partial"].includes(op.state)
     || !frame.owned.has(op.id) && op.state !== "checkpointed" && op.state !== "refused"))) {
@@ -405,9 +439,11 @@ export async function recoverAuthoringGeneration(input: ProviderHttpInput,
   const body = structuredClone(input.body), requestDigest = canonicalJsonDigest({body, endpoint: input.endpoint.href, stream: input.stream?.format ?? null});
   if (manual && (manual.context_digest !== context || manual.request_digest !== requestDigest || !pureLocalGeneration(input)
     || manual.attempts.at(-1)!.no_response_boundary?.destination_digest !== canonicalJsonDigest(input.endpoint.origin)
-    || manual.attempts.at(-1)!.no_response_boundary?.model !== body.model)) throw currentnessFailure("BOUNDARY_AUTHORING_RESUME_CHANGED");
+    || manual.attempts.at(-1)!.no_response_boundary?.model !== body.model
+    || canonicalJsonDigest(manual.producer_input ?? null) !== canonicalJsonDigest(input.authoringInput ?? null))) throw currentnessFailure("BOUNDARY_AUTHORING_RESUME_CHANGED");
   const op: AuthoringTransportOperation = manual ?? {id: randomUUID(), request_digest: requestDigest, context_digest: context,
-    deadline: new Date(Date.now() + (input.timeoutMs ?? 30_000)).toISOString(), state: "in_flight", attempts: []};
+    deadline: new Date(Date.now() + (input.timeoutMs ?? 30_000)).toISOString(), state: "in_flight", attempts: [],
+    ...(input.authoringInput ? {producer_input: structuredClone(input.authoringInput)} : {})};
   // Explicit replacement has its own finite request deadline. Never extend or
   // rewrite the original operation's expired deadline or failed attempt.
   const operationDeadline = manual ? new Date(Date.now() + (input.timeoutMs ?? 30_000)).toISOString() : op.deadline;
@@ -455,6 +491,11 @@ export async function recoverAuthoringGeneration(input: ProviderHttpInput,
         }
         const permanent = e instanceof AskError && ["ASK_PROVIDER_REQUEST_INVALID", "ASK_PROVIDER_REDIRECT_REFUSED", "ASK_PROVIDER_DESTINATION_REFUSED"].includes(e.code);
         op.state = permanent || completedProviderContentError(e) ? "refused" : observation?.classification === "A" ? "unsent" : observation?.classification === "B" ? "unknown" : "partial";
+        if (manual && e instanceof AskError && manualReplacementRefusals.has(e.code)) {
+          op.state = "refused";
+          op.manual_recovery!.failure_code = e.code;
+          manualReplacementStops.add(e); // Preserve the precise refusal through fallback callers.
+        }
         await save();
         const b = observation?.classification === "B";
         const retry = observation?.transient && observation.cleanup_complete && observation.classification !== "C"
