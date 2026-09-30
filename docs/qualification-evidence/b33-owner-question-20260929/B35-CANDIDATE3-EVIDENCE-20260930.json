@@ -1,0 +1,147 @@
+{
+  "sealed_utc": "2026-09-30T08:05:44.454299+00:00",
+  "scope": "Prospective frozen B35 Phase0 closeout. Additive; original J and earlier verdicts unchanged.",
+  "product_tests": "5cdbbb28ecf6489b1dd35d74236545a80ef6237c",
+  "installed_tree_sha256": "0fc640e739a5af7fbdfd4a720012c4d644455e80c0d0bce44816c84fdebab30b",
+  "manifest_sha256": "8189374c5bfda39644f7d19899f8b3ddc54bb2624e4492f6128353da33875c26",
+  "archive_sha256": "e6b3e28a4a96189cd5df8e04e423c996e970b6093c653bc4fe9cf739cc3143da",
+  "independent_verdict": "PASS at report127 stated finite scopes",
+  "independent_index_members_verified": 511,
+  "historical0092": "UNKNOWN/fenced; no paid continuation",
+  "phase0_provider_operations": 0,
+  "phase0_deadline": "2026-09-30T11:13:11Z",
+  "report": "/home/sandesh-tiwari/Desktop/C++/synapsor-runner/docs/qualification-evidence/b33-owner-question-20260929/B35-CANDIDATE3-CLOSEOUT-20260930.md",
+  "report_sha256": "358794de7894c832fc02e46a20395ee04966fd3abf0d0886fae5d6bd647267be",
+  "members": [
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/b35-candidate3/GATE-SUMMARY.json",
+      "bytes": 20412,
+      "sha256": "d30f7102c6730258752ee7f0f459a887f225ac23f6c4134acde5353ae4023081"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/b35-candidate3/DESIGN-224.md",
+      "bytes": 5830,
+      "sha256": "76605cc1d1eeec669ca69ceb4ebf44cc5a5d689fda2de8fdcf2d35c738ff6093"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/b35-candidate3/VERIFICATION-PLAN.md",
+      "bytes": 2369,
+      "sha256": "a59aaa7d60f8cda2bf23c3dbca1878ab94b5336575a925f941d03275afc28884"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/b35-candidate3/PAUSE-HANDOFF-241.md",
+      "bytes": 9147,
+      "sha256": "b7d3f1c6d17aaa2313f6e30537ffddfb7fc7345507bd7104abea64727d8e6750"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b35-20260929/FINAL-REVIEW-127.md",
+      "bytes": 11108,
+      "sha256": "7a7c7b291a890062cbdc504fcde4a664bf34ac9a8d75d337f4288c14e98af25c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b35-20260929/EVIDENCE-INDEX-128.json",
+      "bytes": 134857,
+      "sha256": "9fd0cd784771ee6b19a52084e069f57e840220e8a67989681a195e602c179ed4"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b35-20260929/captures/CLOSEOUT-FINAL-125.json",
+      "bytes": 3342,
+      "sha256": "8e3485d1823beb4252126218b2981d8cac57164d24645be1c68ab15890ff82b3"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-b35-20260929/captures/PUBLIC-SOURCE-CHANGE-FINAL-126.json",
+      "bytes": 1180,
+      "sha256": "b3b85c6dbbb2adde9472c4f7fa0700ef03516194bcaaff56055b5139454492dc"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/b35-candidate3/resume-closeout-20260930/RESUMPTION-001.json",
+      "bytes": 2354,
+      "sha256": "271e1177a2ce585cb4d0fd1e809f77cbcea1d526d6e38bbfe3ca0e76dd6b493c"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/b35-candidate3/resume-closeout-20260930/ARTIFACT-VERIFY-002.json",
+      "bytes": 513,
+      "sha256": "6e2647d1ceec66cb94ce25a032d2b3e98a3f23e92d5d9886b7f64c279eeb39bf"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/b35-candidate3/resume-closeout-20260930/GATE-PROVENANCE-003.json",
+      "bytes": 12039,
+      "sha256": "da9be4556847fb56dd9817f9c2d62d88fecc25f492ab8341e4ff8d2f83dea285"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/b35-candidate3/resume-closeout-20260930/MAIN-COVERED-CLEANUP-005.json",
+      "bytes": 1632,
+      "sha256": "427c7dd603fe73448d0b25bbfb8e477df0488700746867fee07c3ed18a6d9e0d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/b35-candidate3/resume-closeout-20260930/FINANCIAL-RECONCILIATION-006.json",
+      "bytes": 1083,
+      "sha256": "9b2a9ab0d934a7d323c2c365e3e34c79b88fb10cf61c58828e8e1dfc75712d73"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/b35-candidate3/resume-closeout-20260930/ORIGINAL-EVIDENCE-VERIFY-008.json",
+      "bytes": 1174,
+      "sha256": "59367fb7aa6f69f40c44cfd25fcfecf9a2e1f7aa16d02aef891e539988e2a093"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/b35-candidate3/resume-closeout-20260930/CURRENTNESS-CALL-FLOW-013.json",
+      "bytes": 2080,
+      "sha256": "50ed38b9f92b471e554921dabc31d5c8a2662fb6d57e3d81412d47e420c4b5f0"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/b35-candidate3/resume-closeout-20260930/OWNER-TESTER-STATUS-019.json",
+      "bytes": 2069,
+      "sha256": "e77373b129fa7c1fdb6035d3f4d4d604e806054e2abea23f8a1b817e2e9899a9"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/b35-candidate3/resume-closeout-20260930/REVIEWER-EVIDENCE-INSPECTION-020.json",
+      "bytes": 3458,
+      "sha256": "eefb246b56c232eb02e94ee53881ea880f758c5bc284d97a3d211f5ccf3b0693"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/b35-candidate3/resume-closeout-20260930/MAIN-TESTER-PRESERVATION-CHECK-022.json",
+      "bytes": 7283,
+      "sha256": "93383c224e8787da221cf52b7bcc853b5b31b3411d68520cbd749e6b5bc92fab"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/b35-candidate3/resume-closeout-20260930/OWNER-TESTER-ACTIVE-CANCELLATION-024.json",
+      "bytes": 594,
+      "sha256": "47cb9eaac256eca10a8b8736dd637649964d0f55a98524eae8428f8d924ec55d"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/b35-candidate3/resume-closeout-20260930/TESTER-CLOSING-UPDATE-028.json",
+      "bytes": 1030,
+      "sha256": "5395d3a88e55b5e14130ab53c7a9ec9476da1bfa92dc329ccb4d3dcb74817140"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/b35-candidate3/resume-closeout-20260930/PRIVATE-DELIVERY-PREFLIGHT-029.json",
+      "bytes": 721,
+      "sha256": "4411abf2b07c261bf685594e9ac59919e86f697d80fb4baa9dccbeac7f2a5342"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/b35-candidate3/resume-closeout-20260930/MAIN-EVIDENCE-LOOKUP-CORRECTION-030.json",
+      "bytes": 710,
+      "sha256": "cbf07d3487398c8a737bdda8795520ed4199c7543847faa81aadc6be5ed32f35"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/b35-candidate3/resume-closeout-20260930/INDEPENDENT-INDEX-VERIFY-032.json",
+      "bytes": 472,
+      "sha256": "d88206af60645e30745160e0d17bd553fb05652e0e8cd6083f6e7d6c3bf9c934"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/b35-candidate3/resume-closeout-20260930/INDEPENDENT-VERDICT-VERIFY-033.json",
+      "bytes": 1168,
+      "sha256": "3c5524da1d1232c8db5f7e4601347e6ce16f31dac79896caa5ea2c0c687e4246"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/b35-candidate3/resume-closeout-20260930/ARTIFACT-DELIVERY-VERIFY-034.json",
+      "bytes": 513,
+      "sha256": "2257e9d4b81b39008b272401a2d0653e86f0018bcd8e24eaee3d6f8d959c1f18"
+    },
+    {
+      "path": "/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/b33-owner-question-20260929/b35-candidate3/resume-closeout-20260930/gate-cold-004/COLD-RESTORE.json",
+      "bytes": 2490,
+      "sha256": "5a8350d1caf66910a192dfe750f86bf6886b392a60ae07b5c4bcb82eb1d0ecc1"
+    }
+  ]
+}
