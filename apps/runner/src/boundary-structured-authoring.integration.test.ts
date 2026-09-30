@@ -6,7 +6,7 @@ import type { InspectOptions, SchemaInspection } from "@synapsor-runner/schema-i
 import { onboard } from "./guided-start.js";
 import { structuredBoundaryAuthoringCommand } from "./boundary-structured-authoring.js";
 import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
-import { activateActionRuleAuthority, readActionRuleAuthorityActivation, readActionRuleAuthorityDraft, writeActionRuleAuthorityDraft } from "./action-rule-authority.js";
+import { activateActionRuleAuthority, deactivateActionRuleAuthority, readActionRuleAuthorityActivation, readActionRuleAuthorityDraft, writeActionRuleAuthorityDraft } from "./action-rule-authority.js";
 import { activateExplorationBoundary, explorationBoundaryCandidateDigest, loadActivatedExplorationBoundaries } from "./auto-boundary.js";
 import type { ActionRuleModelDraftV1 } from "./action-rule-draft.js";
 import { applyModelReadBoundaryExposureRevision, loadBoundaryReviewContext, prepareModelReadBoundaryExposureRevision, reloadReadReviewForModelRevision, reviewSavedBoundaryPolicy } from "./boundary-commands.js";
@@ -99,6 +99,15 @@ describe("public structured Boundary authoring integration", () => {
       reviewDraft: context.draft, generationLock: context.lock, expectedAuthoring: currentRead.bundle.mutation_bindings.authoring});
     const active = await activateActionRuleAuthority({projectRoot: root, name: authority.authority.name, expected_digest: authority.digest,
       confirmation: `ACTIVATE ${authority.digest}`, actor: "fixture reviewer"});
+    if (mode === "complete") {
+      // Publication consumes the disabled parent. A normal edit must retain
+      // this exact current published baseline, rather than require a fake draft.
+      expect(await readActionRuleAuthorityDraft(root, authority.authority.name)).toBeUndefined();
+      const publishedContext = await loadBoundaryReviewContext(root);
+      await expect(reloadReadReviewForModelRevision(root, publishedContext, active)).resolves.toEqual(publishedContext);
+      // A stale disabled subject must not silently switch lifecycle/location.
+      await expect(reloadReadReviewForModelRevision(root, publishedContext, authority)).rejects.toThrow("ACTION_BOUNDARY_REVISION_CHANGED");
+    }
     const published = await review(); expect(published, JSON.stringify(published)).toMatchObject({tone: "success"});
     expect(notices.join("\n")).toContain("Action subject (active published)");
     const count = calls, again = await review(); expect(again, JSON.stringify(again)).toMatchObject({tone: "success"});
@@ -144,6 +153,22 @@ describe("public structured Boundary authoring integration", () => {
       expect(await readActionRuleAuthorityActivation(root)).toEqual(beforeAuthority);
       expect(await readActionRuleAuthorityDraft(root,authority.authority.name)).toBeUndefined();
       expect(calls).toBe(count);
+    }
+    if (mode === "complete") {
+      const baseline = await loadBoundaryReviewContext(root);
+      // An independently saved draft must not replace the selected active
+      // baseline. A new publication, even with the same business digest, must.
+      await writeActionRuleAuthorityDraft(root, authority);
+      await expect(reloadReadReviewForModelRevision(root, baseline, active)).resolves.toBeDefined();
+      await expect(reloadReadReviewForModelRevision(root, baseline, authority)).resolves.toBeDefined();
+      const republished = await activateActionRuleAuthority({projectRoot: root, name: authority.authority.name,
+        expected_digest: authority.digest, confirmation: `ACTIVATE ${authority.digest}`, actor: "competing fixture reviewer"});
+      expect(republished.digest).toBe(active.digest);
+      await expect(reloadReadReviewForModelRevision(root, baseline, active)).rejects.toThrow("ACTION_BOUNDARY_REVISION_CHANGED");
+      await expect(reloadReadReviewForModelRevision(root, baseline, authority)).rejects.toThrow("ACTION_BOUNDARY_REVISION_CHANGED");
+      await expect(reloadReadReviewForModelRevision(root, baseline, republished)).resolves.toBeDefined();
+      await deactivateActionRuleAuthority(root);
+      await expect(reloadReadReviewForModelRevision(root, baseline, republished)).rejects.toThrow("ACTION_BOUNDARY_REVISION_CHANGED");
     }
     expect(inspect.mock.calls.every(([input]) => input.databaseUrlEnv === "TEST_READ_URL")).toBe(true);
   }, 30_000);

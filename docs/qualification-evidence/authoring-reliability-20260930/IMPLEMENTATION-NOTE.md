@@ -88,13 +88,38 @@ existing32-reference passage bound, and its subsequent correction request
 exceeded the native body bound. The failed responses and partial transport
 state remain preserved; no acknowledgment or replay is inferred.
 
-The next agreed offline operation is one fresh same-DERIVED full50 workflow,
-then the declared edit37/removal43/withdrawal/restart controls only when actual
-whole-review and separate-publication prerequisites pass. Its controlled reply
-fixture must express privacy and Source-owner maintenance through the existing
-typed contract, retaining genuinely unverified assurance. Model-free test
-planning counts every earlier failed operation; it changes no product or paid
-limit.
+The subsequent043 DERIVED full50 workflow passed with308 local responses,
+including pause/export at20 and resume without redrafting earlier Actions.
+It retained all50 Actions,118 typed Source passages,24 counter checks,
+eight privacy checks and current unverified external maintenance commitments.
+Whole review and separate Read/Action publication completed; execution stayed
+disabled. Complete Source/control/project cold comparisons passed. This is
+implementer public-function/production-encoder evidence, independently read
+back by the tester; immutable installed acceptance remains separate.
+
+The045 edit37 operation then exposed a lifecycle defect before Action
+generation: the normal revision loader selected the current published
+authority, but the Source-review path searched only disabled drafts.
+Publication had consumed that draft. The refusal and its pending instruction
+are preserved as a failed result, not described as external Source drift or
+a declined edit save. No edit publication, withdrawal or restart was reached.
+
+The pre-freeze repair carries the actual canonical disabled-or-published
+record selected by the existing loader into Source assessment. Currentness
+checks bind that lifecycle record; a published record must match completely,
+including provenance. A proposed unsaved edit remains separate from its
+persisted baseline. Source, schema, role, Read, current job and coordinated
+save checks remain mandatory. No disabled parent is fabricated and no
+business meaning or correction eligibility is relaxed. A genuine published
+fixture fails before the repair; current/consumed-draft, competing publication,
+withdrawal and existing Source-repair controls pass after it. The full045
+continuation, independent challenge and installed verdict remain pending.
+
+Continue the saved exact37 max25-to20 instruction through ordinary Resume,
+then the predeclared43 withdrawal and survivor restart checks. All prior
+responses count:1053 of1400 local responses, with198 left in the original
+200-response M3 allowance. No fresh full50 sample, history reset or paid-limit
+change follows from this pre-freeze repair.
 
 Settled-source full/types/selected real PostgreSQL/ten offline gates, immutable
 freeze and the existing tester's installed verdict are pending. Main cannot

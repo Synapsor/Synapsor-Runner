@@ -264,6 +264,7 @@ import {
   writeActionRuleAuthorityDraftIfCurrent,
   type ActionRuleAuthorityActivationV1,
   type ActionRuleAuthorityDraftV1,
+  type ActionRuleAuthorityReviewSubjectV1,
   type ActionRuleAuthorityRevisionBaseline,
 } from "./action-rule-authority.js";
 import {
@@ -6426,7 +6427,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   let executionReviewEvidence: Parameters<typeof policyCoverageDraft>[0]["executionReview"];
   let countingDomain: CountingOutcomeDomain | undefined;
   let policySourceInspection: Awaited<ReturnType<typeof inspectPolicyReviewSource>> | undefined;
-  const currentPolicyCoverageDraft = (authority = semanticActionAuthorityDraft) => policyCoverageDraft({ client: intendedClient, read: context.candidate, decisions: context.bundle.decisions,
+  const currentPolicyCoverageDraft = (authority: ActionRuleAuthorityReviewSubjectV1 | undefined = semanticActionAuthorityDraft) => policyCoverageDraft({ client: intendedClient, read: context.candidate, decisions: context.bundle.decisions,
     inputStoreDigest:scopedDisclosureStoreDigest(undefined,context.bundle.mutation_bindings.authoring),
     ...(authoringConversation?.policySources?.scoped_disclosure_reviews?.length
       ? {reviewStoreDigest:scopedDisclosureStoreDigest(countingDomain,context.bundle.mutation_bindings.authoring)} : {}),
@@ -6438,8 +6439,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     actions: semanticActionDrafts.map((entry) => entry.result.compiled), authority });
   const sourceCounterReviewAttempts = new Map<string, { failure?: string }>();
   let reportedSourceCounterFailure: string | undefined;
-  const reviewCompiledSourceCounters = async () => {
-    const authority = semanticActionAuthorityDraft, inspection = policySourceInspection?.inspection, reviewedContext = context;
+  const reviewCompiledSourceCounters = async (authority: ActionRuleAuthorityReviewSubjectV1 | undefined = semanticActionAuthorityDraft) => {
+    const inspection = policySourceInspection?.inspection, reviewedContext = context;
     if (!authority || !inspection) return;
     const checkpoint = await readBoundaryAuthoringResumeState(input.projectRoot, boundaryAuthoringResumeBinding(reviewedContext.bundle));
     const durableReviews = (checkpoint.status === "ready" || checkpoint.status === "stale")
@@ -6457,7 +6458,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       for (const effect of effects) {
         if (effect.operation !== "update" || effect.version_advance?.strategy !== "integer_increment") continue;
         const evidenceForTarget = () => {
-          const current = currentPolicyCoverageDraft().runner_evidence.actions[rule.rule.outcome]?.effect;
+          const current = currentPolicyCoverageDraft(authority).runner_evidence.actions[rule.rule.outcome]?.effect;
           return current && [current, ...(current.atomic_updates ?? [])].find(entry => entry.target_resource === effect.target_resource
             && entry.target_binding === effect.target_binding)?.source_counter_maintenance;
         };
@@ -6507,7 +6508,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     await assertCurrent();
     if (pending) throw new Error("ACTION_COUNTER_REVIEW_PENDING: The source owner has not confirmed every updated counter. The exact rules are retained; resume this job when the maintenance commitment can be reviewed.");
   };
-  const refreshPolicyCoverageEvidence = async (authority = semanticActionAuthorityDraft) => {
+  const refreshPolicyCoverageEvidence = async (authority: ActionRuleAuthorityReviewSubjectV1 | undefined = semanticActionAuthorityDraft) => {
     receiptConfigurationEvidence = await authoringReceiptConfiguration(input.projectRoot, authority?.authority.rules.map(r => r.rule.source) ?? [], process.env);
     executionReviewEvidence = undefined;
     if (authority) {
@@ -6525,7 +6526,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       catch { /* Missing, busy or mismatched history is not evidence of an empty domain. */ }
     }
   };
-  const ensurePolicyCoverage = async (force = false, proposedAuthority = semanticActionAuthorityDraft) => {
+  const ensurePolicyCoverage = async (force = false,
+    proposedAuthority: ActionRuleAuthorityReviewSubjectV1 | undefined = semanticActionAuthorityDraft,
+    currentAuthority: ActionRuleAuthorityReviewSubjectV1 | undefined = semanticActionAuthorityDraft) => {
     const sources = authoringConversation?.policySources;
     const source = activePolicySource(sources);
     if (!source || !input.authoringChat || !modelAssistSession) return undefined;
@@ -6535,7 +6538,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       policySourceInspection = await runWithProgress("Checking current review source", () =>
         inspectPolicyReviewSource(context.lock, input.schemaInspector));
       reviewingSourceCounters = true;
-      await reviewCompiledSourceCounters();
+      await reviewCompiledSourceCounters(currentAuthority);
     }
     catch (error) {
       assertRunning(error);
@@ -6559,12 +6562,12 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         clarifications: authoringConversation?.turns.filter(turn => turn.kind === "clarification") ?? [],
         ...(resumeSelected && activeResume ? { savedReviewEpisode: { job: activeResume.job_intent,
           subject: proposedAuthority
-            ? `disabled Action ${proposedAuthority.authority.name} with Read ${context.candidate.pack.name}`
+            ? `${proposedAuthority.state === "active" ? "published" : "disabled"} Action ${proposedAuthority.authority.name} with Read ${context.candidate.pack.name}`
             : `Read candidate ${context.candidate.pack.name}` } } : {}),
         assertCurrent: async permit => {
           assertRunning();
           if (activeResume) await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, undefined, { permit });
-          await reloadReadReviewForModelRevision(input.projectRoot, context, semanticActionAuthorityDraft);
+          await reloadReadReviewForModelRevision(input.projectRoot, context, currentAuthority);
         }, progress: runWithProgress, state, force });
       policyAttemptKey = state.attemptKey;
       policyReport = state.report;
@@ -6597,9 +6600,11 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
    * original canonical episode supplies the nomination; the Action producer
    * supplies only a confined proposal. A second current complete review occurs
    * after that producer returns, never inside its still-running tool callback. */
-  const prepareActionSourceRepair = async (before: ActionRuleModelDraftV1, catalog: BuiltActionRuleAuthoringCatalogV1, checkpoint?: import("./action-rule-authoring-checkpoint.js").ActionRuleAuthoringCheckpoint) => {
+  const prepareActionSourceRepair = async (before: ActionRuleModelDraftV1, catalog: BuiltActionRuleAuthoringCatalogV1,
+    checkpoint?: import("./action-rule-authoring-checkpoint.js").ActionRuleAuthoringCheckpoint,
+    currentAuthority: ActionRuleAuthorityReviewSubjectV1 | undefined = semanticActionAuthorityDraft) => {
     const sources = authoringConversation?.policySources;
-    if (!sources || !modelAssistSession || !semanticActionAuthorityDraft) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
+    if (!sources || !modelAssistSession || !currentAuthority) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
     const workContext = (): ActionWorkUnitContext => ({ readBoundary: context.candidate,
       readBoundaryDigest: explorationBoundaryCandidateDigest(context.candidate), builtCatalog: catalog, policySources: sources });
     if (!actionInspection) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
@@ -6607,7 +6612,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     const actionRole = rolePostureFingerprint(actionInspection);
     const assertSourceCurrent = async () => {
       await assertAuthoringResumeCurrent(undefined, true);
-      await reloadReadReviewForModelRevision(input.projectRoot, context, semanticActionAuthorityDraft);
+      await reloadReadReviewForModelRevision(input.projectRoot, context, currentAuthority);
       if (await policySourceSavedDigest(input.projectRoot, sources.id) !== canonicalJsonDigest(sources)) throw new PolicySourceChangedError();
       const current = await (input.actionProjectInspector ?? inspectActionProject)(input.projectRoot, process.env);
       if (schemaFingerprintForInspection(current) !== actionSchema || rolePostureFingerprint(current) !== actionRole) {
@@ -6623,8 +6628,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       // Reconstruct from the same retained episode. Starting another review is
       // not a substitute for missing original provenance or exhausted attempts.
       policySourceInspection = await inspectPolicyReviewSource(context.lock, input.schemaInspector);
-      await refreshPolicyCoverageEvidence();
-      originalPrepared = currentPolicyCoverageDraft();
+      await refreshPolicyCoverageEvidence(currentAuthority);
+      originalPrepared = currentPolicyCoverageDraft(currentAuthority);
       const episodes = sources.coverage_episodes?.filter(e => e.id === savedRepair.coverage_provenance?.episode_id) ?? [];
       if (episodes.length !== 1) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
       originalKey = episodes[0]!.context as `sha256:${string}`;
@@ -6632,7 +6637,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         originalPreparedDraft: originalPrepared, expectedCoverageContextKey: originalKey,
         currentSourceSessionDigest: canonicalJsonDigest(sources) }).assessment;
     } else {
-      const checked = await ensurePolicyCoverage();
+      const checked = await ensurePolicyCoverage(false, currentAuthority, currentAuthority);
       if (!checked?.report) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
       originalPrepared = structuredClone(checked.draftRecord); originalKey = checked.key as `sha256:${string}`;
       const assessmentInput = { context: workContext(), currentAction: before, preparedDraft: originalPrepared,
@@ -6669,7 +6674,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         await assertSourceCurrent();
         const proposed = await actionRuleAuthorityDraftFromCompiled(input.projectRoot, revised.compiled, undefined,
           { nextBoundary: context.candidate, inspection: actionInspection! });
-        const checked = await ensurePolicyCoverage(false, proposed);
+        const checked = await ensurePolicyCoverage(false, proposed, currentAuthority);
         if (!checked?.report) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
         const current = assessActionWorkUnitSource({ context: workContext(), currentAction: revised.compiled.draft,
           preparedDraft: checked.draftRecord, report: checked.report, expectedReportDigest: canonicalJsonDigest(checked.report),
@@ -7331,7 +7336,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         semanticActionRevisionBaseline = undefined;
         semanticActionRevisionCatalog = undefined;
         let resumedActivatedAt: string | undefined;
-        let currentActionAuthorityDigest: string | undefined;
+        let currentActionAuthoritySubject: ActionRuleAuthorityReviewSubjectV1 | undefined;
         let disclosureBaseline: Awaited<ReturnType<typeof loadActionRuleRevisionBaseline>>;
         let jointApprovalRepair = false;
         const resumedOutcome = resumePastPlanning && !retainedReadEdit
@@ -7349,7 +7354,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           });
           if (resumedDraft) {
             semanticActionModelDraft = resumedDraft.draft;
-            currentActionAuthorityDigest = resumedDraft.authorityDigest;
+            currentActionAuthoritySubject = resumedDraft.subject;
             semanticActionRevisionCatalog = resumedDraft.catalog;
             resumedActivatedAt = resumedDraft.activatedAt;
             try { assertJointApprovalLimitsPreserved([jobIntent.trim()], resumedDraft.draft.approval); }
@@ -7383,7 +7388,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
               );
             }
             semanticActionRevisionBaseline = revisionBaseline.draft;
-            currentActionAuthorityDigest = revisionBaseline.authorityDigest;
+            currentActionAuthoritySubject = revisionBaseline.subject;
             disclosureBaseline = revisionBaseline;
             if (revalidatedActionOutcomes) {
               // Compile unchanged business AST against freshly inspected structure.
@@ -7492,14 +7497,13 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         let sourceRepair: Awaited<ReturnType<typeof prepareActionSourceRepair>> | undefined;
         if (!semanticActionModelResult && semanticActionRevisionBaseline
           && (activePolicySource(authoringConversation?.policySources) || currentCheckpoint?.source_repair)) {
-          // Use the exact saved disabled parent and complete program. A new
-          // one-Action compilation is not the old Source review's subject.
-          const originalAuthority = (await listActionRuleAuthorityDrafts(input.projectRoot))
-            .find(authority => authority.digest === currentActionAuthorityDigest);
-          if (!originalAuthority) throw new ActionWorkUnitSourcePendingError("currentness");
-          semanticActionAuthorityDraft = originalAuthority;
+          // Publication consumes its disabled parent. Retain the actual selected
+          // lifecycle record and complete program, then recheck that exact record;
+          // never manufacture a disabled parent or substitute another active one.
+          if (!currentActionAuthoritySubject) throw new ActionWorkUnitSourcePendingError("currentness");
+          if (currentActionAuthoritySubject.state === "disabled") semanticActionAuthorityDraft = currentActionAuthoritySubject;
           modelAssistSession = ruleSession;
-          sourceRepair = await prepareActionSourceRepair(semanticActionRevisionBaseline, semanticActionCatalog!, currentCheckpoint);
+          sourceRepair = await prepareActionSourceRepair(semanticActionRevisionBaseline, semanticActionCatalog!, currentCheckpoint, currentActionAuthoritySubject);
         }
         let actionRuleOperatorRetryUsed = false;
         let semanticScopeIssue: {
@@ -11972,7 +11976,7 @@ async function reviewSavedBoundaryPolicyInner(input: {
 export async function reloadReadReviewForModelRevision(
   projectRoot: string,
   previous: Awaited<ReturnType<typeof loadBoundaryReviewContext>>,
-  expectedAction?: ActionRuleAuthorityDraftV1,
+  expectedAction?: ActionRuleAuthorityReviewSubjectV1,
 ): Promise<Awaited<ReturnType<typeof loadBoundaryReviewContext>>> {
   const current = await loadBoundaryReviewContext(projectRoot);
   const readIdentity = ({ authoring, ...bindings }: BoundaryReviewMutationBindings) => ({
@@ -11983,8 +11987,14 @@ export async function reloadReadReviewForModelRevision(
     !== canonicalJsonDigest(readIdentity(current.bundle.mutation_bindings))) {
     throw new Error("READ_BOUNDARY_REVISION_CHANGED: The selected Read revision changed. Reopen its current review; your requested revision has not been applied.");
   }
-  if (expectedAction && (await readActionRuleAuthorityDraft(projectRoot, expectedAction.authority.name))?.digest !== expectedAction.digest) {
-    throw new Error("ACTION_BOUNDARY_REVISION_CHANGED: The dependent Action draft changed. Reopen the saved job to review its current rules; no Read revision was applied.");
+  if (expectedAction) {
+    const currentAction = expectedAction.state === "active"
+      ? await readActionRuleAuthorityActivation(projectRoot)
+      : await readActionRuleAuthorityDraft(projectRoot, expectedAction.authority.name);
+    if (currentAction?.digest !== expectedAction.digest
+      || (expectedAction.state === "active" && canonicalJsonDigest(currentAction) !== canonicalJsonDigest(expectedAction))) {
+      throw new Error("ACTION_BOUNDARY_REVISION_CHANGED: The dependent Action revision changed. Reopen the saved job to review its current rules; no Read revision was applied.");
+    }
   }
   return current;
 }
@@ -12376,6 +12386,7 @@ async function loadActionRuleRevisionBaseline(input: {
   catalog: ActionRuleCatalogV1;
   activatedAt: string;
   authorityDigest: `sha256:${string}`;
+  subject: ActionRuleAuthorityReviewSubjectV1;
   sourceRule: import("@synapsor-runner/action-rules").ActionRuleAuthoritySourceV1;
 } | undefined> {
   const drafts = (await listActionRuleAuthorityDrafts(input.projectRoot))
@@ -12407,6 +12418,7 @@ async function loadActionRuleRevisionBaseline(input: {
     catalog: structuredClone(existing.authority.catalog),
     activatedAt: sourceRule.activated_at,
     authorityDigest: existing.digest,
+    subject: structuredClone(existing),
     sourceRule: structuredClone(sourceRule),
   };
 }
