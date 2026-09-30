@@ -9552,7 +9552,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           if (readRevisionSavedDigest && pendingReadRevisionState?.result_received) {
             // This identity comes from the actual guarded commit callback,
             // not model content or a guessed readback. Failure to persist it
-            // leaves the conservative unsaved/unknown disposition on restart.
+            // leaves the conservative unconfirmed-save disposition on restart.
             pendingReadRevisionState = { ...pendingReadRevisionState, saved_read_digest: readRevisionSavedDigest };
             await persistAuthoringResume("authority_review");
             if (resumePersistenceBlocked) throw checkpointSaveFailure("The recorded Read commit");
@@ -9566,16 +9566,16 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
               if (resumePersistenceBlocked) throw checkpointSaveFailure("The exhausted Read revision");
             });
           }
-          const failureTitle = readRevisionSaved ? "Read revision saved; review needs recovery" : "Read revision not saved";
+          const failureTitle = readRevisionSaved ? "Read revision saved; review needs recovery" : "Read revision save not confirmed";
           const preservedState = readRevisionSaved
             ? "The disabled Read revision was saved, but the following review did not finish. Inspect its exact current Read/Action records through local boundary review --access or --map --all --details; this producer cannot regenerate or replay its consumed result."
-            : "The exact disabled Read and Action drafts are unchanged.";
+            : "The exact Read save was not confirmed. Inspect current disabled Read/Action records through local boundary review --access or --map --all --details; retained responses and requests are not permission to regenerate or replay.";
           readRevisionRecovery = [
             `Before activation: ${failureTitle}. ${message}`,
             readRevisionSaved ? "Disposition: inspect the committed disabled Read and unfinished following review locally. No automatic companion recovery or new model generation is granted."
               : "Recovery: The pending rules remain saved. Inspect exact details and any retained current question; no authority or resend permission was granted.",
           ];
-          chat.rememberDetails(readRevisionSaved ? failureTitle.toUpperCase() : "READ BOUNDARY REVISION NOT SAVED", [
+          chat.rememberDetails(readRevisionSaved ? failureTitle.toUpperCase() : "READ BOUNDARY REVISION SAVE NOT CONFIRMED", [
             message,
             preservedState,
             "No authority, source query, or source write occurred.",

@@ -8194,7 +8194,7 @@ describe("boundary operator-plane CLI", () => {
               expect(context.bundle.candidate_digest).toBe(preRevisionReadDigest);
               expect(vi.mocked(semanticChat.streamModel).mock.calls.flat(2).join("\n")).toContain("No access change was needed");
             }
-            expect(vi.mocked(semanticChat.checkpoint).mock.calls.flat(2).join("\n")).not.toContain("Read revision not saved");
+            expect(vi.mocked(semanticChat.checkpoint).mock.calls.flat(2).join("\n")).not.toContain("Read revision save not confirmed");
             const resumeLoad = await readBoundaryAuthoringResumeState(root, { boundary_name: context.candidate.pack.name,
               generation_lock_fingerprint: context.candidate.generation_lock_fingerprint,
               schema_fingerprint: context.bundle.authority.schema_fingerprint, role_posture_fingerprint: context.bundle.authority.role_posture_fingerprint });
@@ -8315,9 +8315,9 @@ describe("boundary operator-plane CLI", () => {
         expect(modelReadBoundaryRevisionGenerator.mock.calls[1]![0].instruction).toBe(
           "Keep the service visit status private for eligibility verification.",
         );
-        expect(semanticChat.rememberDetails).toHaveBeenCalledWith("READ BOUNDARY REVISION NOT SAVED", expect.arrayContaining([
+        expect(semanticChat.rememberDetails).toHaveBeenCalledWith("READ BOUNDARY REVISION SAVE NOT CONFIRMED", expect.arrayContaining([
           expect.stringContaining("TEST_REVISION_PROVIDER_UNAVAILABLE_BEFORE_EGRESS"),
-          "The exact disabled Read and Action drafts are unchanged.",
+          expect.stringContaining("The exact Read save was not confirmed. Inspect current disabled Read/Action records"),
         ]));
         const context = await loadBoundaryReviewContext(root);
         const resume = await readBoundaryAuthoringResumeState(root, {
@@ -9457,7 +9457,7 @@ describe("boundary operator-plane CLI", () => {
             modelReadBoundaryRevisionGenerator: vocabularyGenerator, boundaryAuthoringChatFactory: () => vocabularyChat });
         const labelledRead = (await loadBoundaryReviewContext(root)).candidate;
         const labelledActions = await readActionRuleAuthorityDraft(root, "reviewed_staging_rules");
-        expect(vocabularyChat.streamCheckpoint).not.toHaveBeenCalledWith("Read revision not saved", expect.anything(), expect.anything());
+        expect(vocabularyChat.streamCheckpoint).not.toHaveBeenCalledWith("Read revision save not confirmed", expect.anything(), expect.anything());
         expect(activationFailureExercised).toBe(true);
         expect(labelledRead.generation_lock_fingerprint).not.toBe(multiple!.authority.catalog.generation_lock_fingerprint);
         expect(labelledActions!.authority.rules).toHaveLength(3);

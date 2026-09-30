@@ -9,6 +9,7 @@ import { createBoundaryAuthoringChat } from "./boundary-authoring-chat.js";
 import { readBoundaryRevisionCatalog } from "./read-boundary-revision-model.js";
 import { ownedProgramInspection } from "./test-fixtures/owned-authoring-program.js";
 import * as delegationSetup from "./delegation-setup.js";
+import * as boundaryMutations from "./boundary-review-mutation.js";
 
 /** One implementer-derived, Source-free public Read revision owner wait.
  * Ordinary local provider responses and terminal/inspection IO are supplied;
@@ -21,7 +22,7 @@ const strings=(value:any):string[]=>typeof value==="string" ? [value] : Array.is
   : value && typeof value==="object" ? Object.values(value).flatMap(strings) : [];
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllEnvs();});
 
-async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"terminal_invalid"|"committed_read") {
+async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"terminal_invalid"|"committed_read"|"guard_ack_loss") {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),`owned-public-read-revision-wait-${control}-`));
   const inspection=ownedProgramInspection(),inspect=async()=>structuredClone(inspection);
   const resumeFile=path.join(root,".synapsor/boundary-authoring/resume.json");
@@ -39,6 +40,18 @@ async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"termina
     }
     return writeDelegation(...args);
   });
+  if(control==="guard_ack_loss") for(const method of ["commitBoundaryReviewMutationBatch","commitExactBoundaryCandidateMutation"] as const) {
+    const original=boundaryMutations[method];
+    vi.spyOn(boundaryMutations,method).mockImplementation(async(...args:any[])=>{
+      const result=await (original as any)(...args);
+      const current=await loadBoundaryReviewContext(root);
+      const units=readBoundaryRevisionCatalog(current.candidate).resources.find(resource=>resource.id==="studio.parcels")?.fields.find(field=>field.id==="units");
+      if(!committedFault && stage==="revision" && units?.current_exposure==="runner_only") {
+        committedFault=true;throw new Error("OWNED_READ_GUARD_ACK_LOSS_AFTER_REAL_COMMIT");
+      }
+      return result;
+    });
+  }
   const write=(text:string)=>{transcript+=text;};
   const fail=(message:string):never=>{throw new Error(`${message}\n${transcript.slice(-6000)}`);};
   const read=async()=>{
@@ -112,21 +125,28 @@ async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"termina
       runBoundaryReview:(args,inspector)=>boundaryReviewCommand(args,inspector,outer,undefined,options)});
     paused={requests,resume:await readResume(),context:await loadBoundaryReviewContext(root)};
     expect(chosenRevision,transcript).toBe(true);expect(before).toBeDefined();
-    if(control==="committed_read") {
+    if(control==="committed_read" || control==="guard_ack_loss") {
       expect(committedFault).toBe(true);
       expect(paused.context.bundle.candidate_digest).not.toBe(before.bundle.candidate_digest);
-      expect(paused.resume.pending_read_revision_state.saved_read_digest).toBe(paused.context.bundle.candidate_digest);
+      expect(paused.resume.pending_read_revision_state.result_received).toBe(true);
+      if(control==="committed_read") expect(paused.resume.pending_read_revision_state.saved_read_digest).toBe(paused.context.bundle.candidate_digest);
+      else expect(paused.resume.pending_read_revision_state.saved_read_digest).toBeUndefined();
       const priorResponses=revisionRequests;
       stage="reopen";reopenOffset=transcript.length;
       await boundaryReviewCommand(["--project-root",root,"--access","--job-first"],inspect,outer,undefined,options);
       reopened={requests,resume:await readResume(),context:await loadBoundaryReviewContext(root)};
       expect(reopened.requests).toBe(paused.requests);expect(revisionRequests).toBe(priorResponses);
       expect(reopened.context.bundle.candidate_digest).toBe(paused.context.bundle.candidate_digest);
-      expect(JSON.stringify(failures)).toContain("READ_BOUNDARY_REVISION_SAVED_REVIEW_PENDING");
+      expect(JSON.stringify(failures)).toContain(control==="committed_read" ? "READ_BOUNDARY_REVISION_SAVED_REVIEW_PENDING" : "READ_BOUNDARY_REVISION_RESULT_NOT_SAVED");
       const inspectionStart=requests;
       await boundaryReviewCommand(["--project-root",root,"--map","--all","--details"],inspect);
       expect(requests).toBe(inspectionStart);
       expect(await fs.readFile(path.join(root,".synapsor/exploration-boundary.active.json")).catch(()=>undefined)).toBeUndefined();
+      if(control==="guard_ack_loss") {
+        expect(transcript).not.toContain("The exact disabled Read and Action drafts are unchanged.");
+        expect(transcript).toContain("Read revision save not confirmed");
+        expect(transcript).toContain("Inspect current disabled Read/Action records");
+      }
       return;
     }
     if(control==="terminal_invalid") {
@@ -173,6 +193,6 @@ async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"termina
   }
 }
 
-it.each(["healthy","pause_restart","terminal_invalid","committed_read"] as const)("public Read revision preserves the exact model owner question before its consumer: %s",async control=>{
+it.each(["healthy","pause_restart","terminal_invalid","committed_read","guard_ack_loss"] as const)("public Read revision preserves the exact model owner question before its consumer: %s",async control=>{
   await publicReadRevisionWait(control);
 },30_000);
