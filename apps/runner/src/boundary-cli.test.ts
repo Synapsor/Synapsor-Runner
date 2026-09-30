@@ -17436,6 +17436,93 @@ describe("saved post-edit review uses reader evidence after writer setup", () =>
 
 
 describe("public saved-job connection recovery control", () => {
+  it.each(["pause", "answer", "decline", "source-drift", "competing"] as const)("Phase1 public Read assistance persists its actual question and current answer: %s", async mode => {
+    const f = await staleSemanticRevalidationFixture();
+    try {
+      const binding = boundaryAuthoringResumeBinding((await loadBoundaryReviewContext(f.root)).bundle);
+      const source = newPolicySourceSession();
+      source.snapshots = [policyTextSnapshot(Buffer.from("The visit status describes the selected visit's current stage."), "visit-stages.txt")];
+      source.active = 1; source.approvals = [{ digest: source.snapshots[0]!.digest,
+        destination: authoringDestination({ provider: "openai", model: "gpt-test" }) }];
+      await savePolicySources(f.root, source);
+      await writeBoundaryAuthoringResumeState(f.root, buildBoundaryAuthoringResumeState({ binding, stage: "read_mapping",
+        jobIntent: "List selected visit status.", readIntent: "List selected visit status.", provider: "openai", model: "gpt-test",
+        policySourceSession: source.id }));
+      const question = "Which visit stages should the status view describe?";
+      const request = { resource: "public.service_visits", field: "status", question,
+        reason: "The selected view needs an exact business explanation." };
+      let reopened = false, sawWaiting = 0, sawAnswer = false;
+      const requestJson = vi.fn(async (wire: { body: Record<string, unknown> }) => {
+        if (requestJson.mock.calls.length > 2) throw new AskError("ASK_CANCELLED", "End this owned mapping control before a separate review", 499);
+        const saved = await readBoundaryAuthoringResumeState(f.root, binding);
+        if (requestJson.mock.calls.length === 2) {
+          sawAnswer = saved.status === "ready" && saved.value.read_assistance?.stage === "decided"
+            && saved.value.owner_handoffs?.at(-1)?.state === "answered";
+          expect(JSON.stringify(wire.body)).toContain("The scheduled or completed stage of the selected visit.");
+        }
+        return { status: 200, body: { output: [{ type: "function_call", call_id: `owned-read-${requestJson.mock.calls.length}`,
+          name: "runner__submit_read_workloads", arguments: JSON.stringify(requestJson.mock.calls.length === 1
+            ? { clarification_request: request } : { allowed: [{ id: "selected_visit_status", description: "List selected visit status",
+              plan: { kind: "rows", resource: "public.service_visits", select: ["status"] } }], forbidden: [] }) }] } };
+      });
+      f.session.chooseOption = async (_title, _choices, options) => {
+        if (_title === "START BOUNDARY DRAFTING") return "resume";
+        if (_title === "SETUP NEEDS ATTENTION" || _title === "READ ACTIVATION NEEDS ATTENTION") return "pause";
+        if (_title === "FINISH BOUNDARY REVIEW") return "finish";
+        throw new Error(`Read assistance fixture needs an explicit route for ${_title}: ${JSON.stringify(options?.context)}`);
+      };
+      f.session.promptText = async prompt => {
+        if (prompt !== question) return undefined;
+        const saved = await readBoundaryAuthoringResumeState(f.root, binding);
+        expect(saved.status).toBe("ready"); if (saved.status !== "ready") return undefined;
+        expect(saved.value.read_assistance?.stage).toBe("waiting");
+        expect(saved.value.owner_handoffs?.at(-1)).toMatchObject({ state: "waiting", consumer: "read_clarification", question });
+        sawWaiting++;
+        if (!reopened || mode === "pause") return undefined;
+        if (mode === "decline") return "";
+        if (mode === "source-drift") {
+          const changed = structuredClone(source);
+          changed.snapshots.push(policyTextSnapshot(Buffer.from("The same visit stage now has a separate exception."), "visit-stages.txt", 2));
+          changed.active = 2; await savePolicySources(f.root, changed);
+        }
+        if (mode === "competing") await writeBoundaryAuthoringResumeState(f.root, buildBoundaryAuthoringResumeState({ binding,
+          stage: saved.value.stage, jobIntent: saved.value.job_intent, provider: "openai", model: "gpt-test", previous: saved.value,
+          pendingJobRevision: "A separately attributed competing Read edit." }), { expectedRevisionDigest: saved.value.revision_digest });
+        return "The scheduled or completed stage of the selected visit.";
+      };
+      const noAction = vi.fn(async () => { throw new Error("This read-only fixture must not draft Actions."); });
+      const run = () => f.run(noAction, undefined, { modelReadWorkloadGenerator: args => generateModelReadWorkload({ ...args, dependencies: { requestJson } }) });
+      await run();
+      expect(requestJson).toHaveBeenCalledTimes(1); expect(sawWaiting).toBe(1);
+      const paused = await readBoundaryAuthoringResumeState(f.root, binding);
+      expect(paused.status).toBe("ready"); if (paused.status !== "ready") return;
+      expect(paused.value.read_assistance?.pending_question).not.toHaveProperty("decision");
+      expect(paused.value.generation_recovery?.operations.at(-1)?.question_handoff?.answered).not.toBe(true);
+      reopened = true; await run();
+      // Finishing the ordinary disabled Read review may replace its candidate.
+      // Recheck using its ACTUAL current binding, not the earlier question view.
+      const finalBinding = boundaryAuthoringResumeBinding((await loadBoundaryReviewContext(f.root)).bundle);
+      const final = await readBoundaryAuthoringResumeState(f.root, finalBinding);
+      expect(final.status).toBe("ready"); if (final.status !== "ready") return;
+      if (mode === "answer") {
+        expect(sawAnswer).toBe(true); expect(requestJson).toHaveBeenCalledTimes(2);
+        expect(final.value.read_assistance).toBeUndefined(); expect(final.value.read).toBeDefined();
+        expect(final.value.owner_handoffs?.at(-1)).toMatchObject({ state: "answered", actor: "local_installation_operator" });
+      } else if (mode === "decline") {
+        expect(requestJson).toHaveBeenCalledTimes(1);
+        expect(final.value.read_assistance).toMatchObject({ stage: "decided", pending_question: { decision: { state: "declined" } } });
+        expect(final.value.owner_handoffs?.at(-1)).toMatchObject({ state: "answered", actor: "local_installation_operator",
+          answer: "Declined the exact Read clarification." });
+        expect(final.value.read).toBeUndefined();
+      } else {
+        expect(requestJson).toHaveBeenCalledTimes(1); expect(final.value.read_assistance?.stage).toBe("waiting");
+        expect(final.value.owner_handoffs?.at(-1)?.state).toBe("waiting");
+        if (mode === "competing") expect(final.value.pending_job_revision).toBe("A separately attributed competing Read edit.");
+      }
+      expect(noAction).not.toHaveBeenCalled();
+      expect(await readActionRuleAuthorityActivation(f.root)).toBeUndefined();
+    } finally { await f.dispose(); }
+  }, 30_000);
   it("Phase1 preserves exhausted planning questions on reopen without resetting answers or sending again", async () => {
     const f = await staleSemanticRevalidationFixture();
     try {

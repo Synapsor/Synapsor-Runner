@@ -296,6 +296,8 @@ import {
   type ModelReadValueContextDecision,
   type ModelReadValueRequest,
 } from "./read-workload-model.js";
+import { ReadWorkloadAssistancePausedError, parseReadWorkloadAssistanceCheckpoint,
+  readWorkloadAssistanceDecisionAnswer, type ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
 import { ReadWorkloadDraftError, readWorkloadDiagnosticLines, type ReadWorkloadDiagnostic } from "./read-workload-diagnostics.js";
 import {
   generateModelReadBoundaryRevision,
@@ -3301,7 +3303,7 @@ async function promptReadBoundaryClarification(input: {
   session: BoundaryReviewInteractiveSession;
   model: ActionModelSuggestionSession;
   request: ModelReadClarificationRequest;
-}): Promise<ModelReadClarificationDecision> {
+}): Promise<ModelReadClarificationDecision | undefined> {
   const exactTarget = `${input.request.resource}${input.request.field ? `.${input.request.field}` : ""}`;
   const answer = await input.session.promptText(input.request.question, {
     context: [
@@ -3311,9 +3313,11 @@ async function promptReadBoundaryClarification(input: {
       `Your answer will be sent to ${boundaryModelLabel(input.model)} for one bounded remapping call.`,
       "Explain only the business meaning. Do not paste rows, credentials, personal data, or trusted tenant/principal values.",
       "Runner will validate the resulting exact plan and will not grant or activate authority.",
+      "Blank declines this exact question. Escape or EOF leaves it saved and unanswered.",
     ],
   });
-  return answer?.trim()
+  if (answer === undefined) return undefined;
+  return answer.trim()
     ? { state: "answered", answer: answer.trim() }
     : { state: "declined" };
 }
@@ -3322,7 +3326,7 @@ async function promptReadBoundaryValueContext(input: {
   session: BoundaryReviewInteractiveSession;
   model: ActionModelSuggestionSession;
   request: ModelReadValueRequest;
-}): Promise<ModelReadValueContextDecision> {
+}): Promise<ModelReadValueContextDecision | undefined> {
   const context = [
     `Exact reviewed field: ${input.request.resource}.${input.request.field}`,
     `Model reason: ${input.request.reason}`,
@@ -3349,6 +3353,7 @@ async function promptReadBoundaryValueContext(input: {
       ))
       ? "provide"
       : "without";
+  if (route === undefined) return undefined;
   if (route !== "provide") return { state: "without_values" };
 
   let warning: string | undefined;
@@ -3365,7 +3370,7 @@ async function promptReadBoundaryValueContext(input: {
         ],
       },
     );
-    if (raw === undefined) return { state: "without_values" };
+    if (raw === undefined) return undefined;
     const values = [...new Set(raw.split(",").map((value) => value.trim()).filter(Boolean))];
     if (!values.length || values.length > 32 || values.some((value) => value.length > 200)) {
       warning = "enter 1 through 32 values, each at most 200 characters";
@@ -4388,6 +4393,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   let activeResume = availableResume;
   let generationRecovery = availableResume?.generation_recovery;
   let ownerHandoffs = structuredClone(availableResume?.owner_handoffs ?? []);
+  let readAssistanceCheckpoint = availableResume?.read_assistance;
   let resumeRead: BoundaryAuthoringResumeRead | undefined = availableResume?.read;
   let resumeReadIntent = availableResume?.read_intent;
   let pendingReadRelationship = availableResume?.pending_read_relationship;
@@ -4494,6 +4500,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         conversation: authoringConversation?.turns,
         generationRecovery: authoringTransportCheckpoint(generationRecovery),
         ownerHandoffs,
+        readAssistanceCheckpoint: readAssistanceCheckpoint ?? null,
         ...(intendedClient ? { intendedClient } : {}),
         ...(authoringConversation?.policySources?.snapshots.length ? { policySourceSession: authoringConversation.policySources.id } : {}),
         ...(resumeReadIntent ? { readIntent: resumeReadIntent } : {}),
@@ -4568,11 +4575,15 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     // answer must not masquerade as an acknowledged saved decision.
     const beforeHandoffs = structuredClone(ownerHandoffs);
     const beforeRecovery = generationRecovery && structuredClone(generationRecovery);
+    const beforeReadAssistance = readAssistanceCheckpoint && structuredClone(readAssistanceCheckpoint);
+    const beforeRead = resumeRead && structuredClone(resumeRead);
     const beforeTurns = authoringConversation && structuredClone(authoringConversation.turns);
     try { return await withProjectAuthorityMutation(input.projectRoot, operation); }
     catch (error) {
       ownerHandoffs = beforeHandoffs;
       generationRecovery = beforeRecovery;
+      readAssistanceCheckpoint = beforeReadAssistance;
+      resumeRead = beforeRead;
       if (authoringConversation && beforeTurns) authoringConversation.turns.splice(0, authoringConversation.turns.length, ...beforeTurns);
       throw error;
     }
@@ -5010,6 +5021,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       activeResume = availableResume;
       resumeRead = availableResume.read;
       resumeReadIntent = availableResume.read_intent;
+      readAssistanceCheckpoint = availableResume.read_assistance;
       resumeAction = availableResume.action;
       pendingActionAddition = availableResume.pending_action_addition;
     } else if (selected === "model" || selected === "choose_model") {
@@ -5022,7 +5034,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       activeResume = editingSavedJob ? availableResume : undefined;
       resumeRead = editingSavedJob ? availableResume!.read : undefined;
       resumeReadIntent = editingSavedJob ? availableResume!.read_intent : undefined;
-      if (!editingSavedJob) pendingReadRelationship = undefined;
+      if (!editingSavedJob) { pendingReadRelationship = undefined; readAssistanceCheckpoint = undefined; }
       resumeAction = editingSavedJob ? availableResume!.action : undefined;
       if (!editingSavedJob) reviewedVersionFields = [];
       if (!editingSavedJob) readPrerequisiteDecisions = [];
@@ -6224,7 +6236,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     await persistAuthoringResume("read_mapping");
   }
   if (input.jobFirst && mode === "model" && resumePastPlanning
-    && availableResume?.stage === "read_mapping" && !resumeRead) {
+    && availableResume?.stage === "read_mapping" && !resumeRead && !readAssistanceCheckpoint) {
     const added = await runWithProgress("Checking saved record links", () =>
       refreshIncompleteReadMappingRelationships({ projectRoot: input.projectRoot, schemaInspector: input.schemaInspector }));
     if (added.length) {
@@ -6546,6 +6558,71 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         }
       }
     }
+    // A reviewed exact-path mutation may legitimately change the Read binding.
+    // This one in-memory bridge is minted only after that supported commit and
+    // binds its current context. It cannot excuse unrelated Source/ACL drift.
+    let reviewedRelationshipAnswer: { id: string; digest: string; context: `sha256:${string}` } | undefined;
+    const persistReadAssistance = async (checkpoint: ReadWorkloadAssistanceCheckpoint | undefined,
+      currentBoundary: ExplorationBoundaryDraft,
+      accepted?: Awaited<ReturnType<typeof generateModelReadWorkload>>) => mutateOwnerHandoff(async permit => {
+      const currentContext = await ownerQuestionContext(permit);
+      const current = await loadBoundaryReviewContext(input.projectRoot);
+      if (explorationBoundaryCandidateDigest(currentBoundary) !== current.bundle.candidate_digest) {
+        throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_STALE: The exact Read candidate changed. Preserve the assistance and inspect the current saved job.");
+      }
+      if (!checkpoint) {
+        if (!accepted || accepted.analysis.status !== "ready") throw checkpointSaveFailure("The accepted Read mapping");
+        // The immutable analysis is inert until the SAME resume CAS records its
+        // exact pointer. Failure never clears a question or acknowledges a save.
+        const analysis = analyzeReadWorkloadSet({ workload: accepted.workload, generatedBoundary: currentBoundary });
+        if (analysis.status !== "ready" || canonicalJsonDigest(analysis) !== canonicalJsonDigest(accepted.analysis)) {
+          throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_STALE: The accepted mapping no longer validates against the current Read catalog.");
+        }
+        const saved = await storeReadWorkloadAnalysis({ projectRoot: input.projectRoot,
+          generatedBoundary: currentBoundary, source: accepted.workload.source, analysis });
+        resumeRead = { analysis_id: saved.analysis_id, analysis_digest: saved.analysis_digest };
+        readAssistanceCheckpoint = undefined;
+      } else {
+        const checked = parseReadWorkloadAssistanceCheckpoint(checkpoint), q = checked.pending_question;
+        const consumer = q.kind === "value" ? "read_value_context" : "read_clarification";
+        const last = ownerHandoffs.at(-1);
+        const sameQuestion = last?.consumer === consumer && last.question === q.question
+          && canonicalJsonDigest(last.completion ?? null) === canonicalJsonDigest(q.completion ?? null);
+        if (checked.stage === "waiting") {
+          if (sameQuestion && last?.state === "waiting") {
+            if (last.scope_digest !== ownerQuestionScope() || last.context_digest !== currentContext) {
+              throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: The saved Read question is not current. No answer or replacement was inferred.");
+            }
+          } else {
+            if (last?.state === "waiting") throw new Error("AUTHORING_OWNER_QUESTION_PENDING: Inspect the current saved question before replacing it.");
+            const next = createOwnerHandoff({ consumer, question: q.question, scope_digest: ownerQuestionScope(),
+              context_digest: currentContext, ...(q.completion ? { completion: q.completion } : {}) });
+            if (q.completion) generationRecovery = authoringQuestionCheckpoint(generationRecovery, ownerHandoffCheckpoint(next));
+            else if (generationRecovery?.operations.some(op => ["in_flight", "received", "handled", "unknown", "partial"].includes(op.state))) {
+              throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The Read question has no exact completed consumer association. Preserve the saved generation without replay.", 409);
+            }
+            ownerHandoffs.push(next);
+          }
+        } else {
+          if (!sameQuestion || last?.state !== "waiting" || last.scope_digest !== ownerQuestionScope()
+            || last.context_digest !== currentContext && !(q.kind === "relationship"
+              && reviewedRelationshipAnswer?.id === last.id && reviewedRelationshipAnswer.digest === last.digest
+              && reviewedRelationshipAnswer.context === currentContext)) {
+            throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: Source, permissions or the exact Read question changed. Its answer was not accepted.");
+          }
+          const answer = readWorkloadAssistanceDecisionAnswer(q);
+          const next = answerOwnerHandoff(last, answer, currentContext);
+          if (last.completion) generationRecovery = authoringQuestionAnswerCheckpoint(generationRecovery,
+            ownerHandoffCheckpoint(last), { digest: canonicalJsonDigest(next), operator_messages: [answer] });
+          ownerHandoffs[ownerHandoffs.length - 1] = next;
+          rememberModelAuthoringTurn(authoringConversation, last.question, answer);
+          reviewedRelationshipAnswer = undefined;
+        }
+        readAssistanceCheckpoint = checked;
+      }
+      await persistAuthoringResume("read_mapping", permit);
+      if (resumePersistenceBlocked) throw checkpointSaveFailure("The Read assistance checkpoint");
+    });
     const prepareRequestedRelationship = async (request: { resource: string }, currentBoundary: ExplorationBoundaryDraft) => {
       pendingReadRelationship = { resource: request.resource };
       await persistAuthoringResume("read_mapping");
@@ -6592,12 +6669,16 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       pendingReadRelationship = undefined;
       await persistAuthoringResume("read_mapping");
       await assertAuthoringResumeCurrent(undefined);
+      const pending = ownerHandoffs.at(-1);
+      if (pending?.state === "waiting" && readAssistanceCheckpoint?.pending_question.kind === "relationship") {
+        reviewedRelationshipAnswer = { id: pending.id, digest: pending.digest, context: await ownerQuestionContext() };
+      }
       return { ...verified, candidate: mappingBoundary };
     };
     // Retry the saved structural step locally; a restart does not buy another
     // model attempt at an unchanged missing prerequisite. Current proof and
     // explicit operator selection are required again, never cached consent.
-    if (pendingReadRelationship) {
+    if (pendingReadRelationship && !readAssistanceCheckpoint) {
       const prepared = await prepareRequestedRelationship(pendingReadRelationship, mappingBoundary);
       if (!prepared) throw new Error("READ_RELATIONSHIP_REVIEW_PENDING: The saved relationship remains pending; no model request was made.");
     }
@@ -6623,6 +6704,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             ...(mappingSession.conversation ? { conversation: mappingSession.conversation } : {}),
             deferNarration: Boolean(input.authoringChat),
             egressAcknowledged: true,
+            ...(input.authoringChat ? { ...(readAssistanceCheckpoint ? { resumeCheckpoint: readAssistanceCheckpoint } : {}),
+              onCheckpoint: persistReadAssistance } : {}),
             relationshipReviewHandler: prepareRequestedRelationship,
             valueRequestHandler: (request) => promptReadBoundaryValueContext({
               session: input.session,
@@ -6635,7 +6718,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
                 model: mappingSession,
                 request,
               });
-              if (decision.state === "answered") {
+              if (decision?.state === "answered" && !input.authoringChat) {
                 rememberModelAuthoringClarification(
                   authoringConversation,
                   request.question,
@@ -6649,6 +6732,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         );
       } catch (error) {
         assertRunning(error);
+        if (error instanceof ReadWorkloadAssistancePausedError) return boundaryAssistResult(boundaryAssistBackNotice(
+          "The exact Read question remains saved and unanswered. Reopen this job to answer or explicitly decline it; no replacement generation or authority was inferred."));
         failure = recoverableReadModelDraftFailure(error);
         if (!failure) throw error;
       }
