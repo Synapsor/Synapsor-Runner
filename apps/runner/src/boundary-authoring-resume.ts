@@ -127,6 +127,8 @@ export type BoundaryAuthoringReadRevision = {
   checkpoint?: ReadBoundaryRevisionCheckpoint;
   /** Complete locally consumed result; no saved revision or resend permission. */
   result_received?: true;
+  /** Recorded guarded Read commit only; following review may still be pending. */
+  saved_read_digest?: `sha256:${string}`;
   /** Complete invalid replies exhausted this exact revision, not transport recovery. */
   terminal_reason?: "READ_BOUNDARY_REVISION_NOT_SUBMITTED";
 };
@@ -705,7 +707,7 @@ function assertReadAssistanceHandoff(value: {
 }
 
 function normalizeReadRevisionState(value: unknown): BoundaryAuthoringReadRevision {
-  if (!isRecord(value) || Object.keys(value).some(key => !["instruction", "provenance", "privacy_only", "vocabulary_only", "interpretation_instruction", "checkpoint", "result_received", "terminal_reason"].includes(key))
+  if (!isRecord(value) || Object.keys(value).some(key => !["instruction", "provenance", "privacy_only", "vocabulary_only", "interpretation_instruction", "checkpoint", "result_received", "saved_read_digest", "terminal_reason"].includes(key))
     || typeof value.instruction !== "string" || !["operator", "guided"].includes(value.provenance as string) || typeof value.privacy_only !== "boolean"
     || value.vocabulary_only !== undefined && value.vocabulary_only !== true
     || value.result_received !== undefined && value.result_received !== true
@@ -714,6 +716,10 @@ function normalizeReadRevisionState(value: unknown): BoundaryAuthoringReadRevisi
     throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The pending Read revision request is invalid.");
   }
   reviewedReadRequestText(value.instruction, "Read revision request");
+  if (value.saved_read_digest !== undefined) {
+    reviewedDigest(value.saved_read_digest, "committed Read");
+    if (value.result_received !== true) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: A recorded Read save requires its consumed result disposition.");
+  }
   if (value.interpretation_instruction !== undefined) {
     if (typeof value.interpretation_instruction !== "string") throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The Read interpretation is invalid.");
     reviewedReadRequestText(value.interpretation_instruction, "Read interpretation");

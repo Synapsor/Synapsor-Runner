@@ -40,7 +40,8 @@ describe("Boundary authoring resume state", () => {
       expect(first.completed_policy_reviews).toBeUndefined();
       for (const changed of [{ ...request, instruction: "Another edit." }, { ...request, result_received: false }, { ...request, privacy_only: null },
         { ...request, approve: true }, { ...request, vocabulary_only: false }, { ...request, checkpoint: null },
-        { ...request, terminal_reason: "READ_BOUNDARY_REVISION_NOT_SUBMITTED" }, { ...request, terminal_reason: "ASK_GENERATION_OUTCOME_UNKNOWN" }]) {
+        { ...request, terminal_reason: "READ_BOUNDARY_REVISION_NOT_SUBMITTED" }, { ...request, terminal_reason: "ASK_GENERATION_OUTCOME_UNKNOWN" },
+        { ...request, saved_read_digest: "wrong" }, { ...request, result_received: undefined, saved_read_digest: canonicalJsonDigest("saved Read") }]) {
         expect(() => buildBoundaryAuthoringResumeState({ ...input, pendingReadRevisionState: changed as any })).toThrow();
       }
       const terminal = { instruction, provenance: "guided" as const, privacy_only: true,
@@ -49,6 +50,10 @@ describe("Boundary authoring resume state", () => {
       await writeBoundaryAuthoringResumeState(root, exhausted, { expectedRevisionDigest: first.revision_digest });
       expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: exhausted });
       expect(buildBoundaryAuthoringResumeState({ ...input, previous: exhausted }).pending_read_revision_state).toEqual(terminal);
+      const recorded = { ...request, saved_read_digest: canonicalJsonDigest("actual recorded commit") };
+      const saved = buildBoundaryAuthoringResumeState({ ...input, pendingReadRevisionState: recorded });
+      expect(saved.pending_read_revision_state).toEqual(recorded);
+      expect(saved.completed_policy_reviews).toBeUndefined();
     } finally { await fs.rm(root, { recursive: true, force: true }); }
   });
   it("retains prior pending review contexts as bounded history, never completions", async () => {

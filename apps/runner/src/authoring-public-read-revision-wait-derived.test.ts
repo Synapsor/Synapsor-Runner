@@ -8,6 +8,7 @@ import { boundaryReviewCommand, loadBoundaryReviewContext } from "./boundary-com
 import { createBoundaryAuthoringChat } from "./boundary-authoring-chat.js";
 import { readBoundaryRevisionCatalog } from "./read-boundary-revision-model.js";
 import { ownedProgramInspection } from "./test-fixtures/owned-authoring-program.js";
+import * as delegationSetup from "./delegation-setup.js";
 
 /** One implementer-derived, Source-free public Read revision owner wait.
  * Ordinary local provider responses and terminal/inspection IO are supplied;
@@ -20,7 +21,7 @@ const strings=(value:any):string[]=>typeof value==="string" ? [value] : Array.is
   : value && typeof value==="object" ? Object.values(value).flatMap(strings) : [];
 afterEach(()=>{vi.restoreAllMocks();vi.unstubAllEnvs();});
 
-async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"terminal_invalid") {
+async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"terminal_invalid"|"committed_read") {
   const root=await fs.mkdtemp(path.join(os.tmpdir(),`owned-public-read-revision-wait-${control}-`));
   const inspection=ownedProgramInspection(),inspect=async()=>structuredClone(inspection);
   const resumeFile=path.join(root,".synapsor/boundary-authoring/resume.json");
@@ -28,6 +29,16 @@ async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"termina
   let transcript="",stage:"initial"|"revision"|"reopen"="initial",requests=0,revisionRequests=0,jobReads=0,instructionReads=0,questionReads=0,reopenOffset=0;
   let chosenRevision=false,awaitingClarification=false,followupSeen=false,before:any,waiting:any,paused:any,reopened:any;
   const responses:any[]=[],menus:any[]=[],failures:any[]=[],reads:any[]=[];
+  let committedFault = false;
+  const writeDelegation = delegationSetup.writeDelegationDraft;
+  if(control==="committed_read") vi.spyOn(delegationSetup,"writeDelegationDraft").mockImplementation(async(...args)=>{
+    const current=await loadBoundaryReviewContext(root);
+    const units=readBoundaryRevisionCatalog(current.candidate).resources.find(resource=>resource.id==="studio.parcels")?.fields.find(field=>field.id==="units");
+    if(!committedFault && stage==="revision" && units?.current_exposure==="runner_only") {
+      committedFault=true;throw new Error("OWNED_POST_READ_COMMIT_PRE_DELEGATION_WRITE");
+    }
+    return writeDelegation(...args);
+  });
   const write=(text:string)=>{transcript+=text;};
   const fail=(message:string):never=>{throw new Error(`${message}\n${transcript.slice(-6000)}`);};
   const read=async()=>{
@@ -101,6 +112,23 @@ async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"termina
       runBoundaryReview:(args,inspector)=>boundaryReviewCommand(args,inspector,outer,undefined,options)});
     paused={requests,resume:await readResume(),context:await loadBoundaryReviewContext(root)};
     expect(chosenRevision,transcript).toBe(true);expect(before).toBeDefined();
+    if(control==="committed_read") {
+      expect(committedFault).toBe(true);
+      expect(paused.context.bundle.candidate_digest).not.toBe(before.bundle.candidate_digest);
+      expect(paused.resume.pending_read_revision_state.saved_read_digest).toBe(paused.context.bundle.candidate_digest);
+      const priorResponses=revisionRequests;
+      stage="reopen";reopenOffset=transcript.length;
+      await boundaryReviewCommand(["--project-root",root,"--access","--job-first"],inspect,outer,undefined,options);
+      reopened={requests,resume:await readResume(),context:await loadBoundaryReviewContext(root)};
+      expect(reopened.requests).toBe(paused.requests);expect(revisionRequests).toBe(priorResponses);
+      expect(reopened.context.bundle.candidate_digest).toBe(paused.context.bundle.candidate_digest);
+      expect(JSON.stringify(failures)).toContain("READ_BOUNDARY_REVISION_SAVED_REVIEW_PENDING");
+      const inspectionStart=requests;
+      await boundaryReviewCommand(["--project-root",root,"--map","--all","--details"],inspect);
+      expect(requests).toBe(inspectionStart);
+      expect(await fs.readFile(path.join(root,".synapsor/exploration-boundary.active.json")).catch(()=>undefined)).toBeUndefined();
+      return;
+    }
     if(control==="terminal_invalid") {
       expect(revisionRequests).toBe(2);expect(questionReads).toBe(0);
       expect(paused.resume.pending_read_revision_state.terminal_reason).toBe("READ_BOUNDARY_REVISION_NOT_SUBMITTED");
@@ -145,6 +173,6 @@ async function publicReadRevisionWait(control:"healthy"|"pause_restart"|"termina
   }
 }
 
-it.each(["healthy","pause_restart","terminal_invalid"] as const)("public Read revision preserves the exact model owner question before its consumer: %s",async control=>{
+it.each(["healthy","pause_restart","terminal_invalid","committed_read"] as const)("public Read revision preserves the exact model owner question before its consumer: %s",async control=>{
   await publicReadRevisionWait(control);
 },30_000);

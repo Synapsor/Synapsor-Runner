@@ -133,6 +133,8 @@ export const AUTHORING_REFUSAL_INVENTORY = {
   READ_BOUNDARY_REVISION_CHECKPOINT_STALE: checkpointCurrentness,
   READ_BOUNDARY_REVISION_RESULT_NOT_SAVED: authoringRefusal('authoring_integrity',
     'Inspect the exact saved Read request, current disabled Read/Action records and consumed response evidence. A parsed response is not a confirmed save. Preserve the result; this stopped producer cannot regenerate or replay it through Resume or a generic retry.'),
+  READ_BOUNDARY_REVISION_SAVED_REVIEW_PENDING: authoringRefusal('authoring_prerequisite',
+    'The guarded disabled Read save was recorded; its following review is unfinished. Inspect current Read/Action identities through local boundary review --access or --map --all --details. This read-only disposition grants no replay, automatic companion recovery, activation or complete BUSINESS review.'),
   READ_BOUNDARY_REVISION_STAGED_REVALIDATION_REQUIRED: authoringRefusal('authoring_prerequisite',
     'Preserve the pending Read question and inspected selections. The ordinary host must recheck the exact current source/catalog before continuation; stored metadata is not fresh consent or authority.'),
   READ_BOUNDARY_REVISION_CLARIFICATION_REQUIRED: assistancePending,

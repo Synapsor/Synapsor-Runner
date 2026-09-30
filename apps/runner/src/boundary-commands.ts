@@ -8987,6 +8987,11 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           throw new Error("READ_BOUNDARY_REVISION_NOT_SUBMITTED: This exact retained Read revision exhausted its semantic correction. Inspect the unchanged disabled draft and original response evidence; ordinary Resume cannot renew the allowance or resend it.");
         }
         if (pendingReadRevisionState?.result_received) {
+          if (pendingReadRevisionState.saved_read_digest) {
+            const current = await loadBoundaryReviewContext(input.projectRoot);
+            throw new Error(`READ_BOUNDARY_REVISION_SAVED_REVIEW_PENDING: Runner recorded the guarded disabled Read save ${pendingReadRevisionState.saved_read_digest}. ${current.bundle.candidate_digest === pendingReadRevisionState.saved_read_digest
+              ? "That revision is still selected; its following review did not finish." : "The selected Read has since changed; inspect both recorded and current identities."} Use local boundary review --access or --map --all --details to inspect current Read/Action records. This retained producer cannot regenerate or replay its consumed result; no authority or complete BUSINESS review follows from the saved Read.`);
+          }
           throw new Error("READ_BOUNDARY_REVISION_RESULT_NOT_SAVED: A complete revision response was consumed but its exact guarded save was not confirmed. Inspect current disabled Read/Action records and the saved request; Resume cannot regenerate or replay that result.");
         }
         if (pendingReadRevisionState?.checkpoint) {
@@ -9116,6 +9121,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         if (resumePersistenceBlocked) throw checkpointSaveFailure("The Read revision request");
 
         let readRevisionSaved = false;
+        let readRevisionSavedDigest: `sha256:${string}` | undefined;
         try {
           // Saving the companion Action draft advances the shared repository
           // epoch, not the Read revision. Start a new preview from that current
@@ -9461,7 +9467,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             revision,
             validateCandidate,
             preview: preparedPreview,
-            onCommitted: () => { readRevisionSaved = true; },
+            onCommitted: (mutation) => { readRevisionSaved = true; readRevisionSavedDigest = mutation.candidate_digest; },
           });
           readRevisionSaved = true;
           context = revised.context;
@@ -9537,6 +9543,14 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           assertRunning(error);
           failedReadRevision = request;
           const message = redactCliErrorMessage(error instanceof Error ? error.message : String(error));
+          if (readRevisionSavedDigest && pendingReadRevisionState?.result_received) {
+            // This identity comes from the actual guarded commit callback,
+            // not model content or a guessed readback. Failure to persist it
+            // leaves the conservative unsaved/unknown disposition on restart.
+            pendingReadRevisionState = { ...pendingReadRevisionState, saved_read_digest: readRevisionSavedDigest };
+            await persistAuthoringResume("authority_review");
+            if (resumePersistenceBlocked) throw checkpointSaveFailure("The recorded Read commit");
+          }
           if (!readRevisionSaved && message.startsWith("READ_BOUNDARY_REVISION_NOT_SUBMITTED:")) {
             await mutateOwnerHandoff(async permit => {
               await ownerQuestionContext(permit, "read_revision_clarification");
@@ -9548,11 +9562,12 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           }
           const failureTitle = readRevisionSaved ? "Read revision saved; review needs recovery" : "Read revision not saved";
           const preservedState = readRevisionSaved
-            ? "The disabled Read revision was saved, but its review did not finish. Resume this job to validate the latest Action dependency before activation."
+            ? "The disabled Read revision was saved, but the following review did not finish. Inspect its exact current Read/Action records through local boundary review --access or --map --all --details; this producer cannot regenerate or replay its consumed result."
             : "The exact disabled Read and Action drafts are unchanged.";
           readRevisionRecovery = [
             `Before activation: ${failureTitle}. ${message}`,
-            "Recovery: The pending rules remain saved. Ask the model about the correction or inspect exact details; no authority was activated.",
+            readRevisionSaved ? "Disposition: inspect the committed disabled Read and unfinished following review locally. No automatic companion recovery or new model generation is granted."
+              : "Recovery: The pending rules remain saved. Inspect exact details and any retained current question; no authority or resend permission was granted.",
           ];
           chat.rememberDetails(readRevisionSaved ? failureTitle.toUpperCase() : "READ BOUNDARY REVISION NOT SAVED", [
             message,
@@ -9563,7 +9578,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           await chat.streamCheckpoint(failureTitle, [
             message,
             `${preservedState} /details shows the exact refusal`,
-            "Resume the saved job to inspect its exact pending question and request. A refused or uncertain generation is not permission to resend; exact failure details remain available.",
+            readRevisionSaved ? "Current local inspection remains available. A saved Read is not completed Action or BUSINESS review and cannot replay the consumed generation."
+              : "Resume the saved job to inspect its exact pending question and request. A refused or uncertain generation is not permission to resend; exact failure details remain available.",
           ], "warning");
           return false;
         }
@@ -12031,7 +12047,7 @@ export async function prepareModelReadBoundaryExposureRevision(
 
 export async function applyModelReadBoundaryExposureRevision(input: ModelReadBoundaryExposureRevisionInput & {
   preview?: ModelReadRevisionPreview;
-  onCommitted?: () => void;
+  onCommitted?: (mutation: { candidate_digest: `sha256:${string}`; review_revision: number }) => void;
 }): Promise<{
   context: Awaited<ReturnType<typeof loadBoundaryReviewContext>>;
   workload: ReadWorkloadView;
@@ -12047,7 +12063,7 @@ export async function applyModelReadBoundaryExposureRevision(input: ModelReadBou
   const mutation = preview.schema_version === "synapsor.boundary-exact-candidate-mutation-preview.v1"
     ? await commitExactBoundaryCandidateMutation(input.projectRoot, preview)
     : await commitBoundaryReviewMutationBatch(input.projectRoot, preview);
-  input.onCommitted?.();
+  input.onCommitted?.(mutation);
   const context = await reloadReadReviewAfterCommit(input.projectRoot, mutation);
   const workload = await recordExactReadAuthorityAsReusableWorkload({
     projectRoot: input.projectRoot,
