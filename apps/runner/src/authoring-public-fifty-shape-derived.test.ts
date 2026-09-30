@@ -33,6 +33,23 @@ const jsonLine = (text: string, prefix: string): any => {
   const value = text.split("\n").find(line => line.startsWith(prefix));
   return value ? JSON.parse(value.slice(prefix.length)) : undefined;
 };
+const publishedReferencePaths = (inventory: any): string[] => {
+  if (Array.isArray(inventory)) {
+    expect(inventory.every(value => typeof value === "string")).toBe(true);
+    return inventory;
+  }
+  expect(Object.keys(inventory).sort()).toEqual(["encoding", "groups"]);
+  expect(inventory.encoding).toBe("pointer_prefix_groups_v1");
+  expect(Array.isArray(inventory.groups)).toBe(true);
+  // Decode only the actual published group. Concatenation preserves the exact
+  // pointer, its escaped tokens and original order; no cross-group expansion.
+  return inventory.groups.flatMap((group: any) => {
+    expect(Object.keys(group).sort()).toEqual(["prefix", "suffixes"]);
+    expect(typeof group.prefix).toBe("string"); expect(Array.isArray(group.suffixes)).toBe(true);
+    expect(group.suffixes.every((value: any) => typeof value === "string")).toBe(true);
+    return group.suffixes.map((suffix: string) => group.prefix + suffix);
+  });
+};
 
 it.skipIf(process.env.SYNAPSOR_TEST_DERIVED_FIFTY_REAL_PG !== "1")("authors the DERIVED ordered fifty agenda through actual public pause, export, restart and complete Source review", async () => {
   const evidence = process.env.OWNED_DERIVED_FIFTY_EVIDENCE ?? path.join(os.tmpdir(), `derived-fifty-${randomUUID()}`);
@@ -225,8 +242,9 @@ it.skipIf(process.env.SYNAPSOR_TEST_DERIVED_FIFTY_REAL_PG !== "1")("authors the 
       }
     } else if (names.includes("runner__review_policy_coverage")) {
       name = "runner__review_policy_coverage";
-      const draft = jsonLine(text, "Current draft (JSON pointer root): "), references = jsonLine(text, "Exact coverage references (select, do not invent paths): ");
-      reports.push({ draft, references });
+      const draft = jsonLine(text, "Current draft (JSON pointer root): "), referenceInventory = jsonLine(text, "Exact coverage references (select, do not invent paths): ");
+      const references = publishedReferencePaths(referenceInventory);
+      reports.push({ draft, reference_inventory: referenceInventory, references });
       const paths = (part: string) => draft.actions.map((_: any, i: number) => `/actions/${i}/${part}`);
       const actionAtLine = new Map(descriptors.map(d => [d.sourceLine, d]));
       args = { passages: sourceLines.map((line, i) => {
@@ -244,8 +262,17 @@ it.skipIf(process.env.SYNAPSOR_TEST_DERIVED_FIFTY_REAL_PG !== "1")("authors the 
           current_capability: limit.history_selector.capability, required_capability: limit.scope === "capability" ? outcome : null,
         })));
       expect(counters).toHaveLength(24);
-      args.passages.push({ start: 3, end: 3, disposition: "implemented", responsibility: "runner", interpretation: "The exact Source-bound operator counting review retains ONE automatic12-allocation domain and each separate per-capability domain, with human approvals excluded and no workunit reset.",
-        draft_paths: [...new Set(counters.map((counter: any) => counter.path.replace(/\/\d+\/history_selector\/capability$/u, "")))], counter_requirements: counters });
+      const counterPassages = [];
+      for (let offset = 0; offset < counters.length; offset += 12) {
+        const checks = counters.slice(offset, offset + 12);
+        counterPassages.push({ start: 3, end: 3, disposition: "implemented", responsibility: "runner", interpretation: "The exact Source-bound operator counting review retains ONE automatic12-allocation domain and each separate per-capability domain, with human approvals excluded and no workunit reset.",
+          draft_paths: [...new Set(checks.map((counter: any) => counter.path.replace(/\/\d+\/history_selector\/capability$/u, "")))], counter_requirements: checks });
+      }
+      // Existing grammar allows overlapping Source ranges and at most16 checks
+      // per passage. The two bounded passages retain all24 original selectors.
+      expect(counterPassages.flatMap(passage => passage.counter_requirements)).toEqual(counters);
+      expect(counterPassages.every(passage => passage.counter_requirements.length <= 16)).toBe(true);
+      args.passages.push(...counterPassages);
       for (const passage of args.passages) for (const pointer of passage.draft_paths) expect(references).toContain(pointer);
     } else if (!names.length) answer = jsonLine(text, "Exact next question: ") ?? "The exact current record needs its normal operator review; no execution is claimed.";
     else fail(`Unexpected actual tool surface: ${names.join(",")}`);
