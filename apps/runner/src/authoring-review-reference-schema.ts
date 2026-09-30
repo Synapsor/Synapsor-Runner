@@ -3,6 +3,34 @@
 const ENUM_BYTES = 65_536;
 const MAX_COMPACTION_INPUT_BYTES = 1_048_576;
 type Prefix = {terminal: boolean; children: Map<string, Prefix>};
+type ReferenceInventory = readonly string[] | {
+  encoding: 'pointer_prefix_groups_v1';
+  groups: {prefix: string; suffixes: string[]}[];
+};
+
+/** Lossless presentation of the finite pointer inventory, not a new pointer
+ * grammar. Concatenate a group's prefix with each of its own suffixes. Keep
+ * ordered contiguous groups so even overlapping prefixes preserve the exact
+ * original list; never combine prefixes and suffixes across groups. Pointer
+ * tokens (including ~0/~1) and Unicode are copied without normalization.
+ */
+export function finiteReviewReferenceInventory(values: readonly string[]): ReferenceInventory {
+  const bytes = Buffer.byteLength(JSON.stringify(values));
+  if (bytes <= ENUM_BYTES || bytes > MAX_COMPACTION_INPUT_BYTES) return values;
+  const groups: {prefix: string; suffixes: string[]}[] = [];
+  for (const value of values) {
+    const parts = value.split('/');
+    const prefix = parts.slice(0, Math.min(4, parts.length - 1)).join('/');
+    let group = groups.at(-1);
+    if (!group || group.prefix !== prefix) {
+      group = {prefix, suffixes: []};
+      groups.push(group);
+    }
+    group.suffixes.push(value.slice(prefix.length));
+  }
+  const compact = {encoding: 'pointer_prefix_groups_v1' as const, groups};
+  return Buffer.byteLength(JSON.stringify(compact)) < bytes ? compact : values;
+}
 
 function literal(character: string): string {
   return character.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')

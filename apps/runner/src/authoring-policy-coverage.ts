@@ -28,7 +28,7 @@ import type { ReviewSection } from "./read-boundary-review-types.js";
 import { redactCliErrorMessage } from "./cli-logging.js";
 import { safeTerminalText } from "./terminal-syntax.js";
 import { ACTION_RULE_SOURCE_CONSTRAINT_GUIDANCE } from "./action-rule-source-evidence.js";
-import { finiteReviewReferenceSchema } from './authoring-review-reference-schema.js';
+import { finiteReviewReferenceInventory, finiteReviewReferenceSchema } from './authoring-review-reference-schema.js';
 
 const DISPOSITIONS = ["implemented", "needs_decision", "conflict", "unsupported", "background", "overridden"] as const;
 const TOOL = "runner.review_policy_coverage";
@@ -855,6 +855,7 @@ export async function reviewPolicyCoverage(input: {
       decision:question.current?.decision??'pending',assurance:'attributed_source_interpretation_only'})):[];
   const inventory = reviewSourceInventory(input.source);
   const ordinaryReferences = coverageReferences(input.draft);
+  const referenceInventory = finiteReviewReferenceInventory(ordinaryReferences);
   const fullTools: AskToolDefinition[] = [{ name: TOOL, description: "Record a COMPLETE REPLACEMENT untrusted review against the exact disabled draft and source inventory. Every nonblank line needs a disposition, including headings and definitions. Overlapping ranges may separate claims; rejected reports are never merged or partially saved. Does not change or activate authority.",
     input_schema: { type: "object", additionalProperties: false, required: ["passages"], properties: { passages: { type: "array", maxItems: 120,
       items: { type: "object", additionalProperties: false, required: ["start", "end", "disposition", "interpretation", "draft_paths"], properties: {
@@ -1021,7 +1022,8 @@ export async function reviewPolicyCoverage(input: {
           ...(scopeDecisions.length?[`Current attributed outcome-scope decisions for registered source-transaction questions (not capability, setup or observation): ${JSON.stringify(scopeDecisions)}. An absent or pending answer is not a negative. A does_not_apply answer excludes only this clause/outcome association and preserves independent receipt duties.`]:[]),
           `Exact narrow receipt component meanings (capability is not observation): ${JSON.stringify(receiptComponentMeanings(input.draft))}`,
           `Host counting requirement states (unknown is not boundary-wide; source and explicit review establish meaning): ${countingRequirementsReviewText(countingSourceRequirements(input.source, input.draft, operatorMessages))}`,
-          `Exact coverage references (select, do not invent paths): ${JSON.stringify(coverageReferences(input.draft))}`,
+          `Exact coverage references (select, do not invent paths): ${JSON.stringify(referenceInventory)}`,
+          ...(!Array.isArray(referenceInventory) ? ["This finite inventory uses pointer_prefix_groups_v1. Each exact allowed draft_path is one group's prefix concatenated with one of THAT group's suffixes; use the resulting original JSON pointer, not a group index. Never combine different groups, normalize escaped tokens, or invent suffixes. This is the complete reference inventory, not a wildcard or permission to edit those records."] : []),
           `Indexed operator messages for supporting clarifications or explicit overrides (not source text or model narration): ${JSON.stringify(operatorMessages.map((message, index) => ({ operator_message_id: index + 1, message })))}`,
           `Privacy candidates requiring comparison with source requirements: ${JSON.stringify((input.draft as { runner_evidence?: { privacy_review?: unknown } })?.runner_evidence?.privacy_review ?? [])}`,
           `Source: ${input.source.name} v${input.source.version} ${input.source.digest}`,

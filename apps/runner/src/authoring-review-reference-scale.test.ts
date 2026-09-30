@@ -1,6 +1,6 @@
 import {Ajv} from 'ajv';
 import { describe, expect, it } from 'vitest';
-import { reviewPolicyCoverage } from './authoring-policy-coverage.js';
+import { coverageReferences, reviewPolicyCoverage } from './authoring-policy-coverage.js';
 import { createModelAuthoringConversation } from './model-authoring-conversation.js';
 import { authoringDestination, newPolicySourceSession, policyTextSnapshot } from './authoring-policy-source.js';
 import { coverageToolDeclarationIssue } from './authoring-coverage-tool-profile.js';
@@ -43,7 +43,12 @@ describe('metadata-heavy review reference declaration', () => {
         const messages = (provider === 'openai' ? request.body.input : request.body.messages) as any[];
         const question = messages.filter(item => item.role === 'user').at(-1).content as string;
         const line = question.split('\n').find(value => value.startsWith('Exact coverage references (select, do not invent paths): '))!;
-        const references: string[] = JSON.parse(line.slice(line.indexOf(': ') + 2));
+        const inventory = JSON.parse(line.slice(line.indexOf(': ') + 2));
+        expect(inventory.encoding).toBe('pointer_prefix_groups_v1');
+        const references: string[] = inventory.groups.flatMap((group: {prefix: string; suffixes: string[]}) =>
+          group.suffixes.map(suffix => group.prefix + suffix));
+        expect(references).toEqual(coverageReferences(draft));
+        expect(question).toContain("one of THAT group's suffixes");
         expect(Buffer.byteLength(JSON.stringify(references))).toBeGreaterThan(131072);
         const validateReference = ajv.compile(parameters.properties.passages.items.properties.draft_paths.items);
         expect(references.every(reference => validateReference(reference))).toBe(true);

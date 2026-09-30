@@ -1,12 +1,44 @@
 import {Ajv} from 'ajv';
 import { describe, expect, it } from 'vitest';
 import { outgoingToolSchemaIssue } from '@synapsor-runner/protocol';
-import { finiteReviewReferenceSchema } from './authoring-review-reference-schema.js';
+import { finiteReviewReferenceInventory, finiteReviewReferenceSchema } from './authoring-review-reference-schema.js';
 
 const large = () => Array.from({length: 2200}, (_, index) =>
   `/runner_evidence/actions/profile.operation_${Math.floor(index / 44)}/scoped_bindings/subject/fields/field_${index % 44}`);
 
 describe('finite review reference publication', () => {
+  const expand = (inventory: ReturnType<typeof finiteReviewReferenceInventory>): string[] =>
+    Array.isArray(inventory) ? [...inventory] :
+      (inventory as {groups: {prefix: string; suffixes: string[]}[]}).groups.flatMap(group =>
+        group.suffixes.map(suffix => group.prefix + suffix));
+  it('keeps small, oversized and non-beneficial inventories literal', () => {
+    for (const values of [[], ['/read', '/actions/0'], Array.from({length: 2200}, (_, i) => `${i}:${'x'.repeat(500)}`),
+      Array.from({length: 15000}, (_, i) => `/unshared_${i}`)]) {
+      expect(finiteReviewReferenceInventory(values)).toBe(values);
+    }
+  });
+  it('preserves the exact ordered finite inventory with overlapping parents and escaped tokens', () => {
+    const special = ['', '/a', '/a/b', '/a/b/c', '/a/b/c/d', '/a/b/c/😀~0~1', '/a/b/c/漢字',
+      '/a/b/c/end\n', '/a/b/c/end\0', '/a/b/c/\\.*', '/a/b/c'];
+    for (const values of [[...large(), ...special], [...special, ...large()].reverse()]) {
+      const before = [...values], inventory = finiteReviewReferenceInventory(values);
+      expect(Array.isArray(inventory)).toBe(false);
+      expect(expand(inventory)).toEqual(before);
+      expect(values).toEqual(before);
+      expect(Buffer.byteLength(JSON.stringify(inventory))).toBeLessThan(Buffer.byteLength(JSON.stringify(values)));
+      expect(expand(JSON.parse(JSON.stringify(inventory)))).toEqual(before);
+    }
+  });
+  it('does not introduce Cartesian combinations or extra reference values', () => {
+    const values = [...large(), '/another/operation/no_such_field'];
+    const inventory = finiteReviewReferenceInventory(values);
+    const expanded = expand(inventory);
+    expect(expanded).toEqual(values);
+    const validate = new Ajv({strict: false}).compile(finiteReviewReferenceSchema(values));
+    expect(expanded.every(value => validate(value))).toBe(true);
+    expect(validate('/another/operation/scoped_bindings/subject/fields/field_0')).toBe(false);
+    expect(validate(expanded[0] + '/extra')).toBe(false);
+  });
   it('preserves the existing small enum exactly', () => {
     const values = ['/read', '/actions/0', '/runner_evidence/actions/profile.operation/effect'];
     expect(finiteReviewReferenceSchema(values)).toEqual({type: 'string', enum: values});
