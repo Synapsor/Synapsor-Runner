@@ -607,6 +607,25 @@ describe("B33 exact completed consumer handoff", () => {
     const completion = completedAuthoringQuestion(result)!;
     return {digest: canonicalJsonDigest({completion, question: result.answer}), pending_question: {question: result.answer, completion}};
   }
+  it.each(["planning", "read_clarification", "read_value_context"] as const)("the actual completed turn binds the selected host consumer: %s", async consumer => {
+    const f = await fixture("tool-question"), m = memory(f.endpoint, 0);
+      const cp = await enter(m, async () => {
+        const completed = await toolQuestion(f.endpoint, async () => ({ok: true, value: {status: "clarification"}}));
+        const cp = {...completed, consumer};
+        m.set(authoringTransportCheckpoint(authoringQuestionCheckpoint(m.read(), cp))!);
+        return cp;
+      });
+      assertAuthoringQuestionHandoff(m.read(), cp);
+      expect(() => assertAuthoringQuestionHandoff(m.read(), {...cp, consumer: "action_rule_clarification"})).toThrow("RESUME_INVALID");
+      const next = {digest: canonicalJsonDigest({question: cp.pending_question.question, answer: "This selected record."}),
+        operator_messages: ["This selected record."]};
+      m.set(authoringQuestionAnswerCheckpoint(m.read(), cp, next)!);
+      validateAuthoringTransportState(m.read());
+      expect(m.read().operations.at(-1)!.question_handoff).toMatchObject({consumer,
+        answered: {answer: "This selected record.", actor: "local_installation_operator"}});
+      expect(f.sends()).toBe(2);
+      // The shared fixture's afterEach closes its owned server/connections.
+  });
   it("a recovered tool and question from one completed turn remain resumable after the saved answer", async () => {
     const f = await fixture("B-tool-question"), m = memory(f.endpoint, 0); let callbacks = 0;
     const call = () => toolQuestion(f.endpoint, async () => { callbacks++; return {ok: true, value: {status: "clarification"}}; });

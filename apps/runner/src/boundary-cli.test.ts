@@ -17436,6 +17436,175 @@ describe("saved post-edit review uses reader evidence after writer setup", () =>
 
 
 describe("public saved-job connection recovery control", () => {
+  it("Phase1 preserves exhausted planning questions on reopen without resetting answers or sending again", async () => {
+    const f = await staleSemanticRevalidationFixture();
+    try {
+      const binding = boundaryAuthoringResumeBinding((await loadBoundaryReviewContext(f.root)).bundle);
+      await writeBoundaryAuthoringResumeState(f.root, buildBoundaryAuthoringResumeState({ binding, stage: "planning",
+        jobIntent: "Clarify the scope of this unchanged visit job.", provider: "openai", model: "gpt-test" }));
+      const planner = vi.fn(async () => ({ state: "clarification" as const,
+        question: `Which reviewed visit scope is intended (${planner.mock.calls.length})?`,
+        correction_used: false, authority_granted: false as const, source_database_changed: false as const }));
+      const noDraft = vi.fn(async () => { throw new Error("An exhausted question cannot draft."); });
+      let answers = 0;
+      f.session.chooseOption = async title => title === "START BOUNDARY DRAFTING" ? "resume" : undefined;
+      f.session.promptText = async prompt => {
+        if (!prompt.startsWith("Which reviewed visit scope")) return undefined;
+        answers++; return `The original visit scope ${answers}.`;
+      };
+      await f.run(noDraft, undefined, { modelBoundaryJobPlanner: planner });
+      const before = await readBoundaryAuthoringResumeState(f.root, binding);
+      expect(before.status).toBe("ready"); if (before.status !== "ready") return;
+      expect(before.value.owner_handoffs?.map(record => record.state)).toEqual(["answered", "answered", "waiting"]);
+      expect(planner).toHaveBeenCalledTimes(3); expect(answers).toBe(2);
+      await f.run(noDraft, undefined, { modelBoundaryJobPlanner: planner });
+      const after = await readBoundaryAuthoringResumeState(f.root, binding);
+      expect(after.status).toBe("ready"); if (after.status !== "ready") return;
+      expect(after.value.owner_handoffs).toEqual(before.value.owner_handoffs);
+      expect(planner).toHaveBeenCalledTimes(3); expect(answers).toBe(2); expect(noDraft).not.toHaveBeenCalled();
+    } finally { await f.dispose(); }
+  });
+  it("Phase1 cancellation of new-job retry review saves the job without opening generation", async () => {
+    const f = await staleSemanticRevalidationFixture();
+    try {
+      const binding = boundaryAuthoringResumeBinding((await loadBoundaryReviewContext(f.root)).bundle);
+      f.session.chooseOption = async title => title === "START BOUNDARY DRAFTING" ? "model_with_recovery"
+        : title === "CLIENT FOR THIS JOB" ? "later" : undefined;
+      f.session.promptText = async prompt => prompt.includes("What job") ? "Keep this exact reviewed visit job." : undefined;
+      const narrator = vi.fn(async () => "No opening narration is permitted after cancellation.");
+      const planner = vi.fn(async () => { throw new Error("Cancelled review cannot plan."); });
+      const noDraft = vi.fn(async () => { throw new Error("Cancelled review cannot draft."); });
+      await f.run(noDraft, undefined, { modelAuthoringNarrator: narrator, modelBoundaryJobPlanner: planner });
+      const current = await readBoundaryAuthoringResumeState(f.root, binding);
+      expect(current.status).toBe("ready"); if (current.status !== "ready") return;
+      expect(current.value.job_intent).toBe("Keep this exact reviewed visit job.");
+      expect(current.value.generation_recovery?.policy).toBeUndefined();
+      expect(narrator).not.toHaveBeenCalled(); expect(planner).not.toHaveBeenCalled(); expect(noDraft).not.toHaveBeenCalled();
+    } finally { await f.dispose(); }
+  });
+  it.each(["answered", "competing", "source-drift"] as const)("Phase1 planning handoff accepts only a current separately saved answer: %s", async mode => {
+    const f = await staleSemanticRevalidationFixture();
+    try {
+      const binding = boundaryAuthoringResumeBinding((await loadBoundaryReviewContext(f.root)).bundle);
+      const sources = newPolicySourceSession();
+      sources.snapshots = [policyTextSnapshot(Buffer.from("The note concerns this selected visit."), "visit.txt")];
+      sources.active = 1; sources.approvals = [{ digest: sources.snapshots[0]!.digest,
+        destination: authoringDestination({ provider: "openai", model: "gpt-test" }) }];
+      await savePolicySources(f.root, sources);
+      const original = buildBoundaryAuthoringResumeState({ binding, stage: "planning", jobIntent: "Clarify this exact visit note.",
+        provider: "openai", model: "gpt-test", policySourceSession: sources.id });
+      await writeBoundaryAuthoringResumeState(f.root, original);
+      const question = "Which visit note is intended?";
+      let savedAnswer = false;
+      const planner = vi.fn(async () => {
+        if (planner.mock.calls.length === 1) return { state: "clarification" as const, question,
+          correction_used: false, authority_granted: false as const, source_database_changed: false as const };
+        const current = await readBoundaryAuthoringResumeState(f.root, binding);
+        savedAnswer = current.status === "ready" && current.value.owner_handoffs?.at(-1)?.state === "answered";
+        throw new AskError("ASK_CANCELLED", "Owned pause after observing separately committed answer", 499);
+      });
+      f.session.chooseOption = async title => title === "START BOUNDARY DRAFTING" ? "resume"
+        : title === "CHOOSE THE SAVED JOB OPERATION" ? "continue" : title === "SETUP NEEDS ATTENTION" ? "pause" : undefined;
+      f.session.promptText = async prompt => {
+        if (prompt !== question) return undefined;
+        const current = await readBoundaryAuthoringResumeState(f.root, binding);
+        if (current.status !== "ready") throw new Error("Question must be committed first.");
+        expect(current.value.owner_handoffs?.at(-1)?.state).toBe("waiting");
+        if (mode === "competing") await writeBoundaryAuthoringResumeState(f.root,
+          buildBoundaryAuthoringResumeState({ binding, stage: "planning", jobIntent: current.value.job_intent,
+            provider: "openai", model: "gpt-test", previous: current.value, pendingJobRevision: "A concurrent explicit edit." }),
+          { expectedRevisionDigest: current.value.revision_digest });
+        if (mode === "source-drift") {
+          const next = structuredClone(sources);
+          next.snapshots.push(policyTextSnapshot(Buffer.from("A changed rule concerns a separate follow-up."), "visit.txt", 2));
+          next.active = 2; await savePolicySources(f.root, next);
+        }
+        return "The note for this selected visit.";
+      };
+      const noDraft = vi.fn(async () => { throw new Error("This pending planning control cannot draft."); });
+      await f.run(noDraft, undefined, { modelBoundaryJobPlanner: planner });
+      const current = await readBoundaryAuthoringResumeState(f.root, binding);
+      expect(current.status).toBe("ready"); if (current.status !== "ready") return;
+      if (mode === "answered") {
+        expect(savedAnswer).toBe(true); expect(planner).toHaveBeenCalledTimes(2);
+        expect(current.value.owner_handoffs?.at(-1)).toMatchObject({ state: "answered", actor: "local_installation_operator",
+          question, answer: "The note for this selected visit." });
+      } else {
+        expect(savedAnswer).toBe(false); expect(planner).toHaveBeenCalledTimes(1);
+        expect(current.value.owner_handoffs?.at(-1)?.state).toBe("waiting");
+        if (mode === "competing") expect(current.value.pending_job_revision).toBe("A concurrent explicit edit.");
+      }
+      expect(noDraft).not.toHaveBeenCalled();
+    } finally { await f.dispose(); }
+  });
+  it("Phase1 commits a planning owner question before waiting and redisplays it without another generation", async () => {
+    const f = await staleSemanticRevalidationFixture();
+    try {
+      const binding = boundaryAuthoringResumeBinding((await loadBoundaryReviewContext(f.root)).bundle);
+      await writeBoundaryAuthoringResumeState(f.root, buildBoundaryAuthoringResumeState({binding, stage: "planning",
+        jobIntent: "Keep this reviewed visit job, but clarify the requested business scope.", provider: "openai", model: "gpt-test"}));
+      const question = "Does the requested note govern this visit or its separate follow-up?";
+      const planner = vi.fn(async () => ({state: "clarification" as const, question, correction_used: false,
+        authority_granted: false as const, source_database_changed: false as const}));
+      const noDraft = vi.fn(async () => {throw new Error("Unanswered meaning cannot draft an Action.");});
+      let waitingSeen = 0;
+      f.session.chooseOption = async title => title === "START BOUNDARY DRAFTING" ? "resume"
+        : title === "SETUP NEEDS ATTENTION" ? "pause" : undefined;
+      f.session.promptText = async prompt => {
+        if (prompt === question) {
+          const current = await readBoundaryAuthoringResumeState(f.root, binding);
+          const handoff = current.status === "ready" ? (current.value as any).owner_handoffs?.at(-1) : undefined;
+          if (handoff?.state === "waiting" && handoff.question === question && handoff.consumer === "planning") waitingSeen++;
+        }
+        return undefined;
+      };
+      await f.run(noDraft, undefined, {modelBoundaryJobPlanner: planner});
+      expect(waitingSeen).toBe(1);
+      await f.run(noDraft, undefined, {modelBoundaryJobPlanner: planner});
+      expect(waitingSeen).toBe(2); expect(planner).toHaveBeenCalledTimes(1); expect(noDraft).not.toHaveBeenCalled();
+    } finally {await f.dispose();}
+  });
+  it("Phase1 checkpoints a current new job and its explicit retry policy before opening generation", async () => {
+    const f = await staleSemanticRevalidationFixture();
+    try {
+      const binding = boundaryAuthoringResumeBinding((await loadBoundaryReviewContext(f.root)).bundle);
+      let policyMenu = false;
+      let firstGenerationWasCurrent = false;
+      f.session.chooseOption = async (title, options, config) => {
+        if (title === "START BOUNDARY DRAFTING") {
+          expect(options.some(option => option.value === "model_with_recovery")).toBe(true);
+          return "model_with_recovery";
+        }
+        if (title === "NEW JOB CONNECTION RECOVERY") {
+          policyMenu = true; expect(config?.initialValue).toBe("keep");
+          expect((await readBoundaryAuthoringResumeState(f.root, binding)).status).toBe("ready");
+          return "two";
+        }
+        if (title === "CLIENT FOR THIS JOB") return "later";
+        if (title === "SETUP NEEDS ATTENTION") return "pause";
+        throw new Error(`Unexpected new-job policy menu ${title}`);
+      };
+      f.session.promptText = async prompt => prompt.includes("What job") ? "Keep the exact reviewed visit rules unchanged." : undefined;
+      const noDraft = vi.fn(async () => { throw new Error("The local preserved-rule test cannot draft an Action."); });
+      const narrator = vi.fn(async () => {
+        const current = await readBoundaryAuthoringResumeState(f.root, binding);
+        firstGenerationWasCurrent = policyMenu && current.status === "ready"
+          && current.value.job_intent === "Keep the exact reviewed visit rules unchanged."
+          && current.value.generation_recovery?.policy?.maximum_additional_attempts === 2;
+        return "Your exact job is saved; nothing is activated.";
+      });
+      await f.run(noDraft, undefined, { modelAuthoringNarrator: narrator,
+        // Pause after the opening. A completely finished no-op job legitimately
+        // removes its resume file; it cannot test pending-work persistence.
+        modelBoundaryJobPlanner: async () => { throw new AskError("ASK_CANCELLED", "Owned pause after first generation", 499); } });
+      expect(policyMenu).toBe(true); expect(narrator).toHaveBeenCalled(); expect(firstGenerationWasCurrent).toBe(true);
+      const after = await readBoundaryAuthoringResumeState(f.root, binding);
+      expect(after.status).toBe("ready");
+      if (after.status === "ready") expect(after.value.generation_recovery?.policy).toMatchObject({maximum_additional_attempts: 2,
+        actor: "local_installation_operator", provider: "openai", model: "gpt-test"});
+      expect(noDraft).not.toHaveBeenCalled();
+    } finally { await f.dispose(); }
+  });
   it.each(["no", "yes", "legacy", "competing", "cancel"] as const)("public manual replacement review is current, explicit and non-generating: %s", async mode => {
     const f = await staleSemanticRevalidationFixture();
     const server = createServer(req => {req.resume(); req.socket.destroy();});

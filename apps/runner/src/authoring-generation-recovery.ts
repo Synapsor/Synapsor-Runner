@@ -11,7 +11,7 @@ export type AuthoringQuestionCompletion = {
   response_digest: `sha256:${string}`;
 };
 export type AuthoringQuestionHandoff = {
-  consumer: "action_rule_clarification";
+  consumer: "action_rule_clarification" | "planning" | "read_clarification" | "read_value_context";
   question: string;
   answered?: {answer: string; actor: "local_installation_operator"; recorded_at: string; checkpoint_digest: `sha256:${string}`};
   checkpoint_digest: `sha256:${string}`;
@@ -146,7 +146,7 @@ export function validateAuthoringTransportState(value: unknown): asserts value i
     if (op.question_handoff !== undefined) {
       const h = op.question_handoff;
       if (!h || typeof h !== "object" || Array.isArray(h) || !exactKeys(h, ["consumer","question","answered","checkpoint_digest","question_digest","response_digest","recorded_at"])
-        || h.consumer !== "action_rule_clarification" || typeof h.question !== "string" || !h.question.trim() || h.question.length > 20_000
+        || !["action_rule_clarification", "planning", "read_clarification", "read_value_context"].includes(h.consumer) || typeof h.question !== "string" || !h.question.trim() || h.question.length > 20_000
         || canonicalJsonDigest(h.question) !== h.question_digest || !digest(h.checkpoint_digest) || !digest(h.question_digest)
         || !digest(h.response_digest) || !date(h.recorded_at) || op.attempts.at(-1)?.outcome !== "response" || op.state !== "checkpointed" || op.checkpoint_seen !== true) throw invalid();
       if (h.answered !== undefined && (!h.answered || typeof h.answered !== "object" || Array.isArray(h.answered) || !exactKeys(h.answered,["answer","actor","recorded_at","checkpoint_digest"])
@@ -294,7 +294,7 @@ export function authoringQuestionCompletion(results: readonly ProviderHttpResult
 /** Prepare one exact question handoff for the SAME coordinated resume write as
  * its component checkpoint. This does not write a second acknowledgement file. */
 export function authoringQuestionCheckpoint(state: AuthoringTransportState | undefined,
-  checkpoint: {digest: `sha256:${string}`; pending_question?: {question: string; completion?: AuthoringQuestionCompletion}}): AuthoringTransportState | undefined {
+  checkpoint: {digest: `sha256:${string}`; consumer?: AuthoringQuestionHandoff["consumer"]; pending_question?: {question: string; completion?: AuthoringQuestionCompletion}}): AuthoringTransportState | undefined {
   if (!checkpoint.pending_question) return state;
   const completion = checkpoint.pending_question.completion, frame = storage.getStore();
   if (!state || !completion || !frame?.owned.has(completion.operation_id)) throw new AskError(
@@ -312,7 +312,7 @@ export function authoringQuestionCheckpoint(state: AuthoringTransportState | und
       || sibling.attempts.at(-1)?.outcome !== "response" || !["handled", "checkpointed", "refused"].includes(sibling.state)) throw invalid();
     if (sibling.state === "handled") { sibling.state = "checkpointed"; sibling.checkpoint_seen = true; }
   }
-  op.question_handoff = {consumer: "action_rule_clarification", question: checkpoint.pending_question.question, checkpoint_digest: checkpoint.digest,
+  op.question_handoff = {consumer: checkpoint.consumer ?? "action_rule_clarification", question: checkpoint.pending_question.question, checkpoint_digest: checkpoint.digest,
     question_digest: canonicalJsonDigest(checkpoint.pending_question.question), response_digest: completion.response_digest,
     recorded_at: new Date().toISOString()};
   op.state = "checkpointed"; op.checkpoint_seen = true;
@@ -320,13 +320,13 @@ export function authoringQuestionCheckpoint(state: AuthoringTransportState | und
 }
 
 export function assertAuthoringQuestionHandoff(state: AuthoringTransportState | undefined,
-  checkpoint: {digest: `sha256:${string}`; pending_question?: {question: string; completion?: AuthoringQuestionCompletion}} | undefined): void {
+  checkpoint: {digest: `sha256:${string}`; consumer?: AuthoringQuestionHandoff["consumer"]; pending_question?: {question: string; completion?: AuthoringQuestionCompletion}} | undefined): void {
   const pending = checkpoint?.pending_question;
   if (!pending) return;
   const c = pending.completion, op = c && state?.operations.find(item => item.id === c.operation_id), h = op?.question_handoff;
   if (!c || !op || !h || op.state !== "checkpointed" || op.checkpoint_seen !== true
     || op.request_digest !== c.request_digest || op.context_digest !== c.context_digest
-    || h.answered || h.checkpoint_digest !== checkpoint!.digest || h.question_digest !== canonicalJsonDigest(pending.question)
+    || h.answered || h.consumer !== (checkpoint!.consumer ?? "action_rule_clarification") || h.checkpoint_digest !== checkpoint!.digest || h.question_digest !== canonicalJsonDigest(pending.question)
     || h.response_digest !== c.response_digest) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The pending question has no exact committed consumer handoff. Preserve the saved state for inspection.");
 }
 

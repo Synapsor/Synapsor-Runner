@@ -1,5 +1,6 @@
 import { assertAuthoringQuestionHandoff, validateAuthoringTransportState, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { AUTHORING_PROGRAM_CAPACITY, AUTHORING_PROGRAM_RESUME_VERSION } from "./authoring-program-capacity.js";
+import { ownerHandoffCheckpoint, parseOwnerHandoffs, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { randomUUID } from "node:crypto";
@@ -156,6 +157,7 @@ export type BoundaryAuthoringResumeState = {
   };
   conversation: AskHistoryTurn[];
   generation_recovery?: AuthoringTransportState;
+  owner_handoffs?: AuthoringOwnerHandoff[];
   policy_source_session?: string;
   action_workflow?: "program";
   /** Concise model-planned Read behavior retained before an analysis exists. */
@@ -230,6 +232,7 @@ export function buildBoundaryAuthoringResumeState(input: {
   model: string;
   conversation?: readonly AskHistoryTurn[];
   generationRecovery?: AuthoringTransportState;
+  ownerHandoffs?: AuthoringOwnerHandoff[];
   policySourceSession?: string;
   actionWorkflow?: "program";
   readIntent?: string;
@@ -294,6 +297,7 @@ export function buildBoundaryAuthoringResumeState(input: {
     },
     conversation,
     ...((input.generationRecovery ?? input.previous?.generation_recovery) ? { generation_recovery: structuredClone(input.generationRecovery ?? input.previous!.generation_recovery!) } : {}),
+    ...((input.ownerHandoffs ?? input.previous?.owner_handoffs) ? { owner_handoffs: parseOwnerHandoffs(input.ownerHandoffs ?? input.previous!.owner_handoffs!) } : {}),
     ...(input.policySourceSession ? { policy_source_session: normalizeSourceSession(input.policySourceSession) } : {}),
     ...(input.readIntent
       ? {
@@ -583,6 +587,21 @@ export function assertBoundaryAuthoringResumeState(
   if (value.reviewed_action_disclosures !== undefined) parseReviewedActionDisclosures(value.reviewed_action_disclosures);
   if (value.reviewed_version_fields !== undefined) parseReviewedActionVersionFields(value.reviewed_version_fields, 32);
   if (value.generation_recovery !== undefined) validateAuthoringTransportState(value.generation_recovery);
+  for (const handoff of parseOwnerHandoffs(value.owner_handoffs ?? [])) {
+    if (handoff.state === "waiting" && handoff.completion) {
+      assertAuthoringQuestionHandoff(value.generation_recovery as AuthoringTransportState | undefined, ownerHandoffCheckpoint(handoff));
+    } else if (handoff.state === "answered" && handoff.completion) {
+      const operation = (value.generation_recovery as AuthoringTransportState | undefined)?.operations.find(op => op.id === handoff.completion!.operation_id);
+      const question = operation?.question_handoff;
+      if (!operation || operation.state !== "checkpointed" || operation.request_digest !== handoff.completion.request_digest
+        || operation.context_digest !== handoff.completion.context_digest || question?.consumer !== handoff.consumer
+        || question.checkpoint_digest !== handoff.digest || question.question_digest !== canonicalJsonDigest(handoff.question)
+        || question.response_digest !== handoff.completion.response_digest || question.answered?.answer !== handoff.answer
+        || question.answered.checkpoint_digest !== canonicalJsonDigest(handoff)) {
+        throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The owner answer has no exact committed consumer handoff.");
+      }
+    }
+  }
   assertAuthoringQuestionHandoff(value.generation_recovery as AuthoringTransportState | undefined,
     (value.action as BoundaryAuthoringResumeAction | undefined)?.checkpoint);
   assertAuthoringQuestionHandoff(value.generation_recovery as AuthoringTransportState | undefined,

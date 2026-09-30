@@ -1,4 +1,4 @@
-import { isAuthoringGenerationStop } from "./authoring-generation-recovery.js";
+import { isAuthoringGenerationStop, type AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { assertReviewOperationShape, planningFieldShape, REVIEW_OPERATION_GUIDANCE, REVIEW_PLAN_FIELDS } from "./boundary-job-operation-contract.js";
@@ -8,6 +8,7 @@ import { activePolicySource } from "./authoring-policy-source.js";
 import { authoringClientChoices, isAuthoringClientPlan, type AuthoringClientPlan } from "./authoring-client-plan.js";
 import {
   askToolSurfaceDigest,
+  completedAuthoringQuestion,
   completedContentError,
   resolveAskProviderConfiguration,
   runAskProviderTurn,
@@ -92,6 +93,8 @@ export type BoundaryJobPlan = {
 } | {
   state: "clarification";
   question: string;
+  /** Host-owned completion sidecar; never a model-supplied proof. */
+  completion?: AuthoringQuestionCompletion;
   correction_used: boolean;
   authority_granted: false;
   source_database_changed: false;
@@ -281,6 +284,7 @@ export async function planModelBoundaryJob(input: {
   });
   let correctionUsed = false;
   let generationStop: AskError | undefined;
+  let questionCompletion: AuthoringQuestionCompletion | undefined;
   try {
     for (let attempt = 0; attempt < 2; attempt++) {
       responseDiagnostic = undefined;
@@ -289,13 +293,14 @@ export async function planModelBoundaryJob(input: {
       let failure: ReturnType<typeof planningErrorDiagnostic> | undefined;
       let retryable = true;
       try {
-        await run(attempt ? [
+        const turn = await run(attempt ? [
           "Runner rejected the first job split. This is the one bounded correction, with the same job and approved policy snapshot.",
           `Validation issue: ${issue.slice(0, 700)}`,
           `Return DATA through ${PLAN_BOUNDARY_JOB_TOOL}, not JSON Schema or prose. Keep routing intents concise.`,
           "Submit one corrected plan using only the Read and Action modes available in the tool schema, or one clarification question. Do not switch to create merely to bypass an unavailable revision when the operator requested preservation of existing access.",
           question,
         ].join("\n") : question);
+        questionCompletion = completedAuthoringQuestion(turn);
         if (!resolution) failure = planningErrorDiagnostic(new Error(issue));
       } catch (error) {
         if (isAuthoringGenerationStop(error)) generationStop = error;
@@ -315,6 +320,7 @@ export async function planModelBoundaryJob(input: {
   if (generationStop) throw generationStop;
   if (!resolution) throw new BoundaryJobPlanningError(diagnostic);
   const result = { ...resolution, correction_used: correctionUsed } as BoundaryJobPlan;
+  if (result.state === "clarification" && questionCompletion) result.completion = questionCompletion;
   const remembered = result.state === "clarification"
     ? result.question
     : result.summary;

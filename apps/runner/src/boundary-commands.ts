@@ -1,4 +1,5 @@
 import { authoringGenerationCurrentnessCode, isAuthoringGenerationStop, withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, authoringTransportCheckpoint, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, prepareAuthoringManualRecovery, permitAuthoringManualRecovery, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+import { answerOwnerHandoff, createOwnerHandoff, ownerHandoffCheckpoint, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
 import { reviewSourceInputPolicy } from "./authoring-input-policy-operation.js";
 import { sourceInputFidelity } from "./authoring-input-policy.js";
 import { AUTHORING_PROGRAM_CAPACITY, AUTHORING_PROGRAM_RESUME_VERSION, authoringProgramProgressLines } from "./authoring-program-capacity.js";
@@ -4386,6 +4387,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   let editingSavedJob = false;
   let activeResume = availableResume;
   let generationRecovery = availableResume?.generation_recovery;
+  let ownerHandoffs = structuredClone(availableResume?.owner_handoffs ?? []);
   let resumeRead: BoundaryAuthoringResumeRead | undefined = availableResume?.read;
   let resumeReadIntent = availableResume?.read_intent;
   let pendingReadRelationship = availableResume?.pending_read_relationship;
@@ -4418,6 +4420,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   let deferUnfinishedActions = false;
   const retainedActionIsUnfinished = () => boundaryAuthoringActionIsUnfinished(retainedReadEdit?.action);
   let selectedResumeModel: ActionModelSuggestionSession | undefined;
+  let openingModelNotice: (() => Promise<void>) | undefined;
+  let reviewNewJobRecovery = false;
   let intendedClient: AuthoringClientPlan | undefined;
   let jobIntent: string | undefined;
   let canonicalJobIntent: string | undefined;
@@ -4489,6 +4493,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           ? { metadataDestinationDigest: canonicalJsonDigest(authoringDestination(selectedResumeModel)) } : {}),
         conversation: authoringConversation?.turns,
         generationRecovery: authoringTransportCheckpoint(generationRecovery),
+        ownerHandoffs,
         ...(intendedClient ? { intendedClient } : {}),
         ...(authoringConversation?.policySources?.snapshots.length ? { policySourceSession: authoringConversation.policySources.id } : {}),
         ...(resumeReadIntent ? { readIntent: resumeReadIntent } : {}),
@@ -4543,6 +4548,64 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       ]);
     }
   };
+  const ownerQuestionScope = () => canonicalJsonDigest({ job: (canonicalJobIntent ?? jobIntent)?.trim(),
+    request: pendingJobRevision ?? null, read_revision: pendingReadRevision ?? null,
+    model: selectedResumeModel && { provider: selectedResumeModel.provider, model: selectedResumeModel.model,
+      destination: authoringDestination(selectedResumeModel) } });
+  const ownerQuestionContext = async (permit?: ProjectAuthorityMutationPermit) => {
+    await assertAuthoringResumeCurrent(undefined, false, permit);
+    const current = await loadBoundaryReviewContext(input.projectRoot);
+    const sources = authoringConversation?.policySources;
+    if (sources?.snapshots.length && await policySourceSavedDigest(input.projectRoot, sources.id) !== canonicalJsonDigest(sources)) {
+      throw new PolicySourceChangedError();
+    }
+    return canonicalJsonDigest({ scope: ownerQuestionScope(), binding: boundaryAuthoringResumeBinding(current.bundle),
+      candidate: current.candidate, source: sources?.snapshots.length ? sources : null });
+  };
+  const mutateOwnerHandoff = async <T,>(operation: (permit: ProjectAuthorityMutationPermit) => Promise<T>): Promise<T> => {
+    // Never retain this exclusion while a human or provider is outstanding.
+    // A failed/uncertain save is inspected on disk on reopen; an in-memory
+    // answer must not masquerade as an acknowledged saved decision.
+    const beforeHandoffs = structuredClone(ownerHandoffs);
+    const beforeRecovery = generationRecovery && structuredClone(generationRecovery);
+    const beforeTurns = authoringConversation && structuredClone(authoringConversation.turns);
+    try { return await withProjectAuthorityMutation(input.projectRoot, operation); }
+    catch (error) {
+      ownerHandoffs = beforeHandoffs;
+      generationRecovery = beforeRecovery;
+      if (authoringConversation && beforeTurns) authoringConversation.turns.splice(0, authoringConversation.turns.length, ...beforeTurns);
+      throw error;
+    }
+  };
+  const persistOwnerQuestion = async (question: string, consumer: AuthoringOwnerHandoff["consumer"],
+    completion?: AuthoringOwnerHandoff["completion"]) => mutateOwnerHandoff(async permit => {
+    const handoff = createOwnerHandoff({ consumer, question, scope_digest: ownerQuestionScope(),
+      context_digest: await ownerQuestionContext(permit), ...(completion ? { completion } : {}) });
+    if (ownerHandoffs.at(-1)?.state === "waiting") throw new Error("AUTHORING_OWNER_QUESTION_PENDING: Answer or inspect the saved question before another question can replace it.");
+    if (completion) generationRecovery = authoringQuestionCheckpoint(generationRecovery, ownerHandoffCheckpoint(handoff));
+    else if (generationRecovery?.operations.some(op => ["in_flight", "received", "handled", "unknown", "partial"].includes(op.state))) {
+      throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "A question without an acknowledged completed turn cannot clear an unresolved generation. Preserve the current job for inspection.", 409);
+    }
+    ownerHandoffs.push(handoff);
+    await persistAuthoringResume(consumer === "planning" ? "planning" : "read_mapping", permit);
+    if (resumePersistenceBlocked) throw checkpointSaveFailure("The owner question");
+    return handoff;
+  });
+  const recordOwnerAnswer = async (handoff: AuthoringOwnerHandoff, answer: string) => mutateOwnerHandoff(async permit => {
+    const current = await ownerQuestionContext(permit);
+    const pending = ownerHandoffs.at(-1);
+    if (handoff.state !== "waiting" || pending?.state !== "waiting" || pending.id !== handoff.id || pending.digest !== handoff.digest
+      || handoff.scope_digest !== ownerQuestionScope() || handoff.context_digest !== current) {
+      throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: The question's Source, permissions or job changed. Its answer was not accepted; inspect the saved context before continuing.");
+    }
+    const next = answerOwnerHandoff(handoff, answer, current);
+    if (handoff.completion) generationRecovery = authoringQuestionAnswerCheckpoint(generationRecovery,
+      ownerHandoffCheckpoint(handoff), { digest: canonicalJsonDigest(next), operator_messages: [answer] });
+    ownerHandoffs[ownerHandoffs.length - 1] = next;
+    rememberModelAuthoringTurn(authoringConversation, handoff.question, answer);
+    await persistAuthoringResume(handoff.consumer === "planning" ? "planning" : "read_mapping", permit);
+    if (resumePersistenceBlocked) throw checkpointSaveFailure("The owner answer");
+  });
   // The model conversation is populated only after this menu. Read the saved
   // source session itself so a confirmed interpretation remains publicly
   // revisitable after restart, before provider selection or egress.
@@ -4561,6 +4624,51 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     const next = {...unsigned, revision_digest: canonicalJsonDigest(unsigned)};
     await writeBoundaryAuthoringResumeState(input.projectRoot, next, {expectedRevisionDigest: savedResumeRevision});
     activeResume = next; savedResumeRevision = next.revision_digest; generationRecovery = next.generation_recovery;
+  };
+  const reviewConnectionRecovery = async (title: string): Promise<boolean> => {
+    const target = activeResume;
+    const choose = input.session.chooseOption;
+    if (!target || !choose || resumePersistenceBlocked) throw checkpointSaveFailure("The current retry-policy review");
+    const permissionContext = async () => canonicalJsonDigest({
+      bundle: (await loadBoundaryReviewContext(input.projectRoot)).bundle,
+      source: target.policy_source_session ? await policySourceSavedDigest(input.projectRoot, target.policy_source_session) : null,
+    });
+    const reviewedContext = await permissionContext();
+    const choice = await choose(title, [
+      {value: "keep", label: "Keep current settings"},
+      {value: "off", label: "Disable automatic generation retries"},
+      {value: "one", label: "Allow at most one additional attempt"},
+      {value: "two", label: "Allow at most two additional attempts"},
+    ], {initialValue: "keep", context: [
+      `Saved provider/model: ${target.model.provider}[${target.model.name}]`,
+      `Current additional-attempt limit: ${generationRecovery?.policy?.maximum_additional_attempts ?? 0}`,
+      "Retries only repeat an eligible generation request; they never repeat a local tool, save or publication.",
+      "A no-response attempt may already have been processed and billed. At most one such reissue per generation is allowed.",
+      "Partial responses and uncertain local saves require inspection. Restart never resets attempts.",
+    ]});
+    if (choice === undefined) return false;
+    if (choice === "one" || choice === "two" || choice === "off") {
+      const maximum = choice === "two" ? 2 : choice === "one" ? 1 : 0;
+      const confirmed = await input.session.confirm(maximum
+        ? `Allow up to ${maximum} additional generation attempt${maximum === 1 ? "" : "s"} for this saved job, including at most one possible duplicate charge per request?`
+        : "Disable automatic generation retries for this saved job?", {defaultValue: false, context: [
+        `Provider/model: ${target.model.provider}[${target.model.name}]`,
+        "Existing failed attempts and unknown charges remain recorded. This grants no source, publication or execution authority.",
+      ]});
+      if (confirmed) {
+        if (await permissionContext() !== reviewedContext) throw new Error("AUTHORING_RECOVERY_CONTEXT_CHANGED: The saved source or authority changed during permission review. No recovery permission was saved.");
+        const model = boundaryAuthoringResumeModelSession(target, currentModel, input.modelDiscovery?.env ?? process.env);
+        if (!model) throw new Error("AUTHORING_RECOVERY_MODEL_UNAVAILABLE: Restore the saved model configuration before changing recovery permission.");
+        const endpoint = new URL(model.baseUrl ?? (model.provider === "openai" ? "https://api.openai.com/v1"
+          : model.provider === "openrouter" ? "https://openrouter.ai/api/v1" : model.provider === "anthropic" ? "https://api.anthropic.com/v1" : "http://127.0.0.1:11434/v1"));
+        await writeGenerationRecovery({...generationRecovery ?? {version: 1 as const, operations: []}, policy: {
+          maximum_additional_attempts: maximum, duplicate_generation_charges: maximum > 0,
+          provider: target.model.provider, model: target.model.name,
+          destination_digest: canonicalJsonDigest(endpoint.origin), actor: "local_installation_operator", reviewed_at: new Date().toISOString(),
+        }});
+      }
+    }
+    return true;
   };
   configureAuthoringGenerationRecovery({
     available: () => Boolean(activeResume && selectedResumeModel && modelEgressAcknowledged
@@ -4615,6 +4723,10 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         ? "Keep the saved rules and client choice. The model receives current Read and Action settings, then asks only what should change."
         : "Talk through the job; Runner validates every suggested Read and Action decision.",
     },
+    ...(!availableResume ? [{ value: "model_with_recovery", label: "Start a new job and review finite connection retries",
+      detail: "Save the exact job and review default-off retry consent before its first generation; possible duplicate charges remain explicit." },
+      { value: "program_with_recovery", label: "Draft a complete program and review finite connection retries",
+      detail: "Retain the complete agenda; review current-job retry consent before any generation. No authority is granted." }] : []),
     ...(!availableResume ? [{ value: "program", label: "Draft a complete multi-Action program",
       detail: "Record and review the complete distinct outcome agenda before drafting bounded work units. No authority is granted." }] : []),
     ...(currentModel
@@ -4808,44 +4920,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           "The original attempt and possible charge remain recorded; saved drafts and business authority are unchanged."]}), navigation: "pause" as const};
     }
     if (selected === "transport_recovery" && availableResume && !revalidateSavedJob) {
-      const permissionContext = async () => canonicalJsonDigest({
-        bundle: (await loadBoundaryReviewContext(input.projectRoot)).bundle,
-        source: availableResume.policy_source_session ? await policySourceSavedDigest(input.projectRoot, availableResume.policy_source_session) : null,
-      });
-      const reviewedContext = await permissionContext();
-      const choice = await input.session.chooseOption("SAVED JOB CONNECTION RECOVERY", [
-        {value: "keep", label: "Keep current settings"},
-        {value: "off", label: "Disable automatic generation retries"},
-        {value: "one", label: "Allow at most one additional attempt"},
-        {value: "two", label: "Allow at most two additional attempts"},
-      ], {initialValue: "keep", context: [
-        `Saved provider/model: ${availableResume.model.provider}[${availableResume.model.name}]`,
-        `Current additional-attempt limit: ${generationRecovery?.policy?.maximum_additional_attempts ?? 0}`,
-        "Retries only repeat an eligible generation request; they never repeat a local tool, save or publication.",
-        "A no-response attempt may already have been processed and billed. At most one such reissue per generation is allowed.",
-        "Partial responses and uncertain local saves require inspection. Restart never resets attempts.",
-      ]});
-      if (choice === "one" || choice === "two" || choice === "off") {
-        const maximum = choice === "two" ? 2 : choice === "one" ? 1 : 0;
-        const confirmed = await input.session.confirm(maximum
-          ? `Allow up to ${maximum} additional generation attempt${maximum === 1 ? "" : "s"} for this saved job, including at most one possible duplicate charge per request?`
-          : "Disable automatic generation retries for this saved job?", {defaultValue: false, context: [
-          `Provider/model: ${availableResume.model.provider}[${availableResume.model.name}]`,
-          "Existing failed attempts and unknown charges remain recorded. This grants no source, publication or execution authority.",
-        ]});
-        if (confirmed) {
-          if (await permissionContext() !== reviewedContext) throw new Error("AUTHORING_RECOVERY_CONTEXT_CHANGED: The saved source or authority changed during permission review. No recovery permission was saved.");
-          const model = boundaryAuthoringResumeModelSession(availableResume, currentModel, input.modelDiscovery?.env ?? process.env);
-          if (!model) throw new Error("AUTHORING_RECOVERY_MODEL_UNAVAILABLE: Restore the saved model configuration before changing recovery permission.");
-          const endpoint = new URL(model.baseUrl ?? (model.provider === "openai" ? "https://api.openai.com/v1"
-            : model.provider === "openrouter" ? "https://openrouter.ai/api/v1" : model.provider === "anthropic" ? "https://api.anthropic.com/v1" : "http://127.0.0.1:11434/v1"));
-          await writeGenerationRecovery({...generationRecovery ?? {version: 1 as const, operations: []}, policy: {
-            maximum_additional_attempts: maximum, duplicate_generation_charges: maximum > 0,
-            provider: availableResume.model.provider, model: availableResume.model.name,
-            destination_digest: canonicalJsonDigest(endpoint.origin), actor: "local_installation_operator", reviewed_at: new Date().toISOString(),
-          }});
-        }
-      }
+      await reviewConnectionRecovery("SAVED JOB CONNECTION RECOVERY");
       return {...boundaryAssistResult({tone: "success", title: "Connection recovery settings reviewed.",
         lines: ["Saved drafts, source meaning and authority are unchanged. Reopen this saved job to continue; no provider request was made."]}), navigation: "pause" as const};
     }
@@ -4887,7 +4962,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       );
       if (selected === undefined) return boundaryAssistResult(boundaryAssistBackNotice());
     }
-    if (selected === "program") {
+    reviewNewJobRecovery = selected === "model_with_recovery" || selected === "program_with_recovery";
+    if (selected === "model_with_recovery") selected = "model";
+    if (selected === "program" || selected === "program_with_recovery") {
       actionWorkflow = "program";
       selected = "model";
     }
@@ -5065,7 +5142,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           }
           input.authoringChat.checkpoint("Rules context", [authoringConversation.policySources.active
             ? "Restored the saved rules snapshot without rereading its original file. /rules views, replaces or removes it."
-            : "Describe the job, paste your business rules, or use /attach ./rules.txt. /rules manages the selected text."]);
+            : "Attached Source: none. Use /attach ./rules.txt to preview and permit a complete text snapshot. A path mentioned in a job is not an attachment."]);
         }
         if (selectedPolicyReview) return runSavedPolicyReview(activeResume?.pending_policy_review?.request);
         installPermissionGuide(preselectedMappingSession);
@@ -5073,11 +5150,15 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           rememberModelAuthoringTurn(authoringConversation, "Runner revalidation notice",
             "The database was rescanned. Revalidate this same saved business job against the current reviewed structure. Prior model validation claims and checkpoints are not current proof. Preserve the saved business rules and existing field restrictions; any necessary authority change requires review.");
         }
+        const openingChat = input.authoringChat;
+        const openingSession = preselectedMappingSession;
+        const openingModel = routeSelectedModel;
+        openingModelNotice = async () => {
         const narrator = input.modelAuthoringNarrator ?? narrateValidatedAuthoringStep;
         const greeting = resumeSelected ? undefined : await runWithProgress(
-          `${resumeSelected ? "Resuming" : "Starting"} ${boundaryModelLabel(preselectedMappingSession)}`,
+          `${resumeSelected ? "Resuming" : "Starting"} ${boundaryModelLabel(openingSession)}`,
           () => narrator({
-            session: boundaryAuthoringModelSession(preselectedMappingSession!, input.authoringChat),
+            session: boundaryAuthoringModelSession(openingSession, openingChat),
             operatorMessage: resumeSelected
               ? "Resume the saved model-guided Boundary job and its accepted business answers."
               : input.initialSavedReadRevision
@@ -5113,12 +5194,13 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           }),
         );
         if (greeting) {
-          await input.authoringChat.streamModel(greeting.split(/\r?\n/u));
+          await openingChat.streamModel(greeting.split(/\r?\n/u));
         } else if (!resumeSelected) {
-          await input.authoringChat.streamCheckpoint("Model connected", [
+          await openingChat.streamCheckpoint("Model connected", [
             "Unsupported opening text was discarded; describe one job below",
           ], "warning");
         }
+        };
       }
     }
   }
@@ -5183,6 +5265,16 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     if (!resumeSelected) rememberModelAuthoringTurn(authoringConversation, "Requested change to the saved job", pendingJobRevision);
   }
   await persistAuthoringResume("planning");
+  if (openingModelNotice || reviewNewJobRecovery) {
+    if (resumePersistenceBlocked || !activeResume) throw checkpointSaveFailure("The new job");
+    if (reviewNewJobRecovery && !await reviewConnectionRecovery("NEW JOB CONNECTION RECOVERY"))
+      return boundaryAssistResult(boundaryAssistBackNotice("The exact new job is saved. Retry-settings review was cancelled; no generation started."));
+    await openingModelNotice?.();
+    // A successfully handled opening belongs to this same current durable job.
+    // Commit its normal consumer boundary before the planning generation.
+    await persistAuthoringResume("planning");
+    if (resumePersistenceBlocked) throw checkpointSaveFailure("The model opening");
+  }
   if (!mode && input.session.chooseOption) {
     let selected = await input.session.chooseOption(
       input.jobFirst ? "MAP THE JOB TO REVIEWED STRUCTURE" : "HOW SHOULD RUNNER MAP THIS JOB?",
@@ -5607,8 +5699,23 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       let planningFailure: unknown;
       jobPlan = undefined;
       try {
-        const clarificationTranscript: string[] = [];
-        for (let modelTurn = 0; modelTurn <= 2; modelTurn += 1) {
+        const priorQuestions = ownerHandoffs.filter(record => record.consumer === "planning" && record.scope_digest === ownerQuestionScope());
+        const priorAnswers = priorQuestions.filter(record => record.state === "answered");
+        const clarificationTranscript = priorAnswers.map(record => record.state === "answered"
+          ? `Model question: ${record.question}\nOperator answer: ${record.answer}` : "");
+        const lastQuestion = priorQuestions.at(-1);
+        if (lastQuestion && (lastQuestion.state === "waiting" ? lastQuestion.context_digest : lastQuestion.answer_context_digest) !== await ownerQuestionContext()) {
+          throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: Saved planning meaning belongs to a changed Source, permissions or job. No new generation was sent.");
+        }
+        for (let modelTurn = priorAnswers.length; modelTurn <= 2; modelTurn += 1) {
+          let handoff = ownerHandoffs.at(-1);
+          if (handoff?.state === "waiting") {
+            if (handoff.consumer !== "planning" || handoff.scope_digest !== ownerQuestionScope()) {
+              throw new Error("AUTHORING_OWNER_QUESTION_PENDING: A different saved question must be resolved before planning continues.");
+            }
+            jobPlan = { state: "clarification", question: handoff.question, correction_used: false,
+              authority_granted: false, source_database_changed: false };
+          } else {
           jobPlan = await runWithProgress(
             clarificationTranscript.length ? "Updating the Boundary plan" : "Planning Read and Action work",
             () => (input.modelBoundaryJobPlanner ?? planModelBoundaryJob)({
@@ -5629,6 +5736,14 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
               egressAcknowledged: true,
             }),
           );
+          if (jobPlan.state === "clarification") handoff = await persistOwnerQuestion(jobPlan.question, "planning", jobPlan.completion);
+          }
+          if (jobPlan.state === "clarification" && modelTurn >= 2) {
+            return boundaryAssistResult({ tone: "warning", title: "Planning clarification limit reached.",
+              lines: [jobPlan.question, "The exact unanswered question and earlier attributed answers are saved. This planning episode will not send another generation on reopen.",
+                "Inspect the saved job and disabled draft through the local review/export routes. No draft, publication or Source effect completed."],
+              footer: "Keep this job for inspection; a session restart does not reset its clarification budget." });
+          }
           if (activeResume && activePolicySource(authoringConversation?.policySources)
             && (jobPlan.state === "clarification" || ["reuse", "none"].includes(jobPlan.read_mode) && ["reuse", "none"].includes(jobPlan.action_mode))) {
             const reviewOnly = jobPlan.state === "planned" && jobPlan.operation === "review_rules";
@@ -5645,7 +5760,6 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             if (operation === "pause") return boundaryAssistResult(boundaryAssistBackNotice("Request retained for continuation; no review or edit completed."));
           }
           if (jobPlan.state === "planned") break;
-          if (modelTurn >= 2) break;
           clarificationAnswer = await input.session.promptText(jobPlan.question, {
             context: [
               "MODEL QUESTION",
@@ -5657,12 +5771,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
               "Boundary planning paused before any disabled draft changed.",
             ));
           }
-          rememberModelAuthoringTurn(
-            authoringConversation,
-            jobPlan.question,
-            clarificationAnswer,
-          );
-          await persistAuthoringResume("planning");
+          if (!handoff || handoff.state !== "waiting") throw checkpointSaveFailure("The owner question");
+          await recordOwnerAnswer(handoff, clarificationAnswer);
           clarificationTranscript.push([
             `Model question: ${jobPlan.question}`,
             `Operator answer: ${clarificationAnswer}`,
