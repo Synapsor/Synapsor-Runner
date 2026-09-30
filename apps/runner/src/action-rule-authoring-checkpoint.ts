@@ -162,7 +162,7 @@ export function parseActionRuleAuthoringCheckpoint(value: unknown): ActionRuleAu
       || new Set(repair.passage_indexes).size !== repair.passage_indexes.length
       || repair.passage_indexes.some(i => !Number.isSafeInteger(i) || i < 0 || i > 119)) throw fail();
     const c = repair.correction;
-    if (!exact(c, ["source_digest", "read_digest", "catalog_digest", "parent_digest", "outcome", "source_answer_history_digest", "interpretation_digest", "source_ranges", "component", "editable_paths"])
+    if (!exact(c, ["source_digest", "read_digest", "catalog_digest", "parent_digest", "outcome", "source_answer_history_digest", "interpretation_digest", "source_ranges", "component", "editable_paths", "binding_permutation"])
       || ![c.read_digest, c.catalog_digest, c.parent_digest, c.source_answer_history_digest, c.interpretation_digest].every(digest)
       || typeof c.source_digest !== "string" || !c.source_digest.trim() || c.source_digest.length > 256
       || typeof c.outcome !== "string" || !c.outcome.trim() || c.outcome.length > 256 || c.outcome !== repair.original_parent.outcome
@@ -174,6 +174,14 @@ export function parseActionRuleAuthoringCheckpoint(value: unknown): ActionRuleAu
       || c.source_ranges.some(r => !object(r) || !exact(r, ["start", "end"]) || !Number.isSafeInteger(r.start)
         || !Number.isSafeInteger(r.end) || r.start < 1 || r.end < r.start)) throw fail();
     if (repair.coverage_provenance !== undefined) parseActionWorkUnitCoverageProvenance(repair.coverage_provenance);
+    if (c.binding_permutation !== undefined) {
+      const p = c.binding_permutation;
+      if (!object(p) || !exact(p, ["slots", "original_bindings"]) || !Array.isArray(p.slots) || p.slots.length < 2 || p.slots.length > 32
+        || !Array.isArray(p.original_bindings) || p.original_bindings.length !== p.slots.length
+        || new Set(p.original_bindings).size !== p.original_bindings.length
+        || p.slots.some((slot,i) => !Number.isSafeInteger(slot) || slot < 0 || i > 0 && slot <= p.slots[i-1]!
+          || repair.original_parent.verification?.resources?.[slot]?.binding !== p.original_bindings[i])) throw fail();
+    }
   }
   if (Buffer.byteLength(JSON.stringify(record), "utf8") > 96 * 1024) throw fail();
   const { digest, ...core } = record;

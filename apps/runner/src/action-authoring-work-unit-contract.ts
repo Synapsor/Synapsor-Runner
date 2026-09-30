@@ -9,6 +9,8 @@ import { activePolicySource, type PolicyCoverage, type PolicyPassage, type Polic
 import { readBoundaryRevisionCatalog } from "./read-boundary-revision-model.js";
 
 type Digest = `sha256:${string}`;
+export type ActionWorkUnitBindingPermutation = { slots: number[]; original_bindings: string[] };
+export const ACTION_WORK_UNIT_BINDING_LOADER_FIELDS = ["source", "max_rows", "overflow", "collection_consistency"] as const;
 type DraftComponents = {
   verification?: ActionRuleModelDraftV1["verification"];
   effect?: ActionRuleModelDraftV1["effect"];
@@ -46,7 +48,8 @@ export type ActionWorkUnitFidelityAssessment =
   | { state: "currentness_pending" }
   | { state: "current_registered_requirements_satisfied"; source_review: ActionWorkUnitSourceReview }
   | { state: "representation_mismatch"; source_review: ActionWorkUnitSourceReview;
-      component: "subject" | "predicate" | "private_role"; editable_paths: string[] };
+      component: "subject" | "predicate" | "private_role"; editable_paths: string[];
+      binding_permutation?: ActionWorkUnitBindingPermutation };
 
 const MAX_CONTRACT_BYTES = 32 * 1024;
 const MAX_EDITABLE_PATHS = 32;
@@ -176,6 +179,7 @@ export type ActionWorkUnitCorrection = {
   source_answer_history_digest: Digest;
   interpretation_digest: Digest; source_ranges: Array<{ start: number; end: number }>;
   component: "subject" | "predicate" | "private_role"; editable_paths: string[];
+  binding_permutation?: ActionWorkUnitBindingPermutation;
 };
 export class ActionWorkUnitFidelityError extends Error {
   readonly code: string = "ACTION_WORK_UNIT_REPRESENTATION_MISMATCH";
@@ -247,17 +251,37 @@ export function validateActionWorkUnitAssessment(context: ActionWorkUnitContext,
     throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
   for (const pointer of assessment.editable_paths) {
     const path = typeof pointer === "string" ? parts(pointer) : [];
+    const loader = path.length === 4 && path[0] === "verification" && path[1] === "resources"
+      && /^(?:0|[1-9]\d*)$/u.test(path[2] ?? "") && ACTION_WORK_UNIT_BINDING_LOADER_FIELDS.includes(path[3] as typeof ACTION_WORK_UNIT_BINDING_LOADER_FIELDS[number]);
+    const region = loader && passages.some(p => p.disposition === "conflict" && p.responsibility === "runner" && p.issue_kind === "contradiction"
+      && p.draft_paths.includes(`/actions/${assessment.source_review.draft.actions.findIndex(a => a.outcome === draft.outcome)}/verification/resources/${path[2]}`));
+    const bindingRegion = path[0] === "verification" && path[1] === "resources" && passages.some(p => p.disposition === "conflict"
+      && p.draft_paths.includes(`/actions/${assessment.source_review.draft.actions.findIndex(a => a.outcome === draft.outcome)}/verification/resources/${path[2]}`));
     if (typeof pointer !== "string" || !pointer.startsWith("/") || pointer.includes("~") && /~(?![01])/u.test(pointer)
       || path.some(p => ["__proto__", "constructor", "prototype", ""].includes(p))
       || !["verification", "require", "inputs", "effect", "derive", "approval", "ttl_seconds", "review", "discovery"].includes(path[0]!)
-      || !pathExists(draft, pointer) || !passages.some(p => p.disposition === "conflict" && nominatedByPassage(draft, assessment.source_review, p, pointer)))
+      || bindingRegion && !loader || !pathExists(draft, pointer) && !region || !passages.some(p => p.disposition === "conflict" && nominatedByPassage(draft, assessment.source_review, p, pointer)))
+      throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
+  }
+  if (assessment.binding_permutation) {
+    const permutation = assessment.binding_permutation;
+    const index = assessment.source_review.draft.actions.findIndex(a => a.outcome === draft.outcome);
+    if (!object(permutation) || Object.keys(permutation).some(k => !["slots", "original_bindings"].includes(k))
+      || !Array.isArray(permutation.slots) || permutation.slots.length < 2 || permutation.slots.length > MAX_EDITABLE_PATHS
+      || !Array.isArray(permutation.original_bindings) || permutation.original_bindings.length !== permutation.slots.length
+      || new Set(permutation.original_bindings).size !== permutation.original_bindings.length
+      || permutation.slots.some((slot, i) => !Number.isSafeInteger(slot) || slot < 0 || i > 0 && slot <= permutation.slots[i - 1]!
+        || draft.verification.resources[slot]?.binding !== permutation.original_bindings[i]
+        || !passages.some(p => p.disposition === "conflict" && p.responsibility === "runner" && p.issue_kind === "contradiction"
+          && p.draft_paths.includes(`/actions/${index}/verification/resources/${slot}`))))
       throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
   }
   return { status, correction: { source_digest: source!.digest, read_digest: context.readBoundaryDigest,
     source_answer_history_digest: canonicalJsonDigest(context.policySources?.operator_messages ?? []),
     catalog_digest: canonicalJsonDigest(context.builtCatalog.catalog), parent_digest: canonicalJsonDigest(draft), outcome: draft.outcome,
     interpretation_digest: canonicalJsonDigest(assessment.source_review.report), component: assessment.component,
-    editable_paths: [...assessment.editable_paths], source_ranges: passages.filter(p => p.disposition === "conflict").map(p => ({ start: p.start, end: p.end })) } };
+    editable_paths: [...assessment.editable_paths], source_ranges: passages.filter(p => p.disposition === "conflict").map(p => ({ start: p.start, end: p.end })),
+    ...(assessment.binding_permutation ? { binding_permutation: structuredClone(assessment.binding_permutation) } : {}) } };
 }
 
 /** Exact JSON-pointer scope, including deletion of nominated array members.
@@ -274,6 +298,16 @@ export function assertActionWorkUnitCorrection(context: ActionWorkUnitContext, p
     if (before === undefined || after === undefined) return before === after;
     if (canonicalJsonDigest(before) === canonicalJsonDigest(after)) return true;
     if (Array.isArray(before) && Array.isArray(after)) {
+      if (pointer === "/verification/resources" && correction.binding_permutation) {
+        const selected = new Set(correction.binding_permutation.slots);
+        if (before.length !== after.length || new Set(after.map(b => object(b) ? b.binding : undefined)).size !== after.length
+          || correction.binding_permutation.slots.some((slot,i) => !object(before[slot]) || before[slot].binding !== correction.binding_permutation!.original_bindings[i])) return false;
+        return before.every((binding, i) => {
+          if (!selected.has(i)) return equal(binding, after[i], `${pointer}/${i}`);
+          const slot = correction.binding_permutation!.slots.find(j => object(after[j]) && after[j].binding === (binding as Record<string, unknown>).binding);
+          return slot !== undefined && equal(binding, after[slot], `${pointer}/${i}`);
+        });
+      }
       const memo = new Map<string, boolean>();
       const visit = (i: number, j: number): boolean => {
         if (i === before.length) return j === after.length;

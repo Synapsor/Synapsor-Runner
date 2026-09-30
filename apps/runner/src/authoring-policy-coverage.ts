@@ -184,6 +184,27 @@ export function coverageReferences(draft: unknown): string[] {
     children(root);
     for (const pointer of [...references].filter((entry) => entry.startsWith(`${root}/`))) children(pointer);
   }
+  const booleanNodes = (value: unknown, path: string): void => {
+    if (!value || typeof value !== "object" || Array.isArray(value)) return;
+    const node = value as Record<string, unknown>;
+    if (!["all", "any", "not", "compare", "null_check", "in", "exists"].includes(node.kind as string)) return;
+    references.add(path);
+    if ((node.kind === "all" || node.kind === "any") && Array.isArray(node.expressions))
+      node.expressions.forEach((expression,i) => booleanNodes(expression, `${path}/expressions/${i}`));
+    if (node.kind === "not") booleanNodes(node.expression, `${path}/expression`);
+    if (node.kind === "exists") booleanNodes(node.where, `${path}/where`);
+  };
+  const rawActions = evidenceRecord(draft)?.actions;
+  if (Array.isArray(rawActions)) for (const [i, raw] of rawActions.entries()) {
+    const action = evidenceRecord(raw), verification = evidenceRecord(action?.verification);
+    if (Array.isArray(verification?.resources)) for (const [j,binding] of verification.resources.entries()) {
+      if (!evidenceRecord(binding)) continue;
+      references.add(`/actions/${i}/verification/resources/${j}`);
+      if (evidenceRecord(binding.source)) references.add(`/actions/${i}/verification/resources/${j}/source`);
+    }
+    booleanNodes(action?.require, `/actions/${i}/require`);
+    booleanNodes(evidenceRecord(action?.approval)?.auto_approve_when, `/actions/${i}/approval/auto_approve_when`);
+  }
   for (const { path } of fieldPrivacyEvidence(draft)) {
     references.add(path);
     references.add(path.slice(0, path.lastIndexOf("/")));

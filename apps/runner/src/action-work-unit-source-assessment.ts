@@ -1,7 +1,7 @@
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { compileActionRuleModelDraft, type ActionRuleModelDraftV1 } from "./action-rule-draft.js";
 import { explorationBoundaryCandidateDigest } from "./auto-boundary.js";
-import { ActionWorkUnitSourcePendingError, validateActionWorkUnitAssessment, type ActionWorkUnitContext,
+import { ACTION_WORK_UNIT_BINDING_LOADER_FIELDS, ActionWorkUnitSourcePendingError, validateActionWorkUnitAssessment, type ActionWorkUnitContext,
   type ActionWorkUnitFidelityAssessment, type ActionWorkUnitSourceReview } from "./action-authoring-work-unit-contract.js";
 import { parseActionWorkUnitCoverageProvenance, type ActionRuleSourceRepairCheckpoint, type ActionWorkUnitCoverageProvenance } from "./action-rule-authoring-checkpoint.js";
 import type { ActionRuleCoverageLineage } from "./action-rule-authority.js";
@@ -102,6 +102,7 @@ export function assessActionWorkUnitSource(input: { context: ActionWorkUnitConte
   const current: number[] = [], global: number[] = [], other: number[] = [], unscoped: number[] = [], roles: number[] = [], deferred: number[] = [];
   const conflicts = { subject: [] as number[], predicate: [] as number[] };
   const editable = { subject: new Set<string>(), predicate: new Set<string>() };
+  const regions = new Set<number>();
   const bindings = prepared.runner_evidence.actions[action.outcome]?.scoped_bindings ?? {};
   const referencePending = action.verification.resources.filter(binding => binding.source.kind === "subject_ref"
     && context.builtCatalog.authoring.resources.find(r => r.name === binding.resource)?.subject_reference?.obtainable !== true).map(b => b.binding);
@@ -129,28 +130,30 @@ export function assessActionWorkUnitSource(input: { context: ActionWorkUnitConte
       const p = parts(path);
       if (p[0] !== "actions" || p[1] !== String(currentIndex)) return undefined;
       const local = p.slice(2), value = at(action, local);
-      if (local.length === 4 && local[0] === "verification" && local[1] === "resources" && local[3] === "source"
+      if ((local.length === 3 || local.length === 4 && local[3] === "source") && local[0] === "verification" && local[1] === "resources"
         && /^(?:0|[1-9]\d*)$/u.test(local[2]!)) {
         const binding = action.verification.resources[Number(local[2])];
         const catalog = context.builtCatalog.authoring.resources.find(r => r.name === binding?.resource);
         const evidence = binding && bindings[binding.binding];
         if (!binding || !catalog || typeof catalog.subject_reference?.obtainable !== "boolean" || !evidence
           || evidence.resource !== binding.resource || !object(value)
-          || !["subject_ref", "relationship"].includes(value.kind as string)
+          || !["subject_ref", "relationship"].includes(binding.source.kind)
           || binding.fields.some(field => !catalog.fields.some(f => f.name === field)
             || !Object.hasOwn(evidence.fields, field))) return undefined;
-        return { component: "subject" as const, pointer: `/${local.map(escape).join("/")}` };
+        return { component: "subject" as const, pointers: local.length === 3 ? ACTION_WORK_UNIT_BINDING_LOADER_FIELDS.map(key => `/verification/resources/${local[2]}/${key}`)
+          : [`/${local.map(escape).join("/")}`], ...(local.length === 3 ? { region: Number(local[2]) } : {}) };
       }
       // Whole component/root references are context, not an edit nomination.
       if (!(local[0] === "require" && local.length > 1
         || local[0] === "approval" && local[1] === "auto_approve_when" && local.length > 2)
         || !object(value) || !["all", "any", "not", "compare", "null_check", "in", "exists"].includes(value.kind as string)) return undefined;
-      return { component: "predicate" as const, pointer: `/${local.map(escape).join("/")}` };
+      return { component: "predicate" as const, pointers: [`/${local.map(escape).join("/")}`] };
     });
     if (!nominations.length || nominations.some(n => n === undefined)) continue;
-    const component = nominations[0]!.component;
-    if (nominations.some(n => n!.component !== component)) continue;
-    conflicts[component].push(index); nominations.forEach(n => editable[component].add(n!.pointer));
+    for (const nomination of nominations) {
+      conflicts[nomination!.component].push(index); nomination!.pointers.forEach(pointer => editable[nomination!.component].add(pointer));
+      if ("region" in nomination! && nomination!.region !== undefined) regions.add(nomination!.region);
+    }
   }
   const scope: ActionWorkUnitSourceAssessmentResult["scope"] = { assurance: "current_interpreted_associations_only", whole_source_review_pending: true,
     report_digest: canonicalJsonDigest(report), prepared_draft_digest: canonicalJsonDigest(prepared), current_passage_indexes: current,
@@ -162,8 +165,10 @@ export function assessActionWorkUnitSource(input: { context: ActionWorkUnitConte
     ...(input.coverageProvenance ? { coverage_provenance: parseActionWorkUnitCoverageProvenance(input.coverageProvenance) } : {}) });
   const component: "subject" | "predicate" | undefined = conflicts.subject.length ? "subject" : conflicts.predicate.length ? "predicate" : undefined;
   if (component) {
+    const slots = [...regions].sort((a,b) => a-b);
     const assessment = { state: "representation_mismatch" as const, component,
-      editable_paths: [...editable[component]], source_review: review(conflicts[component]) };
+      editable_paths: [...new Set([...editable.subject, ...editable.predicate])], source_review: review([...new Set([...conflicts.subject, ...conflicts.predicate])].sort((a,b)=>a-b)),
+      ...(slots.length > 1 ? { binding_permutation: { slots, original_bindings: slots.map(i => action.verification.resources[i]!.binding) } } : {}) };
     validateActionWorkUnitAssessment(context, action, assessment);
     return { assessment, scope };
   }

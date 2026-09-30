@@ -773,7 +773,8 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
           });
           context = prepared.context;
           submission = phase === "verification"
-            ? reconcileRunnerScopedVerification(submission as VerificationSubmission, context.builtCatalog)
+            ? reconcileRunnerScopedVerification(submission as VerificationSubmission, context.builtCatalog,
+              workUnitRepairParent?.correction.editable_paths.some(path => path.startsWith("/verification/")))
             : reconcileRunnerScopedEffect(submission as EffectSubmission, context.builtCatalog);
         }
         submissions[phase] = submission;
@@ -1017,6 +1018,10 @@ export async function generateFocusedModelActionRuleDraft(input: ModelActionRule
     ...(input.expectedOutcome ? { expected_outcome: input.expectedOutcome } : {}),
     ...(input.operatorStatements ? { operator_statements: originalStatements } : {}) }))
     throw new ActionWorkUnitSourcePendingError("currentness");
+  const workUnitContext = (): ActionWorkUnitContext => ({ ...activeContext, policySources: input.session.conversation?.policySources });
+  const restoredRepair = await restoredSourceRepair(input, workUnitContext());
+  let workUnitRepairParent = restoredRepair.parent;
+  let sourceRepair = restoredRepair.checkpoint;
   const existingSubmissions = validatedExistingDraft === undefined
     ? undefined
     : phaseSubmissionsFromDraft(validatedExistingDraft);
@@ -1024,6 +1029,7 @@ export async function generateFocusedModelActionRuleDraft(input: ModelActionRule
     existingSubmissions.verification = reconcileRunnerScopedVerification(
       existingSubmissions.verification as VerificationSubmission,
       activeContext.builtCatalog,
+      workUnitRepairParent?.correction.editable_paths.some(path => path.startsWith("/verification/")),
     );
     existingSubmissions.effect = reconcileRunnerScopedEffect(
       existingSubmissions.effect as EffectSubmission,
@@ -1041,10 +1047,6 @@ export async function generateFocusedModelActionRuleDraft(input: ModelActionRule
   let correctionUsed = false;
   const revisionFocus = modelActionRuleRevisionFocus(intent, existingDraft);
   let phases: readonly PhaseName[] = revisionFocus ? [revisionFocus] : ACTION_RULE_PHASES;
-  const workUnitContext = (): ActionWorkUnitContext => ({ ...activeContext, policySources: input.session.conversation?.policySources });
-  const restoredRepair = await restoredSourceRepair(input, workUnitContext());
-  let workUnitRepairParent = restoredRepair.parent;
-  let sourceRepair = restoredRepair.checkpoint;
   const saveSourceRepair = async () => {
     if (!sourceRepair) return;
     if (!input.onCheckpoint) throw new Error("ACTION_SOURCE_REPAIR_NOT_SAVED: Preserve the original nomination; no correction was sent.");
@@ -1114,6 +1116,7 @@ export async function generateFocusedModelActionRuleDraft(input: ModelActionRule
         submissions.verification = reconcileRunnerScopedVerification(
           submission as VerificationSubmission,
           activeContext.builtCatalog,
+          workUnitRepairParent?.correction.editable_paths.some(path => path.startsWith("/verification/")),
         );
       } else {
         submissions.effect = reconcileRunnerScopedEffect(
@@ -1204,6 +1207,7 @@ export async function generateFocusedModelActionRuleDraft(input: ModelActionRule
           submissions.verification = reconcileRunnerScopedVerification(
             repairedSubmission as VerificationSubmission,
             activeContext.builtCatalog,
+            workUnitRepairParent?.correction.editable_paths.some(path => path.startsWith("/verification/")),
           );
         } else {
           submissions.effect = reconcileRunnerScopedEffect(
@@ -1390,7 +1394,11 @@ async function preparePhaseResources(input: {
 function reconcileRunnerScopedVerification(
   submission: VerificationSubmission,
   builtCatalog: BuiltActionRuleAuthoringCatalogV1,
+  preserveFields = false,
 ): VerificationSubmission {
+  // A Source nomination fixes the original declaration by binding identity.
+  // The compiler still derives and validates mandatory private guard fields.
+  if (preserveFields) return structuredClone(submission);
   const resources = new Map(builtCatalog.catalog.resources.map((resource) => [resource.name, resource]));
   return {
     ...submission,
