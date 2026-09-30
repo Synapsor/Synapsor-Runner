@@ -7,6 +7,7 @@ import { randomUUID } from "node:crypto";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { parseReadPrerequisiteBusinessDecisions, type ReadPrerequisiteBusinessDecision } from "./read-prerequisite-decisions.js";
 import { parseReadWorkloadAssistanceCheckpoint, readWorkloadAssistanceDecisionAnswer, type ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
+import { parseReadBoundaryRevisionCheckpoint, readBoundaryRevisionDecisionAnswer, type ReadBoundaryRevisionCheckpoint } from "./read-boundary-revision-checkpoint.js";
 import type { AskHistoryTurn } from "./model-ask.js";
 import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { isAuthoringClientPlan, type AuthoringClientPlan } from "./authoring-client-plan.js";
@@ -116,6 +117,18 @@ export type BoundaryAuthoringResumeAction = {
   closed_unchanged?: "confirmed_current" | "cancelled";
 };
 
+/** Exact pending Read request and inert producer state, never accepted access. */
+export type BoundaryAuthoringReadRevision = {
+  instruction: string;
+  provenance: "operator" | "guided";
+  privacy_only: boolean;
+  vocabulary_only?: true;
+  interpretation_instruction?: string;
+  checkpoint?: ReadBoundaryRevisionCheckpoint;
+  /** Complete locally consumed result; no saved revision or resend permission. */
+  result_received?: true;
+};
+
 /** Review operation identity, separate from the job's business edit agenda. */
 export type BoundaryPolicyReviewContext = {
   source_session: string; source_digest: `sha256:${string}`; read_digest: `sha256:${string}`;
@@ -175,6 +188,7 @@ export type BoundaryAuthoringResumeState = {
   completed_policy_reviews?: BoundaryPolicyReviewCompletion[];
   /** Requested edit of the exact saved candidate, not a new workload or consent. */
   pending_read_revision?: string;
+  pending_read_revision_state?: BoundaryAuthoringReadRevision;
   /** Exact private Read mapping covered by this saved model's metadata permission. */
   private_read_metadata_digest?: `sha256:${string}`;
   /** Custom provider metadata consent is bound to its endpoint without saving a URL. */
@@ -247,6 +261,8 @@ export function buildBoundaryAuthoringResumeState(input: {
   pendingPolicyReview?: BoundaryPolicyReviewRequest | null;
   completedPolicyReviews?: BoundaryPolicyReviewCompletion[];
   pendingReadRevision?: string;
+  /** Omission retains this same request; null completes its guarded save. */
+  pendingReadRevisionState?: BoundaryAuthoringReadRevision | null;
   pendingReadRelationship?: { resource: string } | null;
   privateReadMetadataDigest?: `sha256:${string}`;
   metadataDestinationDigest?: `sha256:${string}`;
@@ -272,6 +288,11 @@ export function buildBoundaryAuthoringResumeState(input: {
     ? input.previous?.binding.boundary_name === input.binding.boundary_name
       && input.previous.job_intent === input.jobIntent.trim() ? input.previous.read_assistance : undefined
     : input.readAssistanceCheckpoint;
+  const readRevision = input.pendingReadRevisionState === undefined
+    ? input.previous?.binding.boundary_name === input.binding.boundary_name
+      && input.previous.job_intent === input.jobIntent.trim()
+      && input.pendingReadRevision === input.previous.pending_read_revision ? input.previous.pending_read_revision_state : undefined
+    : input.pendingReadRevisionState;
   // Omission during a Read/planning rewrite is not withdrawal of unfinished
   // business work. Completed/replaced agendas are still supplied explicitly.
   const action = input.action ?? (input.previous?.binding.boundary_name === input.binding.boundary_name
@@ -331,8 +352,9 @@ export function buildBoundaryAuthoringResumeState(input: {
       ? { pending_policy_review: normalizePolicyReview(input.pendingPolicyReview ?? input.previous!.pending_policy_review!) } : {}),
     ...((input.completedPolicyReviews ?? input.previous?.completed_policy_reviews)?.length
       ? { completed_policy_reviews: normalizePolicyReviewCompletions(input.completedPolicyReviews ?? input.previous!.completed_policy_reviews!) } : {}),
-    ...(input.pendingReadRevision ? { pending_read_revision: reviewedText(input.pendingReadRevision,
-      "Read revision request", MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS) } : {}),
+    ...(input.pendingReadRevision ? { pending_read_revision: reviewedReadRequestText(input.pendingReadRevision,
+      "Read revision request") } : {}),
+    ...(readRevision ? { pending_read_revision_state: normalizeReadRevisionState(readRevision) } : {}),
     ...(input.privateReadMetadataDigest ? { private_read_metadata_digest: normalizePrivateReadMetadataDigest(input.privateReadMetadataDigest) } : {}),
     ...(input.metadataDestinationDigest ? { metadata_destination_digest: normalizePrivateReadMetadataDigest(input.metadataDestinationDigest) } : {}),
     ...(input.pendingActionRemoval ? { pending_action_removal: normalizeActionRemoval(input.pendingActionRemoval) } : {}),
@@ -355,6 +377,10 @@ export function buildBoundaryAuthoringResumeState(input: {
     source_database_changed: false as const,
   };
   assertReadAssistanceHandoff(core);
+  if (core.pending_read_revision_state) {
+    if (core.pending_read_revision_state.instruction !== core.pending_read_revision) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The Read producer belongs to another pending request.");
+    assertReadRevisionHandoff(core);
+  }
   assertBoundaryAuthoringResumeMaterial(core);
   return {
     ...core,
@@ -587,7 +613,12 @@ export function assertBoundaryAuthoringResumeState(
   if (value.completed_policy_reviews !== undefined) normalizePolicyReviewCompletions(value.completed_policy_reviews);
   if (value.pending_read_revision !== undefined) {
     if (typeof value.pending_read_revision !== "string") throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Read revision request is invalid.");
-    reviewedText(value.pending_read_revision, "Read revision request", MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS);
+    reviewedReadRequestText(value.pending_read_revision, "Read revision request");
+  }
+  if (value.pending_read_revision_state !== undefined) {
+    const pending = normalizeReadRevisionState(value.pending_read_revision_state);
+    if (pending.instruction !== value.pending_read_revision) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The Read producer belongs to another pending request.");
+    assertReadRevisionHandoff(value);
   }
   if (value.pending_action_removal !== undefined) {
     normalizeActionRemoval(value.pending_action_removal);
@@ -666,6 +697,50 @@ function assertReadAssistanceHandoff(value: {
   } else {
     if (handoff.state !== "answered" || handoff.answer !== readWorkloadAssistanceDecisionAnswer(question)) {
       throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Read assistance decision has no exact attributable owner answer.");
+    }
+    assertAnsweredOwnerHandoff(generation, handoff);
+  }
+}
+
+function normalizeReadRevisionState(value: unknown): BoundaryAuthoringReadRevision {
+  if (!isRecord(value) || Object.keys(value).some(key => !["instruction", "provenance", "privacy_only", "vocabulary_only", "interpretation_instruction", "checkpoint", "result_received"].includes(key))
+    || typeof value.instruction !== "string" || !["operator", "guided"].includes(value.provenance as string) || typeof value.privacy_only !== "boolean"
+    || value.vocabulary_only !== undefined && value.vocabulary_only !== true
+    || value.result_received !== undefined && value.result_received !== true) {
+    throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The pending Read revision request is invalid.");
+  }
+  reviewedReadRequestText(value.instruction, "Read revision request");
+  if (value.interpretation_instruction !== undefined) {
+    if (typeof value.interpretation_instruction !== "string") throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The Read interpretation is invalid.");
+    reviewedReadRequestText(value.interpretation_instruction, "Read interpretation");
+  }
+  if (value.checkpoint !== undefined) {
+    const checkpoint = parseReadBoundaryRevisionCheckpoint(value.checkpoint);
+    if (value.result_received && checkpoint.stage === "waiting") throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: An unanswered Read question cannot be a consumed revision result.");
+  }
+  return structuredClone(value) as BoundaryAuthoringReadRevision;
+}
+
+function assertReadRevisionHandoff(value: Record<string, unknown>): void {
+  const pending = normalizeReadRevisionState(value.pending_read_revision_state);
+  if (!pending.checkpoint) return;
+  const checkpoint = pending.checkpoint, question = checkpoint.pending_question;
+  const generation = value.generation_recovery as AuthoringTransportState | undefined;
+  if (generation) validateAuthoringTransportState(generation);
+  const handoffs = parseOwnerHandoffs(value.owner_handoffs ?? []);
+  const handoff = [...handoffs].reverse().find(record => record.consumer === "read_revision_clarification"
+    && record.question === question.question
+    && canonicalJsonDigest(record.completion ?? null) === canonicalJsonDigest(question.completion ?? null));
+  if (!handoff) {
+    if (question.completion || generation || handoffs.length) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The Read revision has no matching owner-question handoff.");
+    return;
+  }
+  if (checkpoint.stage === "waiting") {
+    if (handoff.state !== "waiting") throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The Read revision is waiting on an answered question.");
+    if (question.completion) assertAuthoringQuestionHandoff(generation, ownerHandoffCheckpoint(handoff));
+  } else {
+    if (handoff.state !== "answered" || handoff.answer !== readBoundaryRevisionDecisionAnswer(checkpoint)) {
+      throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The Read revision has no exact attributable answer.");
     }
     assertAnsweredOwnerHandoff(generation, handoff);
   }
@@ -905,6 +980,14 @@ function reviewedText(value: string, label: string, maximum: number): string {
     throw new Error(`BOUNDARY_AUTHORING_RESUME_INVALID: ${label} must be 1 through ${maximum} safe characters.`);
   }
   return normalized;
+}
+
+function reviewedReadRequestText(value: string, label: string): string {
+  if (!value.trim() || value !== value.trim() || value.length > MAX_BOUNDARY_JOB_DESCRIPTION_CHARACTERS
+    || /[\u0000-\u0008\u000b\u000c\u000e-\u001f\u007f]/u.test(value)) {
+    throw new Error(`BOUNDARY_AUTHORING_RESUME_INVALID: ${label} is not a bounded exact request.`);
+  }
+  return value;
 }
 
 export function assertBoundaryAuthoringResumeMaterial(value: unknown): void {

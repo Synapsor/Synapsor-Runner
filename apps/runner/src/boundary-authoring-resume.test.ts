@@ -23,6 +23,27 @@ const binding: BoundaryAuthoringResumeBinding = {
 };
 
 describe("Boundary authoring resume state", () => {
+  it("retains exact Read revision mode and consumed-unsaved disposition without granting replay", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "owned-read-revision-state-"));
+    const instruction = "Keep units private.\nPreserve all labels and unrelated access.";
+    const input = { binding, stage: "authority_review" as const, jobIntent: "Read the current register.", provider: "openai" as const, model: "test", pendingReadRevision: instruction };
+    const request = { instruction, provenance: "guided" as const, privacy_only: true, interpretation_instruction: "Only units must stay private.", result_received: true as const };
+    try {
+      const first = buildBoundaryAuthoringResumeState({ ...input, pendingReadRevisionState: request });
+      await writeBoundaryAuthoringResumeState(root, first);
+      expect(await readBoundaryAuthoringResumeState(root, binding)).toEqual({ status: "ready", value: first });
+      expect(first.pending_read_revision).toBe(instruction);
+      expect(first.pending_read_revision_state).toEqual(request);
+      expect(buildBoundaryAuthoringResumeState({ ...input, previous: first }).pending_read_revision_state).toEqual(request);
+      expect(buildBoundaryAuthoringResumeState({ ...input, previous: first, pendingReadRevisionState: null }).pending_read_revision_state).toBeUndefined();
+      expect(first.generation_recovery).toBeUndefined();
+      expect(first.completed_policy_reviews).toBeUndefined();
+      for (const changed of [{ ...request, instruction: "Another edit." }, { ...request, result_received: false }, { ...request, privacy_only: null },
+        { ...request, approve: true }, { ...request, vocabulary_only: false }, { ...request, checkpoint: null }]) {
+        expect(() => buildBoundaryAuthoringResumeState({ ...input, pendingReadRevisionState: changed as any })).toThrow();
+      }
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
   it("retains prior pending review contexts as bounded history, never completions", async () => {
     const context = { source_session: "c9cfd018-ec47-4418-b06f-c21b2e6cba90", source_digest: canonicalJsonDigest("prior source"),
       read_digest: canonicalJsonDigest("prior Read"), action_name: "saved_rules", action_digest: canonicalJsonDigest("prior Action") };

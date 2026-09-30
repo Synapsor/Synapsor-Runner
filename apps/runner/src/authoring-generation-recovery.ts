@@ -11,7 +11,7 @@ export type AuthoringQuestionCompletion = {
   response_digest: `sha256:${string}`;
 };
 export type AuthoringQuestionHandoff = {
-  consumer: "action_rule_clarification" | "planning" | "read_clarification" | "read_value_context" | "policy_clarification";
+  consumer: "action_rule_clarification" | "planning" | "read_clarification" | "read_value_context" | "read_revision_instruction" | "read_revision_clarification" | "policy_clarification";
   question: string;
   answered?: {answer: string; actor: "local_installation_operator"; recorded_at: string; checkpoint_digest: `sha256:${string}`};
   checkpoint_digest: `sha256:${string}`;
@@ -146,7 +146,7 @@ export function validateAuthoringTransportState(value: unknown): asserts value i
     if (op.question_handoff !== undefined) {
       const h = op.question_handoff;
       if (!h || typeof h !== "object" || Array.isArray(h) || !exactKeys(h, ["consumer","question","answered","checkpoint_digest","question_digest","response_digest","recorded_at"])
-        || !["action_rule_clarification", "planning", "read_clarification", "read_value_context", "policy_clarification"].includes(h.consumer) || typeof h.question !== "string" || !h.question.trim() || h.question.length > 20_000
+        || !["action_rule_clarification", "planning", "read_clarification", "read_value_context", "read_revision_instruction", "read_revision_clarification", "policy_clarification"].includes(h.consumer) || typeof h.question !== "string" || !h.question.trim() || h.question.length > 20_000
         || canonicalJsonDigest(h.question) !== h.question_digest || !digest(h.checkpoint_digest) || !digest(h.question_digest)
         || !digest(h.response_digest) || !date(h.recorded_at) || op.attempts.at(-1)?.outcome !== "response" || op.state !== "checkpointed" || op.checkpoint_seen !== true) throw invalid();
       if (h.answered !== undefined && (!h.answered || typeof h.answered !== "object" || Array.isArray(h.answered) || !exactKeys(h.answered,["answer","actor","recorded_at","checkpoint_digest"])

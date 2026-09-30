@@ -195,6 +195,7 @@ import {
   revalidateBoundaryAuthoringResume,
   writeBoundaryAuthoringResumeState,
   type BoundaryAuthoringResumeAction,
+  type BoundaryAuthoringReadRevision,
   type BoundaryAuthoringActionAddition,
   type BoundaryAuthoringActionRevision,
   type BoundaryActionReconciliation,
@@ -309,6 +310,9 @@ import {
   type ReadBoundaryFieldExposure,
   type ModelReadBoundaryRevisionResult,
 } from "./read-boundary-revision-model.js";
+import { parseReadBoundaryRevisionCheckpoint, readBoundaryRevisionDecisionAnswer,
+  type ReadBoundaryRevisionCheckpoint } from "./read-boundary-revision-checkpoint.js";
+import { assertReviewedReadCurrentStatePrerequisite } from "./read-prerequisite.js";
 import { parseReadPolicySettings } from "./read-boundary-policy-revision.js";
 import { ReadRelationshipUnavailableError, assertReviewedReadRelationshipRetained, reviewReadRelationship, validateReviewedReadRelationship } from "./read-relationship-review.js";
 import { prepareReadWorkloadRelationship, validateReadWorkloadRelationshipPreparation } from "./read-relationship-preparation.js";
@@ -4416,6 +4420,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   let pendingReadRelationship = availableResume?.pending_read_relationship;
   let pendingJobRevision = availableResume?.pending_job_revision;
   let pendingReadRevision = availableResume?.pending_read_revision;
+  let pendingReadRevisionState = structuredClone(availableResume?.pending_read_revision_state);
   let privateReadMetadataDigest = availableResume?.private_read_metadata_digest;
   let pendingActionRemoval = availableResume?.pending_action_removal;
   let pendingActionRevision = availableResume?.pending_action_revision;
@@ -4524,6 +4529,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         pendingReadRelationship: pendingReadRelationship ?? null,
         ...(pendingJobRevision ? { pendingJobRevision } : {}),
         ...(pendingReadRevision ? { pendingReadRevision } : {}),
+        pendingReadRevisionState: pendingReadRevisionState ?? null,
         ...(privateReadMetadataDigest ? { privateReadMetadataDigest } : {}),
         ...(pendingActionRemoval ? { pendingActionRemoval } : {}),
         ...((dependencyRecoveryEdit?.revision ?? pendingActionRevision) ? { pendingActionRevision: dependencyRecoveryEdit?.revision ?? pendingActionRevision } : {}),
@@ -4574,6 +4580,10 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   };
   const ownerQuestionScope = () => canonicalJsonDigest({ job: (canonicalJobIntent ?? jobIntent)?.trim(),
     request: pendingJobRevision ?? null, read_revision: pendingReadRevision ?? null,
+    read_revision_request: pendingReadRevisionState ? { instruction: pendingReadRevisionState.instruction,
+      provenance: pendingReadRevisionState.provenance, privacy_only: pendingReadRevisionState.privacy_only,
+      vocabulary_only: pendingReadRevisionState.vocabulary_only ?? null,
+      interpretation_instruction: pendingReadRevisionState.interpretation_instruction ?? null } : null,
     model: selectedResumeModel && { provider: selectedResumeModel.provider, model: selectedResumeModel.model,
       destination: authoringDestination(selectedResumeModel) } });
   const ownerQuestionContext = async (permit?: ProjectAuthorityMutationPermit,
@@ -4589,7 +4599,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     // inspected reader/Action posture. An old coverage result is not current
     // Source meaning after an Action, role or attachment change.
     let policyContext: unknown;
-    if (consumer === "policy_clarification") {
+    if (consumer === "policy_clarification" || consumer === "read_revision_instruction" || consumer === "read_revision_clarification") {
       await reloadReadReviewForModelRevision(input.projectRoot, current, semanticActionAuthorityDraft);
       const action = semanticActionAuthorityDraft
         ? await (input.actionProjectInspector ?? inspectActionProject)(input.projectRoot, process.env) : undefined;
@@ -4610,6 +4620,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     const beforeRecovery = generationRecovery && structuredClone(generationRecovery);
     const beforeReadAssistance = readAssistanceCheckpoint && structuredClone(readAssistanceCheckpoint);
     const beforeRead = resumeRead && structuredClone(resumeRead);
+    const beforeReadRevision = pendingReadRevisionState && structuredClone(pendingReadRevisionState);
+    const beforeReadRequest = pendingReadRevision;
     const beforeTurns = authoringConversation && structuredClone(authoringConversation.turns);
     try { return await withProjectAuthorityMutation(input.projectRoot, operation); }
     catch (error) {
@@ -4617,6 +4629,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       generationRecovery = beforeRecovery;
       readAssistanceCheckpoint = beforeReadAssistance;
       resumeRead = beforeRead;
+      pendingReadRevisionState = beforeReadRevision;
+      pendingReadRevision = beforeReadRequest;
       if (authoringConversation && beforeTurns) authoringConversation.turns.splice(0, authoringConversation.turns.length, ...beforeTurns);
       throw error;
     }
@@ -4633,7 +4647,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "A question without an acknowledged completed turn cannot clear an unresolved generation. Preserve the current job for inspection.", 409);
     }
     ownerHandoffs.push(handoff);
-    await persistAuthoringResume(consumer === "planning" ? "planning" : consumer === "policy_clarification" ? "authority_review" : "read_mapping", permit);
+    await persistAuthoringResume(consumer === "planning" ? "planning" : consumer === "policy_clarification" || consumer.startsWith("read_revision_") ? "authority_review" : "read_mapping", permit);
     if (resumePersistenceBlocked) throw checkpointSaveFailure("The owner question");
     return handoff;
   });
@@ -4656,9 +4670,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     if (handoff.completion) generationRecovery = authoringQuestionAnswerCheckpoint(generationRecovery,
       ownerHandoffCheckpoint(handoff), { digest: canonicalJsonDigest(next), operator_messages: [answer] });
     ownerHandoffs[ownerHandoffs.length - 1] = next;
-    if (handoff.consumer === "policy_clarification") rememberModelAuthoringClarification(authoringConversation, handoff.question, answer);
+    if (handoff.consumer === "policy_clarification" || handoff.consumer.startsWith("read_revision_")) rememberModelAuthoringClarification(authoringConversation, handoff.question, answer);
     else rememberModelAuthoringTurn(authoringConversation, handoff.question, answer);
-    await persistAuthoringResume(handoff.consumer === "planning" ? "planning" : handoff.consumer === "policy_clarification" ? "authority_review" : "read_mapping", permit);
+    await persistAuthoringResume(handoff.consumer === "planning" ? "planning" : handoff.consumer === "policy_clarification" || handoff.consumer.startsWith("read_revision_") ? "authority_review" : "read_mapping", permit);
     if (resumePersistenceBlocked) throw checkpointSaveFailure("The owner answer");
   });
   // The model conversation is populated only after this menu. Read the saved
@@ -5086,6 +5100,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       if (!editingSavedJob) readPrerequisiteDecisions = [];
       retainedReadEdit = undefined;
       pendingReadRevision = undefined;
+      pendingReadRevisionState = undefined;
       pendingJobRevision = undefined;
       pendingActionRemoval = undefined;
       pendingActionRevision = undefined;
@@ -5958,6 +5973,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       if (jobPlan.read_mode === "create") {
         resumeRead = undefined;
         pendingReadRevision = undefined;
+        pendingReadRevisionState = undefined;
       }
       if (jobPlan.read_mode === "revise") {
         let exact = reusableState.revisable_read_workload;
@@ -8885,6 +8901,79 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   let failedReadRevision: RetainedReadRevisionRequest | undefined;
   let readRevisionRecovery: string[] = [];
   let latestReadRevisionDiff: ReviewSection | undefined;
+  const persistReadRevision = async (checkpoint: ReadBoundaryRevisionCheckpoint | undefined,
+    currentBoundary: ExplorationBoundaryDraft, accepted?: ModelReadBoundaryRevisionResult) => {
+    // A complete parsed result is known consumption, not a committed mutation.
+    // Persist that distinction so a declined/failed save cannot replay the
+    // already consumed producer on reopen. The actual guarded save clears it.
+    if (!checkpoint) {
+      if (!accepted) throw checkpointSaveFailure("The Read revision result");
+      await mutateOwnerHandoff(async permit => {
+        await ownerQuestionContext(permit, "read_revision_clarification");
+        const current = await loadBoundaryReviewContext(input.projectRoot);
+        if (!pendingReadRevisionState || explorationBoundaryCandidateDigest(currentBoundary) !== current.bundle.candidate_digest) {
+          throw new Error("READ_BOUNDARY_REVISION_CHECKPOINT_STALE: The consumed revision belongs to another current candidate.");
+        }
+        pendingReadRevisionState = { ...pendingReadRevisionState, result_received: true };
+        await persistAuthoringResume("authority_review", permit);
+        if (resumePersistenceBlocked) throw checkpointSaveFailure("The consumed Read revision result");
+      });
+      return;
+    }
+    await mutateOwnerHandoff(async permit => {
+      if (!pendingReadRevisionState || pendingReadRevisionState.instruction !== pendingReadRevision) throw checkpointSaveFailure("The pending Read revision");
+      const currentContext = await ownerQuestionContext(permit, "read_revision_clarification");
+      const current = await loadBoundaryReviewContext(input.projectRoot);
+      if (explorationBoundaryCandidateDigest(currentBoundary) !== current.bundle.candidate_digest) {
+        throw new Error("READ_BOUNDARY_REVISION_CHECKPOINT_STALE: The exact Read candidate changed. Preserve this question and inspect the current saved job.");
+      }
+      const checked = parseReadBoundaryRevisionCheckpoint(checkpoint), q = checked.pending_question;
+      const last = ownerHandoffs.at(-1);
+      const sameQuestion = last?.consumer === "read_revision_clarification" && last.question === q.question
+        && canonicalJsonDigest(last.completion ?? null) === canonicalJsonDigest(q.completion ?? null);
+      if (checked.stage === "waiting") {
+        if (sameQuestion && last?.state === "waiting") {
+          if (last.scope_digest !== ownerQuestionScope() || last.context_digest !== currentContext) {
+            throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: The saved Read edit question changed. No answer was inferred.");
+          }
+        } else {
+          if (last?.state === "waiting") throw new Error("AUTHORING_OWNER_QUESTION_PENDING: Inspect the exact saved question before replacing it.");
+          const next = createOwnerHandoff({ consumer: "read_revision_clarification", question: q.question,
+            scope_digest: ownerQuestionScope(), context_digest: currentContext, ...(q.completion ? { completion: q.completion } : {}) });
+          if (q.completion) generationRecovery = authoringQuestionCheckpoint(generationRecovery, ownerHandoffCheckpoint(next));
+          else if (generationRecovery?.operations.some(op => ["in_flight", "received", "handled", "unknown", "partial"].includes(op.state))) {
+            throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The Read edit question has no completed consumer association. Preserve the saved generation without replay.", 409);
+          }
+          ownerHandoffs.push(next);
+        }
+      } else {
+        const answer = readBoundaryRevisionDecisionAnswer(checked);
+        if (!sameQuestion || !last || last.scope_digest !== ownerQuestionScope()) {
+          throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: The saved Read question or exact request changed. Its answer was not accepted.");
+        }
+        if (last.state === "answered") {
+          // Counter updates retain the same acknowledged answer. They cannot
+          // create another consent record or acknowledge another generation.
+          if (last.answer !== answer || last.answer_context_digest !== currentContext) throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: The saved Read answer is no longer current.");
+        } else {
+          if (last.context_digest !== currentContext) throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: Source or permissions changed before the Read answer was accepted.");
+          const sources = authoringConversation?.policySources;
+          if (q.decision?.state === "answered" && sources && activePolicySource(sources)) {
+            await appendPolicySourceOperatorMessage(input.projectRoot, sources, answer, { permit, expectedDigest: canonicalJsonDigest(sources) });
+          }
+          const acceptedContext = await ownerQuestionContext(permit, "read_revision_clarification");
+          const next = answerOwnerHandoff(last, answer, acceptedContext);
+          if (last.completion) generationRecovery = authoringQuestionAnswerCheckpoint(generationRecovery,
+            ownerHandoffCheckpoint(last), { digest: canonicalJsonDigest(next), operator_messages: [answer] });
+          ownerHandoffs[ownerHandoffs.length - 1] = next;
+          if (q.decision?.state === "answered") rememberModelAuthoringClarification(authoringConversation, last.question, answer);
+        }
+      }
+      pendingReadRevisionState = { ...pendingReadRevisionState, checkpoint: checked };
+      await persistAuthoringResume("authority_review", permit);
+      if (resumePersistenceBlocked) throw checkpointSaveFailure("The Read edit question and decision");
+    });
+  };
   const reviseReadWithModel = canReviseReadWithModel
     ? async (guidedInstruction?: string, preparedRevision?: ModelReadBoundaryRevisionResult, options?: {
         interpretationInstruction?: string;
@@ -8893,6 +8982,13 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         generalReadRestriction?: boolean;
       }): Promise<boolean> => {
         const chat = input.authoringChat!;
+        if (pendingReadRevisionState?.result_received) {
+          throw new Error("READ_BOUNDARY_REVISION_RESULT_NOT_SAVED: A complete revision response was consumed but its exact guarded save was not confirmed. Inspect current disabled Read/Action records and the saved request; Resume cannot regenerate or replay that result.");
+        }
+        if (pendingReadRevisionState?.checkpoint) {
+          if (guidedInstruction && guidedInstruction !== pendingReadRevisionState.instruction) throw new Error("AUTHORING_OWNER_QUESTION_PENDING: Inspect the existing exact Read edit before proposing another request.");
+          guidedInstruction ??= pendingReadRevisionState.instruction;
+        }
         const modelSession = modelAssistSession!;
         const narrator = input.modelAuthoringNarrator ?? narrateValidatedAuthoringStep;
         const revisionQuestion = [
@@ -8900,7 +8996,13 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             ? "Your previous revision request is retained. Say retry to use it again, or describe what should change."
             : "What should change in this Read Boundary?",
         ].join(" ");
-        const opening = guidedInstruction ? undefined : await runWithProgress(
+        let instructionHandoff = ownerHandoffs.at(-1);
+        const resumingInstruction = instructionHandoff?.state === "waiting" && instructionHandoff.consumer === "read_revision_instruction";
+        const displayedRevisionQuestion = resumingInstruction ? instructionHandoff!.question : revisionQuestion;
+        if (!preparedRevision && !guidedInstruction && !resumingInstruction) {
+          instructionHandoff = await persistOwnerQuestion(revisionQuestion, "read_revision_instruction");
+        }
+        const opening = guidedInstruction || resumingInstruction ? undefined : await runWithProgress(
           `${boundaryModelLabel(modelSession)} is preparing the Read revision question`,
           () => narrator({
             session: modelSession,
@@ -8921,12 +9023,20 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         if (opening?.trim()) {
           await chat.streamModel(opening.trim().split(/\r?\n/u));
         } else if (!preparedRevision && !guidedInstruction) {
-          await chat.streamModel([revisionQuestion]);
+          await chat.streamModel([displayedRevisionQuestion]);
         }
 
-        const readModelAnswer = async (question: string): Promise<string | undefined> => {
+        const readModelAnswer = async (question: string, handoff?: AuthoringOwnerHandoff): Promise<string | undefined> => {
+          const assertAnswerCurrent = async () => {
+            if (!handoff) return;
+            if (handoff.state !== "waiting" || handoff.scope_digest !== ownerQuestionScope()
+              || handoff.context_digest !== await ownerQuestionContext(undefined, handoff.consumer)) {
+              throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: The Read question's Source, permissions or request changed. No answer was accepted.");
+            }
+          };
+          await assertAnswerCurrent();
           let answer = chat.readOperator
-            ? await chat.readOperator()
+            ? await chat.readOperator(undefined, assertAnswerCurrent, { recordPolicyAnswer: false })
             : await input.session.promptText(question);
           while (answer !== undefined && isBoundaryAuthoringExplanationQuestion(answer)) {
             const explanation = await runWithProgress(
@@ -8949,15 +9059,22 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
               "The pending Read revision is unchanged. Answer it, use /details, or press Esc to pause safely.",
             ], "warning");
             answer = chat.readOperator
-              ? await chat.readOperator()
+              ? await chat.readOperator(undefined, assertAnswerCurrent, { recordPolicyAnswer: false })
               : await input.session.promptText(question);
           }
+          await assertAnswerCurrent();
           return answer;
         };
 
-        const answer = guidedInstruction ?? await readModelAnswer(revisionQuestion);
+        const answer = guidedInstruction ?? await readModelAnswer(instructionHandoff?.state === "waiting" && instructionHandoff.consumer === "read_revision_instruction"
+          ? instructionHandoff.question : revisionQuestion, instructionHandoff?.state === "waiting" && instructionHandoff.consumer === "read_revision_instruction" ? instructionHandoff : undefined);
         const retryingRetainedRequest = answer?.trim().toLowerCase() === "retry" && failedReadRevision;
-        const request = retryingRetainedRequest
+        const request: RetainedReadRevisionRequest | undefined = pendingReadRevisionState?.checkpoint && guidedInstruction === pendingReadRevisionState.instruction
+          ? { instruction: pendingReadRevisionState.instruction, provenance: pendingReadRevisionState.provenance,
+              privacyOnly: pendingReadRevisionState.privacy_only,
+              ...(pendingReadRevisionState.vocabulary_only ? { vocabularyOnly: true } : {}),
+              ...(pendingReadRevisionState.interpretation_instruction ? { interpretationInstruction: pendingReadRevisionState.interpretation_instruction } : {}) }
+          : retryingRetainedRequest
           ? failedReadRevision!
           : answer?.trim()
             ? {
@@ -8978,10 +9095,19 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         }
         // Guided repair instructions are Runner orchestration, not a new
         // operator policy decision. The actual business answer is already saved.
-        if (!preparedRevision && request.provenance === "operator" && !retryingRetainedRequest) {
+        if (!preparedRevision && !guidedInstruction && instructionHandoff?.state === "waiting" && instructionHandoff.consumer === "read_revision_instruction") {
+          await recordOwnerAnswer(instructionHandoff, request.instruction);
+        } else if (!preparedRevision && request.provenance === "operator" && !retryingRetainedRequest && !pendingReadRevisionState?.checkpoint) {
           rememberModelAuthoringClarification(authoringConversation, revisionQuestion, request.instruction);
         }
+        pendingReadRevision = request.instruction;
+        pendingReadRevisionState = { instruction: request.instruction, provenance: request.provenance, privacy_only: request.privacyOnly,
+          ...(request.vocabularyOnly ? { vocabulary_only: true } : {}),
+          ...(request.interpretationInstruction ? { interpretation_instruction: request.interpretationInstruction } : {}),
+          ...(pendingReadRevisionState?.instruction === request.instruction && pendingReadRevisionState.checkpoint
+            ? { checkpoint: pendingReadRevisionState.checkpoint } : {}) };
         await persistAuthoringResume("authority_review");
+        if (resumePersistenceBlocked) throw checkpointSaveFailure("The Read revision request");
 
         let readRevisionSaved = false;
         try {
@@ -9040,6 +9166,29 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
               ...(modelSession.dependencies ? { dependencies: modelSession.dependencies } : {}),
               ...(modelSession.conversation ? { conversation: modelSession.conversation } : {}),
               egressAcknowledged: true,
+              ...(pendingReadRevisionState?.checkpoint ? { resumeCheckpoint: pendingReadRevisionState.checkpoint } : {}),
+              onCheckpoint: persistReadRevision,
+              revalidateStagedSelections: async (selections, currentBoundary) => {
+                await assertAuthoringResumeCurrent(undefined);
+                const fresh = await reloadReadReviewForModelRevision(input.projectRoot, context, semanticActionAuthorityDraft);
+                if (explorationBoundaryCandidateDigest(currentBoundary) !== fresh.bundle.candidate_digest) throw new Error("READ_BOUNDARY_REVISION_CHECKPOINT_STALE: The staged Read selections belong to another candidate.");
+                if (selections.reviewed_relationship) validateReviewedReadRelationship(selections.reviewed_relationship, fresh.candidate, fresh.draft);
+                if (selections.reviewed_prerequisite) {
+                  const inspection = await input.schemaInspector({ engine: fresh.lock.engine, databaseUrlEnv: fresh.lock.source_env,
+                    schema: fresh.lock.inspected_schema, env: process.env });
+                  const retainedCatalogs = semanticActionDrafts.length ? semanticActionDrafts.map(entry => entry.catalog.catalog)
+                    : semanticActionCatalog ? [semanticActionCatalog.catalog] : [];
+                  const sourceReview = await loadReadPrerequisiteSourceReview({ projectRoot: input.projectRoot, boundary: fresh.candidate,
+                    generationLock: fresh.lock, inspection, retainedCatalogs });
+                  await sourceReview.assertCurrent();
+                  assertReviewedReadCurrentStatePrerequisite(selections.reviewed_prerequisite, inspection);
+                  assertPrivateReadSourcesCurrent = async () => {
+                    await assertAuthoringResumeCurrent(undefined);
+                    await reloadReadReviewForModelRevision(input.projectRoot, fresh, semanticActionAuthorityDraft);
+                    await sourceReview.assertCurrent();
+                  };
+                }
+              },
               validateRevision: async (revision) => {
                 validatedPreview = undefined;
                 if (!revision.changes.length && !revision.policy_changes?.length && !revision.read_prerequisite) return;
@@ -9176,16 +9325,18 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
                 return result.reviewed_read_prerequisite;
               },
               clarificationHandler: async (request) => {
+                const handoff = ownerHandoffs.at(-1);
+                if (handoff?.state !== "waiting" || handoff.consumer !== "read_revision_clarification" || handoff.question !== request.question) {
+                  throw checkpointSaveFailure("The exact Read edit question");
+                }
                 chat.rememberDetails("READ EDIT QUESTION", [
                   request.question, request.reason,
                   `Read revision: ${explorationBoundaryCandidateDigest(context.candidate)}`,
                   "This question does not save access, change active permissions or read source rows.",
                 ]);
                 await chat.streamModel([request.question]);
-                const answer = await readModelAnswer(request.question);
-                if (answer === undefined || !answer.trim()) return { state: "declined" as const };
-                rememberModelAuthoringClarification(authoringConversation, request.question, answer.trim());
-                await persistAuthoringResume("authority_review");
+                const answer = await readModelAnswer(request.question, handoff);
+                if (answer === undefined || !answer.trim()) return undefined;
                 return { state: "answered" as const, answer: answer.trim() };
               },
             }),
@@ -9228,6 +9379,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             failedReadRevision = undefined;
             readRevisionRecovery = [];
             pendingReadRevision = undefined;
+            pendingReadRevisionState = undefined;
             await persistAuthoringResume("authority_review");
             chat.rememberDetails("READ INTERPRETATION CONFIRMED", [
               ...fields.map((field) => `${field.resource}.${field.field}: ${formatReadBoundaryExposure(field.after)} (unchanged)`),
@@ -9324,6 +9476,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           await persistConfirmedInterpretation();
           await writeCurrentDelegationDraft();
           pendingReadRevision = undefined;
+          pendingReadRevisionState = undefined;
           await persistAuthoringResume("authority_review");
           readBoundaryActive = await exactReadBoundaryIsActive({
             projectRoot: input.projectRoot,
@@ -9395,18 +9548,18 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           await chat.streamCheckpoint(failureTitle, [
             message,
             `${preservedState} /details shows the exact refusal`,
-            "Choose Revise this Read Boundary again and say retry; your request is retained. You can also change the request or use the manual field editor.",
+            "Resume the saved job to inspect its exact pending question and request. A refused or uncertain generation is not permission to resend; exact failure details remain available.",
           ], "warning");
           return false;
         }
       }
     : undefined;
-  if (pendingReadRevision) {
+  if (pendingReadRevision || ownerHandoffs.at(-1)?.state === "waiting" && ownerHandoffs.at(-1)?.consumer === "read_revision_instruction") {
     if (!reviseReadWithModel || !await reviseReadWithModel(pendingReadRevision, undefined, { operatorInstruction: true })) {
       await persistAuthoringResume("authority_review");
       return boundaryAssistResult({ tone: "warning", title: "Your access edit is saved for recovery.",
         lines: ["The requested edit did not finish. Existing active permissions and customer data are unchanged."],
-        footer: "Resume this job to retry the same edit. Exact details contain the reason; no new job or mapping is needed." });
+        footer: "Resume this job to inspect its saved question and currentness. Exact details contain the reason; no new job or automatic resend is granted." });
     }
   }
   if (recoveringSeparatelySavedActions && retainedActionIsUnfinished()) {
