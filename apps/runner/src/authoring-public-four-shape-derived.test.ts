@@ -36,6 +36,8 @@ const jsonLine = (text: string, prefix: string): any => {
 };
 
 it.skipIf(process.env.SYNAPSOR_TEST_DERIVED_FOUR_REAL_PG !== "1")("authors four DERIVED shapes through actual current compound-FK private admission and canonical Source review", async () => {
+  const provider = process.env.OWNED_DERIVED_FOUR_PROVIDER ?? "openai";
+  if (provider !== "openai" && provider !== "anthropic") throw new Error("Select an existing supported local encoder: openai or anthropic.");
   const evidence = process.env.OWNED_DERIVED_FOUR_EVIDENCE ?? path.join(os.tmpdir(), `derived-four-${randomUUID()}`);
   const physical = await createDerivedFourShapePhysicalFixture({ evidenceRoot: evidence, schema: "derived_small", categories: 1 });
   const root = path.join(evidence, "project"); await fs.mkdir(root, { mode: 0o700 });
@@ -114,8 +116,10 @@ it.skipIf(process.env.SYNAPSOR_TEST_DERIVED_FOUR_REAL_PG !== "1")("authors four 
       else {
         // Normal preparation tools return the updated current catalog in their
         // actual function output; the conversation's initial catalog stays inert.
-        const outputs = (body.input ?? []).filter((value: any) => value.type === "function_call_output")
-          .map((value: any) => JSON.parse(value.output));
+        const outputs = provider === "openai"
+          ? (body.input ?? []).filter((value: any) => value.type === "function_call_output").map((value: any) => JSON.parse(value.output))
+          : (body.messages ?? []).flatMap((message: any) => Array.isArray(message.content) ? message.content : [])
+            .filter((value: any) => value.type === "tool_result").map((value: any) => JSON.parse(value.content));
         const catalog = outputs.filter((value: any) => value.catalog).at(-1)?.catalog
           ?? jsonLine(text, "Current normalized structural catalog: ");
         const unit = catalog.resources.find((r: any) => r.name === "derived_small.units");
@@ -198,6 +202,10 @@ it.skipIf(process.env.SYNAPSOR_TEST_DERIVED_FOUR_REAL_PG !== "1")("authors four 
     } else if (!names.length) answer = jsonLine(text, "Exact next question: ") ?? "The exact current record needs its normal operator review; no execution is claimed.";
     else fail(`Unexpected actual tool surface: ${names.join(",")}`);
     if (name) expect(names).toContain(name);
+    if (provider === "anthropic") return { status: 200, body: { id: `derived-four-${requests}`, type: "message", role: "assistant",
+      model: "derived-four-offline", stop_reason: name ? "tool_use" : "end_turn", stop_sequence: null,
+      content: name ? [{ type: "tool_use", id: `derived-four-${requests}`, name, input: args }] : [{ type: "text", text: answer }],
+      usage: { input_tokens: 0, output_tokens: 0 } } };
     return { status: 200, body: { output: name ? [{ type: "function_call", call_id: `derived-four-${requests}`, name, arguments: JSON.stringify(args) }]
       : [{ type: "message", content: [{ type: "output_text", text: answer }] }] } };
   };
@@ -209,7 +217,7 @@ it.skipIf(process.env.SYNAPSOR_TEST_DERIVED_FOUR_REAL_PG !== "1")("authors four 
     outgoing.writeHead(queued.status, { "content-type": "application/json" }); outgoing.end(response);
   });
   await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
-  const endpoint = new URL(`http://127.0.0.1:${(server.address() as any).port}/responses`);
+  const endpoint = new URL(`http://127.0.0.1:${(server.address() as any).port}/${provider === "openai" ? "responses" : "v1/messages"}`);
   const requestJson = async (request: any) => {
     try { queued = await deriveReply(request); }
     catch (error: any) { dependencyFailures.push({ request: requests, stage, name: error.name, message: error.message, stack: error.stack }); throw error; }
@@ -221,7 +229,7 @@ it.skipIf(process.env.SYNAPSOR_TEST_DERIVED_FOUR_REAL_PG !== "1")("authors four 
       expect(title).toBe("SETUP NEEDS ATTENTION"); expect(choices.some(c => c.value === "pause")).toBe(true); return "pause"; },
     promptText: async () => undefined, confirm: async () => false };
   const options: any = { startWithAgentJob: true, exitAfterAgentJob: true, onAuthoringResult: (notice: any) => notices.push(notice),
-    modelAuthoringSession: { provider: "openai", model: "derived-four-offline", apiKey: "owned-local-only", dependencies: { requestJson } },
+    modelAuthoringSession: { provider, model: "derived-four-offline", apiKey: "owned-local-only", dependencies: { requestJson } },
     actionProjectInspector: physical.inspect, boundaryAuthoringChatFactory: (selection: any) => createBoundaryAuthoringChat({ ...selection, io, color: false, streamLineDelayMs: 0 }) };
   vi.stubEnv("OWNED_DERIVED_READ_URL", physical.env.OWNED_DERIVED_READ_URL);
   const capture = vi.spyOn(process.stdout, "write").mockImplementation(chunk => { stdout += String(chunk); return true; });
@@ -348,7 +356,9 @@ it.skipIf(process.env.SYNAPSOR_TEST_DERIVED_FOUR_REAL_PG !== "1")("authors four 
     await fs.writeFile(path.join(evidence, "actual-encoded-exchanges.json"), JSON.stringify(exchanges, null, 2));
     await fs.writeFile(path.join(evidence, "actual-loopback-exchanges.json"), JSON.stringify(wire, null, 2));
     await fs.writeFile(path.join(evidence, "actual-source-reviews.json"), JSON.stringify(reports, null, 2));
-    await fs.writeFile(path.join(evidence, "result.json"), JSON.stringify({ source_head: process.env.OWNED_DERIVED_SOURCE_HEAD ?? null, scope: "DERIVED implementer small-four public authoring component stage only", failure: failure ?? null,
+    await fs.writeFile(path.join(evidence, "result.json"), JSON.stringify({ source_head: process.env.OWNED_DERIVED_SOURCE_HEAD ?? null,
+      provider, local_endpoint_path: endpoint.pathname,
+      scope: "DERIVED implementer small-four public authoring component stage only; actual encoder and controlled local responses, no external admission claim", failure: failure ?? null,
       requests, actual_loopback_responses: wire.length, dependencyFailures, provider_calls: 0, business_requests: 0, source_effects_requested: 0, notices, container: physical.container, socket: physical.socket,
       cleanup: "Retained until actual full Source/control cold coverage is established." }, null, 2));
     await physical.snapshot();
