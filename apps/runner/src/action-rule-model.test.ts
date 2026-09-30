@@ -1,5 +1,8 @@
 import {makeSourceInputReview,sourceInputFidelity} from "./authoring-input-policy.js";
-import {authoringDestination,newPolicySourceSession,policyTextSnapshot} from "./authoring-policy-source.js";
+import {authoringDestination,newPolicySourceSession,policyTextSnapshot,recordReadInterpretation} from "./authoring-policy-source.js";
+import {buildActionAuthoringWorkUnitContract, validateActionWorkUnitAssessment, assertActionWorkUnitCorrection,
+  type ActionWorkUnitContext, type ActionWorkUnitSourceReview} from "./action-authoring-work-unit-contract.js";
+import { readBoundaryRevisionCatalog } from "./read-boundary-revision-model.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
@@ -26,7 +29,7 @@ import type { ActionRuleAuthoringCheckpoint } from "./action-rule-authoring-chec
 import { actionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
 import { inspectActionRelationships } from "./action-rule-relationship-review.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { evaluateActionRule, evaluateActionRuleApprovalPredicate } from "@synapsor-runner/action-rules";
+import { evaluateActionRule, evaluateActionRuleApprovalPredicate, validateActionRuleInputs } from "@synapsor-runner/action-rules";
 import { ActionAuthoringReadOnlyRequest } from "./action-rule-model.js";
 
 const lock = `sha256:${"a".repeat(64)}` as const;
@@ -339,6 +342,190 @@ describe("conversational Action authoring tools", () => {
     body: { output: [{ type: "function_call", call_id: `call_${name}`, name: name.replaceAll(".", "__"), arguments: JSON.stringify(args) }] },
   });
   const say = (text: string) => ({ status: 200, body: { output: [{ type: "message", content: [{ type: "output_text", text }] }] } });
+
+  describe("current work-unit contract", () => {
+    const fixture = () => {
+      const source = policyTextSnapshot(Buffer.from("Select the account to pause.\nActive status and no risk hold are the eligibility conditions.\nThe caller note is 1 through 64 UTF-16 units."), "current-rules.txt");
+      const sources = newPolicySourceSession(); sources.snapshots = [source]; sources.active = source.version;
+      sources.approvals = [{ digest: source.digest, destination: authoringDestination(requestInput(vi.fn()).session) }];
+      const context: ActionWorkUnitContext = { builtCatalog: builtCatalog(), readBoundary: boundary(), readBoundaryDigest: readDigest, policySources: sources };
+      const review = (draft: ActionRuleModelDraftV1, disposition: "implemented" | "conflict", path = "/actions/0/require/expressions/2"): ActionWorkUnitSourceReview => {
+        const payload = { read: context.readBoundary, actions: [draft] };
+        return { draft: payload, report: { source_digest: source.digest, draft_digest: canonicalJsonDigest(payload), passages: [{ start: 2, end: 2,
+          disposition, interpretation: "Preserve the existing active-status and risk-hold checks. The separate paused-status predicate conflicts with this interpreted requirement.",
+          draft_paths: [path] }] }, passage_indexes: [0], source_answer_history_digest: canonicalJsonDigest(sources.operator_messages ?? []) };
+      };
+      const extraPredicate = () => ({ kind: "compare" as const, operator: "eq" as const,
+        left: { kind: "field" as const, binding: "account", field: "status" }, right: statusLiteral("paused") });
+      return { source, sources, context, review, extraPredicate };
+    };
+
+    it("projects exact existing Read interpretation only when Source, Read, catalog and exposure still match", () => {
+      const f = fixture(); f.context.readBoundary.pack.resources[0]!.field_types = { status: "text", risk_hold: "boolean" };
+      const catalog = readBoundaryRevisionCatalog(f.context.readBoundary);
+      recordReadInterpretation(f.sources, { read_digest: readDigest, catalog_digest: catalog.digest, instruction: "Keep the reviewed risk hold private.",
+        checked_at: "2026-09-30T08:08:20Z", fields: [{ resource: "billing.accounts", field: "risk_hold", exposure: "kept_out" }] });
+      const contract = () => buildActionAuthoringWorkUnitContract({ ...f.context, intent: "Pause an eligible account", components: modelDraft(), draft: modelDraft() });
+      expect(contract().proposal.field_roles.find(p => p.field === "risk_hold")).toMatchObject({ schema_role: "runner_verification_only",
+        proposed_read: { raw_return: false }, current_source_interpretation: { record_digest: f.sources.read_interpretations![0]!.record_digest, exposure: "kept_out" } });
+      f.context.readBoundary.pack.resources[0]!.selectable_fields.push("risk_hold");
+      f.context.readBoundary.pack.resources[0]!.kept_out_fields = [];
+      expect(contract().proposal.field_roles.find(p => p.field === "risk_hold")).not.toHaveProperty("current_source_interpretation");
+      expect(contract().current_interpretation.discarded_stale_record_count).toBe(1);
+      expect(contract().proposal.field_roles.find(p => p.field === "risk_hold")?.proposed_read.raw_return).toBe(true);
+    });
+
+    it("keeps finite length implication distinct from exact local input acceptance and Source equivalence", () => {
+      const f = fixture(), draft = modelDraft(), store = canonicalJsonDigest("owned contract store");
+      draft.inputs = [{ name: "caller_note", description: "Caller note", type: { kind: "string", comparison: "exact", min_length: 2, max_length: 64 } }];
+      f.sources.input_policy_reviews = [makeSourceInputReview({ source: f.source, session: f.sources, store, outcomes: [draft.outcome], actor: "owned fixture operator",
+        requirements: [{ outcomes: [draft.outcome], input: "caller_note", start: 3, end: 3, min_length: 1, max_length: 64 }] })];
+      expect(sourceInputFidelity(f.source, f.sources, store, [draft]).findings).toEqual([]);
+      const compiled = compileActionRuleModelDraft({ ...f.context, draft });
+      expect(() => validateActionRuleInputs(compiled.rule, { caller_note: "x" })).toThrow();
+      expect(validateActionRuleInputs(compiled.rule, { caller_note: "xx" })).toEqual({ caller_note: "xx" });
+      const contract = buildActionAuthoringWorkUnitContract({ ...f.context, intent: "Pause an account", expectedOutcome: draft.outcome, draft, components: draft });
+      expect(contract.current_interpretation.input_requirements[0]?.assurance).toBe("finite_length_implication_only");
+      expect(contract.status.source_semantic_coverage).toBe("pending");
+      expect(validateActionWorkUnitAssessment(f.context, draft, undefined).status).toMatchObject({ state: "source_interpretation_pending", assurance: "structural_only", whole_source_review_pending: true });
+    });
+
+    it.each(["source", "read", "draft", "answers", "unrelated", "conflict"] as const)("refuses a falsely current local Source pass: %s", change => {
+      const f = fixture(), draft = modelDraft(), sourceReview = f.review(draft, "implemented", "/actions/0/require");
+      if (change === "source") sourceReview.report.source_digest = canonicalJsonDigest("prior Source");
+      if (change === "read") sourceReview.draft.read = { ...sourceReview.draft.read, compiler_version: "earlier" };
+      if (change === "draft") sourceReview.draft.actions = [{ ...draft, ttl_seconds: 301 }];
+      if (change === "answers") f.sources.operator_messages = ["An updated attributed Source answer."];
+      if (change === "unrelated") sourceReview.report.passages[0]!.draft_paths = ["/runner_evidence/actions/other.outcome/effect"];
+      if (change === "conflict") sourceReview.report.passages[0]!.disposition = "conflict";
+      sourceReview.report.draft_digest = canonicalJsonDigest(sourceReview.draft);
+      expect(() => validateActionWorkUnitAssessment(f.context, draft, { state: "current_registered_requirements_satisfied", source_review: sourceReview })).toThrow("ACTION_WORK_UNIT_SOURCE_");
+    });
+
+    it("nominates one exact predicate deletion and preserves every outside-parent field and untouched array member", () => {
+      const f = fixture(), parent = modelDraft();
+      parent.require = { kind: "all", expressions: [...(eligiblePredicate() as Extract<ActionRuleBooleanExpressionV1, {kind: "all" | "any"}>).expressions, f.extraPredicate()] };
+      const assessment = { state: "representation_mismatch" as const, source_review: f.review(parent, "conflict"), component: "predicate" as const, editable_paths: ["/require/expressions/2"] };
+      const correction = validateActionWorkUnitAssessment(f.context, parent, assessment).correction!;
+      const corrected = { ...structuredClone(parent), require: eligiblePredicate() };
+      expect(() => assertActionWorkUnitCorrection(f.context, parent, corrected, correction)).not.toThrow();
+      for (const adverse of [{ ...corrected, ttl_seconds: 301 }, { ...corrected, effect: { ...corrected.effect, writeback: "supervised" as const } },
+        { ...corrected, require: { kind: "all" as const, expressions: [(eligiblePredicate() as Extract<ActionRuleBooleanExpressionV1, {kind: "all" | "any"}>).expressions[0]!] } }])
+        expect(() => assertActionWorkUnitCorrection(f.context, parent, adverse, correction)).toThrow("OUTSIDE_SCOPE");
+      expect(() => validateActionWorkUnitAssessment(f.context, parent, { ...assessment, editable_paths: ["/effect"] })).toThrow("ASSESSMENT_INCOMPLETE");
+      expect(() => assertActionWorkUnitCorrection({ ...f.context, readBoundaryDigest: canonicalJsonDigest("new Read") }, parent, corrected, correction)).toThrow("CONTEXT_CHANGED");
+      expect(f.sources).not.toHaveProperty("coverage"); // Projection/nomination saves no semantic decision.
+    });
+
+    it.each(["conversational", "focused"] as const)("uses the current host Source nomination for bounded %s repair before returning structural readiness", async mode => {
+      const f = fixture(), requests: string[] = [], calls: string[] = [];
+      const bad = rulePayload({ kind: "all", expressions: [...(eligiblePredicate() as Extract<ActionRuleBooleanExpressionV1, {kind: "all" | "any"}>).expressions, f.extraPredicate()] });
+      const assess = vi.fn(async (draft: ActionRuleModelDraftV1, context: ActionWorkUnitContext) => {
+        expect(context.policySources?.id).toBe(f.sources.id);
+        const conflict = draft.require.kind === "all" && draft.require.expressions.length === 3;
+        return conflict ? { state: "representation_mismatch" as const, source_review: f.review(draft, "conflict"), component: "predicate" as const, editable_paths: ["/require/expressions/2"] }
+          : { state: "current_registered_requirements_satisfied" as const, source_review: f.review(draft, "implemented", "/actions/0/require") };
+      });
+      let rules = 0;
+      const steps = [call("runner.submit_verification_boundary_draft"), call("runner.submit_effect_envelope_draft"), call("runner.submit_action_rule_draft", bad),
+        call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {}), call("runner.submit_action_rule_draft"), call("runner.validate_action_draft", {}), say("Current nominated requirement checked; whole Source review remains pending.")];
+      const requestJson = mode === "focused" ? phaseResponder(calls, name => name.endsWith("submit_action_rule_draft") && rules++ === 0 ? bad : undefined, requests)
+        : async (request: Parameters<NonNullable<AskProviderDependencies["requestJson"]>>[0]) => { requests.push(JSON.stringify(request.body)); return steps.shift()!; };
+      const result = await (mode === "focused" ? generateModelActionRuleDraft : converseActionRuleDraft)({ ...requestInput(requestJson),
+        session: { ...requestInput(requestJson).session, conversation: { turns: [], policySources: f.sources } }, assessWorkUnitFidelity: assess });
+      expect(assess).toHaveBeenCalledTimes(2);
+      expect(result.compiled.draft.require).toEqual(eligiblePredicate());
+      expect(result.compiled.draft.effect).toEqual(modelDraft().effect);
+      expect(result.compiled.draft.approval).toEqual(modelDraft().approval);
+      expect(result.work_unit_source_review).toMatchObject({ state: "current_registered_requirements_satisfied", assurance: "current_nominated_source_requirements_only", whole_source_review_pending: true });
+      expect(requests.join("\n")).toContain("ACTION_WORK_UNIT_REPRESENTATION_MISMATCH");
+      expect(requests.join("\n")).toContain("parent_digest");
+      expect(result.authority_granted).toBe(false); expect(result.source_database_changed).toBe(false);
+    });
+
+    it.each(["owner_meaning_pending", "currentness_pending", "unclassified_error"] as const)("preserves unknown Source assessment without a compiler correction or fabricated pass: %s", async state => {
+      const f = fixture(), requests: string[] = [], calls: string[] = [];
+      const assessment = async () => { if (state === "unclassified_error") throw new Error("external-private-detail"); return { state }; };
+      const setup = requestInput(phaseResponder(calls, undefined, requests));
+      await expect(generateModelActionRuleDraft({ ...setup,
+        session: { ...setup.session, conversation: { turns: [], policySources: f.sources } }, assessWorkUnitFidelity: assessment })).rejects.toThrow("ACTION_WORK_UNIT_SOURCE_");
+      expect(requests).toHaveLength(4);
+      expect(requests.join("\n")).not.toContain("external-private-detail");
+    });
+
+    it.each(["precise", "outside_parent"] as const)("restores an existing Source correction parent before resumed focused generation: %s", async change => {
+      const f = fixture(), requests: string[] = [], calls: string[] = [];
+      const bad = rulePayload({ kind: "all", expressions: [...(eligiblePredicate() as Extract<ActionRuleBooleanExpressionV1, {kind: "all" | "any"}>).expressions, f.extraPredicate()] });
+      const parent = (await generateModelActionRuleDraft(requestInput(phaseResponder([], name => name.endsWith("submit_action_rule_draft") ? bad : undefined)))).compiled.draft;
+      const workUnitCorrection = { draft: parent, assessment: { state: "representation_mismatch" as const, source_review: f.review(parent, "conflict"),
+        component: "predicate" as const, editable_paths: ["/require/expressions/2"] } };
+      const request = requestInput(phaseResponder(calls, name => name.endsWith("submit_action_rule_draft") && change === "outside_parent"
+        ? rulePayload({ kind: "all", expressions: [(eligiblePredicate() as Extract<ActionRuleBooleanExpressionV1, {kind: "all" | "any"}>).expressions[0]!] }) : undefined, requests));
+      const running = generateModelActionRuleDraft({ ...request, workUnitCorrection, expectedOutcome: parent.outcome,
+        session: { ...request.session, conversation: { turns: [], policySources: f.sources } } });
+      if (change === "outside_parent") {
+        await expect(running).rejects.toThrow("ACTION_WORK_UNIT_CORRECTION_OUTSIDE_SCOPE");
+        expect(calls).toHaveLength(6); // Existing finite repair limit, no owner retry.
+      } else {
+        const result = await running;
+        expect(result.compiled.draft.require).toEqual(eligiblePredicate());
+        expect(result.work_unit_source_review?.state).toBe("source_interpretation_pending"); // Fresh review is still required after repair.
+        expect(calls).toHaveLength(4);
+      }
+      expect(requests[0]).toContain("correction_nomination"); expect(requests[0]).toContain(canonicalJsonDigest(parent));
+    });
+
+    it("rejects a stale retained Source correction before any provider request", async () => {
+      const f = fixture(), parent = modelDraft(), requestJson = vi.fn();
+      const sourceReview = f.review(parent, "conflict", "/actions/0/require"); sourceReview.report.source_digest = canonicalJsonDigest("earlier Source");
+      const request = requestInput(requestJson);
+      await expect(generateModelActionRuleDraft({ ...request, session: { ...request.session, conversation: { turns: [], policySources: f.sources } },
+        workUnitCorrection: { draft: parent, assessment: { state: "representation_mismatch", source_review: sourceReview, component: "predicate", editable_paths: ["/require"] } } })).rejects.toThrow("CONTEXT_CHANGED");
+      expect(requestJson).not.toHaveBeenCalled();
+    });
+
+    it.each([{}, { state: "future_unknown_result" }, { state: "representation_mismatch" }] as const)("keeps malformed external Source assessment distinct from a repairable representation: %j", assessment => {
+      const f = fixture();
+      expect(() => validateActionWorkUnitAssessment(f.context, modelDraft(), assessment as any)).toThrow("ASSESSMENT_INCOMPLETE");
+    });
+
+    it.each(["openai", "openai_compatible"] as const)("encodes current subject, evidence, effect and Source provenance for conversational %s drafting", async provider => {
+      const source = policyTextSnapshot(Buffer.from("Use the selected account. Its risk hold is private evidence.\nOnly an active account without a hold may be paused."), "rules.txt");
+      const sources = newPolicySourceSession();
+      sources.snapshots = [source]; sources.active = source.version;
+      const session = { provider, model: "derived-local-fixture", ...(provider === "openai_compatible" ? { baseUrl: "http://127.0.0.1:11434/v1" } : {}) };
+      sources.approvals = [{ digest: source.digest, destination: authoringDestination(session) }];
+      const steps = [call("runner.submit_verification_boundary_draft"), call("runner.submit_effect_envelope_draft"),
+        call("runner.submit_action_rule_draft"), call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {}), say("Structural draft prepared; Source review remains pending.")];
+      const requests: string[] = [];
+      const result = await converseActionRuleDraft({ ...requestInput(async request => { requests.push(JSON.stringify(request.body)); return steps.shift()!; }),
+        session: { ...session, conversation: { turns: [], policySources: sources }, dependencies: { requestJson: async request => {
+          requests.push(JSON.stringify(request.body)); return steps.shift()!;
+        } } }, expectedOutcome: "billing.pause_account" });
+      expect(requests.every(body => body.includes("Current work-unit contract:"))).toBe(true);
+      expect(requests.at(-1)).toContain(source.digest);
+      expect(requests.at(-1)).toContain("caller_subjects");
+      expect(requests.at(-1)).toContain("evidence_bindings");
+      expect(requests.at(-1)).toContain("effect_targets");
+      expect(result).toHaveProperty("work_unit_source_review.state", "source_interpretation_pending");
+      expect(result).toHaveProperty("work_unit_source_review.whole_source_review_pending", true);
+    });
+
+    it.each(["openai", "openai_compatible"] as const)("encodes the same contract in every focused %s phase and does not infer Source acceptance", async provider => {
+      const source = policyTextSnapshot(Buffer.from("Use the selected account; preserve its private risk-hold check."), "rules.txt");
+      const sources = newPolicySourceSession(); sources.snapshots = [source]; sources.active = source.version;
+      const requests: string[] = [], calls: string[] = [];
+      const session = { provider, model: "derived-local-fixture", ...(provider === "openai_compatible" ? { baseUrl: "http://127.0.0.1:11434/v1" } : {}) };
+      sources.approvals = [{ digest: source.digest, destination: authoringDestination(session) }];
+      const result = await generateModelActionRuleDraft({ ...requestInput(phaseResponder(calls, undefined, requests)),
+        session: { ...session, conversation: { turns: [], policySources: sources }, dependencies: { requestJson: phaseResponder(calls, undefined, requests) } },
+        expectedOutcome: "billing.pause_account" });
+      expect(requests).toHaveLength(4);
+      expect(requests.every(body => body.includes("Current work-unit contract:") && body.includes(source.digest))).toBe(true);
+      expect(result).toHaveProperty("work_unit_source_review.state", "source_interpretation_pending");
+      expect(result).toHaveProperty("work_unit_source_review.whole_source_review_pending", true);
+    });
+  });
 
   describe("B33 owner-question consumer boundary", () => {
     const question = "Who reviews otherwise valid requests above the automatic limit?";
