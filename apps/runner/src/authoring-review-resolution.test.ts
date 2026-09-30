@@ -6,12 +6,14 @@ import { CoverageCounterSupportError, CoverageCurrentDescriptionError, coverageF
 import { SourceTransactionScopeError } from './authoring-source-transaction-scope.js';
 import { assertRegisteredReviewFinding, modelReviewResolution, operatorReviewResolution,
   planCoverageResolution, planReviewPrerequisite, REVIEW_RESOLUTION_HANDLERS, ReviewResolutionError,
-  runtimeReviewResolution, unknownReviewResolution } from './authoring-review-resolution.js';
+  runtimeReviewResolution, unknownReviewResolution, AUTHORING_REFUSAL_INVENTORY,
+  isRegisteredAuthoringRefusalCode, planAuthoringRefusal } from './authoring-review-resolution.js';
 import { localSourceTransactionReview, localSourceTransactionScopeReview } from './authoring-source-transaction-operation.js';
 import { localScopedDisclosureReview } from './authoring-scoped-disclosure-operation.js';
 import { reviewUnestablishedCounting } from './authoring-counting-decision-review.js';
 import { createCoverageRepairScope } from './authoring-scoped-correction.js';
 import { inspectPolicyReviewSource } from './authoring-policy-evidence.js';
+import { SourceInputFidelityError } from './authoring-input-policy.js';
 
 const finding=(error:unknown,component='/passages/0')=>coverageFinding(error,component,{start:1,end:1});
 const feedback=(findings:CoverageFinding[],limited=false):CoverageFeedback=>({
@@ -121,5 +123,112 @@ describe('shared saved-review refusal resolution',()=>{
       scoped_correction:createCoverageRepairScope,reinspection:inspectPolicyReviewSource};
     expect(Object.keys(REVIEW_RESOLUTION_HANDLERS).sort()).toEqual(Object.keys(actual).sort());
     expect(Object.values(actual).every(handler=>typeof handler==='function')).toBe(true);
+  });
+});
+
+describe('finite durable authoring refusal inventory',()=>{
+  it.each(Object.keys(AUTHORING_REFUSAL_INVENTORY))('declares only pending or stopped safe options for %s',code=>{
+    expect(isRegisteredAuthoringRefusalCode(code)).toBe(true);
+    const result=planAuthoringRefusal(code,{subject:'owned disabled draft',context:canonicalJsonDigest('owned context'),retainedWork:'saved_pending'});
+    expect(result).toBeDefined();
+    if(!result)throw new Error('Expected registered refusal');
+    expect(result.code).toBe(code);
+    expect(result.plan).toMatchObject({subject:'owned disabled draft',context:canonicalJsonDigest('owned context'),
+      findings:[{code,component:'/'}],complete_validation:false,retained_work:'saved_pending'});
+    expect(result.next_action.trim().length).toBeGreaterThan(20);
+    expect(result.next_action.length).toBeLessThan(1000);
+    expect(result.plan.options.every(option=>['leave_pending','diagnostic_stop'].includes(option.operation)
+      &&option.handler===null&&option.actor!=='authoring_model'&&option.cost!=='provider_episode'&&option.consent==='none')).toBe(true);
+    expect(result.plan.options).toContainEqual(expect.objectContaining({operation:'leave_pending',availability:'available'}));
+    expect(result.plan.recommended).toBe(result.plan.result==='pending'?'leave_pending':null);
+    expect(modelReviewResolution(result.plan)).toEqual({status:result.plan.result,complete_validation:false,findings:[],correction_available:false});
+    const operator=operatorReviewResolution(result.plan),runtime=runtimeReviewResolution(result.plan);
+    expect(operator.options.every(option=>['leave_pending','diagnostic_stop'].includes(option.operation))).toBe(true);
+    expect(JSON.stringify(operator)).not.toContain('handler');
+    expect(JSON.stringify(operator)).not.toContain('next_action');
+    expect(runtime).toEqual({status:result.plan.result,complete_validation:false,review_pending:true});
+    expect(JSON.stringify(runtime)).not.toContain('leave_pending');
+  });
+
+  it('does not invent acknowledged persistence or a current subject/context',()=>{
+    expect(planAuthoringRefusal('BOUNDARY_AUTHORING_RESUME_NOT_SAVED')?.plan).toMatchObject({
+      subject:null,context:null,retained_work:'not_established',result:'stopped',recommended:null});
+  });
+
+  it('keeps resumable exact waits distinct from declined or exhausted assistance',()=>{
+    for(const code of ['READ_WORKLOAD_AUTHORING_PAUSED','READ_RELATIONSHIP_REVIEW_PENDING','AUTHORING_OWNER_QUESTION_PENDING']){
+      expect(planAuthoringRefusal(code)?.plan).toMatchObject({result:'pending',recommended:'leave_pending'});
+    }
+    for(const code of ['READ_WORKLOAD_CLARIFICATION_DECLINED','READ_WORKLOAD_ASSISTANCE_REQUEST_REPEATED','READ_WORKLOAD_MECHANICAL_QUESTION_REPEATED','ACTION_SOURCE_REPAIR_EXHAUSTED']){
+      expect(planAuthoringRefusal(code)?.plan).toMatchObject({result:'stopped',recommended:null});
+    }
+    expect(planAuthoringRefusal('READ_WORKLOAD_CLARIFICATION_DECLINED')?.next_action).toContain('a decline is not an unanswered question');
+    expect(planAuthoringRefusal('ACTION_SOURCE_REPAIR_EXHAUSTED')?.next_action).toContain('does not renew');
+  });
+
+  it('does not treat a rescan or model switch as retargeting a drifted producer checkpoint',()=>{
+    const result=planAuthoringRefusal('READ_WORKLOAD_ASSISTANCE_CHECKPOINT_STALE');
+    expect(result?.plan).toMatchObject({result:'stopped',recommended:null});
+    expect(result?.next_action).toContain('does not retarget');
+    expect(result?.plan.options.some(option=>option.operation==='reinspection')).toBe(false);
+    expect(planReviewPrerequisite('currentness',null,null).recommended).toBe('reinspection');
+  });
+
+  it('keeps ambiguous persistence and successor confirmation descriptive and non-authorizing',()=>{
+    expect(planAuthoringRefusal('READ_RELATIONSHIP_SAVE_UNCONFIRMED')?.next_action).toContain('An ambiguous save remains unknown');
+    const confirmation=planAuthoringRefusal('STRUCTURED_DRAFT_SUCCESSOR_CONFIRMATION_REQUIRED');
+    expect(confirmation?.next_action).toContain('--dry-run');expect(confirmation?.next_action).toContain('requires explicit --yes');
+    expect(confirmation?.next_action).toContain('not provider consent or activation');
+    expect(confirmation?.plan.options).toContainEqual(expect.objectContaining({operation:'diagnostic_stop',availability:'waiting_for_prerequisite',handler:null}));
+  });
+
+  it('provides fenced unknown transport only read-only inspection/export guidance, including missing past consent',()=>{
+    for(const code of ['ASK_GENERATION_OUTCOME_UNKNOWN','ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION','ASK_GENERATION_MANUAL_RECOVERY_UNAVAILABLE']){
+      const result=planAuthoringRefusal(code);
+      expect(result?.plan).toMatchObject({result:'stopped',recommended:null});
+      expect(result?.next_action).toContain('without replay');expect(result?.next_action).toContain('offline inspection');
+      expect(result?.next_action).toContain('establishes no viable Resume or recovery permission');
+      expect(result?.next_action).toContain('do not import old replies');
+    }
+  });
+
+  it.each([undefined,null,{},'toString','__proto__','READ_WORKLOAD_ASSISTANCE_CHECKPOINT_FUTURE',
+    'ACTION_RULE_EXPRESSION_KIND_INVALID','ACTION_RULE_DRAFT_INVALID','ACTION_RULE_EFFECT_TARGET_UNAVAILABLE',
+    'ACTION_RULE_FUTURE_COMPILE_ERROR','SOURCE_INPUT_REQUIREMENT_PENDING','SOURCE_INPUT_CONSTRAINT_WEAKER',
+    'READ_WORKLOAD_VALUE_REQUEST_REFUSED','READ_WORKLOAD_CLARIFICATION_REFUSED'])
+    ('adopts no unknown value or ordinary grammar/Source-root code %j',code=>{
+      expect(isRegisteredAuthoringRefusalCode(code)).toBe(false);expect(planAuthoringRefusal(code)).toBeUndefined();
+    });
+
+  it('preserves unregistered root Source refusal even when its broad error code looks like weaker input',()=>{
+    const source=new SourceInputFidelityError([{code:'SOURCE_INPUT_REQUIREMENT_PENDING',path:'draft.inputs',outcome:'owned.action',input:'',
+      source_digest:canonicalJsonDigest('owned Source'),repair:'Review the exact current Source root; no finite input correction is established.'}]);
+    expect(source.code).toBe('SOURCE_INPUT_CONSTRAINT_WEAKER');
+    expect(source.message).toMatch(/^SOURCE_INPUT_REQUIREMENT_PENDING:/u);
+    expect(planAuthoringRefusal(source.code)).toBeUndefined();
+    const root={...finding(source),structural:true,typed_reason:undefined};
+    expect(()=>planCoverageResolution(feedback([root]))).toThrow('REVIEW_RESOLUTION_UNREGISTERED');
+    const stopped=unknownReviewResolution();
+    expect(stopped.plan).toMatchObject({result:'stopped',recommended:null});
+    expect(modelReviewResolution(stopped.plan).correction_available).toBe(false);
+  });
+
+  it('retains positive correction for existing registered structural grammar',()=>{
+    const structural=finding(new CoverageCurrentDescriptionError({path:'/counter',actual:null,submitted:'other'}));
+    expect(planCoverageResolution(feedback([structural])).recommended).toBe('scoped_correction');
+    expect(modelReviewResolution(planCoverageResolution(feedback([structural]))).correction_available).toBe(true);
+    expect(isRegisteredAuthoringRefusalCode('ACTION_RULE_DRAFT_INVALID')).toBe(false);
+  });
+
+  it('requires every scoped first-party durable producer code to be explicitly inventoried',async()=>{
+    const files=['read-workload-assistance-checkpoint.ts','read-workload-model.ts','action-rule-model.ts',
+      'action-authoring-work-unit-contract.ts','boundary-draft-bundle.ts','boundary-draft-successor.ts','boundary-structured-authoring.ts'];
+    const sources=await Promise.all(files.map(file=>fs.readFile(new URL(file,import.meta.url),'utf8')));
+    const pattern=/\b(?:READ_WORKLOAD_ASSISTANCE_CHECKPOINT_[A-Z_]+|READ_RELATIONSHIP_[A-Z_]+|ACTION_SOURCE_REPAIR_[A-Z_]+|ACTION_WORK_UNIT_[A-Z_]+|STRUCTURED_DRAFT_BUNDLE_[A-Z_]+|STRUCTURED_DRAFT_SUCCESSOR_[A-Z_]+)\b/gu;
+    const codes=[...new Set(sources.flatMap(source=>[...source.matchAll(pattern)].map(match=>match[0])))].sort();
+    expect(codes.length).toBeGreaterThan(20);
+    expect(codes.filter(code=>!isRegisteredAuthoringRefusalCode(code))).toEqual([]);
+    expect(Object.keys(REVIEW_RESOLUTION_HANDLERS).sort()).toEqual(['source_transaction_review','source_transaction_scope_review',
+      'scoped_disclosure_review','counting_review','scoped_correction','reinspection'].sort());
   });
 });

@@ -16,6 +16,9 @@ export type ReviewPrerequisiteReason =
   | 'source_transaction_review' | 'source_transaction_scope' | 'scoped_disclosure'
   | 'counting_review' | 'source_consent' | 'currentness' | 'provider_unavailable' | 'episode_declined'
   | 'episode_exhausted' | 'history_full';
+export type AuthoringRefusalReason =
+  | 'authoring_pending' | 'authoring_currentness' | 'authoring_integrity'
+  | 'authoring_persistence' | 'authoring_exhausted' | 'authoring_prerequisite';
 type Availability = 'available' | 'waiting_for_prerequisite' | 'unsupported' | 'terminal';
 type Actor = 'operator' | 'authoring_model' | 'none';
 export type ReviewResolutionOption = {
@@ -25,7 +28,7 @@ export type ReviewResolutionOption = {
 };
 export type ReviewResolutionPlan = {
   context: string | null; subject: string | null;
-  findings: Array<{ code: string; typed_reason: ReviewResolutionReason | ReviewPrerequisiteReason | 'unclassified'; component: string }>;
+  findings: Array<{ code: string; typed_reason: ReviewResolutionReason | ReviewPrerequisiteReason | AuthoringRefusalReason | 'unclassified'; component: string }>;
   unevaluated: string[]; complete_validation: false;
   options: ReviewResolutionOption[]; recommended: ReviewResolutionOperation | null;
   retained_work: 'saved_pending' | 'not_established'; result: 'pending' | 'stopped';
@@ -85,6 +88,134 @@ const option=(policy:Policy):ReviewResolutionOption=>({ ...policy,
   handler:policy.operation==='leave_pending'||policy.operation==='diagnostic_stop'?null:policy.operation });
 const pending:ReviewResolutionOption={operation:'leave_pending',actor:'operator',availability:'available',
   handler:null,cost:'local',consent:'none'};
+
+const authoringRefusal = (typed_reason: AuthoringRefusalReason, next_action: string) => ({ typed_reason, next_action });
+const assistancePending = authoringRefusal('authoring_pending',
+  'Reopen the saved job and resume its exact pending question or local relationship review. Answer or explicitly decline only that current question; no replacement generation or authority was inferred.');
+const checkpointInvalid = authoringRefusal('authoring_integrity',
+  'Inspect the preserved saved job and integrity diagnostics. No supported operation can force-accept a changed checkpoint, repair its digest, import an old reply or infer a completed generation.');
+const checkpointCurrentness = authoringRefusal('authoring_currentness',
+  'Reopen the current saved job and exact Source, Read and Action context. Stop this stale continuation; rescan or a model change does not retarget a retained Read assistance checkpoint.');
+const checkpointNotSaved = authoringRefusal('authoring_persistence',
+  'Inspect actual saved state and local storage, then reopen the last acknowledged job before explicitly continuing. An ambiguous save remains unknown; do not repeat an Action mutation, acknowledge old output or refresh its repair budget.');
+const exhausted = authoringRefusal('authoring_exhausted',
+  'Preserve the complete saved parent and agenda and inspect failure details. Retry, another model or restart does not renew this finite assistance or Source repair budget. An existing external disabled proposal may use normal structured draft validation; no new correction episode was granted.');
+const sourceAssessmentPending = authoringRefusal('authoring_prerequisite',
+  'Inspect the current saved Source and choose Review attached rules and unresolved decisions, or boundary review --review-rules in the operator terminal. Retain the nomination; incomplete assessment establishes neither an owner answer nor permission for model repair.');
+const nominatedCorrectionStopped = authoringRefusal('authoring_integrity',
+  'Inspect the retained original parent and exact current Source nomination. Preserve every component outside its editable scope; an existing external disabled proposal must pass normal structured draft validation. No additional repair episode or acceptance was granted.');
+const exchangeInvalid = authoringRefusal('authoring_integrity',
+  'Preserve the original envelope and all parts. Export a fresh coherent draft from the current original disabled job into a new local output path, or correct the external input and validate it with --draft FILE --dry-run. Foreign, mixed or reordered records and imported approvals cannot be accepted by repairing a digest.');
+const exchangeLimit = authoringRefusal('authoring_exhausted',
+  'Preserve the complete original and inspect the exact record, count, part or total limit. Public export already creates bounded parts. Normal changed-Action work units remain bounded; do not raise limits, truncate Source or split an indivisible record to make this declaration pass.');
+const exchangePath = authoringRefusal('authoring_prerequisite',
+  'Use an unused normal project-local export path or a private single-link input file through the same public command. Do not overwrite existing output, follow a symlink or bypass Runner authority directories.');
+const successorInvalid = authoringRefusal('authoring_integrity',
+  'Inspect the complete preserved successor inventory, exact page range and independently initialized disabled destination. Use explicit --action-page N and --dry-run only after the reported condition is resolved; no corrupt agenda, changed destination or historical authority may be replaced or accepted automatically.');
+const fencedGeneration = authoringRefusal('authoring_integrity',
+  'Inspect saved generation and job records without replay. When supported, export only the coherent declarative disabled draft to a new local file for offline inspection. An unknown outcome or missing past consent establishes no viable Resume or recovery permission; do not import old replies, force acknowledgement or repeat the generation.');
+
+/** Finite durable refusals only. Ordinary compiler/grammar diagnostics keep
+ * their existing correction path. These entries declare no executable repair,
+ * resume, rebind or recovery handler and adopt no unregistered Source meaning. */
+export const AUTHORING_REFUSAL_INVENTORY = {
+  ASK_GENERATION_OUTCOME_UNKNOWN: fencedGeneration,
+  ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION: fencedGeneration,
+  ASK_GENERATION_MANUAL_RECOVERY_UNAVAILABLE: fencedGeneration,
+  ASK_GENERATION_RECOVERY_EXHAUSTED: fencedGeneration,
+  ASK_GENERATION_HISTORY_LIMIT: fencedGeneration,
+  ASK_GENERATION_CONTEXT_CHANGED: fencedGeneration,
+  READ_WORKLOAD_AUTHORING_PAUSED: assistancePending,
+  READ_RELATIONSHIP_REVIEW_PENDING: assistancePending,
+  AUTHORING_OWNER_QUESTION_PENDING: assistancePending,
+  READ_WORKLOAD_ASSISTANCE_CHECKPOINT_INVALID: checkpointInvalid,
+  BOUNDARY_AUTHORING_RESUME_INVALID: checkpointInvalid,
+  ACTION_AUTHORING_CHECKPOINT_INVALID: checkpointInvalid,
+  READ_WORKLOAD_ASSISTANCE_CHECKPOINT_STALE: checkpointCurrentness,
+  READ_RELATIONSHIP_CANDIDATE_STALE: checkpointCurrentness,
+  READ_RELATIONSHIP_PROOF_STALE: checkpointCurrentness,
+  AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: checkpointCurrentness,
+  AUTHORING_RECOVERY_CONTEXT_CHANGED: checkpointCurrentness,
+  ACTION_WORK_UNIT_SOURCE_CONTEXT_CHANGED: checkpointCurrentness,
+  ACTION_AUTHORING_CHECKPOINT_STALE: checkpointCurrentness,
+  ACTION_AUTHORING_QUESTION_STALE: checkpointCurrentness,
+  BOUNDARY_AUTHORING_RESUME_CHANGED: checkpointCurrentness,
+  READ_RELATIONSHIP_REVIEW_MISMATCH: authoringRefusal('authoring_integrity',
+    'Inspect the requested Read root and exact reviewed path. A review for another root cannot answer this saved requirement; no link, omission or relationship consent was inferred.'),
+  READ_WORKLOAD_CLARIFICATION_DECISION_INVALID: checkpointInvalid,
+  READ_WORKLOAD_VALUE_CONTEXT_INVALID: checkpointInvalid,
+  READ_RELATIONSHIP_SAVE_UNCONFIRMED: checkpointNotSaved,
+  BOUNDARY_AUTHORING_RESUME_NOT_SAVED: checkpointNotSaved,
+  ACTION_CHECKPOINT_NOT_SAVED: checkpointNotSaved,
+  ACTION_SOURCE_REPAIR_NOT_SAVED: checkpointNotSaved,
+  ACTION_SOURCE_REPAIR_EXHAUSTED: exhausted,
+  READ_RELATIONSHIP_REVIEW_LIMIT: exhausted,
+  READ_WORKLOAD_ASSISTANCE_REQUEST_REPEATED: exhausted,
+  READ_WORKLOAD_MECHANICAL_QUESTION_REPEATED: exhausted,
+  ACTION_RULE_MODEL_DRAFT_INCOMPLETE: authoringRefusal('authoring_exhausted',
+    'Inspect the saved structured components and model failure details. Use the existing structured draft/export path for an exact external disabled proposal when available. This incomplete result grants no new model attempt, compiler exception or authority.'),
+  READ_WORKLOAD_CLARIFICATION_DECLINED: authoringRefusal('authoring_prerequisite',
+    'Keep the exact declined clarification and saved job pending. Inspect its business meaning before an explicit later continuation; a decline is not an unanswered question and authorizes no automatic replacement generation.'),
+  ACTION_WORK_UNIT_CONTEXT_LIMIT: authoringRefusal('authoring_exhausted',
+    'Preserve the complete draft and Source and inspect the bounded work-unit context. Review a smaller exact nomination through existing review operations when available; no Source text was truncated and no smaller interpretation or fresh repair budget was inferred.'),
+  ACTION_WORK_UNIT_SOURCE_MEANING_PENDING: sourceAssessmentPending,
+  ACTION_WORK_UNIT_SOURCE_ASSESSMENT_INCOMPLETE: sourceAssessmentPending,
+  ACTION_WORK_UNIT_REPRESENTATION_MISMATCH: nominatedCorrectionStopped,
+  ACTION_WORK_UNIT_CORRECTION_OUTSIDE_SCOPE: nominatedCorrectionStopped,
+  AUTHORING_RECOVERY_MODEL_UNAVAILABLE: authoringRefusal('authoring_prerequisite',
+    'Inspect the exact saved model and recovery permission. An unavailable model cannot consume or replace this pending generation; no different model or additional recovery attempt was selected.'),
+  STRUCTURED_DRAFT_BUNDLE_MANIFEST_INVALID: exchangeInvalid,
+  STRUCTURED_DRAFT_BUNDLE_MEMBERSHIP_INVALID: exchangeInvalid,
+  STRUCTURED_DRAFT_BUNDLE_INTEGRITY_INVALID: exchangeInvalid,
+  STRUCTURED_DRAFT_BUNDLE_PART_INVALID: exchangeInvalid,
+  STRUCTURED_DRAFT_BUNDLE_RECORD_INVALID: exchangeInvalid,
+  STRUCTURED_DRAFT_BUNDLE_SHAPE_INVALID: exchangeInvalid,
+  STRUCTURED_DRAFT_SOURCE_INVALID: exchangeInvalid,
+  STRUCTURED_DRAFT_JSON_INVALID: exchangeInvalid,
+  STRUCTURED_DRAFT_BUNDLE_MANIFEST_LIMIT: exchangeLimit,
+  STRUCTURED_DRAFT_BUNDLE_PART_LIMIT: exchangeLimit,
+  STRUCTURED_DRAFT_BUNDLE_RECORD_LIMIT: exchangeLimit,
+  STRUCTURED_DRAFT_BUNDLE_TOTAL_LIMIT: exchangeLimit,
+  STRUCTURED_DRAFT_TOO_LARGE: exchangeLimit,
+  STRUCTURED_DRAFT_WORK_UNIT_TOO_LARGE: exchangeLimit,
+  STRUCTURED_DRAFT_PROGRAM_EXPORT_LIMIT: exchangeLimit,
+  STRUCTURED_DRAFT_PATH_INVALID: exchangePath,
+  STRUCTURED_DRAFT_OUTPUT_EXISTS: exchangePath,
+  STRUCTURED_DRAFT_INPUT_UNAVAILABLE: authoringRefusal('authoring_prerequisite',
+    'Check that the exact local input file exists and is readable through the supported private project-local path. No partial draft or unavailable file was accepted.'),
+  STRUCTURED_DRAFT_PRIVATE_MATERIAL_BLOCKED: authoringRefusal('authoring_integrity',
+    'Remove credentials or private keys from the external declarative proposal and validate again. Preserve the original job and all normal private-boundary reviews; do not auto-redact canonical Source or import rejected material.'),
+  STRUCTURED_DRAFT_STALE: authoringRefusal('authoring_currentness',
+    'Inspect or rescan the current disabled setup, then export a fresh coherent draft for its exact current review bundle and validate that input. Historical bindings and old approvals are not current proof.'),
+  STRUCTURED_DRAFT_SUCCESSOR_CONFIRMATION_REQUIRED: authoringRefusal('authoring_prerequisite',
+    'Review the exact selected page with --draft FILE --successor --action-page N --dry-run. Saving that disabled proposal requires explicit --yes through the same public command; it is not provider consent or activation.'),
+  STRUCTURED_DRAFT_SUCCESSOR_INVALID: successorInvalid,
+  STRUCTURED_DRAFT_REPOSITORY_REQUIRED: authoringRefusal('authoring_prerequisite',
+    'Inspect the current disabled destination and its governed project binding. If initialization is needed, use the normal start --from-env path for an independent disabled setup before validating a selected proposal; do not reuse historical authority or unresolved job storage.'),
+} as const;
+export type RegisteredAuthoringRefusalCode = keyof typeof AUTHORING_REFUSAL_INVENTORY;
+
+/** Callers check this before generic model fallback. Exact allowlisting never
+ * upgrades an unregistered prefix or English diagnostic into repair authority. */
+export function isRegisteredAuthoringRefusalCode(code: unknown): code is RegisteredAuthoringRefusalCode {
+  return typeof code === 'string' && Object.hasOwn(AUTHORING_REFUSAL_INVENTORY, code);
+}
+export function planAuthoringRefusal(code: unknown, input: {
+  subject?: string | null; context?: string | null; retainedWork?: ReviewResolutionPlan['retained_work'];
+} = {}): { code: RegisteredAuthoringRefusalCode; plan: ReviewResolutionPlan; next_action: string } | undefined {
+  if (!isRegisteredAuthoringRefusalCode(code)) return undefined;
+  const record = AUTHORING_REFUSAL_INVENTORY[code];
+  const isPending = record.typed_reason === 'authoring_pending';
+  const policy: Policy = isPending ? pending : record.typed_reason === 'authoring_prerequisite'
+    ? { operation:'diagnostic_stop', actor:'operator', availability:'waiting_for_prerequisite', cost:'none', consent:'none' } : terminal;
+  return { code, next_action: record.next_action, plan: {
+    context: input.context ?? null, subject: input.subject ?? null,
+    findings: [{ code, typed_reason: record.typed_reason, component:'/' }],
+    unevaluated:['current-context validation, checkpoint persistence and separate authority reviews'], complete_validation:false,
+    options: unique([option(policy), pending]), recommended:isPending ? 'leave_pending' : null,
+    retained_work:input.retainedWork ?? 'not_established', result:isPending ? 'pending' : 'stopped',
+  } };
+}
 export class UnregisteredReviewFindingError extends Error {
   constructor() {super('REVIEW_RESOLUTION_UNREGISTERED: A first-party review reason has no declared route; work remains pending.');}
 }
