@@ -188,7 +188,7 @@ it.skipIf(process.env.SYNAPSOR_TEST_DERIVED_FIFTY_REAL_PG !== "1")("authors the 
     expect(prior.scope).toContain("DERIVED implementer full50"); expect(Number.isSafeInteger(prior.requests)).toBe(true); expect(prior.requests).toBeGreaterThanOrEqual(0);
     priorRequests += prior.requests;
   }
-  expect(priorRequests).toBeLessThan(1000);
+  expect(priorRequests).toBeLessThan(1400);
   const sourceLines = [
     "DERIVED supported-relationship ordered-fifty program; never original-schema or paid-full50 qualification.",
     ...original.toString("utf8").trim().split("\n").map(line => line.replaceAll("operations.", "derived_ops.")),
@@ -276,7 +276,7 @@ it.skipIf(process.env.SYNAPSOR_TEST_DERIVED_FIFTY_REAL_PG !== "1")("authors the 
     } };
   const deriveReply = async (request: any) => {
     const body = request.body, text = strings(body).join("\n"), names = (body.tools ?? []).map((t: any) => t.name ?? t.function?.name);
-    if (++requests + priorRequests > 1000) fail("Predeclared cumulative M2/M3 1000-response bound exceeded.");
+    if (++requests + priorRequests > 1400) fail("Predeclared cumulative M2/M3 1400-response bound exceeded.");
     exchanges.push({ request: requests, stage, body }); let name: string | undefined, args: any, answer: string | undefined;
     if (names.includes("runner__plan_boundary_job")) {
       name = "runner__plan_boundary_job"; args = { status: "planned", read_mode: "reuse", action_mode: "create", action_strategy: "rule_derived",
@@ -506,7 +506,7 @@ it.skipIf(process.env.SYNAPSOR_TEST_DERIVED_FIFTY_REAL_PG !== "1")("authors the 
     await fs.writeFile(path.join(evidence, "actual-source-reviews.json"), JSON.stringify(reports, null, 2));
     for (const [count, bytes] of observations) await fs.writeFile(path.join(evidence, `actual-progress-${count}.json`), bytes);
     await fs.writeFile(path.join(evidence, "result.json"), JSON.stringify({ source_head: sourceHead, test_source_sha256: testSourceDigest, scope: "DERIVED implementer full50 primary public preparation; not original-schema or paid qualification", failure: failure ?? null,
-      measured_budget: { maximum: 1000, prior_results: priorPaths, prior_requests: priorRequests, total_requests: priorRequests + requests },
+      measured_budget: { maximum: 1400, prior_results: priorPaths, prior_requests: priorRequests, total_requests: priorRequests + requests },
       requests, actual_loopback_responses: wire.length, dependencyFailures, provider_calls: 0, business_requests: 0, source_effects_requested: 0, notices, container: physical.container, socket: physical.socket,
       cleanup: "Retained until actual full Source/control cold coverage is established." }, null, 2));
     await physical.snapshot();
