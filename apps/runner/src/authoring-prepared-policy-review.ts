@@ -130,7 +130,10 @@ export async function ensurePreparedPolicyCoverage(input: {
     'The counting choice remains unresolved. Resume Review attached rules; no business rule changed.');
   if (decisions?.length) {
     const staged = structuredClone(sources);
-    staged.counting_decisions = [...(staged.counting_decisions ?? []).filter(d => !decisions.some(n => n.path === d.path)), ...decisions];
+    // A newly attributed interpretation does not erase the earlier decision.
+    // Applicability still requires the exact Source, full owner history and
+    // configured limit. Conflicting current meanings remain ambiguous.
+    staged.counting_decisions = [...(staged.counting_decisions ?? []), ...decisions];
     await coordinated(async permit => {
       await assertCurrent(permit);
       await savePolicySources(input.projectRoot, staged, { expectedDigest: expectedSource, permit });

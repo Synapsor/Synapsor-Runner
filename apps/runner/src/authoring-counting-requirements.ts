@@ -10,9 +10,9 @@ export const countingConfigurationDigest = (limit: Record<string, any>) => canon
   window_seconds: limit.window_seconds, capability: limit.capability ?? null,
 });
 /** Configuration inventory is independent of every source wording heuristic. */
-export function configuredCountingLimits(draft: unknown): Array<{ path: string; limit: Record<string, any>; digest: string }> {
+export function configuredCountingLimits(draft: unknown): Array<{ outcome: string; path: string; limit: Record<string, any>; digest: string }> {
   const d = record(draft), evidence = record(record(d.runner_evidence).actions);
-  const result: Array<{ path: string; limit: Record<string, any>; digest: string }> = [];
+  const result: Array<{ outcome: string; path: string; limit: Record<string, any>; digest: string }> = [];
   for (const action of Array.isArray(d.actions) ? d.actions : []) {
     const limits = action.approval?.shared_limits ?? [];
     const actual = evidence[action.outcome]?.automatic_limits;
@@ -27,7 +27,7 @@ export function configuredCountingLimits(draft: unknown): Array<{ path: string; 
   for (const [outcome, action] of Object.entries(evidence)) {
     for (const [index, limit] of (action.automatic_limits ?? []).entries()) {
       if (limit.kind !== "count") continue;
-      result.push({ path: `/runner_evidence/actions/${outcome}/automatic_limits/${index}/history_selector/capability`,
+      result.push({ outcome, path: `/runner_evidence/actions/${outcome}/automatic_limits/${index}/history_selector/capability`,
         limit, digest: countingConfigurationDigest(limit) });
     }
   }

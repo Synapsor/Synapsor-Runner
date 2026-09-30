@@ -348,7 +348,7 @@ it.skipIf(process.env.SYNAPSOR_TEST_DERIVED_FOUR_REAL_PG !== "1")("authors four 
     await fs.writeFile(path.join(evidence, "actual-encoded-exchanges.json"), JSON.stringify(exchanges, null, 2));
     await fs.writeFile(path.join(evidence, "actual-loopback-exchanges.json"), JSON.stringify(wire, null, 2));
     await fs.writeFile(path.join(evidence, "actual-source-reviews.json"), JSON.stringify(reports, null, 2));
-    await fs.writeFile(path.join(evidence, "result.json"), JSON.stringify({ source_head: "fe5101cf19e315e21746b4ac891595e30837b331", scope: "DERIVED implementer small-four public authoring component stage only", failure: failure ?? null,
+    await fs.writeFile(path.join(evidence, "result.json"), JSON.stringify({ source_head: process.env.OWNED_DERIVED_SOURCE_HEAD ?? null, scope: "DERIVED implementer small-four public authoring component stage only", failure: failure ?? null,
       requests, actual_loopback_responses: wire.length, dependencyFailures, provider_calls: 0, business_requests: 0, source_effects_requested: 0, notices, container: physical.container, socket: physical.socket,
       cleanup: "Retained until actual full Source/control cold coverage is established." }, null, 2));
     await physical.snapshot();

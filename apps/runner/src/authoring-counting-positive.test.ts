@@ -77,6 +77,30 @@ describe("positive counting requirement inventory",()=>{
     expect(await reviewUnestablishedCounting({source,draft,messages:[],session:{confirm:async()=>{throw Error("unrequested question");}},assertCurrent:async()=>{}})).toEqual([]);
     expect(policyReviewReadiness(source,parsePolicyCoverage({passages:[{start:1,end:1,disposition:"background",interpretation:"Reference.",draft_paths:[]}]},source,draft,[])).ready).toBe(true);
   });
+  it("identifies the exact owning Action and path before reviewing identical capability allowances",async()=>{
+    const f=fixture(),outcomes=["laboratory.first","laboratory.second"];
+    const actions=outcomes.map(outcome=>({...structuredClone(f.d.actions[0]),outcome,
+      approval:{...structuredClone(f.d.actions[0].approval),shared_limits:[{id:"per_capability",kind:"count",scope:"capability",maximum:2,window_seconds:86400}]}}));
+    const draft={...f.d,actions,runner_evidence:{...f.d.runner_evidence,actions:Object.fromEntries(actions.map(action=>[action.outcome,
+      {automatic_limits:action.approval.shared_limits.map((limit:any)=>({...limit,history_selector:{capability:action.outcome}}))}]))}};
+    const source=policyTextSnapshot(Buffer.from("At most two automatic approvals per capability in each rolling 24-hour window."),"capability-choice.txt");
+    const configured=configuredCountingLimits(draft),contexts:string[][]=[];
+    expect(countingSourceRequirements(source,draft,[]).filter(requirement=>requirement.state!=="established")).toHaveLength(2);
+    const decisions=await reviewUnestablishedCounting({source,draft,messages:[],assertCurrent:async()=>{},session:{
+      chooseOption:async(_title,options,preview)=>{
+        expect(preview?.initialValue).toBe("unresolved");
+        const text=preview!.context!.join("\n"),outcome=outcomes.find(value=>text.includes(`Configured Action: ${value}`));
+        expect(outcome,"Identical allowances must disclose their actual owning Action, not hidden iteration order").toBeDefined();
+        const index=outcomes.indexOf(outcome!);
+        expect(text).toContain(`Configuration path: ${configured[index]!.path}`);
+        expect(text).toContain(source.text);contexts.push(preview!.context!);
+        expect(options.some(option=>option.value===`outcome-${index}`)).toBe(true);
+        return `outcome-${index}`;
+      },confirm:async(_message,options)=>{expect(options?.defaultValue).toBe(false);expect(contexts.at(-1)!.every(line=>options!.context!.includes(line))).toBe(true);return true;}}});
+    expect(contexts).toHaveLength(2);
+    expect(decisions?.map(decision=>decision.required_capability)).toEqual(outcomes);
+    expect(decisions?.map(decision=>({path:decision.path,digest:decision.configuration_digest}))).toEqual(configured.map(limit=>({path:limit.path,digest:limit.digest})));
+  });
   it("operator reviews an unknown set once; exact matching program saves, reloads and reuses without another question",async()=>{
     const f=fixture(),outcome=f.d.actions[0].outcome;
     // A separate narrow authoring fixture, not a rewritten tournament result.
@@ -113,6 +137,19 @@ describe("positive counting requirement inventory",()=>{
     for(const c of counter(f.r).counter_requirements)delete c.operator_message_id;
     const report=await produce(f);expect(counter(report).disposition).toBe("implemented");
     expect(counter(report).counting_requirement_bindings.every((b:any)=>b.operator_review?.origin==="OPERATOR-COUNTING-REVIEW")).toBe(true);
+  });
+  it("keeps conflicting current interpretations ambiguous instead of selecting the newest",async()=>{
+    const f=fixture(),read=async(selected:string)=>reviewUnestablishedCounting({source:f.source,draft:f.d,
+      messages:f.state.operator_messages,assertCurrent:async()=>{},session:{chooseOption:async()=>selected,confirm:async()=>true}});
+    // Two separately attributed real factory results compose this adverse
+    // component control; it is not a public concurrent-save success.
+    const boundary=await read("boundary"),one=await read("outcome-0");
+    expect(boundary).toHaveLength(2);expect(one).toHaveLength(2);
+    for(const decisions of [[...boundary!,...one!],[...one!,...boundary!]]) {
+      f.d.runner_evidence.counting_decisions=decisions;
+      expect(countingSourceRequirements(f.source,f.d,f.state.operator_messages).every(requirement=>requirement.state!=="established")).toBe(true);
+      expect(f.d.runner_evidence.counting_decisions).toEqual(decisions);
+    }
   });
   it.each(["declined","cancelled","concurrent"])("does not create accepted interpretation when %s",async mode=>{
     const f=fixture();let checks=0;const run=reviewUnestablishedCounting({source:f.source,draft:f.d,messages:f.state.operator_messages,

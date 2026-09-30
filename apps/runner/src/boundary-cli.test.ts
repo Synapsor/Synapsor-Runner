@@ -1,6 +1,8 @@
 import { withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, recoverAuthoringGeneration,
   authoringGenerationHandled, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { nativeAuthoringRefusal } from "./test-fixtures/native-authoring-refusal.js";
+import * as countingDecisionReview from "./authoring-counting-decision-review.js";
+import { applicableCountingDecisions, configuredCountingLimits, countingSourceRequirements } from "./authoring-counting-requirements.js";
 import * as actionAuthorities from "./action-rule-authority.js";
 import { startLocalUiServer } from "./local-ui.js";
 import { readActivationImpact, readActivationImpactLines } from "./read-activation-impact.js";
@@ -8545,6 +8547,29 @@ describe("boundary operator-plane CLI", () => {
         const recovery = posture === "active_rules_recovery";
         let phase: "blocked" | "fail" | "ready" = "blocked";
         let calls = 0, menus = 0, pendingReviewMenus = 0, countedInterpretations = 0;
+        const countedReviews: Array<{ sourceDigest: string; historyDigest: string; draftDigest: string;
+          messages: string[]; readDigest: string; authorityDigest: string;
+          requirements: Array<{ path: string; configurationDigest: string; outcome: string }>;
+          answers: Array<{ path: string; configurationDigest: string }>; decisions: any[]; draft: any }> = [];
+        if (posture === "policy_target_mixed_read_scope") {
+          const original = countingDecisionReview.reviewUnestablishedCounting;
+          vi.spyOn(countingDecisionReview,"reviewUnestablishedCounting").mockImplementation(async input => {
+            // Observation only: the real factory, menus, currentness checks and
+            // returned decisions still run. A Read owner answer changes the full
+            // Source history, so the earlier decisions cannot silently transfer.
+            const unknown = countingSourceRequirements(input.source,input.draft,input.messages).filter(requirement=>requirement.state!=="established");
+            const configured = configuredCountingLimits(input.draft);
+            const batch = { sourceDigest:input.source.digest,historyDigest:canonicalJsonDigest(input.messages),
+              draftDigest:canonicalJsonDigest(input.draft),messages:[...input.messages],
+              readDigest:(await loadBoundaryReviewContext(root)).bundle.candidate_digest,
+              authorityDigest:(await readActionRuleAuthorityDraft(root,combined.authority.name))!.digest,
+              requirements:unknown.map(requirement=>{const current=configured.find(limit=>limit.path===requirement.path)!;
+                return {path:requirement.path,configurationDigest:current.digest,outcome:current.outcome};}),
+              answers:[] as Array<{path:string;configurationDigest:string}>,decisions:[] as any[],draft:structuredClone(input.draft) };
+            if(unknown.length) countedReviews.push(batch);
+            const result=await original(input);batch.decisions=structuredClone(result??[]);return result;
+          });
+        }
         const details: string[][] = [], diagnostics: string[] = [];
         const confirmAction = vi.fn(async () => false);
         const policySession: BoundaryReviewInteractiveSession = { ...resumedSession,
@@ -8562,6 +8587,12 @@ describe("boundary operator-plane CLI", () => {
               expect(options?.initialValue).toBe("unresolved");
               expect(options?.context?.join("\n")).toContain("The existing allowance counts automatic approvals across all outcomes.");
               expect(_choices.some(choice => choice.value === "boundary")).toBe(true);
+              const batch=countedReviews.at(-1)!,requirement=batch.requirements[batch.answers.length]!;
+              expect(requirement).toBeDefined();
+              expect(options!.context!.join("\n")).toContain(`Configured Action: ${requirement.outcome}`);
+              expect(options!.context!.join("\n")).toContain(`Configuration path: ${requirement.path}`);
+              expect(canonicalJsonDigest((await loadPolicySources(root,source.id)).operator_messages??[])).toBe(batch.historyDigest);
+              batch.answers.push({path:requirement.path,configurationDigest:requirement.configurationDigest});
               countedInterpretations++;
               return "boundary";
             }
@@ -9042,9 +9073,30 @@ describe("boundary operator-plane CLI", () => {
             review_details: vi.mocked(chat.rememberDetails).mock.calls.filter(([title]) => String(title).includes("UNAVAILABLE")) }))
             .toHaveBeenCalledTimes(mixedRead ? 1 : 0);
           if (posture === "policy_target_mixed_read_scope") {
-            expect(countedInterpretations).toBe(6);
             const settled = await loadPolicySources(root, source.id);
-            expect(settled.counting_decisions).toHaveLength(6);
+            expect(countedReviews).toHaveLength(2);
+            expect(new Set(countedReviews.map(batch=>batch.historyDigest)).size).toBe(2);
+            expect(countedReviews[0]!.historyDigest).toBe(canonicalJsonDigest([]));
+            expect(countedReviews[1]!.historyDigest).toBe(canonicalJsonDigest(settled.operator_messages));
+            expect(countedReviews[1]!.messages.join("\n")).toContain("Customers can view only their own permitted records.");
+            for(const batch of countedReviews) {
+              expect(batch.sourceDigest).toBe(source.snapshots[0]!.digest);
+              expect(batch.requirements).toHaveLength(6);expect(batch.answers).toHaveLength(6);
+              expect(new Set(batch.answers.map(answer=>answer.path)).size).toBe(6);
+              expect(batch.answers).toEqual(batch.requirements.map(({path,configurationDigest})=>({path,configurationDigest})));
+            }
+            expect(countedReviews[1]!.requirements).toEqual(countedReviews[0]!.requirements);
+            expect(countedInterpretations).toBe(countedReviews.reduce((sum,batch)=>sum+batch.requirements.length,0));
+            expect(settled.counting_decisions).toHaveLength(12);
+            for(const batch of countedReviews) for(const decision of batch.decisions) expect(settled.counting_decisions).toContainEqual(decision);
+            const last=countedReviews[1]!;
+            expect(applicableCountingDecisions(source.snapshots[0]!,last.draft,last.messages,settled.counting_decisions)).toEqual(last.decisions);
+            const currentDraft=structuredClone(last.draft);
+            currentDraft.runner_evidence.counting_decisions=structuredClone(settled.counting_decisions);
+            const repeated=await countingDecisionReview.reviewUnestablishedCounting({source:source.snapshots[0]!,draft:currentDraft,messages:last.messages,
+              assertCurrent:async()=>{},session:{chooseOption:async()=>{throw new Error("An unchanged complete binding must not repeat a counting question");},
+                confirm:async()=>{throw new Error("An unchanged complete binding must not repeat confirmation");}}});
+            expect(repeated).toEqual([]);expect(countedReviews).toHaveLength(2);
             expect(settled.counting_decisions!.every(decision => decision.required_capability === null
               && decision.source_digest === source.snapshots[0]!.digest)).toBe(true);
           }

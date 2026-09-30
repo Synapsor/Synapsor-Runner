@@ -18,6 +18,8 @@ export async function reviewUnestablishedCounting(input: {
     const context = ["COUNTING INTERPRETATION — BUSINESS REVIEW",
       `Source: ${input.source.name}; lines ${requirement.start}-${requirement.end}`,
       requirement.source_excerpt,
+      `Configured Action: ${configured.outcome}`,
+      `Configuration path: ${configured.path}`,
       `Configured allowance: ${configured.limit.maximum}; scope ${configured.limit.scope}; inclusive rolling ${configured.limit.window_seconds} seconds.`,
       "Which automatic approvals does this source requirement limit? Human approvals are excluded in every choice.",
       "This records your interpretation only. It does not change the saved rule, activate authority, or verify the maximum, window or other policy claims."];
