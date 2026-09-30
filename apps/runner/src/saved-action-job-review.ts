@@ -6,6 +6,7 @@ import type { ActionRuleAuthorityDraftV1, ActionRuleAuthorityActivationV1 } from
 export { readSavedExecutionRequirements } from "./saved-execution-requirements.js";
 import { readBoundaryAuthoringResumeState, type BoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
+import { readStructuredDraftSuccessorInventory } from "./boundary-draft-successor.js";
 
 export type SavedActionJobReview = { summary: string[]; details: string[]; detailsLabel?: string; completeProgram?: { draftsComplete: boolean } };
 
@@ -36,6 +37,36 @@ export function unfinishedActionIntents(resume: BoundaryAuthoringResumeState, cu
 }
 
 export async function readSavedActionJobReview(input: {
+  projectRoot: string; boundaryName: string; currentOutcomes: readonly string[]; env?: NodeJS.ProcessEnv;
+  currentDraft?: ActionRuleAuthorityDraftV1;
+  currentActivation?: ActionRuleAuthorityActivationV1;
+}): Promise<SavedActionJobReview> {
+  const guided = await readGuidedActionJobReview(input);
+  const successor = await readStructuredDraftSuccessorInventory(input.projectRoot);
+  if (successor.status === "none") return guided;
+  if (successor.status === "invalid") return { ...guided, completeProgram: { draftsComplete: false },
+    summary: [...guided.summary, "Independent draft successor inventory needs inspection. No complete-program readiness was inferred."],
+    details: [...guided.details, successor.reason, "Preserve the original bundle and inspect the exact inventory; do not overwrite it or recover the historical generation."] };
+  let draftsComplete = guided.completeProgram?.draftsComplete ?? false;
+  if (input.currentDraft) {
+    try { await assertCompleteSelectedActionProgram({ projectRoot: input.projectRoot, draft: input.currentDraft, env: input.env }); draftsComplete = true; }
+    catch (error) {
+      if (!(error instanceof Error) || !error.message.startsWith("AUTHORING_PROGRAM_NOT_READY:")) throw error;
+      draftsComplete = false;
+    }
+  }
+  return { ...guided, completeProgram: { draftsComplete },
+    summary: [...guided.summary,
+      `Independent untrusted draft successor: ${successor.inventory.actions.length} proposed Actions, ${successor.inventory.intents.length} retained intents; ${successor.pending_pages.length} pages and ${successor.pending_intent_indexes.length} intent associations pending.`,
+      draftsComplete ? "The complete successor declarations and normal current review checks pass. Publication remains a separate explicit operation."
+        : "Imported material is disabled progress. Fresh Source, private-boundary and whole-program review remain pending."],
+    details: [...guided.details, ...successor.pages.map(page => `Page ${page.number}: ${page.matching_current_disabled_outcomes.length}/${page.outcomes.length} exact disabled declarations currently match.`),
+      ...successor.pending_intent_indexes.map(index => `Pending retained intent ${index + 1}: ${successor.inventory.intents[index]!.text}`),
+      ...(successor.current_binding_matches ? [] : ["The current database/access/Read binding differs from the immutable successor inventory."]),
+      "Original unknown requests, approvals, publication and transport consent were not imported. Attach and review current Source through normal controls before considering publication."] };
+}
+
+async function readGuidedActionJobReview(input: {
   projectRoot: string; boundaryName: string; currentOutcomes: readonly string[]; env?: NodeJS.ProcessEnv;
   currentDraft?: ActionRuleAuthorityDraftV1;
   currentActivation?: ActionRuleAuthorityActivationV1;
@@ -108,20 +139,42 @@ export async function assertCompleteSelectedActionProgram(input: {
   /** Activation supplies its existing admitted mutation permit; UI does not. */
   permit?: import("./project-authority-mutation.js").ProjectAuthorityMutationPermit;
 }): Promise<void> {
+  const refuse = (reason: string): never => { throw new Error(`AUTHORING_PROGRAM_NOT_READY: ${reason} Resume the complete saved program. Its drafts and existing authority remain unchanged.`); };
+  const successor = await readStructuredDraftSuccessorInventory(input.projectRoot);
+  if (successor.status === "invalid") refuse("The independent successor inventory integrity or current inspection cannot be established.");
+  if (successor.status === "present") {
+    const required = successor.pages.flatMap(page => page.outcomes);
+    const current = input.draft.authority.rules.map(rule => rule.rule.outcome);
+    if (!successor.current_binding_matches || successor.pending_pages.length || successor.pending_intent_indexes.length
+      || required.some(outcome => !current.includes(outcome))) {
+      refuse("The complete independent successor agenda has unfinished pages, unassociated intents or changed declarations/bindings.");
+    }
+  }
   let selected;
   try { selected = (await readProjectReadAuthoring(input.projectRoot, input.env))?.selected; }
   catch (error) {
-    if ((error as { code?: string }).code === "POLICY_READ_AUTHORING_MISSING") return;
+    if ((error as { code?: string }).code === "POLICY_READ_AUTHORING_MISSING") {
+      if (successor.status === "present") refuse("Fresh Read/Source review for the independent successor is unavailable.");
+      return;
+    }
     throw error;
   }
-  if (!selected) return;
+  if (!selected) {
+    if (successor.status === "present") refuse("Fresh Read/Source review for the independent successor is unavailable.");
+    return;
+  }
   const binding = { boundary_name: selected.progress.candidate.pack.name,
     generation_lock_fingerprint: selected.progress.candidate.generation_lock_fingerprint,
     schema_fingerprint: selected.draft_lock.schema_fingerprint,
     role_posture_fingerprint: selected.draft_lock.role_posture_fingerprint };
   const loaded = await readBoundaryAuthoringResumeState(input.projectRoot, binding);
+  if (successor.status === "present" && successor.inventory.sources.length) {
+    const review = await savedAuthoringPolicyReview({ projectRoot: input.projectRoot, binding,
+      readDigest: explorationBoundaryCandidateDigest(selected.progress.candidate), exactActionDraft: input.draft,
+      env: input.env, permit: input.permit });
+    if (!review?.ready) refuse("Fresh current attached Source/private-boundary coverage for the independent successor is pending. Imported Source text is untrusted material, not an accepted review.");
+  }
   if (loaded.status === "none") return;
-  const refuse = (reason: string): never => { throw new Error(`AUTHORING_PROGRAM_NOT_READY: ${reason} Resume the complete saved program. Its drafts and existing authority remain unchanged.`); };
   if (loaded.status === "invalid") return refuse("The saved program integrity cannot be verified.");
   if (loaded.value.schema_version !== AUTHORING_PROGRAM_RESUME_VERSION) return;
   if (loaded.status !== "ready") return refuse("The saved program belongs to older database or access metadata.");

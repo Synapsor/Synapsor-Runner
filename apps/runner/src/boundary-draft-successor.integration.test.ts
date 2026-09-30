@@ -14,6 +14,7 @@ import { newPolicySourceSession, policyTextSnapshot } from "./authoring-policy-s
 import { ownedProgramDraft, ownedProgramInspection } from "./test-fixtures/owned-authoring-program.js";
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 import * as actionDraft from "./action-rule-draft.js";
+import { assertCompleteSelectedActionProgram, readSavedActionJobReview } from "./saved-action-job-review.js";
 
 const roots: string[] = [];
 afterEach(async () => { vi.restoreAllMocks(); vi.unstubAllEnvs(); for (const root of roots.splice(0)) await fs.rm(root, { recursive: true, force: true }); });
@@ -70,6 +71,8 @@ describe("explicit disabled successor pages", () => {
     if (inspected.status !== "present") throw new Error("Missing complete successor inventory");
     expect(inspected.inventory.actions).toHaveLength(count); expect(inspected.inventory.intents).toHaveLength(64);
     expect(inspected.pages[0]!.matching_current_disabled_outcomes).toHaveLength(12);
+    const firstAuthority = await readActionRuleAuthorityDraft(f.root, `${(await loadBoundaryReviewContext(f.root)).candidate.pack.name}_rules`);
+    await expect(assertCompleteSelectedActionProgram({ projectRoot: f.root, draft: firstAuthority! })).rejects.toThrow("AUTHORING_PROGRAM_NOT_READY");
     expect(inspected.pending_pages).toEqual(Array.from({ length: Math.ceil(count / 12) - 1 }, (_, index) => index + 2));
     expect(JSON.stringify(inspected.inventory)).not.toContain("historical-operation-never-imported");
     expect(JSON.stringify(inspected.inventory)).not.toContain("continuation");
@@ -84,6 +87,12 @@ describe("explicit disabled successor pages", () => {
     expect(inspected).toMatchObject({ status: "present", pending_pages: [], pending_intent_indexes: Array.from({ length: 64 - count }, (_, index) => count + index), source_material_state: "untrusted_not_attached", readiness: false });
     const context = await loadBoundaryReviewContext(f.root), authority = await readActionRuleAuthorityDraft(f.root, `${context.candidate.pack.name}_rules`);
     expect(authority!.authority.rules).toHaveLength(count); expect(authority!.state).toBe("disabled");
+    await expect(assertCompleteSelectedActionProgram({ projectRoot: f.root, draft: authority! })).rejects.toThrow(count === 50
+      ? "unfinished pages, unassociated intents" : "Fresh current attached Source/private-boundary coverage");
+    const jobReview = await readSavedActionJobReview({ projectRoot: f.root, boundaryName: context.candidate.pack.name,
+      currentOutcomes: authority!.authority.rules.map(rule => rule.rule.outcome), currentDraft: authority! });
+    expect(jobReview.completeProgram?.draftsComplete).toBe(false);
+    expect(jobReview.summary.join(" ")).toContain("64 retained intents");
     expect(inspected.status === "present" && structuredDraftSuccessorSourceMatches(inspected.inventory, undefined)).toEqual([{ name: f.source.name, digest: f.source.digest, attached_current: false }]);
     const fresh = newPolicySourceSession(); fresh.snapshots = [policyTextSnapshot(Buffer.from(f.source.text), f.source.name, 3)];
     expect(inspected.status === "present" && structuredDraftSuccessorSourceMatches(inspected.inventory, fresh)).toEqual([{ name: f.source.name, digest: f.source.digest, attached_current: true }]);
