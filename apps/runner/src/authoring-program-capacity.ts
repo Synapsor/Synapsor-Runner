@@ -5,6 +5,11 @@ export const AUTHORING_PROGRAM_CAPACITY = Object.freeze({
   recommendedWorkUnitActions: 8,
   reviewPageActions: 8,
   structuredDraftBytes: 512 * 1024,
+  structuredDraftRecordBytes: 256 * 1024,
+  structuredDraftManifestBytes: 64 * 1024,
+  structuredDraftParts: 16,
+  structuredDraftRecords: 192,
+  structuredDraftTotalBytes: 4 * 1024 * 1024,
 });
 
 export const AUTHORING_PROGRAM_RESUME_VERSION = "synapsor.boundary-authoring-resume.v2" as const;

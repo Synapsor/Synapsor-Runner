@@ -47,6 +47,11 @@ import { openBoundProjectControlPolicies } from "./control-policy-store.js";
 import { OperatorAuthorityRepository } from "./control-policy-operator-repository.js";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 import { withProjectRuntimeAdmission } from "./project-runtime-admission.js";
+import { readBoundaryDraftExchange, writeBoundaryDraftExchange } from "./boundary-draft-bundle.js";
+import { loadPolicySources, policyTextSnapshot } from "./authoring-policy-source.js";
+import { assertStructuredDraftSuccessorDestination, readStructuredDraftSuccessorInventory,
+  stageStructuredDraftSuccessorPage, structuredDraftSuccessorPage, structuredDraftSuccessorProposal,
+  type StructuredDraftSuccessorProposal, type StructuredDraftSuccessorInventory } from "./boundary-draft-successor.js";
 import { resolveSynapsorProject } from "./project-resolution.js";
 import { createBoundaryReviewInteractiveSession, type BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
 import { reviewActionVersionField } from "./action-rule-version-review.js";
@@ -64,6 +69,8 @@ let structuredActionDraftValidator: ReturnType<Ajv2020["compile"]> | undefined;
 type JsonRecord = Record<string, unknown>;
 type StructuredRuleSource = Parameters<typeof buildActionRuleAuthorityDraft>[0]["rules"][number];
 type StructuredActionEntry = { draft: ActionRuleModelDraftV1; retained?: StructuredRuleSource };
+type SuccessorPlan = { proposal: StructuredDraftSuccessorProposal; number: number; total: number;
+  originalStore?: ReadAuthoringBindings; destination: StructuredDraftSuccessorInventory["destination"] };
 
 type StructuredBoundaryDraftInput = {
   schema_version: typeof INPUT_VERSION | typeof AUTHORING_PROGRAM_INPUT_VERSION;
@@ -112,6 +119,7 @@ async function structuredBoundaryAuthoringCommandInner(
 ): Promise<number> {
   assertKnownOptions(args, new Set([
     "--project-root", "--export-draft", "--draft", "--json", "--dry-run", "--review-counters",
+    "--successor", "--action-page", "--yes",
   ]), "boundary structured authoring");
   const exportPath = optionalArg(args, "--export-draft");
   const draftPath = optionalArg(args, "--draft");
@@ -120,6 +128,13 @@ async function structuredBoundaryAuthoringCommandInner(
   }
   if (exportPath && args.includes("--dry-run")) {
     throw new Error("--dry-run applies only to --draft validation; export does not change authority.");
+  }
+  const successorRequested = args.includes("--successor"), pageText = optionalArg(args, "--action-page");
+  if ((successorRequested && (!draftPath || pageText === undefined)) || (!successorRequested && pageText !== undefined)) {
+    throw new Error("STRUCTURED_DRAFT_SUCCESSOR_INVALID: --successor requires --draft FILE and explicit --action-page N.");
+  }
+  if (successorRequested && !args.includes("--dry-run") && !args.includes("--yes")) {
+    throw new Error("STRUCTURED_DRAFT_SUCCESSOR_CONFIRMATION_REQUIRED: use --yes to save the explicitly selected disabled proposal page. This is not provider consent or activation.");
   }
   if (args.includes("--review-counters")) {
     if (!draftPath) throw new Error("--review-counters requires --draft <file>; it reviews the submitted UPDATE targets.");
@@ -132,8 +147,9 @@ async function structuredBoundaryAuthoringCommandInner(
   } else counterReviewSession = undefined;
   const projectRoot = path.resolve(optionalArg(args, "--project-root") ?? process.cwd());
   // Reject malformed input before coordination can create local gate files.
-  const input = draftPath
-    ? parseStructuredDraftInput(await readBoundedJson(projectFile(projectRoot, draftPath, "--draft"), MAX_DRAFT_BYTES))
+  const payload = draftPath ? await readBoundaryDraftExchange(projectRoot, draftPath) : undefined;
+  let input = draftPath
+    ? parseStructuredDraftInput(payload)
     : undefined;
   // Export/preview must not advertise a saveable execution-backed project
   // whose reviewed runtime binding is already unavailable. No authority changes;
@@ -147,24 +163,62 @@ async function structuredBoundaryAuthoringCommandInner(
     } finally { await binding.close(); }
   });
   if (exportPath) {
-    const payload = await exportStructuredDraft(projectRoot, schemaInspector);
-    const target = await newExportFile(projectRoot, exportPath);
-    const text = `${JSON.stringify(payload, null, 2)}\n`;
-    if (Buffer.byteLength(text, "utf8") > MAX_DRAFT_BYTES) {
-      throw new Error(`STRUCTURED_DRAFT_EXPORT_TOO_LARGE: exact export is ${Buffer.byteLength(text, "utf8")} bytes; limit is ${MAX_DRAFT_BYTES}. Narrow the initialized Read boundary before exporting; Runner did not truncate metadata.`);
-    }
-    await fs.writeFile(target, text, { encoding: "utf8", mode: 0o600, flag: "wx" });
-    write(args, { ok: true, state: "exported", path: path.relative(projectRoot, target), source_database_changed: false });
+    const result = await withProjectRuntimeAdmission(projectRoot, (root) => withProjectAuthorityMutation(root, async (held) => {
+      // Read/Action/resume/Source writers use this same coordinator. Capture
+      // declarative state together; no provider or human wait happens here.
+      const binding = await openBoundProjectControlPolicies(held.projectRoot);
+      if (binding) {
+        try { const config = await structuredExecutionContext(held.projectRoot, binding);
+          if (config) await new OperatorAuthorityRepository(binding, config).current();
+        } finally { await binding.close(); }
+      }
+      const payload = await exportStructuredDraft(held.projectRoot, schemaInspector);
+      return writeBoundaryDraftExchange({ projectRoot: held.projectRoot, supplied: exportPath, payload });
+    }));
+    write(args, { ok: true, state: "exported", ...result, source_database_changed: false,
+      active_authority_changed: false, disabled_authority_changed: false });
     return 0;
   }
-
+  let successor: SuccessorPlan | undefined;
+  if (successorRequested) {
+    const root = record(payload, "successor draft"), context = await loadBoundaryReviewContext(projectRoot);
+    const bindings = context.bundle.mutation_bindings.authoring;
+    if (!bindings || input!.bindings.schema_fingerprint !== context.lock.schema_fingerprint
+      || input!.bindings.role_posture_fingerprint !== context.lock.role_posture_fingerprint) {
+      throw new Error("STRUCTURED_DRAFT_STALE: successor proposals require this destination's current exact schema and role posture. Inspect the current disabled setup first.");
+    }
+    const proposal = structuredDraftSuccessorProposal({ actions: input!.actions, readResources: input!.read.resources,
+      skeletons: root.action_skeletons, sources: root.attached_sources });
+    const page = structuredDraftSuccessorPage(proposal, Number(pageText));
+    const destination = { repository_id: bindings.repository_id, deployment_id: bindings.deployment_id, project_id: bindings.project_id,
+      boundary_name: context.candidate.pack.name, schema_fingerprint: context.lock.schema_fingerprint, role_posture_fingerprint: context.lock.role_posture_fingerprint };
+    const binding = await openBoundProjectControlPolicies(projectRoot);
+    if (!binding) throw new Error("STRUCTURED_DRAFT_REPOSITORY_REQUIRED: initialize the independent disabled destination first.");
+    let existing: StructuredDraftSuccessorInventory | undefined;
+    try { existing = await assertStructuredDraftSuccessorDestination({ projectRoot, proposal, originalStore: input!.bindings.authoring,
+      bindings, state: await new OperatorAuthorityRepository(binding).current(), boundaryName: destination.boundary_name,
+      schemaFingerprint: destination.schema_fingerprint, rolePostureFingerprint: destination.role_posture_fingerprint });
+    } finally { await binding.close(); }
+    successor = { proposal, number: page.number, total: page.total, originalStore: input!.bindings.authoring, destination };
+    // Historical bindings and exact-current continuations are not current proof.
+    // Reuse only the independent destination's ordinary snapshot and compiler.
+    input = { schema_version: AUTHORING_PROGRAM_INPUT_VERSION, review_bundle_digest: context.bundle.bundle_digest,
+      bindings: context.bundle.mutation_bindings, actions: page.actions,
+      read: { resources: existing?.read_candidate_digest === context.bundle.candidate_digest ? [] : proposal.read_resources } };
+  }
   const prepared = await prepareStructuredDraft(projectRoot, input!, schemaInspector, counterReviewSession);
   if (args.includes("--dry-run")) {
-    write(args, { ok: true, state: "validated_disabled_preview", ...prepared.summary, source_database_changed: false });
+    write(args, { ok: true, state: "validated_disabled_preview", ...prepared.summary,
+      ...(successor ? { successor: successorSummary(successor) } : {}), source_database_changed: false });
     return 0;
   }
-  const persisted = await persistStructuredDraft(projectRoot, prepared);
+  const persisted = await persistStructuredDraft(projectRoot, prepared, successor);
+  const successorInspection = successor ? await readStructuredDraftSuccessorInventory(projectRoot) : undefined;
   write(args, { ok: true, state: "saved_disabled", ...prepared.summary, policy_epoch: persisted,
+    ...(successor ? { successor: { ...successorSummary(successor), inspection: successorInspection?.status === "present"
+      ? { status: "present", current_binding_matches: successorInspection.current_binding_matches, pages: successorInspection.pages,
+        pending_pages: successorInspection.pending_pages, pending_intent_indexes: successorInspection.pending_intent_indexes,
+        source_material_state: successorInspection.source_material_state, readiness: false } : successorInspection } } : {}),
     next_steps: structuredReviewNextSteps(projectRoot, Boolean(prepared.action)), source_database_changed: false });
   return 0;
 }
@@ -251,6 +305,9 @@ async function exportStructuredDraft(projectRoot: string, schemaInspector: typeo
         ? { state: continuation.state, outcome: continuation.outcome, digest: continuation.digest, draft_ref: `/actions/${index}` }
         : continuation };
   }) : actionSkeletons.skeletons;
+  const sources = actionSkeletons.resume?.policy_source_session
+    ? await loadPolicySources(projectRoot, actionSkeletons.resume.policy_source_session) : undefined;
+  const attachedSources = sources?.snapshots.map(({ name, text, digest, version }) => ({ name, text, digest, version }));
   const payload = {
     schema_version: programEnvelope,
     review_bundle_digest: context.bundle.bundle_digest,
@@ -262,6 +319,7 @@ async function exportStructuredDraft(projectRoot: string, schemaInspector: typeo
       })),
     },
     actions: baselineActions,
+    ...(attachedSources?.length ? { attached_sources: attachedSources } : {}),
     // Incomplete context from a current saved model job. It is not an input to
     // the submission parser and cannot become Action authority by itself.
     action_skeletons: skeletons,
@@ -272,12 +330,19 @@ async function exportStructuredDraft(projectRoot: string, schemaInspector: typeo
     action_authoring_catalog: compactActionRuleAuthoringCatalog(catalog.authoring),
     read_authoring_catalog: exportReadCatalog ? structuredClone(exportReadCatalog) : undefined,
     notes: {
-      state: "template_only",
+      state: "untrusted_declarative_proposals",
+      source_material_state: "untrusted_not_attached",
       provenance: EXTERNAL_DRAFT_ACTOR,
       activation: "not_available_from_this_input",
       instructions: `Edit typed read.resources and actions only. Submit at most ${AUTHORING_PROGRAM_CAPACITY.structuredChangedActions} added or changed Actions at a time; unchanged complete exported entries do not consume that allowance. action_skeletons are view-only incomplete context, not ready actions; Runner never uses them as Action authority. V2 local references must resolve to current saved contracts. The export contains no identity values, confirmations, activation authority, credentials, source rows, or runtime grants. A submission must request at least one real Read or Action change; all saved revisions remain disabled for separate human review.`,
     },
   };
+  const freshInspection = await schemaInspector({ engine: context.lock.engine, databaseUrlEnv: context.lock.source_env,
+    schema: context.lock.inspected_schema, env: process.env });
+  if (schemaFingerprintForInspection(freshInspection) !== context.lock.schema_fingerprint
+    || rolePostureFingerprint(freshInspection) !== context.lock.role_posture_fingerprint) {
+    throw new Error("STRUCTURED_DRAFT_STALE: source metadata changed during coherent draft capture. Reinspect the current source and export again; no draft was published.");
+  }
   return payload;
 }
 
@@ -473,6 +538,14 @@ async function prepareStructuredDraft(
     action,
     authoring,
     authoring_binding: input.bindings.authoring,
+    assertSourceMetadataCurrent: async () => {
+      const fresh = await schemaInspector({ engine: prospectiveLock.engine, databaseUrlEnv: prospectiveLock.source_env,
+        schema: prospectiveLock.inspected_schema, env: process.env });
+      if (schemaFingerprintForInspection(fresh) !== prospectiveLock.schema_fingerprint
+        || rolePostureFingerprint(fresh) !== prospectiveLock.role_posture_fingerprint) {
+        throw new Error("STRUCTURED_DRAFT_STALE: source schema or role posture changed before disabled save. Reinspect and export the current draft; no authority changed.");
+      }
+    },
     ...(reviewedCounters.length ? { assertCounterMetadataCurrent } : {}),
     summary: {
       review_bundle_digest: input.review_bundle_digest,
@@ -559,8 +632,10 @@ function compileStructuredActionBundle(input: {
 async function persistStructuredDraft(
   projectRoot: string,
   prepared: Awaited<ReturnType<typeof prepareStructuredDraft>>,
+  successor?: SuccessorPlan,
 ): Promise<number> {
   return withProjectRuntimeAdmission(projectRoot, (root) => withProjectAuthorityMutation(root, async (held) => {
+    await prepared.assertSourceMetadataCurrent();
     await prepared.assertCounterMetadataCurrent?.();
     const binding = await openBoundProjectControlPolicies(held.projectRoot);
     if (!binding) throw new Error("STRUCTURED_DRAFT_REPOSITORY_REQUIRED: governed policy storage is required for disabled publication.");
@@ -569,6 +644,18 @@ async function persistStructuredDraft(
       const repository = new OperatorAuthorityRepository(binding, config);
       const current = await repository.current();
       assertCurrentAuthoringBinding(prepared.authoring_binding, binding, current);
+      let stage: Awaited<ReturnType<typeof stageStructuredDraftSuccessorPage>> | undefined;
+      if (successor) {
+        if (!prepared.action || !prepared.authoring_binding) throw new Error("STRUCTURED_DRAFT_SUCCESSOR_INVALID: no selected disabled Action page was compiled.");
+        const existing = await assertStructuredDraftSuccessorDestination({ projectRoot: held.projectRoot, proposal: successor.proposal,
+          originalStore: successor.originalStore, bindings: prepared.authoring_binding, state: current,
+          boundaryName: successor.destination.boundary_name, schemaFingerprint: successor.destination.schema_fingerprint,
+          rolePostureFingerprint: successor.destination.role_posture_fingerprint });
+        stage = await stageStructuredDraftSuccessorPage({ projectRoot: held.projectRoot, proposal: successor.proposal,
+          number: successor.number, existing, destination: successor.destination, readCandidateDigest: prepared.summary.read_candidate_digest,
+          compiled: prepared.action });
+        if (stage.already_current) return current.epoch;
+      }
       const companion = prepared.action ? [{
         key: { scope: { level: "operator" as const }, kind: "action" as const, name: prepared.action.authority.name },
         policy: { type: "action" as const, authority: prepared.action },
@@ -587,6 +674,7 @@ async function persistStructuredDraft(
           });
           return result.epoch;
         } catch (error) {
+          if ((error as { code?: string }).code === "POLICY_REVISION_CONFLICT") { await stage?.rollback(); throw error; }
           throw markPublicationUnconfirmed(error);
         }
       }
@@ -600,12 +688,21 @@ async function persistStructuredDraft(
         });
         return result.epoch;
       } catch (error) {
+        if ((error as { code?: string }).code === "POLICY_REVISION_CONFLICT") { await stage?.rollback(); throw error; }
         throw markPublicationUnconfirmed(error);
       }
     } finally {
       await binding.close();
     }
   }));
+}
+
+function successorSummary(plan: SuccessorPlan) {
+  return { declaration_digest: canonicalJsonDigest(plan.proposal), selected_page: plan.number, total_pages: plan.total,
+    selected_outcomes: structuredDraftSuccessorPage(plan.proposal, plan.number).actions.map(action => action.outcome),
+    total_actions: plan.proposal.actions.length, total_intents: plan.proposal.intents.length,
+    source_material_state: "untrusted_not_attached", readiness: false,
+    note: "The complete operator agenda is preserved. Only this explicit page is proposed; normal Source/private review and separate authority publication remain required." };
 }
 
 /** Resolve existing execution, never execution material from the edited draft.
@@ -651,6 +748,7 @@ function parseStructuredDraftInput(value: unknown): StructuredBoundaryDraftInput
   assertKeys(root, [
     "schema_version", "review_bundle_digest", "bindings", "read", "actions",
     "action_skeletons", "read_request_json_schema", "action_rule_draft_json_schema", "action_authoring_catalog", "read_authoring_catalog", "notes",
+    "attached_sources",
     ...(root.schema_version === AUTHORING_PROGRAM_INPUT_VERSION ? ["action_skeleton_candidates"] : []),
   ], "structured boundary draft");
   if (root.schema_version !== INPUT_VERSION && root.schema_version !== AUTHORING_PROGRAM_INPUT_VERSION) {
@@ -671,6 +769,7 @@ function parseStructuredDraftInput(value: unknown): StructuredBoundaryDraftInput
     throw new Error(`structured boundary draft action_skeletons must be an export-only array of at most ${maximum} entries for ${root.schema_version}.`);
   }
   const actions = root.actions.map((item, index) => parseStructuredActionDraft(item, index));
+  parseAttachedSources(root.attached_sources);
   const programReferences = root.schema_version === AUTHORING_PROGRAM_INPUT_VERSION
     ? parseProgramExportReferences(root, actions) : undefined;
   return {
@@ -681,6 +780,23 @@ function parseStructuredDraftInput(value: unknown): StructuredBoundaryDraftInput
     actions,
     ...(programReferences?.length ? { programReferences } : {}),
   };
+}
+
+/** Source text is preserved for operator inspection only. A draft file cannot
+ * import disclosure consent, interpretation, completed coverage or Source identity. */
+function parseAttachedSources(value: unknown): void {
+  if (value === undefined) return;
+  if (!Array.isArray(value) || value.length > 8) throw new Error("STRUCTURED_DRAFT_SOURCE_INVALID: preserve at most eight bounded Source texts.");
+  const versions = new Set<number>();
+  for (const item of value) {
+    const source = record(item, "attached source");
+    assertKeys(source, ["name", "text", "digest", "version"], "attached source");
+    if (typeof source.name !== "string" || typeof source.text !== "string" || !Number.isSafeInteger(source.version)
+      || versions.has(source.version as number)) throw new Error("STRUCTURED_DRAFT_SOURCE_INVALID: Source identity and version must be exact and unique.");
+    const checked = policyTextSnapshot(Buffer.from(source.text, "utf8"), source.name, source.version as number);
+    if (checked.name !== source.name || checked.digest !== source.digest) throw new Error("STRUCTURED_DRAFT_SOURCE_INVALID: Source text does not match its exact declarative identity.");
+    versions.add(source.version as number);
+  }
 }
 
 /** Export metadata is only a checked local navigation projection. Its exact
@@ -811,46 +927,6 @@ function structuredReadRequests(resources: JsonRecord[]): BoundaryResourceReview
     actor: EXTERNAL_DRAFT_ACTOR,
     reason: "External structured draft; pending human review.",
   });
-}
-
-function projectFile(projectRoot: string, supplied: string, label: string): string {
-  const resolved = path.resolve(projectRoot, supplied);
-  const relative = path.relative(projectRoot, resolved);
-  if (!relative || relative === ".." || relative.startsWith(`..${path.sep}`) || path.isAbsolute(relative)) {
-    throw new Error(`${label} must name a file inside --project-root.`);
-  }
-  return resolved;
-}
-
-async function newExportFile(projectRoot: string, supplied: string): Promise<string> {
-  const root = await fs.realpath(projectRoot);
-  const target = projectFile(root, supplied, "--export-draft");
-  const relative = path.relative(root, target);
-  const segments = relative.split(path.sep);
-  if (segments[0] === ".synapsor" || (segments[0] === "synapsor" && segments[1] === "generated")) {
-    throw new Error("--export-draft must not write under a Runner authority or generated-artifact directory.");
-  }
-  let directory = root;
-  for (const segment of segments.slice(0, -1)) {
-    directory = path.join(directory, segment);
-    const entry = await fs.lstat(directory).catch((error: NodeJS.ErrnoException) => {
-      if (error.code === "ENOENT") return undefined;
-      throw error;
-    });
-    if (!entry) {
-      await fs.mkdir(directory, { mode: 0o700 });
-      continue;
-    }
-    if (!entry.isDirectory() || entry.isSymbolicLink()) {
-      throw new Error("--export-draft parent directories must be real project-local directories.");
-    }
-  }
-  const existing = await fs.lstat(target).catch((error: NodeJS.ErrnoException) => {
-    if (error.code === "ENOENT") return undefined;
-    throw error;
-  });
-  if (existing) throw new Error("--export-draft refuses to overwrite an existing project file.");
-  return target;
 }
 
 async function readBoundedJson(file: string, maximum: number): Promise<unknown> {

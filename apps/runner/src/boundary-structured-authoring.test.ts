@@ -255,6 +255,15 @@ describe("structured boundary authoring", () => {
     expect(mocked.commit).not.toHaveBeenCalled();
   });
 
+  it("refuses a draft reached through a parent symlink before compilation or save", async () => {
+    const root = await project(["billing.pause"]);
+    const other = await project(["billing.pause"]);
+    await fs.symlink(other, path.join(root, "foreign"), "dir");
+    await expect(run(["--project-root", root, "--draft", "foreign/draft.json", "--json"])).resolves.toBe(2);
+    expect(mocked.compile).not.toHaveBeenCalled();
+    expect(mocked.commit).not.toHaveBeenCalled();
+  });
+
 });
 
 async function project(outcomes: string[], resources = [{ resource_id: "billing.accounts", include: true }]) {

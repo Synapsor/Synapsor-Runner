@@ -240,6 +240,15 @@ Action definitions can be submitted as structured data; a job description is
 not automatically parsed into policy. Replace illustrative placeholders before
 validation. Input/output files must be inside the selected project.
 
+Exports up to 512 KiB remain ordinary JSON. A larger complete export uses a
+versioned manifest at the requested path and fixed sibling `FILE.parts` files;
+pass the manifest to the same `--draft` command. Keep the manifest and all parts
+together. Runner checks their exact membership, order, bytes and digests before
+preparing any disabled revision. The finite limits are 512 KiB per part, 256 KiB
+per indivisible typed record, 16 parts, 192 records, a 64 KiB manifest, and 4 MiB
+for the complete exchange. An oversized record or inventory stops without
+truncation. See [the bundle format and successor contract](structured-draft-bundles.md).
+
 `action_skeletons` contains one incomplete scaffold per captured business intent,
 with exact current components or explicitly unresolved placeholders. These are
 review context, not validated actions, and submission never activates or compiles
@@ -270,6 +279,28 @@ A structured submission edits the selected Read revision and its outcomes.
 Unchanged outcomes linked to other Read boundaries retain their exact
 dependencies. Cross-Read dependency edits and generation-lock changes require
 joint review; this input cannot retarget them or replace that review.
+
+To propose an operator-visible historical draft in an independently initialized
+disabled project, copy its complete exchange inside that project and explicitly
+select one ordered page of at most 12 Actions:
+
+```bash
+synapsor-runner onboard db --project-root . --draft ./historical-draft.json \
+  --successor --action-page 1 --dry-run --json
+synapsor-runner onboard db --project-root . --draft ./historical-draft.json \
+  --successor --action-page 1 --yes --json
+```
+
+The current schema and role posture must match. The complete proposal and intent
+agenda is preserved before the first page save; later pages use the same
+immutable inventory. Status reports the selected page and pending pages/intents.
+Historical job identity, transport, continuation proofs and Source decisions
+are discarded. Attached Source text remains inert; attach and review it through
+the normal current Source flow with fresh session identity and separate private
+boundary review. Successor import does not resume an old operation, contact a
+provider, establish Source fidelity, or activate authority. A shared obligation
+that depends on an unsaved outcome may stop a page at the ordinary compiler;
+Runner does not omit it to make the page pass.
 
 The saved-draft review commands do not restart a job or require a provider.
 In Read review, inspect the saved field/scope decisions, then press `C` to

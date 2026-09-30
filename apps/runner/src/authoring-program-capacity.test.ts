@@ -16,7 +16,9 @@ const outcomes = (n: number) => Array.from({ length: n }, (_, i) => `studio.pack
 describe("owned authoring program dimensions and continuation", () => {
   it("keeps existing submission and transport dimensions separate from work units", () => {
     expect(AUTHORING_PROGRAM_CAPACITY).toEqual({ totalActions: 64, structuredChangedActions: 12,
-      recommendedWorkUnitActions: 8, reviewPageActions: 8, structuredDraftBytes: 512 * 1024 });
+      recommendedWorkUnitActions: 8, reviewPageActions: 8, structuredDraftBytes: 512 * 1024,
+      structuredDraftRecordBytes: 256 * 1024, structuredDraftManifestBytes: 64 * 1024,
+      structuredDraftParts: 16, structuredDraftRecords: 192, structuredDraftTotalBytes: 4 * 1024 * 1024 });
     expect(authoringProgramWorkUnit(50, 36)).toMatchObject({ completed: 36, remaining: 14, unit: { index: 5, start: 32, end: 40, next_intent_index: 36 } });
     expect(authoringProgramWorkUnit(50, 50)).toMatchObject({ state: "drafted", unit: null });
     for (const args of [[65, 0], [50, 51], [50, -1], [0, 0]]) expect(() => authoringProgramWorkUnit(...args as [number, number])).toThrow();
