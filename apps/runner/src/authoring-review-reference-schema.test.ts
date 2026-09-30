@@ -1,12 +1,53 @@
 import {Ajv} from 'ajv';
 import { describe, expect, it } from 'vitest';
 import { outgoingToolSchemaIssue } from '@synapsor-runner/protocol';
-import { finiteReviewReferenceInventory, finiteReviewReferenceSchema } from './authoring-review-reference-schema.js';
+import { finiteReviewDraftPresentation, finiteReviewReferenceInventory, finiteReviewReferenceSchema } from './authoring-review-reference-schema.js';
+import {canonicalJsonDigest} from '@synapsor-runner/protocol';
 
 const large = () => Array.from({length: 2200}, (_, index) =>
   `/runner_evidence/actions/profile.operation_${Math.floor(index / 44)}/scoped_bindings/subject/fields/field_${index % 44}`);
 
 describe('finite review reference publication', () => {
+  it.each([20, 50, 64])('factors only equal complete binding values in the %i-outcome draft', count => {
+    const outcomes = Array.from({length: count}, (_, i) => `operation.~0~1漢字_${i}`);
+    const equal = {subject: {fields: Object.fromEntries(Array.from({length: 24}, (_, i) => [`field_${i}`, {
+      field: `field_${i}`, visible: false, metadata: 'Scoped verification metadata remains distinct from a returned value or observed source effect.',
+    }]))}};
+    const actions = Object.fromEntries(outcomes.map((outcome, i) => [outcome, {
+      outcome, scoped_bindings: i === 1 ? null : i === 2 ? {different: true} : structuredClone(equal),
+      unique: i, literal_marker: {encoding: 'scoped_binding_groups_v1'},
+    }]));
+    delete (actions[outcomes[3]!] as any).scoped_bindings;
+    const draft = {actions: outcomes.map(outcome => ({outcome})), runner_evidence: {actions}};
+    // Literal metadata outside the factored location must survive untouched.
+    (draft as any).literal = 'x'.repeat(140_000);
+    const before = structuredClone(draft), presentation = finiteReviewDraftPresentation(draft) as any;
+    expect(presentation.encoding).toBe('scoped_binding_groups_v1');
+    expect(presentation.scoped_binding_groups).toHaveLength(1);
+    expect(presentation.scoped_binding_groups[0].outcomes).toEqual(outcomes.filter((_, i) => ![1, 2, 3].includes(i)));
+    const expanded = JSON.parse(JSON.stringify(presentation.draft));
+    for (const group of presentation.scoped_binding_groups) for (const outcome of group.outcomes) {
+      expect(Object.hasOwn(expanded.runner_evidence.actions[outcome], 'scoped_bindings')).toBe(false);
+      expanded.runner_evidence.actions[outcome].scoped_bindings = structuredClone(group.value);
+    }
+    expect(expanded).toEqual(before); expect(canonicalJsonDigest(expanded)).toBe(canonicalJsonDigest(before));
+    expect(draft).toEqual(before);
+    expect(Object.hasOwn(presentation.draft.runner_evidence.actions[outcomes[3]!], 'scoped_bindings')).toBe(false);
+    expect(presentation.draft.runner_evidence.actions[outcomes[1]!].scoped_bindings).toBeNull();
+    expect(presentation.draft.runner_evidence.actions[outcomes[2]!].scoped_bindings).toEqual({different: true});
+    expect(Buffer.byteLength(JSON.stringify(presentation))).toBeLessThan(Buffer.byteLength(JSON.stringify(draft)));
+  });
+  it('leaves small, unknown, foreign, non-beneficial and over-capacity drafts literal', () => {
+    const example = (count: number) => ({literal: 'x'.repeat(140_000), actions: Array.from({length: count}, (_, i) => ({outcome: `op_${i}`})),
+      runner_evidence: {actions: Object.fromEntries(Array.from({length: count}, (_, i) => [`op_${i}`, {scoped_bindings: {v: 'y'.repeat(700)}}]))}});
+    const foreign = example(20); foreign.runner_evidence.actions.foreign = {scoped_bindings: {v: 'y'.repeat(700)}};
+    const duplicate = example(20); duplicate.actions[1]!.outcome = duplicate.actions[0]!.outcome;
+    const huge = example(20); huge.literal = 'x'.repeat(1_048_577);
+    const unique = example(20);
+    for (const [i, value] of Object.values(unique.runner_evidence.actions).entries()) value.scoped_bindings.v += `${i}`;
+    for (const value of [undefined, null, [], {}, {actions: []}, {actions: [{outcome: 'small'}]}, foreign, duplicate, huge, unique, example(65)])
+      expect(finiteReviewDraftPresentation(value)).toBe(value);
+  });
   const expand = (inventory: ReturnType<typeof finiteReviewReferenceInventory>): string[] =>
     Array.isArray(inventory) ? [...inventory] :
       (inventory as {groups: {prefix: string; suffixes: string[]}[]}).groups.flatMap(group =>
