@@ -3,6 +3,7 @@ import { clientDutyInventory } from "./authoring-client-duties.js";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
+import { createHash, randomUUID } from "node:crypto";
 import { setTimeout as delay } from "node:timers/promises";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
@@ -25,6 +26,10 @@ import { ControlPolicyRepository } from "@synapsor-runner/proposal-store";
 import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { newPolicySourceSession, policyTextSnapshot, savePolicySources } from "./authoring-policy-source.js";
+import { authoringQuestionCheckpoint, configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery,
+  type AuthoringTransportOperation, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+import { createOwnerHandoff, ownerHandoffCheckpoint } from "./authoring-owner-handoff.js";
+import { askToolSurfaceDigest, completedAuthoringQuestion, resolveAskProviderConfiguration, runAskProviderTurn } from "./model-ask.js";
 import {
   activateInstantCliBoundary,
   type InstantCliBoundaryActivationResult,
@@ -32,7 +37,148 @@ import {
 
 const suiteCwd = process.cwd();
 
+// Hash every ordinary file in the owned temporary project; no external fixture,
+// credential, private key or historical client capture is read by this test.
+async function savedStatusFixtureFiles(root: string, relative = ""): Promise<Record<string, string>> {
+  const result: Record<string, string> = {};
+  for (const entry of await fs.readdir(path.join(root, relative), { withFileTypes: true })) {
+    const name = path.join(relative, entry.name);
+    if (entry.isDirectory()) Object.assign(result, await savedStatusFixtureFiles(root, name));
+    else if (entry.isFile()) result[name] = createHash("sha256").update(await fs.readFile(path.join(root, name))).digest("hex");
+  }
+  return result;
+}
+
 describe("guided start surfaces", () => {
+  it("public status describes unresolved generation records, preserves healthy handoffs and does not mutate saved state", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "runner-status-generation-"));
+    const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    try {
+      await onboard(["db", "--project-root", root, "--from-env", "DATABASE_URL", "--json"],
+        { interactive: false, schemaInspector: async () => inspection() });
+      let context = await loadBoundaryReviewContext(root);
+      await saveInstantBoundaryReviewBaseline({ projectRoot: root, draft: context.draft, candidate: context.candidate,
+        actor: "test-operator", expectedAuthoring: context.bundle.mutation_bindings.authoring });
+      context = await loadBoundaryReviewContext(root);
+      const binding = boundaryAuthoringResumeBinding(context.bundle);
+      const sources = newPolicySourceSession();
+      const source = policyTextSnapshot(Buffer.from("Review the disabled record view."), "rules.txt");
+      sources.snapshots = [source]; sources.active = 1;
+      sources.coverage_authority_digest = canonicalJsonDigest({ read: context.bundle.candidate_digest, action: null });
+      sources.coverage = { source_digest: source.digest, draft_digest: canonicalJsonDigest("owned saved interpretation"),
+        client_duties: clientDutyInventory({ actions: [] }), passages: [{ start: 1, end: 1, disposition: "implemented",
+          interpretation: "Owned offline successful policy interpretation.", draft_paths: [] }] };
+      await savePolicySources(root, sources);
+      const build = (extra: Partial<Parameters<typeof buildBoundaryAuthoringResumeState>[0]> = {}) => buildBoundaryAuthoringResumeState({
+        binding, stage: "authority_review", jobIntent: "Review the disabled record view.",
+        provider: "openai", model: "owned-offline-status", policySourceSession: sources.id, ...extra });
+
+      // Actual offline decoder completion, followed by the existing owner-question
+      // checkpoint and CAS. No historical operation or generation consumption is invented.
+      let current = build();
+      await writeBoundaryAuthoringResumeState(root, current);
+      const healthy = await withAuthoringGenerationRecovery(async () => {
+        configureAuthoringGenerationRecovery({ available: () => true, read: () => current.generation_recovery,
+          current: async () => canonicalJsonDigest(binding), write: async recovery => {
+            const next = build({ previous: current, generationRecovery: recovery });
+            await writeBoundaryAuthoringResumeState(root, next, { expectedRevisionDigest: current.revision_digest }); current = next;
+          } });
+        const tools = [{ name: "runner.inspect", description: "OWNED OFFLINE", input_schema: { type: "object", properties: {}, additionalProperties: false } }];
+        const authorityDigest = askToolSurfaceDigest(tools);
+        const configuration = resolveAskProviderConfiguration({ provider: "openai", model: "owned-offline-status",
+          api_key: "OWNED-fixture-key", authority_digest: authorityDigest, egress_acknowledged: true }, {}, new Date());
+        const result = await runAskProviderTurn({ configuration, question: "OWNED OFFLINE", history: [], tools, authorityDigest,
+          signal: new AbortController().signal, gateway: { mode: "authoring", listTools: () => tools, close: async () => {},
+            callTool: async () => { throw new Error("No callback allowed"); } }, dependencies: { requestJson: async () => ({ status: 200,
+            body: { status: "completed", output: [{ type: "message", content: [{ type: "output_text", text: "Which reviewed record view?" }] }] } }) } });
+        const handoff = createOwnerHandoff({ consumer: "read_clarification", scope_digest: canonicalJsonDigest("owned workload"),
+          context_digest: canonicalJsonDigest(binding), question: result.answer, completion: completedAuthoringQuestion(result) });
+        const generation = authoringQuestionCheckpoint(current.generation_recovery, ownerHandoffCheckpoint(handoff));
+        const next = build({ previous: current, ownerHandoffs: [handoff], generationRecovery: generation });
+        await writeBoundaryAuthoringResumeState(root, next, { expectedRevisionDigest: current.revision_digest });
+        return { generation, handoff };
+      });
+      expect(healthy.generation!.operations[0]!.state).toBe("checkpointed");
+      expect(healthy.handoff.state).toBe("waiting");
+
+      const now = new Date().toISOString();
+      // Controlled negative records exercise descriptive projection, not eligibility
+      // to recover, acknowledge or replay any of these states.
+      const unfinished = (state: AuthoringTransportOperation["state"]): AuthoringTransportState => ({ version: 1, operations: [{
+        id: randomUUID(), request_digest: canonicalJsonDigest("owned request"), context_digest: canonicalJsonDigest(binding),
+        deadline: now, state, attempts: [{ id: randomUUID(), started_at: now,
+          outcome: state === "in_flight" ? "in_flight" : ["received", "handled", "refused"].includes(state) ? "response" : "C" }],
+      }] });
+      const replacementRefused = unfinished("refused");
+      const refused = replacementRefused.operations[0]!;
+      const prior = { id: randomUUID(), started_at: now, outcome: "B" as const, phase: "connection" as const,
+        no_response_boundary: { version: 1 as const, transport_closed: true as const, headers_received: false as const,
+          content_received: false as const, response_consumer: "not_started" as const, pure_local_generation: true as const,
+          owner_cancelled: false as const, destination_digest: canonicalJsonDigest("owned destination"), model: "owned-offline-status", recorded_at: now } };
+      refused.attempts.unshift(prior);
+      refused.manual_recovery = { id: randomUUID(), actor: "local_installation_operator", reviewed_at: now,
+        prior_attempt_id: prior.id, checkpoint_digest: canonicalJsonDigest("owned checkpoint"), state_digest: canonicalJsonDigest("owned state"),
+        status: "admitted", replacement_attempt_id: refused.attempts[1]!.id, attempt_deadline: now, failure_code: "ASK_PROVIDER_MODEL_UNAVAILABLE" };
+      const blocked = ["unknown", "partial", "received", "in_flight", "unsent", "handled"] as const;
+      for (const pending of [true, false]) {
+        for (const variant of [...blocked, "replacement_refused", "ordinary_refused", "checkpointed"] as const) {
+          const generation = variant === "replacement_refused" ? replacementRefused : variant === "checkpointed" ? healthy.generation
+            : unfinished(variant === "ordinary_refused" ? "refused" : variant);
+          await writeBoundaryAuthoringResumeState(root, build({ generationRecovery: generation,
+            ...(variant === "checkpointed" ? { ownerHandoffs: [healthy.handoff] } : {}),
+            ...(pending ? { pendingReadRevision: "Review the exact private field mapping." } : {}) }));
+          const before = await savedStatusFixtureFiles(root);
+          output.mockClear();
+          await expect(boundaryCommand(["status", "--project-root", root, "--json"])).resolves.toBe(0);
+          const status = JSON.parse(output.mock.calls.map(([chunk]) => String(chunk)).join(""));
+          expect(status.policy_review.ready, `${variant}/${pending}`).toBe(!pending);
+          expect(status.activation).toBe("disabled_unreviewed");
+          const fenced = variant !== "ordinary_refused" && variant !== "checkpointed";
+          if (fenced) {
+            expect(status.next_action).toMatch(/^Inspect saved generation/);
+            expect(status.authoring_generation).toMatchObject({ status: "inspection_required",
+              operation_states: [variant === "replacement_refused" ? "refused" : variant] });
+            expect(status.next_action).toContain("export only the coherent declarative disabled draft");
+            expect(status.next_action).not.toMatch(/^Resume|^Activate|^Retry/);
+            expect(status.policy_review.summary.join(" ")).not.toMatch(/Resume the saved job to recheck/);
+            expect(status.authoring_generation.summary.join(" ")).toContain("Status does not determine recovery eligibility");
+          } else {
+            expect(status.authoring_generation).toBeUndefined();
+            expect(status.next_action).toMatch(/^Resume/);
+          }
+          output.mockClear();
+          await boundaryCommand(["status", "--project-root", root]);
+          const text = output.mock.calls.map(([chunk]) => String(chunk)).join("");
+          expect(text).toContain(`Next action: ${status.next_action}`);
+          if (fenced) {
+            expect(text).not.toContain("Next: synapsor-runner boundary review");
+            expect(text).not.toMatch(/Resume the saved job to|Resume the exact saved review/);
+          }
+          expect(await savedStatusFixtureFiles(root), `${variant}/${pending}`).toEqual(before);
+        }
+      }
+      // A generation fence is visible even without an attached Source session.
+      await writeBoundaryAuthoringResumeState(root, build({ policySourceSession: undefined, generationRecovery: unfinished("unknown") }));
+      output.mockClear();
+      const noSourceBefore = await savedStatusFixtureFiles(root);
+      await boundaryCommand(["status", "--project-root", root, "--json"]);
+      const noSource = JSON.parse(output.mock.calls.map(([chunk]) => String(chunk)).join(""));
+      expect(noSource.policy_review).toBeUndefined();
+      expect(noSource.next_action).toMatch(/^Inspect saved generation/);
+      expect(await savedStatusFixtureFiles(root)).toEqual(noSourceBefore);
+      // Invalid saved metadata cannot safely be described as a resumable review.
+      const resumeFile = path.join(root, ".synapsor/boundary-authoring/resume.json");
+      await fs.writeFile(resumeFile, "{invalid controlled fixture");
+      const invalidBefore = await savedStatusFixtureFiles(root);
+      output.mockClear();
+      await boundaryCommand(["status", "--project-root", root, "--json"]);
+      const invalid = JSON.parse(output.mock.calls.map(([chunk]) => String(chunk)).join(""));
+      expect(invalid.policy_review.ready).toBe(false);
+      expect(invalid.next_action).toMatch(/^Inspect the preserved saved job/);
+      expect(invalid.next_action).not.toMatch(/^Resume/);
+      expect(await savedStatusFixtureFiles(root)).toEqual(invalidBefore);
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
   it("public status preserves the saved policy blocker instead of recommending activation from field signoffs", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "runner-status-policy-"));
     const output = vi.spyOn(process.stdout, "write").mockReturnValue(true);

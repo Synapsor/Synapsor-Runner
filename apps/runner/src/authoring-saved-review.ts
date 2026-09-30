@@ -11,6 +11,26 @@ import { activePolicySource, loadPolicySources } from "./authoring-policy-source
 import { policyReviewReadiness } from "./authoring-review-readiness.js";
 import { withCountingOutcomeDomain } from "./authoring-counting-domain.js";
 import { clientDutyInventory } from "./authoring-client-duties.js";
+import type { AuthoringTransportState } from "./authoring-generation-recovery.js";
+import { planAuthoringRefusal } from "./authoring-review-resolution.js";
+
+/** Describes saved records only. It never decides retry/recovery eligibility,
+ * acknowledges a response or establishes whether a previous effect occurred. */
+export function savedAuthoringGenerationGuidance(recovery: AuthoringTransportState | undefined): {
+  status: "inspection_required"; operation_states: AuthoringTransportState["operations"][number]["state"][];
+  summary: string[]; next_action: string;
+} | undefined {
+  const unresolved = recovery?.operations.filter(operation => !["checkpointed", "refused"].includes(operation.state)
+    || operation.manual_recovery?.failure_code) ?? [];
+  if (!unresolved.length) return undefined;
+  const operation_states = [...new Set(unresolved.map(operation => operation.state))];
+  const next_action = planAuthoringRefusal("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION")!.next_action;
+  return { status: "inspection_required", operation_states, next_action, summary: [
+    `Saved generation records require inspection: ${operation_states.join(", ")}.`,
+    next_action,
+    "Status does not determine recovery eligibility. The existing exact saved-generation control must review any available permission.",
+  ] };
+}
 
 /** dependencies_current describes source/count evidence only, even when a
  * pending review or edit still prevents BUSINESS completion. It grants no right.
@@ -22,12 +42,17 @@ export async function savedAuthoringPolicyReview(input: {
   env?: NodeJS.ProcessEnv;
   /** Only supplied under an existing runtime-admission -> mutation scope. */
   permit?: import("./project-authority-mutation.js").ProjectAuthorityMutationPermit;
-}): Promise<(ReturnType<typeof policyReviewReadiness> & { dependencies_current?: true }) | undefined> {
-  const pending = (message: string) => ({ ready: false, privacy: false, summary: [message,
-    "Resume the saved job to recheck its policy and pending work. Active authority is unchanged."] });
+}): Promise<(ReturnType<typeof policyReviewReadiness> & { dependencies_current?: true; next_action?: string }) | undefined> {
   const loaded = await readBoundaryAuthoringResumeState(input.projectRoot, input.binding);
+  const generation = loaded.status === "ready" || loaded.status === "stale"
+    ? savedAuthoringGenerationGuidance(loaded.value.generation_recovery) : undefined;
+  const pending = (message: string, nextAction?: string) => ({ ready: false, privacy: false,
+    ...(nextAction || generation ? { next_action: nextAction ?? generation!.next_action } : {}), summary: [message,
+      ...(nextAction ? [nextAction] : generation ? generation.summary
+        : ["Resume the saved job to recheck its policy and pending work. Active authority is unchanged."])] });
   if (loaded.status === "none") return undefined;
-  if (loaded.status === "invalid") return pending("The saved job needs recovery before its review can continue.");
+  if (loaded.status === "invalid") return pending("The saved job cannot be validated for review.",
+    planAuthoringRefusal("BOUNDARY_AUTHORING_RESUME_INVALID")!.next_action);
   const saved = loaded.value;
   if (!saved.policy_source_session) return undefined;
   if (loaded.status !== "ready") return pending("The saved policy review belongs to older database or access metadata.");
@@ -97,9 +122,12 @@ export async function savedAuthoringPolicyReview(input: {
     if (saved.pending_policy_review || saved.pending_job_revision || saved.pending_read_revision || saved.pending_action_revision
       || (saved.pending_action_removal && !isPreparedProgramRemoval(saved, input.exactActionDraft)) || saved.pending_action_addition
       || !["authority_review", "client_setup"].includes(saved.stage)) {
-      return { ...review, dependencies_current: true, ready: false, summary: ["A saved edit or unfinished drafting step is still pending.", ...review.summary] };
+      return { ...review, dependencies_current: true, ready: false,
+        ...(generation ? { next_action: generation.next_action } : {}),
+        summary: ["A saved edit or unfinished drafting step is still pending.", ...review.summary, ...(generation?.summary ?? [])] };
     }
-    return { ...review, dependencies_current: true, summary: [...review.summary,
+    return { ...review, dependencies_current: true, ...(generation ? { next_action: generation.next_action } : {}), summary: [...review.summary,
+      ...(generation?.summary ?? []),
       "This is the saved policy interpretation, not a live check or activation. Exact authority and execution reviews remain separate."] };
   } catch {
     return pending("The saved policy review is unavailable; the policy and draft have not been changed.");

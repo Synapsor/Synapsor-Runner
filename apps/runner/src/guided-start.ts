@@ -46,7 +46,7 @@ import {
 import { readBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { listActionRuleAuthorityDrafts } from "./action-rule-authority.js";
 import { clientHandoffMatchesActiveAuthority } from "./authoring-client-readiness.js";
-import { savedAuthoringPolicyReview } from "./authoring-saved-review.js";
+import { savedAuthoringGenerationGuidance, savedAuthoringPolicyReview } from "./authoring-saved-review.js";
 import { cliCommandName } from "./cli-command-meta.js";
 import { fileExists, readJsonFileWithLocation } from "./cli-files.js";
 import { isRecord, shellQuote } from "./cli-format.js";
@@ -1484,6 +1484,9 @@ export async function boundaryCommand(
     );
     const policyReview = await savedAuthoringPolicyReview({ projectRoot,
       binding: boundaryAuthoringResumeBinding(context.bundle), readDigest: context.bundle.candidate_digest });
+    const savedAuthoring = await readBoundaryAuthoringResumeState(projectRoot, boundaryAuthoringResumeBinding(context.bundle));
+    const generationGuidance = savedAuthoring.status === "ready" || savedAuthoring.status === "stale"
+      ? savedAuthoringGenerationGuidance(savedAuthoring.value.generation_recovery) : undefined;
     const unresolvedResources = [...new Set(context.bundle.decisions
       .filter((decision) => context.bundle.outstanding_decision_ids.includes(decision.id))
       .map((decision) => decision.resource_id)
@@ -1547,11 +1550,12 @@ export async function boundaryCommand(
       active_named_tools: operational.activeNamedTools,
       production_readiness: operational.productionReadiness,
       ...(policyReview ? { policy_review: policyReview } : {}),
-      next_action: policyReview && !policyReview.ready
+      ...(generationGuidance ? { authoring_generation: generationGuidance } : {}),
+      next_action: generationGuidance?.next_action ?? policyReview?.next_action ?? (policyReview && !policyReview.ready
         ? "Resume the saved job to resolve its policy review; the pending draft is not ready to activate."
         : policyReview && !editingActive
           ? "Resume the exact saved review before activation. Client and execution setup remain separate."
-          : operational.nextAction,
+          : operational.nextAction),
       source_database_changed: false,
     };
     if (rest.includes("--json")) process.stdout.write(`${JSON.stringify(payload, null, 2)}\n`);
@@ -1572,10 +1576,11 @@ export async function boundaryCommand(
       `Disabled protected drafts: ${payload.disabled_protected_drafts.length}`,
       `Active named tools: ${payload.active_named_tools.length}`,
       ...(policyReview?.summary ?? []),
-      sortedActiveBoundaries.length
+      ...(!policyReview ? generationGuidance?.summary ?? [] : []),
+      ...(generationGuidance || policyReview?.next_action ? [] : [sortedActiveBoundaries.length
         ? `${sortedActiveBoundaries.length} exact reviewed ${sortedActiveBoundaries.length === 1 ? "boundary is" : "boundaries are"} serving.`
         : `Next: ${cliCommandName()} boundary review --project-root ${shellQuote(projectRoot)} ` +
-          "(interactive), or use boundary review resource <table> with decision flags for scripts.",
+          "(interactive), or use boundary review resource <table> with decision flags for scripts."]),
       `Next action: ${payload.next_action}`,
       "Source database changed: no.",
       "",
