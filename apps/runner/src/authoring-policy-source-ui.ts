@@ -1,10 +1,26 @@
 import { assertBoundaryAuthoringResumeMaterial } from "./boundary-authoring-resume.js";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import type { ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import type { BoundaryAuthoringChat } from "./boundary-authoring-chat.js";
 import type { ModelAuthoringConversation } from "./model-authoring-conversation.js";
 import { policyCoverageSection } from "./authoring-policy-coverage.js";
 import { reviewSectionLines } from "./read-boundary-review-view.js";
 import { activePolicySource, authoringDestination, policyTextLines, policyTextSnapshot, readPolicyTextFile,
-  savePolicySources, removePolicySources, type AuthoringDestination, type PolicyTextSnapshot } from "./authoring-policy-source.js";
+  savePolicySources, removePolicySources, type AuthoringDestination, type PolicyTextSnapshot, type PolicySourceSession } from "./authoring-policy-source.js";
+
+/** Append only an accepted operator statement. The consumer owns its handoff
+ * and coordinated resume persistence; this helper commits one Source CAS. */
+export async function appendPolicySourceOperatorMessage(root: string, sources: PolicySourceSession, answer: string,
+  options: { permit?: ProjectAuthorityMutationPermit; expectedDigest?: string | null } = {}): Promise<void> {
+  if (!activePolicySource(sources)) return;
+  if (answer.length > 4_000 || (sources.operator_messages?.length ?? 0) >= 64) throw new Error("Source-related history is full (64 messages, 4000 characters each). /rules can remove retained context; nothing was truncated or sent.");
+  assertBoundaryAuthoringResumeMaterial(answer);
+  const expectedDigest=options.expectedDigest === undefined ? canonicalJsonDigest(sources) : options.expectedDigest;
+  const next=structuredClone(sources);
+  next.operator_messages=[...(next.operator_messages ?? []),answer];
+  await savePolicySources(root,next,{expectedDigest,permit:options.permit});
+  Object.assign(sources,next);
+}
 
 export function installPolicySourceCommands(input: {
   root: string; chat: BoundaryAuthoringChat; conversation: ModelAuthoringConversation;
@@ -17,14 +33,11 @@ export function installPolicySourceCommands(input: {
   chat.setSourceAnswerRecorder?.(async (answer) => {
     const sources = conversation.policySources;
     if (!activePolicySource(sources) || !sources) return;
-    if (answer.length > 4_000 || (sources.operator_messages?.length ?? 0) >= 64) throw new Error("Source-related history is full (64 messages, 4000 characters each). /rules can remove retained context; nothing was truncated or sent.");
     // Validate before the separate source-history write. Otherwise a refused
     // checkpoint's answer would be reintroduced on every resumed Action edit.
     // The chat's existing answer-refusal path lets the operator correct it.
-    assertBoundaryAuthoringResumeMaterial(answer);
-    const next = { ...sources, operator_messages: [...(sources.operator_messages ?? []), answer] };
-    await savePolicySources(input.root, next);
-    Object.assign(sources, next);
+    const expectedDigest=canonicalJsonDigest(sources);
+    await appendPolicySourceOperatorMessage(input.root,sources,answer,{expectedDigest});
     await input.onChange();
   });
   const show = async (source: PolicyTextSnapshot) => {

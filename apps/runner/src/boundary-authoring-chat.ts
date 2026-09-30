@@ -53,7 +53,7 @@ export type BoundaryAuthoringChat = {
   streamRunner(title: string, lines?: string[], tone?: BoundaryAuthoringTone): Promise<void>;
   streamCheckpoint(title: string, lines?: string[], tone?: BoundaryAuthoringTone): Promise<void>;
   streamModel(lines: string[]): Promise<void>;
-  readOperator?(defaultValue?: string, assertAnswerCurrent?: () => Promise<void>): Promise<string | undefined>;
+  readOperator?(defaultValue?: string, assertAnswerCurrent?: () => Promise<void>, options?: { recordPolicyAnswer?: boolean }): Promise<string | undefined>;
   rememberDetails(title: string, lines: string[]): void;
   showDetails(): void;
   providerStream(event: AskProviderStreamEvent): void;
@@ -879,7 +879,7 @@ export function createBoundaryAuthoringChat(input: {
   let sourceCommandHandler: ((command: string, argument: string) => Promise<boolean | "reviewed">) | undefined;
   let sourceHasDraft: (() => boolean) | undefined;
   let sourceAnswerRecorder: ((answer: string) => Promise<void>) | undefined;
-  const readAnswer = async (defaultValue?: string, recordPolicyAnswer = true, assertAnswerCurrent?: () => Promise<void>) => {
+  const readAnswer = async (defaultValue?: string, recordPolicyAnswer = true, assertAnswerCurrent?: () => Promise<void>, recordSourceChangedAnswer = true) => {
     finishLiveResponse();
     await livePending;
     io.clearStatus?.();
@@ -960,7 +960,7 @@ export function createBoundaryAuthoringChat(input: {
       // Cancellation and blank input are not answers. No lock spans human input.
       if (answer?.trim()) await assertAnswerCurrent?.();
       pendingConversationQuestion = undefined;
-      if (answer?.trim() && sourceAnswerRecorder && (recordPolicyAnswer || sourceChanged)) {
+      if (answer?.trim() && sourceAnswerRecorder && (recordPolicyAnswer || sourceChanged && recordSourceChangedAnswer)) {
         try { await sourceAnswerRecorder(answer); }
         catch (error) { checkpoint("Answer not sent", [safeTerminalText(error instanceof Error ? error.message : String(error))], "warning"); continue; }
       }
@@ -1375,7 +1375,8 @@ export function createBoundaryAuthoringChat(input: {
     streamRunner,
     streamCheckpoint,
     streamModel,
-    readOperator: (defaultValue, assertAnswerCurrent) => readAnswer(defaultValue, true, assertAnswerCurrent),
+    readOperator: (defaultValue, assertAnswerCurrent, options) => readAnswer(defaultValue, options?.recordPolicyAnswer !== false,
+      assertAnswerCurrent, options?.recordPolicyAnswer !== false),
     rememberDetails,
     showDetails,
     providerStream: (event) => {

@@ -229,9 +229,10 @@ describe("Boundary authoring chat", () => {
     const writable = Object.assign(new PassThrough(), { isTTY: true, columns: 80, rows: 24 });
     writable.resume();
     const chat = createBoundaryAuthoringChat({ io: createTerminalAnalyticsShellIo({ readable, writable, terminal: true }) });
+    const record=vi.fn(async()=>{});chat.setSourceAnswerRecorder!(record);
     try {
       const pending = chat.progress("Clarifying", async () => {
-        const answer = await chat.readOperator!();
+        const answer = await chat.readOperator!(undefined,undefined,{recordPolicyAnswer:false});
         if (answer === undefined) throw new Error("ACTION_RULE_MODEL_DRAFT_CANCELLED");
         return answer;
       });
@@ -239,6 +240,7 @@ describe("Boundary authoring chat", () => {
       await new Promise<void>((resolve) => setImmediate(resolve));
       readable.emit("keypress", "\u001b", { name: "escape" });
       await refused;
+      expect(record).not.toHaveBeenCalled();
     } finally { chat.close(); readable.destroy(); writable.destroy(); }
     const resumed = createBoundaryAuthoringChat({ io: memoryIo({ reads: ["Reviewed answer"] }).io });
     expect(await resumed.progress("New clarification", () => resumed.readOperator!())).toBe("Reviewed answer");
@@ -305,6 +307,40 @@ describe("Boundary authoring chat", () => {
     chat.setSourceAnswerRecorder!(record);
     try { await chat.readOperator!(undefined, check); expect(check).not.toHaveBeenCalled(); expect(record).not.toHaveBeenCalled(); }
     finally { chat.close(); }
+  });
+
+  it("defers durable answer recording until its consumer accepts the returned answer", async () => {
+    const memory=memoryIo({reads:["Existing reviewer"]}),chat=createBoundaryAuthoringChat({io:memory.io,color:false}),order:string[]=[];
+    const record=vi.fn(async()=>{order.push("record");});chat.setSourceAnswerRecorder!(record);
+    try {
+      const answer=await chat.readOperator!(undefined,async()=>{order.push("check");},{recordPolicyAnswer:false});
+      expect(answer).toBe("Existing reviewer");expect(order).toEqual(["check"]);expect(record).not.toHaveBeenCalled();
+      order.push("accepted");await record();expect(order).toEqual(["check","accepted","record"]);
+    } finally {chat.close();}
+  });
+
+  it("defers durable answer recording after an actual Source command changes context", async () => {
+    const memory=memoryIo({reads:["/rules","Use the complete updated rules"]}),chat=createBoundaryAuthoringChat({io:memory.io,color:false});
+    const record=vi.fn(async()=>{}),changed=vi.fn(async()=>true),check=vi.fn(async()=>{});
+    chat.setSourceAnswerRecorder!(record);chat.setSourceCommandHandler!(changed,()=>true);
+    try {
+      expect(await chat.readOperator!(undefined,check,{recordPolicyAnswer:false})).toBe("Use the updated attached-rules context for this same draft. Operator instruction: Use the complete updated rules");
+      expect(changed).toHaveBeenCalledOnce();expect(check).toHaveBeenCalledOnce();expect(record).not.toHaveBeenCalled();
+    } finally {chat.close();}
+  });
+
+  it.each([undefined,"","   "])("does not validate or record unanswered deferred owner input %s", async answer => {
+    const memory=memoryIo({reads:[answer]}),chat=createBoundaryAuthoringChat({io:memory.io,color:false}),record=vi.fn(async()=>{}),check=vi.fn(async()=>{});
+    chat.setSourceAnswerRecorder!(record);
+    try {expect(await chat.readOperator!(undefined,check,{recordPolicyAnswer:false})).toBe(answer);expect(check).not.toHaveBeenCalled();expect(record).not.toHaveBeenCalled();}
+    finally {chat.close();}
+  });
+
+  it("refuses a stale deferred owner answer before returning or recording it", async () => {
+    const memory=memoryIo({reads:["Existing reviewer"]}),chat=createBoundaryAuthoringChat({io:memory.io,color:false}),record=vi.fn(async()=>{});
+    chat.setSourceAnswerRecorder!(record);
+    try {await expect(chat.readOperator!(undefined,async()=>{throw new Error("ACTION_AUTHORING_QUESTION_STALE");},{recordPolicyAnswer:false})).rejects.toThrow("ACTION_AUTHORING_QUESTION_STALE");expect(record).not.toHaveBeenCalled();}
+    finally {chat.close();}
   });
 
   it("renders exact Action facts once and leaves explanation optional", async () => {

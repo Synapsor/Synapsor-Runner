@@ -6,7 +6,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { activePolicySource, authoringDestination, confirmedReadFieldMeanings, newPolicySourceSession, policySourceHistory, policyTextSnapshot,
   readPolicyTextFile, recordReadInterpretation, savePolicySources, loadPolicySources, removePolicySources, POLICY_TEXT_MAX_BYTES } from "./authoring-policy-source.js";
 import { createModelAuthoringConversation, modelAuthoringHistory, rememberModelAuthoringTurn } from "./model-authoring-conversation.js";
-import { installPolicySourceCommands } from "./authoring-policy-source-ui.js";
+import { appendPolicySourceOperatorMessage, installPolicySourceCommands } from "./authoring-policy-source-ui.js";
+import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 import { parsePolicyCoverage, policyCoverageSection, policyCoverageSummary, reviewPolicyCoverage } from "./authoring-policy-coverage.js";
 import { createBoundaryAuthoringChat } from "./boundary-authoring-chat.js";
 import type { BoundaryAuthoringChat } from "./boundary-authoring-chat.js";
@@ -26,6 +27,38 @@ function approved(text?: string) {
 }
 
 describe("complete operator-selected policy text", () => {
+  it("appends exactly one accepted Source answer with matched CAS under the existing mutation permit", async () => {
+    const root=await directory(),sources=approved();await savePolicySources(root,sources);
+    const before=structuredClone(sources),expectedDigest=canonicalJsonDigest(sources),answer="The existing assigned reviewer must review the proposal.";
+    await withProjectAuthorityMutation(root,async permit=>{
+      await appendPolicySourceOperatorMessage(root,sources,answer,{permit,expectedDigest});
+      expect(sources).toEqual({...before,operator_messages:[answer]});expect(await loadPolicySources(root,sources.id)).toEqual(sources);
+    });
+  });
+  it.each([false,true])("refuses a stale append without altering the in-memory session (explicit digest=%s)", async explicit => {
+    const root=await directory(),sources=approved();await savePolicySources(root,sources);
+    const before=structuredClone(sources),expectedDigest=canonicalJsonDigest(sources),newer=structuredClone(sources);
+    newer.operator_messages=["A competing accepted clarification."];await savePolicySources(root,newer);
+    await expect(appendPolicySourceOperatorMessage(root,sources,"The older answer.",explicit ? {expectedDigest} : {})).rejects.toThrow("POLICY_SOURCE_CHANGED");
+    expect(sources).toEqual(before);expect(await loadPolicySources(root,sources.id)).toEqual(newer);
+  });
+  it.each(["history","length","material"] as const)("keeps the Source unchanged when its answer cannot be retained: %s", async reason => {
+    const root=await directory(),sources=approved();if(reason==="history")sources.operator_messages=Array.from({length:64},(_,i)=>`Prior statement ${i}.`);
+    await savePolicySources(root,sources);const before=structuredClone(sources);
+    const answer=reason==="length" ? "x".repeat(4001) : reason==="material" ? "principal_id: user-123" : "One more statement.";
+    await expect(appendPolicySourceOperatorMessage(root,sources,answer)).rejects.toThrow(reason==="material" ? "TRUSTED_IDENTITY_BLOCKED" : "Source-related history is full");
+    expect(sources).toEqual(before);expect(await loadPolicySources(root,sources.id)).toEqual(before);
+  });
+  it("the installed source recorder refuses a competing writer before changing memory or calling onChange", async () => {
+    const root=await directory(),conversation=createModelAuthoringConversation();conversation.policySources=approved();
+    await savePolicySources(root,conversation.policySources);const before=structuredClone(conversation.policySources);
+    let record!:(answer:string)=>Promise<void>;const changed=vi.fn(async()=>{});
+    const chat={session:{},setSourceAnswerRecorder:(value:typeof record)=>{record=value;},setSourceCommandHandler:()=>{}} as unknown as BoundaryAuthoringChat;
+    installPolicySourceCommands({root,chat,conversation,destination:()=>destination,onChange:changed});
+    const newer=structuredClone(before);newer.operator_messages=["A competing accepted clarification."];await savePolicySources(root,newer);
+    await expect(record("The older owner's answer.")).rejects.toThrow("POLICY_SOURCE_CHANGED");
+    expect(conversation.policySources).toEqual(before);expect(await loadPolicySources(root,before.id)).toEqual(newer);expect(changed).not.toHaveBeenCalled();
+  });
   it("refuses an older review save after a competing accepted clarification without clearing its evidence", async () => {
     const root = await directory(), session = approved();
     await savePolicySources(root, session);
