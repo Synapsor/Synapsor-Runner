@@ -6,6 +6,7 @@ import path from "node:path";
 import { randomUUID } from "node:crypto";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { parseReadPrerequisiteBusinessDecisions, type ReadPrerequisiteBusinessDecision } from "./read-prerequisite-decisions.js";
+import { parseReadWorkloadAssistanceCheckpoint, readWorkloadAssistanceDecisionAnswer, type ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
 import type { AskHistoryTurn } from "./model-ask.js";
 import { withProjectAuthorityMutation, type ProjectAuthorityMutationPermit } from "./project-authority-mutation.js";
 import { isAuthoringClientPlan, type AuthoringClientPlan } from "./authoring-client-plan.js";
@@ -158,6 +159,9 @@ export type BoundaryAuthoringResumeState = {
   conversation: AskHistoryTurn[];
   generation_recovery?: AuthoringTransportState;
   owner_handoffs?: AuthoringOwnerHandoff[];
+  /** Bounded producer state; current catalog, Source and decision applicability
+   * are revalidated by the ordinary Read producer before continuation. */
+  read_assistance?: ReadWorkloadAssistanceCheckpoint;
   policy_source_session?: string;
   action_workflow?: "program";
   /** Concise model-planned Read behavior retained before an analysis exists. */
@@ -233,6 +237,8 @@ export function buildBoundaryAuthoringResumeState(input: {
   conversation?: readonly AskHistoryTurn[];
   generationRecovery?: AuthoringTransportState;
   ownerHandoffs?: AuthoringOwnerHandoff[];
+  /** Omission retains the same job's checkpoint; null explicitly completes it. */
+  readAssistanceCheckpoint?: ReadWorkloadAssistanceCheckpoint | null;
   policySourceSession?: string;
   actionWorkflow?: "program";
   readIntent?: string;
@@ -262,6 +268,10 @@ export function buildBoundaryAuthoringResumeState(input: {
   if (input.previous) assertBoundaryAuthoringResumeState(input.previous);
   const now = input.now ?? new Date().toISOString();
   const conversation = modelAuthoringHistory(createModelAuthoringConversation(input.conversation));
+  const readAssistance = input.readAssistanceCheckpoint === undefined
+    ? input.previous?.binding.boundary_name === input.binding.boundary_name
+      && input.previous.job_intent === input.jobIntent.trim() ? input.previous.read_assistance : undefined
+    : input.readAssistanceCheckpoint;
   // Omission during a Read/planning rewrite is not withdrawal of unfinished
   // business work. Completed/replaced agendas are still supplied explicitly.
   const action = input.action ?? (input.previous?.binding.boundary_name === input.binding.boundary_name
@@ -298,6 +308,7 @@ export function buildBoundaryAuthoringResumeState(input: {
     conversation,
     ...((input.generationRecovery ?? input.previous?.generation_recovery) ? { generation_recovery: structuredClone(input.generationRecovery ?? input.previous!.generation_recovery!) } : {}),
     ...((input.ownerHandoffs ?? input.previous?.owner_handoffs) ? { owner_handoffs: parseOwnerHandoffs(input.ownerHandoffs ?? input.previous!.owner_handoffs!) } : {}),
+    ...(readAssistance !== undefined && readAssistance !== null ? { read_assistance: parseReadWorkloadAssistanceCheckpoint(readAssistance) } : {}),
     ...(input.policySourceSession ? { policy_source_session: normalizeSourceSession(input.policySourceSession) } : {}),
     ...(input.readIntent
       ? {
@@ -343,6 +354,7 @@ export function buildBoundaryAuthoringResumeState(input: {
     source_query_executed: false as const,
     source_database_changed: false as const,
   };
+  assertReadAssistanceHandoff(core);
   assertBoundaryAuthoringResumeMaterial(core);
   return {
     ...core,
@@ -465,7 +477,7 @@ export async function clearBoundaryAuthoringResumeState(projectRootInput: string
     catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return true; throw error; }
     assertBoundaryAuthoringResumeState(state);
     if (state.schema_version === AUTHORING_PROGRAM_RESUME_VERSION
-      || boundaryAuthoringActionIsUnfinished(state.action) || state.pending_job_revision || state.pending_read_revision
+      || boundaryAuthoringActionIsUnfinished(state.action) || state.read_assistance || state.pending_job_revision || state.pending_read_revision
       || state.pending_action_addition || state.pending_action_revision || state.pending_action_removal
       || state.reconciled_action_revisions?.length || state.pending_policy_review || state.completed_policy_reviews?.length) return false;
     await fs.rm(filePath, { force: true });
@@ -591,17 +603,10 @@ export function assertBoundaryAuthoringResumeState(
     if (handoff.state === "waiting" && handoff.completion) {
       assertAuthoringQuestionHandoff(value.generation_recovery as AuthoringTransportState | undefined, ownerHandoffCheckpoint(handoff));
     } else if (handoff.state === "answered" && handoff.completion) {
-      const operation = (value.generation_recovery as AuthoringTransportState | undefined)?.operations.find(op => op.id === handoff.completion!.operation_id);
-      const question = operation?.question_handoff;
-      if (!operation || operation.state !== "checkpointed" || operation.request_digest !== handoff.completion.request_digest
-        || operation.context_digest !== handoff.completion.context_digest || question?.consumer !== handoff.consumer
-        || question.checkpoint_digest !== handoff.digest || question.question_digest !== canonicalJsonDigest(handoff.question)
-        || question.response_digest !== handoff.completion.response_digest || question.answered?.answer !== handoff.answer
-        || question.answered.checkpoint_digest !== canonicalJsonDigest(handoff)) {
-        throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The owner answer has no exact committed consumer handoff.");
-      }
+      assertAnsweredOwnerHandoff(value.generation_recovery as AuthoringTransportState | undefined, handoff);
     }
   }
+  assertReadAssistanceHandoff(value);
   assertAuthoringQuestionHandoff(value.generation_recovery as AuthoringTransportState | undefined,
     (value.action as BoundaryAuthoringResumeAction | undefined)?.checkpoint);
   assertAuthoringQuestionHandoff(value.generation_recovery as AuthoringTransportState | undefined,
@@ -615,6 +620,54 @@ export function assertBoundaryAuthoringResumeState(
   delete unsigned.revision_digest;
   if (canonicalJsonDigest(unsigned) !== value.revision_digest) {
     throw new Error("BOUNDARY_AUTHORING_RESUME_CHANGED: the saved authoring state does not match its digest.");
+  }
+}
+
+function assertAnsweredOwnerHandoff(generation: AuthoringTransportState | undefined, handoff: AuthoringOwnerHandoff): void {
+  if (handoff.state !== "answered" || !handoff.completion) return;
+  const operation = generation?.operations.find(op => op.id === handoff.completion!.operation_id);
+  const question = operation?.question_handoff;
+  if (!operation || operation.state !== "checkpointed" || operation.checkpoint_seen !== true
+    || operation.request_digest !== handoff.completion.request_digest
+    || operation.context_digest !== handoff.completion.context_digest || question?.consumer !== handoff.consumer
+    || question.checkpoint_digest !== handoff.digest || question.question_digest !== canonicalJsonDigest(handoff.question)
+    || question.response_digest !== handoff.completion.response_digest || question.answered?.answer !== handoff.answer
+    || question.answered.checkpoint_digest !== canonicalJsonDigest(handoff)) {
+    throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The owner answer has no exact committed consumer handoff.");
+  }
+}
+
+/** Link the producer's canonical typed decision to its actual owner record.
+ * The transport checkpoint binds that owner record, never the producer digest. */
+function assertReadAssistanceHandoff(value: {
+  read_assistance?: unknown; generation_recovery?: unknown; owner_handoffs?: unknown;
+}): void {
+  if (value.read_assistance === undefined) return;
+  const checkpoint = parseReadWorkloadAssistanceCheckpoint(value.read_assistance);
+  if (value.generation_recovery !== undefined) validateAuthoringTransportState(value.generation_recovery);
+  const generation = value.generation_recovery as AuthoringTransportState | undefined;
+  const question = checkpoint.pending_question;
+  const consumer = question.kind === "value" ? "read_value_context" : "read_clarification";
+  const handoffs = parseOwnerHandoffs(value.owner_handoffs ?? []);
+  const handoff = [...handoffs].reverse().find(record => record.consumer === consumer
+    && record.question === question.question
+    && canonicalJsonDigest(record.completion ?? null) === canonicalJsonDigest(question.completion ?? null));
+  // Isolated local producer fixtures have neither a transport nor owner ledger.
+  // Once either exists, even a local question must match its actual owner record.
+  if (!handoff) {
+    if (question.completion || generation || handoffs.length) {
+      throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Read assistance has no matching owner-question handoff.");
+    }
+    return;
+  }
+  if (checkpoint.stage === "waiting") {
+    if (handoff.state !== "waiting") throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Read assistance is waiting on an already answered owner question.");
+    if (question.completion) assertAuthoringQuestionHandoff(generation, ownerHandoffCheckpoint(handoff));
+  } else {
+    if (handoff.state !== "answered" || handoff.answer !== readWorkloadAssistanceDecisionAnswer(question)) {
+      throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: Read assistance decision has no exact attributable owner answer.");
+    }
+    assertAnsweredOwnerHandoff(generation, handoff);
   }
 }
 

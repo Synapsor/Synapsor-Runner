@@ -66,6 +66,43 @@ export function readWorkloadAssistanceCheckpoint(input: Omit<ReadWorkloadAssista
   return parseReadWorkloadAssistanceCheckpoint({ ...body, digest: canonicalJsonDigest(body) });
 }
 
+/** Bounded operator answer attributed to the canonical typed decision. This is
+ * not provider consumption, Source acceptance or permission to query values. */
+export function readWorkloadAssistanceDecisionAnswer(question: ReadWorkloadAssistanceQuestion): string {
+  assertAssistanceQuestion(question, "decided");
+  if (question.kind === "clarification") {
+    return question.decision!.state === "answered"
+      ? question.decision!.answer : "Declined the exact Read clarification.";
+  }
+  if (question.kind === "value") {
+    return question.decision!.state === "provided"
+      ? JSON.stringify(question.decision!.values) : "Declined the requested Read value context.";
+  }
+  return "Confirmed the exact generated Read relationship review.";
+}
+
+function assertAssistanceQuestion(value: unknown, stage: "waiting" | "decided"): void {
+  const fail = () => new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_INVALID: Preserve the pending Read assistance state; it is malformed or changed.");
+  if (!record(value) || !exact(value, ["kind", "request", "question", "completion", "decision"])
+    || !["clarification", "value", "relationship"].includes(value.kind as string)
+    || !request(value.request, value.kind === "value") || !text(value.question, 500)
+    || value.question !== (value.request as Record<string, unknown>).question
+    || (stage === "waiting" ? value.decision !== undefined : !record(value.decision))) throw fail();
+  if (value.completion !== undefined) {
+    const c = value.completion;
+    if (!record(c) || !exact(c, ["operation_id", "request_digest", "context_digest", "response_digest"])
+      || typeof c.operation_id !== "string" || !/^[a-f0-9-]{36}$/u.test(c.operation_id)
+      || ![c.request_digest, c.context_digest, c.response_digest].every(digest)) throw fail();
+  }
+  if (value.decision !== undefined) {
+    const d = value.decision as Record<string, unknown>;
+    if (value.kind === "clarification" ? !exact(d, ["state", "answer"]) || !["answered", "declined"].includes(d.state as string)
+      || (d.state === "answered" ? !text(d.answer, 1_000) : d.answer !== undefined)
+      : value.kind === "value" ? !(provided(d) || exact(d, ["state"]) && d.state === "without_values")
+        : !exact(d, ["state"]) || d.state !== "relationship_reviewed") throw fail();
+  }
+}
+
 /** Storage shape only. The producer also re-parses every retained target and
  * decision against its CURRENT catalog and compares exact canonical input. */
 export function parseReadWorkloadAssistanceCheckpoint(value: unknown): ReadWorkloadAssistanceCheckpoint {
@@ -75,22 +112,7 @@ export function parseReadWorkloadAssistanceCheckpoint(value: unknown): ReadWorkl
     || ![value.input_digest, value.boundary_digest, value.catalog_digest, value.tool_digest, value.digest].every(digest)
     || !["waiting", "decided"].includes(value.stage as string) || !record(value.state) || !record(value.pending_question)) throw fail();
   const q = value.pending_question, s = value.state;
-  if (!exact(q, ["kind", "request", "question", "completion", "decision"]) || !["clarification", "value", "relationship"].includes(q.kind as string)
-    || !request(q.request, q.kind === "value") || !text(q.question, 500) || q.question !== (q.request as Record<string, unknown>).question
-    || (value.stage === "waiting" ? q.decision !== undefined : !record(q.decision))) throw fail();
-  if (q.completion !== undefined) {
-    const c = q.completion;
-    if (!record(c) || !exact(c, ["operation_id", "request_digest", "context_digest", "response_digest"])
-      || typeof c.operation_id !== "string" || !/^[a-f0-9-]{36}$/u.test(c.operation_id)
-      || ![c.request_digest, c.context_digest, c.response_digest].every(digest)) throw fail();
-  }
-  if (q.decision !== undefined) {
-    const d = q.decision as Record<string, unknown>;
-    if (q.kind === "clarification" ? !exact(d, ["state", "answer"]) || !["answered", "declined"].includes(d.state as string)
-      || (d.state === "answered" ? !text(d.answer, 1_000) : d.answer !== undefined)
-      : q.kind === "value" ? !(provided(d) || exact(d, ["state"]) && d.state === "without_values")
-        : !exact(d, ["state"]) || d.state !== "relationship_reviewed") throw fail();
-  }
+  assertAssistanceQuestion(q, value.stage as "waiting" | "decided");
   const flags = ["correction_used", "clarification_from_invalid_naming", "clarification_resolved", "mechanical_clarification_resolved",
     "value_request_resolved", "repeated_assistance_request", "naming_evidence_correction_used"];
   if (!exact(s, ["call_count", "attempt", "phase", "relationship_reviews", "relationship_review_limit", "clarified_targets", "clarification_answers",
