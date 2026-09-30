@@ -21,6 +21,7 @@ import { secureAskJsonRequest } from "./model-ask.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { readBoundaryDraftExchange } from "./boundary-draft-bundle.js";
 import { createDerivedFourShapePhysicalFixture } from "./test-fixtures/derived-four-shape-physical.js";
+import { policyReviewReadiness } from "./authoring-review-readiness.js";
 
 // IMPLEMENTER DERIVED component/public-route evidence. Real inspected compound FK,
 // RLS and fresh synthetic data are explicit differences from the original025 Source.
@@ -366,7 +367,7 @@ it.skipIf(process.env.SYNAPSOR_TEST_DERIVED_FIFTY_REAL_PG !== "1")("authors the 
         const actionIndex = action ? draft.actions.findIndex((a: any) => a.outcome === action.outcome) : undefined;
         return { start: i + 1, end: i + 1, disposition: i === 0 ? "background" : "implemented", interpretation: line,
           draft_paths: i === 0 ? [] : action ? [`/actions/${actionIndex}`] : i === 1 ? paths("require") : i === 2 ? paths("approval")
-            : i === sourceLines.length - 2 ? draft.actions.map((a: any) => `/runner_evidence/actions/${a.outcome}/effect/source_counter_maintenance`)
+            : i === sourceLines.length - 2 ? paths("verification")
             : i === sourceLines.length - 3 ? ["/read", ...paths("effect")] : i === sourceLines.length - 1 ? paths("approval") : paths("effect") };
       })) };
       expect(draft.actions.map((a: any) => a.outcome).sort()).toEqual([...outcomes].sort());
@@ -387,6 +388,25 @@ it.skipIf(process.env.SYNAPSOR_TEST_DERIVED_FIFTY_REAL_PG !== "1")("authors the 
       expect(counterPassages.flatMap(passage => passage.counter_requirements)).toEqual(counters);
       expect(counterPassages.every(passage => passage.counter_requirements.length <= 16)).toBe(true);
       args.passages.push(...counterPassages);
+      // Separate source-owner operating responsibility from effect/condition
+      // and privacy claims. The reply supplies no confirmation or resolution:
+      // the actual parser must find the normal current owner record itself.
+      args.passages.push(...draft.actions.map((action: any) => {
+        const pointer = `/runner_evidence/actions/${action.outcome}/effect/source_counter_maintenance`;
+        return { start: sourceLines.length - 2, end: sourceLines.length - 1,
+          disposition: "needs_decision", responsibility: "deployment", issue_kind: "missing_configuration",
+          topic: `Source-owned version maintenance: ${action.outcome}`,
+          interpretation: "Backend version maintenance is Source-owned. Its all-writers operating contract requires current exact owner confirmation; independent external-writer and production assurance remain unverified.",
+          draft_paths: [pointer], source_counter_obligation: { path: pointer, requirement: "owner_maintenance" } };
+      }));
+      args.passages.push({ start: sourceLines.length - 2, end: sourceLines.length - 2,
+        disposition: "implemented", responsibility: "runner",
+        interpretation: "Only id/category/status/reason/allocated_count are public unit values. Blocked and supporting eligibility allowed/capacity remain private across every current Read and Action use.",
+        draft_paths: ["/read", "/runner_evidence/actions"], field_checks: [
+          { resource: "derived_ops.units", field: "blocked", expectation: "private" },
+          ...["allowed", "capacity"].map(field => ({ resource: "derived_ops.eligibility", field, expectation: "private" })),
+          ...["id", "category", "status", "reason", "allocated_count"].map(field => ({ resource: "derived_ops.units", field, expectation: "business_visible" })),
+        ] });
       expect(args.passages.length).toBeLessThanOrEqual(120);
       expect(args.passages.every((passage: any) => passage.draft_paths.length <= 32)).toBe(true);
       for (const passage of args.passages) for (const pointer of passage.draft_paths) expect(references).toContain(pointer);
@@ -466,7 +486,18 @@ it.skipIf(process.env.SYNAPSOR_TEST_DERIVED_FIFTY_REAL_PG !== "1")("authors the 
     expect(dependencyFailures).toHaveLength(0);
     expect(sources.coverage).toBeDefined(); expect(sources.coverage?.source_digest).toBe(activePolicySource(sources)?.digest);
     expect(sources.coverage?.draft_digest).toBe(canonicalJsonDigest(reports.at(-1).draft));
-    expect(sources.coverage?.passages.every(p => p.disposition === "implemented" || p.disposition === "background")).toBe(true);
+    expect(policyReviewReadiness(activePolicySource(sources)!, sources.coverage, sources).ready).toBe(true);
+    const maintenance = sources.coverage!.passages.filter(p => p.source_counter_obligation);
+    expect(maintenance).toHaveLength(50);
+    expect(new Set(maintenance.map(p => p.source_counter_obligation!.path)).size).toBe(50);
+    for (const passage of maintenance) {
+      expect(passage).toMatchObject({ disposition: "needs_decision", responsibility: "deployment", issue_kind: "missing_configuration",
+        source_counter_obligation: { requirement: "owner_maintenance" }, source_counter_resolution: {
+          source_digest: activePolicySource(sources)!.digest, path: passage.source_counter_obligation!.path, external_assurance: "unverified",
+        } });
+    }
+    expect(sources.coverage!.passages.filter(p => !p.source_counter_obligation)
+      .every(p => p.disposition === "implemented" || p.disposition === "background")).toBe(true);
     expect(sources.coverage_episodes?.some(e => e.submissions.some(s => s.validated === true && s.completed_at))).toBe(true);
     expect(resume.generation_recovery.operations.every((op: any) => op.state === "checkpointed")).toBe(true);
     await fs.writeFile(path.join(evidence, "actual-disabled-authority.json"), JSON.stringify(authorities[0], null, 2));
