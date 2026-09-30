@@ -15,6 +15,8 @@ import { readActivationImpact, readActivationImpactLines } from "./read-activati
 import { authoringReceiptConfiguration } from "./authoring-receipt-configuration.js";
 import type { PolicySourceSession } from "./authoring-policy-source.js";
 import { ensurePreparedPolicyCoverage, type PreparedPolicyReviewState } from "./authoring-prepared-policy-review.js";
+import { assessActionWorkUnitSource, reconstructOriginalActionWorkUnitSourceAssessment } from "./action-work-unit-source-assessment.js";
+import { ActionWorkUnitSourcePendingError, validateActionWorkUnitAssessment, type ActionWorkUnitContext } from "./action-authoring-work-unit-contract.js";
 import { operatorReviewResolution, planAuthoringRefusal, planReviewPrerequisite, ReviewResolutionError, unknownReviewResolution } from './authoring-review-resolution.js';
 import { reviewUnestablishedCounting } from "./authoring-counting-decision-review.js";
 import { reviewHistorySelectorChange } from "./action-history-selector-review.js";
@@ -6336,9 +6338,23 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   let semanticActionPublicationBaseline: ActionRuleAuthorityRevisionBaseline | undefined;
   const plannedEditReadDigest = dependencyRecoveryEdit ? explorationBoundaryCandidateDigest(mappingBoundary)
     : pendingActionRevision?.preparation?.read_digest ?? availableResume?.pending_action_revision?.preparation?.read_digest;
-  const saveSemanticActionDraft = async (draft: ActionRuleAuthorityDraftV1): Promise<void> => {
+  const saveSemanticActionDraft = async (draft: ActionRuleAuthorityDraftV1, expectedSource?: { id: string; digest: string; reader_schema: string; reader_role: string; action_schema: string; action_role: string }): Promise<void> => {
     if (!semanticActionPublicationBaseline) throw new Error("ACTION_RULE_REVISION_BASELINE_MISSING: reload the saved job before saving Action rules.");
     semanticActionPublicationBaseline = await withProjectAuthorityMutation(input.projectRoot, async permit => {
+      if (expectedSource && await policySourceSavedDigest(input.projectRoot, expectedSource.id) !== expectedSource.digest) {
+        throw new PolicySourceChangedError();
+      }
+      if (expectedSource) {
+        if (activeResume) await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, undefined, { permit });
+        const reader = await inspectPolicyReviewSource(context.lock, input.schemaInspector);
+        const action = await (input.actionProjectInspector ?? inspectActionProject)(input.projectRoot, process.env);
+        if (schemaFingerprintForInspection(reader.inspection) !== expectedSource.reader_schema
+          || rolePostureFingerprint(reader.inspection) !== expectedSource.reader_role
+          || schemaFingerprintForInspection(action) !== expectedSource.action_schema
+          || rolePostureFingerprint(action) !== expectedSource.action_role) {
+          throw new ActionWorkUnitSourcePendingError("currentness");
+        }
+      }
       const expectedRead = pendingActionRevision?.preparation?.read_digest ?? plannedEditReadDigest;
       if (expectedRead) {
         const fresh = await loadBoundaryReviewContext(input.projectRoot);
@@ -6349,6 +6365,271 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       }
       return writeActionRuleAuthorityDraftIfCurrent(input.projectRoot, draft, semanticActionPublicationBaseline!, permit);
     });
+  };
+  let policyAttemptKey: string | undefined;
+  let policyReport: { key: string; report: PolicyCoverage } | undefined;
+  let policyFailure: string | undefined;
+  let receiptConfigurationEvidence: Parameters<typeof policyCoverageDraft>[0]["receiptConfiguration"];
+  let executionReviewEvidence: Parameters<typeof policyCoverageDraft>[0]["executionReview"];
+  let countingDomain: CountingOutcomeDomain | undefined;
+  let policySourceInspection: Awaited<ReturnType<typeof inspectPolicyReviewSource>> | undefined;
+  const currentPolicyCoverageDraft = (authority = semanticActionAuthorityDraft) => policyCoverageDraft({ client: intendedClient, read: context.candidate, decisions: context.bundle.decisions,
+    inputStoreDigest:scopedDisclosureStoreDigest(undefined,context.bundle.mutation_bindings.authoring),
+    ...(authoringConversation?.policySources?.scoped_disclosure_reviews?.length
+      ? {reviewStoreDigest:scopedDisclosureStoreDigest(countingDomain,context.bundle.mutation_bindings.authoring)} : {}),
+    reviewedVersionFields, policySources: authoringConversation?.policySources, executionReview: executionReviewEvidence, receiptConfiguration: receiptConfigurationEvidence, countingDomain,
+    operatorClarifications: authoringConversation?.turns.filter(turn => turn.kind === "clarification"
+      && authoringConversation?.policySources?.operator_messages?.includes(turn.answer)).map(turn => ({ question: turn.question, answer: turn.answer })) ?? [],
+    ...(modelAssistSession ? { authoringSession: { provider: modelAssistSession.provider, model: modelAssistSession.model } } : {}),
+    ...(policySourceInspection ? { source: policySourceInspection } : {}),
+    actions: semanticActionDrafts.map((entry) => entry.result.compiled), authority });
+  const sourceCounterReviewAttempts = new Map<string, { failure?: string }>();
+  let reportedSourceCounterFailure: string | undefined;
+  const reviewCompiledSourceCounters = async () => {
+    const authority = semanticActionAuthorityDraft, inspection = policySourceInspection?.inspection, reviewedContext = context;
+    if (!authority || !inspection) return;
+    const checkpoint = await readBoundaryAuthoringResumeState(input.projectRoot, boundaryAuthoringResumeBinding(reviewedContext.bundle));
+    const durableReviews = (checkpoint.status === "ready" || checkpoint.status === "stale")
+      && checkpoint.value.binding.boundary_name === reviewedContext.candidate.pack.name ? boundaryAuthoringVersionReviews(checkpoint.value) : [];
+    reviewedVersionFields = reviewedVersionFields.filter(review => durableReviews.some(saved => canonicalJsonDigest(saved) === canonicalJsonDigest(review)));
+    const assertCurrent = async () => {
+      assertRunning();
+      await reloadReadReviewForModelRevision(input.projectRoot, reviewedContext, authority);
+    };
+    await assertCurrent();
+    const readDigest = explorationBoundaryCandidateDigest(reviewedContext.candidate);
+    let pending = false;
+    for (const rule of authority.authority.rules) {
+      const effects = [rule.effect_envelope, ...(rule.effect_envelope.atomic_updates ?? [])];
+      for (const effect of effects) {
+        if (effect.operation !== "update" || effect.version_advance?.strategy !== "integer_increment") continue;
+        const evidenceForTarget = () => {
+          const current = currentPolicyCoverageDraft().runner_evidence.actions[rule.rule.outcome]?.effect;
+          return current && [current, ...(current.atomic_updates ?? [])].find(entry => entry.target_resource === effect.target_resource
+            && entry.target_binding === effect.target_binding)?.source_counter_maintenance;
+        };
+        if (evidenceForTarget()) continue;
+        const key = canonicalJsonDigest({ read: readDigest, authority: authority.digest,
+          resource: effect.target_resource, field: effect.version_advance.column });
+        const attempted = sourceCounterReviewAttempts.get(key);
+        if (attempted?.failure) throw new Error(attempted.failure);
+        if (attempted) { pending = true; continue; }
+        const attempt: { failure?: string } = {};
+        sourceCounterReviewAttempts.set(key, attempt);
+        try {
+          const prepared = await reviewActionVersionField({ resource: effect.target_resource, field: effect.version_advance.column,
+            context: { readBoundary: reviewedContext.candidate, readBoundaryDigest: readDigest,
+              builtCatalog: buildActionRuleAuthoringCatalog({ boundary: reviewedContext.candidate, inspection, retainedCatalog: authority.authority.catalog }) },
+            inspection, generationLock: reviewedContext.lock, session: input.session, assertCurrent,
+            previousReview: reviewedVersionFields.find(review => review.resource === effect.target_resource),
+          });
+          if (!prepared) { pending = true; continue; }
+          const previousReviews = reviewedVersionFields, previousResume = activeResume;
+          try {
+            reviewedVersionFields = [...reviewedVersionFields.filter(review => review.resource !== prepared.review.resource), prepared.review];
+            // The exact compiled target must accept the proof without remapping
+            // its catalog or regenerating any business rule.
+            if (!evidenceForTarget()) throw new Error("ACTION_COUNTER_REVIEW_STALE: The compiled update no longer matches the reviewed counter. Revalidate the saved Action; no rule changed.");
+            await assertCurrent();
+            await persistAuthoringResume("authority_review");
+            if (resumePersistenceBlocked || !activeResume) throw checkpointSaveFailure("The source counter review");
+            const saved = await readBoundaryAuthoringResumeState(input.projectRoot, activeResume.binding);
+            if (saved.status !== "ready" || saved.value.revision_digest !== activeResume.revision_digest
+              || !boundaryAuthoringVersionReviews(saved.value).some(review => canonicalJsonDigest(review) === canonicalJsonDigest(prepared.review))) {
+              throw checkpointSaveFailure("The source counter review acknowledgement");
+            }
+          } catch (error) {
+            reviewedVersionFields = previousReviews;
+            activeResume = previousResume;
+            throw error;
+          }
+          await assertCurrent();
+        } catch (error) {
+          assertRunning(error);
+          attempt.failure = redactCliErrorMessage(error instanceof Error ? error.message : String(error));
+          throw new Error(attempt.failure);
+        }
+      }
+    }
+    await assertCurrent();
+    if (pending) throw new Error("ACTION_COUNTER_REVIEW_PENDING: The source owner has not confirmed every updated counter. The exact rules are retained; resume this job when the maintenance commitment can be reviewed.");
+  };
+  const refreshPolicyCoverageEvidence = async (authority = semanticActionAuthorityDraft) => {
+    receiptConfigurationEvidence = await authoringReceiptConfiguration(input.projectRoot, authority?.authority.rules.map(r => r.rule.source) ?? [], process.env);
+    executionReviewEvidence = undefined;
+    if (authority) {
+      try {
+        const execution = await readSemanticSupervisedExecutionState({ projectRoot: input.projectRoot, env: process.env });
+        const actionDigest = authority.authority.action_boundary.digest;
+        const matching = execution.policies.filter(policy => policy.action_boundary_digest === actionDigest);
+        if (matching.length) executionReviewEvidence = { action_digest: actionDigest, policy_digest: canonicalJsonDigest({ enabled: execution.enabled, policies: matching }),
+          enabled_outcomes: execution.enabled ? matching.map(policy => policy.outcome).sort() : [] };
+      } catch { /* Unavailable or changed deployment is not evidence of enabled execution. */ }
+    }
+    countingDomain = undefined;
+    if (authority) {
+      try { countingDomain = await withCountingOutcomeDomain(input.projectRoot, authority, async domain => domain); }
+      catch { /* Missing, busy or mismatched history is not evidence of an empty domain. */ }
+    }
+  };
+  const ensurePolicyCoverage = async (force = false, proposedAuthority = semanticActionAuthorityDraft) => {
+    const sources = authoringConversation?.policySources;
+    const source = activePolicySource(sources);
+    if (!source || !input.authoringChat || !modelAssistSession) return undefined;
+    let reviewingSourceCounters = false;
+    try {
+      policySourceInspection = undefined;
+      policySourceInspection = await runWithProgress("Checking current review source", () =>
+        inspectPolicyReviewSource(context.lock, input.schemaInspector));
+      reviewingSourceCounters = true;
+      await reviewCompiledSourceCounters();
+    }
+    catch (error) {
+      assertRunning(error);
+      policyFailure = redactCliErrorMessage(error instanceof Error ? error.message : String(error));
+      policyReport = undefined;
+      if (reportedSourceCounterFailure !== policyFailure) {
+        reportedSourceCounterFailure = policyFailure;
+        input.authoringChat.rememberDetails(reviewingSourceCounters ? "SOURCE COUNTER REVIEW PENDING" : "SAVED REVIEW PREREQUISITE UNAVAILABLE", [policyFailure,
+          "The saved rules and active authority are unchanged. Reopen this job after resolving the source review or checkpoint prerequisite."]);
+      }
+      return undefined;
+    }
+    await refreshPolicyCoverageEvidence(proposedAuthority);
+    const state: PreparedPolicyReviewState = { attemptKey: policyAttemptKey, report: policyReport };
+    try {
+      const result = await ensurePreparedPolicyCoverage({ projectRoot: input.projectRoot, sources: sources!,
+        modelSession: modelAssistSession, operatorSession: input.session, currentDraft: () => currentPolicyCoverageDraft(proposedAuthority),
+        authorityDigest: canonicalJsonDigest({ read: explorationBoundaryCandidateDigest(context.candidate),
+          action: proposedAuthority?.digest ?? null }),
+        authority: proposedAuthority, countingDomain,
+        clarifications: authoringConversation?.turns.filter(turn => turn.kind === "clarification") ?? [],
+        ...(resumeSelected && activeResume ? { savedReviewEpisode: { job: activeResume.job_intent,
+          subject: proposedAuthority
+            ? `disabled Action ${proposedAuthority.authority.name} with Read ${context.candidate.pack.name}`
+            : `Read candidate ${context.candidate.pack.name}` } } : {}),
+        assertCurrent: async permit => {
+          assertRunning();
+          if (activeResume) await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, undefined, { permit });
+          await reloadReadReviewForModelRevision(input.projectRoot, context, semanticActionAuthorityDraft);
+        }, progress: runWithProgress, state, force });
+      policyAttemptKey = state.attemptKey;
+      policyReport = state.report;
+      if (result.report) policyFailure = undefined;
+      return result;
+    } catch (error) {
+      assertRunning(error);
+      if (isAuthoringGenerationStop(error)) throw error;
+      policyAttemptKey = state.attemptKey;
+      policyReport = undefined;
+      const resolved=error instanceof ReviewResolutionError?error:error instanceof PolicySourceChangedError||error instanceof AuthoringReviewSubjectError
+        ?new ReviewResolutionError(error.code,planReviewPrerequisite('currentness',null,null),
+          'A competing source or review changed during save. Reopen current Review; no stale result was saved.')
+        :unknownReviewResolution();
+      const publicPlan=operatorReviewResolution(resolved.plan);
+      policyFailure = redactCliErrorMessage(resolved.message);
+      input.authoringChat.rememberDetails("RULES COVERAGE UNAVAILABLE", [policyFailure,
+        `Next supported step: ${publicPlan.recommended??'inspect the saved review'}.`,
+        "The draft and source snapshot remain saved. No rule was dropped and no authority was activated."]);
+      input.authoringChat.checkpoint("Rules check remains pending", [policyFailure,
+        publicPlan.recommended==='scoped_correction'
+          ? "A bounded correction may be available within the existing review episode; the complete replacement must validate."
+          : publicPlan.recommended==='source_transaction_scope_review'
+            ? "Use the exact local source-outcome scope decision. Another model opinion cannot establish owner meaning."
+            : "Inspect the saved review and its actual prerequisite before starting another model episode."], "warning");
+      return { source, key: state.attemptKey ?? "", draftRecord: currentPolicyCoverageDraft(proposedAuthority), report: undefined };
+    }
+  };
+  /** A requested Source repair uses the existing complete report producer. The
+   * original canonical episode supplies the nomination; the Action producer
+   * supplies only a confined proposal. A second current complete review occurs
+   * after that producer returns, never inside its still-running tool callback. */
+  const prepareActionSourceRepair = async (before: ActionRuleModelDraftV1, catalog: BuiltActionRuleAuthoringCatalogV1, checkpoint?: import("./action-rule-authoring-checkpoint.js").ActionRuleAuthoringCheckpoint) => {
+    const sources = authoringConversation?.policySources;
+    if (!sources || !modelAssistSession || !semanticActionAuthorityDraft) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
+    const workContext = (): ActionWorkUnitContext => ({ readBoundary: context.candidate,
+      readBoundaryDigest: explorationBoundaryCandidateDigest(context.candidate), builtCatalog: catalog, policySources: sources });
+    if (!actionInspection) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
+    const actionSchema = schemaFingerprintForInspection(actionInspection);
+    const actionRole = rolePostureFingerprint(actionInspection);
+    const assertSourceCurrent = async () => {
+      await assertAuthoringResumeCurrent(undefined, true);
+      await reloadReadReviewForModelRevision(input.projectRoot, context, semanticActionAuthorityDraft);
+      if (await policySourceSavedDigest(input.projectRoot, sources.id) !== canonicalJsonDigest(sources)) throw new PolicySourceChangedError();
+      const current = await (input.actionProjectInspector ?? inspectActionProject)(input.projectRoot, process.env);
+      if (schemaFingerprintForInspection(current) !== actionSchema || rolePostureFingerprint(current) !== actionRole) {
+        throw new ActionWorkUnitSourcePendingError("currentness");
+      }
+    };
+    await assertSourceCurrent();
+    const savedRepair = checkpoint?.source_repair ?? (pendingActionRevision?.checkpoint ?? resumeAction?.checkpoint)?.source_repair;
+    let originalPrepared: ReturnType<typeof currentPolicyCoverageDraft>;
+    let originalKey: `sha256:${string}`;
+    let originalAssessment: Extract<import("./action-authoring-work-unit-contract.js").ActionWorkUnitFidelityAssessment, { state: "representation_mismatch" }>;
+    if (savedRepair) {
+      // Reconstruct from the same retained episode. Starting another review is
+      // not a substitute for missing original provenance or exhausted attempts.
+      policySourceInspection = await inspectPolicyReviewSource(context.lock, input.schemaInspector);
+      await refreshPolicyCoverageEvidence();
+      originalPrepared = currentPolicyCoverageDraft();
+      const episodes = sources.coverage_episodes?.filter(e => e.id === savedRepair.coverage_provenance?.episode_id) ?? [];
+      if (episodes.length !== 1) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
+      originalKey = episodes[0]!.context as `sha256:${string}`;
+      originalAssessment = reconstructOriginalActionWorkUnitSourceAssessment({ context: workContext(), savedRepair,
+        originalPreparedDraft: originalPrepared, expectedCoverageContextKey: originalKey,
+        currentSourceSessionDigest: canonicalJsonDigest(sources) }).assessment;
+    } else {
+      const checked = await ensurePolicyCoverage();
+      if (!checked?.report) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
+      originalPrepared = structuredClone(checked.draftRecord); originalKey = checked.key as `sha256:${string}`;
+      const matches = (sources.coverage_episodes ?? []).filter(e => e.context === originalKey)
+        .flatMap(e => e.submissions.filter(s => s.validated && s.completed_at).map(s => ({ context_key: originalKey,
+          episode_id: e.id, submission_number: s.number })));
+      if (matches.length !== 1) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
+      const result = assessActionWorkUnitSource({ context: workContext(), currentAction: before, preparedDraft: originalPrepared,
+        report: checked.report, expectedReportDigest: canonicalJsonDigest(checked.report),
+        sourceAnswerHistoryDigest: canonicalJsonDigest(sources.operator_messages ?? []), coverageProvenance: matches[0]! });
+      // Only this finite, canonically nominated subject/predicate repair uses
+      // the confined work-unit publisher. Other existing requirement editors
+      // retain their ordinary whole-review validation and operator diff review;
+      // absence of this nomination is never a Source-fidelity PASS.
+      if (result.assessment.state !== "representation_mismatch") return undefined;
+      originalAssessment = result.assessment;
+    }
+    const revalidate = async (saved: import("./action-rule-authoring-checkpoint.js").ActionRuleSourceRepairCheckpoint,
+      current: ActionWorkUnitContext) => {
+      await assertSourceCurrent();
+      return reconstructOriginalActionWorkUnitSourceAssessment({ context: { ...current, policySources: sources }, savedRepair: saved,
+        originalPreparedDraft: originalPrepared, expectedCoverageContextKey: originalKey,
+        currentSourceSessionDigest: canonicalJsonDigest(sources) }).assessment;
+    };
+    return {
+      producer: { workUnitCorrection: { draft: before, assessment: originalAssessment },
+        workUnitSourceReview: originalAssessment.source_review, revalidateSourceRepair: revalidate },
+      finish: async (revised: ModelActionRuleDraftResult) => {
+        await assertSourceCurrent();
+        const proposed = await actionRuleAuthorityDraftFromCompiled(input.projectRoot, revised.compiled, undefined,
+          { nextBoundary: context.candidate, inspection: actionInspection! });
+        const checked = await ensurePolicyCoverage(false, proposed);
+        if (!checked?.report) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
+        const current = assessActionWorkUnitSource({ context: workContext(), currentAction: revised.compiled.draft,
+          preparedDraft: checked.draftRecord, report: checked.report, expectedReportDigest: canonicalJsonDigest(checked.report),
+          sourceAnswerHistoryDigest: canonicalJsonDigest(sources.operator_messages ?? []) });
+        // Unrelated/future duties remain visible and do not require drafting
+        // the entire agenda to correct this exact current disabled component.
+        // No unresolved claim about this Action becomes a completed repair.
+        if (current.scope.caller_reference_pending_bindings.length || !current.scope.current_passage_indexes.length || current.scope.current_passage_indexes.some(index =>
+          ["conflict", "unsupported", "needs_decision"].includes(checked.report!.passages[index]!.disposition))) {
+          throw new ActionWorkUnitSourcePendingError(current.assessment.state === "owner_meaning_pending" ? "owner_meaning" : "assessment_incomplete");
+        }
+        const status = validateActionWorkUnitAssessment(workContext(), revised.compiled.draft, current.assessment).status;
+        await assertSourceCurrent();
+        if (!policySourceInspection) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
+        return { proposed, status, expectedSource: { id: sources.id, digest: canonicalJsonDigest(sources),
+          reader_schema: schemaFingerprintForInspection(policySourceInspection.inspection),
+          reader_role: rolePostureFingerprint(policySourceInspection.inspection), action_schema: actionSchema, action_role: actionRole } };
+      },
+    };
   };
   let semanticActionActivation: ActionRuleAuthorityActivationV1 | undefined;
   let semanticExecutionEnabled = false;
@@ -6972,6 +7253,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         semanticActionRevisionBaseline = undefined;
         semanticActionRevisionCatalog = undefined;
         let resumedActivatedAt: string | undefined;
+        let currentActionAuthorityDigest: string | undefined;
         let disclosureBaseline: Awaited<ReturnType<typeof loadActionRuleRevisionBaseline>>;
         let jointApprovalRepair = false;
         const resumedOutcome = resumePastPlanning && !retainedReadEdit
@@ -6989,6 +7271,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           });
           if (resumedDraft) {
             semanticActionModelDraft = resumedDraft.draft;
+            currentActionAuthorityDigest = resumedDraft.authorityDigest;
             semanticActionRevisionCatalog = resumedDraft.catalog;
             resumedActivatedAt = resumedDraft.activatedAt;
             try { assertJointApprovalLimitsPreserved([jobIntent.trim()], resumedDraft.draft.approval); }
@@ -7022,6 +7305,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
               );
             }
             semanticActionRevisionBaseline = revisionBaseline.draft;
+            currentActionAuthorityDigest = revisionBaseline.authorityDigest;
             disclosureBaseline = revisionBaseline;
             if (revalidatedActionOutcomes) {
               // Compile unchanged business AST against freshly inspected structure.
@@ -7125,6 +7409,20 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           ]);
         }
         let ruleSession = boundaryAuthoringModelSession(mappingSession, input.authoringChat);
+        const currentCheckpoint = preserveProgramRevisionAgenda ? pendingActionRevision?.checkpoint
+          : semanticIndex === partialActionIndex ? partialActionCheckpoint : undefined;
+        let sourceRepair: Awaited<ReturnType<typeof prepareActionSourceRepair>> | undefined;
+        if (!semanticActionModelResult && semanticActionRevisionBaseline
+          && (pendingActionRevision?.coverage_repair || currentCheckpoint?.source_repair)) {
+          // Use the exact saved disabled parent and complete program. A new
+          // one-Action compilation is not the old Source review's subject.
+          const originalAuthority = (await listActionRuleAuthorityDrafts(input.projectRoot))
+            .find(authority => authority.digest === currentActionAuthorityDigest);
+          if (!originalAuthority) throw new ActionWorkUnitSourcePendingError("currentness");
+          semanticActionAuthorityDraft = originalAuthority;
+          modelAssistSession = ruleSession;
+          sourceRepair = await prepareActionSourceRepair(semanticActionRevisionBaseline, semanticActionCatalog!, currentCheckpoint);
+        }
         let actionRuleOperatorRetryUsed = false;
         let semanticScopeIssue: {
           kind: "paused" | "blocked";
@@ -7191,8 +7489,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
                       ? programRevisionAgenda!.intents!.slice(programRevisionAgenda!.completed_outcomes?.length ?? 0)
                       : actionIntents.slice(semanticIndex)), ...(pendingActionRevision ? [pendingActionRevision.instruction] : [])] } } : {}),
                 builtCatalog: semanticActionCatalog!,
-                ...(partialActionCheckpoint && semanticIndex === partialActionIndex
-                  ? { checkpoint: partialActionCheckpoint, revalidateSavedComponents: true } : {}),
+                ...(sourceRepair?.producer ?? {}),
+                ...(currentCheckpoint ? { checkpoint: currentCheckpoint, revalidateSavedComponents: true } : {}),
                 onCheckpoint: async (checkpoint) => withProjectAuthorityMutation(input.projectRoot, async permit => {
                   assertRunning();
                   await assertAuthoringResumeCurrent(actionFreshness, true, permit);
@@ -7473,7 +7771,6 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         if (!semanticActionModelResult) {
           throw new Error("ACTION_RULE_MODEL_DRAFT_INCOMPLETE: no validated semantic Action draft is available.");
         }
-        if (semanticIndex === partialActionIndex) partialActionCheckpoint = undefined;
         const reopened = semanticActionModelResult.revision?.reopened_draft;
         const reopenedIndex = reopened
           ? semanticActionDrafts.findIndex((entry) => entry.result.compiled.rule.outcome === reopened.outcome)
@@ -7495,6 +7792,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         semanticActionModelDraft = semanticActionModelResult.compiled.draft;
         if (semanticActionRevisionBaseline && !resumedOutcome && !revalidatedActionOutcomes
           && semanticActionPolicyDigest(semanticActionRevisionBaseline) === semanticActionPolicyDigest(semanticActionModelDraft)) {
+          if (sourceRepair) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
           const resolution = await confirmUnchangedActionRequest(input.session, semanticIntent, semanticActionRevisionBaseline);
           if (resolution) {
             pendingActionRevision = undefined;
@@ -7639,7 +7937,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         }
         // Persist completed outcomes before starting another one. They remain
         // disabled and will all be rebound to the final reviewed Read revision.
-        const saved = await actionRuleAuthorityDraftFromCompiled(input.projectRoot, semanticActionModelResult.compiled, undefined, {
+        const sourceChecked = await sourceRepair?.finish(semanticActionModelResult);
+        if (sourceChecked) semanticActionModelResult.work_unit_source_review = sourceChecked.status;
+        const saved = sourceChecked?.proposed ?? await actionRuleAuthorityDraftFromCompiled(input.projectRoot, semanticActionModelResult.compiled, undefined, {
           nextBoundary: mappingBoundary,
           inspection: actionInspection!,
           revalidateMetadata: true,
@@ -7649,7 +7949,11 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           await persistAuthoringResume("action_drafting");
           if (resumePersistenceBlocked) throw checkpointSaveFailure("The validated candidate identity");
         }
-        await saveSemanticActionDraft(saved);
+        await saveSemanticActionDraft(saved, sourceChecked?.expectedSource);
+        semanticActionAuthorityDraft = saved;
+        // Do not clear an accepted proposal's checkpoint before the separate
+        // complete Source review and coordinated Action save have succeeded.
+        if (semanticIndex === partialActionIndex) partialActionCheckpoint = undefined;
         if (pendingActionRevision?.preparation && pendingActionRevision.outcome === semanticActionModelResult.compiled.rule.outcome) pendingActionRevision = undefined;
         if (reopened) {
           const priorIntent = semanticActionDrafts[reopenedIndex]!.intent;
@@ -9101,177 +9405,6 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       ]);
     }
   };
-  let policyAttemptKey: string | undefined;
-  let policyReport: { key: string; report: PolicyCoverage } | undefined;
-  let policyFailure: string | undefined;
-  let receiptConfigurationEvidence: Parameters<typeof policyCoverageDraft>[0]["receiptConfiguration"];
-  let executionReviewEvidence: Parameters<typeof policyCoverageDraft>[0]["executionReview"];
-  let countingDomain: CountingOutcomeDomain | undefined;
-  let policySourceInspection: Awaited<ReturnType<typeof inspectPolicyReviewSource>> | undefined;
-  const currentPolicyCoverageDraft = () => policyCoverageDraft({ client: intendedClient, read: context.candidate, decisions: context.bundle.decisions,
-    inputStoreDigest:scopedDisclosureStoreDigest(undefined,context.bundle.mutation_bindings.authoring),
-    ...(authoringConversation?.policySources?.scoped_disclosure_reviews?.length
-      ? {reviewStoreDigest:scopedDisclosureStoreDigest(countingDomain,context.bundle.mutation_bindings.authoring)} : {}),
-    reviewedVersionFields, policySources: authoringConversation?.policySources, executionReview: executionReviewEvidence, receiptConfiguration: receiptConfigurationEvidence, countingDomain,
-    operatorClarifications: authoringConversation?.turns.filter(turn => turn.kind === "clarification"
-      && authoringConversation?.policySources?.operator_messages?.includes(turn.answer)).map(turn => ({ question: turn.question, answer: turn.answer })) ?? [],
-    ...(modelAssistSession ? { authoringSession: { provider: modelAssistSession.provider, model: modelAssistSession.model } } : {}),
-    ...(policySourceInspection ? { source: policySourceInspection } : {}),
-    actions: semanticActionDrafts.map((entry) => entry.result.compiled), authority: semanticActionAuthorityDraft });
-  const sourceCounterReviewAttempts = new Map<string, { failure?: string }>();
-  let reportedSourceCounterFailure: string | undefined;
-  const reviewCompiledSourceCounters = async () => {
-    const authority = semanticActionAuthorityDraft, inspection = policySourceInspection?.inspection, reviewedContext = context;
-    if (!authority || !inspection) return;
-    const checkpoint = await readBoundaryAuthoringResumeState(input.projectRoot, boundaryAuthoringResumeBinding(reviewedContext.bundle));
-    const durableReviews = (checkpoint.status === "ready" || checkpoint.status === "stale")
-      && checkpoint.value.binding.boundary_name === reviewedContext.candidate.pack.name ? boundaryAuthoringVersionReviews(checkpoint.value) : [];
-    reviewedVersionFields = reviewedVersionFields.filter(review => durableReviews.some(saved => canonicalJsonDigest(saved) === canonicalJsonDigest(review)));
-    const assertCurrent = async () => {
-      assertRunning();
-      await reloadReadReviewForModelRevision(input.projectRoot, reviewedContext, authority);
-    };
-    await assertCurrent();
-    const readDigest = explorationBoundaryCandidateDigest(reviewedContext.candidate);
-    let pending = false;
-    for (const rule of authority.authority.rules) {
-      const effects = [rule.effect_envelope, ...(rule.effect_envelope.atomic_updates ?? [])];
-      for (const effect of effects) {
-        if (effect.operation !== "update" || effect.version_advance?.strategy !== "integer_increment") continue;
-        const evidenceForTarget = () => {
-          const current = currentPolicyCoverageDraft().runner_evidence.actions[rule.rule.outcome]?.effect;
-          return current && [current, ...(current.atomic_updates ?? [])].find(entry => entry.target_resource === effect.target_resource
-            && entry.target_binding === effect.target_binding)?.source_counter_maintenance;
-        };
-        if (evidenceForTarget()) continue;
-        const key = canonicalJsonDigest({ read: readDigest, authority: authority.digest,
-          resource: effect.target_resource, field: effect.version_advance.column });
-        const attempted = sourceCounterReviewAttempts.get(key);
-        if (attempted?.failure) throw new Error(attempted.failure);
-        if (attempted) { pending = true; continue; }
-        const attempt: { failure?: string } = {};
-        sourceCounterReviewAttempts.set(key, attempt);
-        try {
-          const prepared = await reviewActionVersionField({ resource: effect.target_resource, field: effect.version_advance.column,
-            context: { readBoundary: reviewedContext.candidate, readBoundaryDigest: readDigest,
-              builtCatalog: buildActionRuleAuthoringCatalog({ boundary: reviewedContext.candidate, inspection, retainedCatalog: authority.authority.catalog }) },
-            inspection, generationLock: reviewedContext.lock, session: input.session, assertCurrent,
-            previousReview: reviewedVersionFields.find(review => review.resource === effect.target_resource),
-          });
-          if (!prepared) { pending = true; continue; }
-          const previousReviews = reviewedVersionFields, previousResume = activeResume;
-          try {
-            reviewedVersionFields = [...reviewedVersionFields.filter(review => review.resource !== prepared.review.resource), prepared.review];
-            // The exact compiled target must accept the proof without remapping
-            // its catalog or regenerating any business rule.
-            if (!evidenceForTarget()) throw new Error("ACTION_COUNTER_REVIEW_STALE: The compiled update no longer matches the reviewed counter. Revalidate the saved Action; no rule changed.");
-            await assertCurrent();
-            await persistAuthoringResume("authority_review");
-            if (resumePersistenceBlocked || !activeResume) throw checkpointSaveFailure("The source counter review");
-            const saved = await readBoundaryAuthoringResumeState(input.projectRoot, activeResume.binding);
-            if (saved.status !== "ready" || saved.value.revision_digest !== activeResume.revision_digest
-              || !boundaryAuthoringVersionReviews(saved.value).some(review => canonicalJsonDigest(review) === canonicalJsonDigest(prepared.review))) {
-              throw checkpointSaveFailure("The source counter review acknowledgement");
-            }
-          } catch (error) {
-            reviewedVersionFields = previousReviews;
-            activeResume = previousResume;
-            throw error;
-          }
-          await assertCurrent();
-        } catch (error) {
-          assertRunning(error);
-          attempt.failure = redactCliErrorMessage(error instanceof Error ? error.message : String(error));
-          throw new Error(attempt.failure);
-        }
-      }
-    }
-    await assertCurrent();
-    if (pending) throw new Error("ACTION_COUNTER_REVIEW_PENDING: The source owner has not confirmed every updated counter. The exact rules are retained; resume this job when the maintenance commitment can be reviewed.");
-  };
-  const ensurePolicyCoverage = async (force = false) => {
-    const sources = authoringConversation?.policySources;
-    const source = activePolicySource(sources);
-    if (!source || !input.authoringChat || !modelAssistSession) return undefined;
-    let reviewingSourceCounters = false;
-    try {
-      policySourceInspection = undefined;
-      policySourceInspection = await runWithProgress("Checking current review source", () =>
-        inspectPolicyReviewSource(context.lock, input.schemaInspector));
-      reviewingSourceCounters = true;
-      await reviewCompiledSourceCounters();
-    }
-    catch (error) {
-      assertRunning(error);
-      policyFailure = redactCliErrorMessage(error instanceof Error ? error.message : String(error));
-      policyReport = undefined;
-      if (reportedSourceCounterFailure !== policyFailure) {
-        reportedSourceCounterFailure = policyFailure;
-        input.authoringChat.rememberDetails(reviewingSourceCounters ? "SOURCE COUNTER REVIEW PENDING" : "SAVED REVIEW PREREQUISITE UNAVAILABLE", [policyFailure,
-          "The saved rules and active authority are unchanged. Reopen this job after resolving the source review or checkpoint prerequisite."]);
-      }
-      return undefined;
-    }
-    receiptConfigurationEvidence = await authoringReceiptConfiguration(input.projectRoot, semanticActionAuthorityDraft?.authority.rules.map(r => r.rule.source) ?? [], process.env);
-    executionReviewEvidence = undefined;
-    if (semanticActionAuthorityDraft) {
-      try {
-        const execution = await readSemanticSupervisedExecutionState({ projectRoot: input.projectRoot, env: process.env });
-        const actionDigest = semanticActionAuthorityDraft.authority.action_boundary.digest;
-        const matching = execution.policies.filter(policy => policy.action_boundary_digest === actionDigest);
-        if (matching.length) executionReviewEvidence = { action_digest: actionDigest, policy_digest: canonicalJsonDigest({ enabled: execution.enabled, policies: matching }),
-          enabled_outcomes: execution.enabled ? matching.map(policy => policy.outcome).sort() : [] };
-      } catch { /* Unavailable or changed deployment is not evidence of enabled execution. */ }
-    }
-    countingDomain = undefined;
-    if (semanticActionAuthorityDraft) {
-      try { countingDomain = await withCountingOutcomeDomain(input.projectRoot, semanticActionAuthorityDraft, async domain => domain); }
-      catch { /* Missing, busy or mismatched history is not evidence of an empty domain. */ }
-    }
-    const state: PreparedPolicyReviewState = { attemptKey: policyAttemptKey, report: policyReport };
-    try {
-      const result = await ensurePreparedPolicyCoverage({ projectRoot: input.projectRoot, sources: sources!,
-        modelSession: modelAssistSession, operatorSession: input.session, currentDraft: currentPolicyCoverageDraft,
-        authorityDigest: canonicalJsonDigest({ read: explorationBoundaryCandidateDigest(context.candidate),
-          action: semanticActionAuthorityDraft?.digest ?? null }),
-        authority: semanticActionAuthorityDraft, countingDomain,
-        clarifications: authoringConversation?.turns.filter(turn => turn.kind === "clarification") ?? [],
-        ...(resumeSelected && activeResume ? { savedReviewEpisode: { job: activeResume.job_intent,
-          subject: semanticActionAuthorityDraft
-            ? `disabled Action ${semanticActionAuthorityDraft.authority.name} with Read ${context.candidate.pack.name}`
-            : `Read candidate ${context.candidate.pack.name}` } } : {}),
-        assertCurrent: async permit => {
-          assertRunning();
-          if (activeResume) await assertBoundaryAuthoringResumeCurrent(input.projectRoot, activeResume, undefined, { permit });
-          await reloadReadReviewForModelRevision(input.projectRoot, context, semanticActionAuthorityDraft);
-        }, progress: runWithProgress, state, force });
-      policyAttemptKey = state.attemptKey;
-      policyReport = state.report;
-      if (result.report) policyFailure = undefined;
-      return result;
-    } catch (error) {
-      assertRunning(error);
-      if (isAuthoringGenerationStop(error)) throw error;
-      policyAttemptKey = state.attemptKey;
-      policyReport = undefined;
-      const resolved=error instanceof ReviewResolutionError?error:error instanceof PolicySourceChangedError||error instanceof AuthoringReviewSubjectError
-        ?new ReviewResolutionError(error.code,planReviewPrerequisite('currentness',null,null),
-          'A competing source or review changed during save. Reopen current Review; no stale result was saved.')
-        :unknownReviewResolution();
-      const publicPlan=operatorReviewResolution(resolved.plan);
-      policyFailure = redactCliErrorMessage(resolved.message);
-      input.authoringChat.rememberDetails("RULES COVERAGE UNAVAILABLE", [policyFailure,
-        `Next supported step: ${publicPlan.recommended??'inspect the saved review'}.`,
-        "The draft and source snapshot remain saved. No rule was dropped and no authority was activated."]);
-      input.authoringChat.checkpoint("Rules check remains pending", [policyFailure,
-        publicPlan.recommended==='scoped_correction'
-          ? "A bounded correction may be available within the existing review episode; the complete replacement must validate."
-          : publicPlan.recommended==='source_transaction_scope_review'
-            ? "Use the exact local source-outcome scope decision. Another model opinion cannot establish owner meaning."
-            : "Inspect the saved review and its actual prerequisite before starting another model episode."], "warning");
-      return { source, key: state.attemptKey ?? "", draftRecord: currentPolicyCoverageDraft(), report: undefined };
-    }
-  };
   const originalPolicyStatements = () => [...new Set([
     canonicalJobIntent ?? jobIntent,
     activePolicySource(authoringConversation?.policySources)?.text,
@@ -9292,10 +9425,13 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       }, pendingActionRevision);
       await persistAuthoringResume("authority_review");
       if (resumePersistenceBlocked) throw checkpointSaveFailure("The edit request");
+      const sourceRepair = coverageRepair || pendingActionRevision?.checkpoint?.source_repair
+        ? await prepareActionSourceRepair(before.draft, entry.catalog) : undefined;
       const revised = await runWithProgress("Reconciling this action with your saved rules", () => (input.modelActionRuleGenerator ?? generateModelActionRuleDraft)({
         session: modelAssistSession!, intent: pendingActionRevision!.instruction, existingDraft: before.draft,
         ...(pendingActionRevision!.operator_statements ? { operatorStatements: pendingActionRevision!.operator_statements } : {}),
         ...(pendingActionRevision!.checkpoint ? { checkpoint: pendingActionRevision!.checkpoint } : {}),
+        ...(sourceRepair?.producer ?? {}),
         onCheckpoint: async checkpoint => {
           await assertAuthoringResumeCurrent({ revision: { outcome: before.rule.outcome, instruction,
             ...(operatorStatements ? { operator_statements: operatorStatements } : {}),
@@ -9365,6 +9501,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       }));
       if (revised.compiled.rule.outcome !== before.rule.outcome) throw new Error("The revision must preserve this exact outcome. No duplicate or active authority was changed.");
       if (semanticActionPolicyDigest(before.draft) === semanticActionPolicyDigest(revised.compiled.draft)) {
+        if (sourceRepair) throw new ActionWorkUnitSourcePendingError("assessment_incomplete");
         const resolution = await confirmUnchangedActionRequest(input.session, pendingActionRevision!.instruction, before.draft);
         if (!resolution) {
           await persistAuthoringResume("authority_review");
@@ -9384,7 +9521,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         ...diff, "Before:", ...JSON.stringify(before.draft, null, 2).split("\n"),
         "After:", ...JSON.stringify(revised.compiled.draft, null, 2).split("\n"),
       ]);
-      const saved = await actionRuleAuthorityDraftFromCompiled(input.projectRoot, revised.compiled, undefined, {
+      const sourceChecked = await sourceRepair?.finish(revised);
+      if (sourceChecked) revised.work_unit_source_review = sourceChecked.status;
+      const saved = sourceChecked?.proposed ?? await actionRuleAuthorityDraftFromCompiled(input.projectRoot, revised.compiled, undefined, {
         nextBoundary: context.candidate,
         inspection: actionInspection!,
       });
@@ -9393,7 +9532,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         compiled: compileActionRuleModelDraft({ draft: item === entry ? revised.compiled.draft : item.result.compiled.draft,
           builtCatalog: nextCatalog, readBoundary: context.candidate, readBoundaryDigest: committed.candidate_digest }),
       }));
-      await saveSemanticActionDraft(saved);
+      await saveSemanticActionDraft(saved, sourceChecked?.expectedSource);
       savedRevision = saved.digest;
       for (const item of revalidated) {
         item.item.result = { ...item.result, compiled: item.compiled };
@@ -9434,7 +9573,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         throw new AskError("ASK_CANCELLED", "Saved Action retained; authoring is paused after a follow-up save failure.", 499);
       }
       chat.rememberDetails("ACTION REVISION NOT SAVED", [diagnostic, "The existing draft and active authority are unchanged."]);
-      chat.checkpoint("Action revision needs attention", [diagnostic, "The draft is preserved. Continue with the model or inspect /details; no new job is needed."], "warning");
+      const stopped = registeredAuthoringFailure(error);
+      chat.checkpoint("Action revision needs attention", [diagnostic, stopped?.next_action
+        ?? "The draft is preserved. Inspect /details and the actual pending prerequisite; no new model attempt was inferred."], "warning");
       return false;
     }
   };
