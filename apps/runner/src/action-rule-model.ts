@@ -790,6 +790,13 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
           builtCatalog: context.builtCatalog,
           verification: submissions.verification as VerificationSubmission | undefined,
         });
+        // This typed Source refusal consumed the complete validation call. Save
+        // its untrusted components and original nomination through the normal
+        // checkpoint; it is not a validated Action or retry permission. A save
+        // failure remains infrastructure failure, never model feedback.
+        if (error instanceof ActionWorkUnitFidelityError) {
+          await saveCheckpoint().catch(failure => { infrastructureFailure = failure; throw failure; });
+        }
         return { ...phaseRefusal("Repair the named schema issue yourself. Choose internal draft names and aliases; never ask the operator to supply them. Ask only about unknown business meaning or policy, and do not broaden authority."), value: { ...snapshot(), status: "needs_repair" } };
       }
     },
