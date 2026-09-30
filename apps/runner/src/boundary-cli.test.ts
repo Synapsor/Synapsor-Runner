@@ -17436,7 +17436,7 @@ describe("saved post-edit review uses reader evidence after writer setup", () =>
 
 
 describe("public saved-job connection recovery control", () => {
-  it.each(["pause", "answer", "decline", "source-drift", "competing"] as const)("Phase1 public Read assistance persists its actual question and current answer: %s", async mode => {
+  it.each(["pause", "answer", "decline", "source-drift", "competing", "registered-refusal", "diagnostic-refusal"] as const)("Phase1 public Read assistance persists its actual question and current answer: %s", async mode => {
     const f = await staleSemanticRevalidationFixture();
     try {
       const binding = boundaryAuthoringResumeBinding((await loadBoundaryReviewContext(f.root)).bundle);
@@ -17491,7 +17491,12 @@ describe("public saved-job connection recovery control", () => {
         return "The scheduled or completed stage of the selected visit.";
       };
       const noAction = vi.fn(async () => { throw new Error("This read-only fixture must not draft Actions."); });
-      const run = () => f.run(noAction, undefined, { modelReadWorkloadGenerator: args => generateModelReadWorkload({ ...args, dependencies: { requestJson } }) });
+      const run = () => f.run(noAction, undefined, { modelReadWorkloadGenerator: args => {
+        if (reopened && mode === "registered-refusal") throw new Error("READ_WORKLOAD_ASSISTANCE_REQUEST_REPEATED: The saved assistance allowance is exhausted.");
+        if (reopened && mode === "diagnostic-refusal") throw new ReadWorkloadDraftError([{ attempt: 1, phase: "follow-up", category: "validation",
+          code: "READ_WORKLOAD_MECHANICAL_QUESTION_REPEATED", reasons: ["The exact mechanical question repeated."] }]);
+        return generateModelReadWorkload({ ...args, dependencies: { requestJson } });
+      } });
       await run();
       expect(requestJson).toHaveBeenCalledTimes(1); expect(sawWaiting).toBe(1);
       const paused = await readBoundaryAuthoringResumeState(f.root, binding);

@@ -15,7 +15,7 @@ import { readActivationImpact, readActivationImpactLines } from "./read-activati
 import { authoringReceiptConfiguration } from "./authoring-receipt-configuration.js";
 import type { PolicySourceSession } from "./authoring-policy-source.js";
 import { ensurePreparedPolicyCoverage, type PreparedPolicyReviewState } from "./authoring-prepared-policy-review.js";
-import { operatorReviewResolution, planReviewPrerequisite, ReviewResolutionError, unknownReviewResolution } from './authoring-review-resolution.js';
+import { operatorReviewResolution, planAuthoringRefusal, planReviewPrerequisite, ReviewResolutionError, unknownReviewResolution } from './authoring-review-resolution.js';
 import { reviewUnestablishedCounting } from "./authoring-counting-decision-review.js";
 import { reviewHistorySelectorChange } from "./action-history-selector-review.js";
 import { withCountingOutcomeDomain, type CountingOutcomeDomain } from "./authoring-counting-domain.js";
@@ -3424,6 +3424,19 @@ type BoundaryModelDraftFailure =
   | { kind: "read_diagnostic"; diagnostics: ReadWorkloadDiagnostic[] }
   | { kind: "reviewed_grammar"; blockers: string[]; details?: string[] };
 
+/** Keep exact durable producer stops out of the generic model/fallback menu.
+ * The transport classifier remains authoritative; this is only a safe stopped
+ * projection of a known code, not permission to recover or regenerate. */
+function registeredAuthoringFailure(error: unknown) {
+  if (isAuthoringGenerationStop(error)) return undefined;
+  const code = error instanceof ReadWorkloadDraftError
+    ? error.diagnostics.at(-1)?.code
+    : typeof (error as { code?: unknown } | null)?.code === "string"
+      ? (error as { code: string }).code
+      : error instanceof Error ? /^([A-Z][A-Z0-9_]+):/u.exec(error.message)?.[1] : undefined;
+  return planAuthoringRefusal(code);
+}
+
 function recoverableActionModelDraftFailure(error: unknown): BoundaryModelDraftFailure | undefined {
   const providerFailure = recoverableBoundaryProviderFailure(error);
   if (providerFailure) return providerFailure;
@@ -3440,6 +3453,7 @@ function recoverableActionModelDraftFailure(error: unknown): BoundaryModelDraftF
 }
 
 function recoverableActionRuleModelDraftFailure(error: unknown): BoundaryModelDraftFailure | undefined {
+  if (isAuthoringGenerationStop(error) || registeredAuthoringFailure(error)) return undefined;
   const providerFailure = recoverableBoundaryProviderFailure(error);
   if (providerFailure) return providerFailure;
   if (!(error instanceof Error)) return undefined;
@@ -3475,6 +3489,7 @@ function actionRuleModelFailureSummary(message: string): string {
 }
 
 function recoverableReadModelDraftFailure(error: unknown): BoundaryModelDraftFailure | undefined {
+  if (isAuthoringGenerationStop(error) || registeredAuthoringFailure(error)) return undefined;
   if (error instanceof ReadWorkloadDraftError) return { kind: "read_diagnostic", diagnostics: error.diagnostics };
   const providerFailure = recoverableBoundaryProviderFailure(error);
   if (providerFailure) return providerFailure;
@@ -6734,6 +6749,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         assertRunning(error);
         if (error instanceof ReadWorkloadAssistancePausedError) return boundaryAssistResult(boundaryAssistBackNotice(
           "The exact Read question remains saved and unanswered. Reopen this job to answer or explicitly decline it; no replacement generation or authority was inferred."));
+        const stopped = registeredAuthoringFailure(error);
+        if (stopped) return boundaryAssistResult(boundaryAssistBackNotice(`${stopped.code}: ${stopped.next_action}`));
         failure = recoverableReadModelDraftFailure(error);
         if (!failure) throw error;
       }
@@ -7395,6 +7412,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
                   : "Reopen Agent job to retry with the reviewed scope. Use /details for the exact blockers.",
               });
             }
+            const stopped = registeredAuthoringFailure(error);
+            if (stopped) return boundaryAssistResult(boundaryAssistBackNotice(`${stopped.code}: ${stopped.next_action}`));
             failure = recoverableActionRuleModelDraftFailure(error);
             if (!failure) throw error;
           }

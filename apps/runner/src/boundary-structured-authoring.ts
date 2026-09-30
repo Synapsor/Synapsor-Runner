@@ -38,6 +38,7 @@ import { cliCommandName } from "./cli-command-meta.js";
 import { redactCliErrorMessage } from "./cli-logging.js";
 import { assertKnownOptions, optionalArg } from "./cli-options.js";
 import { shellQuote } from "./cli-format.js";
+import { planAuthoringRefusal } from "./authoring-review-resolution.js";
 import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 import { assertReadAuthoringBindings, type ReadAuthoringBindings } from "./control-policy-record.js";
 import { preparedReadAuthoringDraft, readAuthoringCatalog } from "./control-policy-read-authoring.js";
@@ -1020,6 +1021,8 @@ function structuredErrorMessage(error: unknown, code: string): string {
 }
 
 function structuredErrorNextAction(code: string): string | undefined {
+  const stopped = planAuthoringRefusal(code);
+  if (stopped) return stopped.next_action;
   if (code === "ACTION_VERSION_REVIEW_TERMINAL_REQUIRED") {
     return "Run the counter review in a real operator terminal. The typed draft and --json do not supply source-owner consent; no draft-field correction is required by this refusal.";
   }

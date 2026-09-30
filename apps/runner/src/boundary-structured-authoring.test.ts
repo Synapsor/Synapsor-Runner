@@ -251,7 +251,11 @@ describe("structured boundary authoring", () => {
 
   it("returns a bounded JSON failure envelope instead of leaking an input-path error", async () => {
     const root = await project(["billing.pause"]);
+    let output = "";
+    vi.spyOn(process.stdout, "write").mockImplementation(chunk => { output += String(chunk); return true; });
     await expect(run(["--project-root", root, "--draft", "missing.json", "--json"])).resolves.toBe(2);
+    expect(JSON.parse(output)).toMatchObject({ ok: false, code: "STRUCTURED_DRAFT_INPUT_UNAVAILABLE",
+      next_action: expect.stringContaining("exact local input file"), source_database_changed: false, active_authority_changed: false });
     expect(mocked.commit).not.toHaveBeenCalled();
   });
 
