@@ -2,8 +2,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { onboard } from "./guided-start.js";
-import { structuredBoundaryAuthoringCommand } from "./boundary-structured-authoring.js";
+import { onboard, start } from "./guided-start.js";
 import { readBoundaryDraftExchange, writeBoundaryDraftExchange } from "./boundary-draft-bundle.js";
 import { loadBoundaryReviewContext } from "./boundary-commands.js";
 import { readActionRuleAuthorityDraft } from "./action-rule-authority.js";
@@ -34,7 +33,7 @@ async function fixture() {
   vi.spyOn(process.stdout, "write").mockImplementation(chunk => { output += String(chunk); return true; });
   expect(await onboard(["db", "--project-root", root, "--from-env", "EXCHANGE_OWNED_READ_URL", "--schema", "studio", "--json"],
     { interactive: false, schemaInspector: inspector })).toBe(0);
-  const run = async (args: string[]) => { output = ""; const exit = await structuredBoundaryAuthoringCommand(["--project-root", root, ...args, "--json"], inspector); return { exit, output: JSON.parse(output) }; };
+  const run = async (args: string[]) => { output = ""; const exit = await start(["--project-root", root, ...args, "--json"], { interactive: false, schemaInspector: inspector }); return { exit, output: JSON.parse(output) }; };
   return { root, inspector, run };
 }
 
