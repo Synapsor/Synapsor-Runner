@@ -19,6 +19,10 @@ const finding=(error:unknown,component='/passages/0')=>coverageFinding(error,com
 const feedback=(findings:CoverageFinding[],limited=false):CoverageFeedback=>({
   context:canonicalJsonDigest('derived current review'),findings,limited,
   unevaluated:['complete review and persistence'],complete_validation:false});
+// Inventory diagnostic literals, not similarly named TypeScript declarations.
+// Both an exact code value and a message/template prefix remain discoverable.
+const durableProducerCodes=(source:string)=>[...source.matchAll(/["'`]\b((?:READ_WORKLOAD_ASSISTANCE_CHECKPOINT_|READ_RELATIONSHIP_|ACTION_SOURCE_REPAIR_|ACTION_WORK_UNIT_|STRUCTURED_DRAFT_BUNDLE_|STRUCTURED_DRAFT_SUCCESSOR_)[A-Z_]+)(?=[:"'`])/gu)]
+  .map(match=>match[1]!);
 
 describe('shared saved-review refusal resolution',()=>{
   it('routes the same coupling family by typed current cause rather than its broad policy label',()=>{
@@ -224,11 +228,19 @@ describe('finite durable authoring refusal inventory',()=>{
     const files=['read-workload-assistance-checkpoint.ts','read-workload-model.ts','action-rule-model.ts',
       'action-authoring-work-unit-contract.ts','boundary-draft-bundle.ts','boundary-draft-successor.ts','boundary-structured-authoring.ts'];
     const sources=await Promise.all(files.map(file=>fs.readFile(new URL(file,import.meta.url),'utf8')));
-    const pattern=/\b(?:READ_WORKLOAD_ASSISTANCE_CHECKPOINT_[A-Z_]+|READ_RELATIONSHIP_[A-Z_]+|ACTION_SOURCE_REPAIR_[A-Z_]+|ACTION_WORK_UNIT_[A-Z_]+|STRUCTURED_DRAFT_BUNDLE_[A-Z_]+|STRUCTURED_DRAFT_SUCCESSOR_[A-Z_]+)\b/gu;
-    const codes=[...new Set(sources.flatMap(source=>[...source.matchAll(pattern)].map(match=>match[0])))].sort();
+    const codes=[...new Set(sources.flatMap(durableProducerCodes))].sort();
     expect(codes.length).toBeGreaterThan(20);
     expect(codes.filter(code=>!isRegisteredAuthoringRefusalCode(code))).toEqual([]);
     expect(Object.keys(REVIEW_RESOLUTION_HANDLERS).sort()).toEqual(['source_transaction_review','source_transaction_scope_review',
       'scoped_disclosure_review','counting_review','scoped_correction','reinspection'].sort());
+  });
+
+  it('excludes a loader-field declaration without hiding an uninventoried diagnostic',()=>{
+    const source='export const ACTION_WORK_UNIT_BINDING_LOADER_FIELDS = ["source"]; '
+      + 'const code = "ACTION_WORK_UNIT_SOURCE_CONTEXT_CHANGED"; '
+      + 'throw new Error(`ACTION_WORK_UNIT_NEW_REFUSAL: keep work pending`);';
+    expect(durableProducerCodes(source)).toEqual(['ACTION_WORK_UNIT_SOURCE_CONTEXT_CHANGED','ACTION_WORK_UNIT_NEW_REFUSAL']);
+    expect(durableProducerCodes(source).filter(code=>!isRegisteredAuthoringRefusalCode(code)))
+      .toEqual(['ACTION_WORK_UNIT_NEW_REFUSAL']);
   });
 });
