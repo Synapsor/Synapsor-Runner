@@ -22,6 +22,8 @@ import {prepareRetainedDutyReview,assembleRetainedDutyReview,preflightRetainedDu
 import {assessActionWithdrawal} from './action-rule-withdrawal.js';
 import {buildBoundaryAuthoringResumeState,writeBoundaryAuthoringResumeState} from './boundary-authoring-resume.js';
 import {policyReviewReadiness} from './authoring-review-readiness.js';
+import {createBoundaryAuthoringChat} from './boundary-authoring-chat.js';
+import {authoringDestination} from './authoring-policy-source.js';
 
 const roots:string[]=[];
 afterEach(async()=>{vi.restoreAllMocks();for(const root of roots.splice(0))await fs.rm(root,{recursive:true,force:true});});
@@ -69,10 +71,65 @@ async function fixture(){
  const coverageAuthority=canonicalJsonDigest({read:readDigest,action:active.digest});
  const plan=()=>prepareRetainedDutyReview(previous,source,current,undefined,coverageAuthority,proof);
  const report=()=>assembleRetainedDutyReview(parse(submitted),plan(),source,current,p=>parsePolicyCoverage({passages:p},source,current,[]));
- return{root,active,candidate,proof,readDigest,source,session,old,current,previous,submitted,parse,coverageAuthority,plan,report,prepared,context,reviewed};
+ return{root,active,candidate,proof,readDigest,source,session,old,current,previous,submitted,parse,coverageAuthority,plan,report,prepared,context,reviewed,inspect};
 }
 
 describe('prospective exact withdrawal retains current Source duties',()=>{
+ it.each(['resume_no','resume_yes','explicit_review','review_without_removal'] as const)(
+  'ordinary public %s preserves the distinction between pending policy review and exact withdrawal',async mode=>{
+   const f=await fixture(),report=f.report(),model='DERIVED component';
+   bindPolicyCoverage(f.session,report,canonicalJsonDigest({read:f.readDigest,action:f.candidate.digest}));
+   f.session.approvals=[{digest:f.source.digest,destination:authoringDestination({provider:'openai',model})}];
+   await savePolicySources(f.root,f.session,{expectedDigest:null});
+   const binding={boundary_name:f.context.candidate.pack.name,generation_lock_fingerprint:f.context.candidate.generation_lock_fingerprint,
+    schema_fingerprint:f.context.lock.schema_fingerprint,role_posture_fingerprint:f.context.lock.role_posture_fingerprint};
+   const original=buildBoundaryAuthoringResumeState({binding,stage:'action_drafting',jobIntent:'DERIVED original two parcel duties stay pending.',actionWorkflow:'program',provider:'openai',model,
+    action:{intent:'Parcel one',intents:['Parcel one','Parcel two'],intended_outcomes:f.active.authority.rules.map(r=>r.rule.outcome)}});
+   const resume=buildBoundaryAuthoringResumeState({binding,previous:original,stage:'authority_review',jobIntent:original.job_intent,provider:'openai',model,
+    policySourceSession:f.session.id,reviewedVersionFields:[f.reviewed],action:{intent:'Parcel one',intents:['Parcel one'],intended_outcomes:f.candidate.authority.rules.map(r=>r.rule.outcome),completed_outcomes:f.candidate.authority.rules.map(r=>r.rule.outcome)},
+    ...(mode==='review_without_removal'?{}:{pendingActionRemoval:{outcome:f.proof.basis.removed_outcomes[0]!,authority_name:f.candidate.authority.name,draft_digest:f.candidate.digest}}),
+    pendingPolicyReview:{operation:'review_rules',request:'Review attached rules and unresolved decisions',source_session:f.session.id,source_digest:f.source.digest as `sha256:${string}`,
+     read_digest:f.readDigest,action_name:f.candidate.authority.name,action_digest:f.candidate.digest,
+     action_subject:(await readActionRuleReviewSubjects(f.root)).find(s=>s.identity.location==='disabled'&&s.authority.digest===f.candidate.digest)!.identity}});
+   await writeBoundaryAuthoringResumeState(f.root,resume,{expectedRevisionDigest:null});
+   const menus:any[]=[],notices:any[]=[],unexpectedRequests:any[]=[];
+   let interrupt:(()=>void)|undefined;
+   const io:any={write:()=>{},writeChunk:()=>{},columns:()=>110,isTerminal:()=>false,setStatus:()=>{},clearStatus:()=>{},close:()=>{},
+    onInterrupt:(handler:()=>void)=>{interrupt=handler;return()=>{interrupt=undefined;};},review:async()=>{},
+    read:async()=>{interrupt?.();return undefined;},readConversation:async()=>{interrupt?.();return undefined;},
+    choose:async(choice:any)=>{
+     const values=choice.options.map((o:any)=>o.value);let selected:string|undefined;
+     if(choice.title==='START BOUNDARY DRAFTING')selected=mode==='explicit_review'?'review_rules':'resume';
+     else if(choice.title==='CLIENT FOR THIS JOB')selected='later';
+     else if(choice.title==='USE THE SAVED ATTACHMENT')selected='continue';
+     else if(choice.title==='SEND ATTACHED RULES')selected='send';
+     else if(values.includes('withdraw'))selected=menus.some(m=>m.message==='Publish this exact Action withdrawal?')?'back':'withdraw';
+     else if(choice.message==='Publish this exact Action withdrawal?'){
+      expect(choice.initialValue).toBe('no');selected=mode==='resume_yes'?'yes':'no';
+     }else if(choice.message==='Run a new bounded model review?')selected='no';
+     else if(choice.title==='FINISH ATTACHED RULES REVIEW'||choice.title==='SETUP NEEDS ATTENTION')selected='pause';
+     else if(values.includes('back'))selected='back';
+     menus.push({...choice,selected});if(!selected||!values.includes(selected)){interrupt?.();return undefined;}return selected;
+    }};
+   const outer:any={chooseResource:async()=>undefined,editFieldTiers:async()=>undefined,promptText:async()=>undefined,confirm:async()=>false,
+    chooseOption:async()=> 'pause'};
+   await boundaryReviewCommand(['--project-root',f.root,'--access','--job-first'],f.inspect,outer,undefined,{
+    startWithAgentJob:true,exitAfterAgentJob:true,onAuthoringResult:notice=>notices.push(notice),actionProjectInspector:f.inspect,
+    modelAuthoringSession:{provider:'openai',model,apiKey:'local-test-only',dependencies:{requestJson:async request=>{unexpectedRequests.push(request);throw new Error('NO_PROVIDER_REQUEST_EXPECTED');}}},
+    boundaryAuthoringChatFactory:selection=>createBoundaryAuthoringChat({...selection,io,color:false,streamLineDelayMs:0})});
+   expect(unexpectedRequests).toEqual([]);
+   const withdrawalVisited=menus.some(m=>m.message==='Publish this exact Action withdrawal?');
+   expect(withdrawalVisited,JSON.stringify({menus,notices})).toBe(mode==='resume_no'||mode==='resume_yes');
+   const active=(await readActionRuleAuthorityActivation(f.root))!;
+   expect(active).toEqual(mode==='resume_yes'?expect.objectContaining({digest:f.candidate.digest,
+    publication:expect.objectContaining({kind:'withdrawal',business_review_completed:false,removed_outcomes:f.proof.basis.removed_outcomes})}):f.active);
+   const saved=await loadPolicySources(f.root,f.session.id);expect(saved.snapshots).toEqual(f.session.snapshots);
+   expect(saved.coverage).toEqual(f.session.coverage);expect(policyReviewReadiness(f.source,saved.coverage,saved).ready).toBe(false);
+   const after=JSON.parse(await fs.readFile(path.join(f.root,'.synapsor/boundary-authoring/resume.json'),'utf8'));
+   expect(after.pending_policy_review).toEqual(resume.pending_policy_review);
+   if(mode==='resume_yes')expect(after.pending_action_removal).toBeUndefined();
+   else expect(after.pending_action_removal).toEqual(resume.pending_action_removal);
+  },20000);
  it('permits canonical review, preserves full original report, and never invents a removal event or BUSINESS readiness',async()=>{
   const f=await fixture();expect(()=>preflightRetainedDutyEvidence(f.plan(),f.source,f.current)).not.toThrow();
   const report=f.report();expect(report.retained_duty_history).toMatchObject([{disposition:'pending_exact_withdrawal',verified:false,original_report:f.previous}]);

@@ -5070,6 +5070,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     selectCurrentReviewContext ||= selected === "review_rules";
     selectedPolicyReview ||= selected === "review_rules" || selected === "resume" && !revalidateSavedJob && ownerHandoffs.at(-1)?.state !== "waiting"
       && !availableResume?.pending_job_revision && !availableResume?.pending_read_revision && !availableResume?.pending_action_revision
+      && !availableResume?.pending_action_removal
       && Boolean(availableResume?.pending_policy_review);
     resumeSelected = selected === "resume" || selected === "review_rules";
     editingSavedJob = Boolean(availableResume
