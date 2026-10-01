@@ -1252,7 +1252,8 @@ export function createTerminalAnalyticsShellIo(input: {
       isRaw?: boolean;
       setRawMode?: (enabled: boolean) => void;
     };
-    if (!terminal || typeof ttyInput.setRawMode !== "function" || !choice.options.length) {
+    if (closed || readable.readableEnded || readable.destroyed
+      || !terminal || typeof ttyInput.setRawMode !== "function" || !choice.options.length) {
       return undefined;
     }
     if (questionActive) throw new Error("A terminal choice cannot open while a question prompt is active.");
@@ -1264,7 +1265,13 @@ export function createTerminalAnalyticsShellIo(input: {
       maxRows: () => (writable as NodeJS.WriteStream).rows,
     });
     const queuedKeys: Array<{ name?: string; ctrl?: boolean }> = [];
-    const keyWaiters: Array<(key: { name?: string; ctrl?: boolean }) => void> = [];
+    const keyWaiters: Array<(key: { name?: string; ctrl?: boolean } | undefined) => void> = [];
+    let inputUnavailable = false;
+    const onInputUnavailable = () => {
+      inputUnavailable = true;
+      queuedKeys.length = 0;
+      for (const waiter of keyWaiters.splice(0)) waiter(undefined);
+    };
     const keyHandler = (_text: string, key: { name?: string; ctrl?: boolean }) => {
       const waiter = keyWaiters.shift();
       if (waiter) waiter(key);
@@ -1280,9 +1287,10 @@ export function createTerminalAnalyticsShellIo(input: {
     const isBinaryConfirmation = choice.options.length === 2 && yesIndex >= 0 && noIndex >= 0;
 
     const nextKey = () => {
+      if (inputUnavailable) return Promise.resolve(undefined);
       const queued = queuedKeys.shift();
       if (queued) return Promise.resolve(queued);
-      return new Promise<{ name?: string; ctrl?: boolean }>((resolve) => keyWaiters.push(resolve));
+      return new Promise<{ name?: string; ctrl?: boolean } | undefined>((resolve) => keyWaiters.push(resolve));
     };
     const fit = (value: string, width: number) => value.length <= width
       ? value
@@ -1340,6 +1348,10 @@ export function createTerminalAnalyticsShellIo(input: {
 
     readable.removeAllListeners("keypress");
     readable.on("keypress", keyHandler);
+    readable.on("end", onInputUnavailable);
+    readable.on("close", onInputUnavailable);
+    readable.on("error", onInputUnavailable);
+    rl.on("error", onInputUnavailable);
     ttyInput.setRawMode(true);
     readable.resume();
     writable.write("\u001b[?25l");
@@ -1347,6 +1359,7 @@ export function createTerminalAnalyticsShellIo(input: {
       while (true) {
         render();
         const key = await nextKey();
+        if (!key || inputUnavailable) return undefined;
         if (key.name === "up") {
           selected = (selected - 1 + choice.options.length) % choice.options.length;
         } else if (key.name === "down") {
@@ -1367,9 +1380,14 @@ export function createTerminalAnalyticsShellIo(input: {
       }
     } finally {
       readable.off("keypress", keyHandler);
+      readable.off("end", onInputUnavailable);
+      readable.off("close", onInputUnavailable);
+      readable.off("error", onInputUnavailable);
+      rl.off("error", onInputUnavailable);
       pickerRenderer.clear();
       writable.write("\u001b[?25h");
-      ttyInput.setRawMode(wasRaw);
+      try { ttyInput.setRawMode(inputUnavailable ? false : wasRaw); }
+      catch (error) { if (!inputUnavailable) throw error; }
       if (!wasFlowing) readable.pause();
       for (const listener of existingKeypressListeners) {
         readable.on("keypress", listener as (...args: unknown[]) => void);
@@ -1413,7 +1431,7 @@ export function createTerminalAnalyticsShellIo(input: {
     prompt: string,
     allowEscape: boolean,
   ): Promise<string | undefined> => {
-      if (closed) return undefined;
+      if (closed || readable.readableEnded || readable.destroyed) return undefined;
       try {
         activePrompt = terminal ? padTerminalBlock(prompt) : prompt;
         escapeEnabled = allowEscape;
@@ -1450,7 +1468,7 @@ export function createTerminalAnalyticsShellIo(input: {
     if (!terminal || typeof ttyInput.setRawMode !== "function") {
       return readQuestion(prompt, true);
     }
-    if (closed) return undefined;
+    if (closed || readable.readableEnded || readable.destroyed) return undefined;
     if (questionActive) throw new Error("A conversation prompt cannot open while another question is active.");
 
     clearStatus();

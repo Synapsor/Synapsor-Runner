@@ -2261,6 +2261,51 @@ describe("Synapsor Analytics shell", () => {
     expect(readable.isRaw).toBe(false);
   });
 
+  it.each(["end", "close", "error", "already_ended"])("cancels a terminal ownership choice when input is %s", async mode => {
+    const readable = new PassThrough() as PassThrough & { isRaw: boolean; setRawMode(value: boolean): void };
+    readable.isRaw = false;
+    readable.setRawMode = value => { readable.isRaw = value; };
+    const writable = new PassThrough() as PassThrough & { columns: number; rows: number };
+    Object.assign(writable, { columns: 100, rows: 30 });
+    writable.on("data", () => {});
+    const observer = () => {};
+    for (const event of ["keypress", "end", "close", "error"]) readable.on(event, observer);
+    const io = createTerminalAnalyticsShellIo({ readable, writable, terminal: true });
+    const listeners = new Map(["keypress", "end", "close", "error"].map(event => [event, readable.listeners(event)]));
+    if (mode === "already_ended") {
+      readable.end(); readable.resume();
+      await new Promise<void>(resolve => setImmediate(resolve));
+      expect(readable.readableEnded).toBe(true);
+    }
+    const choice = io.choose!({ title: "CLIENT INTEGRATION RESPONSIBILITIES", message: "Current planned ownership only.",
+      initialValue: "back", options: [{ value: "assign", label: "My client application will handle these responsibilities" },
+        { value: "back", label: "Keep this decision pending" }] });
+    let conversation: Promise<string | undefined> | undefined;
+    try {
+      await new Promise<void>(resolve => setImmediate(resolve));
+      if (mode === "end") readable.end();
+      if (mode === "close") readable.destroy();
+      if (mode === "error") readable.destroy(new Error("owned test input failure"));
+      const result = await Promise.race([choice, new Promise<string>(resolve => setTimeout(() => resolve("INPUT_STILL_WAITING"), 100))]);
+      expect(result).toBeUndefined();
+      for (const [event, original] of listeners) {
+        expect(readable.listeners(event)).toContain(observer);
+        // Native readline may detach its listeners on EOF; the chooser must leave none of its own.
+        expect(readable.listeners(event).every(listener => original.includes(listener))).toBe(true);
+      }
+      conversation = io.readConversation!("you> ");
+      expect(await Promise.race([conversation, new Promise<string>(resolve => setTimeout(() => resolve("INPUT_STILL_WAITING"), 100))]))
+        .toBeUndefined();
+    } finally {
+      // Preserve a bounded failing-before result without leaving an owned waiter.
+      readable.emit("keypress", "", { name: "escape" });
+      await choice;
+      await conversation;
+      io.close();
+    }
+    expect(readable.isRaw).toBe(false);
+  });
+
   it("keeps an Ask picker inside a short terminal while selection moves", async () => {
     const readable = new PassThrough() as PassThrough & {
       isRaw: boolean;

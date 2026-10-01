@@ -2,6 +2,10 @@ export { validClientDutyInventory, type ClientDuty, type ClientDutyInventory } f
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { validClientDutyInventory, type ClientDuty, type ClientDutyInventory, type PolicyCoverage, type PolicyPassage, type PolicySourceSession } from "./authoring-policy-source.js";
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
+import { AskError } from "./model-provider-transport.js";
+
+/** Ephemeral operator choice, never ownership evidence or persisted authority. */
+export type ClientDutyReviewState = { pendingContext?: string };
 
 const record = (v: unknown): Record<string, any> | undefined => v && typeof v === "object" && !Array.isArray(v) ? v as Record<string, any> : undefined;
 
@@ -53,7 +57,8 @@ export const clientDutyReviewContext = [
 ];
 
 export async function reviewClientDutyOwnership(input: { report: PolicyCoverage; sources: PolicySourceSession;
-  session: Pick<BoundaryReviewInteractiveSession, "chooseOption">; assertCurrent: () => Promise<void> }) {
+  session: Pick<BoundaryReviewInteractiveSession, "chooseOption">; assertCurrent: () => Promise<void>;
+  reviewState?: ClientDutyReviewState }) {
   const inventory = input.report.client_duties;
   const pending = inventory?.duties.filter(d => !clientDutyAssigned(input.report, d, input.sources)) ?? [];
   const policyPassages = inventory?.mode === "interactive_subject_action" ? [] : input.report.passages.filter(p => isClientDutyPassage(p)
@@ -63,13 +68,20 @@ export async function reviewClientDutyOwnership(input: { report: PolicyCoverage;
       && a.obligations.every(d => p.application_obligations!.includes(d))));
   if ((!pending.length && !policyPassages.length) || !input.session.chooseOption) return [];
   await input.assertCurrent();
+  const context = canonicalJsonDigest({ source: input.report.source_digest, draft: input.report.draft_digest,
+    inventory: inventory ?? null, pending, policyPassages });
+  if (input.reviewState?.pendingContext === context) return [];
   const choice = await input.session.chooseOption("CLIENT INTEGRATION RESPONSIBILITIES", [
     { value: "assign", label: "My client application will handle these responsibilities", detail: "Explicit ownership for the current source and client contract; not verified." },
     { value: "back", label: "Keep this decision pending" },
   ], { initialValue: "back", reviewOnly: true, displayContext: true, context: [...(pending.length ? clientDutyReviewContext : ["Attached-policy client duties: current explicit ownership, not implementation or verification.", ...policyPassages.map(p => p.interpretation)]),
     `Selected client: ${inventory?.client ?? "unresolved"}. Current duties: ${pending.join(", ")}.`,
     ...(input.sources.application_assignments?.length ? ["Previous ownership choices remain in history. They are not acceptance for a changed source or client contract."] : [])] });
-  if (choice !== "assign") return [];
+  if (choice === "back") {
+    if (input.reviewState) input.reviewState.pendingContext = context;
+    return [];
+  }
+  if (choice !== "assign") throw new AskError("ASK_CANCELLED", "Client responsibility review paused; no ownership was assigned.", 499);
   await input.assertCurrent();
   return [...(pending.length ? [{ source_digest: input.report.source_digest, draft_digest: input.report.draft_digest,
     origin: "PRODUCT-CLIENT-CONTRACT" as const, contract_digest: inventory!.contract_digest,

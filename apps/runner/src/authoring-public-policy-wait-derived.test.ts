@@ -13,12 +13,13 @@ import { listActionRuleAuthorityDrafts, readActionRuleAuthorityActivation } from
 import { buildBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
 import { activePolicySource, loadPolicySources, policyTextSnapshot, savePolicySources } from "./authoring-policy-source.js";
 import { ownedProgramDraft, ownedProgramInspection } from "./test-fixtures/owned-authoring-program.js";
+import { policyReviewReadiness } from "./authoring-review-readiness.js";
 
 /** Owned synthetic public regression. Only IO, inspection and local ordinary
  * provider responses are supplied. The actual planner/compiler/Source parser,
  * generation recovery, owner handoff, chat recorder, writer permit and CAS run.
  * No readiness/assessment callback or accepted-owner record is fabricated. */
-type Control = "healthy" | "pause_restart" | "source_drift" | "schema_drift" | "role_drift" | "competing_resume" | "explicit_review";
+type Control = "healthy" | "pause_restart" | "source_drift" | "schema_drift" | "role_drift" | "competing_resume" | "explicit_review" | "client_keep" | "client_cancel";
 const question="Should this parcel action be permitted only when the parcel is available?";
 const answer="Yes. Require available=true; refuse unavailable parcels.";
 const strings=(value:any):string[]=>typeof value==="string" ? [value] : Array.isArray(value) ? value.flatMap(strings)
@@ -45,6 +46,7 @@ async function publicPolicyWait(control:Control) {
   const sourceFile=path.join(root,"derived-policy-wait-rules.txt");await fs.writeFile(sourceFile,initialLines.join("\n"));
   let stage:"initial"|"question"|"restart"|"explicit_review"="initial",transcript="",requests=0,actionPhase=0,questionNarrations=0;
   let sourceId:string|undefined,questionReads=0,clarifyChosen=false,injected=false,expectedWaiting:any,competingSaved:any,baseline:any;
+  let clientDutyPrompts=0;
   const answers:Array<string|undefined>=[`/attach ${sourceFile}`,job];
   const responses:any[]=[],menus:any[]=[],reports:any[]=[],questionSnapshots:any[]=[],failures:any[]=[];
   const readResume=async()=>JSON.parse(await fs.readFile(resumeFile,"utf8"));
@@ -98,7 +100,13 @@ async function publicPolicyWait(control:Control) {
       else if(choice.title==="REVIEW DECLARED TEXT INPUT BOUNDS")selected="none";
       else if(choice.message==="Save this exact attributed input-policy interpretation?") {expect(choice.initialValue).toBe("no");selected="yes";}
       else if(choice.message==="Run a new bounded model review?") {expect(choice.initialValue).toBe("no");selected="yes";}
-      else if(choice.title==="CLIENT INTEGRATION RESPONSIBILITIES") {expect(choice.initialValue).toBe("back");selected="assign";}
+      else if(choice.title==="CLIENT INTEGRATION RESPONSIBILITIES") {
+        expect(choice.initialValue).toBe("back");clientDutyPrompts++;
+        if(control==="client_keep" || control==="client_cancel") {
+          if(clientDutyPrompts>1)fail("The same client-duty prompt repeated after the operator's pending/cancel choice.");
+          selected=control==="client_keep" ? "back" : undefined;
+        } else selected="assign";
+      }
       else if(choice.title==="FINISH ATTACHED RULES REVIEW") {
         selected=stage==="question" && !clarifyChosen ? "clarify" : "pause";if(selected==="clarify")clarifyChosen=true;
       } else if(choice.title==="SETUP NEEDS ATTENTION" || values.includes("pause") && !values.includes("yes"))selected="pause";
@@ -171,6 +179,10 @@ async function publicPolicyWait(control:Control) {
   vi.spyOn(globalThis,"fetch").mockImplementation(async()=>fail("External network forbidden"));
   try {
     await onboard(["db","--project-root",root,"--from-env","OWNED_POLICY_WAIT_READ_URL","--schema","studio","--json"],{interactive:false,schemaInspector:inspect});
+    if(control==="client_keep" || control==="client_cancel") {
+      const setup=await loadBoundaryReviewContext(root);
+      failures.push({title:"OWNED_CLIENT_TEST_SETUP_READBACK",draft:setup.draft,candidate:setup.candidate});
+    }
     const workload=path.join(root,"derived-private-read.json");await fs.writeFile(workload,JSON.stringify({schema_version:READ_WORKLOAD_SET_VERSION,name:"owned_private_availability",
       allowed:[{id:"parcel_labels_units",description:"Read parcel labels and units.",plan:{kind:"rows",resource:"studio.parcels",select:["label","units"]}}],
       forbidden:[{id:"private_available",description:"Never return availability to the assistant.",plan:{kind:"rows",resource:"studio.parcels",select:["available"]}}],source:{kind:"operator_exact_plan"}}));
@@ -182,6 +194,20 @@ async function publicPolicyWait(control:Control) {
       runBoundaryReview:(args,inspector)=>boundaryReviewCommand(args,inspector,outer,undefined,options)});
     const initiallySaved=await readResume();sourceId=initiallySaved.policy_source_session;
     expect((await listActionRuleAuthorityDrafts(root))[0],transcript).toBeDefined();
+    if(control==="client_keep" || control==="client_cancel") {
+      // Actual public start/CLI consumer and ordinary local provider replies,
+      // not a direct call to the client-duty or readiness helper.
+      expect(clientDutyPrompts,transcript).toBe(1);
+      const sources=await loadPolicySources(root,sourceId!);
+      expect(sources.application_assignments ?? []).toEqual([]);
+      expect(sources.coverage,transcript).toBeDefined();
+      expect(sources.coverage_episodes!.at(-1)!.submissions.at(-1)!.validated).toBe(true);
+      expect(policyReviewReadiness(activePolicySource(sources)!,sources.coverage,sources).ready).toBe(false);
+      expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+      expect(transcript).toContain(control==="client_keep" ? "Client responsibilities remain pending" : "Boundary conversation paused");
+      expect(transcript).toContain("Resume");
+      return {origin:"IMPLEMENTER_DERIVED_PUBLIC_CLIENT_DUTY",control,requests,questionNarrations,questionReads,activation:false,provider_calls:0};
+    }
     const originalSource=await loadPolicySources(root,sourceId!),changedSource=structuredClone(originalSource);
     const changedSnapshot=policyTextSnapshot(Buffer.from(lines.join("\n")),path.basename(sourceFile),activePolicySource(originalSource)!.version+1);
     changedSource.snapshots.push(changedSnapshot);changedSource.active=changedSnapshot.version;
@@ -232,5 +258,10 @@ async function publicPolicyWait(control:Control) {
 
 it.each(["healthy","pause_restart","source_drift","schema_drift","role_drift","competing_resume","explicit_review"] as const)(
   "public Source owner wait persists the actual business question and protects its current answer: %s",async control=>{
+    const result=await publicPolicyWait(control);expect(result.provider_calls).toBe(0);
+  },30_000);
+
+it.each(["client_keep","client_cancel"] as const)(
+  "public start/CLI retains pending client duties and leaves the review without a prompt loop: %s",async control=>{
     const result=await publicPolicyWait(control);expect(result.provider_calls).toBe(0);
   },30_000);

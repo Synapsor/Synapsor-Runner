@@ -6404,6 +6404,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
   };
   let policyAttemptKey: string | undefined;
   let policyReport: { key: string; report: PolicyCoverage } | undefined;
+  const clientDutyReviewState: NonNullable<PreparedPolicyReviewState["clientDutyReview"]> = {};
   let policyFailure: string | undefined;
   let receiptConfigurationEvidence: Parameters<typeof policyCoverageDraft>[0]["receiptConfiguration"];
   let executionReviewEvidence: Parameters<typeof policyCoverageDraft>[0]["executionReview"];
@@ -6534,7 +6535,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       return undefined;
     }
     await refreshPolicyCoverageEvidence(proposedAuthority);
-    const state: PreparedPolicyReviewState = { attemptKey: policyAttemptKey, report: policyReport };
+    const state: PreparedPolicyReviewState = { attemptKey: policyAttemptKey, report: policyReport, clientDutyReview: clientDutyReviewState };
     try {
       const result = await ensurePreparedPolicyCoverage({ projectRoot: input.projectRoot, sources: sources!,
         modelSession: modelAssistSession, operatorSession: input.session, currentDraft: () => currentPolicyCoverageDraft(proposedAuthority),
@@ -11957,6 +11958,10 @@ async function reviewSavedBoundaryPolicyInner(input: {
         : "Resume Review attached rules and unresolved decisions. Any necessary rule change is a separate Edit operation; no rule changed here." };
   } catch (error) {
     input.assertRunning?.();
+    if (error instanceof AskError && error.code === "ASK_CANCELLED") return { tone: "warning", title: "Saved business review paused.",
+      lines: ["The saved review and unfinished edits are retained.",
+        "Cancellation grants no ownership or BUSINESS completion. Unresolved decisions remain pending."],
+      footer: "Resume Review attached rules and unresolved decisions to continue; no new model review was started by cancellation." };
     const generationCurrentness = authoringGenerationCurrentnessCode(error);
     if (isAuthoringGenerationStop(error) && !generationCurrentness) throw error;
     const currentnessCode = generationCurrentness ?? (error instanceof PolicySourceChangedError || error instanceof AuthoringReviewSubjectError ? error.code : undefined);

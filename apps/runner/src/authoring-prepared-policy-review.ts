@@ -11,7 +11,8 @@ import { SourceTransactionScopeError } from './authoring-source-transaction-scop
 import { planCoverageResolution } from './authoring-review-resolution.js';
 import { randomUUID } from "node:crypto";
 import type { CoverageReviewEpisode } from "./authoring-policy-source.js";
-import { reviewClientDutyOwnership } from "./authoring-client-duties.js";
+import { reviewClientDutyOwnership, type ClientDutyReviewState } from "./authoring-client-duties.js";
+import { AskError } from "./model-provider-transport.js";
 import { authoringReceiptConfiguration } from "./authoring-receipt-configuration.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { ActionRuleAuthorityReviewSubjectV1 } from "./action-rule-authority.js";
@@ -32,6 +33,7 @@ export type PreparedPolicyReviewState = {
   attemptKey?: string;
   report?: { key: string; report: PolicyCoverage };
   activity?: "provider" | "validated_reuse";
+  clientDutyReview?: ClientDutyReviewState;
 };
 const pending=(reason:ReviewPrerequisiteReason,code:string,message:string,subject:string|null=null,context:string|null=null):never=>{
   throw new ReviewResolutionError(code,planReviewPrerequisite(reason,subject,context),message);
@@ -260,7 +262,15 @@ export async function ensurePreparedPolicyCoverage(input: {
   const staged = structuredClone(sources);
   bindPolicyCoverage(staged, report, input.authorityDigest);
   staged.coverage_context_digest = key;
-  const assignments = await reviewClientDutyOwnership({ report, sources: staged, session: input.operatorSession, assertCurrent });
+  let assignments: Awaited<ReturnType<typeof reviewClientDutyOwnership>> = [];
+  let clientCancellation: AskError | undefined;
+  try {
+    assignments = await reviewClientDutyOwnership({ report, sources: staged, session: input.operatorSession, assertCurrent,
+      reviewState: state.clientDutyReview ??= {} });
+  } catch (error) {
+    if (!(error instanceof AskError) || error.code !== "ASK_CANCELLED") throw error;
+    clientCancellation = error;
+  }
   if (assignments.length) {
     if ((staged.application_assignments?.length ?? 0) + assignments.length > 120)
       pending('history_full','POLICY_CLIENT_ASSIGNMENT_HISTORY_FULL',
@@ -292,5 +302,13 @@ export async function ensurePreparedPolicyCoverage(input: {
   Object.assign(sources, staged);
   state.report = { key, report };
   state.activity = reused ? "validated_reuse" : "provider";
+  // A received valid report is saved normally with ownership still pending.
+  // Cancellation grants nothing and never bypasses the coordinated guards above.
+  if (clientCancellation) {
+    input.operatorSession.present?.("Client responsibilities remain pending", [
+      "Resume Review attached rules to explicitly assign current ownership. Selection, status presentation and integration remain unverified.",
+    ]);
+    throw clientCancellation;
+  }
   return { source, key, draftRecord, report, activity: state.activity };
 }

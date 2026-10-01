@@ -83,6 +83,65 @@ describe("intrinsic client duties independent of coverage wording", () => {
     if (mode === "cancel") expect(await operation).toEqual([]); else await expect(operation).rejects.toThrow("POLICY_SOURCE_CHANGED");
     expect(sources).toEqual(before);
   });
+  it("remembers Keep pending only within the live exact client-duty context", async () => {
+    const { sources, source, draft, args } = fixture();
+    const report = parsePolicyCoverage(args, source, draft, sources.operator_messages!);
+    const before = structuredClone(sources), reviewState = {};
+    const chooseOption = vi.fn(async () => "back");
+    const input = { report, sources, session: { chooseOption }, assertCurrent: async () => {}, reviewState };
+    expect(await reviewClientDutyOwnership(input as any)).toEqual([]);
+    expect(await reviewClientDutyOwnership(input as any)).toEqual([]);
+    expect(chooseOption).toHaveBeenCalledTimes(1);
+    for (const changed of [
+      { ...report, source_digest: canonicalJsonDigest("changed complete Source") },
+      { ...report, draft_digest: canonicalJsonDigest("changed prepared draft") },
+      { ...report, client_duties: { ...report.client_duties!, contract_digest: canonicalJsonDigest("changed client contract") } },
+    ]) expect(await reviewClientDutyOwnership({ ...input, report: changed } as any)).toEqual([]);
+    expect(chooseOption).toHaveBeenCalledTimes(4);
+    expect(await reviewClientDutyOwnership({ ...input, reviewState: {} } as any)).toEqual([]);
+    expect(chooseOption).toHaveBeenCalledTimes(5);
+    expect(sources).toEqual(before);
+    expect(blockedDuties(policyReviewReadiness(source, report, sources))).toHaveLength(2);
+  });
+  it("distinguishes an undefined menu cancellation from explicit Keep pending", async () => {
+    const { sources, source, draft, args } = fixture();
+    const report = parsePolicyCoverage(args, source, draft, sources.operator_messages!);
+    const before = structuredClone(sources);
+    await expect(reviewClientDutyOwnership({ report, sources, session: { chooseOption: async () => undefined },
+      assertCurrent: async () => {} })).rejects.toMatchObject({ code: "ASK_CANCELLED" });
+    expect(sources).toEqual(before);
+  });
+  it("preserves a consumed valid report on menu cancellation and reopens with no extra generation", async () => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "runner-client-duty-pause-"));
+    try {
+      const { sources, draft, args } = fixture();
+      vi.spyOn(receiptConfiguration, "authoringReceiptConfiguration").mockResolvedValue(draft.runner_evidence.runtime_contract.receipt_configuration);
+      delete sources.coverage_context_digest;
+      const conversation = createModelAuthoringConversation(); conversation.policySources = sources;
+      const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "owned-valid-before-cancel",
+        name: "runner__review_policy_coverage", arguments: JSON.stringify(args) }] } }));
+      const modelSession = { provider: "openai" as const, model: "gpt-5.6-terra", apiKey: "test-only", conversation, dependencies: { requestJson } };
+      await savePolicySources(root, sources);
+      const assignments = structuredClone(sources.application_assignments), onValidated = vi.fn();
+      const input = { projectRoot: root, sources, modelSession, currentDraft: () => draft,
+        authorityDigest: sources.coverage_authority_digest!, clarifications: [], assertCurrent: async () => {}, state: {}, onValidated };
+      await expect(ensurePreparedPolicyCoverage({ ...input, operatorSession: { chooseOption: async () => undefined, confirm: async () => false } as any }))
+        .rejects.toMatchObject({ code: "ASK_CANCELLED" });
+      const restarted = await loadPolicySources(root, sources.id);
+      expect(restarted.application_assignments).toEqual(assignments);
+      expect(restarted.coverage).toEqual(sources.coverage);
+      expect(restarted.coverage_context_digest).toBeDefined();
+      expect(restarted.coverage_episodes!.at(-1)!.submissions.at(-1)!.validated).toBe(true);
+      expect(onValidated).toHaveBeenCalledTimes(1);
+      expect(policyReviewReadiness(restarted.snapshots.find(s => s.version === restarted.active)!, restarted.coverage, restarted).ready).toBe(false);
+      const reviewed = await ensurePreparedPolicyCoverage({ ...input, sources: restarted, state: {},
+        operatorSession: { chooseOption: async () => "assign", confirm: async () => false } as any });
+      expect(reviewed.activity).toBe("validated_reuse");
+      expect(policyReviewReadiness(reviewed.source, reviewed.report, restarted).ready).toBe(true);
+      expect(restarted.application_assignments!.at(-1)).toMatchObject({ owner: "client_application", verified: false });
+      expect(requestJson).toHaveBeenCalledTimes(1);
+    } finally { vi.restoreAllMocks(); await fs.rm(root, { recursive: true, force: true }); }
+  });
   it("retains current ownership through save/reload while changed source, client and draft refuse reuse", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "runner-client-duty-"));
     try {
@@ -98,6 +157,36 @@ describe("intrinsic client duties independent of coverage wording", () => {
         expect(policyReviewReadiness(source, changed, restored).ready).toBe(false);
       await expect(savePolicySources(root, { ...sources, application_assignments: [] }, { expectedDigest: canonicalJsonDigest("stale") })).rejects.toThrow("POLICY_SOURCE_CHANGED");
       expect(await loadPolicySources(root, sources.id)).toEqual(restored);
+    } finally { vi.restoreAllMocks(); await fs.rm(root, { recursive: true, force: true }); }
+  });
+  it.each(["source", "client", "abort"])("menu cancellation cannot bypass the prepared %s guard", async mode => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "runner-client-duty-cancel-race-"));
+    try {
+      const { sources, draft, args } = fixture();
+      vi.spyOn(receiptConfiguration, "authoringReceiptConfiguration").mockResolvedValue(draft.runner_evidence.runtime_contract.receipt_configuration);
+      delete sources.coverage_context_digest;
+      const conversation = createModelAuthoringConversation(); conversation.policySources = sources;
+      const requestJson = vi.fn(async () => ({ status: 200, body: { output: [{ type: "function_call", call_id: "valid-before-cancel-race",
+        name: "runner__review_policy_coverage", arguments: JSON.stringify(args) }] } }));
+      const modelSession = { provider: "openai" as const, model: "gpt-5.6-terra", apiKey: "test-only", conversation, dependencies: { requestJson } };
+      await savePolicySources(root, sources);
+      const before = structuredClone(sources), onValidated = vi.fn();
+      let aborted = false;
+      await expect(ensurePreparedPolicyCoverage({ projectRoot: root, sources, modelSession,
+        operatorSession: { chooseOption: async () => {
+          if (mode === "source") await savePolicySources(root, { ...sources, operator_messages: [...sources.operator_messages!, "A concurrent current decision"] });
+          if (mode === "client") draft.runner_evidence.runtime_contract.client_contract = { mode: "interactive_four_tool", client: "changed" };
+          if (mode === "abort") aborted = true;
+          return undefined;
+        }, confirm: async () => false } as any,
+        currentDraft: () => draft, authorityDigest: sources.coverage_authority_digest!, clarifications: [], state: {}, onValidated,
+        assertCurrent: async () => { if (aborted) throw new Error("OWNED_REVIEW_ABORTED"); } }))
+        .rejects.toThrow(mode === "source" ? "POLICY_SOURCE_CHANGED" : mode === "client" ? "POLICY_CLIENT_CONTRACT_CHANGED" : "OWNED_REVIEW_ABORTED");
+      expect(onValidated).not.toHaveBeenCalled();
+      const restored = await loadPolicySources(root, sources.id);
+      expect(restored.application_assignments).toEqual(before.application_assignments);
+      expect(restored.coverage).toEqual(before.coverage);
+      expect(requestJson).toHaveBeenCalledTimes(1);
     } finally { vi.restoreAllMocks(); await fs.rm(root, { recursive: true, force: true }); }
   });
   it.each(["source", "client", "save_failure"])("prepared %s race/failure cannot persist partial ownership or complete review", async mode => {
