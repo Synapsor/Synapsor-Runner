@@ -120,7 +120,11 @@ async function runHost(f: Fixture, options: {
     } }], forbidden: [] });
   });
   const session: BoundaryReviewInteractiveSession = {
-    chooseResource: async () => undefined,
+    chooseResource: async (_resources, _overview, options) => {
+      if (options?.notice) failures.push(options.notice.title, ...options.notice.lines,
+        ...(options.notice.footer ? [options.notice.footer] : []));
+      return undefined;
+    },
     editFieldTiers: async () => undefined,
     promptText: async prompt => {
       if (prompt === "What job are you giving this agent?") return job;
@@ -192,11 +196,23 @@ describe("public host Read relationship preparation", () => {
     expect(first.failures.join("\n")).toContain("no generated outgoing path");
     expect(first.failures.join("\n")).toContain("private verification facts");
     expect(await resumeState(f)).toMatchObject({status:"ready",value:{pending_read_relationship:{resource:f.from},job_intent:job,stage:"read_mapping"}});
+    const retained = await resumeState(f);
+    if (retained.status !== "ready") throw new Error("Missing acknowledged relationship checkpoint.");
     const restarted = await runHost(f);
     await expect(restarted.operation).resolves.toBe(0);
     expect(restarted.requestJson).not.toHaveBeenCalled();
-    expect(restarted.mapper).not.toHaveBeenCalled();
+    // The resumed consumer checks its genuine checkpoint locally. It must
+    // not issue a replacement generation for the same missing prerequisite.
+    expect(restarted.mapper).toHaveBeenCalledOnce();
+    expect(restarted.mapper.mock.calls[0]![0].resumeCheckpoint).toEqual(retained.value.read_assistance);
     expect(restarted.failures).toEqual(first.failures);
+    const after = await resumeState(f);
+    expect(after.status).toBe("ready");
+    if (after.status === "ready") {
+      expect(after.value.owner_handoffs).toEqual(retained.value.owner_handoffs);
+      expect(after.value.read_assistance).toEqual(retained.value.read_assistance);
+      expect(after.value.generation_recovery).toEqual(retained.value.generation_recovery);
+    }
     expect((await loadBoundaryReviewContext(f.root)).candidate).toEqual(f.before.candidate);
     await expect(loadActivatedExplorationBoundaries(f.root)).rejects.toMatchObject({code:"ENOENT"});
   }, 30_000);

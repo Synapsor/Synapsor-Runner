@@ -139,6 +139,9 @@ async function structuredBoundaryAuthoringCommandInner(
   }
   if (args.includes("--review-counters")) {
     if (!draftPath) throw new Error("--review-counters requires --draft <file>; it reviews the submitted UPDATE targets.");
+    if (args.includes("--yes")) {
+      throw new Error("ACTION_VERSION_REVIEW_EXPLICIT_CONFIRMATION_REQUIRED: --yes cannot supply source-owner counter confirmation. Run --review-counters without --yes and review each exact counter in the operator terminal.");
+    }
     // The typed file and --json never supply or imply source-owner consent.
     if (!counterReviewSession && (!process.stdin.isTTY || !process.stdout.isTTY)) {
       throw Object.assign(new Error("Counter review requires a real terminal for the source owner's explicit confirmation. No draft was saved."),
@@ -1025,6 +1028,9 @@ function structuredErrorNextAction(code: string): string | undefined {
   if (stopped) return stopped.next_action;
   if (code === "ACTION_VERSION_REVIEW_TERMINAL_REQUIRED") {
     return "Run the counter review in a real operator terminal. The typed draft and --json do not supply source-owner consent; no draft-field correction is required by this refusal.";
+  }
+  if (code === "ACTION_VERSION_REVIEW_EXPLICIT_CONFIRMATION_REQUIRED") {
+    return "Run --review-counters without --yes in the operator terminal and explicitly review each source counter. Disabled successor-save confirmation does not supply source-owner consent.";
   }
   if (code === "STRUCTURED_DRAFT_STALE" || code === "POLICY_REVISION_CONFLICT") {
     return "Export a new structured draft from the current saved review, then resubmit it.";

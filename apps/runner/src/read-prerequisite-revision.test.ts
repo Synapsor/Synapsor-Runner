@@ -73,7 +73,9 @@ describe("private Read condition disabled revisions", () => {
         modelAuthoringNarrator: narrator, modelReadWorkloadGenerator: mapper, boundaryAuthoringChatFactory: () => chat,
       })).toBe(0);
       expect(confirm).toHaveBeenCalledOnce();
-      expect(narrator).toHaveBeenCalledTimes(allowed ? 1 : 0);
+      // Metadata permission alone does not start generation. The operator
+      // cancelled the new job prompt, so neither path opens a narrator.
+      expect(narrator).not.toHaveBeenCalled();
       expect(mapper).not.toHaveBeenCalled();
       expect((await loadBoundaryReviewContext(root)).candidate).toEqual(saved.candidate);
       await expect(fs.access(path.join(root, ".synapsor/exploration-boundary.active.json"))).rejects.toThrow();

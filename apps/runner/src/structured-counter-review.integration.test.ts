@@ -176,6 +176,10 @@ describe("public model-free structured counter review", () => {
     expect(output(f)).toContain("Run the counter review in a real operator terminal");
     expect(output(f)).not.toContain("Correct the reported draft field");
     expect(await f.run(["--draft", "action.json", "--review-counters", "--yes"], reviewSession())).toBe(2);
+    expect(output(f)).toContain("ACTION_VERSION_REVIEW_EXPLICIT_CONFIRMATION_REQUIRED");
+    expect(output(f)).toContain("--yes cannot supply source-owner counter confirmation");
+    expect(output(f)).toContain("Run --review-counters without --yes in the operator terminal");
+    expect(await readActionRuleAuthorityRevisionBaseline(f.root)).toEqual(baseline);
     expect(await f.run(["--export-draft", "unused.json", "--review-counters"], reviewSession())).toBe(2);
     expect(await readActionRuleAuthorityRevisionBaseline(f.root)).toEqual(baseline);
     expect(globalThis.fetch).not.toHaveBeenCalled();

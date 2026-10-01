@@ -122,6 +122,7 @@ import {
   commitReadWorkloadCandidate,
   prepareReadWorkloadCandidate,
 } from "./read-workload-authoring.js";
+import * as readWorkloadAuthoring from "./read-workload-authoring.js";
 import {
   listReadWorkloadAnalyses,
   readReadWorkloadAnalysis,
@@ -130,6 +131,7 @@ import {
 } from "./read-workloads.js";
 import { readDelegationDraft } from "./delegation-setup.js";
 import { readBoundaryAuthoringResumeState, buildBoundaryAuthoringResumeState, writeBoundaryAuthoringResumeState } from "./boundary-authoring-resume.js";
+import * as authoringResumePersistence from "./boundary-authoring-resume.js";
 import { loadCompletedBoundaryReviewOverrides } from "./boundary-review-policy.js";
 import { policyReviewReadiness } from "./authoring-review-readiness.js";
 import { boundaryCommand } from "./guided-start.js";
@@ -2986,12 +2988,16 @@ describe("boundary operator-plane CLI", () => {
       let visits = 0;
       let selected: Awaited<ReturnType<typeof loadBoundaryReviewContext>> | undefined;
       let competing: typeof selected;
+      let waitingQuestion: Awaited<ReturnType<typeof readBoundaryAuthoringResumeState>> | undefined;
+      const currentnessNotices: Array<{ title: string; lines: string[] }> = [];
       const session: BoundaryReviewInteractiveSession = {
+        rememberDetails: (title, lines) => { currentnessNotices.push({ title, lines }); },
         chooseResource: async () => undefined, editFieldTiers: async () => undefined,
         confirm: async () => true, confirmActivation: async () => false, confirmReviewedDisabled: async () => true,
         promptText: async question => {
           if (question.includes("What job")) return "Inspect service visits.";
           if (posture === "concurrent_change" && selected && !competing) {
+            waitingQuestion = await readBoundaryAuthoringResumeState(root, boundaryAuthoringResumeBinding(selected.bundle));
             await boundaryReviewMutations.commitBoundaryReviewMutationBatch(root, await prepareBoundaryReviewMutationBatch(root,
               [{ resource_id: "public.service_visits", max_rows: 7, actor: "competing-reviewer", reason: "Concurrent independent change." }],
               async () => inspection, selected.bundle.mutation_bindings));
@@ -3024,8 +3030,16 @@ describe("boundary operator-plane CLI", () => {
       } else {
         expect(revision).not.toHaveBeenCalled();
         expect(current.candidate).toEqual(competing!.candidate);
-        expect(chat.rememberDetails).toHaveBeenCalledWith("READ BOUNDARY REVISION NOT SAVED",
-          expect.arrayContaining([expect.stringContaining("READ_BOUNDARY_REVISION_CHANGED:")]));
+        expect(currentnessNotices).toContainEqual({ title: "Read activation did not complete", lines:
+          expect.arrayContaining([expect.stringContaining("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED:"),
+            expect.stringContaining("No answer was accepted.")]) });
+        expect(waitingQuestion?.status).toBe("ready");
+        if (!waitingQuestion || waitingQuestion.status !== "ready") throw new Error("Missing genuine displayed Read question.");
+        expect(waitingQuestion.value.owner_handoffs?.at(-1)?.state).toBe("waiting");
+        const retained = await readBoundaryAuthoringResumeState(root, boundaryAuthoringResumeBinding(current.bundle));
+        expect(["ready", "stale"]).toContain(retained.status);
+        if (retained.status !== "ready" && retained.status !== "stale") throw new Error("The pending Read question was lost.");
+        expect(retained.value.owner_handoffs?.at(-1)).toEqual(waitingQuestion.value.owner_handoffs!.at(-1));
       }
       await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
     } finally { await fs.rm(root, { recursive: true, force: true }); }
@@ -7347,6 +7361,8 @@ describe("boundary operator-plane CLI", () => {
       expect(permissionNarration?.validatedFacts.join("\n")).not.toMatch(/deadbeef|northstar-mobile|secret_internal_note|password_hash/iu);
       expect(mappingChoices).toEqual([
         "model",
+        "model_with_recovery",
+        "program_with_recovery",
         "program",
         "choose_model",
         "cards",
@@ -9611,7 +9627,7 @@ describe("boundary operator-plane CLI", () => {
         expect(savedActions!.authority.approval_classes).toEqual(single!.authority.approval_classes);
         expect(savedActions!.authority.rules.every((entry) => entry.read_boundary_digest === explorationBoundaryCandidateDigest(savedRead))).toBe(true);
         expect(vocabularyChat.streamCheckpoint).toHaveBeenCalledWith("Read revision saved; review needs recovery",
-          expect.arrayContaining([expect.stringContaining("The disabled Read revision was saved, but its review did not finish.")]), "warning");
+          expect.arrayContaining([expect.stringContaining("The disabled Read revision was saved, but the following review did not finish.")]), "warning");
         expect(vi.mocked(vocabularyChat.streamCheckpoint).mock.calls.flat(2).join("\n")).not.toContain("the prior Action draft is retained");
       }
     } finally {
@@ -9885,7 +9901,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 25_000);
 
-  it.each(["required_tool", "validation", "mixed", "clarification_paused"] as const)("offers model retry and exact %s details while preserving optional Runner guidance", async (failureKind) => {
+  it.each(["required_tool", "validation", "mixed", "clarification_paused"] as const)("preserves eligible fallback and terminal decline handling: %s", async (failureKind) => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-model-fallback-"));
     const inspection = actionTargetInspection();
     const build = buildAutoBoundary({
@@ -9910,7 +9926,9 @@ describe("boundary operator-plane CLI", () => {
       source_database_changed: false as const,
       activated_actions: [],
     }));
+    let refusedRead: Awaited<ReturnType<typeof loadBoundaryReviewContext>> | undefined;
     const modelReadWorkloadGenerator = vi.fn(async () => {
+      if (failureKind === "clarification_paused") refusedRead = await loadBoundaryReviewContext(root);
       if (failureKind === "clarification_paused") throw new Error(
         "READ_WORKLOAD_CLARIFICATION_DECLINED: no business meaning was supplied for public.service_visits.visit_date; Runner accepted no model draft.",
       );
@@ -9926,7 +9944,10 @@ describe("boundary operator-plane CLI", () => {
       );
     });
     const session: BoundaryReviewInteractiveSession = {
-      chooseResource: async () => undefined,
+      chooseResource: async (_resources, _overview, options) => {
+        if (options?.notice) fallbackDetails.push({ title: options.notice.title, lines: options.notice.lines, tone: options.notice.tone });
+        return undefined;
+      },
       editFieldTiers: async () => undefined,
       promptText: async (prompt) => {
         if (prompt.includes("What job are you giving this agent?")) {
@@ -9997,6 +10018,19 @@ describe("boundary operator-plane CLI", () => {
       )).resolves.toBe(0);
 
       expect(modelReadWorkloadGenerator).toHaveBeenCalledOnce();
+      if (failureKind === "clarification_paused") {
+        expect(fallbackChoices).toEqual([]);
+        expect(runDelegationActionReview).not.toHaveBeenCalled();
+        expect(fallbackDetails.map(detail => detail.title + " " + detail.lines.join(" ")).join("\n"))
+          .toContain("READ_WORKLOAD_CLARIFICATION_DECLINED");
+        expect((await loadBoundaryReviewContext(root)).candidate).toEqual(refusedRead!.candidate);
+        const retained = await readBoundaryAuthoringResumeState(root, boundaryAuthoringResumeBinding(refusedRead!.bundle));
+        expect(retained).toMatchObject({ status: "ready", value: { stage: "read_mapping",
+          job_intent: "Explain service visits and propose creating a maintenance request." } });
+        await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
+        expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+        return;
+      }
       expect(fallbackChoices).toEqual([
         "READ BOUNDARY MODEL DRAFT FAILED",
         "READ BOUNDARY MODEL DRAFT FAILED",
@@ -10007,16 +10041,13 @@ describe("boundary operator-plane CLI", () => {
         lines: expect.arrayContaining([
           expect.stringContaining(failureKind === "required_tool"
             ? "required bounded Read Boundary authoring tool"
-            : failureKind === "clarification_paused" ? "READ_WORKLOAD_CLARIFICATION_DECLINED" : "READ_WORKLOAD_ID_INVALID"),
+            : "READ_WORKLOAD_ID_INVALID"),
           expect.stringContaining("no source query or write ran"),
           expect.stringContaining("intermediate metadata workspace, not an accepted model draft or active access"),
         ]),
       }));
       const failureText = fallbackDetails.map((detail) => detail.lines.join("\n")).join("\n");
-      if (failureKind === "clarification_paused") {
-        expect(failureText).toContain("business clarification was left unanswered");
-        expect(failureText).not.toContain("submitted a structured Read Boundary draft");
-      } else if (failureKind !== "required_tool") {
+      if (failureKind !== "required_tool") {
         expect(failureText).toContain("Attempt 1 (initial)");
         expect(failureText).toContain("Attempt 2 (correction)");
         expect(failureText).not.toContain("did not produce");
@@ -17229,6 +17260,20 @@ describe("saved review operation dispatch and persistence", () => {
         expect(resume.pending_job_revision).toBe(mode === "genuine-noop" ? "Change the maximum to four." : exact);
         expect(providerCalls).toBe(0); expect(plannerCalls).toBe(1); return;
       }
+      if (mode === "redundant-source") {
+        // The captured model actually asked for a replacement Source. Review
+        // cannot silently answer or erase that newly durable owner question.
+        expect(providerCalls).toBe(0); expect(plannerCalls).toBe(1); expect(ownershipReviews).toBe(0);
+        expect(resume.pending_policy_review).toBeUndefined(); expect(resume.completed_policy_reviews).toBeUndefined();
+        expect(resume.pending_job_revision).toBe(exact);
+        const capture = JSON.parse(await fs.readFile(new URL("./fixtures/review-routing-captures.json", import.meta.url), "utf8"))[1];
+        const question = JSON.parse(capture.response.output[0].arguments).question;
+        expect(resume.owner_handoffs?.at(-1)).toMatchObject({ state: "waiting", consumer: "planning", question });
+        expect(resume.owner_handoffs?.at(-1)?.completion).toBeDefined();
+        expect(resume.owner_handoffs?.at(-1)?.context_digest).toMatch(/^sha256:[a-f0-9]{64}$/u);
+        expect(JSON.stringify(stored)).toBe(sourceInitial);
+        return;
+      }
       if (["declined", "choice-save-race", "source-race", "resume-race", "provider-refusal", "maintenance-missing", "maintenance-source-race", "receipt-source-race", "client-declined", "client-source-race"].includes(mode)) {
         expect(resume.pending_policy_review?.operation).toBe("review_rules"); expect(resume.completed_policy_reviews).toBeUndefined();
         if (mode.startsWith("client-")) {
@@ -17495,8 +17540,9 @@ describe("saved post-edit review uses reader evidence after writer setup", () =>
 
 
 describe("public saved-job connection recovery control", () => {
-  it.each(["pause", "answer", "decline", "source-drift", "competing", "registered-refusal", "diagnostic-refusal"] as const)("Phase1 public Read assistance persists its actual question and current answer: %s", async mode => {
+  it.each(["pause", "answer", "decline", "source-drift", "competing", "registered-refusal", "diagnostic-refusal", "checkpoint-failed", "checkpoint-noop", "read-ack-race", "resume-ack-race"] as const)("Phase1 public Read assistance persists its actual question and current answer: %s", async mode => {
     const f = await staleSemanticRevalidationFixture();
+    let restoreCommit: (() => void) | undefined, restoreCheckpoint: (() => void) | undefined;
     try {
       const binding = boundaryAuthoringResumeBinding((await loadBoundaryReviewContext(f.root)).bundle);
       const source = newPolicySourceSession();
@@ -17562,11 +17608,67 @@ describe("public saved-job connection recovery control", () => {
       expect(paused.status).toBe("ready"); if (paused.status !== "ready") return;
       expect(paused.value.read_assistance?.pending_question).not.toHaveProperty("decision");
       expect(paused.value.generation_recovery?.operations.at(-1)?.question_handoff?.answered).not.toBe(true);
+      const ackFailure = ["checkpoint-failed", "checkpoint-noop", "read-ack-race", "resume-ack-race"].includes(mode);
+      let acknowledged = false;
+      let beforeAck: Awaited<ReturnType<typeof readBoundaryAuthoringResumeState>> | undefined;
+      let competingResume: Awaited<ReturnType<typeof readBoundaryAuthoringResumeState>> | undefined;
+      let competingRead: Awaited<ReturnType<typeof loadBoundaryReviewContext>> | undefined;
+      if (ackFailure) {
+        const realCommit = readWorkloadAuthoring.commitReadWorkloadCandidate;
+        const realWrite = authoringResumePersistence.writeBoundaryAuthoringResumeState;
+        const commit = vi.spyOn(readWorkloadAuthoring, "commitReadWorkloadCandidate").mockImplementation(async args => {
+          beforeAck = await readBoundaryAuthoringResumeState(f.root, binding);
+          const saved = await realCommit(args);
+          acknowledged = true;
+          const current = await loadBoundaryReviewContext(f.root);
+          if (mode === "read-ack-race") {
+            await boundaryReviewMutations.commitBoundaryReviewMutationBatch(f.root, await prepareBoundaryReviewMutationBatch(f.root,
+              [{ resource_id: "public.service_visits", max_rows: 7, actor: "competing-reviewer", reason: "Concurrent Read after acknowledged mapping." }],
+              async () => f.inspection, current.bundle.mutation_bindings));
+            competingRead = await loadBoundaryReviewContext(f.root);
+          } else if (mode === "resume-ack-race") {
+            if (beforeAck.status !== "ready") throw new Error("Missing genuine pre-commit checkpoint.");
+            const next = buildBoundaryAuthoringResumeState({ binding: boundaryAuthoringResumeBinding(current.bundle),
+              stage: beforeAck.value.stage, jobIntent: beforeAck.value.job_intent, provider: "openai", model: "gpt-test",
+              previous: beforeAck.value, pendingJobRevision: "A competing current Read request after mapping commit." });
+            await realWrite(f.root, next, { expectedRevisionDigest: beforeAck.value.revision_digest });
+            competingResume = await readBoundaryAuthoringResumeState(f.root, next.binding);
+          }
+          return saved;
+        });
+        restoreCommit = () => commit.mockRestore();
+        if (mode === "checkpoint-failed" || mode === "checkpoint-noop") {
+          const checkpoint = vi.spyOn(authoringResumePersistence, "writeBoundaryAuthoringResumeState").mockImplementation(async (...args) => {
+            if (acknowledged) {
+              if (mode === "checkpoint-failed") throw new Error("TEST_READ_ACK_CHECKPOINT_NOT_SAVED");
+              return path.join(f.root, ".synapsor/boundary-authoring/resume.json");
+            }
+            return realWrite(...args);
+          });
+          restoreCheckpoint = () => checkpoint.mockRestore();
+        }
+      }
       reopened = true; await run();
       // Finishing the ordinary disabled Read review may replace its candidate.
       // Recheck using its ACTUAL current binding, not the earlier question view.
       const finalBinding = boundaryAuthoringResumeBinding((await loadBoundaryReviewContext(f.root)).bundle);
       const final = await readBoundaryAuthoringResumeState(f.root, finalBinding);
+      if (ackFailure) {
+        expect(acknowledged).toBe(true); expect(sawAnswer).toBe(true); expect(requestJson).toHaveBeenCalledTimes(2);
+        expect(noAction).not.toHaveBeenCalled();
+        expect(beforeAck?.status).toBe("ready");
+        if (!beforeAck || beforeAck.status !== "ready") throw new Error("Missing acknowledged answer history.");
+        expect(final.status).toBe(mode === "resume-ack-race" ? "ready" : "stale");
+        if (final.status !== "ready" && final.status !== "stale") throw new Error("The saved job was lost.");
+        expect(final.value.owner_handoffs).toEqual(beforeAck.value.owner_handoffs);
+        expect(final.value.generation_recovery).toEqual(beforeAck.value.generation_recovery);
+        if (mode === "resume-ack-race") expect(final).toEqual(competingResume);
+        else expect(final.value.read).toEqual(beforeAck.value.read);
+        if (mode === "read-ack-race") expect((await loadBoundaryReviewContext(f.root)).candidate).toEqual(competingRead!.candidate);
+        expect(await readActionRuleAuthorityActivation(f.root)).toBeUndefined();
+        await expect(loadActivatedExplorationBoundaries(f.root)).rejects.toMatchObject({ code: "ENOENT" });
+        return;
+      }
       expect(final.status).toBe("ready"); if (final.status !== "ready") return;
       if (mode === "answer") {
         expect(sawAnswer).toBe(true); expect(requestJson).toHaveBeenCalledTimes(2);
@@ -17585,7 +17687,7 @@ describe("public saved-job connection recovery control", () => {
       }
       expect(noAction).not.toHaveBeenCalled();
       expect(await readActionRuleAuthorityActivation(f.root)).toBeUndefined();
-    } finally { await f.dispose(); }
+    } finally { restoreCheckpoint?.(); restoreCommit?.(); await f.dispose(); }
   }, 30_000);
   it("Phase1 preserves exhausted planning questions on reopen without resetting answers or sending again", async () => {
     const f = await staleSemanticRevalidationFixture();

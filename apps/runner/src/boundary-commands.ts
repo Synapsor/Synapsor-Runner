@@ -8569,6 +8569,18 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     committed = savedRead;
     context = await reloadReadReviewAfterCommit(input.projectRoot, savedRead);
     mappingBoundary = context.candidate;
+    if (input.authoringChat && activeResume) {
+      // A later review can pause after this acknowledged Read commit. Bind
+      // the saved job to this exact commit before any further model/human wait;
+      // a competing Read or resume must not become its replacement identity.
+      await withProjectAuthorityMutation(input.projectRoot, async permit => {
+        context = await reloadReadReviewAfterCommit(input.projectRoot, savedRead);
+        mappingBoundary = context.candidate;
+        await persistAuthoringResume(actionIntents.length ? "action_drafting" : "authority_review", permit);
+        if (resumePersistenceBlocked) throw checkpointSaveFailure("The committed Read mapping");
+        await assertAuthoringResumeCurrent(undefined, false, permit);
+      });
+    }
   }
   if (actionIntents.length && !reusingExactRead) {
     if (!input.completeReadReview) {
