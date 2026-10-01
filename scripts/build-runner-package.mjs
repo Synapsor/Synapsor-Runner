@@ -230,6 +230,7 @@ const publicDocs = [
   "fresh-developer-usability.md",
   "getting-started-own-database.md",
   "guided-onboarding.md",
+  "structured-draft-bundles.md",
   "openrouter.md",
   "action-rule-complete-collections.md",
   "action-rule-shared-reference-scope.md",
