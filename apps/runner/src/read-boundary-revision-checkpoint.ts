@@ -2,9 +2,9 @@ import { Buffer } from "node:buffer";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { assertReadCurrentStatePrerequisiteShape, type ReviewedReadCurrentStatePrerequisite } from "./read-prerequisite.js";
-import type { ReviewedReadRelationship } from "./read-relationship-review.js";
+import type { ReviewedReadRelationship } from "./read-authoring-contract-types.js";
 import type { ReadBoundaryFieldExposureChange, ModelReadBoundaryRevisionClarification,
-  ModelReadBoundaryRevisionClarificationDecision } from "./read-boundary-revision-model.js";
+  ModelReadBoundaryRevisionClarificationDecision } from "./read-authoring-contract-types.js";
 
 type Digest = `sha256:${string}`;
 export type ReadBoundaryRevisionCheckpoint = {

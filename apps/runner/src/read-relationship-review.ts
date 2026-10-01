@@ -1,3 +1,5 @@
+import { REVIEWED_READ_RELATIONSHIP_SCHEMA_VERSION, type ReviewedReadRelationship } from "./read-authoring-contract-types.js";
+export type { ReviewedReadRelationship } from "./read-authoring-contract-types.js";
 import { Buffer } from "node:buffer";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
@@ -10,7 +12,6 @@ import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js"
 import type { ReviewSection } from "./read-boundary-review-types.js";
 import { safeTerminalText } from "./terminal-syntax.js";
 
-const REVIEWED_READ_RELATIONSHIP_SCHEMA_VERSION = "synapsor.reviewed-read-relationship.v1";
 const MAX_REVIEWABLE_RELATIONSHIPS = 64;
 const MAX_REVIEW_METADATA_BYTES = 64 * 1024;
 
@@ -18,13 +19,6 @@ const MAX_REVIEW_METADATA_BYTES = 64 * 1024;
  * A host-created selection of one generated relationship. This is provenance,
  * not authority: callers must still make an exact disabled-candidate mutation.
  */
-export type ReviewedReadRelationship = Readonly<{
-  schema_version: typeof REVIEWED_READ_RELATIONSHIP_SCHEMA_VERSION;
-  candidate_digest: `sha256:${string}`;
-  resource: string;
-  relationship_id: string;
-  relationship_fingerprint: `sha256:${string}`;
-}>;
 
 type ReviewableReadRelationship = {
   resource: string;

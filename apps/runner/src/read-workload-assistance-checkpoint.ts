@@ -1,7 +1,7 @@
 import { Buffer } from "node:buffer";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
-import type { ModelReadClarificationRequest, ModelReadClarificationDecision, ModelReadValueRequest, ModelReadValueContextDecision } from "./read-workload-model.js";
+import type { ModelReadClarificationRequest, ModelReadClarificationDecision, ModelReadValueRequest, ModelReadValueContextDecision } from "./read-authoring-contract-types.js";
 import { safeReadWorkloadDiagnostic, type ReadWorkloadDiagnostic } from "./read-workload-diagnostics.js";
 
 type Digest = `sha256:${string}`;

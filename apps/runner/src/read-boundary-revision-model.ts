@@ -1,3 +1,5 @@
+import type { ReadBoundaryFieldExposure, ReadBoundaryFieldExposureChange, ModelReadBoundaryRevisionClarification, ModelReadBoundaryRevisionClarificationDecision } from "./read-authoring-contract-types.js";
+export type { ReadBoundaryFieldExposure, ReadBoundaryFieldExposureChange, ModelReadBoundaryRevisionClarification, ModelReadBoundaryRevisionClarificationDecision } from "./read-authoring-contract-types.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
@@ -30,17 +32,7 @@ import {
 
 const SUBMIT_READ_BOUNDARY_REVISION_TOOL = "runner.submit_read_boundary_revision";
 
-export type ReadBoundaryFieldExposure = "model_and_runner" | "runner_only" | "kept_out";
 
-export type ReadBoundaryFieldExposureChange = {
-  resource: string;
-  field: string;
-  before: ReadBoundaryFieldExposure;
-  after: ReadBoundaryFieldExposure;
-  rationale?: string;
-  /** Full privacy is the default for new model-guided Runner-only decisions. */
-  model_operations?: "none" | "preserve_reviewed";
-};
 
 export type ModelReadBoundaryRevisionResult = {
   changes: ReadBoundaryFieldExposureChange[];
@@ -64,14 +56,7 @@ export type ModelReadBoundaryRevisionResult = {
   usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number };
 };
 
-export type ModelReadBoundaryRevisionClarification = {
-  question: string;
-  reason: string;
-};
 
-export type ModelReadBoundaryRevisionClarificationDecision =
-  | { state: "answered"; answer: string }
-  | { state: "declined" };
 
 export async function generateModelReadBoundaryRevision(input: {
   instruction: string;

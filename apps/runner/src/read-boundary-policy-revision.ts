@@ -1,5 +1,5 @@
 import { EXPLORATION_BUDGET_REVIEW_CEILINGS } from "./auto-boundary.js";
-import type { BoundaryResourceReviewRequest } from "./boundary-review-mutation.js";
+import type { BoundaryResourceReviewRequest } from "./read-authoring-contract-types.js";
 
 const fieldLists = ["selectable_fields", "filterable_fields", "sortable_fields", "groupable_fields", "time_bucket_fields", "count_distinct_fields"] as const;
 const numericLimits = {

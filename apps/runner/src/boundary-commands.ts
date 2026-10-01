@@ -1,3 +1,5 @@
+import { loadBoundaryReviewContext, type BoundaryReviewBundle } from "./boundary-review-context.js";
+export { loadBoundaryReviewContext, type BoundaryReviewBundle } from "./boundary-review-context.js";
 import { authoringGenerationCurrentnessCode, isAuthoringGenerationStop, withAuthoringGenerationRecovery, configureAuthoringGenerationRecovery, authoringTransportCheckpoint, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, prepareAuthoringManualRecovery, permitAuthoringManualRecovery, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { answerOwnerHandoff, createOwnerHandoff, ownerHandoffCheckpoint, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
 import { reviewSourceInputPolicy } from "./authoring-input-policy-operation.js";
@@ -411,27 +413,6 @@ const REVIEWED_SHAPE_LIMIT_FLAGS = [
 ] as const;
 
 
-type BoundaryReviewBundle = {
-  schema_version: "synapsor.boundary-review-bundle.v1";
-  candidate_digest: `sha256:${string}`;
-  bundle_digest: `sha256:${string}`;
-  activation: "disabled_unreviewed";
-  mutation_bindings: BoundaryReviewMutationBindings;
-  authority: {
-    source: string;
-    deployment_profile: "development" | "staging" | "production";
-    compiler_version: string;
-    spec_version: string;
-    generation_lock_fingerprint: `sha256:${string}`;
-    schema_fingerprint: `sha256:${string}`;
-    role_posture_fingerprint: `sha256:${string}`;
-    environment: string;
-    budgets: ExplorationBoundaryDraft["budgets"];
-  };
-  decisions: Array<ReturnType<typeof boundaryReviewDecisions>[number] & { confirmed: boolean }>;
-  outstanding_decision_ids: string[];
-  candidate: ExplorationBoundaryDraft;
-};
 
 export type BoundaryActivationHandoff = (input: {
   projectRoot: string;
@@ -18135,73 +18116,6 @@ async function saveBoundaryReviewSignoff(projectRoot: string,
   });
 }
 
-export async function loadBoundaryReviewContext(projectRoot: string): Promise<{
-  boundaryRoot: string;
-  draft: ExplorationBoundaryDraft;
-  candidate: ExplorationBoundaryDraft;
-  lock: GenerationLock;
-  progress: Awaited<ReturnType<typeof readBoundaryReviewProgress>>;
-  bundle: BoundaryReviewBundle;
-}> {
-  const journey = await readGuidedOnboardingState(projectRoot);
-  const boundaryRoot = path.resolve(projectRoot, journey?.artifacts.boundary_root ?? "synapsor/generated");
-  const relative = path.relative(projectRoot, boundaryRoot);
-  if (relative.startsWith("..") || path.isAbsolute(relative)) {
-    throw new Error("Managed boundary root escapes the selected project.");
-  }
-  const stored = await readProjectReadAuthoring(projectRoot);
-  if (stored && !stored.selected) {
-    throw new Error("No saved Read boundary is selected. Create a disabled boundary before opening its review.");
-  }
-  const draft = stored?.selected?.draft ?? await readJsonFileWithLocation<ExplorationBoundaryDraft>(
-    path.join(boundaryRoot, "exploration-boundary.draft.json"),
-    "exploration boundary draft",
-  );
-  const lock = stored?.selected?.draft_lock ?? await readJsonFileWithLocation<GenerationLock>(
-    path.join(projectRoot, ".synapsor/generation-lock.json"),
-    "generation lock",
-  );
-  const progress = stored?.selected?.progress ?? await readBoundaryReviewProgress(projectRoot, draft);
-  const candidate = progress?.candidate ?? recommendedBoundaryReviewCandidate(draft);
-  const decisions = boundaryReviewDecisions(candidate).map((decision) => ({
-    ...decision,
-    confirmed: progress?.confirmed_decisions.includes(decision.decision) ?? false,
-  }));
-  const candidateDigest = explorationBoundaryCandidateDigest(candidate);
-  const core = {
-    schema_version: "synapsor.boundary-review-bundle.v1" as const,
-    candidate_digest: candidateDigest,
-    activation: "disabled_unreviewed" as const,
-    authority: {
-      source: candidate.source,
-      deployment_profile: candidate.deployment_profile,
-      compiler_version: candidate.compiler_version,
-      spec_version: candidate.spec_version,
-      generation_lock_fingerprint: candidate.generation_lock_fingerprint,
-      schema_fingerprint: lock.schema_fingerprint,
-      role_posture_fingerprint: candidate.role_posture_fingerprint,
-      environment: candidate.deployment_profile,
-      budgets: candidate.budgets,
-    },
-    decisions,
-    outstanding_decision_ids: decisions.filter((decision) => !decision.confirmed).map((decision) => decision.id),
-    candidate,
-  };
-  const bundle: BoundaryReviewBundle = {
-    ...core,
-    mutation_bindings: {
-      draft_digest: explorationBoundaryCandidateDigest(draft),
-      candidate_digest: candidateDigest,
-      generation_lock_fingerprint: draft.generation_lock_fingerprint,
-      schema_fingerprint: lock.schema_fingerprint,
-      role_posture_fingerprint: lock.role_posture_fingerprint,
-      review_revision: progress?.revision ?? 0,
-      ...(stored ? { authoring: stored.bindings } : {}),
-    },
-    bundle_digest: canonicalJsonDigest(core),
-  };
-  return { boundaryRoot, draft, candidate, lock, progress, bundle };
-}
 
 
 async function formatBoundaryReviewSummary(

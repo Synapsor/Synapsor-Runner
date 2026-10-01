@@ -1,7 +1,17 @@
 import type { AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { ActionRuleModelDraftV1 } from "./action-rule-draft.js";
-import type { ActionWorkUnitCorrection } from "./action-authoring-work-unit-contract.js";
+type Digest = `sha256:${string}`;
+
+export type ActionWorkUnitBindingPermutation = { slots: number[]; original_bindings: string[] };
+
+export type ActionWorkUnitCorrection = {
+  source_digest: string; read_digest: Digest; catalog_digest: Digest; parent_digest: Digest; outcome: string;
+  source_answer_history_digest: Digest;
+  interpretation_digest: Digest; source_ranges: Array<{ start: number; end: number }>;
+  component: "subject" | "predicate" | "private_role"; editable_paths: string[];
+  binding_permutation?: ActionWorkUnitBindingPermutation;
+};
 
 /** Identity of an actual completed coverage submission, not a verdict. */
 export type ActionWorkUnitCoverageProvenance = {

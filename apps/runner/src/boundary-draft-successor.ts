@@ -4,7 +4,7 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { ActionRuleModelDraftV1 } from "./action-rule-draft.js";
 import { actionRuleModelDraftFromAuthority } from "./action-rule-draft.js";
 import { readActionRuleAuthorityDraft, type ActionRuleAuthorityDraftV1 } from "./action-rule-authority.js";
-import { loadBoundaryReviewContext } from "./boundary-commands.js";
+import { loadBoundaryReviewContext } from "./boundary-review-context.js";
 import { readProjectReadAuthoring } from "./control-policy-read-authoring-project.js";
 import type { OperatorAuthorityState } from "./control-policy-operator-repository.js";
 import type { ReadAuthoringBindings } from "./control-policy-record.js";

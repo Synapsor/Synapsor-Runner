@@ -1,5 +1,6 @@
 import type { ActionRuleSpecV1, DerivedEffectEnvelopeSpecV1, RuleVerificationBoundarySpecV1 } from "@synapsor/spec";
-import type { ActionRuleCatalogV1, ActionRuleSubjectIdentityV1 } from "../index.js";
+import type { ActionRuleCatalogV1 } from "../types.js";
+import type { ActionRuleSubjectIdentityV1 } from "../fact-loader.js";
 
 /** Fresh synthetic original-shaped allocation control. Native proof is supplied
  * only by its real inspected catalogue, never by this fixture constructor. */

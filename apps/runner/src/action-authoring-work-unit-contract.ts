@@ -1,3 +1,5 @@
+import type { ActionWorkUnitCorrection, ActionWorkUnitBindingPermutation } from "./action-rule-authoring-checkpoint.js";
+export type { ActionWorkUnitCorrection, ActionWorkUnitBindingPermutation } from "./action-rule-authoring-checkpoint.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { parseActionWorkUnitCoverageProvenance, type ActionWorkUnitCoverageProvenance } from "./action-rule-authoring-checkpoint.js";
 import { Buffer } from "node:buffer";
@@ -9,7 +11,6 @@ import { activePolicySource, type PolicyCoverage, type PolicyPassage, type Polic
 import { readBoundaryRevisionCatalog } from "./read-boundary-revision-model.js";
 
 type Digest = `sha256:${string}`;
-export type ActionWorkUnitBindingPermutation = { slots: number[]; original_bindings: string[] };
 export const ACTION_WORK_UNIT_BINDING_LOADER_FIELDS = ["source", "max_rows", "overflow", "collection_consistency"] as const;
 type DraftComponents = {
   verification?: ActionRuleModelDraftV1["verification"];
@@ -174,13 +175,6 @@ export function buildActionAuthoringWorkUnitContract(input: ActionWorkUnitContex
   return core;
 }
 
-export type ActionWorkUnitCorrection = {
-  source_digest: string; read_digest: Digest; catalog_digest: Digest; parent_digest: Digest; outcome: string;
-  source_answer_history_digest: Digest;
-  interpretation_digest: Digest; source_ranges: Array<{ start: number; end: number }>;
-  component: "subject" | "predicate" | "private_role"; editable_paths: string[];
-  binding_permutation?: ActionWorkUnitBindingPermutation;
-};
 export class ActionWorkUnitFidelityError extends Error {
   readonly code: string = "ACTION_WORK_UNIT_REPRESENTATION_MISMATCH";
   constructor(readonly correction: ActionWorkUnitCorrection) {

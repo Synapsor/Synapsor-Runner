@@ -1,3 +1,5 @@
+import type { ModelReadValueRequest, ModelReadClarificationRequest, ModelReadValueContextDecision, ModelReadClarificationDecision } from "./read-authoring-contract-types.js";
+export type { ModelReadValueRequest, ModelReadClarificationRequest, ModelReadValueContextDecision, ModelReadClarificationDecision } from "./read-authoring-contract-types.js";
 import { isAuthoringGenerationStop } from "./authoring-generation-recovery.js";
 import { readWorkloadAssistanceCheckpoint, parseReadWorkloadAssistanceCheckpoint, ReadWorkloadAssistancePausedError,
   type ReadWorkloadAssistanceCheckpoint, type ReadWorkloadAssistanceQuestion } from "./read-workload-assistance-checkpoint.js";
@@ -57,34 +59,9 @@ export type ModelReadWorkloadResult = {
   usage?: { input_tokens?: number; output_tokens?: number; total_tokens?: number };
 };
 
-export type ModelReadValueRequest = {
-  resource: string;
-  field: string;
-  reason: string;
-  question: string;
-};
 
-export type ModelReadClarificationRequest = {
-  resource: string;
-  field?: string;
-  category?: "business_meaning" | "relationship_support";
-  reason: string;
-  question: string;
-};
 
-export type ModelReadValueContextDecision =
-  | {
-      state: "provided";
-      resource: string;
-      field: string;
-      values: string[];
-      egressAcknowledged: true;
-    }
-  | { state: "without_values" };
 
-export type ModelReadClarificationDecision =
-  | { state: "answered"; answer: string }
-  | { state: "declined" };
 
 /**
  * Optional semantic frontend: a provider maps operator-authored questions to
