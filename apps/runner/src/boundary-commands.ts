@@ -8633,13 +8633,22 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     }
     const prepared: Array<{ entry: typeof entries[number]; catalog: BuiltActionRuleAuthoringCatalogV1; compiled: CompiledActionRuleModelDraftV1 }> = [];
     let latestCompiled: CompiledActionRuleModelDraftV1 | undefined;
+    // Earlier outcomes can predate a later private-source review. Every merge
+    // recompiles retained rules against its incoming catalog, so first bind
+    // the complete reviewed dependency closure to this exact Read revision.
+    // Include the saved replacement for outcomes outside this batch; conflicts
+    // remain refusals, and retained metadata is rebuilt from current inspection.
+    const reboundCatalogs = [];
     for (const entry of entries) {
-    // Read-workload minimization intentionally removes resources that exist
-    // only to support an Action target. Retain their already reviewed private
-    // catalog authority while rebinding the Action draft to the exact final
-    // Read revision. This must not make the Action-only resource model-readable.
-    const catalog = await buildActionCatalogForSavedReadRevision({ projectRoot: input.projectRoot,
-      catalog: entry.catalog.catalog, nextBoundary: reviewedRead, inspection: actionInspection! });
+      reboundCatalogs.push((await buildActionCatalogForSavedReadRevision({ projectRoot: input.projectRoot,
+        catalog: entry.catalog.catalog, nextBoundary: reviewedRead, inspection: actionInspection! })).catalog);
+    }
+    const retainedCatalog = combineReviewedActionCatalogs([
+      ...(replacement ? [replacement.authority.catalog] : []), ...reboundCatalogs,
+    ]);
+    const catalog = buildActionRuleAuthoringCatalog({ boundary: reviewedRead,
+      inspection: actionInspection!, retainedCatalog });
+    for (const entry of entries) {
     const compiled = compileActionRuleModelDraft({
       draft: entry.result.compiled.draft,
       builtCatalog: catalog,
