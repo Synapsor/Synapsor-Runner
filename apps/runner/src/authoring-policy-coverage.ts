@@ -957,7 +957,8 @@ export async function reviewPolicyCoverage(input: {
     const index = operator_clarification ? operatorMessages.indexOf(operator_clarification) : -1;
     return { ...record, ...(index >= 0 ? { operator_message_id: index + 1 } : {}) };
   };
-  const retiredAssociations = new Set(input.retainedDutyPlan?.retire.map(entry => canonicalJsonDigest(entry.passage)) ?? []);
+  const retiredAssociations = new Set([...(input.retainedDutyPlan?.retire.map(entry => canonicalJsonDigest(entry.passage)) ?? []),
+    ...(input.retainedDutyPlan?.pending?.filter(entry=>entry.basis).map(entry=>canonicalJsonDigest(entry.passage))??[])]);
   const previousUnresolved = input.previousReport ? unresolvedPolicyPassages(input.previousReport)
     .filter(passage => !retiredAssociations.has(canonicalJsonDigest(passage))) : [];
   // Old reports without scoped dependencies require the full unchanged bundle.
@@ -1134,7 +1135,7 @@ export function policyCoverageSummary(source: PolicyTextSnapshot, report?: Polic
   const topics = [...new Set(unresolved.map((passage) => passageTopic(source, passage)))];
   return [
     `Attached rules: ${source.name} v${source.version}; ${open.length} open check(s) across ${new Set(open.map((passage) => passageTopic(source, passage))).size} business topic(s).`,
-    ...(report.retained_duty_history?.length ? [`${report.retained_duty_history.length} obsolete Action association(s) retained in review history. Their source-wide duties continue under independently checked current counter responsibilities; external writers and production assurance remain unverified. No historical work was reauthorized.`] : []),
+    ...(report.retained_duty_history?.length ? [`${report.retained_duty_history.length} host-retained Action association(s) remain in review history. Exact proposed withdrawals remain pending; completed removal requires actual publication lineage. Source-wide duties and external assurance remain unverified. No historical work was reauthorized.`] : []),
     ...(unresolved.length ? ["Structured draft prepared; policy coverage needs review before activation.",
       `Review topics: ${topics.slice(0, 3).join("; ")}. Open Review attached rules to inspect and resolve every topic.`]
       : ["Source interpretation is ready for your review, not proof of complete policy correctness."]),
@@ -1189,14 +1190,17 @@ export function policyCoverageSection(source: PolicyTextSnapshot, report: Policy
       lines: entries.flatMap((entry) => entry.lines),
       children: entries.length === 1 ? entries[0]!.children : entries,
     };
-  }), ...(report.retained_duty_history?.length ? [{ id: 'retained_duty_history', title: 'Historical associations after reviewed removal',
-    lines: ['These records are outside current Action scope, not fulfilled or waived. Source-wide obligations remain under their current responsibilities; historical work is not reauthorized.'],
+  }), ...(report.retained_duty_history?.length ? [{ id: 'retained_duty_history', title: 'Host-retained Source duties and proposal history',
+    lines: ['Pending proposals are not completed removals. Original Source duties are not fulfilled or waived; historical work is not reauthorized.'],
     children: report.retained_duty_history.map((record, index) => ({id:`retired_duty_${index}`,title:`Historical source lines ${record.original_passage.start}-${record.original_passage.end}`,
       lines:[`Original interpretation: ${record.original_passage.interpretation}`,
         `Original association: ${record.original_passage.draft_paths.join(', ')}`,
         `Disposition: ${record.disposition}; verification: false`,
-        `Original report: ${record.original_report_digest}`, `Publication lineage: ${record.lineage_digest}`,
-        ...record.removal_basis.transitions.map(t => `Reviewed publication: ${t.before} -> ${t.after}; event ${t.event}`),
+        `Original report: ${record.original_report_digest}`,
+        ...(record.disposition==='outside_current_action_scope'
+          ? [`Publication lineage: ${record.lineage_digest}`,...record.removal_basis.transitions.map(t => `Reviewed publication: ${t.before} -> ${t.after}; event ${t.event}`)]
+          : [`Pending exact proposal: ${record.prospective_basis.proof_digest}; no publication event is implied.`,
+            `Active baseline: ${record.prospective_basis.active_digest}; candidate: ${record.prospective_basis.candidate_digest}`]),
         `Continuing current duties: ${record.continuing_paths.join(', ')}`],
       children:[{id:`original_retired_report_${index}`,title:'Complete original report (historical)',
         lines:[`Original source: ${record.original_report.source_digest}`,`Original draft: ${record.original_report.draft_digest}`,

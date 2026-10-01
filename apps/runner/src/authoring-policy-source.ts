@@ -1,3 +1,4 @@
+import { AUTHORING_PROGRAM_CAPACITY } from "./authoring-program-capacity.js";
 import { assertSourceInputReviews, type SourceInputPolicyReview } from "./authoring-input-policy-records.js";
 import { assertScopedDisclosureReviews, type ScopedDisclosureReview, type ScopedDisclosureInventory } from "./authoring-scoped-disclosure-records.js";
 import { assertSourceTransactionReviews, type SourceTransactionReview } from "./authoring-source-transaction-review.js";
@@ -121,16 +122,24 @@ export type PolicyPassage = {
   source_counter_resolution?: { source_digest: string; path: string; dependencies_digest: string;
     proof_digest: string; external_assurance: "unverified" };
 };
-export type RetainedDutyHistory = {
+type RetainedDutyAudit = {
   origin: 'HOST-RETAINED-DUTY'; source_digest: string; original_report_digest: string;
   original_report: PolicyCoverage;
   coverage_authority_digest: string; original_passage: PolicyPassage;
+  continuing_paths: string[]; verified: false;
+};
+export type RetainedDutyHistory = RetainedDutyAudit & ({
   removal_basis: { store: string; origin_record: string; active_digest: string;
     transitions: Array<{event:string;before:string;after:string;before_digest:string;after_digest:string;removed_outcomes:string[];introduced_outcomes:string[]}> };
   disposition: 'outside_current_action_scope'; lineage_digest: string;
-  continuing_paths: string[]; verified: false;
-};
+} | {
+  /** An exact proposed reduction, never an event or completed removal. */
+  disposition: 'pending_exact_withdrawal';
+  prospective_basis: import('./action-rule-authority.js').ActionRuleProspectiveWithdrawalBasis;
+});
 export type PolicyCoverage = { input_fidelity?: {digest:string;review_digests:string[];findings:import("./authoring-input-policy-records.js").InputFidelityFinding[]}; retained_duty_history?: RetainedDutyHistory[];
+  /** Host-recomputed current applicability; immutable proposal audits remain history. */
+  current_pending_retained_duties?: string[];
   scoped_disclosure?: ScopedDisclosureInventory; client_duties?: ClientDutyInventory;
   counting_inventory?: { version: 1; digest: string; paths: string[] };
   source_transaction_requirement_pending?: true;
@@ -447,6 +456,8 @@ export async function savePolicySources(root: string, session: PolicySourceSessi
       if (priorScopes.some((r,i)=>r.digest!==session.source_transaction_scope_reviews?.[i]?.digest))
         throw new Error("SOURCE_TRANSACTION_SCOPE_HISTORY_CHANGED: Existing scope decisions must be retained; no review was overwritten.");
     } catch(error) { if((error as NodeJS.ErrnoException).code!=="ENOENT")throw error; }
+    if(session.coverage?.retained_duty_history!==undefined && !validStoredCoverage(session.coverage,session.snapshots))
+      throw new Error('POLICY_RETAINED_DUTY_PENDING: Invalid host-retained duty audit; no report was saved.');
     const serialized = JSON.stringify(session);
     if (Buffer.byteLength(serialized) > 2 * 1024 * 1024) throw new Error("Saved policy sources exceed the supported size. The previous snapshot remains unchanged; remove older sources explicitly before adding more context.");
     if (options?.expectedDigest !== undefined && await policySourceSavedDigest(root, session.id) !== options.expectedDigest) {
@@ -520,13 +531,25 @@ export function validApplicationObligations(value: unknown): value is NonNullabl
       || entry === "independent_source_readback" && value.length === 1);
 }
 
+function validProspectiveWithdrawalBasis(basis: import('./action-rule-authority.js').ActionRuleProspectiveWithdrawalBasis): boolean {
+  if (!basis || Object.keys(basis).sort().join(',') !== 'active_digest,active_record,candidate_digest,candidate_record,proof_digest,read_digest,removed_outcomes,store') return false;
+  const {proof_digest,...unsigned}=basis;
+  return [basis.store,basis.active_digest,basis.candidate_digest,basis.read_digest,proof_digest].every(v => /^sha256:[a-f0-9]{64}$/u.test(v))
+    && [basis.active_record,basis.candidate_record].every(v => typeof v==='string' && v.length>0 && v.length<=128)
+    && basis.active_record!==basis.candidate_record && basis.active_digest!==basis.candidate_digest
+    && Array.isArray(basis.removed_outcomes) && basis.removed_outcomes.length>0 && basis.removed_outcomes.length<=64
+    && new Set(basis.removed_outcomes).size===basis.removed_outcomes.length
+    && basis.removed_outcomes.every(v => typeof v==='string' && v.length>0 && v.length<=256)
+    && canonicalJsonDigest(unsigned)===proof_digest;
+}
+
 function validStoredCoverage(report: PolicyCoverage, sources: PolicyTextSnapshot[], historyDepth = 0): boolean {
   if (!report || historyDepth > 120) return false;
   const source = sources.find((entry) => entry.digest === report.source_digest);
   return Boolean(source && (report.retained_duty_history === undefined || Array.isArray(report.retained_duty_history)
     && report.retained_duty_history.length <= 120 && report.retained_duty_history.every(record => record
       && record.origin === 'HOST-RETAINED-DUTY' && record.verified === false && record.source_digest === source.digest
-      && record.disposition === 'outside_current_action_scope'
+      && (record.disposition === 'outside_current_action_scope'
       && record.removal_basis && /^sha256:[a-f0-9]{64}$/u.test(record.removal_basis.store)
       && typeof record.removal_basis.origin_record === 'string' && record.removal_basis.origin_record.length <= 128
       && /^sha256:[a-f0-9]{64}$/u.test(record.removal_basis.active_digest)
@@ -536,14 +559,28 @@ function validStoredCoverage(report: PolicyCoverage, sources: PolicyTextSnapshot
         && [t.before_digest,t.after_digest].every(v => /^sha256:[a-f0-9]{64}$/u.test(v))
         && [t.removed_outcomes,t.introduced_outcomes].every(values => Array.isArray(values) && values.length <= 128
           && values.every(v => typeof v === 'string' && v.length <= 256)))
-      && [record.original_report_digest, record.coverage_authority_digest, record.lineage_digest].every(value => /^sha256:[a-f0-9]{64}$/u.test(value))
+      && /^sha256:[a-f0-9]{64}$/u.test(record.lineage_digest)
+      || record.disposition === 'pending_exact_withdrawal'
+        && Object.keys(record).sort().join(',') === 'continuing_paths,coverage_authority_digest,disposition,origin,original_passage,original_report,original_report_digest,prospective_basis,source_digest,verified'
+        && validProspectiveWithdrawalBasis(record.prospective_basis))
+      && [record.original_report_digest, record.coverage_authority_digest].every(value => /^sha256:[a-f0-9]{64}$/u.test(value))
       && record.original_report?.source_digest === source.digest
       && canonicalJsonDigest(record.original_report) === record.original_report_digest
       && validStoredCoverage(record.original_report, sources, historyDepth + 1)
       && record.original_report.passages.some(p => canonicalJsonDigest(p) === canonicalJsonDigest(record.original_passage))
-      && Array.isArray(record.continuing_paths) && record.continuing_paths.length > 0 && record.continuing_paths.length <= 32
+      && Array.isArray(record.continuing_paths) && record.continuing_paths.length > 0
+      // Existing completed association bound stays32. Pending authoring may
+      // contain every primary+3 atomic effect for the supported64 Actions.
+      && record.continuing_paths.length <= (record.disposition === 'pending_exact_withdrawal' ? 4*AUTHORING_PROGRAM_CAPACITY.totalActions : 32)
+      && new Set(record.continuing_paths).size === record.continuing_paths.length
       && record.continuing_paths.every(value => typeof value === 'string' && value.length <= 500 && value.startsWith('/runner_evidence/actions/'))
       && validStoredCoverage({source_digest:source.digest,draft_digest:report.draft_digest,passages:[record.original_passage]}, [source], historyDepth + 1)))
+    && (report.current_pending_retained_duties === undefined
+      ? !report.retained_duty_history?.some(r => r.disposition==='pending_exact_withdrawal')
+      : Array.isArray(report.current_pending_retained_duties) && report.current_pending_retained_duties.length<=120
+        && new Set(report.current_pending_retained_duties).size===report.current_pending_retained_duties.length
+        && report.current_pending_retained_duties.every(d => report.retained_duty_history?.some(r =>
+          r.disposition==='pending_exact_withdrawal' && canonicalJsonDigest(r)===d)))
     && (report.client_duties === undefined || validClientDutyInventory(report.client_duties)) && /^sha256:[a-f0-9]{64}$/u.test(report.draft_digest)
     && (report.source_transaction_requirement_pending === undefined || report.source_transaction_requirement_pending === true)
     && !(report.source_transaction_requirement_pending && report.source_transaction_association)

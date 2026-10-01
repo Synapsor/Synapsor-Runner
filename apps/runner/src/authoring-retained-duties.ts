@@ -1,5 +1,8 @@
 import { canonicalJsonDigest } from '@synapsor-runner/protocol';
-import type { ActionRuleCoverageLineage } from './action-rule-authority.js';
+import type { ActionRuleCoverageLineage, ActionRuleProspectiveWithdrawal } from './action-rule-authority.js';
+import { proveExactActionWithdrawal } from './action-rule-withdrawal-proof.js';
+import { actionRuleModelDraftFromAuthority } from './action-rule-draft.js';
+import { explorationBoundaryCandidateDigest } from './auto-boundary.js';
 import { deferredReviewObligation, receiptConfigurationComponentOnly, isDeferredSourceReadback,
   isDeferredSourceCounterMaintenance, type PolicyCoverage, type PolicyPassage, type PolicyTextSnapshot, type RetainedDutyHistory } from './authoring-policy-source.js';
 import type { CoverageFeedback } from './authoring-coverage-feedback.js';
@@ -64,13 +67,50 @@ function removalBasis(p: PolicyPassage, source: PolicyTextSnapshot, lineage: Act
 }
 export type RetainedDutyPlan = { retain: PolicyPassage[]; retire: Array<{ passage: PolicyPassage; basis: ReturnType<typeof removalBasis>;
   original_report_digest: string; original_report: PolicyCoverage; coverage_authority_digest: string;
-  expected_continuing_paths?: string[] }> };
+  expected_continuing_paths?: string[] }>;
+  pending?: Array<{ passage: PolicyPassage; basis?: ReturnType<typeof prospectiveBasis> | ReturnType<typeof removalBasis>;
+    record: Extract<RetainedDutyHistory, { disposition: 'pending_exact_withdrawal' }> }> };
+
+function prospectiveBasis(p: PolicyPassage, source: PolicyTextSnapshot, proof: ActionRuleProspectiveWithdrawal | undefined,
+  coverageAuthority: string | undefined) {
+  const path = p.source_counter_obligation?.path ?? p.draft_paths[0] ?? '/', match = counterPath.exec(path);
+  const {proof_digest: digest, ...unsigned} = proof?.basis ?? {proof_digest: ''};
+  if (!proof || !match || !isDeferredSourceCounterMaintenance(p) || !deferredReviewObligation(p)
+    || p.source_counter_resolution?.source_digest !== source.digest || digest !== canonicalJsonDigest(unsigned)
+    || proof.basis.active_digest !== proof.active.digest
+    || coverageAuthority !== canonicalJsonDigest({read: proof.basis.read_digest, action: proof.active.digest}))
+    throw new RetainedDutyApplicabilityError(path, 'lineage_unavailable');
+  try {
+    if (proof.candidate.digest !== proof.basis.candidate_digest || canonicalJsonDigest(proveExactActionWithdrawal(proof.active,proof.candidate))
+      !== canonicalJsonDigest(proof.basis.removed_outcomes)) throw new Error();
+  } catch { throw new RetainedDutyApplicabilityError(path,'binding_changed'); }
+  const outcome = match[1]!.replace(/~1/gu, '/').replace(/~0/gu, '~');
+  const rules = proof.active.authority.rules.filter(r => r.rule.outcome === outcome);
+  if (!proof.basis.removed_outcomes.includes(outcome) || rules.length !== 1)
+    throw new RetainedDutyApplicabilityError(path, 'binding_changed');
+  const rule = rules[0]!, effect = match[2] === undefined ? rule.effect_envelope : rule.effect_envelope.atomic_updates?.[Number(match[2])];
+  if (!effect || effect.operation !== 'update' || effect.version_advance?.strategy !== 'integer_increment'
+    || effect.conflict_key !== effect.version_advance.column || rule.read_boundary_digest !== proof.basis.read_digest)
+    throw new RetainedDutyApplicabilityError(path, 'binding_changed');
+  return {outcome, resource: effect.target_resource, field: effect.version_advance.column,
+    read_digest: rule.read_boundary_digest, generation_lock: rule.verification_boundary.generation_lock_fingerprint};
+}
 
 /** Pointer availability only tells us whether to revalidate a current duty.
  * It never proves removal. This read-only assessment runs before episode consent. */
 export function prepareRetainedDutyReview(previous: PolicyCoverage | undefined, source: PolicyTextSnapshot, draft: unknown,
-  lineage?: ActionRuleCoverageLineage, coverageAuthority?: string): RetainedDutyPlan {
-  const plan: RetainedDutyPlan = { retain: [], retire: [] };
+  lineage?: ActionRuleCoverageLineage, coverageAuthority?: string, prospective?: ActionRuleProspectiveWithdrawal): RetainedDutyPlan {
+  const plan: RetainedDutyPlan = { retain: [], retire: [], pending: [] };
+  if (prospective) {
+    const expected = prospective.candidate.authority.rules.map(r => actionRuleModelDraftFromAuthority({
+      authority:prospective.candidate.authority,outcome:r.rule.outcome,
+      review:prospective.candidate.reviews.find(v => v.outcome===r.rule.outcome)!,preserveVerificationFields:true}));
+    try {
+      if (canonicalJsonDigest(valueAt(draft,'/actions')) !== canonicalJsonDigest(expected)
+        || explorationBoundaryCandidateDigest(valueAt(draft,'/read') as Parameters<typeof explorationBoundaryCandidateDigest>[0])
+          !== prospective.basis.read_digest) throw new Error();
+    } catch { throw new RetainedDutyApplicabilityError('/prospective_withdrawal','binding_changed'); }
+  }
   if (!previous) return plan;
   const prior = previous.passages.filter(carriedReviewDuty);
   if (previous.source_digest !== source.digest && (prior.length || previous.retained_duty_history?.length))
@@ -93,6 +133,20 @@ export function prepareRetainedDutyReview(previous: PolicyCoverage | undefined, 
       }
       plan.retain.push(p); continue;
     }
+    if (prospective) {
+      // A restored/reselected original duty may appear in the current passage
+      // list again. Its immutable pending audit is processed below; copying
+      // this newer report would recursively duplicate that audit on every No
+      // or reselection cycle. Retain and revalidate the existing origin once.
+      if (previous.retained_duty_history?.some(record => record.disposition==='pending_exact_withdrawal'
+        && dutyKey(record.original_passage)===dutyKey(p))) continue;
+      const basis = prospectiveBasis(p, source, prospective, coverageAuthority);
+      plan.pending!.push({passage: p, basis, record: {origin:'HOST-RETAINED-DUTY', source_digest:source.digest,
+        original_report:structuredClone(previous), original_report_digest:canonicalJsonDigest(previous),
+        coverage_authority_digest:coverageAuthority!, original_passage:structuredClone(p),
+        disposition:'pending_exact_withdrawal', prospective_basis:structuredClone(prospective.basis), continuing_paths:[], verified:false}});
+      continue;
+    }
     const basis = removalBasis(p, source, lineage, coverageAuthority);
     // No Action substitution or same-name resurrection. The exact removed
     // outcome must be absent from the complete current prepared authority.
@@ -107,6 +161,26 @@ export function prepareRetainedDutyReview(previous: PolicyCoverage | undefined, 
       || canonicalJsonDigest(record.original_report) !== record.original_report_digest
       || !record.original_report.passages.some(p => canonicalJsonDigest(p) === canonicalJsonDigest(record.original_passage)))
       throw new RetainedDutyApplicabilityError('/history', 'binding_changed');
+    if (record.disposition === 'pending_exact_withdrawal') {
+      // Restoring the outcome revalidates the original duty normally; the old
+      // proposal remains immutable pending history, never publication proof.
+      if (record.original_passage.draft_paths.every(path => valueAt(draft, path) !== undefined)) {
+        plan.retain.push(record.original_passage);
+        plan.pending!.push({passage:record.original_passage,record:structuredClone(record)});
+        continue;
+      }
+      const basis = prospective ? prospectiveBasis(record.original_passage, source, prospective, record.coverage_authority_digest)
+        : removalBasis(record.original_passage, source, lineage, record.coverage_authority_digest);
+      const next = structuredClone(record);
+      if (prospective && canonicalJsonDigest(next.prospective_basis) !== canonicalJsonDigest(prospective.basis)) {
+        // Reuse the complete original report, not a recursively nested copy of
+        // the newer report that already contains this pending audit.
+        next.prospective_basis = structuredClone(prospective.basis);
+        plan.pending!.push({passage:record.original_passage,record:structuredClone(record)});
+      }
+      plan.pending!.push({passage:record.original_passage,basis,record:next});
+      continue;
+    }
     const basis = removalBasis(record.original_passage, source, lineage, record.coverage_authority_digest);
     if (!record.removal_basis || record.lineage_digest !== basis.lineage_digest
       || canonicalJsonDigest(record.removal_basis) !== canonicalJsonDigest(basis.removal_basis) || valueAt(draft,
@@ -126,7 +200,7 @@ export function assembleRetainedDutyReview(report: PolicyCoverage, plan: Retaine
   let complete: PolicyCoverage;
   try { complete = missing.length ? validate([...report.passages, ...missing]) : report; }
   catch { throw new RetainedDutyApplicabilityError(missing[0]?.draft_paths[0] ?? '/', 'retained_validation'); }
-  const history = plan.retire.map(({ passage: p, basis, original_report_digest, original_report, coverage_authority_digest, expected_continuing_paths }): RetainedDutyHistory => {
+  const continuingPaths = (p: PolicyPassage, basis: ReturnType<typeof prospectiveBasis>) => {
     // Keep every surviving association of this exact all-writers counter. A
     // field-name match is insufficient: the canonical current proof must equal
     // the original host-confirmed source/Read/role/lock/target proof.
@@ -154,6 +228,10 @@ export function assembleRetainedDutyReview(report: PolicyCoverage, plan: Retaine
         throw new RetainedDutyApplicabilityError(path, 'shared_duty_unresolved');
       return path;
     }).sort();
+    return continuing_paths;
+  };
+  const history = plan.retire.map(({ passage: p, basis, original_report_digest, original_report, coverage_authority_digest, expected_continuing_paths }): RetainedDutyHistory => {
+    const continuing_paths = continuingPaths(p, basis);
     if (expected_continuing_paths && canonicalJsonDigest(expected_continuing_paths) !== canonicalJsonDigest(continuing_paths))
       throw new RetainedDutyApplicabilityError(p.draft_paths[0]!, 'binding_changed');
     return { origin: 'HOST-RETAINED-DUTY', source_digest: source.digest, original_report_digest,
@@ -162,8 +240,22 @@ export function assembleRetainedDutyReview(report: PolicyCoverage, plan: Retaine
       removal_basis: structuredClone(basis.removal_basis),
       lineage_digest: basis.lineage_digest, continuing_paths, verified: false };
   });
+  const applicable: string[] = [];
+  for (const entry of plan.pending ?? []) {
+    const record = structuredClone(entry.record);
+    if (entry.basis) {
+      const paths = continuingPaths(entry.passage, entry.basis);
+      if (record.continuing_paths.length && canonicalJsonDigest(record.continuing_paths) !== canonicalJsonDigest(paths))
+        throw new RetainedDutyApplicabilityError(entry.passage.draft_paths[0]!, 'binding_changed');
+      record.continuing_paths = paths;
+      applicable.push(canonicalJsonDigest(record));
+    }
+    if (!history.some(item => canonicalJsonDigest(item) === canonicalJsonDigest(record))) history.push(record);
+  }
   if (history.length > 120) throw new RetainedDutyApplicabilityError('/history', 'binding_changed');
-  return { ...complete, ...(history.length ? { retained_duty_history: history } : {}) };
+  return { ...complete, ...(history.length ? { retained_duty_history: history } : {}),
+    ...(history.some(r => r.disposition==='pending_exact_withdrawal')
+      ? {current_pending_retained_duties:[...new Set(applicable)]} : {}) };
 }
 
 /** Establish known host prerequisites locally, before consent/reservation. This
@@ -180,7 +272,18 @@ export function preflightRetainedDutyEvidence(plan: RetainedDutyPlan, source: Po
   });
   // Known surviving old records are not trusted through retention: their exact
   // current host evidence was recomputed above. No new pointer is generated.
-  if (plan.retire.length) assembleRetainedDutyReview({ source_digest: source.digest,
+  if (plan.retire.length || plan.pending?.some(entry => entry.basis)) assembleRetainedDutyReview({ source_digest: source.digest,
     draft_digest: canonicalJsonDigest(draft), passages: checked }, { ...plan, retain: [] }, source, draft,
     () => { throw new Error('Preflight cannot manufacture model coverage.'); });
+}
+
+/** Publication still rechecks the real pointers and pure reduction proof.
+ * A persisted proposal audit is never itself fresh permission or an event. */
+export function assertPendingWithdrawalDutyProofs(report: PolicyCoverage, proof: ActionRuleProspectiveWithdrawal | undefined): void {
+  const pending=report.retained_duty_history?.filter(r=>r.disposition==='pending_exact_withdrawal')??[];
+  const current=pending.filter(r=>report.current_pending_retained_duties?.includes(canonicalJsonDigest(r)));
+  if(current.some(r=>!proof || canonicalJsonDigest(r.prospective_basis)!==canonicalJsonDigest(proof.basis))
+    || pending.some(r=>proof?.basis.removed_outcomes.includes(counterPath.exec(r.original_passage.source_counter_obligation?.path??'')?.[1]?.replace(/~1/gu,'/').replace(/~0/gu,'~')??'')
+      && !current.some(c=>c.original_passage.source_counter_obligation?.path===r.original_passage.source_counter_obligation?.path)))
+    throw new RetainedDutyApplicabilityError('/prospective_withdrawal','binding_changed');
 }

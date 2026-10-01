@@ -6,6 +6,7 @@ import { needsDeploymentCoverageClassification, unresolvedPolicyPassages } from 
 import { readBoundaryRevisionCatalog, type ReadBoundaryFieldExposureChange } from "./read-boundary-revision-model.js";
 import type { ExplorationBoundaryDraft } from "./auto-boundary.js";
 import type { CompiledActionRuleModelDraftV1 } from "./action-rule-draft.js";
+import {canonicalJsonDigest} from '@synapsor-runner/protocol';
 
 export type AuthoringReadinessItem = {
   kind: "business_decision" | "mechanical_correction" | "unsupported_runtime" | "deployment_prerequisite" | "provider_failure";
@@ -26,6 +27,16 @@ export function policyReadinessItems(report?: PolicyCoverage, session?: PolicySo
   if (!report) return [{ kind: "provider_failure", title: "Attached rules need checking",
     nextStep: "Retry the coverage check for this saved draft.", passages: [], blocksReview: true }];
   const grouped = new Map<string, AuthoringReadinessItem>();
+  const pendingAudits=(report.retained_duty_history??[]).filter(r => r.disposition==='pending_exact_withdrawal'
+    // Applicability is recomputed by the host from the exact current subject
+    // and proof during canonical assembly. Historical audit presence alone is
+    // neither completion nor a permanent block after normal revalidation.
+    && (report.current_pending_retained_duties===undefined
+      || report.current_pending_retained_duties.includes(canonicalJsonDigest(r))));
+  if(pendingAudits.length)grouped.set('pending-withdrawal-duties',{kind:'business_decision',
+    title:'Original Source duties remain pending after an exact proposed withdrawal',
+    nextStep:'Inspect the exact current withdrawal separately. This pending audit grants no publication or BUSINESS completion; original duties and source-wide maintenance remain retained.',
+    passages:pendingAudits.map(r=>r.original_passage),blocksReview:true});
   if(session?.input_policy_reviews?.length){
     const fidelity=report.input_fidelity;
     const relevant=session.input_policy_reviews.filter(r=>fidelity?.review_digests.includes(r.digest));

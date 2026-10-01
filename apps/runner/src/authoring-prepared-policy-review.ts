@@ -1,4 +1,4 @@
-import {readActionRuleCoverageLineage} from './action-rule-authority.js';
+import {readActionRuleCoverageLineage,readActionRuleProspectiveWithdrawal} from './action-rule-authority.js';
 import {explorationBoundaryCandidateDigest} from './auto-boundary.js';
 import {prepareRetainedDutyReview, assembleRetainedDutyReview, preflightRetainedDutyEvidence, RetainedDutyApplicabilityError} from './authoring-retained-duties.js';
 import { scopedDisclosureInventory } from "./authoring-scoped-disclosure.js";
@@ -155,23 +155,29 @@ export async function ensurePreparedPolicyCoverage(input: {
   const loadLineage = () => input.authority && sources.coverage ? readActionRuleCoverageLineage(input.projectRoot,
     input.authority, explorationBoundaryCandidateDigest(draftRecord.read)) : Promise.resolve(undefined);
   const lineage = await loadLineage();
+  const loadProspective = () => input.authority && sources.coverage ? readActionRuleProspectiveWithdrawal(input.projectRoot,
+    input.authority, explorationBoundaryCandidateDigest(draftRecord.read)) : Promise.resolve(undefined);
+  const prospective = await loadProspective();
   let retainedDutyPlan: ReturnType<typeof prepareRetainedDutyReview>;
   const hostPending = (error: RetainedDutyApplicabilityError): never => { throw new ReviewResolutionError(error.code,
     planCoverageResolution(error.feedback(canonicalJsonDigest(draftRecord))), error.message); };
-  try { retainedDutyPlan = prepareRetainedDutyReview(sources.coverage, source, draftRecord, lineage, sources.coverage_authority_digest);
+  try { retainedDutyPlan = prepareRetainedDutyReview(sources.coverage, source, draftRecord, lineage, sources.coverage_authority_digest,prospective);
     preflightRetainedDutyEvidence(retainedDutyPlan, source, draftRecord); }
   catch (error) { if (error instanceof RetainedDutyApplicabilityError) hostPending(error); throw error; }
   const assertRetainedCurrent = async () => {
     const current = await loadLineage();
     if (canonicalJsonDigest(current ?? null) !== canonicalJsonDigest(lineage ?? null))
       pending('currentness','POLICY_RETAINED_DUTY_CHANGED','Current Action publication history changed; reopen saved Review. No stale duty reconciliation was saved.');
+    if (canonicalJsonDigest(await loadProspective() ?? null) !== canonicalJsonDigest(prospective ?? null))
+      pending('currentness','POLICY_RETAINED_DUTY_CHANGED','The exact proposed withdrawal changed; reopen saved Review. No stale prospective duty review was saved.');
   };
   const preparedDraftDigest = canonicalJsonDigest(draftRecord);
   const key = canonicalJsonDigest({ source: source.digest, draft: draftRecord, messages: sources.operator_messages ?? [],
     clarifications: input.clarifications, interpretations: sources.read_interpretations ?? [],
     source_transaction_scope_reviews:sources.source_transaction_scope_reviews?.map(record=>record.digest)??[],
     ...(sources.input_policy_reviews?.length?{input_policy_reviews:sources.input_policy_reviews.map(record=>record.digest)}:{}),
-    ...(lineage ? {retained_duty_lineage:canonicalJsonDigest(lineage)} : {}) });
+    ...(lineage ? {retained_duty_lineage:canonicalJsonDigest(lineage)} : {}),
+    ...(prospective ? {prospective_withdrawal:canonicalJsonDigest(prospective)} : {}) });
   let reused: PolicyCoverage | undefined;
   if (!input.force && (state.attemptKey === key && state.report?.key === key
     || state.attemptKey === undefined && sources.coverage_context_digest === key && sources.coverage)) {

@@ -106,6 +106,44 @@ export type ActionRuleCoverageLineage = {
       before_digest: string; after_digest: string; removed_outcomes: string[]; introduced_outcomes: string[] }> }>;
 };
 
+/** Exact current rights reduction, not a completed publication or consent. */
+export type ActionRuleProspectiveWithdrawalBasis = {
+  store: string; active_record: string; candidate_record: string;
+  active_digest: string; candidate_digest: string; read_digest: string;
+  removed_outcomes: string[]; proof_digest: string;
+};
+export type ActionRuleProspectiveWithdrawal = {
+  basis: ActionRuleProspectiveWithdrawalBasis;
+  active: ActionRuleAuthorityActivationV1;
+  candidate: ActionRuleAuthorityDraftV1;
+};
+
+/** Both records must still be the actual selected repository pointers. Never
+ * substitutes draft absence for publication history or BUSINESS review. */
+export async function readActionRuleProspectiveWithdrawal(projectRoot: string,
+  selected: ActionRuleAuthorityReviewSubjectV1, readDigest: string): Promise<ActionRuleProspectiveWithdrawal | undefined> {
+  if (selected.state !== 'disabled') return undefined;
+  return (await withStoredActionPolicies(projectRoot, undefined, async (binding, current) => {
+    const activeRevision = current.active.find(r => r.name === selected.authority.name);
+    const candidateRevision = current.drafts.find(r => r.name === selected.authority.name);
+    if (!activeRevision || !candidateRevision) return undefined;
+    const active = parseStoredActionActivation(activeRevision).activation;
+    const candidate = parseStoredActionDraft(candidateRevision);
+    if (canonicalJsonDigest(candidate) !== canonicalJsonDigest(selected)
+      || candidate.authority.rules.some(r => r.read_boundary_digest !== readDigest)) return undefined;
+    let removed: string[];
+    try { removed = proveExactActionWithdrawal(active, candidate); }
+    catch (error) { if ((error as {code?: string}).code === 'ACTION_RULE_WITHDRAWAL_NOT_EXACT') return undefined; throw error; }
+    const unsigned = { store: canonicalJsonDigest({ project: path.resolve(projectRoot), repository: binding.repository_id,
+      deployment: binding.deployment_id, project_id: binding.project_id }), active_record: activeRevision.revision_id,
+      candidate_record: candidateRevision.revision_id, active_digest: active.digest, candidate_digest: candidate.digest,
+      read_digest: readDigest, removed_outcomes: removed };
+    if ((await binding.repository.deployment(binding.deployment_id))?.epoch !== current.epoch)
+      throw authorityError('POLICY_REVISION_CONFLICT', 'Current exact withdrawal changed during inspection.');
+    return { basis: {...unsigned, proof_digest: canonicalJsonDigest(unsigned)}, active, candidate };
+  })) ?? undefined;
+}
+
 export async function readActionRuleCoverageLineage(projectRoot: string, selected: ActionRuleAuthorityReviewSubjectV1,
   readDigest: string): Promise<ActionRuleCoverageLineage | undefined> {
   return (await withStoredActionPolicies(projectRoot, undefined, async (binding, current) => {
