@@ -1,3 +1,4 @@
+import { normalizeReadMeaningEvidence, normalizeReadMeaningAttempts, type ReadMeaningEvidence, type ReadMeaningAttempt } from "./read-meaning-evidence.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
   explorationBoundaryCandidateDigest,
@@ -23,6 +24,9 @@ export type ReadWorkloadSource = {
   kind: "operator_exact_plan" | "plan_playground" | "model" | "observed_plan" | "existing_capability";
   provider?: "openai" | "anthropic" | "openrouter" | "openai_compatible";
   model?: string;
+  /** Host association audit only, not an authority or semantic proof. */
+  meaning_evidence?: ReadMeaningEvidence[];
+  meaning_attempts?: ReadMeaningAttempt[];
 };
 
 export type ReadWorkloadEntry = {
@@ -1092,7 +1096,7 @@ function normalizeEntries(value: unknown, label: "allowed" | "forbidden"): ReadW
 
 function normalizeSource(value: unknown): ReadWorkloadSource {
   if (!isRecord(value)) throw new Error("READ_WORKLOAD_SOURCE_REQUIRED: source metadata is required.");
-  rejectUnknownKeys(value, new Set(["kind", "provider", "model"]), "source");
+  rejectUnknownKeys(value, new Set(["kind", "provider", "model", "meaning_evidence", "meaning_attempts"]), "source");
   const kind = value.kind;
   if (kind !== "operator_exact_plan"
     && kind !== "plan_playground"
@@ -1112,8 +1116,11 @@ function normalizeSource(value: unknown): ReadWorkloadSource {
   if (kind !== "model" && (provider || model)) {
     throw new Error("READ_WORKLOAD_MODEL_IDENTITY_FORBIDDEN: only model workloads may name provider or model.");
   }
+  if ((value.meaning_evidence !== undefined || value.meaning_attempts !== undefined) && kind !== "model") throw new Error("READ_WORKLOAD_MEANING_EVIDENCE_INVALID: Only the assisted producer records meaning associations.");
   return {
     kind,
+    ...(value.meaning_evidence !== undefined ? { meaning_evidence: normalizeReadMeaningEvidence(value.meaning_evidence) } : {}),
+    ...(value.meaning_attempts !== undefined ? { meaning_attempts: normalizeReadMeaningAttempts(value.meaning_attempts) } : {}),
     ...(provider ? { provider } : {}),
     ...(model ? { model } : {}),
   };

@@ -1,3 +1,4 @@
+import { normalizeReadMeaningAttempts, type ReadMeaningAttempt } from "./read-meaning-evidence.js";
 import { Buffer } from "node:buffer";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
@@ -30,6 +31,8 @@ export type ReadWorkloadAssistanceCheckpoint = {
     correction_used: boolean; relationship_reviews: number; relationship_review_limit: 0 | 3;
     clarified_targets: Array<ModelReadClarificationRequest & { answer: string }>;
     clarification_answers: string[];
+    /** Attributed nonanswers remain history, not resolved meaning. */
+    unresolved_answers?: ReadMeaningAttempt[];
     clarification_from_invalid_naming: boolean; clarification_resolved: boolean;
     mechanical_clarification_resolved: boolean; value_request_resolved: boolean;
     repeated_assistance_request: boolean; naming_evidence_correction_used: boolean;
@@ -58,7 +61,7 @@ const provided = (v: unknown) => record(v) && exact(v, ["state", "resource", "fi
 
 export class ReadWorkloadAssistancePausedError extends Error {
   readonly code = "READ_WORKLOAD_AUTHORING_PAUSED";
-  constructor() { super("READ_WORKLOAD_AUTHORING_PAUSED: The assistance question remains pending. No decline, replacement generation or Read authority was inferred."); }
+  constructor(detail = "The assistance question remains pending. No decline, replacement generation or Read authority was inferred.") { super(`READ_WORKLOAD_AUTHORING_PAUSED: ${detail}`); }
 }
 
 export function readWorkloadAssistanceCheckpoint(input: Omit<ReadWorkloadAssistanceCheckpoint, "schema_version" | "digest">): ReadWorkloadAssistanceCheckpoint {
@@ -115,7 +118,7 @@ export function parseReadWorkloadAssistanceCheckpoint(value: unknown): ReadWorkl
   assertAssistanceQuestion(q, value.stage as "waiting" | "decided");
   const flags = ["correction_used", "clarification_from_invalid_naming", "clarification_resolved", "mechanical_clarification_resolved",
     "value_request_resolved", "repeated_assistance_request", "naming_evidence_correction_used"];
-  if (!exact(s, ["call_count", "attempt", "phase", "relationship_reviews", "relationship_review_limit", "clarified_targets", "clarification_answers",
+  if (!exact(s, ["call_count", "attempt", "phase", "relationship_reviews", "relationship_review_limit", "clarified_targets", "clarification_answers", "unresolved_answers",
     ...flags, "resolved_mechanical_request", "naming_correction_workload", "approved_value_context", "diagnostics", "usage"])
     || !count(s.call_count, 11) || !count(s.attempt, 16) || !["initial", "correction", "follow-up"].includes(s.phase as string)
     || ![0, 3].includes(s.relationship_review_limit as number) || !count(s.relationship_reviews, s.relationship_review_limit as number)
@@ -126,6 +129,10 @@ export function parseReadWorkloadAssistanceCheckpoint(value: unknown): ReadWorkl
     || s.naming_correction_workload !== undefined && !digest(s.naming_correction_workload)
     || s.approved_value_context !== undefined && !provided(s.approved_value_context)
     || !Array.isArray(s.diagnostics) || s.diagnostics.length > 6) throw fail();
+  if (s.unresolved_answers !== undefined) {
+    const attempts = normalizeReadMeaningAttempts(s.unresolved_answers);
+    if (attempts.length + s.clarified_targets.length > 4) throw fail();
+  }
   for (const d of s.diagnostics) if (!record(d) || !exact(d, ["attempt", "phase", "category", "code", "reasons"])
     || !count(d.attempt, 16) || !["initial", "correction", "follow-up"].includes(d.phase as string)
     || !["required_tool", "provider_response", "provider_request", "validation"].includes(d.category as string)

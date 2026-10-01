@@ -18,7 +18,7 @@ import {
 import type { AskIntentCheckMode } from "./ask-intent-preferences.js";
 import { askPlanSyntaxRepair, matchesAskPlanSyntaxRepair, type AskPlanSyntaxRepair } from "./ask-plan-recovery.js";
 import { isFixedOpenRouterModel, OPENROUTER_CHAT_ENDPOINT } from "./hosted-provider-settings.js";
-import { recoverAuthoringGeneration, authoringGenerationHandled, authoringGenerationFailed, authoringQuestionCompletion, type AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
+import { recoverAuthoringGeneration, authoringGenerationHandled, authoringGenerationFailed, authoringQuestionCompletion, authoringQuestionSequenceCompletion, type AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { coverageToolDeclarationIssue } from "./authoring-coverage-tool-profile.js";
 
 const DEFAULT_REMOTE_TIMEOUT_SECONDS = 30;
@@ -218,6 +218,17 @@ const questionCompletions = new WeakMap<AskTurnResult, AuthoringQuestionCompleti
 export function completedAuthoringQuestion(result: AskTurnResult): AuthoringQuestionCompletion | undefined {
   const value = questionCompletions.get(result);
   return value && structuredClone(value);
+}
+
+/** One producer may consume several complete turns before asking a question.
+ * Only the original successful result objects can establish that association;
+ * reconstructed JSON and stored records cannot acknowledge a prior response. */
+export function completedAuthoringQuestionSequence(results: readonly AskTurnResult[]): AuthoringQuestionCompletion | undefined {
+  const completions = results.map(result => questionCompletions.get(result));
+  if (completions.every(value => value === undefined)) return undefined;
+  if (completions.some(value => value === undefined)) throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION",
+    "The bounded question sequence includes a result without a current decoded consumer.", 409);
+  return authoringQuestionSequenceCompletion(completions as AuthoringQuestionCompletion[]);
 }
 
 export type AskSessionStatus = {

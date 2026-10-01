@@ -291,6 +291,33 @@ export function authoringQuestionCompletion(results: readonly ProviderHttpResult
   return completion;
 }
 
+/** Associate only explicitly consumed turns of one bounded producer with its
+ * final question. The caller obtains these completions from actual decoded
+ * result identities. No saved operation scan or generic checkpoint promotion. */
+export function authoringQuestionSequenceCompletion(completions: readonly AuthoringQuestionCompletion[]): AuthoringQuestionCompletion | undefined {
+  const frame = storage.getStore();
+  if (!frame?.host?.available()) return undefined;
+  if (!completions.length || completions.length > 16) throw invalid();
+  const consumed = new Map<string, CompletedTurnOperation>();
+  for (const completion of completions) {
+    const refs = frame.completedTurns.get(canonicalJsonDigest(completion));
+    if (!refs?.length) throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION",
+      "The bounded question sequence has no current completed consumer association.", 409);
+    for (const ref of refs) {
+      const op = frame.host.read()?.operations.find(item => item.id === ref.id);
+      if (!op || !frame.owned.has(ref.id) || op.request_digest !== ref.request_digest || op.context_digest !== ref.context_digest
+        || op.attempts.at(-1)?.id !== ref.attempt_id || op.attempts.at(-1)?.outcome !== "response"
+        || !["handled", "checkpointed", "refused"].includes(op.state)) throw invalid();
+      const prior = consumed.get(ref.id);
+      if (prior && canonicalJsonDigest(prior) !== canonicalJsonDigest(ref)) throw invalid();
+      consumed.set(ref.id, ref);
+    }
+  }
+  const last = completions.at(-1)!;
+  frame.completedTurns.set(canonicalJsonDigest(last), [...consumed.values()]);
+  return structuredClone(last);
+}
+
 /** Prepare one exact question handoff for the SAME coordinated resume write as
  * its component checkpoint. This does not write a second acknowledgement file. */
 export function authoringQuestionCheckpoint(state: AuthoringTransportState | undefined,

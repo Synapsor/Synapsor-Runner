@@ -1,7 +1,7 @@
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery, validateAuthoringTransportState, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+import { authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, authoringTransportCheckpoint, configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery, validateAuthoringTransportState, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { parseReadWorkloadAssistanceCheckpoint, readWorkloadAssistanceCheckpoint, type ReadWorkloadAssistanceCheckpoint } from "./read-workload-assistance-checkpoint.js";
 import { describe, expect, it, vi } from "vitest";
 import {
@@ -189,6 +189,53 @@ describe("durable Read assistance producer checkpoint", () => {
     finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
   });
 
+  it("checkpoints the exact bounded Read correction sequence before its question and continues once after restart", async () => {
+    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
+    let state: AuthoringTransportState = { version: 1, operations: [] }, sends = 0;
+    const server = createServer(async (req, res) => {
+      for await (const _chunk of req) {}
+      sends++;
+      const args = sends === 1 ? { allowed: [{ id: "orders", description: "Read purchase stage",
+        plan: { kind: "rows", resource: "public.orders", select: ["absent_field"] } }], forbidden: [] }
+        : sends === 2 ? { clarification_request: request }
+        : { allowed: [{ id: "orders", description: "Read purchase stage",
+          plan: { kind: "rows", resource: "public.orders", select: ["status"] } }], forbidden: [] };
+      res.setHeader("content-type", "application/json");
+      res.end(JSON.stringify({ status: "completed", ...response(args).body }));
+    });
+    await new Promise<void>(resolve => server.listen(0, "127.0.0.1", resolve));
+    const endpoint = new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/responses`);
+    const host = { available: () => true, read: () => state,
+      current: async () => canonicalJsonDigest(checkpoint ?? "owned_read_origin"),
+      write: async (value: AuthoringTransportState) => { validateAuthoringTransportState(value); state = structuredClone(value); } };
+    const save = async (next: ReadWorkloadAssistanceCheckpoint | undefined) => {
+      if (next?.stage === "waiting" && next.digest !== checkpoint?.digest) state = authoringTransportCheckpoint(authoringQuestionCheckpoint(state,
+        { digest: next.digest, consumer: "read_clarification", pending_question: next.pending_question }))!;
+      if (next?.stage === "decided") state = authoringQuestionAnswerCheckpoint(state,
+        { digest: checkpoint!.digest, consumer: "read_clarification", pending_question: checkpoint!.pending_question },
+        { digest: next.digest, operator_messages: [(next.pending_question.decision as { answer: string }).answer] })!;
+      checkpoint = structuredClone(next);
+    };
+    const entering = (resume: boolean) => withAuthoringGenerationRecovery(() => {
+      configureAuthoringGenerationRecovery(host);
+      return generateModelReadWorkload({ ...setup(r => secureAskJsonRequest({ ...r, endpoint, scope: "custom_loopback" })),
+        ...(resume ? { resumeCheckpoint: checkpoint } : {}), onCheckpoint: save,
+        clarificationHandler: async () => resume ? { state: "answered", answer: "The purchase fulfillment stage" } : undefined });
+    });
+    try {
+      await expect(entering(false)).rejects.toThrow("READ_WORKLOAD_AUTHORING_PAUSED");
+      expect(sends).toBe(2);
+      expect(checkpoint?.stage).toBe("waiting");
+      expect(state.operations.map(op => op.state)).toEqual(["checkpointed", "checkpointed"]);
+      const result = await entering(true);
+      expect(result.analysis.status).toBe("ready");
+      expect(sends).toBe(3);
+      expect(checkpoint).toBeUndefined();
+      expect(state.operations[1]?.question_handoff?.answered).toMatchObject({ answer: "The purchase fulfillment stage", actor: "local_installation_operator" });
+      expect(state.operations.flatMap(op => op.attempts).every(attempt => attempt.outcome === "response")).toBe(true);
+    } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+  });
+
   it("restores the pending relationship review counter without resending or charging the same review slot twice", async () => {
     let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
     const linkRequest = { resource: request.resource, category: "relationship_support" as const, reason: "The related business detail needs an inspected link", question: "Prepare the missing related business detail path." };
@@ -217,6 +264,208 @@ describe("durable Read assistance producer checkpoint", () => {
   });
 });
 
+describe("B41 host-owned Read meaning resolution", () => {
+  const response = (args: unknown) => ({ status: 200, body: { output: [{ type: "function_call", call_id: "b41_read",
+    name: "runner__submit_read_workloads", arguments: JSON.stringify(args) }] } });
+  const mapped = { allowed: [{ id: "shipments", description: "Read shipment lifecycle",
+    plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }], forbidden: [] };
+  const setup = (requestJson: NonNullable<AskProviderDependencies["requestJson"]>, boundary = opaqueGeneratedBoundary()) => {
+    boundary.pack.resources[0]!.label = "Shipments";
+    return { name: "b41_read", allowedQuestions: ["Read shipment lifecycle"], generatedBoundary: boundary,
+      provider: "openai" as const, model: "gpt-test", apiKey: "test-key", egressAcknowledged: true,
+      deferNarration: true, dependencies: { requestJson } };
+  };
+  const policy = (text: string) => {
+    const conversation = createModelAuthoringConversation(), session = newPolicySourceSession();
+    const snapshot = policyTextSnapshot(Buffer.from(text), "Rules.txt");
+    session.snapshots.push(snapshot); session.active = snapshot.version;
+    session.approvals.push({ digest: snapshot.digest, destination: authoringDestination({ provider: "openai", model: "gpt-test" }) });
+    conversation.policySources = session;
+    return conversation;
+  };
+  it("901 retains an explicitly unknown answer as pending and resumes without an initial replay", async () => {
+    const requestJson = vi.fn().mockResolvedValueOnce(response({ ...mapped,
+      operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: "Invented meaning" }] }))
+      .mockResolvedValue(response(mapped));
+    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
+    const save = async (value: ReadWorkloadAssistanceCheckpoint | undefined) => { checkpoint = value; };
+    await expect(generateModelReadWorkload({ ...setup(requestJson), onCheckpoint: save,
+      clarificationHandler: async () => ({ state: "answered", answer: "I don't know" }) })).rejects.toThrow("AUTHORING_PAUSED");
+    expect(requestJson).toHaveBeenCalledOnce();
+    expect(checkpoint?.stage).toBe("waiting");
+    expect(checkpoint!.state).toMatchObject({ unresolved_answers: [expect.objectContaining({ answer: "I don't know", actor: "local_installation_operator" })] });
+    const result = await generateModelReadWorkload({ ...setup(requestJson), resumeCheckpoint: checkpoint, onCheckpoint: save,
+      clarificationHandler: async () => ({ state: "answered", answer: "Shipment lifecycle status" }) });
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(result.analysis.status).toBe("ready");
+    expect(result.workload.source.meaning_evidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: "col_2", reference: expect.objectContaining({ text: "Shipment lifecycle status" }) }) ]));
+    expect(result.workload.source.meaning_attempts).toEqual([
+      expect.objectContaining({ answer: "I don't know", actor: "local_installation_operator", field: "col_2" }) ]);
+  });
+  it("retains the four-answer budget across unknown-answer pauses, with no fifth answer or generation", async () => {
+    const requestJson = vi.fn().mockResolvedValue(response(mapped));
+    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
+    const save = async (value: ReadWorkloadAssistanceCheckpoint | undefined) => { checkpoint = structuredClone(value); };
+    for (let attempt = 1; attempt <= 4; attempt++) {
+      const handler = vi.fn(async () => ({ state: "answered" as const, answer: "I don't know" }));
+      await expect(generateModelReadWorkload({ ...setup(requestJson), ...(checkpoint ? { resumeCheckpoint: checkpoint } : {}),
+        onCheckpoint: save, clarificationHandler: handler })).rejects.toThrow("AUTHORING_PAUSED");
+      expect(handler).toHaveBeenCalledOnce();
+      expect(checkpoint?.stage).toBe("waiting");
+      expect(checkpoint?.state.unresolved_answers).toHaveLength(attempt);
+      expect(checkpoint?.pending_question).not.toHaveProperty("decision");
+      expect(checkpoint?.state.call_count).toBe(1);
+      expect(checkpoint?.state.attempt).toBe(1);
+      expect(requestJson).toHaveBeenCalledOnce();
+    }
+    const before = structuredClone(checkpoint), handler = vi.fn(async () => ({ state: "answered" as const, answer: "The shipment lifecycle" }));
+    await expect(generateModelReadWorkload({ ...setup(requestJson), resumeCheckpoint: checkpoint,
+      onCheckpoint: save, clarificationHandler: handler })).rejects.toThrow("READ_WORKLOAD_CLARIFICATION_LIMIT");
+    expect(handler).not.toHaveBeenCalled();
+    expect(requestJson).toHaveBeenCalledOnce();
+    expect(checkpoint).toEqual(before);
+  });
+  it.each(["save_failed", "acknowledgement_uncertain"])("does not dispatch after an unknown-answer %s", async mode => {
+    const requestJson = vi.fn().mockResolvedValue(response(mapped));
+    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
+    const handler = vi.fn(async () => ({ state: "answered" as const, answer: "I don't know" }));
+    await expect(generateModelReadWorkload({ ...setup(requestJson), clarificationHandler: handler,
+      onCheckpoint: async value => {
+        if (value?.state.unresolved_answers?.length) {
+          if (mode === "acknowledgement_uncertain") checkpoint = structuredClone(value);
+          throw new Error("OWNED_UNKNOWN_ANSWER_SAVE_NOT_ACKNOWLEDGED");
+        }
+        checkpoint = structuredClone(value);
+      } })).rejects.toThrow("OWNED_UNKNOWN_ANSWER_SAVE_NOT_ACKNOWLEDGED");
+    expect(requestJson).toHaveBeenCalledOnce();
+    expect(handler).toHaveBeenCalledOnce();
+    expect(checkpoint?.stage).toBe("waiting");
+    expect(checkpoint?.pending_question).not.toHaveProperty("decision");
+    expect(checkpoint?.state.unresolved_answers?.length ?? 0).toBe(mode === "acknowledgement_uncertain" ? 1 : 0);
+    const before = structuredClone(checkpoint), noSend = vi.fn();
+    await expect(generateModelReadWorkload({ ...setup(noSend), resumeCheckpoint: checkpoint,
+      onCheckpoint: async value => { checkpoint = structuredClone(value); }, clarificationHandler: async () => undefined }))
+      .rejects.toThrow("AUTHORING_PAUSED");
+    expect(noSend).not.toHaveBeenCalled();
+    expect(checkpoint).toEqual(before);
+  });
+  it.each(["verbatim_conflicting_quote", "no_model_quote"])("requires a new attributed interpretation for %s rather than selecting a Source definition", async mode => {
+    const first = "public.tbl_7.col_2 is the shipment lifecycle stage.";
+    const text = `${first}\npublic.tbl_7.col_2 is the customer credit band.`;
+    const requestJson = vi.fn().mockResolvedValue(response({ ...mapped, ...(mode === "verbatim_conflicting_quote"
+      ? { operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: first }] } : {}) }));
+    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
+    const handler = vi.fn(async () => undefined);
+    await expect(generateModelReadWorkload({ ...setup(requestJson), conversation: policy(text),
+      onCheckpoint: async value => { checkpoint = value; }, clarificationHandler: handler })).rejects.toThrow("AUTHORING_PAUSED");
+    expect(handler).toHaveBeenCalledOnce();
+    expect(checkpoint?.pending_question.question).toContain("new interpretation");
+    expect(checkpoint?.stage).toBe("waiting");
+    expect(requestJson).toHaveBeenCalledOnce();
+  });
+  it.each(["unknown", "conflicting"])("901 routes %s Source knowledge to a plain attributed decision, not first-match meaning", async kind => {
+    const text = kind === "unknown" ? "public.tbl_7.col_2 is unknown to the owner; ask before assigning business meaning."
+      : "public.tbl_7.col_2 is the shipment lifecycle stage.\npublic.tbl_7.col_2 is the customer credit band.\nThese descriptions conflict; no reviewed precedence exists.";
+    const conversation = policy(text);
+    const requestJson = vi.fn().mockResolvedValueOnce(response({ ...mapped,
+      operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: "Invented meaning" }] }))
+      .mockResolvedValue(response(mapped));
+    const clarificationHandler = vi.fn(async () => ({ state: "answered" as const, answer: "Shipment lifecycle status" }));
+    const result = await generateModelReadWorkload({ ...setup(requestJson), conversation, clarificationHandler });
+    expect(clarificationHandler).toHaveBeenCalledOnce();
+    expect(result.analysis.status).toBe("ready");
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(conversation.policySources!.snapshots[0]!.text).toBe(text);
+    expect(result.workload.source.meaning_evidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({ field: "col_2", reference: expect.objectContaining({ kind: "answered_clarification", text: "Shipment lifecycle status" }) }) ]));
+  });
+  it("repairs a misquoted established Source meaning without requiring quote echo or another owner answer", async () => {
+    const quote = "public.tbl_7.col_2 means shipment lifecycle status.";
+    const requestJson = vi.fn().mockResolvedValueOnce(response({ ...mapped,
+      operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: `Invented prefix: ${quote}` }] }))
+      .mockResolvedValue(response(mapped));
+    const clarificationHandler = vi.fn(async () => ({ state: "declined" as const }));
+    const result = await generateModelReadWorkload({ ...setup(requestJson), conversation: policy(quote), clarificationHandler });
+    expect(result.analysis.status).toBe("ready");
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(clarificationHandler).not.toHaveBeenCalled();
+    expect(result.diagnostics?.some(item => item.code === "READ_WORKLOAD_NAMING_EVIDENCE_INVALID")).toBe(true);
+    expect(JSON.stringify(requestJson.mock.calls[1])).toContain(quote);
+    expect(result.authority_granted).toBe(false);
+  });
+  it("keeps a repeat fabricated claim terminal instead of asking the owner to repeat established meaning", async () => {
+    const quote = "public.tbl_7.col_2 means shipment lifecycle status.";
+    const requestJson = vi.fn().mockResolvedValue(response({ ...mapped,
+      operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: "It contains a private credit balance" }] }));
+    const clarificationHandler = vi.fn(async () => ({ state: "declined" as const }));
+    await expect(generateModelReadWorkload({ ...setup(requestJson), conversation: policy(quote), clarificationHandler }))
+      .rejects.toThrow("READ_WORKLOAD_NAMING_EVIDENCE_INVALID");
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(clarificationHandler).not.toHaveBeenCalled();
+  });
+  it("does not let an incomplete model plan erase an exact operator-requested field", async () => {
+    const omitted = { allowed: [{ id: "shipments", description: "Read shipments",
+      plan: { kind: "rows", resource: "public.tbl_7", select: ["col_1"] } }], forbidden: [] };
+    const requestJson = vi.fn().mockResolvedValueOnce(response({ ...omitted,
+      operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: "Invented meaning" }] }))
+      .mockResolvedValue(response(omitted));
+    const clarificationHandler = vi.fn(async () => ({ state: "answered" as const, answer: "Shipment lifecycle status" }));
+    await expect(generateModelReadWorkload({ ...setup(requestJson), operatorNamingContext: "Read public.tbl_7.col_2 for this job.", clarificationHandler }))
+      .rejects.toThrow("READ_WORKLOAD_REQUIRED_TASK_FIELD_OMITTED");
+    expect(clarificationHandler).toHaveBeenCalledOnce();
+    expect(requestJson).toHaveBeenCalledTimes(3);
+  });
+  it("exposes the same typed pending meaning in a durable headless path before spending a correction", async () => {
+    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
+    const requestJson = vi.fn().mockResolvedValue(response({ ...mapped,
+      operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: "Invented meaning" }] }));
+    await expect(generateModelReadWorkload({ ...setup(requestJson), onCheckpoint: async value => { checkpoint = value; } }))
+      .rejects.toThrow("READ_WORKLOAD_CLARIFICATION_REQUIRED");
+    expect(requestJson).toHaveBeenCalledOnce();
+    expect(checkpoint).toMatchObject({ stage: "waiting", state: { call_count: 1, correction_used: false },
+      pending_question: { kind: "clarification", request: { resource: "public.tbl_7", field: "col_2" } } });
+  });
+  it("does not equate a generated label with meaning when an opaque field has no model quote", async () => {
+    const boundary = opaqueGeneratedBoundary();
+    boundary.pack.resources[0]!.field_metadata = { col_2: { label: "Lifecycle" } };
+    const requestJson = vi.fn().mockResolvedValue(response(mapped));
+    const clarificationHandler = vi.fn(async () => ({ state: "answered" as const, answer: "The shipment lifecycle status" }));
+    const result = await generateModelReadWorkload({ ...setup(requestJson, boundary), clarificationHandler });
+    expect(clarificationHandler).toHaveBeenCalledOnce();
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(result.analysis.status).toBe("ready");
+    expect(result.workload.source.meaning_evidence).toEqual(expect.arrayContaining([
+      expect.objectContaining({ resource: "public.tbl_7", field: "col_2", reference: expect.objectContaining({ kind: "answered_clarification" }) }) ]));
+  });
+  it("refuses a competing Source change in the actual question handler before follow-up egress", async () => {
+    const conversation = policy("Use the shipment lifecycle for this task.");
+    const requestJson = vi.fn().mockResolvedValue(response({ ...mapped,
+      operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: "Invented meaning" }] }));
+    let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
+    await expect(generateModelReadWorkload({ ...setup(requestJson), conversation,
+      onCheckpoint: async value => { checkpoint = value; }, clarificationHandler: async () => {
+        conversation.policySources!.snapshots[0]!.text = "Changed source";
+        return { state: "answered", answer: "The lifecycle stage" };
+      } })).rejects.toThrow("CHECKPOINT_STALE");
+    expect(requestJson).toHaveBeenCalledOnce();
+    expect(checkpoint?.stage).toBe("waiting");
+  });
+  it("does not let a generated field label suppress a necessary plain business question", async () => {
+    const boundary = opaqueGeneratedBoundary();
+    boundary.pack.resources[0]!.field_metadata = { col_2: { label: "Lifecycle" } };
+    const requestJson = vi.fn().mockResolvedValueOnce(response({ ...mapped,
+      operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: "The field means shipment lifecycle status" }] }))
+      .mockResolvedValue(response(mapped));
+    const clarificationHandler = vi.fn(async () => ({ state: "answered" as const, answer: "The shipment lifecycle status" }));
+    const result = await generateModelReadWorkload({ ...setup(requestJson, boundary), clarificationHandler });
+    expect(clarificationHandler).toHaveBeenCalledOnce();
+    expect(clarificationHandler).toHaveBeenCalledWith(expect.objectContaining({ resource: "public.tbl_7", field: "col_2" }));
+    expect(result.analysis.status).toBe("ready");
+    expect(requestJson).toHaveBeenCalledTimes(2);
+  });
+});
+
 describe("model-assisted Read workload mapping", () => {
   it.each(["corrected", "fabricated", "changed_workload"])("repairs quoted meanings for ordinary fields before asking the operator (%s)", async mode => {
     const boundary = generatedBoundary(), before = structuredClone(boundary);
@@ -239,8 +488,8 @@ describe("model-assisted Read workload mapping", () => {
       expect(clarificationHandler).not.toHaveBeenCalled();
     } else {
       await expect(result).rejects.toThrow(mode === "changed_workload"
-        ? "READ_WORKLOAD_NAMING_CORRECTION_CHANGED_WORKLOAD" : "READ_WORKLOAD_CLARIFICATION_DECLINED");
-      expect(clarificationHandler).toHaveBeenCalledTimes(mode === "fabricated" ? 1 : 0);
+        ? "READ_WORKLOAD_NAMING_CORRECTION_CHANGED_WORKLOAD" : "READ_WORKLOAD_NAMING_EVIDENCE_INVALID");
+      expect(clarificationHandler).not.toHaveBeenCalled();
     }
     expect(calls).toBe(2);
     expect(JSON.stringify(requestJson.mock.calls[1])).toContain("Rejected naming submission");
@@ -269,8 +518,8 @@ describe("model-assisted Read workload mapping", () => {
       operatorNamingContext: "Use the attached rules.", provider: "openai", model: "gpt-test", generatedBoundary: boundary,
       apiKey: "test-key", egressAcknowledged: true, conversation, deferNarration: true, dependencies: { requestJson }, clarificationHandler });
     expect(result.analysis.status).toBe("ready");
-    expect(requestJson).toHaveBeenCalledTimes(2); expect(clarificationHandler).not.toHaveBeenCalled();
-    expect(JSON.stringify(requestJson.mock.calls[1])).toContain("Rejected naming submission");
+    expect(requestJson).toHaveBeenCalledTimes(attempt === "omission" ? 1 : 2); expect(clarificationHandler).not.toHaveBeenCalled();
+    if (attempt === "question") expect(JSON.stringify(requestJson.mock.calls[1])).toContain("Rejected naming submission");
     expect(boundary).toEqual(before); expect(result.authority_granted).toBe(false);
   });
 
@@ -286,16 +535,23 @@ describe("model-assisted Read workload mapping", () => {
           operator_quote: failure === "fabricated_quote" ? "col_2 means private credit balance" : fieldQuote }];
       return { status: 200, body: { output: [{ type: "function_call", call_id: "bounded_naming", name: "runner__submit_read_workloads",
         arguments: JSON.stringify({ allowed: calls > 1 && failure === "changed_workload" ? [] : allowed, forbidden: [],
-          ...(calls > 1 && failure !== "missing_quote" ? { operator_meanings } : {}) }) }] } };
+          ...(calls === 1 ? { operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: `Invented prefix: ${fieldQuote}` }] }
+            : failure !== "missing_quote" ? { operator_meanings } : {}) }) }] } };
     });
     const clarificationHandler = vi.fn().mockResolvedValue({ state: "declined" });
-    await expect(generateModelReadWorkload({ name: "shipment_read", allowedQuestions: ["Read my shipment lifecycle"],
+    const result = generateModelReadWorkload({ name: "shipment_read", allowedQuestions: ["Read my shipment lifecycle"],
       operatorNamingContext: `${tableQuote}. ${fieldQuote}.`, provider: "openai", model: "gpt-test", generatedBoundary: boundary,
-      apiKey: "test-key", egressAcknowledged: true, deferNarration: true, dependencies: { requestJson }, clarificationHandler }))
-      .rejects.toThrow(failure === "changed_workload" ? "READ_WORKLOAD_NAMING_CORRECTION_CHANGED_WORKLOAD"
-        : ["unknown_field", "withheld_field"].includes(failure) ? "READ_WORKLOAD_NAMING_EVIDENCE_INVALID" : "READ_WORKLOAD_CLARIFICATION_DECLINED");
+      apiKey: "test-key", egressAcknowledged: true, deferNarration: true, dependencies: { requestJson }, clarificationHandler });
+    if (failure === "missing_quote") {
+      const accepted = await result;
+      expect(accepted.analysis.status).toBe("ready");
+      expect(accepted.workload.source.meaning_evidence).toEqual(expect.arrayContaining([
+        expect.objectContaining({ resource: "public.tbl_7", field: "col_2", origin: "HOST-RESOLVED" }) ]));
+      expect(accepted.authority_granted).toBe(false);
+    } else await expect(result).rejects.toThrow(failure === "changed_workload" ? "READ_WORKLOAD_NAMING_CORRECTION_CHANGED_WORKLOAD"
+      : "READ_WORKLOAD_NAMING_EVIDENCE_INVALID");
     expect(calls).toBe(2);
-    expect(clarificationHandler).toHaveBeenCalledTimes(["missing_quote", "fabricated_quote"].includes(failure) ? 1 : 0);
+    expect(clarificationHandler).not.toHaveBeenCalled();
     expect(boundary).toEqual(before);
   });
 
@@ -312,7 +568,7 @@ describe("model-assisted Read workload mapping", () => {
     const result = await generateModelReadWorkload({ name: "shipment_read", allowedQuestions: ["Read my shipment lifecycle"],
       operatorNamingContext: quote, provider: "openai", model: "gpt-test", generatedBoundary: boundary, apiKey: "test-key",
       egressAcknowledged: true, deferNarration: true, dependencies: { requestJson }, clarificationHandler });
-    expect(calls).toBe(3); expect(clarificationHandler).toHaveBeenCalledOnce();
+    expect(calls).toBe(2); expect(clarificationHandler).toHaveBeenCalledOnce();
     expect(clarificationHandler).toHaveBeenCalledWith(expect.objectContaining({ resource: "public.tbl_7", field: "col_2" }));
     expect(result.analysis.status).toBe("ready"); expect(result.authority_granted).toBe(false); expect(boundary).toEqual(before);
   });
@@ -324,7 +580,8 @@ describe("model-assisted Read workload mapping", () => {
       if (++calls === 2) boundary.pack.resources[0]!.selectable_fields = [];
       return { status: 200, body: { output: [{ type: "function_call", call_id: "stale_naming", name: "runner__submit_read_workloads",
         arguments: JSON.stringify({ allowed: [{ id: "shipments", description: "Read shipment lifecycle",
-          plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }], forbidden: [] }) }] } };
+          plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }], forbidden: [],
+          ...(calls === 1 ? { operator_meanings: [{ resource: "public.tbl_7", operator_quote: "Invented prefix: public.tbl_7 contains shipment requests" }] } : {}) }) }] } };
     });
     await expect(generateModelReadWorkload({ name: "shipment_read", allowedQuestions: ["Read my shipment lifecycle"],
       operatorNamingContext: "public.tbl_7 contains shipment requests", provider: "openai", model: "gpt-test", generatedBoundary: boundary,
