@@ -7,7 +7,7 @@ import { onboard } from "./guided-start.js";
 import { structuredBoundaryAuthoringCommand } from "./boundary-structured-authoring.js";
 import { readBoundaryDraftExchange, writeBoundaryDraftExchange } from "./boundary-draft-bundle.js";
 import { readStructuredDraftSuccessorInventory, structuredDraftSuccessorSourceMatches } from "./boundary-draft-successor.js";
-import { readActionRuleAuthorityDraft } from "./action-rule-authority.js";
+import { readActionRuleAuthorityActivation, readActionRuleAuthorityDraft } from "./action-rule-authority.js";
 import { loadBoundaryReviewContext } from "./boundary-commands.js";
 import { OperatorAuthorityRepository } from "./control-policy-operator-repository.js";
 import { newPolicySourceSession, policyTextSnapshot } from "./authoring-policy-source.js";
@@ -162,6 +162,65 @@ describe("explicit disabled successor pages", () => {
     expect(await readStructuredDraftSuccessorInventory(f.root)).toEqual({ status: "none" });
     const context = await loadBoundaryReviewContext(f.root);
     expect(await readActionRuleAuthorityDraft(f.root, `${context.candidate.pack.name}_rules`)).toBeUndefined();
+  });
+
+  it("does not treat disabled successor-save confirmation as a headless counter-owner decision", async () => {
+    const f = await fixture(20);
+    expect(Boolean(process.stdin.isTTY && process.stdout.isTTY)).toBe(false);
+    f.inspect.mockClear();
+    expect(await f.run(["--draft", "agenda.json", "--successor", "--action-page", "1", "--yes", "--review-counters"]))
+      .toMatchObject({ exit: 2, output: { code: "ACTION_VERSION_REVIEW_TERMINAL_REQUIRED", disabled_authority_changed: false } });
+    expect(f.inspect).not.toHaveBeenCalled();
+    expect(await readStructuredDraftSuccessorInventory(f.root)).toEqual({ status: "none" });
+    const context = await loadBoundaryReviewContext(f.root);
+    expect(await readActionRuleAuthorityDraft(f.root, `${context.candidate.pack.name}_rules`)).toBeUndefined();
+    expect(await readActionRuleAuthorityActivation(f.root)).toBeUndefined();
+  });
+
+  it.each(["selection_default", "maintenance_pending", "maintenance_absent"])("keeps successor work unsaved when its separate counter review returns %s", async mode => {
+    const f = await fixture(20), session = { chooseOption: vi.fn(async (title, _choices, options) => {
+      expect(options?.requireExplicitSelection).toBe(true);
+      if (title === "SELECT MAINTAINED CONFLICT COUNTER") {
+        expect(options?.initialValue).toBe("cancel");
+        return mode === "selection_default" ? undefined : "field:version";
+      }
+      expect(title).toBe("REVIEW CHANGED-RECORD PROTECTION");
+      expect(options?.initialValue).toBe("pending");
+      expect(options?.context?.join("\n")).toContain("every source writer increments");
+      return mode === "maintenance_pending" ? "pending" : undefined;
+    }) } as unknown as BoundaryReviewInteractiveSession;
+    expect(await f.run(["--draft", "agenda.json", "--successor", "--action-page", "1", "--yes", "--review-counters"], session))
+      .toMatchObject({ exit: 2, output: { code: "ACTION_VERSION_REVIEW_CANCELLED", disabled_authority_changed: false } });
+    expect(session.chooseOption).toHaveBeenCalledTimes(mode === "selection_default" ? 1 : 2);
+    expect(await readStructuredDraftSuccessorInventory(f.root)).toEqual({ status: "none" });
+    const context = await loadBoundaryReviewContext(f.root);
+    expect(await readActionRuleAuthorityDraft(f.root, `${context.candidate.pack.name}_rules`)).toBeUndefined();
+    expect(await readActionRuleAuthorityActivation(f.root)).toBeUndefined();
+  });
+
+  it("saves the selected disabled successor page only after independent explicit counter selection and owner confirmation", async () => {
+    const f = await fixture(20), session = { chooseOption: vi.fn(async (title, choices, options) => {
+      expect(options?.requireExplicitSelection).toBe(true);
+      if (title === "SELECT MAINTAINED CONFLICT COUNTER") {
+        expect(options?.initialValue).toBe("cancel");
+        expect(choices).toContainEqual(expect.objectContaining({ value: "field:version" }));
+        return "field:version";
+      }
+      expect(title).toBe("REVIEW CHANGED-RECORD PROTECTION");
+      expect(options?.initialValue).toBe("pending");
+      expect(options?.context?.join("\n")).toContain("every source writer increments");
+      expect(options?.exactDetails?.lines.join("\n")).toContain("not proof of external application behavior");
+      return "confirm";
+    }) } as unknown as BoundaryReviewInteractiveSession;
+    expect(await f.run(["--draft", "agenda.json", "--successor", "--action-page", "1", "--yes", "--review-counters"], session))
+      .toMatchObject({ exit: 0, output: { state: "saved_disabled", reviewed_conflict_counters: [{ resource: "studio.parcels", field: "version", maintenance: "all_writers_increment" }] } });
+    expect(session.chooseOption).toHaveBeenCalledTimes(2);
+    const context = await loadBoundaryReviewContext(f.root), saved = await readActionRuleAuthorityDraft(f.root, `${context.candidate.pack.name}_rules`);
+    expect(saved?.state).toBe("disabled");
+    expect(saved?.authority.rules).toHaveLength(12);
+    expect(saved?.authority.catalog.resources.find(resource => resource.name === "studio.parcels")?.version_field).toBe("version");
+    expect(await readStructuredDraftSuccessorInventory(f.root)).toMatchObject({ status: "present", current_binding_matches: true, pending_pages: [2], readiness: false });
+    expect(await readActionRuleAuthorityActivation(f.root)).toBeUndefined();
   });
 
   it("refuses final Source role drift before staging any successor page", async () => {

@@ -139,7 +139,9 @@ async function structuredBoundaryAuthoringCommandInner(
   }
   if (args.includes("--review-counters")) {
     if (!draftPath) throw new Error("--review-counters requires --draft <file>; it reviews the submitted UPDATE targets.");
-    if (args.includes("--yes")) {
+    // A successor's --yes acknowledges saving its disabled page only. The
+    // separate terminal review below must still supply every counter decision.
+    if (args.includes("--yes") && !successorRequested) {
       throw new Error("ACTION_VERSION_REVIEW_EXPLICIT_CONFIRMATION_REQUIRED: --yes cannot supply source-owner counter confirmation. Run --review-counters without --yes and review each exact counter in the operator terminal.");
     }
     // The typed file and --json never supply or imply source-owner consent.
