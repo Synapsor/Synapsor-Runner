@@ -2,7 +2,7 @@ import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { SchemaInspection } from "@synapsor-runner/schema-inspector";
 import type { ModelActionRuleDraftInput } from "./action-rule-model.js";
 import type { BoundaryReviewInteractiveSession } from "./boundary-cli-picker.js";
-import { preparePrivateActionSource } from "./action-rule-resource-review.js";
+import { preparePrivateActionSource, PrivateSingletonScopeReviewRequired } from "./action-rule-resource-review.js";
 import { inspectedPostgresScopeMapping } from "./inspected-scope-mapping.js";
 
 /** Exact metadata is local until the operator permits this catalog expansion. */
@@ -15,8 +15,32 @@ export async function reviewPrivateActionSourceForModel(input: {
 }) {
   await input.assertCurrent();
   const { request } = input;
-  const prepared = preparePrivateActionSource({ built: request.context.builtCatalog, boundary: request.context.readBoundary,
-    inspection: input.inspection, resource: request.resource, parentResource: request.parentResource });
+  const base = { built: request.context.builtCatalog, boundary: request.context.readBoundary,
+    inspection: input.inspection, resource: request.resource, parentResource: request.parentResource };
+  const previousMapping = request.previousReview?.evidence_mode === "required_scoped_singleton" && request.previousReview.scope_mapping
+    ? { relationship: request.previousReview.relationship, ...request.previousReview.scope_mapping } : undefined;
+  let prepared;
+  try { prepared = preparePrivateActionSource({ ...base, ...(previousMapping ? { requiredSingletonScope: previousMapping } : {}) }); }
+  catch (error) {
+    if (!(error instanceof PrivateSingletonScopeReviewRequired) || request.prerequisite?.collection_consistency || !input.session.chooseOption) throw error;
+    const choose = async (title: string, values: string[], detail: string) => {
+      // Menu control values are separate from arbitrary catalogue identifiers.
+      const selected = await input.session.chooseOption!(title,
+        [...values.map((value, index) => ({ value: `column:${index}`, label: value, detail })),
+          { value: "pending", label: "Keep pending", detail: "Do not confirm a mapping or transfer metadata." }],
+        { initialValue: "pending", requireExplicitSelection: true, context: ["Choose only a source fact whose meaning you have reviewed. A foreign key does not establish tenant/principal meaning."] });
+      const index = selected && /^column:[0-9]+$/u.test(selected) ? Number(selected.slice(7)) : -1;
+      return Number.isSafeInteger(index) && index >= 0 && index < values.length ? values[index] : undefined;
+    };
+    const relationship = await choose("PRIVATE REQUIRED SINGLETON LINK", error.options.relationships, "Catalogue-proven immediate at-most-one linkage; not a scope or existence guarantee.");
+    if (!relationship) return undefined;
+    const tenant_field = await choose("PRIVATE TRUSTED TENANT COLUMN", error.options.tenant_fields, "This column represents the same trusted tenant domain as the reviewed subject.");
+    if (!tenant_field) return undefined;
+    const principal_field = await choose("PRIVATE TRUSTED PRINCIPAL COLUMN", error.options.principal_fields.filter(name => name !== tenant_field), "This column represents the same trusted principal domain as the reviewed subject.");
+    if (!principal_field) return undefined;
+    await input.assertCurrent();
+    prepared = preparePrivateActionSource({ ...base, requiredSingletonScope: { relationship, tenant_field, principal_field } });
+  }
   if (request.prerequisite) {
     const child = prepared.built.catalog.resources.find(resource => resource.name === request.resource)!;
     const parent = request.context.readBoundary.pack.resources.find(resource => resource.id === request.parentResource);
@@ -28,6 +52,10 @@ export async function reviewPrivateActionSourceForModel(input: {
       || !scope || scope.principal.field !== child.principal_scope_key) {
       throw new Error("ACTION_RULE_PRIVATE_SOURCE_REVIEW_REQUIRED: The retained complete collection needs its exact current relationship and unfiltered direct tenant/principal read scope. Keep the absence/aggregate condition pending; no metadata was transferred or Read access changed.");
     }
+  }
+  if (prepared.review.evidence_mode && request.previousReview?.scope_confirmation
+    && request.previousReview.proof_digest === prepared.review.proof_digest) {
+    prepared.review.scope_confirmation = structuredClone(request.previousReview.scope_confirmation);
   }
   const sameProof = request.previousReview && canonicalJsonDigest(prepared.review) === canonicalJsonDigest(request.previousReview);
   if (request.previousReview && !sameProof && !request.revalidatePreviousReview) {
@@ -55,6 +83,9 @@ export async function reviewPrivateActionSourceForModel(input: {
     });
     if (selected !== "allow") return undefined;
     await input.assertCurrent();
+    if (prepared.review.evidence_mode) prepared.review.scope_confirmation = {
+      actor: "local_installation_operator", confirmed_at: new Date().toISOString(),
+    };
   }
   return { ...request.context, builtCatalog: prepared.built, review: prepared.review };
 }

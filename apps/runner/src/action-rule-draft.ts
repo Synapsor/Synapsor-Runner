@@ -350,7 +350,14 @@ export function compileActionRuleModelDraft(input: {
     const source = resourceDraft.source.kind === "subject_ref"
       ? { kind: "subject_ref" as const }
       : relationshipSource(resourceDraft, parent!.catalog, resource, relationship!);
-    const cardinality = relationship === undefined
+    const requiredSingleton = resource.private_evidence?.mode === "required_scoped_singleton";
+    if (requiredSingleton && (resourceDraft.source.kind !== "relationship" || resourceDraft.source.direction !== "inverse"
+      || resourceDraft.source.relationship !== resource.private_evidence!.relationship
+      || parent?.catalog.name !== resource.private_evidence!.parent_resource || completeCollections.has(resourceDraft.binding)
+      || resourceDraft.collection_consistency !== undefined)) {
+      invalid("Required singleton evidence cannot be a subject, collection, absence or aggregate proof; keep its exact reviewed parent link.");
+    }
+    const cardinality = requiredSingleton ? "one" as const : relationship === undefined
       ? "one" as const
       : relationshipCardinality(
           relationship,
@@ -380,6 +387,7 @@ export function compileActionRuleModelDraft(input: {
       fields,
       scope,
       cardinality,
+      ...(requiredSingleton ? { evidence_mode: "required_scoped_singleton" as const } : {}),
       ...(completeCollections.has(resourceDraft.binding) || resourceDraft.collection_consistency
         ? { collection_consistency: resourceDraft.collection_consistency ?? "complete_locked" as const } : {}),
       max_rows: maxRows,
@@ -489,7 +497,7 @@ export function compileActionRuleModelDraft(input: {
     generation_lock_fingerprint: catalog.generation_lock_fingerprint,
     resources: verificationResources,
     lock_order: verificationResources.map((resource) => resource.binding),
-    transaction: { isolation: catalog.resources[0]?.engine === "postgres" && verificationResources.some(resource => resource.collection_consistency)
+    transaction: { isolation: catalog.resources[0]?.engine === "postgres" && verificationResources.some(resource => resource.collection_consistency || resource.evidence_mode)
       ? "read_committed" : "repeatable_read", timezone: "UTC" },
   };
   const subjects = verificationResources

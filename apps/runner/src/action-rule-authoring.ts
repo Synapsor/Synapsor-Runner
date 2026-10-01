@@ -49,6 +49,7 @@ export type ActionRuleAuthoringResourceV1 = {
   /** Structurally suitable fields; their conflict-counter meaning needs review. */
   version_field_options?: string[];
   verification_only?: true;
+  private_evidence?: ActionRuleCatalogResourceV1["private_evidence"];
   operations: {
     update: boolean;
     insert: boolean;
@@ -207,6 +208,7 @@ export function buildActionRuleAuthoringCatalog(input: {
         : {}),
       ...(selectedVersionField ? { version_field: selectedVersionField } : {}),
       ...(verificationOnly ? { verification_only: true as const } : {}),
+      ...(verificationOnly && retainedResource?.private_evidence ? { private_evidence: structuredClone(retainedResource.private_evidence) } : {}),
       fields: supportedFields,
     };
     resources.push(canonical);
@@ -278,6 +280,7 @@ export function buildActionRuleAuthoringCatalog(input: {
       version_field_options: versionFieldOptions,
       ...(selectedVersionField ? { selected_version_field: selectedVersionField } : {}),
       ...(verificationOnly ? { verification_only: true as const } : {}),
+      ...(canonical.private_evidence ? { private_evidence: structuredClone(canonical.private_evidence) } : {}),
       operations: {
         update: !verificationOnly && table.writable && selectedVersionField !== undefined,
         insert: !verificationOnly && table.writable

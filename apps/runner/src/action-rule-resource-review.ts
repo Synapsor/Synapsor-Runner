@@ -13,6 +13,9 @@ export type PrivateActionSourceReview = {
   parent_resource: string;
   relationship: string;
   proof_digest: `sha256:${string}`;
+  evidence_mode?: "required_scoped_singleton";
+  scope_mapping?: { tenant_field: string; principal_field: string };
+  scope_confirmation?: { actor: "local_installation_operator"; confirmed_at: string };
 };
 
 export type PreparePrivateActionSourceInput = {
@@ -21,6 +24,8 @@ export type PreparePrivateActionSourceInput = {
   inspection: SchemaInspection;
   resource: string;
   parentResource: string;
+  /** An operator-reviewed mapping, not FK-derived meaning or model consent. */
+  requiredSingletonScope?: { relationship: string; tenant_field: string; principal_field: string };
 };
 
 export type PreparedPrivateActionSource = {
@@ -32,6 +37,20 @@ export type PreparedPrivateActionSource = {
 
 const MAX_PRIVATE_RESOURCES = 16;
 const MAX_PRIVATE_FIELDS = 128;
+
+/** Restricted metadata for an operator choice, never a scope fact inferred by a model. */
+export class PrivateSingletonScopeReviewRequired extends Error {
+  constructor(readonly options: { relationships: string[]; tenant_fields: string[]; principal_fields: string[] }) {
+    super("ACTION_RULE_PRIVATE_SOURCE_REVIEW_REQUIRED: Review the exact private tenant/principal columns and required singleton link in guided setup. No metadata, Read access or authority changed.");
+  }
+}
+
+function singletonProof(relationship: { required_singleton_proof?: { child_unique_key: string; child_unique_index: string; parent_unique_key: string; parent_unique_index: string } }): boolean {
+  const proof = relationship.required_singleton_proof;
+  return !!proof && Object.keys(proof).length === 4
+    && [proof.child_unique_key, proof.child_unique_index, proof.parent_unique_key, proof.parent_unique_index]
+      .every(name => typeof name === "string" && /^[A-Za-z_][A-Za-z0-9_$]*$/u.test(name));
+}
 
 function refuse(reason: string): never {
   throw new Error(`ACTION_RULE_PRIVATE_SOURCE_REVIEW_REQUIRED: ${reason} Read access, existing rules and source data are unchanged.`);
@@ -101,6 +120,14 @@ export function preparePrivateActionSource(input: PreparePrivateActionSourceInpu
   if (table.primary_key.length !== 1 || !uniqueKey(table, table.primary_key)) refuse(`${resource} requires one proven scalar primary key.`);
   const primaryKey = table.primary_key[0]!;
   portableRequiredField(table, primaryKey);
+  // Keep the complete ordinary catalog, including unsupported native types.
+  // This new proof advertises only positively qualified columns. Compilation
+  // refuses any selected verification dependency without its exact stamp;
+  // neither model fields nor used rule dependencies are silently removed.
+  const columnDeclarations = (source: TableInfo) => Object.fromEntries(source.columns
+    .filter(column => actionRuleTypeForColumn(column) && column.postgres_declaration_digest
+      && /^sha256:[a-f0-9]{64}$/u.test(column.postgres_declaration_digest))
+    .map(column => [column.name, column.postgres_declaration_digest])) as Record<string, `sha256:${string}`>;
   const retainedPrivate = built.catalog.resources.filter(candidate => candidate.verification_only && candidate.name !== resource);
   if (retainedPrivate.length >= MAX_PRIVATE_RESOURCES
     || table.columns.length + retainedPrivate.reduce((total, candidate) => total + candidate.fields.length, 0) > MAX_PRIVATE_FIELDS) {
@@ -110,18 +137,50 @@ export function preparePrivateActionSource(input: PreparePrivateActionSourceInpu
   const diagnostics: ActionRuleAuthoringCatalogV1["diagnostics"] = [];
   const relationships = actionRuleRelationshipsForTable(table, new Map([[resource, table], [parentResource, parentTable]]),
     new Set([resource, parentResource]), diagnostics);
+  const mapping = input.requiredSingletonScope;
+  if (mapping && (inspection.engine !== "postgres"
+    || Object.keys(mapping).some(key => !["relationship", "tenant_field", "principal_field"].includes(key))
+    || ![mapping.relationship, mapping.tenant_field, mapping.principal_field].every(name => /^[A-Za-z_][A-Za-z0-9_$]*$/u.test(name))
+    || mapping.tenant_field === mapping.principal_field)) {
+    refuse("Required scoped singleton evidence needs an exact independently reviewed PostgreSQL tenant/principal mapping.");
+  }
+  if (mapping) for (const [childName, parentName] of [[mapping.tenant_field, parent.tenant_key], [mapping.principal_field, parent.principal_scope_key]]) {
+    const childField = portableRequiredField(table, childName!), parentField = portableRequiredField(parentTable, parentName!);
+    if (canonicalJsonDigest(childField.type) !== canonicalJsonDigest(parentField.type)) {
+      refuse("The selected scope columns must have unchanged matching trusted-domain types; no cast or guessed domain is permitted.");
+    }
+  }
+  if (mapping && [[table, [primaryKey, mapping.tenant_field, mapping.principal_field]],
+    [parentTable, [parent.primary_key, parent.tenant_key, parent.principal_scope_key]]].some(([source, fields]) =>
+      (fields as string[]).some(name => !columnDeclarations(source as TableInfo)[name]))) {
+    refuse("Current native identities for every scope and key column are required. Refresh the PostgreSQL inspection; a mapping cannot supply unsupported catalogue proof.");
+  }
   const candidates = relationships.filter(relationship => {
     const foreignKey = table.foreign_keys.find(key => key.name === relationship.name);
     const pairs = actionRuleRelationshipPairs(relationship);
     return relationship.to_resource === parentResource && foreignKey && !foreignKey.deferrable && !relationship.nullable && relationship.target_unique
-      && pairs.some(pair => pair.target_field === parent.tenant_key)
-      && pairs.some(pair => pair.target_field === parent.principal_scope_key)
+      && (mapping ? relationship.name === mapping.relationship && pairs.length === 1 && singletonProof(relationship)
+        : pairs.some(pair => pair.target_field === parent.tenant_key) && pairs.some(pair => pair.target_field === parent.principal_scope_key))
       && pairs.every(pair => parentTable.columns.find(column => column.name === pair.target_field)?.nullable === false);
   });
   if (candidates.length !== 1) {
+    if (!mapping && inspection.engine === "postgres" && candidates.length === 0) {
+      const qualified = relationships.filter(relationship => relationship.to_resource === parentResource
+        && !relationship.nullable && relationship.target_unique && singletonProof(relationship)
+        && actionRuleRelationshipPairs(relationship).length === 1
+        && !table.foreign_keys.find(key => key.name === relationship.name)?.deferrable);
+      const fieldsFor = (parentName: string) => table.columns.filter(column => !column.nullable
+        && canonicalJsonDigest(actionRuleTypeForColumn(column) ?? null)
+          === canonicalJsonDigest(portableRequiredField(parentTable, parentName).type)).map(column => column.name).sort();
+      const tenant_fields = fieldsFor(parent.tenant_key), principal_fields = fieldsFor(parent.principal_scope_key);
+      if (qualified.length && tenant_fields.length && principal_fields.length) throw new PrivateSingletonScopeReviewRequired({
+        relationships: qualified.map(value => value.name).sort(), tenant_fields, principal_fields,
+      });
+    }
     refuse(candidates.length > 1
       ? `More than one complete immediate foreign key connects ${resource} to ${parentResource}'s reviewed tenant and principal; select an unambiguous source.`
-      : `No complete, non-null, immediate exact foreign key proves both reviewed scopes from ${resource} to ${parentResource}. ${diagnostics.map(item => item.message).join(" ")}`);
+      : mapping ? "The selected link lacks current immediate enforced singleton key proof. Review the exact catalogue; operator mapping cannot supply missing database constraints."
+        : `No complete, non-null, immediate exact foreign key proves both reviewed scopes from ${resource} to ${parentResource}. A qualified PostgreSQL singleton may instead use independently reviewed scope columns. ${diagnostics.map(item => item.message).join(" ")}`);
   }
   const relationship = candidates[0]!, pairs = actionRuleRelationshipPairs(relationship);
   for (const pair of pairs) {
@@ -138,10 +197,12 @@ export function preparePrivateActionSource(input: PreparePrivateActionSourceInpu
   if (previous && !existingRelationship) refuse(`${resource} is already private; its exact reviewed parent relationship must be retained, not replaced.`);
   const seed: ActionRuleCatalogResourceV1 = {
     name: resource, source: boundary.source, engine: parent.engine, schema: table.schema, table: table.name,
-    primary_key: primaryKey, tenant_key: pairs.find(pair => pair.target_field === parent.tenant_key)!.local_field,
-    principal_scope_key: pairs.find(pair => pair.target_field === parent.principal_scope_key)!.local_field,
+    primary_key: primaryKey, tenant_key: mapping?.tenant_field ?? pairs.find(pair => pair.target_field === parent.tenant_key)!.local_field,
+    principal_scope_key: mapping?.principal_field ?? pairs.find(pair => pair.target_field === parent.principal_scope_key)!.local_field,
     ...(previous?.version_field ? { version_field: previous.version_field } : {}),
     verification_only: true, fields: [],
+    ...(mapping ? { private_evidence: { mode: "required_scoped_singleton" as const, parent_resource: parentResource, relationship: relationship.name,
+      column_declarations: { witness: columnDeclarations(table), parent: columnDeclarations(parentTable) } } } : {}),
   };
   const prepared = buildActionRuleAuthoringCatalog({ boundary, inspection,
     retainedCatalog: { ...built.catalog, resources: [...built.catalog.resources.filter(candidate => candidate.name !== resource), seed] } });
@@ -171,7 +232,9 @@ export function preparePrivateActionSource(input: PreparePrivateActionSourceInpu
     resource: added, relationship, immediate: true,
   };
   const review: PrivateActionSourceReview = { resource, parent_resource: parentResource,
-    relationship: relationship.name, proof_digest: canonicalJsonDigest(proof) };
+    relationship: relationship.name, proof_digest: canonicalJsonDigest(proof),
+    ...(mapping ? { evidence_mode: "required_scoped_singleton" as const,
+      scope_mapping: { tenant_field: mapping.tenant_field, principal_field: mapping.principal_field } } : {}) };
   return { built: next, review, details: [
     `PRIVATE ACTION SOURCE PREPARATION: ${resource} via ${parentResource}`,
     "Operator-only metadata preview. Obtain the host's exact egress consent before returning this catalog to a model.",
@@ -181,13 +244,16 @@ export function preparePrivateActionSource(input: PreparePrivateActionSourceInpu
     `Primary key: ${JSON.stringify(added.primary_key)}; version: ${added.version_field ? JSON.stringify(added.version_field) : "none required for verification"}`,
     "verification_only=true; INSERT=false; UPDATE=false; all fields writable=false",
     "",
-    "Reviewed scope proof",
+    mapping ? "Independently reviewed runtime scope (not database-enforced scope)" : "Reviewed scope proof",
     `Parent: ${parentResource}; primary key: ${JSON.stringify(parent.primary_key)}`,
-    `Tenant: ${resource}.${added.tenant_key} -> ${parentResource}.${parent.tenant_key} (direct, non-null)`,
-    `Principal: ${resource}.${added.principal_scope_key} -> ${parentResource}.${parent.principal_scope_key} (direct, non-null)`,
+    `Tenant: ${resource}.${added.tenant_key} and ${parentResource}.${parent.tenant_key} must each equal the trusted tenant (direct, non-null)`,
+    `Principal: ${resource}.${added.principal_scope_key} and ${parentResource}.${parent.principal_scope_key} must each equal the trusted principal (direct, non-null)`,
     `Exact inspected FK: ${JSON.stringify(relationship.name)}; immediate; complete target tuple unique; non-null; many_to_one`,
     ...pairs.map((pair, index) => `  Pair ${index + 1}: ${resource}.${JSON.stringify(pair.local_field)} -> ${parentResource}.${JSON.stringify(pair.target_field)}`),
-    "Inverse access remains a bounded collection, not a one-row lookup.",
+    ...(mapping ? ["Catalogue-proven at most one witness; Runner requires exactly one current in-scope row before any rule or approval can permit.",
+      "This is runtime-scoped required evidence, not database-enforced scope or complete-collection proof. Absence and aggregate uses are unsupported.",
+      "Execution must reread and lock both parent and witness through the source transaction; SELECT-only preparation does not install writer privileges."]
+      : ["Inverse access remains a bounded collection, not a one-row lookup."]),
     "",
     "Private field metadata: field | type | nullability | purpose | writable",
     ...addedAuthoring.fields.map(field => `${JSON.stringify(field.name)} | ${displayType(field.type)} | ${field.nullable ? "nullable" : "NOT NULL"} | ${field.role} | false${field.enum_source ? ` | enum_source=${field.enum_source}` : ""}`),

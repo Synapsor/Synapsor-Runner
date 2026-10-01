@@ -28,6 +28,8 @@ export type ActionRuleFactQueryV1 = {
   source: string;
   schema: string;
   table: string;
+  /** PG required-singleton proofs concern these base relations, not inherited rows. */
+  relation_mode?: "only";
   projection: string[];
   predicates: ActionRuleFactPredicateV1[];
   order_by: Array<{ column: string; direction: "asc" | "desc" }>;
@@ -38,7 +40,8 @@ export type ActionRuleFactQueryV1 = {
 export type ActionRuleFactLoaderAdapterV1 = {
   engine: "postgres" | "mysql";
   assertResourceCompatible?(binding: CompiledRuleBindingV1): Promise<void>;
-  assertRelationshipCompatible?(binding: CompiledRuleBindingV1, parent: CompiledRuleBindingV1): Promise<void>;
+  assertRelationshipCompatible?(binding: CompiledRuleBindingV1, parent: CompiledRuleBindingV1,
+    mode?: "proposal_snapshot" | "transaction_reverify"): Promise<void>;
   assertCompleteCollection?(input: {
     binding: CompiledRuleBindingV1;
     parent: CompiledRuleBindingV1;
@@ -236,12 +239,21 @@ export async function loadActionRuleFacts(input: LoadActionRuleFactsInputV1): Pr
   const bindingByName = new Map(input.compiled.bindings.map((binding) => [binding.binding, binding]));
   const bindings: Record<string, { rows: ActionRuleFactRowV1[] }> = {};
   const queries: ActionRuleFactQueryV1[] = [];
+  const exactRelations = new Set<string>();
+  for (const binding of input.compiled.bindings) {
+    if (binding.verification.evidence_mode === "required_scoped_singleton") {
+      exactRelations.add(binding.binding);
+      if (binding.verification.source.kind === "relationship") exactRelations.add(binding.verification.source.from_binding);
+    }
+  }
   for (const bindingName of input.compiled.verification_boundary.lock_order) {
     const binding = bindingByName.get(bindingName);
     if (binding === undefined) fail("ACTION_RULE_LOAD_PLAN_INVALID", `Compiled lock binding ${bindingName} is unavailable.`);
     if (binding.resource.engine !== input.adapter.engine) fail("ACTION_RULE_ENGINE_MISMATCH", `Verification resource ${binding.resource.name} uses another database engine.`);
     await input.adapter.assertResourceCompatible?.(binding);
-    if (binding.verification.source.kind === "relationship" && (binding.relationship?.field_pairs || binding.verification.collection_consistency)) {
+    if (binding.verification.evidence_mode && (!input.adapter.assertRelationshipCompatible || !input.adapter.assertResourceCompatible
+      || input.adapter.engine !== "postgres")) fail("ACTION_RULE_LOAD_PLAN_INVALID", "The adapter cannot establish required scoped singleton evidence.");
+    if (binding.verification.source.kind === "relationship" && (binding.relationship?.field_pairs || binding.verification.collection_consistency || binding.verification.evidence_mode)) {
       const parent = input.compiled.bindings.find((candidate) => candidate.binding === (binding.verification.source.kind === "relationship" ? binding.verification.source.from_binding : ""));
       if (!parent) return fail("ACTION_RULE_LOAD_PLAN_INVALID", "A composite relationship requires its reviewed parent binding.");
       if (binding.verification.collection_consistency) {
@@ -252,7 +264,7 @@ export async function loadActionRuleFacts(input: LoadActionRuleFactsInputV1): Pr
         if (!parentRows || parentRows.length !== 1) return fail("ACTION_RULE_FACTS_UNKNOWN", "Complete collection requires its exact existing parent.");
         await input.adapter.assertCompleteCollection({ binding, parent, parentRows, trusted: input.trusted, mode: input.mode });
       }
-      await input.adapter.assertRelationshipCompatible?.(binding, parent);
+      await input.adapter.assertRelationshipCompatible?.(binding, parent, input.mode);
     }
     const sourcePredicate = binding.verification.source.kind === "subject_ref"
       ? (() => {
@@ -267,6 +279,7 @@ export async function loadActionRuleFacts(input: LoadActionRuleFactsInputV1): Pr
       source: binding.resource.source,
       schema: binding.resource.schema,
       table: binding.resource.table,
+      ...(exactRelations.has(binding.binding) ? { relation_mode: "only" as const } : {}),
       projection: binding.verification.fields.map((field) => field.name),
       predicates: [sourcePredicate, ...scopePredicates(binding, input.trusted)],
       order_by: binding.verification.deterministic_order?.map((entry) => ({ column: entry.field, direction: entry.direction }))

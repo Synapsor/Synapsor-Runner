@@ -177,15 +177,49 @@ function resolveRelationship(
   if (parent.resource.name !== expectedParent || binding.resource.name !== expectedChild) {
     fail("ACTION_RULE_INVALID", `Relationship ${relationship.name} does not connect ${parent.resource.name} to ${binding.resource.name} in the reviewed direction.`, `verification_boundary.resources.${verification.binding}.source`);
   }
+  const requiredSingleton = verification.evidence_mode === "required_scoped_singleton";
   const yieldsMany = forward
     ? relationship.cardinality === "one_to_many"
-    : relationship.cardinality === "many_to_one";
+    : relationship.cardinality === "many_to_one" && !requiredSingleton;
   const expectedCardinality = yieldsMany ? "many" : "one";
   if (verification.cardinality !== expectedCardinality) {
     fail("ACTION_RULE_UNBOUNDED", `Binding ${verification.binding} must declare cardinality ${expectedCardinality} for relationship ${relationship.name}.`, `verification_boundary.resources.${verification.binding}.cardinality`);
   }
   if (!yieldsMany && relationship.cardinality !== "one_to_many" && !relationship.target_unique) {
     fail("ACTION_RULE_UNBOUNDED", `Relationship ${relationship.name} does not prove at-most-one target row.`, `verification_boundary.resources.${verification.binding}.source.relationship`);
+  }
+  if (requiredSingleton) {
+    const proof = relationship.required_singleton_proof;
+    const purpose = binding.resource.private_evidence;
+    const pairs = actionRuleRelationshipPairs(relationship);
+    if (forward || relationship.cardinality !== "many_to_one" || relationship.nullable || pairs.length !== 1
+      || !proof || Object.keys(proof).some(key => !["child_unique_key", "child_unique_index", "parent_unique_key", "parent_unique_index"].includes(key))
+      || ![proof.child_unique_key, proof.child_unique_index, proof.parent_unique_key, proof.parent_unique_index]
+        .every(name => typeof name === "string" && /^[A-Za-z_][A-Za-z0-9_$]*$/u.test(name))
+      || binding.resource.engine !== "postgres" || parent.resource.engine !== "postgres"
+      || !binding.resource.verification_only || purpose?.mode !== "required_scoped_singleton"
+      || purpose.parent_resource !== parent.resource.name || purpose.relationship !== relationship.name
+      || verification.collection_consistency !== undefined || verification.max_rows !== 1
+      || verification.scope.mode !== "columns" || !verification.scope.principal_field
+      || parent.verification.cardinality !== "one" || parent.verification.scope.mode !== "columns"
+      || !parent.verification.scope.principal_field || !parent.resource.tenant_key || !parent.resource.principal_scope_key) {
+      fail("ACTION_RULE_SCOPE_UNPROVEN", "Required singleton evidence needs its exact reviewed PostgreSQL scope and immediate singleton key proof; it is not complete collection evidence.");
+    }
+    for (const [childField, parentField] of [
+      [verification.scope.tenant_field, parent.verification.scope.tenant_field],
+      [verification.scope.principal_field, parent.verification.scope.principal_field],
+    ]) {
+      const child = fieldMap(binding.resource).get(childField!), ancestor = fieldMap(parent.resource).get(parentField!);
+      if (!child || !ancestor || child.nullable || ancestor.nullable || !exactTypes(child.type, ancestor.type)) {
+        fail("ACTION_RULE_SCOPE_UNPROVEN", "Reviewed singleton scope columns must have matching required trusted-domain types.");
+      }
+    }
+    for (const [candidate, side] of [[binding, "witness"], [parent, "parent"]] as const) {
+      const declarations = purpose.column_declarations[side];
+      if (!declarations || candidate.verification.fields.some(field => !/^sha256:[a-f0-9]{64}$/u.test(declarations[field.name] ?? ""))) {
+        fail("ACTION_RULE_SCOPE_UNPROVEN", "Required singleton verification needs the exact native declarations for every material, identity and scope field.");
+      }
+    }
   }
   return relationship;
 }
@@ -599,6 +633,14 @@ function compileAgainstCatalog(
     if (bindings.has(verification.binding)) fail("ACTION_RULE_INVALID", `Verification binding ${verification.binding} is duplicated.`);
     const resource = catalogResources.get(verification.resource);
     if (resource === undefined || resource.source !== boundary.source) fail("ACTION_RULE_INVALID", `Verification resource ${verification.resource} is not in source ${boundary.source}.`);
+    if ((resource.private_evidence?.mode === "required_scoped_singleton") !== (verification.evidence_mode === "required_scoped_singleton")
+      || (verification.evidence_mode !== undefined && verification.evidence_mode !== "required_scoped_singleton")) {
+      fail("ACTION_RULE_SCOPE_UNPROVEN", "The reviewed required private witness cannot be omitted, weakened or promoted to a collection proof.");
+    }
+    if (verification.evidence_mode && (verification.source.kind !== "relationship" || verification.source.direction !== "inverse"
+      || verification.cardinality !== "one" || boundary.transaction.isolation !== "read_committed" || resource.engine !== "postgres")) {
+      fail("ACTION_RULE_SCOPE_UNPROVEN", "Required singleton evidence is qualified only for PostgreSQL READ COMMITTED inverse verification.");
+    }
     if (verification.primary_key !== resource.primary_key || verification.version_field !== resource.version_field) fail("ACTION_RULE_AUTHORITY_STALE", `Verification identity for ${resource.name} no longer matches the inspected catalog.`);
     if (verification.cardinality === "one" && verification.max_rows !== 1) fail("ACTION_RULE_UNBOUNDED", `One-row binding ${verification.binding} must have max_rows 1.`);
     if (verification.cardinality === "many" && (verification.max_rows < 1 || verification.max_rows > 100)) fail("ACTION_RULE_UNBOUNDED", `Many-row binding ${verification.binding} must be bounded to 1 through 100 rows.`);
@@ -608,6 +650,7 @@ function compileAgainstCatalog(
       if (inspected === undefined) fail("ACTION_RULE_AUTHORITY_STALE", `Verification field ${resource.name}.${field.name} is absent from the inspected catalog.`);
       assertFieldTypeMatches(field.type, inspected.type, `verification_boundary.resources.${verification.binding}.fields.${field.name}`);
       if ((field.nullable ?? false) !== inspected.nullable) fail("ACTION_RULE_AUTHORITY_STALE", `Nullability changed for ${resource.name}.${field.name}.`);
+      if (verification.evidence_mode && field.model_visible === true) fail("ACTION_RULE_SCOPE_UNPROVEN", "Private singleton facts are never model-visible result fields.");
     }
     bindings.set(verification.binding, { binding: verification.binding, resource, verification });
   }

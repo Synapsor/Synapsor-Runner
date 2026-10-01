@@ -30,12 +30,7 @@ export type ActionRuleSourceRepairCheckpoint = {
   coverage_provenance?: ActionWorkUnitCoverageProvenance;
 };
 
-export type ReviewedPrivateActionSource = {
-  resource: string;
-  parent_resource: string;
-  relationship: string;
-  proof_digest: `sha256:${string}`;
-};
+export type ReviewedPrivateActionSource = import("./action-rule-resource-review.js").PrivateActionSourceReview;
 
 export type ReviewedActionVersionField = {
   resource: string;
@@ -139,12 +134,23 @@ export function parseActionRuleAuthoringCheckpoint(value: unknown): ActionRuleAu
     const names = new Set<string>();
     for (const source of sources) {
       if (!source || typeof source !== "object" || Array.isArray(source)
-        || Object.keys(source).some(key => !["resource", "parent_resource", "relationship", "proof_digest"].includes(key))
+        || Object.keys(source).some(key => !["resource", "parent_resource", "relationship", "proof_digest", "evidence_mode", "scope_mapping", "scope_confirmation"].includes(key))
         || [source.resource, source.parent_resource, source.relationship].some(name => typeof name !== "string"
           || name.length > 256 || !/^[A-Za-z_][A-Za-z0-9_.]*$/u.test(name))
         || typeof source.proof_digest !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(source.proof_digest)
         || names.has(source.resource)) throw fail();
       names.add(source.resource);
+      if (source.evidence_mode !== undefined) {
+        const mapping = source.scope_mapping, confirmation = source.scope_confirmation;
+        if (source.evidence_mode !== "required_scoped_singleton" || !mapping || !confirmation
+          || Object.keys(mapping).some(key => !["tenant_field", "principal_field"].includes(key))
+          || ![mapping.tenant_field, mapping.principal_field].every(name => typeof name === "string" && /^[A-Za-z_][A-Za-z0-9_$]*$/u.test(name))
+          || mapping.tenant_field === mapping.principal_field
+          || Object.keys(confirmation).some(key => !["actor", "confirmed_at"].includes(key))
+          || confirmation.actor !== "local_installation_operator" || typeof confirmation.confirmed_at !== "string"
+          || !Number.isFinite(Date.parse(confirmation.confirmed_at))
+          || new Date(confirmation.confirmed_at).toISOString() !== confirmation.confirmed_at) throw fail();
+      } else if (source.scope_mapping !== undefined || source.scope_confirmation !== undefined) throw fail();
     }
   }
   if (record.reviewed_version_fields !== undefined) {

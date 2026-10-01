@@ -1638,4 +1638,4 @@ export const safeErrorCodes = [
 ] as const;
 
 export type SafeErrorCode = (typeof safeErrorCodes)[number];
-export { postgresColumnDeclarationExpression } from "./postgres-column-declaration.js";
+export { postgresColumnDeclarationExpression, postgresNativeDeclarationSupportedExpression, postgresRequiredSingletonProofExpression } from "./postgres-column-declaration.js";

@@ -1,7 +1,10 @@
 import { Buffer } from "node:buffer";
 import mysql from "mysql2/promise";
 import { Pool, type PoolClient } from "pg";
-import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import {
+  canonicalJsonDigest, postgresColumnDeclarationExpression,
+  postgresNativeDeclarationSupportedExpression, postgresRequiredSingletonProofExpression,
+} from "@synapsor-runner/protocol";
 import {
   classifySensitivity,
   type SensitivityClassification,
@@ -574,6 +577,8 @@ function splitTopLevelTokens(
 }
 
 export type ColumnInfo = {
+  /** Native supported declaration identity; absent metadata cannot qualify the new singleton mode. */
+  postgres_declaration_digest?: `sha256:${string}`;
   name: string;
   data_type: string;
   comment?: string;
@@ -606,11 +611,19 @@ export type ForeignKeyInfo = {
   referenced_columns: string[];
   delete_rule: "NO ACTION" | "RESTRICT" | "CASCADE" | "SET NULL" | "SET DEFAULT" | string;
   action_rule_issue?: "unvalidated_foreign_key" | "non_exact_collation";
+  /** Catalogue names for the finite ordinary required-singleton proof; not scope or row existence. */
+  required_singleton_proof?: {
+    child_unique_key: string;
+    child_unique_index: string;
+    parent_unique_key: string;
+    parent_unique_index: string;
+  };
   /** Deferred foreign keys cannot prove complete collection locking. */
   deferrable?: true;
 };
 
 export type ReferencingForeignKeyInfo = {
+  required_singleton_proof?: ForeignKeyInfo["required_singleton_proof"];
   name: string;
   schema: string;
   table: string;
@@ -891,6 +904,7 @@ export function schemaFingerprintForInspection(inspection: SchemaInspection): `s
         generated: column.generated,
         identity: column.identity ?? false,
         enum_values: column.enum_values ?? [],
+        ...(column.postgres_declaration_digest === undefined ? {} : { postgres_declaration_digest: column.postgres_declaration_digest }),
       })),
       primary_key: table.primary_key,
       unique_constraints: table.unique_constraints,
@@ -1302,6 +1316,8 @@ async function inspectPostgres(
     client ??= await pool!.connect();
     await client.query("BEGIN READ ONLY");
     await client.query(`SET LOCAL statement_timeout = ${Number(options.statementTimeoutMs ?? 3000)}`);
+    // Fixed deparse identity inside this owned read-only transaction only.
+    await client.query("SET LOCAL search_path = pg_catalog");
     const selectedResources = normalizedInspectionResources(options.resources);
     const resourceParams = [
       options.schema ?? null,
@@ -1355,7 +1371,16 @@ async function inspectPostgres(
                 JOIN pg_catalog.pg_enum enum_value ON enum_value.enumtypid = enum_type.oid
                 WHERE enum_type.typname = information_schema.columns.udt_name
                   AND enum_ns.nspname = information_schema.columns.udt_schema
-              ) ELSE NULL END AS enum_values
+              ) ELSE NULL END AS enum_values,
+              (SELECT CASE WHEN ${postgresNativeDeclarationSupportedExpression}
+                THEN ${postgresColumnDeclarationExpression} ELSE NULL END
+               FROM pg_catalog.pg_class r
+               JOIN pg_catalog.pg_namespace rn ON rn.oid=r.relnamespace
+               JOIN pg_catalog.pg_attribute a ON a.attrelid=r.oid AND a.attnum>0 AND NOT a.attisdropped
+               JOIN pg_catalog.pg_type t ON t.oid=a.atttypid
+               WHERE rn.nspname=information_schema.columns.table_schema
+                 AND r.relname=information_schema.columns.table_name
+                 AND a.attname=information_schema.columns.column_name) AS postgres_declaration
        FROM information_schema.columns
        WHERE table_schema NOT IN ('pg_catalog', 'information_schema')
          AND ($1::text IS NULL OR table_schema = $1)
@@ -1388,6 +1413,7 @@ async function inspectPostgres(
               (NOT EXISTS (SELECT 1 FROM pg_catalog.pg_collation coll
                 WHERE coll.oid IN (source_attr.attcollation, target_attr.attcollation)
                   AND NOT coll.collisdeterministic)) AS exact_equality,
+              ${postgresRequiredSingletonProofExpression} AS required_singleton_proof,
               CASE con.confdeltype
                 WHEN 'a' THEN 'NO ACTION' WHEN 'r' THEN 'RESTRICT'
                 WHEN 'c' THEN 'CASCADE' WHEN 'n' THEN 'SET NULL'
@@ -1940,9 +1966,11 @@ type RawColumn = {
   ordinal_position: number;
   comment?: string | null;
   enum_values?: unknown;
+  postgres_declaration?: unknown;
 };
 type RawKeyColumn = { schema: string; table_name: string; constraint_name: string; constraint_type: string; column_name: string; ordinal_position: number };
 type RawForeignKey = {
+  required_singleton_proof?: unknown;
   validated?: boolean;
   deferrable?: boolean;
   exact_equality?: boolean;
@@ -1953,7 +1981,7 @@ type RawForeignKey = {
   referenced_schema: string;
   referenced_table: string;
   referenced_column: string;
-  ordinal_position: number;
+  ordinal_position: number | string;
   delete_rule?: string;
 };
 type RawIndex = {
@@ -2047,6 +2075,7 @@ function normalizeInspection(input: {
     const unique_constraints = constraintColumns(keysByTable.get(key) ?? [], "UNIQUE");
     const columns = rawColumns.map((column) => normalizeColumn({
       ...column,
+      ...(input.engine === "postgres" ? {} : { postgres_declaration: undefined }),
       enum_values: deriveSchemaDeclaredEnumValues({
         engine: input.engine,
         column_name: String(column.name),
@@ -2088,8 +2117,8 @@ function normalizeInspection(input: {
       primary_key,
       unique_constraints,
       check_constraints: tableChecks.map((check) => ({ name: check.name, definition: check.definition })),
-      foreign_keys: normalizeForeignKeys(fksByTable.get(key) ?? []),
-      referenced_by: normalizeReferencingForeignKeys(incomingFksByTable.get(key) ?? []),
+      foreign_keys: normalizeForeignKeys(fksByTable.get(key) ?? [], input.engine),
+      referenced_by: normalizeReferencingForeignKeys(incomingFksByTable.get(key) ?? [], input.engine),
       write_triggers: normalizeTriggers(triggersByTable.get(key) ?? []),
       row_level_security: rowSecurityEnabled,
       row_level_security_policies: policies,
@@ -2192,10 +2221,58 @@ function normalizePolicyRoles(value: unknown): string[] {
   return value.map(String).sort();
 }
 
+function closedRecord(value: unknown, keys: readonly string[]): value is Record<string, unknown> {
+  return value !== null && typeof value === "object" && !Array.isArray(value)
+    && [Object.prototype, null].includes(Object.getPrototypeOf(value))
+    && Object.keys(value).length === keys.length && keys.every(key => Object.hasOwn(value, key));
+}
+
+function postgresIdentifier(value: unknown): value is string {
+  return typeof value === "string" && value.length > 0 && !value.includes("\0") && Buffer.byteLength(value, "utf8") <= 63;
+}
+
+function singletonProofMetadata(rows: RawForeignKey[], engine: SourceEngine): Pick<ForeignKeyInfo, "required_singleton_proof"> {
+  const row = rows[0];
+  const value = row?.required_singleton_proof;
+  const keys = ["child_unique_key", "child_unique_index", "parent_unique_key", "parent_unique_index"] as const;
+  if (engine !== "postgres" || rows.length !== 1 || !(row?.ordinal_position === 1 || row?.ordinal_position === "1")
+    || row?.validated !== true || row.deferrable !== false || row.exact_equality !== true
+    || row.delete_rule !== "NO ACTION"
+    || [row.schema, row.table_name, row.constraint_name, row.column_name, row.referenced_schema, row.referenced_table, row.referenced_column].some(name => !postgresIdentifier(name))
+    || !closedRecord(value, keys) || keys.some(key => !postgresIdentifier(value[key]))) return {};
+  return { required_singleton_proof: {
+    child_unique_key: value.child_unique_key as string, child_unique_index: value.child_unique_index as string,
+    parent_unique_key: value.parent_unique_key as string, parent_unique_index: value.parent_unique_index as string,
+  } };
+}
+
+function nativeColumnDeclarationDigest(column: RawColumn): `sha256:${string}` | undefined {
+  const value = column.postgres_declaration;
+  const keys = ["type_schema", "type_name", "type_modifier", "nullable", "collation_schema", "collation_name",
+    "generated", "identity", "default_expression", "enum_values", "domain_checks", "table_checks"];
+  const nativeNames = new Set(["bool", "int2", "int4", "int8", "date", "timestamp", "timestamptz", "text", "varchar", "bpchar"]);
+  if (!closedRecord(value, keys) || value.type_schema !== "pg_catalog" || typeof value.type_name !== "string"
+    || !nativeNames.has(value.type_name) || !Number.isInteger(value.type_modifier) || (value.type_modifier as number) < -1
+    || typeof value.nullable !== "boolean" || value.nullable !== (String(column.is_nullable).toUpperCase() === "YES")
+    || !(value.collation_schema === null && value.collation_name === null
+      || value.collation_schema === "pg_catalog" && postgresIdentifier(value.collation_name))
+    || !["", "s", "v"].includes(value.generated as string) || !["", "a", "d"].includes(value.identity as string)
+    || !(value.default_expression === null || typeof value.default_expression === "string" && value.default_expression.length > 0)
+    || !Array.isArray(value.enum_values) || value.enum_values.length !== 0
+    || !Array.isArray(value.domain_checks) || value.domain_checks.length !== 0
+    || !Array.isArray(value.table_checks)) return undefined;
+  const checkKeys = ["name", "definition", "validated", "no_inherit"];
+  if (value.table_checks.some(check => !closedRecord(check, checkKeys) || !postgresIdentifier(check.name)
+    || typeof check.definition !== "string" || check.definition.length === 0
+    || typeof check.validated !== "boolean" || typeof check.no_inherit !== "boolean")) return undefined;
+  return canonicalJsonDigest(value);
+}
+
 function normalizeColumn(column: RawColumn, primaryKey: string[]): ColumnInfo {
   const name = String(column.name);
   const lower = name.toLowerCase();
   const type = String(column.udt_name || column.data_type || "unknown").toLowerCase();
+  const nativeDigest = nativeColumnDeclarationDigest(column);
   const sensitivity = classifySensitivity({
     name,
     dataType: String(column.data_type || column.udt_name || "unknown"),
@@ -2208,6 +2285,7 @@ function normalizeColumn(column: RawColumn, primaryKey: string[]): ColumnInfo {
   return {
     name,
     data_type: String(column.data_type || column.udt_name || "unknown"),
+    ...(nativeDigest === undefined ? {} : { postgres_declaration_digest: nativeDigest }),
     ...(column.comment ? { comment: column.comment } : {}),
     ...(Array.isArray(column.enum_values) && column.enum_values.length
       ? { enum_values: column.enum_values.map(String) }
@@ -2473,7 +2551,7 @@ function constraintColumns(rows: RawKeyColumn[], kind: string): UniqueConstraint
   }));
 }
 
-function normalizeForeignKeys(rows: RawForeignKey[]): ForeignKeyInfo[] {
+function normalizeForeignKeys(rows: RawForeignKey[], engine: SourceEngine): ForeignKeyInfo[] {
   const grouped = groupBy(rows, (row) => row.constraint_name);
   return Array.from(grouped.entries()).map(([name, items]) => {
     const sorted = items.sort((a, b) => Number(a.ordinal_position) - Number(b.ordinal_position));
@@ -2484,6 +2562,7 @@ function normalizeForeignKeys(rows: RawForeignKey[]): ForeignKeyInfo[] {
       referenced_table: sorted[0]?.referenced_table ?? "",
       referenced_columns: sorted.map((item) => item.referenced_column),
       delete_rule: sorted[0]?.delete_rule ?? "NO ACTION",
+      ...singletonProofMetadata(sorted, engine),
       ...(sorted.some(item => item.deferrable === true) ? { deferrable: true as const } : {}),
       ...(sorted.some((item) => item.validated === false) ? { action_rule_issue: "unvalidated_foreign_key" as const }
         : sorted.some((item) => item.exact_equality === false) ? { action_rule_issue: "non_exact_collation" as const } : {}),
@@ -2491,7 +2570,7 @@ function normalizeForeignKeys(rows: RawForeignKey[]): ForeignKeyInfo[] {
   });
 }
 
-function normalizeReferencingForeignKeys(rows: RawForeignKey[]): ReferencingForeignKeyInfo[] {
+function normalizeReferencingForeignKeys(rows: RawForeignKey[], engine: SourceEngine): ReferencingForeignKeyInfo[] {
   const grouped = groupBy(rows, (row) => `${row.schema}.${row.table_name}.${row.constraint_name}`);
   return Array.from(grouped.values()).map((items) => {
     const sorted = items.sort((a, b) => Number(a.ordinal_position) - Number(b.ordinal_position));
@@ -2502,6 +2581,7 @@ function normalizeReferencingForeignKeys(rows: RawForeignKey[]): ReferencingFore
       columns: sorted.map((item) => item.column_name),
       referenced_columns: sorted.map((item) => item.referenced_column),
       delete_rule: sorted[0]?.delete_rule ?? "NO ACTION",
+      ...singletonProofMetadata(sorted, engine),
     };
   });
 }

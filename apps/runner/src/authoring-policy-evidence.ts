@@ -213,7 +213,7 @@ export function policyCoverageDraft(input: {
       if (parentProof && parent?.scope.mode === "columns" && parent.scope.tenant_field === parentProof.tenant.field
         && parent.scope.principal_field === parentProof.principal.field
         && link?.from_resource === resource.name && link.to_resource === parent.resource
-        && canonicalJsonDigest(source.field_pairs) === canonicalJsonDigest(actionRuleRelationshipPairs(link))) {
+        && canonicalJsonDigest(actionRuleRelationshipPairs(source)) === canonicalJsonDigest(actionRuleRelationshipPairs(link))) {
         try {
           const built = buildActionRuleAuthoringCatalog({ boundary: input.read, inspection: input.source.inspection,
             retainedCatalog: action.source_catalog });
@@ -236,8 +236,10 @@ export function policyCoverageDraft(input: {
               const pairs = actionRuleRelationshipPairs(candidate);
               return candidate.to_resource === parent.resource && candidate.target_unique && !candidate.nullable
                 && !childTable.foreign_keys.find(key => key.name === candidate.name)?.deferrable
-                && pairs.some(pair => pair.local_field === resource.tenant_key && pair.target_field === parentProof.tenant.field)
-                && pairs.some(pair => pair.local_field === resource.principal_scope_key && pair.target_field === parentProof.principal.field)
+                && (binding.evidence_mode === "required_scoped_singleton"
+                  ? pairs.length === 1 && candidate.required_singleton_proof !== undefined
+                  : pairs.some(pair => pair.local_field === resource.tenant_key && pair.target_field === parentProof.tenant.field)
+                    && pairs.some(pair => pair.local_field === resource.principal_scope_key && pair.target_field === parentProof.principal.field))
                 && pairs.every(pair => parentTable.columns.find(column => column.name === pair.target_field)?.nullable === false);
             });
           if (candidates.length !== 1 || canonicalJsonDigest(candidates[0]) !== canonicalJsonDigest(link)) return null;
@@ -246,7 +248,11 @@ export function policyCoverageDraft(input: {
           // purpose or fabricating the separate private-source consent record.
           if (resource.verification_only) {
             const prepared = preparePrivateActionSource({ built, boundary: input.read, inspection: input.source.inspection,
-              resource: resource.name, parentResource: parent.resource });
+              resource: resource.name, parentResource: parent.resource,
+              ...(binding.evidence_mode === "required_scoped_singleton" && binding.scope.principal_field ? {
+                requiredSingletonScope: { relationship: source.relationship,
+                  tenant_field: binding.scope.tenant_field, principal_field: binding.scope.principal_field },
+              } : {}) });
             if (prepared.review.relationship !== source.relationship) return null;
           }
           const mapping = resource.tenant_key && inspectedPostgresScopeMapping({ inspection: input.source.inspection,
@@ -269,6 +275,46 @@ export function policyCoverageDraft(input: {
       || resource.principal_scope_key && resource.principal_scope_key !== proof.principal.field
       || ![proof.tenant.field, proof.principal.field].every(field => resource.fields.some(entry => entry.name === field))) return null;
     return proof;
+  };
+  const requiredPrivateEvidence = (action: typeof actions[number], binding: typeof actions[number]["verification_boundary"]["resources"][number]) => {
+    if (binding.evidence_mode !== "required_scoped_singleton" || !input.source || !action.source_catalog
+      || binding.source.kind !== "relationship" || binding.source.direction !== "inverse"
+      || binding.scope.mode !== "columns" || !binding.scope.principal_field || binding.cardinality !== "one"
+      || binding.collection_consistency || binding.max_rows !== 1
+      || action.read_dependency?.name !== input.read.pack.name || action.read_dependency.digest !== readDigest
+      || action.source_catalog.generation_lock_fingerprint !== input.read.generation_lock_fingerprint
+      || action.verification_boundary.generation_lock_fingerprint !== input.read.generation_lock_fingerprint
+      || canonicalJsonDigest(input.source.generationLock) !== input.read.generation_lock_fingerprint
+      || schemaFingerprintForInspection(input.source.inspection) !== input.source.generationLock.schema_fingerprint
+      || rolePostureFingerprint(input.source.inspection) !== input.read.role_posture_fingerprint) return null;
+    const parent = action.verification_boundary.resources.find(entry => entry.binding === (binding.source.kind === "relationship" ? binding.source.from_binding : ""));
+    const resource = action.source_catalog.resources.find(entry => entry.name === binding.resource);
+    if (!parent || parent.scope.mode !== "columns" || !parent.scope.principal_field || parent.cardinality !== "one"
+      || !resource?.verification_only || resource.private_evidence?.mode !== "required_scoped_singleton"
+      || resource.private_evidence.parent_resource !== parent.resource || resource.private_evidence.relationship !== binding.source.relationship
+      || resource.tenant_key !== binding.scope.tenant_field || resource.principal_scope_key !== binding.scope.principal_field) return null;
+    try {
+      const relationshipName = binding.source.relationship;
+      const built = buildActionRuleAuthoringCatalog({ boundary: input.read, inspection: input.source.inspection, retainedCatalog: action.source_catalog });
+      const prepared = preparePrivateActionSource({ built, boundary: input.read, inspection: input.source.inspection,
+        resource: resource.name, parentResource: parent.resource,
+        requiredSingletonScope: { relationship: binding.source.relationship, tenant_field: binding.scope.tenant_field,
+          principal_field: binding.scope.principal_field } });
+      const current = normalizeActionRuleCatalog(prepared.built.catalog), saved = normalizeActionRuleCatalog(action.source_catalog);
+      if (![resource.name, parent.resource].every(name => canonicalJsonDigest(current.resources.find(entry => entry.name === name))
+        === canonicalJsonDigest(saved.resources.find(entry => entry.name === name)))
+        || canonicalJsonDigest(current.relationships.find(entry => entry.name === relationshipName))
+          !== canonicalJsonDigest(saved.relationships.find(entry => entry.name === relationshipName))) return null;
+      return { mode: "required_scoped_singleton" as const, relationship: binding.source.relationship,
+        scope: { tenant_field: binding.scope.tenant_field, principal_field: binding.scope.principal_field,
+          origin: "reviewed_trusted_runtime_columns" },
+        identity: "catalogue_proven_immediate_singleton", required_presence: true, private_values_returned: false,
+        complete_collection_proof: false, database_enforced_link_scope: false,
+        revalidation: "protected_current_parent_and_witness_rows_through_transaction_commit",
+        writer_readiness_verified: false, execution_observed: false,
+        meaning: "Runner requires exactly one private witness matching the reviewed tenant, principal and ordinary identity link before evaluating any Boolean alternative or manual approval. PostgreSQL keys prove singleton identity, not cross-table scope equality, witness existence or complete collection visibility. Current parent and material witness facts must be revalidated and locked through commit; writer privileges and execution remain separate prerequisites. No source values or public Read rights are supplied.",
+      };
+    } catch { return null; }
   };
   const sourceConstraints = input.source ? policySourceConstraintEvidence({ source: input.source, read: input.read,
     resources: [...input.read.pack.resources.map(resource => resource.id),
@@ -357,6 +403,7 @@ export function policyCoverageDraft(input: {
         scoped_bindings: Object.fromEntries(action.verification_boundary.resources.map((resource) => [resource.binding, {
           binding: resource.binding, resource: resource.resource, scope: resource.scope, source: resource.source,
           database_scope_proof: actionScope(action, resource),
+          ...(resource.evidence_mode ? { private_required_evidence: requiredPrivateEvidence(action, resource) } : {}),
           row_identity: resource.primary_key, conflict_field: resource.version_field ?? null,
           fields: Object.fromEntries(resource.fields.map((field) => {
             const readField = readFields.get(resource.resource)?.get(field.name);

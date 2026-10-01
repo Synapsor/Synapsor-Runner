@@ -33,6 +33,16 @@ export type ActionRuleCatalogResourceV1 = {
   version_field?: string;
   /** Private fact source only; no primary or companion effect may target it. */
   verification_only?: true;
+  /** Reviewed runtime scope, not an FK scope guarantee or collection completeness. */
+  private_evidence?: {
+    mode: "required_scoped_singleton";
+    parent_resource: string;
+    relationship: string;
+    column_declarations: {
+      witness: Record<string, `sha256:${string}`>;
+      parent: Record<string, `sha256:${string}`>;
+    };
+  };
   storage_engine?: string;
   collation?: string;
   fields: ActionRuleCatalogFieldV1[];
@@ -45,6 +55,13 @@ export type ActionRuleCatalogRelationshipV1 = RuleRelationshipFieldsSpecV1 & {
   cardinality: "one_to_one" | "many_to_one" | "one_to_many";
   nullable: boolean;
   target_unique: boolean;
+  /** PG catalogue qualification only. Existence and trusted scope are checked at runtime. */
+  required_singleton_proof?: {
+    child_unique_key: string;
+    child_unique_index: string;
+    parent_unique_key: string;
+    parent_unique_index: string;
+  };
 };
 
 export type ActionRuleCatalogV1 = {

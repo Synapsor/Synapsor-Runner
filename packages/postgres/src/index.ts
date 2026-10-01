@@ -1,6 +1,7 @@
 import { sourceRollbackBinding } from "@synapsor-runner/worker-core";
 import crypto from "node:crypto";
 import { isCompleteCollectionScopeExpression } from "./complete-collection-scope.js";
+import { assertPostgresRequiredSingletonRelationship } from "./required-singleton.js";
 export { isCompleteCollectionScopeExpression } from "./complete-collection-scope.js";
 import { postgresActionRuleVerificationScope } from "./action-rule-rls-scope.js";
 export { postgresActionRuleVerificationScope } from "./action-rule-rls-scope.js";
@@ -77,6 +78,8 @@ export type PostgresRlsInspection = {
   tenant_setting: string;
   principal_setting?: string;
   required_operations: PostgresRlsOperation[];
+  /** UPDATE USING is needed for row locks; WITH CHECK remains mandatory for writes. */
+  update_purpose?: "row_lock";
   policies: PostgresRlsPolicyInspection[];
   referenced_relations?: Array<{
     schema: string;
@@ -133,6 +136,7 @@ export function quotePostgresIdentifier(identifier: string): string {
 
 function validateActionRuleFactQuery(query: ActionRuleFactQueryV1, engine: "postgres" | "mysql"): void {
   if (query.engine !== engine) throw new Error("ACTION_RULE_ENGINE_MISMATCH");
+  if (query.relation_mode !== undefined && (engine !== "postgres" || query.relation_mode !== "only")) throw new Error("ACTION_RULE_INVALID_RELATION_MODE");
   if (query.projection.length < 1 || query.projection.length > 256 || new Set(query.projection).size !== query.projection.length) throw new Error("ACTION_RULE_INVALID_PROJECTION");
   if (!Number.isSafeInteger(query.limit) || query.limit < 2 || query.limit > 101) throw new Error("ACTION_RULE_INVALID_ROW_BOUND");
   if (query.predicates.length < 1 || query.predicates.length > 16) throw new Error("ACTION_RULE_INVALID_PREDICATES");
@@ -173,7 +177,7 @@ export function buildPostgresActionRuleFactQuery(query: ActionRuleFactQueryV1): 
     .map((item) => `${quotePostgresIdentifier(item.column)} ${item.direction.toUpperCase()}`)
     .join(", ");
   return {
-    sql: `SELECT ${query.projection.map(quotePostgresIdentifier).join(", ")}\nFROM ${quotePostgresIdentifier(query.schema)}.${quotePostgresIdentifier(query.table)}\nWHERE ${where.join("\n  AND ")}\nORDER BY ${order}\nLIMIT $${values.length}${query.lock === "for_update" ? "\nFOR UPDATE" : ""}`,
+    sql: `SELECT ${query.projection.map(quotePostgresIdentifier).join(", ")}\nFROM ${query.relation_mode === "only" ? "ONLY " : ""}${quotePostgresIdentifier(query.schema)}.${quotePostgresIdentifier(query.table)}\nWHERE ${where.join("\n  AND ")}\nORDER BY ${order}\nLIMIT $${values.length}${query.lock === "for_update" ? "\nFOR UPDATE" : ""}`,
     values,
   };
 }
@@ -249,7 +253,15 @@ export function createPostgresActionRuleFactLoader(
         }
       }
     },
-    async assertRelationshipCompatible(binding, parent): Promise<void> {
+    async assertRelationshipCompatible(binding, parent, mode): Promise<void> {
+      if (binding.verification.evidence_mode === "required_scoped_singleton") {
+        if (mode === "transaction_reverify" && databaseScope) for (const locked of [parent, binding]) {
+          await assertPostgresRlsTarget(client, { schema: locked.resource.schema, table: locked.resource.table,
+            scope: postgresActionRuleVerificationScope(locked, databaseScope), operations: ["SELECT", "UPDATE"], update_purpose: "row_lock" });
+        }
+        await assertPostgresRequiredSingletonRelationship(client, binding, parent, mode);
+        return;
+      }
       if (!binding.relationship || binding.verification.source.kind !== "relationship") throw new Error("ACTION_RULE_LOAD_PLAN_INVALID");
       const forward = binding.verification.source.direction === "forward";
       const from = forward ? parent.resource : binding.resource;
@@ -341,6 +353,7 @@ export async function inspectPostgresRlsTarget(
       principalSetting?: string;
     };
     operations: PostgresRlsOperation[];
+    update_purpose?: "row_lock";
   },
 ): Promise<PostgresRlsInspection> {
   return inspectPostgresRlsTargetInternal(client, input, new Set());
@@ -403,6 +416,7 @@ async function inspectPostgresRlsTargetInternal(
     tenant_setting: input.scope.tenantSetting,
     ...(input.scope.principalSetting ? { principal_setting: input.scope.principalSetting } : {}),
     required_operations: requiredOperations,
+    ...(input.update_purpose ? { update_purpose: input.update_purpose } : {}),
     policies: [],
     errors: [],
     ok: false,
@@ -517,7 +531,7 @@ async function inspectPostgresRlsTargetInternal(
 export function postgresRlsPrerequisiteErrors(report: Pick<PostgresRlsInspection,
   "row_security_enabled" | "force_row_security" | "role_is_superuser" | "role_has_bypassrls"
   | "role_is_table_owner" | "role_can_assume_table_owner" | "policies" | "required_operations"
-  | "tenant_setting" | "principal_setting">): string[] {
+  | "tenant_setting" | "principal_setting" | "update_purpose">): string[] {
   const errors: string[] = [];
   if (!report.row_security_enabled) errors.push("POSTGRES_RLS_DISABLED");
   if (!report.force_row_security) errors.push("POSTGRES_RLS_FORCE_DISABLED");
@@ -536,7 +550,7 @@ export function postgresRlsPrerequisiteErrors(report: Pick<PostgresRlsInspection
     }
     const expressions = operation === "INSERT"
       ? applicable.map((policy) => policy.with_check_expression)
-      : operation === "UPDATE"
+      : operation === "UPDATE" && report.update_purpose !== "row_lock"
         ? applicable.flatMap((policy) => [policy.using_expression, policy.with_check_expression])
         : applicable.map((policy) => policy.using_expression);
     if (expressions.some((expression) => !expression)) {

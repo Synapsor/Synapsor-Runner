@@ -154,7 +154,7 @@ const RECEIPT_KEYS = new Set(["id", "proposal_id", "status", "idempotency_key", 
 const REPLAY_KEYS = new Set(["id", "proposal_id", "run_id", "events"]);
 const EXTERNAL_ACTION_KEYS = new Set(["id", "action", "handler", "idempotency_key", "receipt"]);
 const VERIFICATION_BOUNDARY_KEYS = new Set(["schema_version", "name", "source", "context", "generation_lock_fingerprint", "resources", "lock_order", "transaction"]);
-const VERIFICATION_RESOURCE_KEYS = new Set(["binding", "resource", "source", "primary_key", "version_field", "fields", "scope", "cardinality", "collection_consistency", "max_rows", "overflow", "deterministic_order", "lock"]);
+const VERIFICATION_RESOURCE_KEYS = new Set(["binding", "resource", "source", "primary_key", "version_field", "fields", "scope", "cardinality", "collection_consistency", "evidence_mode", "max_rows", "overflow", "deterministic_order", "lock"]);
 const VERIFICATION_FIELD_KEYS = new Set(["name", "type", "nullable", "model_visible"]);
 const VERIFICATION_SOURCE_KEYS = new Set(["kind", "from_binding", "relationship", "local_field", "target_field", "field_pairs", "direction"]);
 const VERIFICATION_SCOPE_KEYS = new Set(["mode", "tenant_field", "principal_field", "from_binding", "organization_id"]);
@@ -2424,6 +2424,11 @@ function validateVerificationResources(value: unknown, boundaryPath: string, res
     if (raw.overflow !== "ineligible" && raw.overflow !== "unsupported") errors.push({ path: `${itemPath}.overflow`, code: "INVALID_VERIFICATION_OVERFLOW", message: "overflow must fail as ineligible or unsupported." });
     if (raw.collection_consistency !== undefined && (raw.collection_consistency !== "complete_locked" || raw.cardinality !== "many")) {
       errors.push({ path: `${itemPath}.collection_consistency`, code: "INVALID_COLLECTION_CONSISTENCY", message: "complete_locked requires a bounded many-row collection." });
+    }
+    if (raw.evidence_mode !== undefined && (raw.evidence_mode !== "required_scoped_singleton"
+      || raw.cardinality !== "one" || raw.collection_consistency !== undefined
+      || !isRecord(raw.source) || raw.source.kind !== "relationship" || raw.source.direction !== "inverse")) {
+      errors.push({ path: `${itemPath}.evidence_mode`, code: "INVALID_PRIVATE_EVIDENCE_MODE", message: "required_scoped_singleton requires one mandatory inverse witness, separate from collection completeness." });
     }
     if (raw.lock !== "for_update") errors.push({ path: `${itemPath}.lock`, code: "VERIFICATION_LOCK_REQUIRED", message: "first-release rule facts require for_update locking." });
     if (raw.deterministic_order !== undefined) {

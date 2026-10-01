@@ -291,6 +291,24 @@ export function normalizeActionRuleCatalog(catalog: ActionRuleCatalogV1): Action
     if (resource.verification_only !== undefined && resource.verification_only !== true) {
       invalid(`catalog.resources.${index}.verification_only`, "Verification-only purpose must be true or absent.");
     }
+    if (resource.private_evidence !== undefined) {
+      const purpose = record(resource.private_evidence, `catalog.resources.${index}.private_evidence`);
+      onlyKeys(purpose, new Set(["mode", "parent_resource", "relationship", "column_declarations"]), `catalog.resources.${index}.private_evidence`);
+      if (purpose.mode !== "required_scoped_singleton" || resource.verification_only !== true || resource.engine !== "postgres"
+        || typeof purpose.parent_resource !== "string" || typeof purpose.relationship !== "string") {
+        invalid(`catalog.resources.${index}.private_evidence`, "Required scoped singleton purpose is a reviewed PostgreSQL private witness only.");
+      }
+      const declarations = record(purpose.column_declarations, `catalog.resources.${index}.private_evidence.column_declarations`);
+      onlyKeys(declarations, new Set(["witness", "parent"]), `catalog.resources.${index}.private_evidence.column_declarations`);
+      for (const side of ["witness", "parent"] as const) {
+        const fields = record(declarations[side], `catalog.resources.${index}.private_evidence.column_declarations.${side}`);
+        if (Object.keys(fields).length < 1 || Object.keys(fields).length > 128
+          || Object.entries(fields).some(([name, digest]) => !/^[A-Za-z_][A-Za-z0-9_]*$/u.test(name)
+            || typeof digest !== "string" || !/^sha256:[a-f0-9]{64}$/u.test(digest))) {
+          invalid(`catalog.resources.${index}.private_evidence.column_declarations.${side}`, "Exact bounded native column declaration digests are required.");
+        }
+      }
+    }
   }
   normalized.relationships.forEach(actionRuleRelationshipPairs);
   normalized.resources = normalized.resources

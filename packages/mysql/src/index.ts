@@ -64,6 +64,7 @@ export function quoteMysqlIdentifier(identifier: string): string {
 
 function validateActionRuleFactQuery(query: ActionRuleFactQueryV1): void {
   if (query.engine !== "mysql") throw new Error("ACTION_RULE_ENGINE_MISMATCH");
+  if (query.relation_mode !== undefined) throw new Error("ACTION_RULE_POSTGRES_REQUIRED_SINGLETON_UNSUPPORTED");
   if (query.projection.length < 1 || query.projection.length > 256 || new Set(query.projection).size !== query.projection.length) throw new Error("ACTION_RULE_INVALID_PROJECTION");
   if (!Number.isSafeInteger(query.limit) || query.limit < 2 || query.limit > 101) throw new Error("ACTION_RULE_INVALID_ROW_BOUND");
   if (query.predicates.length < 1 || query.predicates.length > 16) throw new Error("ACTION_RULE_INVALID_PREDICATES");
@@ -114,6 +115,9 @@ export function createMysqlActionRuleFactLoader(connection: MysqlApplyConnection
   return {
     engine: "mysql",
     async assertResourceCompatible(binding: CompiledRuleBindingV1): Promise<void> {
+      if (binding.verification.evidence_mode !== undefined || binding.resource.private_evidence !== undefined) {
+        throw new ActionRuleError("ACTION_RULE_SCOPE_UNPROVEN", "Required scoped singleton private evidence is not qualified for MySQL. Existing supported verification modes are unchanged.");
+      }
       const key = `${binding.resource.schema}.${binding.resource.table}`;
       if (compatible.has(key)) return;
       const [rows] = await connection.query<Record<string, unknown>[]>(

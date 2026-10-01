@@ -267,6 +267,8 @@ export type RuleVerificationResourceSpecV1 = ExtensionFields & {
   cardinality: "one" | "many";
   /** Complete relationship range, with reviewed phantom and visibility protection. */
   collection_consistency?: "complete_locked";
+  /** A mandatory scoped witness; never absence or complete-collection evidence. */
+  evidence_mode?: "required_scoped_singleton";
   max_rows: number;
   overflow: "ineligible" | "unsupported";
   deterministic_order?: Array<{ field: string; direction: "asc" | "desc" }>;

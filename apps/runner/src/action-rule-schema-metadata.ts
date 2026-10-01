@@ -60,6 +60,8 @@ export function actionRuleRelationshipsForTable(
       cardinality: "many_to_one",
       nullable: localColumns.some((column) => column!.nullable),
       target_unique: true,
+      ...(foreignKey.required_singleton_proof && pairs.length === 1
+        ? { required_singleton_proof: structuredClone(foreignKey.required_singleton_proof) } : {}),
     }];
   });
 }

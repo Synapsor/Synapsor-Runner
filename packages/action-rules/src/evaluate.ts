@@ -393,7 +393,8 @@ function normalizeAndValidateFacts(compiled: CompiledActionRuleV1, facts: Action
       for (const [name, field] of allowed) {
         if (!(name in row)) throw new ActionRuleError("ACTION_RULE_FACTS_UNKNOWN", `Required verification fact ${binding.binding}.${name} is unavailable.`);
         const value = row[name];
-        if (value === undefined || !scalarMatchesType(value, field.type, field.nullable ?? false)) throw new ActionRuleError("ACTION_RULE_FACTS_UNKNOWN", `Verification fact ${binding.binding}.${name} has an invalid value.`);
+        if (value === undefined || (binding.verification.evidence_mode === "required_scoped_singleton" && value === null)
+          || !scalarMatchesType(value, field.type, field.nullable ?? false)) throw new ActionRuleError("ACTION_RULE_FACTS_UNKNOWN", `Verification fact ${binding.binding}.${name} has an invalid value.`);
         output[name] = value;
       }
       return output;
