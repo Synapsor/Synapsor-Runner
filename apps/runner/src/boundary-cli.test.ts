@@ -17540,7 +17540,9 @@ describe("saved post-edit review uses reader evidence after writer setup", () =>
 
 
 describe("public saved-job connection recovery control", () => {
-  it.each(["pause", "answer", "decline", "source-drift", "competing", "registered-refusal", "diagnostic-refusal", "checkpoint-failed", "checkpoint-noop", "read-ack-race", "resume-ack-race"] as const)("Phase1 public Read assistance persists its actual question and current answer: %s", async mode => {
+  it.each(["native-blank", "native-replace-no", "pause", "answer", "decline", "blank", "blank-cancel", "replace-no", "replace-yes", "replace-source-drift", "replace-competing", "decline-source-drift", "decline-competing", "source-drift", "competing", "registered-refusal", "diagnostic-refusal", "checkpoint-failed", "checkpoint-noop", "read-ack-race", "resume-ack-race"] as const)("Phase1 public Read assistance persists its actual question and current answer: %s", async rawMode => {
+    const mode = rawMode.replace(/^native-/u, "");
+    const native = rawMode.startsWith("native-");
     const f = await staleSemanticRevalidationFixture();
     let restoreCommit: (() => void) | undefined, restoreCheckpoint: (() => void) | undefined;
     try {
@@ -17556,18 +17558,20 @@ describe("public saved-job connection recovery control", () => {
       const question = "Which visit stages should the status view describe?";
       const request = { resource: "public.service_visits", field: "status", question,
         reason: "The selected view needs an exact business explanation." };
-      let reopened = false, sawWaiting = 0, sawAnswer = false;
+      const followup = { ...request, reason: "The first answer explains priority rather than stage", question: "Does the view describe scheduled or completed visits?" };
+      const replacing = mode.startsWith("replace");
+      let reopened = false, sawWaiting = 0, sawAnswer = false, answerAfterBlank = false, declinePrompts = 0, replaceConfirmed = false, replacePrompts = 0;
       const requestJson = vi.fn(async (wire: { body: Record<string, unknown> }) => {
-        if (requestJson.mock.calls.length > 2) throw new AskError("ASK_CANCELLED", "End this owned mapping control before a separate review", 499);
+        if (requestJson.mock.calls.length > (replacing ? 3 : 2)) throw new AskError("ASK_CANCELLED", "End this owned mapping control before a separate review", 499);
         const saved = await readBoundaryAuthoringResumeState(f.root, binding);
         if (requestJson.mock.calls.length === 2) {
           sawAnswer = saved.status === "ready" && saved.value.read_assistance?.stage === "decided"
             && saved.value.owner_handoffs?.at(-1)?.state === "answered";
-          expect(JSON.stringify(wire.body)).toContain("The scheduled or completed stage of the selected visit.");
+          expect(JSON.stringify(wire.body)).toContain(replacing ? "Priority means ordinary or urgent." : "The scheduled or completed stage of the selected visit.");
         }
         return { status: 200, body: { output: [{ type: "function_call", call_id: `owned-read-${requestJson.mock.calls.length}`,
           name: "runner__submit_read_workloads", arguments: JSON.stringify(requestJson.mock.calls.length === 1
-            ? { clarification_request: request } : { allowed: [{ id: "selected_visit_status", description: "List selected visit status",
+            ? { clarification_request: request } : replacing && requestJson.mock.calls.length === 2 ? { clarification_request: followup } : { allowed: [{ id: "selected_visit_status", description: "List selected visit status",
               plan: { kind: "rows", resource: "public.service_visits", select: ["status"] } }], forbidden: [] }) }] } };
       });
       f.session.chooseOption = async (_title, _choices, options) => {
@@ -17576,15 +17580,51 @@ describe("public saved-job connection recovery control", () => {
         if (_title === "FINISH BOUNDARY REVIEW") return "finish";
         throw new Error(`Read assistance fixture needs an explicit route for ${_title}: ${JSON.stringify(options?.context)}`);
       };
+      const originalConfirm = f.session.confirm;
+      f.session.confirm = async (prompt, options) => {
+        if (prompt === "Use this new answer as the current interpretation?") {
+          replacePrompts++; expect(options?.defaultValue).toBe(false);
+          expect(options?.context?.join("\n")).toContain("Priority means ordinary or urgent.");
+          expect(options?.context?.join("\n")).toContain("The scheduled or completed stage of the selected visit.");
+          if (mode === "replace-source-drift") {
+            const changed = structuredClone(source);
+            changed.snapshots.push(policyTextSnapshot(Buffer.from("Visit stage now has a separate exception."), "visit-stages.txt", 2));
+            changed.active = 2; await savePolicySources(f.root, changed);
+          }
+          if (mode === "replace-competing") {
+            const current = await readBoundaryAuthoringResumeState(f.root, binding);
+            if (current.status !== "ready") throw new Error("Expected waiting proposal");
+            await writeBoundaryAuthoringResumeState(f.root, buildBoundaryAuthoringResumeState({ binding,
+              stage: current.value.stage, jobIntent: current.value.job_intent, provider: "openai", model: "gpt-test", previous: current.value,
+              pendingJobRevision: "A competing interpretation review." }), { expectedRevisionDigest: current.value.revision_digest });
+          }
+          return mode !== "replace-no" || replaceConfirmed;
+        }
+        if (prompt !== "Decline this Read question? No keeps it pending.") return originalConfirm(prompt, options);
+        declinePrompts++; expect(options?.defaultValue).toBe(false);
+        if (mode === "decline-source-drift") {
+          const changed = structuredClone(source);
+          changed.snapshots.push(policyTextSnapshot(Buffer.from("The same visit stage now has a separate exception."), "visit-stages.txt", 2));
+          changed.active = 2; await savePolicySources(f.root, changed);
+        }
+        if (mode === "decline-competing") {
+          const current = await readBoundaryAuthoringResumeState(f.root, binding);
+          if (current.status !== "ready") throw new Error("Expected waiting job");
+          await writeBoundaryAuthoringResumeState(f.root, buildBoundaryAuthoringResumeState({ binding,
+            stage: current.value.stage, jobIntent: current.value.job_intent, provider: "openai", model: "gpt-test", previous: current.value,
+            pendingJobRevision: "A separately attributed competing Read edit." }), { expectedRevisionDigest: current.value.revision_digest });
+        }
+        return mode.startsWith("decline") ? true : mode === "blank-cancel" ? undefined as never : false;
+      };
       f.session.promptText = async prompt => {
-        if (prompt !== question) return undefined;
+        if (prompt !== question && prompt !== followup.question) return undefined;
         const saved = await readBoundaryAuthoringResumeState(f.root, binding);
         expect(saved.status).toBe("ready"); if (saved.status !== "ready") return undefined;
         expect(saved.value.read_assistance?.stage).toBe("waiting");
-        expect(saved.value.owner_handoffs?.at(-1)).toMatchObject({ state: "waiting", consumer: "read_clarification", question });
+        expect(saved.value.owner_handoffs?.at(-1)).toMatchObject({ state: "waiting", consumer: "read_clarification", question: prompt });
         sawWaiting++;
         if (!reopened || mode === "pause") return undefined;
-        if (mode === "decline") return "";
+        if (!answerAfterBlank && (mode.startsWith("decline") || mode.startsWith("blank"))) return "  ";
         if (mode === "source-drift") {
           const changed = structuredClone(source);
           changed.snapshots.push(policyTextSnapshot(Buffer.from("The same visit stage now has a separate exception."), "visit-stages.txt", 2));
@@ -17593,10 +17633,21 @@ describe("public saved-job connection recovery control", () => {
         if (mode === "competing") await writeBoundaryAuthoringResumeState(f.root, buildBoundaryAuthoringResumeState({ binding,
           stage: saved.value.stage, jobIntent: saved.value.job_intent, provider: "openai", model: "gpt-test", previous: saved.value,
           pendingJobRevision: "A separately attributed competing Read edit." }), { expectedRevisionDigest: saved.value.revision_digest });
-        return "The scheduled or completed stage of the selected visit.";
+        return replacing && prompt === question ? "Priority means ordinary or urgent." : "The scheduled or completed stage of the selected visit.";
       };
       const noAction = vi.fn(async () => { throw new Error("This read-only fixture must not draft Actions."); });
-      const run = () => f.run(noAction, undefined, { modelReadWorkloadGenerator: args => {
+      const nativeChats: BoundaryAuthoringChat[] = [];
+      const run = () => f.run(noAction, undefined, {
+        ...(native ? { boundaryAuthoringChatFactory: () => {
+          const chat = testBoundaryAuthoringChat(f.session); let actualQuestion = "";
+          chat.streamModel = async lines => { actualQuestion = [...lines].join("\n"); };
+          chat.readOperator = vi.fn(async (_default, assertCurrent, options) => {
+            expect(options?.recordPolicyAnswer).toBe(false);
+            await assertCurrent?.();
+            return f.session.promptText(actualQuestion);
+          });
+          nativeChats.push(chat); return chat;
+        } } : {}), modelReadWorkloadGenerator: args => {
         if (reopened && mode === "registered-refusal") throw new Error("READ_WORKLOAD_ASSISTANCE_REQUEST_REPEATED: The saved assistance allowance is exhausted.");
         if (reopened && mode === "diagnostic-refusal") throw new ReadWorkloadDraftError([{ attempt: 1, phase: "follow-up", category: "validation",
           code: "READ_WORKLOAD_MECHANICAL_QUESTION_REPEATED", reasons: ["The exact mechanical question repeated."] }]);
@@ -17670,9 +17721,33 @@ describe("public saved-job connection recovery control", () => {
         return;
       }
       expect(final.status).toBe("ready"); if (final.status !== "ready") return;
-      if (mode === "answer") {
+      if (replacing) {
+        expect(replacePrompts).toBe(1);
+        if (mode === "replace-yes") {
+          expect(requestJson).toHaveBeenCalledTimes(3);
+          expect(final.value.read_assistance).toBeUndefined();
+          expect(final.value.read?.assistance_history?.pending_question).toMatchObject({
+            replacement: { confirmed: true }, decision: { state: "answered", answer: "The scheduled or completed stage of the selected visit." } });
+        } else {
+          expect(requestJson).toHaveBeenCalledTimes(2);
+          expect(final.value.read_assistance).toMatchObject({ stage: "waiting", pending_question: {
+            replacement: { proposed_answer: "The scheduled or completed stage of the selected visit." } } });
+          expect(final.value.read_assistance?.pending_question).not.toHaveProperty("decision");
+          expect(final.value.owner_handoffs?.at(-1)?.state).toBe("waiting");
+          if (mode === "replace-no") {
+            const beforePrompts = sawWaiting; replaceConfirmed = true; await run();
+            expect(replacePrompts).toBe(2); expect(sawWaiting).toBe(beforePrompts);
+            expect(requestJson).toHaveBeenCalledTimes(3);
+            const restarted = await readBoundaryAuthoringResumeState(f.root, boundaryAuthoringResumeBinding((await loadBoundaryReviewContext(f.root)).bundle));
+            expect(restarted.status).toBe("ready");
+            if (restarted.status === "ready") expect(restarted.value.read?.assistance_history?.pending_question).toMatchObject({ replacement: { confirmed: true } });
+          }
+        }
+      } else if (mode === "answer") {
         expect(sawAnswer).toBe(true); expect(requestJson).toHaveBeenCalledTimes(2);
         expect(final.value.read_assistance).toBeUndefined(); expect(final.value.read).toBeDefined();
+        expect(final.value.read?.assistance_history).toMatchObject({ stage: "decided",
+          pending_question: { decision: { state: "answered", answer: "The scheduled or completed stage of the selected visit." } } });
         expect(final.value.owner_handoffs?.at(-1)).toMatchObject({ state: "answered", actor: "local_installation_operator" });
       } else if (mode === "decline") {
         expect(requestJson).toHaveBeenCalledTimes(1);
@@ -17685,7 +17760,23 @@ describe("public saved-job connection recovery control", () => {
         expect(final.value.owner_handoffs?.at(-1)?.state).toBe("waiting");
         if (mode === "competing") expect(final.value.pending_job_revision).toBe("A separately attributed competing Read edit.");
       }
+      if (mode.startsWith("blank")) {
+        expect(declinePrompts).toBe(1);
+        expect(final.value.owner_handoffs?.at(-1)?.state).toBe("waiting");
+        expect(final.value.generation_recovery?.operations.at(-1)?.question_handoff?.answered).not.toBe(true);
+        answerAfterBlank = true; await run();
+        expect(requestJson).toHaveBeenCalledTimes(2); expect(sawAnswer).toBe(true);
+        expect(declinePrompts).toBe(1);
+      }
+      if (mode.startsWith("decline")) expect(declinePrompts).toBe(1);
       expect(noAction).not.toHaveBeenCalled();
+      if (native) {
+        const context = nativeChats.flatMap(chat => vi.mocked(chat.runner).mock.calls)
+          .filter(([title]) => title === "Before you answer").flatMap(([, lines]) => lines).join("\n");
+        expect(context).toContain("Blank keeps this question unanswered");
+        if (replacing) expect(context).toContain("Priority means ordinary or urgent.");
+        expect(context).not.toContain("Blank declines this exact question.");
+      }
       expect(await readActionRuleAuthorityActivation(f.root)).toBeUndefined();
     } finally { restoreCheckpoint?.(); restoreCommit?.(); await f.dispose(); }
   }, 30_000);

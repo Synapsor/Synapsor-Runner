@@ -47,7 +47,8 @@ function explicitReadStatements(clause: string, target: ReadMeaningTarget, catal
     const before = clause.slice(0, token.index), after = clause.slice(token.index! + token[0].length);
     if (/\b(?:caller|input|parameter)\s+(?:[\p{L}\p{N}_]+\s+){0,2}$/iu.test(before)) continue;
     const definition = target.field === undefined ? /^(?:means|represents|is|contains)$/iu : /^(?:means|represents|records|stores|is)$/iu;
-    const verb = after.match(/^\s+(\w+)\s+(\S.{3,})/u);
+    const verb = after.match(target.field === undefined ? /^\s+(\w+)\s+(\S.{3,})/u
+      : /^\s+(?:(?:field|column)\s+)?(\w+)\s+(\S.{3,})/u);
     if (verb && definition.test(verb[1]!) && !/^(?:(?:one|any)\s+of|(?:enum|allowed|permitted|valid|unknown|unclear|unresolved|unestablished)\b|not\s+(?:known|established|understood)|[([])/iu.test(verb[2]!)) {
       claims.push({ kind: "definition", meaning: verb[2]!.trim().replace(/[.!?]+$/u, "").replace(/\s+/gu, " ").toLowerCase() });
     }
@@ -110,7 +111,19 @@ export function findReadMeaningEvidence(input: {
       source_id: canonicalJsonDigest({ target: input.target, question: answer.question }), source_digest: canonicalJsonDigest(answer.answer),
       start_line: 1, end_line: answer.answer.split(/\r?\n/u).length, text: answer.answer } };
   const candidates: Array<{ evidence: ReadMeaningEvidence; kind: "definition" | "transition"; meaning: string }> = [];
-  for (const statement of input.statements) {
+  // A newly received answer is available before the outer conversation has
+  // copied it into statements. Only explicit field references within an answer
+  // for this resource may supply an additional association; a resource answer
+  // is never inherited wholesale by its fields.
+  const statements: Array<Omit<ReadMeaningStatement, "origin"> & { origin: ReadMeaningEvidence["reference"]["kind"] }> = [
+    ...input.statements,
+    ...input.answers.filter(answer => answer.resource === input.target.resource).map(answer => ({
+      text: answer.answer, origin: "answered_clarification" as const,
+      source_id: canonicalJsonDigest({ target: { resource: answer.resource, ...(answer.field ? { field: answer.field } : {}) }, question: answer.question }),
+      source_digest: canonicalJsonDigest(answer.answer),
+    })),
+  ];
+  for (const statement of statements) {
     for (const [index, line] of statement.text.split(/\r?\n/u).entries()) {
       const claims = line.split(/;|(?<=[.!?])\s+(?=[A-Z])/u).flatMap(clause => explicitReadStatements(clause, input.target, input.catalog));
       for (const claim of claims) candidates.push({ ...claim, evidence: { ...input.target, origin: "HOST-RESOLVED",
@@ -190,6 +203,11 @@ export function explicitReadTaskTargets(text: string, catalog: ReadMeaningCatalo
         const instruction = before.match(/(?<![\p{L}\p{N}_.:-])\b(?:read|show|display|include|return)\s+(?:(?:(?:me|the|current)\s+){0,2}|(?:[\p{L}\p{N}_-]+\s+){1,12}(?:in|from|of|on|at)\s+)$/iu);
         if (!instruction) continue;
         const prefix = before.slice(0, instruction.index);
+        // "Show asset display name" contains the noun phrase "display name",
+        // not a second imperative naming another resource's bare `name` field.
+        // A qualified catalog reference remains explicit even in a longer task.
+        const reference = token[0].replace(/\.$/u, "");
+        if (reference === field.id && /\b(?:read|show|display|include|return)\b/iu.test(prefix)) continue;
         // A separate execution prohibition or another field's negative is not
         // a withdrawal of this positive Read instruction.
         if (/\b(?:not|never|no|cannot|avoid|without|don['’]t|can['’]t)(?:\s+(?:ever|again|currently|also|yet|safely|need\s+to|permission\s+to))?\s*$/iu.test(prefix)

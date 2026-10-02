@@ -6,11 +6,21 @@ import type { ModelReadClarificationRequest, ModelReadClarificationDecision, Mod
 import { safeReadWorkloadDiagnostic, type ReadWorkloadDiagnostic } from "./read-workload-diagnostics.js";
 
 type Digest = `sha256:${string}`;
+/** Host-only review of one received response. Indices identify immutable
+ * response events, not merely repeated answer text. Neither shape is a model tool. */
+export type ReadClarificationReplacement = {
+  previous_index: number; previous_digest: Digest; context_digest: Digest;
+  proposed_answer?: string; confirmed?: true;
+};
+export type ReadReviewedClarificationReplacement = {
+  previous_index: number; next_index: number; previous_digest: Digest; next_digest: Digest;
+  context_digest: Digest; actor: "local_installation_operator";
+};
 export type ReadWorkloadAssistanceQuestion = {
   question: string;
   completion?: AuthoringQuestionCompletion;
 } & (
-  | { kind: "clarification"; request: ModelReadClarificationRequest; decision?: ModelReadClarificationDecision }
+  | { kind: "clarification"; request: ModelReadClarificationRequest; decision?: ModelReadClarificationDecision; replacement?: ReadClarificationReplacement }
   | { kind: "value"; request: ModelReadValueRequest; decision?: ModelReadValueContextDecision }
   | { kind: "relationship"; request: ModelReadClarificationRequest; decision?: { state: "relationship_reviewed" } }
 );
@@ -31,6 +41,9 @@ export type ReadWorkloadAssistanceCheckpoint = {
     correction_used: boolean; relationship_reviews: number; relationship_review_limit: 0 | 3;
     clarified_targets: Array<ModelReadClarificationRequest & { answer: string }>;
     clarification_answers: string[];
+    /** The original response list is append-only. Only these operator-reviewed
+     * edges select a later current interpretation; history is never removed. */
+    reviewed_replacements?: ReadReviewedClarificationReplacement[];
     /** Attributed nonanswers remain history, not resolved meaning. */
     unresolved_answers?: ReadMeaningAttempt[];
     clarification_from_invalid_naming: boolean; clarification_resolved: boolean;
@@ -86,11 +99,23 @@ export function readWorkloadAssistanceDecisionAnswer(question: ReadWorkloadAssis
 
 function assertAssistanceQuestion(value: unknown, stage: "waiting" | "decided"): void {
   const fail = () => new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_INVALID: Preserve the pending Read assistance state; it is malformed or changed.");
-  if (!record(value) || !exact(value, ["kind", "request", "question", "completion", "decision"])
+  if (!record(value) || !exact(value, ["kind", "request", "question", "completion", "decision", "replacement"])
     || !["clarification", "value", "relationship"].includes(value.kind as string)
     || !request(value.request, value.kind === "value") || !text(value.question, 500)
     || value.question !== (value.request as Record<string, unknown>).question
     || (stage === "waiting" ? value.decision !== undefined : !record(value.decision))) throw fail();
+  if (value.replacement !== undefined) {
+    const r = value.replacement;
+    if (value.kind !== "clarification" || !record(r)
+      || !exact(r, ["previous_index", "previous_digest", "context_digest", "proposed_answer", "confirmed"])
+      || !count(r.previous_index, 3) || !digest(r.previous_digest) || !digest(r.context_digest)
+      || r.proposed_answer !== undefined && !text(r.proposed_answer, 1_000)
+      || r.confirmed !== undefined && r.confirmed !== true
+      || stage === "waiting" && r.confirmed !== undefined
+      || stage === "decided" && record(value.decision) && value.decision.state === "answered"
+        && (r.confirmed !== true || r.proposed_answer !== value.decision.answer)
+      || record(value.decision) && value.decision.state === "declined" && (r.confirmed !== undefined || r.proposed_answer !== undefined)) throw fail();
+  }
   if (value.completion !== undefined) {
     const c = value.completion;
     if (!record(c) || !exact(c, ["operation_id", "request_digest", "context_digest", "response_digest"])
@@ -118,7 +143,7 @@ export function parseReadWorkloadAssistanceCheckpoint(value: unknown): ReadWorkl
   assertAssistanceQuestion(q, value.stage as "waiting" | "decided");
   const flags = ["correction_used", "clarification_from_invalid_naming", "clarification_resolved", "mechanical_clarification_resolved",
     "value_request_resolved", "repeated_assistance_request", "naming_evidence_correction_used"];
-  if (!exact(s, ["call_count", "attempt", "phase", "relationship_reviews", "relationship_review_limit", "clarified_targets", "clarification_answers", "unresolved_answers",
+  if (!exact(s, ["call_count", "attempt", "phase", "relationship_reviews", "relationship_review_limit", "clarified_targets", "clarification_answers", "unresolved_answers", "reviewed_replacements",
     ...flags, "resolved_mechanical_request", "naming_correction_workload", "approved_value_context", "diagnostics", "usage"])
     || !count(s.call_count, 11) || !count(s.attempt, 16) || !["initial", "correction", "follow-up"].includes(s.phase as string)
     || ![0, 3].includes(s.relationship_review_limit as number) || !count(s.relationship_reviews, s.relationship_review_limit as number)
@@ -133,6 +158,17 @@ export function parseReadWorkloadAssistanceCheckpoint(value: unknown): ReadWorkl
     const attempts = normalizeReadMeaningAttempts(s.unresolved_answers);
     if (attempts.length + s.clarified_targets.length > 4) throw fail();
   }
+  if (s.reviewed_replacements !== undefined) {
+    if (!Array.isArray(s.reviewed_replacements) || s.reviewed_replacements.length > 3) throw fail();
+    for (const r of s.reviewed_replacements) {
+      if (!record(r) || !exact(r, ["previous_index", "next_index", "previous_digest", "next_digest", "context_digest", "actor"])
+        || !count(r.previous_index, 3) || !count(r.next_index, 3) || (r.previous_index as number) >= (r.next_index as number)
+        || ![r.previous_digest, r.next_digest, r.context_digest].every(digest) || r.actor !== "local_installation_operator") throw fail();
+    }
+  }
+  const pendingReplacement = q.replacement;
+  if (record(pendingReplacement) && pendingReplacement.proposed_answer !== undefined
+    && s.clarified_targets.length + ((s.unresolved_answers as unknown[] | undefined)?.length ?? 0) >= 4) throw fail();
   for (const d of s.diagnostics) if (!record(d) || !exact(d, ["attempt", "phase", "category", "code", "reasons"])
     || !count(d.attempt, 16) || !["initial", "correction", "follow-up"].includes(d.phase as string)
     || !["required_tool", "provider_response", "provider_request", "validation"].includes(d.category as string)

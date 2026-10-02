@@ -3291,23 +3291,32 @@ async function promptReadBoundaryClarification(input: {
   session: BoundaryReviewInteractiveSession;
   model: ActionModelSuggestionSession;
   request: ModelReadClarificationRequest;
+  previous?: ModelReadClarificationRequest & { answer: string };
 }): Promise<ModelReadClarificationDecision | undefined> {
   const exactTarget = `${input.request.resource}${input.request.field ? `.${input.request.field}` : ""}`;
   const answer = await input.session.promptText(input.request.question, {
     context: [
       "CLARIFY ONE REVIEWED NAME",
+      ...(input.previous ? [
+        `Earlier question: ${input.previous.question}`, `Earlier answer: ${input.previous.answer}`,
+        "That answer remains current. A new answer will be saved for your local review before it can replace this interpretation or reach the model.",
+      ] : []),
       `Exact reviewed metadata: ${exactTarget}`,
       `Why the model stopped: ${input.request.reason}`,
-      `Your answer will be sent to ${boundaryModelLabel(input.model)} for one bounded remapping call.`,
+      input.previous ? `Only an explicitly confirmed replacement may be sent to ${boundaryModelLabel(input.model)} for bounded remapping.`
+        : `Your answer will be sent to ${boundaryModelLabel(input.model)} for one bounded remapping call.`,
       "Explain only the business meaning. Do not paste rows, credentials, personal data, or trusted tenant/principal values.",
       "Runner will validate the resulting exact plan and will not grant or activate authority.",
-      "Blank declines this exact question. Escape or EOF leaves it saved and unanswered.",
+      "Blank keeps this question unanswered unless you explicitly choose to decline. Escape or EOF leaves it saved and unanswered.",
     ],
   });
   if (answer === undefined) return undefined;
-  return answer.trim()
-    ? { state: "answered", answer: answer.trim() }
-    : { state: "declined" };
+  if (answer.trim()) return { state: "answered", answer: answer.trim() };
+  const decline = await input.session.confirm("Decline this Read question? No keeps it pending.", {
+    defaultValue: false,
+    context: ["This is a local decision, not business meaning or a model request. No keeps the exact saved question available to answer on Resume."],
+  });
+  return decline === true ? { state: "declined" } : undefined;
 }
 
 async function promptReadBoundaryValueContext(input: {
@@ -5977,7 +5986,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         reusedReadWorkload = exact;
         reusingExactRead = true;
         reusableState.read_boundaries_by_digest.set(context.bundle.candidate_digest, context.candidate);
-        resumeRead = { analysis_id: exact.analysis_id, analysis_digest: exact.analysis_digest };
+        resumeRead = { analysis_id: exact.analysis_id, analysis_digest: exact.analysis_digest,
+          ...(resumeRead?.analysis_id === exact.analysis_id && resumeRead.analysis_digest === exact.analysis_digest
+            && resumeRead.assistance_history ? { assistance_history: resumeRead.assistance_history } : {}) };
         if (jobPlan.action_mode === "reuse" || jobPlan.action_mode === "none") {
           if (reusableState.current_state.actions.some((action) => action.kind !== "rule_derived")) {
             return boundaryAssistResult({ tone: "warning", title: "An older action needs dependency review.",
@@ -6063,7 +6074,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         jobPlan = { ...jobPlan, read_mode: "reuse", action_mode: revalidatedActionOutcomes.length ? "revise" : "none",
           ...(revalidatedActionOutcomes.length ? { action_strategy: "rule_derived", action_intent: jobIntent.trim(),
             action_intents: resumedActionIntents, action_outcome: revalidatedActionOutcomes[0] } : {}) };
-        resumeRead = { analysis_id: reusedReadWorkload.analysis_id, analysis_digest: reusedReadWorkload.analysis_digest };
+        resumeRead = { analysis_id: reusedReadWorkload.analysis_id, analysis_digest: reusedReadWorkload.analysis_digest,
+          ...(resumeRead?.analysis_id === reusedReadWorkload.analysis_id && resumeRead.analysis_digest === reusedReadWorkload.analysis_digest
+            && resumeRead.assistance_history ? { assistance_history: resumeRead.assistance_history } : {}) };
       }
       if (editingSavedJob && availableResume
         && (jobPlan.read_mode === "none" || jobPlan.read_mode === "reuse")
@@ -6910,7 +6923,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
     // currentness/CAS checks. Approved samples remain in their separate value
     // contract and are never copied into general Source history.
     const readAssistanceSession: BoundaryReviewInteractiveSession = input.authoringChat?.readOperator
-      ? { ...input.session, promptText: async (question) => {
+      ? { ...input.session, promptText: async (question, options) => {
           const handoff = ownerHandoffs.at(-1);
           if (handoff?.state !== "waiting" || !["read_clarification", "read_value_context"].includes(handoff.consumer)) {
             throw checkpointSaveFailure("The Read assistance owner question");
@@ -6921,6 +6934,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             }
           };
           await assertAnswerCurrent();
+          if (options?.context?.length) input.authoringChat!.runner("Before you answer", options.context);
           await input.authoringChat!.streamModel(question.split(/\r?\n/u));
           return input.authoringChat!.readOperator!(undefined, assertAnswerCurrent, { recordPolicyAnswer: false });
         } } : input.session;
@@ -6942,7 +6956,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         }
         const saved = await storeReadWorkloadAnalysis({ projectRoot: input.projectRoot,
           generatedBoundary: currentBoundary, source: accepted.workload.source, analysis });
-        resumeRead = { analysis_id: saved.analysis_id, analysis_digest: saved.analysis_digest };
+        resumeRead = { analysis_id: saved.analysis_id, analysis_digest: saved.analysis_digest,
+          ...(readAssistanceCheckpoint ? { assistance_history: structuredClone(readAssistanceCheckpoint) } : {}) };
         readAssistanceCheckpoint = undefined;
       } else {
         const checked = parseReadWorkloadAssistanceCheckpoint(checkpoint), q = checked.pending_question;
@@ -7074,11 +7089,32 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
               model: mappingSession,
               request,
             }),
-            clarificationHandler: async (request) => {
+            ...(input.authoringChat ? { clarificationReplacementHandler: async ({ previous, request, answer }) => {
+              const assertCurrent = async () => {
+                await assertAuthoringResumeCurrent(undefined);
+                const pending = readAssistanceCheckpoint?.pending_question, handoff = ownerHandoffs.at(-1);
+                if (pending?.kind !== "clarification" || readAssistanceCheckpoint?.stage !== "waiting"
+                  || canonicalJsonDigest(pending.request) !== canonicalJsonDigest(request)
+                  || pending.replacement?.previous_digest !== canonicalJsonDigest(previous)
+                  || pending.replacement.proposed_answer !== answer || handoff?.state !== "waiting"
+                  || handoff.scope_digest !== ownerQuestionScope() || handoff.context_digest !== await ownerQuestionContext())
+                  throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: The exact pending interpretation review changed. No replacement was accepted.");
+              };
+              await assertCurrent();
+              const confirmed = await input.session.confirm("Use this new answer as the current interpretation?", { defaultValue: false,
+                context: [`Earlier question: ${previous.question}`, `Earlier answer: ${previous.answer}`,
+                  `Follow-up question: ${request.question}`, `Proposed answer: ${answer}`,
+                  "Yes replaces only this interpretation. Both exact responses stay in history and count against the same question allowance.",
+                  "No or cancel keeps the proposal pending and the earlier interpretation current. Resume reopens this review without another answer or model request."] });
+              await assertCurrent();
+              return confirmed === true;
+            } } : {}),
+            clarificationHandler: async (request, clarificationContext) => {
               const decision = await promptReadBoundaryClarification({
                 session: readAssistanceSession,
                 model: mappingSession,
                 request,
+                ...(clarificationContext ? { previous: clarificationContext.previous } : {}),
               });
               if (decision?.state === "answered" && !input.authoringChat) {
                 rememberModelAuthoringClarification(
@@ -7284,6 +7320,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         resumeRead = {
           analysis_id: workload.analysis_id,
           analysis_digest: workload.analysis_digest,
+          ...(resumeRead?.analysis_id === workload.analysis_id && resumeRead.analysis_digest === workload.analysis_digest
+            && resumeRead.assistance_history ? { assistance_history: resumeRead.assistance_history } : {}),
         };
         await persistAuthoringResume(actionIntents.length ? "action_drafting" : "authority_review");
       }
@@ -8378,6 +8416,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         resumeRead = {
           analysis_id: workload.analysis_id,
           analysis_digest: workload.analysis_digest,
+          ...(resumeRead?.analysis_id === workload.analysis_id && resumeRead.analysis_digest === workload.analysis_digest
+            && resumeRead.assistance_history ? { assistance_history: resumeRead.assistance_history } : {}),
         };
         await persistAuthoringResume(actionIntents.length ? "action_drafting" : "authority_review");
       }

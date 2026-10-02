@@ -3,7 +3,7 @@ import type { ModelReadValueRequest, ModelReadClarificationRequest, ModelReadVal
 export type { ModelReadValueRequest, ModelReadClarificationRequest, ModelReadValueContextDecision, ModelReadClarificationDecision } from "./read-authoring-contract-types.js";
 import { isAuthoringGenerationStop } from "./authoring-generation-recovery.js";
 import { readWorkloadAssistanceCheckpoint, parseReadWorkloadAssistanceCheckpoint, ReadWorkloadAssistancePausedError,
-  type ReadWorkloadAssistanceCheckpoint, type ReadWorkloadAssistanceQuestion } from "./read-workload-assistance-checkpoint.js";
+  type ReadWorkloadAssistanceCheckpoint, type ReadWorkloadAssistanceQuestion, type ReadReviewedClarificationReplacement } from "./read-workload-assistance-checkpoint.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import {
@@ -91,7 +91,14 @@ export type ModelReadWorkloadInput = {
   ) => Promise<ModelReadValueContextDecision | undefined>;
   clarificationHandler?: (
     request: ModelReadClarificationRequest,
+    context?: { previous: ModelReadClarificationRequest & { answer: string } },
   ) => Promise<ModelReadClarificationDecision | undefined>;
+  /** Local operator review, never a model decision. The proposed response is
+   * checkpointed before this default-No review and is not yet current meaning. */
+  clarificationReplacementHandler?: (input: {
+    previous: ModelReadClarificationRequest & { answer: string };
+    request: ModelReadClarificationRequest; answer: string;
+  }) => Promise<boolean | undefined>;
   /** Host exact-path review and disabled save; never a model-supplied candidate. */
   relationshipReviewHandler?: (
     request: ModelReadClarificationRequest,
@@ -176,12 +183,19 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   let resolvedMechanicalRequest: ModelReadClarificationRequest | undefined;
   const clarifiedTargets: (ModelReadClarificationRequest & { answer: string })[] = [];
   const unresolvedAnswers: ReadMeaningAttempt[] = [];
+  const reviewedReplacements: ReadReviewedClarificationReplacement[] = [];
+  const retiredIndices = () => new Set(reviewedReplacements.map(review => review.previous_index));
+  const activeClarifiedTargets = () => clarifiedTargets.filter((_answer, index) => !retiredIndices().has(index));
+  const retiredAnswerText = () => new Set(reviewedReplacements.map(review => clarifiedTargets[review.previous_index]!.answer));
+  const activeMeaningStatements = () => meaningStatements.filter(statement => statement.origin === "policy_source" || !retiredAnswerText().has(statement.text));
+  const activeNamingSources = () => namingSources.filter(text => !retiredAnswerText().has(text) || originalNamingSources.includes(text) || policySource?.text === text);
+  const meaningBinding = () => canonicalJsonDigest({ meaning: expectedMeaningContext, boundary: expectedBoundaryDigest, catalog: catalog.digest });
   const meaningConflicts = new Map<string, ReadMeaningEvidence[]>();
   const readAnswerCount = () => clarifiedTargets.length + unresolvedAnswers.length;
   const currentMeaning = (target: { resource: string; field?: string }) => {
     try {
-      const evidence = findReadMeaningEvidence({ target, catalog, statements: meaningStatements, answers: clarifiedTargets,
-        requested_use_digest: requestedUseDigest, context_digest: canonicalJsonDigest({ meaning: expectedMeaningContext, boundary: expectedBoundaryDigest, catalog: catalog.digest }) });
+      const evidence = findReadMeaningEvidence({ target, catalog, statements: activeMeaningStatements(), answers: activeClarifiedTargets(),
+        requested_use_digest: requestedUseDigest, context_digest: meaningBinding() });
       meaningConflicts.delete(JSON.stringify(target));
       return evidence;
     }
@@ -252,7 +266,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
         } };
       }
       try {
-        suppliedMeanings = parseOperatorReadMeanings(args.operator_meanings, namingSources, catalog, clarifiedTargets);
+        suppliedMeanings = parseOperatorReadMeanings(args.operator_meanings, activeNamingSources(), catalog, activeClarifiedTargets());
         for (const meaning of suppliedMeanings) {
           const target = { resource: meaning.resource, ...(meaning.field ? { field: meaning.field } : {}) };
           currentMeaning(target);
@@ -263,7 +277,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
         workloadValidationBlockers = [error instanceof Error ? error.message : String(error)];
         let clarification = (input.clarificationHandler || input.onCheckpoint) && error instanceof ReadNamingEvidenceError && error.target
           && readAnswerCount() < MAX_READ_CLARIFICATIONS
-          ? refusedReadMeaningClarification(args, error.target, catalog, clarifiedTargets, [...originalNamingSources, ...allowedQuestions, ...(policySource ? [policySource.text] : [])]) : undefined;
+          ? refusedReadMeaningClarification(args, error.target, catalog, activeClarifiedTargets(), [...originalNamingSources, ...allowedQuestions, ...(policySource ? [policySource.text] : [])]) : undefined;
         const knownMeaning = error instanceof ReadNamingEvidenceError && error.target ? currentMeaning(error.target) : undefined;
         if (error instanceof ReadNamingEvidenceError && error.target && clarification && meaningConflicts.has(JSON.stringify(error.target))) {
           clarification = { ...clarification, reason: "Current policy statements give different meanings for this exact field; no reviewed precedence was established.",
@@ -387,7 +401,8 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
           };
         }
         if (readAnswerCount() >= MAX_READ_CLARIFICATIONS || valueRequest || clarificationRequest
-          || clarifiedTargets.some((prior) => clarificationKey(prior) === clarificationKey(parsedRequest))) {
+          || clarifiedTargets.some(prior => clarificationKey(prior) === clarificationKey(parsedRequest)
+            && (!input.clarificationReplacementHandler || prior.question.trim().toLowerCase() === parsedRequest.question.trim().toLowerCase()))) {
           repeatedAssistanceRequest = true;
           return {
             ok: false,
@@ -442,11 +457,11 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
           authority_granted: false, source_query_executed: false, source_database_changed: false } };
       }
       const effectiveMeanings = [...suppliedMeanings, ...hostEvidence.map(e => ({ resource: e.resource, ...(e.field ? { field: e.field } : {}), operator_quote: e.reference.text }))];
-      const unresolvedOpaque = opaqueWorkloadReferences(args, catalog, clarifiedTargets, effectiveMeanings);
+      const unresolvedOpaque = opaqueWorkloadReferences(args, catalog, activeClarifiedTargets(), effectiveMeanings);
       if (unresolvedOpaque.length) {
         opaqueGuessBlockers = unresolvedOpaque;
         const interceptedClarification = readAnswerCount() < MAX_READ_CLARIFICATIONS
-          ? opaqueWorkloadClarificationRequest(args, catalog, clarifiedTargets, effectiveMeanings)
+          ? opaqueWorkloadClarificationRequest(args, catalog, activeClarifiedTargets(), effectiveMeanings)
           : undefined;
         if (interceptedClarification && !clarificationRequest && !valueRequest) {
           clarificationRequest = interceptedClarification;
@@ -625,7 +640,8 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
       assertAssistanceContext();
       const result = await runAskProviderTurn({
         configuration,
-        question: [...clarificationAnswers, question].join("\n"),
+        question: [...clarificationAnswers.map((line, index) => retiredIndices().has(index)
+          ? `Historical response ${index}, superseded by an explicit operator review; not current meaning: ${line}` : line), question].join("\n"),
     history: modelAuthoringHistory(input.conversation, input),
         gateway: diagnosedGateway,
         tools,
@@ -691,6 +707,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
         call_count: callCount, attempt, phase, correction_used: correctionUsed, relationship_reviews: relationshipReviews,
         relationship_review_limit: relationshipReviewLimit, clarified_targets: clarifiedTargets, clarification_answers: clarificationAnswers,
         ...(unresolvedAnswers.length ? { unresolved_answers: unresolvedAnswers } : {}),
+        ...(reviewedReplacements.length ? { reviewed_replacements: reviewedReplacements } : {}),
         clarification_from_invalid_naming: clarificationFromInvalidNaming, clarification_resolved: clarificationResolved,
         mechanical_clarification_resolved: mechanicalClarificationResolved, value_request_resolved: valueRequestResolved,
         repeated_assistance_request: repeatedAssistanceRequest, naming_evidence_correction_used: namingEvidenceCorrectionUsed,
@@ -711,9 +728,30 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
       return parsed;
     };
     const s = saved.state, q = saved.pending_question;
+    const retired = new Set<number>(), replaced = new Set<number>();
+    for (const review of s.reviewed_replacements ?? []) {
+      const previous = s.clarified_targets[review.previous_index], next = s.clarified_targets[review.next_index];
+      if (!previous || !next || retired.has(review.previous_index) || replaced.has(review.next_index)
+        || review.previous_index >= review.next_index || review.context_digest !== meaningBinding()
+        || review.previous_digest !== canonicalJsonDigest(previous) || review.next_digest !== canonicalJsonDigest(next)
+        || clarificationKey(previous) !== clarificationKey(next) || previous.question.trim().toLowerCase() === next.question.trim().toLowerCase())
+        throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_INVALID: Reviewed response history does not identify an exact current predecessor and replacement.");
+      retired.add(review.previous_index); replaced.add(review.next_index);
+    }
+    const activeTargets = s.clarified_targets.filter((_prior, index) => !retired.has(index));
+    const replacement = q.kind === "clarification" ? q.replacement : undefined;
+    if (replacement) {
+      const previous = s.clarified_targets[replacement.previous_index];
+      if (!input.clarificationReplacementHandler || !previous || retired.has(replacement.previous_index)
+        || replacement.previous_digest !== canonicalJsonDigest(previous) || replacement.context_digest !== meaningBinding()
+        || clarificationKey(previous) !== clarificationKey(q.request)
+        || s.clarified_targets.some(prior => clarificationKey(prior) === clarificationKey(q.request)
+          && prior.question.trim().toLowerCase() === q.request.question.trim().toLowerCase()))
+        throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_INVALID: The pending response review is not bound to its exact current predecessor.");
+    }
     if (!s.call_count || !s.attempt || s.call_count > MAX_READ_CLARIFICATIONS + relationshipReviewLimit + 4
       || q.kind === "clarification" && (s.clarified_targets.length >= MAX_READ_CLARIFICATIONS
-        || s.clarified_targets.some(prior => clarificationKey(prior) === clarificationKey(q.request)))
+        || !replacement && s.clarified_targets.some(prior => clarificationKey(prior) === clarificationKey(q.request)))
       || q.kind === "value" && s.value_request_resolved
       || q.kind === "relationship" && (q.request.category !== "relationship_support" || !s.relationship_reviews
         || !s.mechanical_clarification_resolved || !input.relationshipReviewHandler))
@@ -729,7 +767,8 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
         : catalog.resources.find(r => r.id === prior.resource)?.fields.find(f => f.id === prior.field);
       if (!currentTarget || !isUnknownReadMeaning(prior.answer)) throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_INVALID: The retained unresolved answer does not match this reviewed target.");
     }
-    if (new Set(s.clarified_targets.map(clarificationKey)).size !== s.clarified_targets.length
+    if (new Set(activeTargets.map(clarificationKey)).size !== activeTargets.length
+      || s.clarified_targets.some((prior, index) => s.clarified_targets.slice(0, index).some(earlier => clarificationKey(earlier) === clarificationKey(prior)) && !replaced.has(index))
       || canonicalJsonDigest(s.clarification_answers) !== canonicalJsonDigest(s.clarified_targets.map(r => clarificationLine(r, r.answer))))
       throw new Error("READ_WORKLOAD_ASSISTANCE_CHECKPOINT_INVALID: Retained targets and their answers disagree.");
     if (q.kind === "value") {
@@ -754,6 +793,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     callCount = s.call_count; attempt = s.attempt; phase = s.phase; correctionUsed = s.correction_used; relationshipReviews = s.relationship_reviews;
     clarifiedTargets.push(...s.clarified_targets); clarificationAnswers.push(...s.clarification_answers);
     unresolvedAnswers.push(...(s.unresolved_answers ?? []));
+    reviewedReplacements.push(...(s.reviewed_replacements ?? []));
     clarificationFromInvalidNaming = s.clarification_from_invalid_naming; clarificationResolved = s.clarification_resolved;
     mechanicalClarificationResolved = s.mechanical_clarification_resolved; valueRequestResolved = s.value_request_resolved;
     repeatedAssistanceRequest = s.repeated_assistance_request; namingEvidenceCorrectionUsed = s.naming_evidence_correction_used;
@@ -821,10 +861,13 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
         const request = clarificationRequest;
         const resource = catalog.resources.find(resource => resource.id === request.resource);
         const metadata = request.field === undefined ? resource : resource?.fields.find(field => field.id === request.field);
+        const previousIndex = clarifiedTargets.findIndex((prior, index) => !retiredIndices().has(index) && clarificationKey(prior) === clarificationKey(request));
+        const previous = previousIndex < 0 ? undefined : clarifiedTargets[previousIndex];
+        const reviewFollowup = previous !== undefined && input.clarificationReplacementHandler !== undefined;
         const knownMeaning = request.category !== "relationship_support" ? currentMeaning(request) : undefined;
         // A malformed claim is still refused. Only current host evidence, not
         // the model's quote, selects this finite representation correction.
-        if (!namingEvidenceCorrectionUsed && knownMeaning) {
+        if (!reviewFollowup && !namingEvidenceCorrectionUsed && knownMeaning) {
           namingEvidenceCorrectionUsed = true;
           correctionUsed = true;
           clarificationRequest = undefined;
@@ -846,10 +889,14 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
           }
           continue;
         }
-        if (knownMeaning) throw new Error("READ_WORKLOAD_NAMING_EVIDENCE_INVALID: The current operator meaning is retained, but the finite naming correction did not produce a valid mapping. Save the pending job; no repeated business answer or fresh allowance was inferred.");
+        if (!reviewFollowup && knownMeaning) throw new Error("READ_WORKLOAD_NAMING_EVIDENCE_INVALID: The current operator meaning is retained, but the finite naming correction did not produce a valid mapping. Save the pending job; no repeated business answer or fresh allowance was inferred.");
         const retained = pendingAssistance?.kind === "clarification" && canonicalJsonDigest(pendingAssistance.request) === canonicalJsonDigest(request)
           ? pendingAssistance : undefined;
-        if (!retained?.decision) await saveAssistance({ kind: "clarification", request, question: request.question, ...(completion ? { completion } : {}) }, "waiting");
+        let replacement = retained?.replacement ?? (reviewFollowup ? {
+          previous_index: previousIndex, previous_digest: canonicalJsonDigest(previous), context_digest: meaningBinding(),
+        } : undefined);
+        if (!retained?.decision) await saveAssistance({ kind: "clarification", request, question: request.question,
+          ...(completion ? { completion } : {}), ...(replacement ? { replacement } : {}) }, "waiting");
         if (input.signal?.aborted) throw new ReadWorkloadAssistancePausedError();
         if (!input.clarificationHandler && !retained?.decision) {
           throw new Error(
@@ -858,16 +905,30 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
         }
         if (!retained?.decision && readAnswerCount() >= MAX_READ_CLARIFICATIONS) throw new ReadWorkloadAssistancePausedError(
           "READ_WORKLOAD_CLARIFICATION_LIMIT: Four operator responses are retained without this meaning being resolved. Keep the saved job pending and inspect its question/history; no additional answer, correction or generation allowance was inferred.");
-        const decision = retained?.decision ?? validateReadClarificationDecision(await input.clarificationHandler!(request));
+        const decision = retained?.decision ?? (replacement?.proposed_answer !== undefined
+          ? { state: "answered" as const, answer: replacement.proposed_answer }
+          : validateReadClarificationDecision(await (previous
+            ? input.clarificationHandler!(request, { previous }) : input.clarificationHandler!(request))));
         if (decision.state === "answered" && isUnknownReadMeaning(decision.answer)) {
           unresolvedAnswers.push({ resource: request.resource, ...(request.field ? { field: request.field } : {}), question: request.question,
             request_digest: canonicalJsonDigest(request), context_digest: canonicalJsonDigest({ meaning: expectedMeaningContext, boundary: expectedBoundaryDigest, catalog: catalog.digest }),
             answer: decision.answer, actor: "local_installation_operator", recorded_at: new Date().toISOString() });
-          await saveAssistance({ kind: "clarification", request, question: request.question, ...(completion ? { completion } : {}) }, "waiting");
+          await saveAssistance({ kind: "clarification", request, question: request.question, ...(completion ? { completion } : {}),
+            ...(replacement ? { replacement } : {}) }, "waiting");
           throw new ReadWorkloadAssistancePausedError("No business meaning was supplied. The exact operator response is retained as unresolved, and the same question remains pending. Resume to review it; no follow-up request was sent.");
         }
 
-        if (!retained?.decision) await saveAssistance({ kind: "clarification", request, question: request.question, ...(completion ? { completion } : {}), decision }, "decided");
+        if (replacement && decision.state === "answered" && !retained?.decision) {
+          replacement = { ...replacement, proposed_answer: decision.answer };
+          await saveAssistance({ kind: "clarification", request, question: request.question,
+            ...(completion ? { completion } : {}), replacement }, "waiting");
+          if (await input.clarificationReplacementHandler!({ previous: previous!, request, answer: decision.answer }) !== true)
+            throw new ReadWorkloadAssistancePausedError("The proposed answer is saved for local review. The earlier interpretation remains current; Resume to review this exact proposal without another model request.");
+          assertAssistanceContext();
+          replacement = { ...replacement, confirmed: true };
+        }
+        if (!retained?.decision) await saveAssistance({ kind: "clarification", request, question: request.question,
+          ...(completion ? { completion } : {}), decision, ...(replacement ? { replacement } : {}) }, "decided");
         clarificationRequest = undefined;
         clarificationResolved = true;
         opaqueGuessBlockers = [];
@@ -876,6 +937,10 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
             `READ_WORKLOAD_CLARIFICATION_DECLINED: no business meaning was supplied for ${request.resource}${request.field ? `.${request.field}` : ""}; Runner accepted no model draft.`,
           );
         }
+        if (replacement) reviewedReplacements.push({ previous_index: replacement.previous_index,
+          next_index: clarifiedTargets.length, previous_digest: replacement.previous_digest,
+          next_digest: canonicalJsonDigest({ ...request, answer: decision.answer }), context_digest: replacement.context_digest,
+          actor: "local_installation_operator" });
         clarifiedTargets.push({ ...request, answer: decision.answer });
         clarificationAnswers.push(clarificationLine(request, decision.answer));
         await remap([

@@ -46,6 +46,9 @@ export type BoundaryAuthoringResumeBinding = {
 export type BoundaryAuthoringResumeRead = {
   analysis_id: string;
   analysis_digest: `sha256:${string}`;
+  /** Inert provenance retained after the pending assistance wait is cleared.
+   * It cannot resume a generation or grant current authority. */
+  assistance_history?: ReadWorkloadAssistanceCheckpoint;
 };
 
 export type BoundaryAuthoringActionRemoval = {
@@ -913,6 +916,7 @@ function normalizeRead(value: BoundaryAuthoringResumeRead): BoundaryAuthoringRes
   return {
     analysis_id: reviewedName(value.analysis_id, "Read analysis id", 128),
     analysis_digest: reviewedDigest(value.analysis_digest, "Read analysis digest"),
+    ...(value.assistance_history ? { assistance_history: parseReadWorkloadAssistanceCheckpoint(value.assistance_history) } : {}),
   };
 }
 
