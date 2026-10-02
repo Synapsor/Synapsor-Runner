@@ -1,0 +1,71 @@
+{
+  "scope": "Main DISPOSABLE synthetic registration only, not live acceptance or paid GO",
+  "tests": [
+    {
+      "name": "append-only valid registration preserves all395 historical entries, stops, invocations, recovery and liabilities",
+      "result": "PASS"
+    },
+    {
+      "name": "live activation refused unchanged",
+      "result": "PASS"
+    },
+    {
+      "name": "ledger CAS rejects stale seed unchanged",
+      "result": "PASS"
+    },
+    {
+      "name": "missing case binding refuses atomic registration",
+      "result": "PASS"
+    },
+    {
+      "name": "wrong independent signature fails",
+      "result": "PASS"
+    },
+    {
+      "name": "historical mutation APIs absent",
+      "result": "PASS"
+    },
+    {
+      "name": "historical journey cannot invoke",
+      "result": "PASS"
+    },
+    {
+      "name": "only actual F1 bound; later case unavailable without fabricated job bindings",
+      "result": "PASS"
+    },
+    {
+      "name": "append next actual case after closure preserves prior records and recovery context",
+      "result": "PASS"
+    },
+    {
+      "name": "unbound case may only be skipped, not completed; skipping does not create a paid sample",
+      "result": "PASS"
+    },
+    {
+      "name": "case identity/source/order tampering denied atomically",
+      "result": "PASS"
+    },
+    {
+      "name": "stale append CAS and absent actual consent refused",
+      "result": "PASS"
+    },
+    {
+      "name": "request consent and plan checked before reservation; serial count/inference enforced; replacement settles once",
+      "result": "PASS"
+    },
+    {
+      "name": "baseline shared money fails well before transport ceiling",
+      "result": "PASS"
+    },
+    {
+      "name": "new per-case recovery leaves old continuation exact",
+      "result": "PASS"
+    },
+    {
+      "name": "legacy retry_of cannot use a second recovery pool even with a parent",
+      "result": "PASS"
+    }
+  ],
+  "passed": 16,
+  "provider": 0
+}

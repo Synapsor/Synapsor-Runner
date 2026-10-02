@@ -1,0 +1,23 @@
+{
+  "scope": "SIMULATED ledgers/review records only; no actual registration or paid authority",
+  "passed": 4,
+  "tests": [
+    {
+      "name": "live append waits for predecessor then preserves history and recovery",
+      "result": "PASS"
+    },
+    {
+      "name": "wrong task identity and stale append CAS leave ledger exact",
+      "result": "PASS"
+    },
+    {
+      "name": "unresolved request blocks closure and additional registration",
+      "result": "PASS"
+    },
+    {
+      "name": "append signoff drift blocks later request",
+      "result": "PASS"
+    }
+  ],
+  "provider": 0
+}

@@ -1,0 +1,31 @@
+{
+  "scope": "Main synthetic copied-ledger four-check correction only; no upstream or live registration",
+  "passed": 6,
+  "tests": [
+    {
+      "name": "original145 stale policy deadline refuses before admission",
+      "result": "PASS"
+    },
+    {
+      "name": "changed deadline with recomputed digest still refuses",
+      "result": "PASS"
+    },
+    {
+      "name": "increased case monetary allowance refuses even with recomputed hash",
+      "result": "PASS"
+    },
+    {
+      "name": "changed case limits in both group and policy refuse",
+      "result": "PASS"
+    },
+    {
+      "name": "increased recovery bound refuses",
+      "result": "PASS"
+    },
+    {
+      "name": "policy drift between reserve and start refuses with reservation retained",
+      "result": "PASS"
+    }
+  ],
+  "provider": 0
+}

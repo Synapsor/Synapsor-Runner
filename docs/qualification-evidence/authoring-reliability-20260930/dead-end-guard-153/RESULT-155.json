@@ -1,0 +1,63 @@
+{
+  "scope": "SIMULATED local ledgers and review records only; zero provider, no real registration, no readiness signoff",
+  "tests": [
+    {
+      "name": "simulated complete dual preflight preserves all history and liabilities",
+      "result": "PASS"
+    },
+    {
+      "name": "synthetic signoffs cannot activate live mode",
+      "result": "PASS"
+    },
+    {
+      "name": "same session cannot be both independent signers",
+      "result": "PASS"
+    },
+    {
+      "name": "missing preflight binding refuses",
+      "result": "PASS"
+    },
+    {
+      "name": "stale ledger CAS refuses atomically",
+      "result": "PASS"
+    },
+    {
+      "name": "wrong guard code digest refuses",
+      "result": "PASS"
+    },
+    {
+      "name": "wrong absolute ledger destination refuses",
+      "result": "PASS"
+    },
+    {
+      "name": "disposable state cannot become live merely by flipping mode",
+      "result": "PASS"
+    },
+    {
+      "name": "changed approval file refuses subsequent admission",
+      "result": "PASS"
+    },
+    {
+      "name": "changed preflight evidence refuses admission",
+      "result": "PASS"
+    },
+    {
+      "name": "copied registered ledger cannot authorize another path",
+      "result": "PASS"
+    },
+    {
+      "name": "altered case cannot use retained preflight",
+      "result": "PASS"
+    },
+    {
+      "name": "live money boundary and global count/inference serialization remain enforced; settle replaces hold",
+      "result": "PASS"
+    },
+    {
+      "name": "disposable closure cannot close live registration",
+      "result": "PASS"
+    }
+  ],
+  "passed": 14,
+  "provider": 0
+}

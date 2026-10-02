@@ -1,0 +1,8 @@
+{
+  "scope": "Main DISPOSABLE simulated harness counterexample; no Runner change or real ledger operation",
+  "expected": "Reject changed policy before new admission",
+  "actual": "ADMITTED_UNEXPECTEDLY",
+  "error": null,
+  "provider": 0,
+  "guard_sha256": "7f48bed08540cd4b93d0578b72dbfcc5e8f6fd049677cd5a60b8bd58a127e90b"
+}

@@ -1,0 +1,68 @@
+[
+  {
+    "case_id": "MINI-CODED",
+    "journey": "deadend_baseline_mini_coded_20261002",
+    "order": 1,
+    "wave": "baseline",
+    "entry": "fresh",
+    "family": "F1",
+    "policy_sha256": "a428a5b2d5f4642b7daeba105cfe65e5956fd8404356b42bf8fc88a34530c048",
+    "job_sha256": "f439cc05196f0e3807c94e7b4fd55674fe10060a508c7f48f4a18298b2d3ab46",
+    "case_order_sha256": "491ca5cc7d99851e565dbc5be47d54cc4ca7b7ebd4d17e4258f50efba7eb9369"
+  },
+  {
+    "case_id": "MINI-INPUT",
+    "journey": "deadend_baseline_mini_input_20261002",
+    "order": 2,
+    "wave": "baseline",
+    "entry": "fresh",
+    "family": "F5",
+    "policy_sha256": "af17898111fd8e00dff673e63533616861f3e1aa3241ed2484a062db6a06e8ef",
+    "job_sha256": "b34a358f153a7b1214ce344af31b2f86191568f318e0842a451ba2224b637134",
+    "case_order_sha256": "491ca5cc7d99851e565dbc5be47d54cc4ca7b7ebd4d17e4258f50efba7eb9369"
+  },
+  {
+    "case_id": "MINI-AGENDA",
+    "journey": "deadend_baseline_mini_agenda_20261002",
+    "order": 3,
+    "wave": "baseline",
+    "entry": "fresh",
+    "family": "F7",
+    "policy_sha256": "49f4a03f71c2caecbdb03c88a8bf65f1788a10fc503fc82c2f988220a048fa35",
+    "job_sha256": "fc034858d097bcd0aaa0636334b7a4dd37e7a45964ffe48b5f347567af128550",
+    "case_order_sha256": "491ca5cc7d99851e565dbc5be47d54cc4ca7b7ebd4d17e4258f50efba7eb9369"
+  },
+  {
+    "case_id": "MINI-RELATION",
+    "journey": "deadend_baseline_mini_relation_20261002",
+    "order": 4,
+    "wave": "baseline",
+    "entry": "fresh",
+    "family": "F3",
+    "policy_sha256": "2cc8977803ab81647b10f6a5f91ab4c1e186007f23e11a2e35157cc7e8d6ef69",
+    "job_sha256": "c2f97cb86c629c4b77480046bbcf3713e1fe8cc9bc95d6378e6653321e01920b",
+    "case_order_sha256": "491ca5cc7d99851e565dbc5be47d54cc4ca7b7ebd4d17e4258f50efba7eb9369"
+  },
+  {
+    "case_id": "MINI-PRIVATE",
+    "journey": "deadend_baseline_mini_private_20261002",
+    "order": 5,
+    "wave": "baseline",
+    "entry": "publiccontrolled Actionstage-entry",
+    "family": "F2",
+    "policy_sha256": "7a4ff9bc1b739f58e2ea8bc3aaa76b87ad92716ea60bfb3c0f695852c4a2744a",
+    "job_sha256": "b224f593944756ce0a6f01028a987519a3b20d9f5864ec62253cf34f8e34f6bd",
+    "case_order_sha256": "491ca5cc7d99851e565dbc5be47d54cc4ca7b7ebd4d17e4258f50efba7eb9369"
+  },
+  {
+    "case_id": "MINI-EDIT",
+    "journey": "deadend_baseline_mini_edit_20261002",
+    "order": 6,
+    "wave": "baseline",
+    "entry": "publiccontrolled3Actionstage-entry",
+    "family": "F6",
+    "policy_sha256": "1710dbfdd356b7e1d12a29c5638d22bc7570c424df9949de49f1d9358918115b",
+    "job_sha256": "938a85616d5d70d1422bd665bbcd061baa6f4846ebe271bccf612b2afd942be8",
+    "case_order_sha256": "491ca5cc7d99851e565dbc5be47d54cc4ca7b7ebd4d17e4258f50efba7eb9369"
+  }
+]

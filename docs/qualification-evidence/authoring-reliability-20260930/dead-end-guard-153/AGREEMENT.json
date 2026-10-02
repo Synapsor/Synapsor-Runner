@@ -1,0 +1,7 @@
+{
+  "at": "2026-10-02T15:56:00.135234+00:00",
+  "owner": "time-box minimal four checks, target first mini11AM PDT",
+  "independent_tester": "01a0bcb8-0925-7380-911a-8bab207b9e0b",
+  "independent_counterexample": "/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/independent-authoring-reliability-20260930/probes/DEAD-END-LAB-GUARD-DRIFT-1157/checks/RESULT.json",
+  "agreed": "admission-time policy digest, exact deadline, case limits, recovery bounds; harness-only; original136 preserved"
+}
