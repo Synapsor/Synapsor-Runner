@@ -416,6 +416,49 @@ describe("B41 host-owned Read meaning resolution", () => {
     expect(clarificationHandler).toHaveBeenCalledOnce();
     expect(requestJson).toHaveBeenCalledTimes(3);
   });
+  it.each([
+    "Read the dispatch review stage in public.tbl_7.col_2; no activation or execution.",
+    "Read the current workflow state in public.tbl_7.col_2; no Action draft or execution.",
+    "Read public.tbl_7.col_2 with no execution permission.",
+    "Read public.tbl_7.col_2 without executing any Action.",
+  ])("refuses an omitted operator-requested field after plain meaning resolution: %s", async operatorNamingContext => {
+    const boundary = opaqueGeneratedBoundary();
+    // Use an ordinary identity field so this negative exercises the requested
+    // business-field question, not an unrelated opaque-PK naming question.
+    boundary.pack.resources[0]!.primary_key = "id";
+    boundary.pack.resources[0]!.field_types.id = "uuid";
+    boundary.pack.resources[0]!.selectable_fields.push("id");
+    const omitted = { allowed: [{ id: "shipments", description: "Read shipment stage",
+      plan: { kind: "rows", resource: "public.tbl_7", select: ["id"] } }], forbidden: [] };
+    const requestJson = vi.fn().mockResolvedValueOnce(response({ ...omitted,
+      operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: "Invented meaning" }] }))
+      .mockResolvedValue(response(omitted));
+    const clarificationHandler = vi.fn(async question => {
+      expect(question).toMatchObject({ resource: "public.tbl_7", field: "col_2" });
+      return { state: "answered" as const, answer: "The shipment workflow state" };
+    });
+    await expect(generateModelReadWorkload({ ...setup(requestJson, boundary), operatorNamingContext, clarificationHandler }))
+      .rejects.toThrow("READ_WORKLOAD_REQUIRED_TASK_FIELD_OMITTED");
+    expect(clarificationHandler).toHaveBeenCalledOnce();
+    expect(requestJson).toHaveBeenCalledTimes(3);
+  });
+  it("allows the same ordinary requested-use wording when the proposed Read retains the required field", async () => {
+    const requestJson = vi.fn().mockResolvedValueOnce(response({ ...mapped,
+      operator_meanings: [{ resource: "public.tbl_7", field: "col_2", operator_quote: "Invented meaning" }] }))
+      .mockResolvedValue(response(mapped));
+    const events: string[] = [];
+    const result = await generateModelReadWorkload({ ...setup(async request => {
+      events.push("local_reply"); return requestJson(request);
+    }), operatorNamingContext: "Read the current workflow state in public.tbl_7.col_2; no Action draft or execution.",
+    onCheckpoint: async checkpoint => { events.push(checkpoint?.stage ?? "accepted"); },
+    clarificationHandler: async () => { events.push("answer"); return { state: "answered", answer: "The shipment workflow state" }; } });
+    expect(result.analysis.status).toBe("ready");
+    expect(result.workload.allowed[0]!.plan).toMatchObject({ select: ["col_2"] });
+    expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false);
+    expect(requestJson).toHaveBeenCalledTimes(2);
+    expect(events).toEqual(["local_reply", "waiting", "answer", "decided", "local_reply", "accepted"]);
+  });
   it("exposes the same typed pending meaning in a durable headless path before spending a correction", async () => {
     let checkpoint: ReadWorkloadAssistanceCheckpoint | undefined;
     const requestJson = vi.fn().mockResolvedValue(response({ ...mapped,

@@ -158,14 +158,45 @@ export function normalizeReadMeaningEvidence(value: unknown): ReadMeaningEvidenc
  * ambiguity remains for ordinary clarification/whole-program review. */
 export function explicitReadTaskTargets(text: string, catalog: ReadMeaningCatalog): ReadMeaningTarget[] {
   const found = new Map<string, ReadMeaningTarget>();
+  // Mask quotations before splitting instructions, so a later quoted clause
+  // cannot escape its quotation context. Original evidence is never rewritten.
+  const characters = [...text];
+  let quoteEnd: string | undefined;
+  const unquoted = characters.map((character, index) => {
+    if (quoteEnd) {
+      if (character === quoteEnd) quoteEnd = undefined;
+      return character === "\n" ? "\n" : " ";
+    }
+    const apostrophe = /['’]/u.test(character) && /[\p{L}\p{N}]/u.test(characters[index - 1] ?? "") && /[\p{L}\p{N}]/u.test(characters[index + 1] ?? "");
+    if (!apostrophe && /["'“‘`]/u.test(character)) {
+      quoteEnd = character === "“" ? "”" : character === "‘" ? "’" : character;
+      return " ";
+    }
+    return character;
+  }).join("");
+  const clauses = unquoted.split(/[;\n]|(?<=[.!?])\s+|(?:,\s*|\s+)(?:and|but)\s+(?=(?:(?:do\s+not|don't|never|not)\s+)?(?:read|show|display|include|return)\b)/iu);
   for (const resource of catalog.resources) for (const field of resource.fields) {
     const target = { resource: resource.id, field: field.id };
-    for (const reference of readMeaningReferences(target, catalog)) {
-      const escaped = reference.replace(/[.*+?^${}()|[\]\\]/gu, "\\$&");
-      const instruction = new RegExp(`\\b(?:read|show|display|include|return)\\s+(?:(?:me|the|current)\\s+){0,2}${escaped}(?![\\p{L}\\p{N}_.:-])`, "giu");
-      for (const clause of text.split(/[;\n]|(?<=[!?])\s+/u)) {
-        const match = instruction.exec(clause); instruction.lastIndex = 0;
-        if (match && !/\b(?:not|never|no|cannot)\b/iu.test(clause.slice(0, match.index))) found.set(JSON.stringify(target), target);
+    const references = readMeaningReferences(target, catalog);
+    for (const clause of clauses) {
+      for (const token of clause.matchAll(/[\p{L}\p{N}_.:-]+/gu)) {
+        // A sentence-ending period is punctuation, not part of the field.
+        // Strip it only when the remaining complete token is an exact reference.
+        if (!references.includes(token[0]) && !(token[0].endsWith(".") && references.includes(token[0].slice(0, -1)))) continue;
+        const before = clause.slice(0, token.index);
+        // Recognize a finite positive instruction, not the meaning of its
+        // requested-use phrase. The exact catalog token remains authoritative;
+        // no model-selected plan or generated label can erase that dependency.
+        const instruction = before.match(/(?<![\p{L}\p{N}_.:-])\b(?:read|show|display|include|return)\s+(?:(?:(?:me|the|current)\s+){0,2}|(?:[\p{L}\p{N}_-]+\s+){1,12}(?:in|from|of|on|at)\s+)$/iu);
+        if (!instruction) continue;
+        const prefix = before.slice(0, instruction.index);
+        // A separate execution prohibition or another field's negative is not
+        // a withdrawal of this positive Read instruction.
+        if (/\b(?:not|never|no|cannot|avoid|without|don['’]t|can['’]t)(?:\s+(?:ever|again|currently|also|yet|safely|need\s+to|permission\s+to))?\s*$/iu.test(prefix)
+          || /(?:^|[^\p{L}\p{N}_-])(?:not|never|no|cannot|without|avoid)(?![\p{L}\p{N}_-])/iu.test(instruction[0])) continue;
+        const surrounding = before + clause.slice(token.index! + token[0].length);
+        if (/(?<![\p{L}\p{N}_.-])(?:if|unless|when|example|hypothetical)(?![\p{L}\p{N}_.-])/iu.test(surrounding)) continue;
+        found.set(JSON.stringify(target), target);
       }
     }
   }
