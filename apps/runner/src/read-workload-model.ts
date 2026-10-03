@@ -528,6 +528,9 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
           workload: candidateWorkload,
           generatedBoundary: mappingBoundary,
         });
+        if (candidateAnalysis.status === "blocked") {
+          candidateAnalysis.blockers = [...misplacedReadRootFieldIssues(args), ...candidateAnalysis.blockers];
+        }
         const relatedOnlyRoots = candidateWorkload.allowed.flatMap(entry =>
           catalog.resources.some(resource => resource.id === entry.plan.resource && resource.relationship_only)
             ? [entry.plan.resource] : []);
@@ -1734,6 +1737,27 @@ function boundedText(value: unknown, label: string, maximum: number): string {
     throw new Error(`READ_WORKLOAD_SECRET_BLOCKED: ${label} appears to contain secret material.`);
   }
   return normalized;
+}
+
+/** Diagnose misplaced control fields without interpreting or relocating their values. */
+function misplacedReadRootFieldIssues(args: Record<string, unknown>): string[] {
+  const issues: string[] = [];
+  for (const branch of ["allowed", "forbidden"] as const) {
+    const entries = args[branch];
+    if (!Array.isArray(entries)) continue;
+    entries.forEach((entry, index) => {
+      if (!isRecord(entry)) return;
+      const locations = [{ value: entry, path: `/${branch}/${index}` },
+        ...(isRecord(entry.plan) ? [{ value: entry.plan, path: `/${branch}/${index}/plan` }] : [])];
+      for (const { value, path } of locations) {
+        if (Object.hasOwn(value, "clarification_request")) issues.push(
+          `${path}/clarification_request is misplaced. Submit clarification_request in the standalone root clarification branch, without allowed or forbidden. Runner has not accepted or moved this value.`);
+        if (Object.hasOwn(value, "operator_meanings")) issues.push(
+          `${path}/operator_meanings is misplaced. Submit operator_meanings as the root list alongside allowed and forbidden in the workload branch. Exact target and operator-evidence validation still apply; Runner has not accepted or moved this value.`);
+      }
+    });
+  }
+  return issues;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

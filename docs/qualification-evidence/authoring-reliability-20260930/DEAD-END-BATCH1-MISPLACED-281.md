@@ -1,0 +1,11 @@
+# Batch 1: misplaced Read control fields
+
+The real F5 baseline put `clarification_request` inside a Read plan. Runner refused it but only explained the missing plan kind. Independent review1247 agreed that the existing bounded correction should name the misplaced field and correct root branch. The analogous `operator_meanings` mistake uses the workload branch's root list. Original refusals and paid outcomes remain unchanged.
+
+The change adds location-specific diagnostics to an already blocked workload analysis. It neither moves nor accepts model arguments, changes schemas, interprets supplied values, grants authority, nor adds attempts. Existing validation, correction routing and returned blocked-analysis shape remain in place. Root evidence and private-field checks still apply to a corrected reply.
+
+Before integration, early gate269 on8174b7d2 passed the complete suite (8521 passed,576 skipped), explicit types, selected real PostgreSQL controls (195 passed,4 skipped), native42 and ten offline/package checks. This is an unfrozen development baseline; final settled gates and independent acceptance remain required.
+
+The four new guidance assertions failed on unchanged product after correcting a test-only native request projection (`input`, not `messages`). An initial early-return implementation changed persistent refusals from blocked results to thrown errors; regression277 caught that and was preserved. The implementation was narrowed to diagnostics on the original blocked result, without editing that expectation. Five focused cases then passed, as did all865 existing tests in12 affected files and explicit types. A sixth new negative originally expected a blocked result for an invented root quote; existing product throws an exact evidence refusal. Tester1259 personally reproduced that behavior on immutable6aca with no clarification handler and agreed the test correction before it was made. All six focused cases283 pass. Supplying a handler is a distinct pending-question path, not covered by that no-handler expectation.
+
+Evidence is under the private task record's `misplaced-guidance-271` and `early-gates-269`. Independent source review is pending. No frozen candidate was patched or published, and Main made zero provider calls.
