@@ -19,7 +19,7 @@ import { policyReviewReadiness } from "./authoring-review-readiness.js";
  * provider responses are supplied. The actual planner/compiler/Source parser,
  * generation recovery, owner handoff, chat recorder, writer permit and CAS run.
  * No readiness/assessment callback or accepted-owner record is fabricated. */
-type Control = "healthy" | "pause_restart" | "source_drift" | "schema_drift" | "role_drift" | "competing_resume" | "explicit_review" | "client_keep" | "client_cancel";
+type Control = "healthy" | "pause_restart" | "source_drift" | "schema_drift" | "role_drift" | "competing_resume" | "explicit_review" | "client_keep" | "client_cancel" | "nested_source_review" | "nested_competing_resume" | "nested_competing_source" | "nested_transfer_cancel" | "nested_cached_activate";
 const question="Should this parcel action be permitted only when the parcel is available?";
 const answer="Yes. Require available=true; refuse unavailable parcels.";
 const strings=(value:any):string[]=>typeof value==="string" ? [value] : Array.isArray(value) ? value.flatMap(strings)
@@ -47,6 +47,10 @@ async function publicPolicyWait(control:Control) {
   let stage:"initial"|"question"|"restart"|"explicit_review"="initial",transcript="",requests=0,actionPhase=0,questionNarrations=0;
   let sourceId:string|undefined,questionReads=0,clarifyChosen=false,injected=false,expectedWaiting:any,competingSaved:any,baseline:any;
   let clientDutyPrompts=0;
+  let nestedEntered=false,nestedReads=0,nestedDeclines=0,nestedStartRequests=0,nestedAuthorityBefore:any,cachedActivationAttempts=0;
+  const nestedControl=control.startsWith("nested_");
+  const replacementFile=path.join(root,"replacement-policy-review.txt");
+  await fs.writeFile(replacementFile,["Updated heading for the same parcel proposal program.",...initialLines.slice(1)].join("\n"));
   const answers:Array<string|undefined>=[`/attach ${sourceFile}`,job];
   const responses:any[]=[],menus:any[]=[],reports:any[]=[],questionSnapshots:any[]=[],failures:any[]=[];
   const readResume=async()=>JSON.parse(await fs.readFile(resumeFile,"utf8"));
@@ -69,7 +73,10 @@ async function publicPolicyWait(control:Control) {
     }
   };
   const read=async()=>{
-    if(stage==="initial")return answers.shift();
+    if(stage==="initial") {
+      if(nestedControl && nestedEntered && nestedReads++===0)return `/attach ${replacementFile}`;
+      return answers.shift();
+    }
     questionReads++;const saved=await readResume(),handoff=saved.owner_handoffs?.at(-1);
     sourceId=saved.policy_source_session;
     expect(handoff,transcript).toMatchObject({consumer:"policy_clarification",state:"waiting",question});
@@ -93,13 +100,34 @@ async function publicPolicyWait(control:Control) {
       const values=choice.options.map((entry:any)=>entry.value);let selected:string|undefined;
       if(choice.title==="START BOUNDARY DRAFTING")selected=stage==="initial" ? "model" : stage==="explicit_review" ? "review_rules" : "resume";
       else if(choice.title==="CLIENT FOR THIS JOB")selected="later";
-      else if(choice.title==="SEND ATTACHED RULES") {expect(choice.initialValue).toBe("cancel");selected="send";}
-      else if(choice.title==="USE THE SAVED ATTACHMENT")selected="continue";
+      else if(choice.title==="SEND ATTACHED RULES") {expect(choice.initialValue).toBe("cancel");selected=control==="nested_transfer_cancel" && nestedEntered ? "cancel" : "send";}
+      else if(choice.title==="USE THE SAVED ATTACHMENT") {
+        if(nestedEntered)nestedAuthorityBefore=(await listActionRuleAuthorityDrafts(root))[0];
+        if(nestedEntered && !injected && ["nested_competing_resume","nested_competing_source","nested_cached_activate"].includes(control)) {
+          injected=true;
+          const saved=await readResume();sourceId=saved.policy_source_session;
+          if(control==="nested_competing_resume") {
+            const next=buildBoundaryAuthoringResumeState({previous:saved,binding:saved.binding,stage:saved.stage,
+              jobIntent:saved.job_intent,provider:saved.model.provider,model:saved.model.name,policySourceSession:saved.policy_source_session,
+              read:saved.read,action:saved.action,pendingReadRevision:"A separate current operator requested a new Read inspection."});
+            await writeBoundaryAuthoringResumeState(root,next,{expectedRevisionDigest:saved.revision_digest});competingSaved=next;
+          } else {
+            const sources=await loadPolicySources(root,sourceId!),next=structuredClone(sources),prior=activePolicySource(sources)!;
+            const snapshot=policyTextSnapshot(Buffer.from("Competing heading for the same parcel proposal program.\n"+prior.text.split("\n").slice(1).join("\n")),prior.name,prior.version+1);
+            next.snapshots.push(snapshot);next.active=snapshot.version;
+            await savePolicySources(root,next,{expectedDigest:canonicalJsonDigest(sources)});competingSaved=next;
+          }
+        }
+        selected=nestedControl && nestedEntered ? "review" : "continue";
+      }
       else if(choice.message==="Use this complete intended Action inventory?") {expect(choice.initialValue).toBe("no");selected="yes";}
       else if(choice.message==="REVIEW CHANGED-RECORD PROTECTION") {expect(choice.initialValue).toBe("pending");expect(transcript).toContain("studio.parcels.version");selected="confirm";}
       else if(choice.title==="REVIEW DECLARED TEXT INPUT BOUNDS")selected="none";
       else if(choice.message==="Save this exact attributed input-policy interpretation?") {expect(choice.initialValue).toBe("no");selected="yes";}
-      else if(choice.message==="Run a new bounded model review?") {expect(choice.initialValue).toBe("no");selected="yes";}
+      else if(choice.message==="Run a new bounded model review?") {
+        expect(choice.initialValue).toBe("no");
+        if(nestedControl && nestedEntered) {nestedDeclines++;selected="no";} else selected="yes";
+      }
       else if(choice.title==="CLIENT INTEGRATION RESPONSIBILITIES") {
         expect(choice.initialValue).toBe("back");clientDutyPrompts++;
         if(control==="client_keep" || control==="client_cancel") {
@@ -111,7 +139,12 @@ async function publicPolicyWait(control:Control) {
         selected=stage==="question" && !clarifyChosen ? "clarify" : "pause";if(selected==="clarify")clarifyChosen=true;
       } else if(choice.title==="SETUP NEEDS ATTENTION" || values.includes("pause") && !values.includes("yes"))selected="pause";
       else if(values.includes("yes") && /Send this Boundary-authoring conversation|Allow the assistant to send|reviewed structural context|Allow the assistant to read|Allow the reviewed change requests/.test(choice.message)) {expect(choice.initialValue).toBe("no");selected="yes";}
-      else if(values.includes("activate"))selected=values.includes("finish") ? "finish" : values.includes("back") ? "back" : undefined;
+      else if(values.includes("activate")) {
+        if(nestedControl && !nestedEntered) {
+          expect(values).toContain("__ask_boundary_model__");nestedEntered=true;nestedStartRequests=requests;selected="__ask_boundary_model__";
+        } else if(control==="nested_cached_activate" && injected) {cachedActivationAttempts++;selected="activate";}
+        else selected=values.includes("finish") ? "finish" : values.includes("back") ? "back" : undefined;
+      }
       menus.push({stage,...choice,values,selected});if(!selected || !values.includes(selected))return undefined;return selected;
     }};
   const requestJson=async(request:any)=>{
@@ -194,6 +227,58 @@ async function publicPolicyWait(control:Control) {
       runBoundaryReview:(args,inspector)=>boundaryReviewCommand(args,inspector,outer,undefined,options)});
     const initiallySaved=await readResume();sourceId=initiallySaved.policy_source_session;
     expect((await listActionRuleAuthorityDrafts(root))[0],transcript).toBeDefined();
+    if(control==="nested_transfer_cancel") {
+      expect(nestedEntered,transcript).toBe(true);expect(nestedDeclines).toBe(0);
+      expect(requests,transcript).toBe(nestedStartRequests);
+      const sources=await loadPolicySources(root,sourceId!);
+      expect(sources.snapshots).toHaveLength(1);expect(activePolicySource(sources)!.text).toBe(initialLines.join("\n"));
+      expect(failures.filter(entry=>entry.title==="SETUP NEEDS ATTENTION"),transcript).toEqual([]);
+      expect(transcript).not.toContain("BOUNDARY_AUTHORING_RESUME_CHANGED");
+      expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+      expect(await fs.readFile(path.join(root,".synapsor/exploration-boundary.active.json")).catch(()=>undefined)).toBeUndefined();
+      return {origin:"IMPLEMENTER_DERIVED_PUBLIC_DECLINED_SOURCE_TRANSFER",control,requests,activation:false,provider_calls:0};
+    }
+    if(control==="nested_competing_resume" || control==="nested_competing_source" || control==="nested_cached_activate") {
+      expect(nestedEntered,transcript).toBe(true);expect(injected).toBe(true);
+      expect(requests,transcript).toBe(nestedStartRequests);expect(competingSaved).toBeDefined();
+      if(control==="nested_competing_resume") {
+        expect(await readResume()).toEqual(competingSaved);
+        expect(failures.some(entry=>entry.title==="SETUP NEEDS ATTENTION"),transcript).toBe(true);
+        expect(failures.flatMap(entry=>entry.context??entry.details??[]).join("\n")).toContain("BOUNDARY_AUTHORING_RESUME_CHANGED");
+      } else {
+        const current=await loadPolicySources(root,sourceId!);
+        expect(current).toEqual(competingSaved);expect(activePolicySource(current)!.version).toBe(3);
+        expect(transcript).toContain("POLICY_SOURCE_CHANGED");
+        expect(nestedDeclines).toBe(0); // Refused before even offering a new episode.
+        expect(policyReviewReadiness(activePolicySource(current)!,current.coverage,current).ready).toBe(false);
+      }
+      if(control==="nested_cached_activate")expect(cachedActivationAttempts,transcript).toBe(1);
+      expect(await fs.readFile(path.join(root,".synapsor/exploration-boundary.active.json")).catch(()=>undefined)).toBeUndefined();
+      expect(nestedAuthorityBefore).toBeDefined();
+      expect((await listActionRuleAuthorityDrafts(root))[0]).toEqual(nestedAuthorityBefore);
+      expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+      return {origin:"IMPLEMENTER_DERIVED_PUBLIC_NESTED_REVIEW_RACE",control,requests,activation:false,provider_calls:0};
+    }
+    if(control==="nested_source_review") {
+      // Real enclosing Read permission conversation -> /attach -> saved Review
+      // -> decline. It must unwind before the stale outer save or narration.
+      expect(nestedEntered,transcript).toBe(true);expect(nestedDeclines,transcript).toBe(1);
+      expect(requests,transcript).toBe(nestedStartRequests);
+      expect(failures.filter(entry=>entry.title==="SETUP NEEDS ATTENTION"),transcript).toEqual([]);
+      expect(transcript).not.toContain("BOUNDARY_AUTHORING_RESUME_CHANGED");
+      expect(transcript).not.toContain("BOUNDARY DRAFTS SAVED");
+      const sources=await loadPolicySources(root,sourceId!);
+      expect(sources.snapshots).toHaveLength(2);expect(sources.snapshots[0]!.text).toBe(initialLines.join("\n"));
+      expect(activePolicySource(sources)!.version).toBe(2);
+      expect(sources.application_assignments).toBeDefined();
+      expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+      const savedRevision=initiallySaved.revision_digest;stage="explicit_review";
+      await boundaryReviewCommand(["--project-root",root,"--access","--job-first","--review-rules"],inspect,outer,undefined,options);
+      expect(requests,transcript).toBe(nestedStartRequests);expect((await readResume()).revision_digest).toBeDefined();
+      expect(savedRevision).toBeDefined();expect(activePolicySource(await loadPolicySources(root,sourceId!))!.version).toBe(2);
+      expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+      return {origin:"IMPLEMENTER_DERIVED_PUBLIC_NESTED_REVIEW",control,requests,nestedDeclines,activation:false,provider_calls:0};
+    }
     if(control==="client_keep" || control==="client_cancel") {
       // Actual public start/CLI consumer and ordinary local provider replies,
       // not a direct call to the client-duty or readiness helper.
@@ -265,3 +350,21 @@ it.each(["client_keep","client_cancel"] as const)(
   "public start/CLI retains pending client duties and leaves the review without a prompt loop: %s",async control=>{
     const result=await publicPolicyWait(control);expect(result.provider_calls).toBe(0);
   },30_000);
+
+// Added regression; prior controls and their expectations stay intact.
+it("public nested saved Review pauses before the outer stale checkpoint after attachment replacement",async()=>{
+  const result=await publicPolicyWait("nested_source_review");expect(result.provider_calls).toBe(0);
+},30_000);
+
+it.each(["nested_competing_resume","nested_competing_source"] as const)(
+  "public nested saved Review preserves genuine competing context refusal: %s",async control=>{
+    const result=await publicPolicyWait(control);expect(result.provider_calls).toBe(0);
+  },30_000);
+
+it("public nested canceled attachment transfer preserves the ordinary disabled Save No path",async()=>{
+  const result=await publicPolicyWait("nested_transfer_cancel");expect(result.provider_calls).toBe(0);
+},30_000);
+
+it("public cached activation refuses a concurrently replaced policy without generation consent",async()=>{
+  const result=await publicPolicyWait("nested_cached_activate");expect(result.provider_calls).toBe(0);
+},30_000);

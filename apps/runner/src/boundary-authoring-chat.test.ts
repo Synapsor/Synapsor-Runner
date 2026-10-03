@@ -434,6 +434,39 @@ describe("Boundary authoring chat", () => {
     chat.close();
   });
 
+  it.each(["/rules", "/attach replacement.txt"])("unwinds an enclosing permission after explicit saved Review: %s", async command => {
+    const memory = memoryIo({ reads: [command], choices: ["__ask_boundary_model__", "finish", "finish"] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    const review = vi.fn(async () => "reviewed" as const);
+    const guide = vi.fn(async () => "No explanation generation should run.");
+    const record = vi.fn(async () => undefined);
+    chat.setSourceCommandHandler!(review, () => true);
+    chat.setPermissionGuide!(guide);chat.setSourceAnswerRecorder!(record);
+    const decide = () => chat.session.chooseOption!("ACTIVATE READ BOUNDARY", [
+      { value: "activate", label: "Activate this exact revision" },
+      { value: "finish", label: "Leave disabled" },
+    ], { initialValue: "finish", explainOnRequest: true });
+    try {
+      expect(await decide()).toBeUndefined();
+      expect(memory.choices).toHaveLength(1);
+      expect(review).toHaveBeenCalledOnce();expect(guide).not.toHaveBeenCalled();expect(record).not.toHaveBeenCalled();
+      // A subsequent fresh permission conversation is still usable.
+      expect(await decide()).toBe("finish");expect(memory.choices).toHaveLength(2);
+    } finally {chat.close();}
+  });
+
+  it.each([undefined, "", "   "])("keeps a permission pending after ordinary canceled explanation %s", async answer => {
+    const memory = memoryIo({ reads: [answer], choices: ["__ask_boundary_model__", "finish"] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    const guide=vi.fn(),review=vi.fn();chat.setPermissionGuide!(guide);chat.setSourceCommandHandler!(review,()=>true);
+    try {
+      expect(await chat.session.chooseOption!("ACTIVATE READ BOUNDARY", [
+        { value: "activate", label: "Activate this exact revision" },{ value: "finish", label: "Leave disabled" },
+      ], {initialValue:"finish",explainOnRequest:true})).toBe("finish");
+      expect(memory.choices).toHaveLength(2);expect(guide).not.toHaveBeenCalled();expect(review).not.toHaveBeenCalled();
+    } finally {chat.close();}
+  });
+
   it("still records business answers and changed rules during a permission question", async () => {
     const memory = memoryIo({ reads: ["Keep the date visible.", "/attach replacement.txt", "Use these revised rules."],
       choices: ["__ask_boundary_model__", "finish"] });

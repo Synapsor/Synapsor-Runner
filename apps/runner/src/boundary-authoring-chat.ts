@@ -878,6 +878,7 @@ export function createBoundaryAuthoringChat(input: {
   };
   let sourceCommandHandler: ((command: string, argument: string) => Promise<boolean | "reviewed">) | undefined;
   let sourceHasDraft: (() => boolean) | undefined;
+  let completedSourceReviews = 0;
   let sourceAnswerRecorder: ((answer: string) => Promise<void>) | undefined;
   const readAnswer = async (defaultValue?: string, recordPolicyAnswer = true, assertAnswerCurrent?: () => Promise<void>, recordSourceChangedAnswer = true) => {
     finishLiveResponse();
@@ -918,7 +919,10 @@ export function createBoundaryAuthoringChat(input: {
         else {
           try {
             const changed = await sourceCommandHandler(command, trimmed!.slice(trimmed!.split(/\s+/u)[0]!.length).trim());
-            if (changed === "reviewed") return undefined;
+            if (changed === "reviewed") {
+              completedSourceReviews++;
+              return undefined;
+            }
             sourceChanged ||= changed;
             if (changed) checkpoint("Rules context changed", [sourceHasDraft?.() || defaultValue
               ? "Describe how to use these rules for this same draft. Enter alone will not accept the old decision."
@@ -1023,6 +1027,7 @@ export function createBoundaryAuthoringChat(input: {
     context: string[] = [],
     verifiedCheckpointTitle?: string,
   ): Promise<string | undefined> => {
+    const sourceReviewAtEntry = completedSourceReviews;
     const exactChoices = choice.options.filter((option) => !option.disabled);
     const request = {
       title: choice.title,
@@ -1138,6 +1143,10 @@ export function createBoundaryAuthoringChat(input: {
       // Inspection belongs in conversation history, not in governing policy.
       // A changed attachment still invalidates the prior review as usual.
       const operatorQuestion = await readAnswer(undefined, false);
+      // An explicit saved Review owns its new checkpoint and disposition.
+      // Unwind this older permission conversation; ordinary empty/canceled
+      // explanation input still leaves its pending decision untouched.
+      if (completedSourceReviews !== sourceReviewAtEntry) return undefined;
       if (operatorQuestion === undefined || !operatorQuestion.trim()) continue;
       if (choice.onModelQuestion) return choice.onModelQuestion(operatorQuestion.trim());
       await explain(operatorQuestion.trim());

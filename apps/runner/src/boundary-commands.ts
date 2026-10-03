@@ -6049,9 +6049,12 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         await input.authoringChat?.streamCheckpoint("Business rules retained", [
           "Checking current database metadata and saved action dependencies without changing their business conditions. Final permissions still require your review.",
         ]);
-        if (!exactReadBoundaryIsFullyReviewed(context)
-          && await input.completeReadReview("prepare_actions", input.session) !== 0) {
-          return boundaryAssistResult(boundaryAssistBackNotice("Revalidation paused. Saved business rules and current authority are unchanged."));
+        if (!exactReadBoundaryIsFullyReviewed(context)) {
+          const reviewResult = await input.completeReadReview("prepare_actions", input.session);
+          if (sourceReviewOutcome) return sourceReviewOutcome;
+          if (reviewResult !== 0) {
+            return boundaryAssistResult(boundaryAssistBackNotice("Revalidation paused. Saved business rules and current authority are unchanged."));
+          }
         }
         context = await loadBoundaryReviewContext(input.projectRoot);
         if (!exactReadBoundaryIsFullyReviewed(context)) {
@@ -8656,6 +8659,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       "No proposal, approval, apply, or source-write authority is active.",
     ], "success");
     const reviewResult = await input.completeReadReview("prepare_actions", input.session);
+    if (sourceReviewOutcome) return sourceReviewOutcome;
     if (reviewResult !== 0) {
       throw new Error("DELEGATION_READ_REVIEW_INCOMPLETE: the exact Read Boundary review did not complete.");
     }
@@ -10719,6 +10723,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         reviewNavigation = disposition === "manual_editor" ? "manual_editor" : "boundary_list";
       },
     });
+    if (sourceReviewOutcome) return sourceReviewOutcome;
     if (reviewResult !== 0) {
       throw new Error("DELEGATION_READ_ACTIVATION_REVIEW_INCOMPLETE: the final Read Boundary review did not complete.");
     }
