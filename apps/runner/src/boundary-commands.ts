@@ -5739,6 +5739,25 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       projectRoot: input.projectRoot,
       context,
     });
+    // An explicit edit can re-plan an untouched program, but must not lose its
+    // reviewed identities. Prepared/partially saved work uses its existing
+    // revision paths; absence of active authority alone is not an empty draft.
+    const checkpoint = resumeAction?.checkpoint;
+    const unstartedProgramEdit = editingSavedJob && actionWorkflow === "program"
+      && Boolean(resumeAction?.intended_outcomes?.length)
+      && reusableState.current_state.actions.length === 0
+      && !resumeAction?.outcome && !resumeAction?.completed_outcomes?.length && !resumeAction?.closed_unchanged
+      && !Object.keys(checkpoint?.components ?? {}).length
+      && !checkpoint?.reopened_draft && !checkpoint?.source_repair
+      && !checkpoint?.reviewed_relationships?.length && !checkpoint?.reviewed_private_sources?.length
+      && !checkpoint?.reviewed_version_fields?.length
+      && !pendingActionRevision && !pendingActionAddition && !pendingActionRemoval
+      && !pendingReadRevision && !pendingReadRevisionState && !pendingReadRelationship
+      && !preserveProgramRevisionAgenda && !reconciledActionRevisions.length
+      && !reviewedVersionFields.length && !reviewedActionDisclosures.length
+      && !availableResume?.pending_policy_review && !availableResume?.completed_policy_reviews?.length
+      && !availableResume?.client_handoff;
+    const planCompleteProgram = actionWorkflow === "program" && (!editingSavedJob || unstartedProgramEdit);
     let planningModel = preselectedMappingSession!;
     let additionalAttemptUsed = false;
     while (true) {
@@ -5787,7 +5806,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             () => (input.modelBoundaryJobPlanner ?? planModelBoundaryJob)({
               session: planningSession,
               jobIntent: jobIntent!.trim(),
-              ...(!editingSavedJob && actionWorkflow === "program" ? { workflow: actionWorkflow,
+              ...(planCompleteProgram ? { workflow: "program" as const,
                 ...(resumeAction?.intended_outcomes ? { expectedActionOutcomes: resumeAction.intended_outcomes } : {}) } : {}),
               currentState: reusableState!.current_state,
               onDiagnostic: async (diagnostic) => {
@@ -5912,7 +5931,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       additionalAttemptUsed = true;
     }
     if (jobPlan?.state === "planned") {
-      if (!editingSavedJob && actionWorkflow === "program" && jobPlan.action_mode === "create") {
+      if (planCompleteProgram && jobPlan.action_mode === "create") {
         if (!jobPlan.action_outcomes || !jobPlan.action_intents || jobPlan.action_outcomes.length !== jobPlan.action_intents.length) {
           throw new Error("AUTHORING_PROGRAM_INVENTORY_REQUIRED: The selected program has no complete aligned inventory. Component drafting did not start.");
         }

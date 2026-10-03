@@ -6326,6 +6326,113 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
+  it.each(["accept", "decline", "foreign", "added", "removed", "reordered", "source-drift", "competing", "prepared", "disposed", "completed"] as const)("Draft a change preserves an unstarted program inventory through the real planner and save (%s)", async disposition => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-program-edit-inventory-"));
+    const inspection = boundaryInspection();
+    const build = buildAutoBoundary({ inspection, project: { root, package_manager: "npm", frameworks: [], schema_inputs: [], database_env_names: ["DATABASE_URL"] },
+      sourceEnv: "DATABASE_URL", inspectedSchema: "public" });
+    const outcomes = ["maintenance.complete_visit", "maintenance.flag_visit"];
+    const intents = ["Complete the selected visit after review.", "Flag the selected visit for follow-up."];
+    const policy = newPolicySourceSession();
+    policy.snapshots = [policyTextSnapshot(Buffer.from("Prepare complete_visit and flag_visit. Keep all source changes disabled."), "program.txt")];
+    policy.active = 1;
+    policy.approvals = [{ digest: policy.snapshots[0]!.digest, destination: authoringDestination({ provider: "openai", model: "gpt-test" }) }];
+    const requests: any[] = [];
+    const inventoryPrompts: unknown[] = [];
+    const menus: unknown[] = [];
+    const excluded = ["prepared", "disposed", "completed"].includes(disposition);
+    const invalid = excluded || ["foreign", "added", "removed", "reordered"].includes(disposition);
+    const submitted = disposition === "foreign" ? [outcomes[0]!, "maintenance.unrelated"]
+      : disposition === "added" ? [...outcomes, "maintenance.extra"] : disposition === "removed" ? outcomes.slice(0, 1)
+      : disposition === "reordered" ? [...outcomes].reverse() : outcomes;
+    const submittedIntents = disposition === "added" ? [...intents, "Prepare an extra unrelated outcome."]
+      : disposition === "removed" ? intents.slice(0, 1) : intents;
+    let competingRevision: string | undefined;
+    let reachedRead: Awaited<ReturnType<typeof readBoundaryAuthoringResumeState>> | undefined;
+    const mapper = vi.fn(async () => {
+      const context = await loadBoundaryReviewContext(root);
+      reachedRead = await readBoundaryAuthoringResumeState(root, boundaryAuthoringResumeBinding(context.bundle));
+      // Controlled stage-entry stop: verify acknowledged planning, not a completed Read/review.
+      throw new Error("CONTROLLED_READ_STAGE_STOP");
+    });
+    const session: BoundaryReviewInteractiveSession = {
+      chooseResource: async () => undefined, editFieldTiers: async () => undefined,
+      promptText: async () => "Use the updated policy when preparing this same two-Action program.",
+      chooseOption: async (title, _choices, options) => { menus.push({ title, context: options?.context }); return title === "START BOUNDARY DRAFTING" ? "model" : title === "REVIEW DECLARED TEXT INPUT BOUNDS" ? "none" : "back"; },
+      confirm: async (question, options) => {
+        if (question === "Use this complete intended Action inventory?") {
+          inventoryPrompts.push(options);
+          if (disposition === "source-drift") {
+            policy.snapshots.push(policyTextSnapshot(Buffer.from("Changed policy while exact inventory confirmation is open."), "changed.txt"));
+            policy.active = 2;
+            await savePolicySources(root, policy);
+          }
+          if (disposition === "competing") {
+            const context = await loadBoundaryReviewContext(root);
+            const binding = boundaryAuthoringResumeBinding(context.bundle);
+            const current = await readBoundaryAuthoringResumeState(root, binding);
+            if (current.status !== "ready") throw new Error("Controlled competing checkpoint unavailable");
+            const next = buildBoundaryAuthoringResumeState({ binding, stage: current.value.stage,
+              jobIntent: current.value.job_intent, provider: "openai", model: "gpt-test", previous: current.value,
+              conversation: current.value.conversation,
+              pendingJobRevision: "Concurrent operator change remains pending." });
+            await writeBoundaryAuthoringResumeState(root, next, { expectedRevisionDigest: current.value.revision_digest });
+            competingRevision = next.revision_digest;
+          }
+          return disposition !== "decline";
+        }
+        return true;
+      }, confirmActivation: async () => false, confirmReviewedDisabled: async () => false,
+    };
+    const chat = testBoundaryAuthoringChat(session, "claude-code");
+    chat.streamCheckpoint = vi.fn(async () => undefined);
+    try {
+      const guided = await initializeGuidedProject({ projectRoot: root, build, runnerVersion: "1.8.0" });
+      await initializeFreshGovernedAuthoring({ projectRoot: root, build, actor: "fixture_local_operator",
+        config: loadRuntimeConfigFromFile(guided.config_path), storePath: guided.store_path });
+      const context = await loadBoundaryReviewContext(root);
+      await savePolicySources(root, policy);
+      const original = buildBoundaryAuthoringResumeState({
+        binding: boundaryAuthoringResumeBinding(context.bundle), stage: "action_drafting", actionWorkflow: "program",
+        jobIntent: "Prepare the complete visit program.", provider: "openai", model: "gpt-test", intendedClient: "claude-code",
+        policySourceSession: policy.id, conversation: [{ kind: "clarification", question: "Who reviews?", answer: "A support reviewer." }],
+        action: { intent: intents[0]!, intents, intended_outcomes: outcomes, strategy: "rule_derived",
+          ...(disposition === "disposed" ? { closed_unchanged: "cancelled" as const } : {}),
+          ...(disposition === "completed" ? { completed_outcomes: [outcomes[0]!] } : {}),
+          ...(disposition === "prepared" ? { checkpoint: actionRuleAuthoringCheckpoint({ intent_digest: canonicalJsonDigest(intents[0]),
+            context_digest: canonicalJsonDigest("controlled-partial-context"), components: { verification: { name: "retained_component" } } }) } : {}) },
+      });
+      await writeBoundaryAuthoringResumeState(root, original);
+      await boundaryReviewCommandInternal(["--project-root", root, "--access", "--job-first"], async () => inspection, session, undefined, {
+        startWithAgentJob: true, modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "offline-test" },
+        modelBoundaryJobPlanner: input => planModelBoundaryJob({ ...input, session: { ...input.session, dependencies: {
+          requestJson: async request => {
+            requests.push(request.body);
+            return { status: 200, body: { output: [{ type: "function_call", call_id: `plan${requests.length}`,
+              name: "runner__plan_boundary_job", arguments: JSON.stringify({ status: "planned", read_mode: "create", read_intent: "Read selected service visits.",
+                action_mode: "create", action_strategy: "rule_derived", action_intent: submittedIntents[0], action_intents: submittedIntents, action_outcomes: submitted,
+                summary: "Retain both identities; review the changed policy before any activation." }) }] } };
+          },
+        } } }), modelReadWorkloadGenerator: mapper,
+        modelAuthoringNarrator: async () => "Which part of this saved program should change?", boundaryAuthoringChatFactory: () => chat,
+      });
+      expect(requests).toHaveLength(invalid ? 2 : 1);
+      if (excluded) expect(JSON.stringify(requests[0].tools)).not.toContain("action_outcomes");
+      else expect(JSON.stringify(requests[0].tools)).toContain("action_outcomes");
+      expect(inventoryPrompts).toEqual(invalid ? [] : [expect.objectContaining({ defaultValue: false })]);
+      expect(mapper, JSON.stringify({ menus, checkpoints: vi.mocked(chat.streamCheckpoint).mock.calls, notices: vi.mocked(chat.checkpoint).mock.calls })).toHaveBeenCalledTimes(disposition === "accept" ? 1 : 0);
+      if (disposition === "accept") expect(reachedRead).toMatchObject({ status: "ready", value: { stage: "read_mapping",
+        action_workflow: "program", action: { intended_outcomes: outcomes, intents } } });
+      const saved = await readBoundaryAuthoringResumeState(root, boundaryAuthoringResumeBinding((await loadBoundaryReviewContext(root)).bundle));
+      expect(saved).toMatchObject({ status: "ready", value: { action: { intended_outcomes: outcomes },
+        conversation: expect.arrayContaining(original.conversation) } });
+      if (excluded) expect(saved).toMatchObject({ value: { action: original.action } });
+      if (competingRevision) expect(saved).toMatchObject({ value: { revision_digest: competingRevision } });
+      expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(context.bundle.candidate_digest);
+      await expect(loadActivatedExplorationBoundaries(root)).rejects.toMatchObject({ code: "ENOENT" });
+    } finally { await fs.rm(root, { recursive: true, force: true }); }
+  });
+
   it("Draft a change retains the saved policy snapshot, business answers and chosen client without replaying component checkpoints", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-change-saved-job-"));
     const inspection = boundaryInspection();
