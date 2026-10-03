@@ -178,6 +178,17 @@ describe('finite durable authoring refusal inventory',()=>{
     expect(planReviewPrerequisite('currentness',null,null).recommended).toBe('reinspection');
   });
 
+  it('describes a stale Action question without promising that reopening refreshes it',()=>{
+    const result=planAuthoringRefusal('ACTION_AUTHORING_QUESTION_STALE');
+    expect(result?.plan).toMatchObject({result:'stopped',recommended:null});
+    expect(result?.plan.options.every(option=>option.handler===null)).toBe(true);
+    expect(result?.next_action).toContain('Reopening preserves this checkpoint; it does not approve changed applicability');
+    expect(result?.next_action).toContain('untouched program with no prepared or saved Action');
+    expect(result?.next_action).toContain('Draft a change');
+    expect(result?.next_action).toContain('fresh exact agenda for review');
+    expect(result?.next_action).toContain('Prepared or partially saved work requires applicable revision review');
+  });
+
   it('keeps ambiguous persistence and successor confirmation descriptive and non-authorizing',()=>{
     expect(planAuthoringRefusal('READ_RELATIONSHIP_SAVE_UNCONFIRMED')?.next_action).toContain('An ambiguous save remains unknown');
     const confirmation=planAuthoringRefusal('STRUCTURED_DRAFT_SUCCESSOR_CONFIRMATION_REQUIRED');
