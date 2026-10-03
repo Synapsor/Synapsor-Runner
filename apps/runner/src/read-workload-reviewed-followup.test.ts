@@ -214,4 +214,46 @@ describe("lab regression: operator-reviewed follow-up preserves prior answers", 
   expect(fifth).toHaveBeenCalledOnce(); expect(noAnswer).not.toHaveBeenCalled(); expect(noReview).not.toHaveBeenCalled();
  });
 
+ it("uses an explicit same-call field explanation through the real Read producer without asking again", async () => {
+  const meaning = "The orders register contains customer purchases. Its status field is the purchase fulfillment stage.";
+  const resourceQuestion = { resource: "public.orders", reason: "The register needs a business explanation", question: "What business records does this register contain?" };
+  const requestJson = vi.fn().mockResolvedValueOnce(reply({ clarification_request: resourceQuestion }))
+   .mockResolvedValueOnce(reply({ allowed: [{ id: "orders", description: "List my orders", plan: { kind: "rows", resource: "public.orders", select: ["status"] } }], forbidden: [],
+     operator_meanings: [{ resource: "public.orders", field: "status", operator_quote: "Added prefix: Its status field is the purchase fulfillment stage." }] }))
+   .mockResolvedValue(valid());
+  const handler = vi.fn(async (question: any) => {
+   expect(question).toEqual(resourceQuestion);
+   return { state: "answered" as const, answer: meaning };
+  });
+  const result = await generateModelReadWorkload({ ...setup(requestJson), clarificationHandler: handler });
+  expect(result.analysis.status).toBe("ready"); expect(result.authority_granted).toBe(false);
+  expect(handler).toHaveBeenCalledOnce(); expect(requestJson).toHaveBeenCalledTimes(3);
+  expect(result.workload.source.meaning_evidence).toEqual(expect.arrayContaining([expect.objectContaining({
+   resource: "public.orders", field: "status", reference: expect.objectContaining({ kind: "answered_clarification", text: meaning }),
+  })]));
+ });
+
+ it("does not require an unrelated sites.name field in the actual display-name mapping", async () => {
+  const boundary = generatedBoundary();
+  const common = boundary.pack.resources[0]!;
+  boundary.pack.resources = [
+   { ...common, id: "public.assets", table: "assets", label: "Assets", description: "Assets visible in this installation",
+     field_types: { id: "uuid", tenant_id: "text", principal_id: "text", display_name: "text", location: "text" },
+     field_enums: {}, selectable_fields: ["id", "display_name", "location"], filterable_fields: {}, sortable_fields: [],
+     groupable_fields: [], aggregate_measures: [], aggregate_measure_functions: {}, count_distinct_fields: [], kept_out_fields: [] },
+   { ...common, id: "public.sites", table: "sites", label: "Sites", description: "Sites in this installation",
+     field_types: { id: "uuid", tenant_id: "text", principal_id: "text", name: "text" }, field_enums: {},
+     selectable_fields: ["id", "name"], filterable_fields: {}, sortable_fields: [], groupable_fields: [],
+     aggregate_measures: [], aggregate_measure_functions: {}, count_distinct_fields: [], kept_out_fields: [] },
+  ];
+  const before = structuredClone(boundary);
+  const requestJson = vi.fn(async () => reply({ allowed: [{ id: "asset_locations", description: "Show asset display name and location.",
+    plan: { kind: "rows", resource: "public.assets", select: ["display_name", "location"] } }], forbidden: [] }));
+  const question = vi.fn(async () => undefined);
+  const result = await generateModelReadWorkload({ ...setup(requestJson), generatedBoundary: boundary,
+   allowedQuestions: ["Show asset display name and location."], clarificationHandler: question });
+  expect(result.analysis.status).toBe("ready"); expect(result.authority_granted).toBe(false);
+  expect(question).not.toHaveBeenCalled(); expect(requestJson).toHaveBeenCalledOnce(); expect(boundary).toEqual(before);
+ });
+
 });
