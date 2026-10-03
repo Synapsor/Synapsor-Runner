@@ -347,10 +347,12 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
       if (isRecord(args.clarification_request)) {
         let parsedRequest: ModelReadClarificationRequest;
         try {
-          parsedRequest = normalizeOpaqueClarificationRequest(
-            parseReadClarificationRequest(args.clarification_request, catalog),
-            catalog,
-          );
+          parsedRequest = parseReadClarificationRequest(args.clarification_request, catalog);
+          // A current root association does not explain its fields. Preserve
+          // the distinct field question instead of reasking the answered root.
+          if (!currentMeaning({ resource: parsedRequest.resource })) {
+            parsedRequest = normalizeOpaqueClarificationRequest(parsedRequest, catalog);
+          }
         } catch (error) {
           return {
             ok: false,
