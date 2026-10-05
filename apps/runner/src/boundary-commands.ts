@@ -7549,6 +7549,42 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         }
         const saved = await storeReadWorkloadAnalysis({ projectRoot: input.projectRoot,
           generatedBoundary: currentBoundary, source: accepted.workload.source, analysis });
+        // The producer pins its input history until this accepted mapping.
+        // Index newly confirmed testimony only here, without changing that
+        // contract or upgrading legacy conversation into current meaning.
+        const sources = authoringConversation?.policySources;
+        const source = activePolicySource(sources);
+        if (sources && source && readAssistanceCheckpoint) {
+          const pending = readAssistanceCheckpoint.pending_question;
+          const answers = [...readAssistanceCheckpoint.state.clarified_targets];
+          const retired = new Set((readAssistanceCheckpoint.state.reviewed_replacements ?? []).map(review => review.previous_index));
+          if (pending.kind === "clarification" && pending.decision?.state === "answered") {
+            if (pending.replacement?.confirmed) retired.add(pending.replacement.previous_index);
+            answers.push({ ...pending.request, answer: pending.decision.answer });
+          }
+          const statements = answers.filter((_answer, index) => !retired.has(index)).flatMap(answer => {
+            const handoff = [...ownerHandoffs].reverse().find(record => record.consumer === "read_clarification"
+              && record.question === answer.question);
+            // Older non-mediated checkpoints remain ordinary naming context.
+            // Association precedes validation: an existing malformed native
+            // question must never masquerade as absent legacy evidence.
+            const question = [...operatorQuestions].reverse().find(record => record.kind === "attributed_meaning"
+              && record.handoff_id === handoff?.id);
+            if (!question) return [];
+            if (question.scope_digest !== ownerQuestionScope() || question.context_digest !== currentContext
+              || question.target.resource !== answer.resource || question.target.field !== answer.field
+              || question.presentation?.text !== answer.question || question.raw_answer?.text !== answer.answer
+              || !question.confirmation || !handoff || handoff.state !== "answered"
+              || handoff.answer !== answer.answer || handoff.answer_context_digest !== currentContext) throw new PolicySourceChangedError();
+            return [{ resource: answer.resource, ...(answer.field ? { field: answer.field } : {}),
+              question: answer.question, raw_answer: answer.answer, question_digest: question.digest,
+              question_context_digest: question.context_digest, confirmation: question.confirmation }];
+          });
+          if (statements.length) await appendPolicySourceOperatorMessage(input.projectRoot, sources,
+            JSON.stringify({ kind: "confirmed_read_meaning", attribution: "Untrusted operator naming context for this task only; not database proof or permission to read or change data.",
+              source_digest: source.digest, scope_digest: ownerQuestionScope(), statements }),
+            { permit, expectedDigest: canonicalJsonDigest(sources) });
+        }
         resumeRead = { analysis_id: saved.analysis_id, analysis_digest: saved.analysis_digest,
           ...(readAssistanceCheckpoint ? { assistance_history: structuredClone(readAssistanceCheckpoint) } : {}) };
         readAssistanceCheckpoint = undefined;

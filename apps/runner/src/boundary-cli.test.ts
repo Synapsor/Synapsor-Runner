@@ -22,7 +22,10 @@ import * as readPrerequisiteConsent from "./read-prerequisite-consent.js";
 import { buildReadPrerequisiteModelCatalog } from "./read-prerequisite-model.js";
 import { listSupportedReadCurrentStatePrerequisiteCandidates } from "./read-prerequisite.js";
 import { planModelBoundaryJob } from "./boundary-job-model.js";
+import { createModelAuthoringConversation, rememberModelAuthoringTurn } from "./model-authoring-conversation.js";
+import { reviewPolicyCoverage } from "./authoring-policy-coverage.js";
 import { actionRuleAuthoringCheckpoint } from "./action-rule-authoring-checkpoint.js";
+import * as policySourceUi from "./authoring-policy-source-ui.js";
 import { loadPolicySources, activePolicySource, newPolicySourceSession, policyTextSnapshot, savePolicySources, authoringDestination } from "./authoring-policy-source.js";
 import { ProposalStore } from "@synapsor-runner/proposal-store";
 import { loadRuntimeConfigFromFile } from "@synapsor-runner/mcp-server";
@@ -94,6 +97,7 @@ import {
   READ_WORKLOAD_SET_VERSION,
 } from "./read-workload-assist.js";
 import { generateModelReadWorkload } from "./read-workload-model.js";
+import { ReadWorkloadAssistancePausedError } from "./read-workload-assistance-checkpoint.js";
 import { ReadWorkloadDraftError } from "./read-workload-diagnostics.js";
 import { generateModelReadBoundaryRevision, readBoundaryRevisionCatalog } from "./read-boundary-revision-model.js";
 import { AskError, secureAskJsonRequest } from "./model-ask.js";
@@ -17965,21 +17969,26 @@ describe("saved post-edit review uses reader evidence after writer setup", () =>
 
 
 describe("public saved-job connection recovery control", () => {
-  it.each(["native-blank", "native-replace-no", "pause", "answer", "decline", "blank", "blank-cancel", "replace-no", "replace-yes", "replace-source-drift", "replace-competing", "decline-source-drift", "decline-competing", "source-drift", "competing", "registered-refusal", "diagnostic-refusal", "checkpoint-failed", "checkpoint-noop", "read-ack-race", "resume-ack-race"] as const)("Phase1 public Read assistance persists its actual question and current answer: %s", async rawMode => {
-    const mode = rawMode.replace(/^native-/u, "");
+  it.each(["native-legacy-association", "native-unconfirmed-association", "native-literal-retention", "native-no-confirm", "native-cancel-confirm", "native-source-cas", "native-answer-too-large", "native-remap-failed", "native-history-full", "native-index-save-failed", "native-meaning-retention", "native-source-drift", "native-competing", "native-decline", "native-blank-cancel", "native-replace-yes", "native-blank", "native-replace-no", "pause", "answer", "decline", "blank", "blank-cancel", "replace-no", "replace-yes", "replace-source-drift", "replace-competing", "decline-source-drift", "decline-competing", "source-drift", "competing", "registered-refusal", "diagnostic-refusal", "checkpoint-failed", "checkpoint-noop", "read-ack-race", "resume-ack-race"] as const)("Phase1 public Read assistance persists its actual question and current answer: %s", async rawMode => {
+    const mode = ["native-meaning-retention", "native-literal-retention"].includes(rawMode) ? "answer" : rawMode.replace(/^native-/u, "");
     const native = rawMode.startsWith("native-");
+    const expectedMeaning = rawMode === "native-literal-retention"
+      ? "  The scheduled or completed stage of the selected visit. 🧭  " : "The scheduled or completed stage of the selected visit.";
+    let associationFixturePrepared = false;
     const f = await staleSemanticRevalidationFixture();
-    let restoreCommit: (() => void) | undefined, restoreCheckpoint: (() => void) | undefined;
+    let restoreCommit: (() => void) | undefined, restoreCheckpoint: (() => void) | undefined, restoreAppend: (() => void) | undefined;
     try {
       const binding = boundaryAuthoringResumeBinding((await loadBoundaryReviewContext(f.root)).bundle);
       const source = newPolicySourceSession();
       source.snapshots = [policyTextSnapshot(Buffer.from("The visit status describes the selected visit's current stage."), "visit-stages.txt")];
       source.active = 1; source.approvals = [{ digest: source.snapshots[0]!.digest,
         destination: authoringDestination({ provider: "openai", model: "gpt-test" }) }];
+      if (mode === "history-full") source.operator_messages = Array.from({ length: 64 }, (_, i) => `Existing statement ${i}.`);
       await savePolicySources(f.root, source);
       await writeBoundaryAuthoringResumeState(f.root, buildBoundaryAuthoringResumeState({ binding, stage: "read_mapping",
         jobIntent: "List selected visit status.", readIntent: "List selected visit status.", provider: "openai", model: "gpt-test",
         policySourceSession: source.id }));
+      const sourceMetadataBeforeAnswer = canonicalJsonDigest(f.inspection);
       const question = "Which visit stages should the status view describe?";
       const request = { resource: "public.service_visits", field: "status", question,
         reason: "The selected view needs an exact business explanation." };
@@ -17994,6 +18003,7 @@ describe("public saved-job connection recovery control", () => {
             && saved.value.owner_handoffs?.at(-1)?.state === "answered";
           expect(JSON.stringify(wire.body)).toContain(replacing ? "Priority means ordinary or urgent." : "The scheduled or completed stage of the selected visit.");
         }
+        if (mode === "remap-failed" && requestJson.mock.calls.length === 2) throw new AskError("ASK_CANCELLED", "Retain confirmed question after refused remap", 499);
         return { status: 200, body: { output: [{ type: "function_call", call_id: `owned-read-${requestJson.mock.calls.length}`,
           name: "runner__submit_read_workloads", arguments: JSON.stringify(requestJson.mock.calls.length === 1
             ? { clarification_request: request } : replacing && requestJson.mock.calls.length === 2 ? { clarification_request: followup } : { allowed: [{ id: "selected_visit_status", description: "List selected visit status",
@@ -18007,6 +18017,10 @@ describe("public saved-job connection recovery control", () => {
       };
       const originalConfirm = f.session.confirm;
       f.session.confirm = async (prompt, options) => {
+        if (prompt === "Record these exact words as the meaning for this task?" && ["no-confirm", "cancel-confirm"].includes(mode)) {
+          expect(options?.defaultValue).toBe(false);
+          return mode === "cancel-confirm" ? undefined as never : false;
+        }
         if (prompt === "Use this new answer as the current interpretation?") {
           replacePrompts++; expect(options?.defaultValue).toBe(false);
           expect(options?.context?.join("\n")).toContain("Priority means ordinary or urgent.");
@@ -18058,7 +18072,8 @@ describe("public saved-job connection recovery control", () => {
         if (mode === "competing") await writeBoundaryAuthoringResumeState(f.root, buildBoundaryAuthoringResumeState({ binding,
           stage: saved.value.stage, jobIntent: saved.value.job_intent, provider: "openai", model: "gpt-test", previous: saved.value,
           pendingJobRevision: "A separately attributed competing Read edit." }), { expectedRevisionDigest: saved.value.revision_digest });
-        return replacing && prompt === question ? "Priority means ordinary or urgent." : "The scheduled or completed stage of the selected visit.";
+        if (mode === "answer-too-large") return "The scheduled or completed stage of the selected visit.".repeat(68);
+        return replacing && prompt === question ? "Priority means ordinary or urgent." : expectedMeaning;
       };
       const noAction = vi.fn(async () => { throw new Error("This read-only fixture must not draft Actions."); });
       const nativeChats: BoundaryAuthoringChat[] = [];
@@ -18076,12 +18091,17 @@ describe("public saved-job connection recovery control", () => {
         if (reopened && mode === "registered-refusal") throw new Error("READ_WORKLOAD_ASSISTANCE_REQUEST_REPEATED: The saved assistance allowance is exhausted.");
         if (reopened && mode === "diagnostic-refusal") throw new ReadWorkloadDraftError([{ attempt: 1, phase: "follow-up", category: "validation",
           code: "READ_WORKLOAD_MECHANICAL_QUESTION_REPEATED", reasons: ["The exact mechanical question repeated."] }]);
-        return generateModelReadWorkload({ ...args, dependencies: { requestJson } });
+        return generateModelReadWorkload({ ...args, dependencies: { requestJson },
+          ...(args.onCheckpoint && mode.endsWith("-association") ? { onCheckpoint: async (...checkpointArgs) => {
+            await args.onCheckpoint!(...checkpointArgs);
+            if (!associationFixturePrepared && checkpointArgs[0]?.stage === "decided") throw new ReadWorkloadAssistancePausedError();
+          } } : {}) });
       } });
       await run();
       expect(requestJson).toHaveBeenCalledTimes(1); expect(sawWaiting).toBe(1);
       const paused = await readBoundaryAuthoringResumeState(f.root, binding);
       expect(paused.status).toBe("ready"); if (paused.status !== "ready") return;
+      expect((await loadPolicySources(f.root, source.id)).operator_messages ?? []).toEqual(source.operator_messages ?? []);
       expect(paused.value.read_assistance?.pending_question).not.toHaveProperty("decision");
       expect(paused.value.generation_recovery?.operations.at(-1)?.question_handoff?.answered).not.toBe(true);
       const ackFailure = ["checkpoint-failed", "checkpoint-noop", "read-ack-race", "resume-ack-race"].includes(mode);
@@ -18124,7 +18144,43 @@ describe("public saved-job connection recovery control", () => {
           restoreCheckpoint = () => checkpoint.mockRestore();
         }
       }
+      if (mode === "source-cas") {
+        const realAppend = policySourceUi.appendPolicySourceOperatorMessage;
+        const append = vi.spyOn(policySourceUi, "appendPolicySourceOperatorMessage").mockImplementation(async (root, sources, answer, options) => {
+          const newer = structuredClone(sources);
+          newer.operator_messages = ["A competing current meaning review."];
+          await savePolicySources(root, newer, { expectedDigest: canonicalJsonDigest(sources), permit: options?.permit });
+          return realAppend(root, sources, answer, options);
+        });
+        restoreAppend = () => append.mockRestore();
+      }
+      if (mode === "index-save-failed") {
+        const realWrite = authoringResumePersistence.writeBoundaryAuthoringResumeState;
+        const checkpoint = vi.spyOn(authoringResumePersistence, "writeBoundaryAuthoringResumeState").mockImplementation(async (...args) => {
+          if ((await loadPolicySources(f.root, source.id)).operator_messages?.length) throw new Error("TEST_MEANING_INDEX_RESUME_SAVE_FAILED");
+          return realWrite(...args);
+        });
+        restoreCheckpoint = () => checkpoint.mockRestore();
+      }
       reopened = true; await run();
+      if (mode.endsWith("-association")) {
+        const retained = await readBoundaryAuthoringResumeState(f.root, binding);
+        expect(retained.status).toBe("ready"); if (retained.status !== "ready") throw new Error("Missing exact decided fixture");
+        expect(retained.value.read_assistance?.stage).toBe("decided");
+        // Counterfactual saved-format controls: legacy has no native question;
+        // malformed native retains its association but lacks confirmation.
+        // Neither fixture adds a fact, role, permission or business authority.
+        const { revision_digest: _old, ...core } = structuredClone(retained.value);
+        if (mode === "legacy-association") delete core.operator_questions;
+        else for (const question of core.operator_questions ?? []) {
+          delete question.confirmation;
+          const { digest: _questionDigest, ...body } = question;
+          question.digest = canonicalJsonDigest(body);
+        }
+        await fs.writeFile(path.join(f.root, ".synapsor/boundary-authoring/resume.json"),
+          JSON.stringify({ ...core, revision_digest: canonicalJsonDigest(core) }));
+        associationFixturePrepared = true; await run();
+      }
       // Finishing the ordinary disabled Read review may replace its candidate.
       // Recheck using its ACTUAL current binding, not the earlier question view.
       const finalBinding = boundaryAuthoringResumeBinding((await loadBoundaryReviewContext(f.root)).bundle);
@@ -18146,6 +18202,46 @@ describe("public saved-job connection recovery control", () => {
         return;
       }
       expect(final.status).toBe("ready"); if (final.status !== "ready") return;
+      if (mode.endsWith("-association")) {
+        expect((await loadPolicySources(f.root, source.id)).operator_messages ?? []).toEqual([]);
+        expect(requestJson).toHaveBeenCalledTimes(2);
+        if (mode === "legacy-association") expect(final.value.read).toBeDefined();
+        else { expect(final.value.read).toBeUndefined(); expect(final.value.read_assistance?.stage).toBe("decided"); }
+        expect(noAction).not.toHaveBeenCalled();
+        expect(await readActionRuleAuthorityActivation(f.root)).toBeUndefined();
+        return;
+      }
+      if (mode === "answer-too-large") {
+        expect(sawAnswer).toBe(false); expect(requestJson).toHaveBeenCalledTimes(1);
+        expect(final.value.operator_questions?.at(-1)?.raw_answer?.text).toHaveLength("The scheduled or completed stage of the selected visit.".length * 68);
+        expect(final.value.operator_questions?.at(-1)?.confirmation).toBeUndefined();
+        expect(final.value.owner_handoffs?.at(-1)?.state).toBe("waiting");
+        expect((await loadPolicySources(f.root, source.id)).operator_messages ?? []).toEqual([]);
+        return;
+      }
+      if (["remap-failed", "history-full", "index-save-failed", "source-cas"].includes(mode)) {
+        expect(sawAnswer).toBe(true); expect(requestJson).toHaveBeenCalledTimes(2);
+        expect(final.value.owner_handoffs?.at(-1)?.state).toBe("answered");
+        expect(final.value.operator_questions?.at(-1)?.confirmation?.decision).toBe("new_attributed_decision");
+        expect(final.value.read_assistance?.stage).toBe("decided");
+        expect(final.value.read).toBeUndefined();
+        const indexed = (await loadPolicySources(f.root, source.id)).operator_messages ?? [];
+        expect(indexed).toHaveLength(mode === "history-full" ? 64 : ["index-save-failed", "source-cas"].includes(mode) ? 1 : 0);
+        if (mode === "history-full") expect(indexed).toEqual(source.operator_messages);
+        if (mode === "source-cas") expect(indexed).toEqual(["A competing current meaning review."]);
+        if (mode === "index-save-failed") {
+          restoreCheckpoint?.(); restoreCheckpoint = undefined;
+          await run();
+          expect(requestJson).toHaveBeenCalledTimes(2);
+          expect((await loadPolicySources(f.root, source.id)).operator_messages).toEqual(indexed);
+          const retained = await readBoundaryAuthoringResumeState(f.root, finalBinding);
+          expect(retained.status).toBe("ready");
+          if (retained.status === "ready") expect(retained.value.read).toBeUndefined();
+        }
+        expect(noAction).not.toHaveBeenCalled();
+        expect(await readActionRuleAuthorityActivation(f.root)).toBeUndefined();
+        return;
+      }
       if (replacing) {
         expect(replacePrompts).toBe(1);
         if (mode === "replace-yes") {
@@ -18172,8 +18268,48 @@ describe("public saved-job connection recovery control", () => {
         expect(sawAnswer).toBe(true); expect(requestJson).toHaveBeenCalledTimes(2);
         expect(final.value.read_assistance).toBeUndefined(); expect(final.value.read).toBeDefined();
         expect(final.value.read?.assistance_history).toMatchObject({ stage: "decided",
-          pending_question: { decision: { state: "answered", answer: "The scheduled or completed stage of the selected visit." } } });
+          pending_question: { decision: { state: "answered", answer: expectedMeaning } } });
         expect(final.value.owner_handoffs?.at(-1)).toMatchObject({ state: "answered", actor: "local_installation_operator" });
+        if (["native-meaning-retention", "native-literal-retention"].includes(rawMode)) {
+          // The answer is newly obtained and confirmed by the current public
+          // Read controller; no old analysis or legacy conversation is imported.
+          const meaning = expectedMeaning;
+          const accepted = final.value.operator_questions!.at(-1)!;
+          expect(accepted.target).toMatchObject({ resource: "public.service_visits", field: "status" });
+          expect(accepted.raw_answer?.text).toBe(meaning);
+          expect(accepted.confirmation?.decision).toBe("new_attributed_decision");
+          expect(canonicalJsonDigest(f.inspection)).toBe(sourceMetadataBeforeAnswer);
+          const sources = await loadPolicySources(f.root, source.id);
+          expect(sources.id).toBe(source.id);
+          expect(activePolicySource(sources)?.digest).toBe(source.snapshots[0]!.digest);
+          const conversation = createModelAuthoringConversation(final.value.conversation);
+          conversation.policySources = sources;
+          for (let i = 0; i < 20; i++) rememberModelAuthoringTurn(conversation,
+            `Inspect unchanged setup item ${i}.`, "The same saved setup is retained; no business meaning changed.");
+          expect(conversation.turns.some(turn => turn.answer === meaning)).toBe(false);
+          const coverageBodies: string[] = [];
+          const currentRead = await loadBoundaryReviewContext(f.root);
+          await reviewPolicyCoverage({ source: activePolicySource(sources)!, sourceSession: sources,
+            draft: { read: currentRead.candidate, actions: [] },
+            session: { provider: "openai", model: "gpt-test", apiKey: "inert-meaning-retention-control", conversation,
+              dependencies: { requestJson: async request => {
+                coverageBodies.push(JSON.stringify(request.body));
+                return { status: 200, body: { output: [{ type: "function_call", call_id: "owned-meaning-coverage",
+                  name: "runner__review_policy_coverage", arguments: JSON.stringify({ passages: [{
+                    start: 1, end: 1, disposition: "needs_decision", responsibility: "operator", issue_kind: "schema_meaning",
+                    interpretation: "The current status meaning remains under review in this regression control.",
+                    draft_paths: ["/read"], next_step: "Review the current attributed status meaning." }] }) }] } };
+              } } } });
+          expect(coverageBodies).toHaveLength(1);
+          // Only source-current confirmed testimony should survive chat-window
+          // eviction in the coverage producer's durable attributed facts.
+          expect(coverageBodies[0]).toContain(meaning);
+          expect(sources.operator_messages).toHaveLength(1);
+          expect(JSON.parse(sources.operator_messages![0]!)).toMatchObject({ kind: "confirmed_read_meaning",
+            source_digest: source.snapshots[0]!.digest, scope_digest: accepted.scope_digest,
+            statements: [{ resource: "public.service_visits", field: "status", question, raw_answer: meaning,
+              confirmation: { actor: "local_installation_operator", decision: "new_attributed_decision" } }] });
+        }
       } else if (mode === "decline") {
         expect(requestJson).toHaveBeenCalledTimes(1);
         expect(final.value.read_assistance).toMatchObject({ stage: "decided", pending_question: { decision: { state: "declined" } } });
@@ -18184,6 +18320,15 @@ describe("public saved-job connection recovery control", () => {
         expect(requestJson).toHaveBeenCalledTimes(1); expect(final.value.read_assistance?.stage).toBe("waiting");
         expect(final.value.owner_handoffs?.at(-1)?.state).toBe("waiting");
         if (mode === "competing") expect(final.value.pending_job_revision).toBe("A separately attributed competing Read edit.");
+      }
+      if (["no-confirm", "cancel-confirm"].includes(mode)) {
+        const question = final.value.operator_questions!.at(-1)!;
+        expect(question.raw_answer?.text).toBe("The scheduled or completed stage of the selected visit.");
+        expect(question.confirmation).toBeUndefined();
+        expect(question.disposition).toBe(mode === "no-confirm" ? "declined" : "cancelled");
+      }
+      if (["no-confirm", "cancel-confirm", "pause", "decline", "blank", "blank-cancel", "source-drift", "competing", "decline-source-drift", "decline-competing"].includes(mode)) {
+        expect((await loadPolicySources(f.root, source.id)).operator_messages ?? []).toEqual([]);
       }
       if (mode.startsWith("blank")) {
         expect(declinePrompts).toBe(1);
@@ -18221,7 +18366,7 @@ describe("public saved-job connection recovery control", () => {
         expect(context).not.toContain("Blank declines this exact question.");
       }
       expect(await readActionRuleAuthorityActivation(f.root)).toBeUndefined();
-    } finally { restoreCheckpoint?.(); restoreCommit?.(); await f.dispose(); }
+    } finally { restoreAppend?.(); restoreCheckpoint?.(); restoreCommit?.(); await f.dispose(); }
   }, 30_000);
   it("Phase1 preserves exhausted planning questions on reopen without resetting answers or sending again", async () => {
     const f = await staleSemanticRevalidationFixture();
