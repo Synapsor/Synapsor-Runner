@@ -1,6 +1,6 @@
 # Current project state
 
-**RESUMED by owner on the new account. Read [RESUME_HANDOFF.md](RESUME_HANDOFF.md) first. Corrected full1214 is running; no final verdict. At approximately 3 percentage points usage (37% → 40%), checkpoint, hand off and STOP.**
+**STOPPED at owner usage threshold: 37% → 40%. Read [USAGE_HANDOFF.md](USAGE_HANDOFF.md) first. Corrected full1214 remains running; collect its actual result without relaunching. New authoring literal-boundary defect is recorded; runtime refusal holds.**
 
 Checkpoint: 2026-10-05 UTC. **Unfrozen development; final installed acceptance is pending.**
 
