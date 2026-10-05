@@ -3359,8 +3359,10 @@ async function promptReadBoundaryClarification(input: {
       }
       // Later replacement uses its existing single old/new readback instead.
       if (!input.previous) {
+        const readback = operatorQuestionReadback(question);
         const confirmed = await input.session.confirm("Record these exact words as the meaning for this task?", {
-          defaultValue: false, context: operatorQuestionReadback(question),
+          defaultValue: false, context: readback,
+          exactDetails: { title: "CURRENT READ MEANING", lines: readback },
         });
         if (confirmed !== true) {
           await input.mediation!.save(leaveOperatorQuestionPending(question, confirmed === undefined ? "cancelled" : "declined"));
@@ -3375,6 +3377,8 @@ async function promptReadBoundaryClarification(input: {
   const decline = await input.session.confirm("Decline this Read question? No keeps it pending.", {
     defaultValue: false,
     context: ["This is a local decision, not business meaning or a model request. No keeps the exact saved question available to answer on Resume."],
+    exactDetails: { title: "CURRENT READ QUESTION", lines: [input.request.question,
+      "Declining leaves this meaning unanswered. No keeps the exact saved question available on Resume."] },
   });
   if (question) await input.mediation!.save(leaveOperatorQuestionPending(question, decline === true ? "declined" : decline === undefined ? "cancelled" : "unknown"));
   return decline === true ? { state: "declined" } : undefined;
@@ -4719,7 +4723,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
             }
             return (await input.session.promptText(text,{context:readQuestions().root.material,recordPolicyAnswer:false,...options}))??null;
           },
-          confirm:async(lines,options)=>(await input.session.confirm('Save this exact attributed input-policy interpretation?',{context:lines,...options}))??null,
+          confirm:async(lines,options)=>(await input.session.confirm('Save this exact attributed input-policy interpretation?',{
+            context:lines,...options,exactDetails:{title:'CURRENT INPUT INTERPRETATION',lines},
+          }))??null,
         }});
       if(result.state==='pending')throw new Error('SOURCE_INPUT_REQUIREMENT_PENDING: The saved input-policy decision is still pending. Its question and actual answers remain saved; existing access and Actions are unchanged.');
       return;
@@ -6922,7 +6928,9 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           },
           confirm: async (lines, options) => {
             await assertCurrent();
-            return input.session.confirm("Record this planned counter maintenance for the current setup?", { ...options, context: lines });
+            return input.session.confirm("Record this planned counter maintenance for the current setup?", {
+              ...options, context: lines, exactDetails: { title: "CURRENT COUNTER STATEMENT", lines },
+            });
           },
         } });
       if (result.state !== "confirmed") return undefined;
@@ -7740,12 +7748,13 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
                   throw new Error("AUTHORING_OWNER_QUESTION_CONTEXT_CHANGED: The exact pending interpretation review changed. No replacement was accepted.");
               };
               await assertCurrent();
-              const confirmed = await input.session.confirm("Use this new answer as the current interpretation?", { defaultValue: false,
-                context: [`Earlier question: ${previous.question}`, `Earlier answer: ${previous.answer}`,
+              const readback = [`Earlier question: ${previous.question}`, `Earlier answer: ${previous.answer}`,
                   `Follow-up question: ${request.question}`, `Proposed answer: ${answer}`,
                   ...operatorQuestionReadback(currentReadQuestion()),
                   "Yes replaces only this interpretation. Both exact responses stay in history and count against the same question allowance.",
-                  "No or cancel keeps the proposal pending and the earlier interpretation current. Resume reopens this review without another answer or model request."] });
+                  "No or cancel keeps the proposal pending and the earlier interpretation current. Resume reopens this review without another answer or model request."];
+              const confirmed = await input.session.confirm("Use this new answer as the current interpretation?", { defaultValue: false,
+                context: readback, exactDetails: { title: "CURRENT READ MEANING REPLACEMENT", lines: readback } });
               await assertCurrent();
               if (confirmed === true) await acceptReadQuestion(currentReadQuestion());
               return confirmed === true;

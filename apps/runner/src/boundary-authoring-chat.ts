@@ -1154,7 +1154,12 @@ export function createBoundaryAuthoringChat(input: {
     }
   };
   const chooseReviewedDecision = async (choice: ChoiceInput): Promise<string | undefined> => {
-    if (!latestDetails) return choose(choice);
+    // Bind inspection to this pending decision when its caller supplies an
+    // exact readback. Legacy authority reviews may intentionally retain a
+    // more complete record than their compact confirmation context.
+    const details = choice.exactDetails ?? latestDetails;
+    if (!details) return choose(choice);
+    const snapshot = { title: details.title, lines: [...details.lines] };
     while (true) {
       const selected = await choose({
         ...choice,
@@ -1169,6 +1174,7 @@ export function createBoundaryAuthoringChat(input: {
         ],
       });
       if (selected !== viewRunnerDetailsChoiceValue) return selected;
+      rememberDetails(snapshot.title, snapshot.lines);
       showDetails();
     }
   };

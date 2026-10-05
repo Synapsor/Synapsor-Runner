@@ -904,6 +904,50 @@ describe("Boundary authoring chat", () => {
     expect(transcript).toContain("you> Yes, continue");
   });
 
+  it.each(["no", undefined])("uses this decision's exact details instead of an unrelated prior page (%s)", async (ending) => {
+    const memory = memoryIo({ choices: ["later", "__view_runner_details__", ending] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    await chat.session.chooseOption!("CLIENT DESTINATION", [
+      { value: "later", label: "Choose later" },
+    ], { context: ["Previous client-destination explanation."] });
+    const current = { title: "CURRENT INPUT INTERPRETATION", lines: [
+      "Target: dispatch.change_note / note_text.",
+      "Minimum 0 and maximum 37 UTF-16 units, including spaces.",
+      "The saved answer is attributed, unverified, and creates no access.",
+    ] };
+    const before = structuredClone(current);
+    const detailsStart = memory.writes.length;
+    await expect(chat.session.confirm("Record this exact interpretation?", {
+      defaultValue: false,
+      context: current.lines,
+      exactDetails: current,
+    })).resolves.toBe(ending === undefined ? undefined : false);
+    expect(current).toEqual(before);
+    const rendered = memory.writes.slice(detailsStart).join("");
+    expect(rendered).toContain("CURRENT INPUT INTERPRETATION");
+    expect(rendered).toContain("Minimum 0 and maximum 37");
+    expect(rendered).not.toContain("Previous client-destination explanation.");
+    expect(memory.choices.slice(1).every(choice => choice.initialValue === "no")).toBe(true);
+    chat.close();
+  });
+
+  it("offers current exact decision details without relying on a prior page", async () => {
+    const memory = memoryIo({ choices: ["__view_runner_details__", "yes"] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    const current = { title: "CURRENT COUNTER STATEMENT", lines: [
+      "Counter maintenance: each application advances the revision on every update.",
+      "Implementation remains unverified; this is planned ownership only.",
+    ] };
+    await expect(chat.session.confirm("Record this planned maintenance?", {
+      defaultValue: false, context: current.lines, exactDetails: current,
+    })).resolves.toBe(true);
+    expect(memory.choices).toHaveLength(2);
+    expect(memory.writes.join("")).toContain("CURRENT COUNTER STATEMENT");
+    expect(memory.choices[0]?.initialValue).toBe("no");
+    chat.close();
+  });
+
+
   it("changes the selected model without printing a redundant checkpoint", () => {
     const memory = memoryIo();
     const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
