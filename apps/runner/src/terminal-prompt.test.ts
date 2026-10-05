@@ -1,8 +1,11 @@
 import { PassThrough } from "node:stream";
 import { execFileSync } from "node:child_process";
+import os from "node:os";
 import type { ReadStream } from "node:tty";
 import type { WriteStream } from "node:tty";
 import { describe, expect, it } from "vitest";
+
+const childEnv = { PATH: process.env.PATH, TMPDIR: os.tmpdir(), TSX_DISABLE_CACHE: "1" };
 import {
   createInPlaceTerminalRenderer,
   fitTerminalFrameToRows,
@@ -24,7 +27,7 @@ describe("terminal text input lifecycle", () => {
       console.log(JSON.stringify({answer:await pending})); input.pause();
     `;
     const result = execFileSync(process.execPath, ["--import", "tsx", "--input-type", "module", "--eval", script], {
-      cwd: new URL("../../../", import.meta.url), env: { PATH: process.env.PATH }, encoding: "utf8", timeout: 10000,
+      cwd: new URL("../../../", import.meta.url), env: childEnv, encoding: "utf8", timeout: 10000,
     });
     expect(JSON.parse(result).answer).toBe("  Waiting 😀  ");
   });
@@ -62,7 +65,7 @@ describe("terminal text input lifecycle", () => {
       `;
       const output = execFileSync(process.execPath, ["--import", "tsx", "--input-type", "module", "--eval", script], {
         cwd: new URL("../../../", import.meta.url),
-        env: { PATH: process.env.PATH },
+        env: childEnv,
         encoding: "utf8",
         timeout: 10_000,
       });
@@ -97,7 +100,7 @@ describe("terminal confirmation input lifecycle", () => {
         keypressListeners: input.listenerCount('keypress') }));
     `;
     const output = execFileSync(process.execPath, ["--import", "tsx", "--input-type", "module", "--eval", script], {
-      cwd: new URL("../../../", import.meta.url), env: { PATH: process.env.PATH }, encoding: "utf8", timeout: 10_000,
+      cwd: new URL("../../../", import.meta.url), env: childEnv, encoding: "utf8", timeout: 10_000,
     });
     expect(JSON.parse(output)).toEqual({ value: null, paused: true, errorListeners: 0, endListeners: 0, keypressListeners: 0 });
   });
@@ -118,7 +121,7 @@ describe("terminal confirmation input lifecycle", () => {
       console.log(JSON.stringify({ code, paused: input.isPaused(), errorListeners: input.listenerCount('error') }));
     `;
     const output = execFileSync(process.execPath, ["--import", "tsx", "--input-type", "module", "--eval", script], {
-      cwd: new URL("../../../", import.meta.url), env: { PATH: process.env.PATH }, encoding: "utf8", timeout: 10_000,
+      cwd: new URL("../../../", import.meta.url), env: childEnv, encoding: "utf8", timeout: 10_000,
     });
     expect(JSON.parse(output)).toEqual({ code: scenario === "healthy-EIO" ? "EIO" : "EINVAL", paused: true, errorListeners: 0 });
   });

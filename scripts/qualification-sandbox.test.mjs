@@ -11,8 +11,11 @@ afterEach(async () => { for (const root of roots.splice(0)) await fs.rm(root, { 
 const sandboxTest = test.skipIf(process.platform !== 'linux'
   || spawnSync('bwrap', ['--ro-bind', '/', '/', '--', '/bin/true'], { stdio: 'pipe' }).status !== 0);
 async function fixture() {
-  // /var/tmp is not hidden by the sandbox's private /tmp mount.
-  const base = await fs.mkdtemp('/var/tmp/synapsor-isolation-sentinel-');
+  // Keep fixtures in the caller's writable temporary root. The qualification
+  // sandbox still remounts originals read-only and binds only the owned copy.
+  const configuredTemp = path.resolve(process.env.TMPDIR ?? '/var/tmp');
+  const temporaryRoot = configuredTemp === '/tmp' || configuredTemp.startsWith('/tmp/') ? '/var/tmp' : configuredTemp;
+  const base = await fs.mkdtemp(path.join(temporaryRoot, 'synapsor-isolation-sentinel-'));
   roots.push(base);
   const owned = path.join(base, 'owned'), original = path.join(base, 'original');
   const copy = path.join(owned, 'copy'), home = path.join(owned, 'home');

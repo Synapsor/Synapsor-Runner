@@ -10,7 +10,10 @@ import { afterEach, describe, expect, it } from "vitest";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "../../..");
 const executable = path.join(root, "bin/synapsor-runner");
 const fixtureChild = path.join(root, "apps/runner/src/test-fixtures/cli-output-child.ts");
-const childEnv = { PATH: process.env.PATH, NODE_NO_WARNINGS: "1" };
+const childEnv = {
+  PATH: process.env.PATH, NODE_NO_WARNINGS: "1",
+  TMPDIR: os.tmpdir(), TSX_DISABLE_CACHE: "1",
+};
 const ownedDirectories: string[] = [];
 
 afterEach(async () => {
