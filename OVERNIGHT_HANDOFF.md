@@ -1,3 +1,21 @@
+# ACTIVE independent-currentness and live B checkpoint1293 — 2026-10-05T17:25:15.219420+00:00
+
+Owner resume remains controlling. Stop near97% USED (3% remains), completion or a genuine blocker; current usage71%. Storage48GiB/8GiB free floor; protected evidence and containers preserved. JourneyB is ACTIVE under the accepted v3 launcher; whole B/connected-client/F3/Original50 remain incomplete. The ONE final unfiltered suite is prepared, NOT LAUNCHED, pending settled product after these lanes.
+
+Product **9e717671dd0d4ddd4ef90a63a7a921f31800dd82**, private backup pushed0. Fresh reader schema/role checks now protect native Review across consent/response/final saves. Main complete changed scopes283PASS/0FAIL/0SKIP and types/build/freshness0. Independent Tester actual PostgreSQL known UPDATE drift plus presealed unselected peer-schema drift **2PASS/0FAIL**, decoder/HTTP/provider0; all32 original fixture files and all42 control tables exact. Main verified121 sealed members (E/MAIN-N3-AFTERFIX-READBACK1288.json). Original a237 FAIL stays preserved. This closes these currentness oracles only; original distinct private-proof branch is not established separately and whole journey/installed/privacy-row coverage is not implied.
+
+Official source pin E/n3-reader-pin1288/SOURCE-PIN-READY1288.json SHA **190833c19fbe68aec93e7c1d5a72191f9df2afe977d93bc664b371088b250908**: complete11732 source records/17559 external dependency records verified. Earlier small-module-index metadata error preserved and corrected before jobs; no product bytes changed. Tester immutable repaired export runtime5155 records with historical qualification docs separately indexed; OWNED-SOURCE-PIN-current-module-index.json SHA0364fd38f7b5178f18eab5cdba2c824f2e1ccdb19351e9fa3c54acd07110ef16. Root handoffs/Git masked, so this documentation checkpoint does not rebase active B.
+
+Tester B v3 is live at T/coherent-b-current1277-v1/captures/public-quorum-current1293. Current schema/reader/CONTROL preflight passed; initial exact resume and default-No transfer screens reached; zero provider calls at this checkpoint. Helper accepted launcher SHAa17a84ddc4b7cfb61fe21fbba0195a1924b45fb185f04e44ea9dd94d6e3c118c after required masks, actual dependency checks and signal-safe process cleanup. Fixed counted transport1285/64 cap and global pool retained. Helper supports actual wire frames and then safe SAME Original source-level continuation; ClassC partial/history remains fenced, no reset/replay/new Original or invented authority.
+
+Owner generalisation record updated: rollback6311PASS; decoy2+10PASS with final unfiltered under decoy pending; N1 exact presealed public assembly/restart PASS on a237; H1/H2/H3 mapping3PASS on a237 with H2 informed qualification; retention preseal372.65s before candidate, same variant2PASS/1FAIL→3PASS/0FAIL, shared-filesystem implementer non-exposure not established. No broad class_fixed or whole acceptance inferred.
+
+Optional Terra timing repair: actual supported native --timeout600, fresh-host stage hold240s/first Tester45s/relay245s, unchanged real count/inference120s each; bounded530s envelope,70s margin. Inert actual loopback clock controls **5PASS/0FAIL**, provider/ledger/fixture effects0 (E/TERRA-HOLD-TIMING-PLAN1293.json). Fresh actual copied-host/joint Source/privacy/money/resource preflight still required; no new paid run. Old student case stays terminal; old00→01→02→03 allpassed, no SQL fix needed/made. One fresh ≤$2 case only if it fits after B/F3 without freeze delay.
+
+Resource owner Helper; renew before expiry/new launches. Last1293 UTC17:15:01 upper44,904,010,249/headroom6,635,597,303 against51,539,607,552; held Main1GiB(stop768MiB), Tester512MiB(stop384MiB), B128MiB(stop96MiB), Original160MiB. Ten absent historical roots carry844,996,608B without cleanupcredit; cause undetermined. PRIVATE backup only; never origin/root Runner config/credentials/ledgers.
+
+---
+
 # ACTIVE reader-currentness checkpoint1287 — 2026-10-05T16:43:39.650828+00:00
 
 Owner resume remains controlling. Stop at about97% USED (3% remaining), completion or a genuine blocker. Storage48GiB;8GiB free floor; protected evidence preserved. The final unfiltered suite remains prepared, NOT LAUNCHED, awaiting independent checks and journeyB/F3 on the settled product.
