@@ -1,3 +1,7 @@
+# Controlling checkpoint — 2026-10-05T07:05Z
+
+Owner resume and97%-used stopping rule remain active; account48%used. Actual full1214 finished8851PASS19FAIL576SKIP/exit1; exact19 fixture assertions allpass unchanged in complete affected9files391PASS0FAIL1existingopt-inSKIP. Types/build1227 PASS. Constant-effect fix87556ea0 integrated and independently validated; test-isolation e48f09a7. **No fullPASS/freeze/installed/B/F3 claim.** Helper actual wholeA restore PASS and progressing to read-only metadata/current public inspection. Tester active, authorizedONEfreshTerra remains preflight-pending. Main next actualPG/offline/size gates under fresh resources. See [active handoff](OVERNIGHT_HANDOFF.md) and E/MAIN-FULL-TRIAGE1227.json for exact evidence/commands. Older records below are historical where they conflict.
+
 # Current project state
 
 **ACTIVE overnight. Read [OVERNIGHT_HANDOFF.md](OVERNIGHT_HANDOFF.md) first. Owner usage rule is 3% remaining / about 97% used. Full1214 is running on unchanged Main source; literal repair ddd1c7ac is committed in an isolated worktree and awaits integration.**
