@@ -8495,7 +8495,8 @@ describe("boundary operator-plane CLI", () => {
           expect(after).toEqual(beforeCancellation);
         }
         expect(semanticChat.streamCheckpoint).toHaveBeenLastCalledWith("Boundary conversation paused.",
-          ["Existing authority is unchanged by interruption; saved steps are retained."], "warning");
+          ["Existing authority is unchanged by interruption; saved steps are retained.",
+            "Reopen this job to inspect saved progress. An unfinished generation or unacknowledged result may require inspection before continuation."], "warning");
         expect(semanticChat.close).toHaveBeenCalledOnce();
         expect(modelActionRuleGenerator).toHaveBeenCalledTimes(posture === "cancel_read_scope_preview" ? 0 : 2);
         expect(semanticRecoveryChoices).toHaveLength(posture === "cancel_read_scope_preview" ? 0 : 1);
@@ -8524,7 +8525,8 @@ describe("boundary operator-plane CLI", () => {
           expect({...after,resume:beforeCancellation!.resume}).toEqual(beforeCancellation);
         } else expect(after).toEqual(beforeCancellation);
         expect(semanticChat.streamCheckpoint).toHaveBeenLastCalledWith("Boundary conversation paused.",
-          ["Existing authority is unchanged by interruption; saved steps are retained."], "warning");
+          ["Existing authority is unchanged by interruption; saved steps are retained.",
+            "Reopen this job to inspect saved progress. An unfinished generation or unacknowledged result may require inspection before continuation."], "warning");
         expect(semanticChat.close).toHaveBeenCalledOnce();
         expect(modelActionRuleGenerator).toHaveBeenCalledTimes(posture === "cancel_action" ? 1 : 2);
         expect(semanticRecoveryChoices).toHaveLength(posture === "cancel_action" ? 0 : 1);

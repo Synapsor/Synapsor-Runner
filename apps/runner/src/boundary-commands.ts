@@ -4383,8 +4383,9 @@ async function interactiveReadWorkloadAssist(
   } catch (error) {
     if (!boundaryAuthoringCancelled(error, authoringChat)) throw error;
     const notice: BoundaryAccessNotice = { tone: "warning", title: "Boundary conversation paused.",
-      lines: ["Existing authority is unchanged by interruption; saved steps are retained."],
-      footer: "Resume this job to continue from its saved checkpoint." };
+      lines: ["Existing authority is unchanged by interruption; saved steps are retained.",
+        "Reopen this job to inspect saved progress. An unfinished generation or unacknowledged result may require inspection before continuation."],
+      footer: "Inspect this saved job before continuing; interruption does not grant a retry or acknowledge a result." };
     await authoringChat?.streamCheckpoint(notice.title, notice.lines, "warning");
     return { notice, activation_ready: false, handoff_ready: false, navigation: "pause", notice_presented: Boolean(authoringChat) };
   } finally {
