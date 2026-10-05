@@ -134,6 +134,21 @@ function assertLiteralMatchesType(expression: Extract<ActionRuleScalarExpression
   if (type.kind === "timestamp" && (typeof value !== "string" || !isCanonicalTimestamp(value))) fail("ACTION_RULE_TYPE_MISMATCH", `${path} must be a canonical UTC timestamp.`, path);
 }
 
+function constantEffectLiteral(
+  expression: ActionRuleScalarExpressionV1,
+  derive: ActionRuleSpecV1["derive"],
+): Extract<ActionRuleScalarExpressionV1, { kind: "literal" }> | undefined {
+  const visited = new Set<string>();
+  while (expression.kind === "derived") {
+    if (visited.has(expression.name)) return undefined;
+    visited.add(expression.name);
+    const next = derive[expression.name];
+    if (!next) return undefined;
+    expression = next;
+  }
+  return expression.kind === "literal" ? expression : undefined;
+}
+
 function assertEffectFieldConstraint(
   field: DerivedEffectEnvelopeSpecV1["allowed_fields"][number],
   path: string,
@@ -557,6 +572,17 @@ function assertEnvelope(
     if (field === undefined) fail("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", `Rule attempts to set ${name} outside the effect envelope.`, `rule.effect.set.${name}`);
     const inferred = inferScalar(expression, context, `rule.effect.set.${name}`);
     if (!compatibleTypes(inferred.type, field.type)) fail("ACTION_RULE_TYPE_MISMATCH", `Derived value for ${name} has the wrong type or unit.`, `rule.effect.set.${name}`);
+    const literal = constantEffectLiteral(expression, rule.derive);
+    if (literal) {
+      const value = literal.value;
+      if (typeof value === "number" && ((field.minimum !== undefined && value < field.minimum)
+        || (field.maximum !== undefined && value > field.maximum))) {
+        fail("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", `Constant effect value for ${name} is outside its reviewed numeric bounds.`, `rule.effect.set.${name}`);
+      }
+      if (field.values !== undefined && !field.values.some(candidate => candidate === value)) {
+        fail("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY", `Constant effect value for ${name} is outside its reviewed effect allowlist.`, `rule.effect.set.${name}`);
+      }
+    }
     // Clearing is an explicit reviewed operation, not permission to write unknown facts.
     const reviewedClear = expression.kind === "literal" && expression.value === null && field.values?.includes(null);
     if (inferred.nullable && !reviewedClear) fail("ACTION_RULE_TYPE_MISMATCH", `Derived value for ${name} can be null or unknown. To clear a nullable field, use an explicit typed null literal and include null in its reviewed values.`, `rule.effect.set.${name}`);

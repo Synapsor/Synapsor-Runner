@@ -102,6 +102,29 @@ describe("structured Action draft schema", () => {
 });
 
 describe("conversational Action authoring tools", () => {
+  it("corrects an impossible constant in the focused effect phase before draft readiness", async () => {
+    const calls: string[] = [], bodies: string[] = [];
+    let effects = 0;
+    const requestJson = phaseResponder(calls, name => {
+      if (name.endsWith("submit_effect_envelope_draft") && effects++ === 0) {
+        return { ...payloadFor(name), set: { status: statusLiteral("active") } };
+      }
+      return undefined;
+    }, bodies);
+    const result = await generateModelActionRuleDraft({
+      session: { provider: "openai", model: "synthetic-unit", dependencies: { requestJson } },
+      intent: "Propose only the paused state for an eligible account, with one human reviewer.",
+      builtCatalog: builtCatalog(), readBoundary: boundary(), readBoundaryDigest: readDigest,
+      egressAcknowledged: true, env: { OPENAI_API_KEY: "provider-test-key" },
+    });
+    expect(calls.filter(name => name.endsWith("submit_effect_envelope_draft"))).toHaveLength(2);
+    expect(bodies.some(body => body.includes("ACTION_RULE_EFFECT_OUTSIDE_BOUNDARY"))).toBe(true);
+    expect(result.compiled.rule.effect.set).toEqual({ status: statusLiteral("paused") });
+    expect(result.compiled.effect_envelope.allowed_fields[0]!.values).toEqual(["paused"]);
+    expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false);
+  });
+
   it("reviews an existing counter through a bounded host operation and restores it before resuming draft components", async () => {
     const initial = builtCatalog();
     delete initial.catalog.resources[0]!.version_field;
