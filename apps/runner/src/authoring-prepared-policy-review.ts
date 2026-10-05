@@ -50,6 +50,8 @@ export async function ensurePreparedPolicyCoverage(input: {
   countingDomain?: CountingOutcomeDomain;
   clarifications: unknown[];
   assertCurrent: (permit?: ProjectAuthorityMutationPermit) => Promise<void>;
+  /** Native reader metadata refresh. Only called outside authority locks. */
+  assertEvidenceCurrent?: () => Promise<void>;
   progress?: <T>(label: string, operation: () => Promise<T>) => Promise<T>;
   state: PreparedPolicyReviewState;
   force?: boolean;
@@ -72,6 +74,7 @@ export async function ensurePreparedPolicyCoverage(input: {
     pending('currentness','POLICY_SOURCE_CHANGED','The in-memory source is not the current saved source. Reopen its review before continuing.');
   }
   const assertCurrent = async (permit?: ProjectAuthorityMutationPermit) => {
+    if (!permit) await input.assertEvidenceCurrent?.();
     await input.assertCurrent(permit);
     if (authoringDestination(input.modelSession) !== selectedDestination)
       pending('currentness','POLICY_COVERAGE_CONTEXT_CHANGED','The selected model or destination changed during review. Reopen current Review; no stale response was saved.');
@@ -210,6 +213,9 @@ export async function ensurePreparedPolicyCoverage(input: {
   }
   let episode: CoverageReviewEpisode;
   const saveEpisode = async (update: (e: CoverageReviewEpisode) => void) => {
+    // Covers both initial/correction submissions and received responses. The
+    // native reader may have changed during consent or the provider wait.
+    await assertCurrent();
     await coordinated(async permit => {
       await assertCurrent(permit);
       await assertRetainedCurrent();
@@ -294,6 +300,8 @@ export async function ensurePreparedPolicyCoverage(input: {
   }
   // Reuse has the same source/authority/history serialization as a new review.
   // Provider calls occur above, outside this coordinated section.
+  // Ownership menus (including Back) can wait after the response or reuse.
+  await assertCurrent();
   await coordinated(async permit => {
     await assertCurrent(permit);
     await assertRetainedCurrent();

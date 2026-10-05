@@ -22,6 +22,7 @@ import { prepareActionVersionField } from "./action-rule-version-review.js";
 import { preparePrivateActionSource } from "./action-rule-resource-review.js";
 import type { DerivedEffectEnvelopeSpecV1 } from "@synapsor/spec";
 import type { AskProvider } from "./model-ask.js";
+import { planReviewPrerequisite, ReviewResolutionError } from "./authoring-review-resolution.js";
 
 /** Policy and counter evidence is bound to the reviewed reader, not the
  * writer-enriched inspection used to compile Actions. Never substitute writer
@@ -35,6 +36,24 @@ export async function inspectPolicyReviewSource(
   const inspection = await inspect({ engine: generationLock.engine, databaseUrlEnv: generationLock.source_env,
     ...(generationLock.inspected_schema ? { schema: generationLock.inspected_schema } : {}), env });
   return { inspection, generationLock };
+}
+
+/** Refresh outside authority locks. A changed reader invalidates the captured
+ * review; fresh metadata must never silently replace its evidence. */
+export async function assertPolicyReviewSourceCurrent(
+  source: PolicySourceInspection | undefined,
+  inspect: typeof inspectDatabase = inspectDatabase,
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<void> {
+  if (!source) throw new ReviewResolutionError('POLICY_REVIEW_READER_UNAVAILABLE',
+    planReviewPrerequisite('currentness',null,null),'Reopen the exact current reader review before continuing.');
+  const fresh = await inspectPolicyReviewSource(source.generationLock,inspect,env);
+  if (fresh.inspection.engine !== source.inspection.engine
+    || schemaFingerprintForInspection(fresh.inspection) !== schemaFingerprintForInspection(source.inspection)
+    || rolePostureFingerprint(fresh.inspection) !== rolePostureFingerprint(source.inspection)) {
+    throw new ReviewResolutionError('POLICY_REVIEW_READER_CHANGED',planReviewPrerequisite('currentness',null,null),
+      'The reader schema or role changed while awaiting review. Reopen the exact current reader review; no stale submission or result was saved.');
+  }
 }
 
 function inspectedReaderPosture(read: ExplorationBoundaryDraft, source?: PolicySourceInspection) {

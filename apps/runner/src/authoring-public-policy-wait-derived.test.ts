@@ -19,7 +19,7 @@ import { policyReviewReadiness } from "./authoring-review-readiness.js";
  * provider responses are supplied. The actual planner/compiler/Source parser,
  * generation recovery, owner handoff, chat recorder, writer permit and CAS run.
  * No readiness/assessment callback or accepted-owner record is fabricated. */
-type Control = "healthy" | "pause_restart" | "source_drift" | "schema_drift" | "role_drift" | "competing_resume" | "explicit_review" | "client_keep" | "client_cancel" | "nested_source_review" | "nested_competing_resume" | "nested_competing_source" | "nested_transfer_cancel" | "nested_cached_activate";
+type Control = "healthy" | "pause_restart" | "source_drift" | "schema_drift" | "role_drift" | "competing_resume" | "explicit_review" | "client_keep" | "client_cancel" | "nested_source_review" | "nested_competing_resume" | "nested_competing_source" | "nested_transfer_cancel" | "nested_cached_activate" | "nested_review_role_drift" | "nested_review_schema_drift" | "nested_review_role_after_response" | "nested_review_role_client_back";
 const question="Should this parcel action be permitted only when the parcel is available?";
 const answer="Yes. Require available=true; refuse unavailable parcels.";
 const strings=(value:any):string[]=>typeof value==="string" ? [value] : Array.isArray(value) ? value.flatMap(strings)
@@ -49,6 +49,13 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
   let clientDutyPrompts=0,versionAnswerPending=false,liveCoverageBefore:any;
   let nestedEntered=false,nestedReads=0,nestedDeclines=0,nestedStartRequests=0,nestedAuthorityBefore:any,cachedActivationAttempts=0;
   const nestedControl=control.startsWith("nested_");
+  const reviewWaitControl=control.startsWith("nested_review_");
+  let reviewWaitSnapshot:any;
+  const changeReaderRole=()=>{
+    inspection.role_posture!.read_only=false;
+    inspection.role_posture!.writable_relations=["studio.parcels"];
+    inspection.tables[0]!.role_posture!.privileges.update=true;
+  };
   const replacementFile=path.join(root,"replacement-policy-review.txt");
   await fs.writeFile(replacementFile,["Updated heading for the same parcel proposal program.",...initialLines.slice(1)].join("\n"));
   const answers:Array<string|undefined>=[`/attach ${sourceFile}`,job];
@@ -128,12 +135,27 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
       else if(choice.message==="Save this exact attributed input-policy interpretation?") {expect(choice.initialValue).toBe("no");selected="yes";}
       else if(choice.message==="Run a new bounded model review?") {
         expect(choice.initialValue).toBe("no");
-        if(nestedControl && nestedEntered) {nestedDeclines++;selected="no";} else selected="yes";
+        if(reviewWaitControl && nestedEntered) {
+          expect(injected).toBe(false);injected=true;
+          const saved=await readResume();sourceId=saved.policy_source_session;
+          reviewWaitSnapshot={requests,sources:await loadPolicySources(root,sourceId!),
+            authority:(await listActionRuleAuthorityDrafts(root))[0],
+            read:(await loadBoundaryReviewContext(root)).bundle.candidate_digest};
+          if(control==="nested_review_role_drift") {
+            // Same principal and schema; only its native UPDATE posture changes
+            // while the operator is deciding whether to submit this review.
+            changeReaderRole();
+          } else if(control==="nested_review_schema_drift") inspection.tables[0]!.columns.find(column=>column.name==="units")!.data_type="bigint";
+          else injected=false;
+          selected="yes";
+        } else if(nestedControl && nestedEntered) {nestedDeclines++;selected="no";} else selected="yes";
       }
       else if(choice.title==="CLIENT INTEGRATION RESPONSIBILITIES") {
         expect(choice.initialValue).toBe("back");clientDutyPrompts++;
         if(requireSavedCoverageCheckpoint)liveCoverageBefore=structuredClone((await readResume()).generation_recovery);
-        if(control==="client_keep" || control==="client_cancel") {
+        if(control==="nested_review_role_client_back" && reviewWaitSnapshot) {
+          expect(injected).toBe(false);injected=true;changeReaderRole();selected="back";
+        } else if(control==="client_keep" || control==="client_cancel") {
           if(clientDutyPrompts>1)fail("The same client-duty prompt repeated after the operator's pending/cancel choice.");
           selected=control==="client_keep" ? "back" : undefined;
         } else selected="assign";
@@ -217,6 +239,9 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
       else narration=jsonLine(text,"Exact next question: ")??"The actual disabled record and unfinished interpretation remain available for review.";
     } else fail(`Unexpected actual emitted tool surface: ${names.join(", ")}`);
     if(name)expect(names).toContain(name);
+    if(control==="nested_review_role_after_response" && reviewWaitSnapshot && name==="runner__review_policy_coverage") {
+      expect(injected).toBe(false);injected=true;changeReaderRole();
+    }
     return {status:200,body:{output:name ? [{type:"function_call",call_id:`owned-policy-wait-${requests}`,name,arguments:JSON.stringify(args)}]
       : [{type:"message",content:[{type:"output_text",text:narration}]}]}};
   };
@@ -248,6 +273,28 @@ async function publicPolicyWait(control:Control, requireSavedCoverageCheckpoint=
       runBoundaryReview:(args,inspector)=>boundaryReviewCommand(args,inspector,outer,undefined,options)});
     const initiallySaved=await readResume();sourceId=initiallySaved.policy_source_session;
     expect((await listActionRuleAuthorityDrafts(root))[0],transcript+"\nDIAGNOSTIC_REQUESTS_MENUS_FAILURES="+JSON.stringify({responses,menus,failures})).toBeDefined();
+    if(reviewWaitControl) {
+      expect(nestedEntered,transcript).toBe(true);expect(injected).toBe(true);
+      const afterResponse=control==="nested_review_role_after_response" || control==="nested_review_role_client_back";
+      expect(requests,transcript).toBe(reviewWaitSnapshot.requests+(afterResponse ? 1 : 0));
+      const sources=await loadPolicySources(root,sourceId!);
+      if(afterResponse) {
+        // The already reserved submission stays in history. A changed reader
+        // cannot turn its response or a pending ownership choice into coverage.
+        const {coverage_episodes:prior=[],...sourceBefore}=reviewWaitSnapshot.sources;
+        const {coverage_episodes:episodes=[],...sourceAfter}=sources;
+        expect(sourceAfter).toEqual(sourceBefore);
+        expect(episodes).toHaveLength(prior.length+1);expect(episodes.slice(0,-1)).toEqual(prior);
+        expect(episodes.at(-1)!.submissions).toHaveLength(1);
+        expect(episodes.at(-1)!.submissions[0]!.validated).toBe(control==="nested_review_role_client_back" ? true : undefined);
+      } else expect(sources).toEqual(reviewWaitSnapshot.sources);
+      expect((await listActionRuleAuthorityDrafts(root))[0]).toEqual(reviewWaitSnapshot.authority);
+      expect((await loadBoundaryReviewContext(root)).bundle.candidate_digest).toBe(reviewWaitSnapshot.read);
+      expect(transcript).toContain("reader schema or role changed");
+      expect(await readActionRuleAuthorityActivation(root)).toBeUndefined();
+      expect(await fs.readFile(path.join(root,".synapsor/exploration-boundary.active.json")).catch(()=>undefined)).toBeUndefined();
+      return {origin:"IMPLEMENTER_DERIVED_PUBLIC_REVIEW_CONSENT_CURRENTNESS",control,requests,activation:false,provider_calls:0};
+    }
     if(control==="nested_transfer_cancel") {
       expect(nestedEntered,transcript).toBe(true);expect(nestedDeclines).toBe(0);
       expect(requests,transcript).toBe(nestedStartRequests);
@@ -405,3 +452,13 @@ it("public nested canceled attachment transfer preserves the ordinary disabled S
 it("public cached activation refuses a concurrently replaced policy without generation consent",async()=>{
   const result=await publicPolicyWait("nested_cached_activate");expect(result.provider_calls).toBe(0);
 },30_000);
+
+it.each(["nested_review_role_drift","nested_review_schema_drift"] as const)(
+  "public saved review refuses reader metadata drift during generation consent before submission: %s",async control=>{
+    const result=await publicPolicyWait(control);expect(result.provider_calls).toBe(0);
+  },30_000);
+
+it.each(["nested_review_role_after_response","nested_review_role_client_back"] as const)(
+  "public saved review retains pending coverage when reader role changes during a response or ownership wait: %s",async control=>{
+    const result=await publicPolicyWait(control);expect(result.provider_calls).toBe(0);
+  },30_000);

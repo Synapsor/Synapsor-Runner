@@ -1,3 +1,19 @@
+# ACTIVE reader-currentness checkpoint1287 — 2026-10-05T16:43:39.650828+00:00
+
+Owner resume remains controlling. Stop at about97% USED (3% remaining), completion or a genuine blocker. Storage48GiB;8GiB free floor; protected evidence preserved. The final unfiltered suite remains prepared, NOT LAUNCHED, awaiting independent checks and journeyB/F3 on the settled product.
+
+The Tester found a real N3 currentness failure on a237: granting UPDATE to the same owned reader during the default-No bounded-review consent screen changed its role fingerprint while the schema stayed equal, yet Runner invoked requestJson once. No HTTP/provider call, authority change or source effect occurred; grant revoked and stopped case preserved. Main personally verified all80 sealed evidence members (E/MAIN-N3-INDEPENDENT-READBACK1286.json). This checkpoint repairs both native Review callers with fresh reader schema/role checks outside authority locks before submissions, after responses and before final result/ownership/reuse saves. The captured evidence is never replaced. Known public regressions2FAIL→2PASS; complete public19PASS/0FAIL/0SKIP and seven prepared-caller files264PASS/0FAIL/0SKIP. Types, runner build and bundle freshness exit0. Independent real-grant and new presealed withheld checks are PENDING on the new pin; no class_fixed claim yet. E/MAIN-N3-REPAIR-GATES1287.json records exact results.
+
+Tester closed the presealed public N1 repeat-assembly contract on a237: exact Input29/default-No, ranks2..17, both counter mappings4/15, immutable prior history, client Back pending, then fresh-process restart0decoder/full Source+Resume/all42 exact. Main verified81 sealed members; earlier harness failures retained. #14 H1/H2/H3 remain source-scoped PASS on a237 with independent/informed distinctions and read-meaning non-exposure qualification retained. Rollback6311PASS and decoy2+10PASS remain closed; final full under decoy is still pending. COVERAGE-CAUSES now records N1 PASS and N3 FAIL/candidate repair; old bytes preserved.
+
+Tester owns the B outer launcher and native preflight; Helper owns immutable1285 finite transport/contract and actual-frame adaptation. No helper B outer launcher exists; old A/Original launchers cannot be used on B. B/connected-client/wholeF3 remain incomplete. F3 six actual authoring request bodies captured before HTTP show private field visibility/analysis exclusions and no owned DB password; this is bounded body evidence, not runtime/canary acceptance.
+
+Original was actually launched once and closed with a preserved ClassC partial response before provider0; no new Original/resample/ACK/reset. Same restored20tables/139rows/12roles remain protected. Exact greeting responderfix6PASS and public Source attachment/consent contract PASS are bounded preparation only; full50 completion NOT ESTABLISHED. Current containers and all evidence remain intact.
+
+Helper's latest resource1288 (UTC16:40:14Z,600s freshness) upper44,872,905,225/headroom6,666,702,327 against51,539,607,552. Main1GiB/stop768MiB, Tester512MiB/stop384MiB, HelperB128MiB, Original160MiB held. Absent historical844,996,608B still counted with no cleanupcredit; cause undetermined. Renew before new launch. One conditional new student Terra≤$2 remains authorized only after the90s coordination hold is fixed/proved and without freeze delay. Old Terra stays terminal; no new paid run under this checkpoint. Push private backup only, never origin/root config/credentials/ledgers.
+
+---
+
 # ACTIVE checkpoint1281 — 2026-10-05T15:36:09.043407+00:00
 
 Owner resumed; continue until about97% usage USED (3% remains), completion or a genuine blocker. Current API67% used. Storage48GiB,8GiB free floor; no protected evidence deletion. Today evening freeze priority: coherent journeyB/connected rule edit → restored Original full50 → F3 → ONE final unfiltered suite on settled pin. This current section controls older statuses below.

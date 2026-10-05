@@ -342,7 +342,7 @@ import { newPolicySourceSession, loadPolicySources, activePolicySource, authorin
 import { BoundaryJobPlanningError, planningDiagnosticLines, saveBoundaryJobPlanningDiagnostic } from "./boundary-job-diagnostics.js";
 import { appendPolicySourceOperatorMessage, installPolicySourceCommands } from "./authoring-policy-source-ui.js";
 import { reviewPolicyCoverage, parsePolicyCoverage, policyCoverageSection, policyCoverageSummary, unresolvedPolicyPassages, isMechanicalApprovalCounterPassage, isReadOnlyPolicyPassage, referencesReadPolicy, actionablePolicyRequirements, prioritizePolicyRepairs, type PolicyCoverage } from "./authoring-policy-coverage.js";
-import { inspectPolicyReviewSource, policyCoverageDraft, policyCoverageActionTargets } from "./authoring-policy-evidence.js";
+import { inspectPolicyReviewSource, assertPolicyReviewSourceCurrent, policyCoverageDraft, policyCoverageActionTargets } from "./authoring-policy-evidence.js";
 import { hasReviewedCustomerReadEntry } from "./read-relationship-access.js";
 import { knownPolicyPrivacyReductions, policyReviewReadiness, policyReadinessItems } from "./authoring-review-readiness.js";
 import { ActionAuthoringReadOnlyRequest } from "./action-rule-model.js";
@@ -7134,6 +7134,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
       return undefined;
     }
     await refreshPolicyCoverageEvidence(proposedAuthority);
+    const reviewReader = policySourceInspection;
     const state: PreparedPolicyReviewState = { attemptKey: policyAttemptKey, report: policyReport, clientDutyReview: clientDutyReviewState };
     try {
       const result = await ensurePreparedPolicyCoverage({ projectRoot: input.projectRoot, sources: sources!,
@@ -7141,6 +7142,7 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
         authorityDigest: canonicalJsonDigest({ read: explorationBoundaryCandidateDigest(context.candidate),
           action: proposedAuthority?.digest ?? null }),
         authority: proposedAuthority, countingDomain,
+        assertEvidenceCurrent: () => assertPolicyReviewSourceCurrent(reviewReader,input.schemaInspector),
         clarifications: authoringConversation?.turns.filter(turn => turn.kind === "clarification") ?? [],
         ...(resumeSelected && activeResume ? { savedReviewEpisode: { job: activeResume.job_intent,
           subject: proposedAuthority
@@ -12719,6 +12721,7 @@ async function reviewSavedBoundaryPolicyInner(input: {
       modelSession: input.modelSession, operatorSession: input.session, currentDraft, authority,
       authorityDigest: canonicalJsonDigest({ read: readDigest, action: authority?.digest ?? null }), countingDomain: domain,
       clarifications: resume.conversation.filter(turn => turn.kind === "clarification"), assertCurrent,
+      assertEvidenceCurrent: () => assertPolicyReviewSourceCurrent(sourceInspection,input.schemaInspector),
       progress: input.progress, state, requireCountingChoice: true, subjectLocation:authority?.state === "active" ? "active" : "draft",
       savedReviewEpisode: { job: resume.job_intent,
         subject: authority ? `${authority.state === "active" ? "active published" : "disabled candidate"} Action ${authority.authority.name} with Read ${context.candidate.pack.name}`
