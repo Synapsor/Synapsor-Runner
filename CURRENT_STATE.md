@@ -1,5 +1,7 @@
 # Current project state
 
+**PAUSED by owner for account switch, 2026-10-05 UTC. Read [PAUSE_HANDOFF.md](PAUSE_HANDOFF.md) first. Full1194 finished: 8,406 pass / 464 fail / 576 skip. Corrected full rerun has NOT started. Historical running/next-step statements below are superseded by the pause handoff.**
+
 Checkpoint: 2026-10-05 UTC. **Unfrozen development; final installed acceptance is pending.**
 
 ## What Synapsor Runner is
