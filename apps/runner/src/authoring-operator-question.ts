@@ -26,7 +26,7 @@ export type OperatorQuestion = {
   target: { phase: string; resource?: string; field?: string; outcomes: string[] };
   material: string[];
   evidence: Array<{ id: string; digest: Digest }>;
-  continuation: "read_mapping" | "input_policy_review" | "version_mapping";
+  continuation: "read_mapping" | "action_rule_review" | "input_policy_review" | "version_mapping";
   /** Saved operator policy, not a fabricated UI answer. Only input review may
    * propose from this evidence without an owner-question handoff. */
   source_binding?: { source_session: string; source_digest: Digest; store_digest: Digest;
@@ -86,7 +86,7 @@ export function parseOperatorQuestion(value: unknown): OperatorQuestion {
     || !Array.isArray(value.material) || value.material.length > 64 || value.material.some(line => !text(line, 2000))
     || !Array.isArray(value.evidence) || value.evidence.length > 64
     || value.evidence.some(e => !object(e) || !exact(e, ["id", "digest"]) || !text(e.id, 256) || !digest(e.digest))
-    || !["read_mapping", "input_policy_review", "version_mapping"].includes(value.continuation as string)
+    || !["read_mapping", "action_rule_review", "input_policy_review", "version_mapping"].includes(value.continuation as string)
     || Buffer.byteLength(JSON.stringify(value)) > 128 * 1024) invalid("The saved question envelope is malformed or too large.");
   const continuation = { attributed_meaning: "read_mapping", input_bounds: "input_policy_review", writer_maintenance: "version_mapping" };
   if (value.source_binding !== undefined) {
@@ -103,7 +103,8 @@ export function parseOperatorQuestion(value: unknown): OperatorQuestion {
     || value.kind !== "input_bounds" || value.source_binding !== undefined || value.budget !== undefined))
     invalid("The missing-answer question cannot own or reset another allowance.");
   if (continuation[value.kind as OperatorQuestion["kind"]] !== value.continuation
-    || value.kind === "attributed_meaning" && !value.target.resource
+      && !(value.kind === "attributed_meaning" && value.continuation === "action_rule_review")
+    || value.kind === "attributed_meaning" && value.continuation === "read_mapping" && !value.target.resource
     || value.kind === "writer_maintenance" && (!value.target.resource || !value.target.field)
     || value.kind === "input_bounds" && !value.target.outcomes.length) invalid("The decision does not match its exact target or continuation.");
   if (value.budget !== undefined && (!object(value.budget) || !exact(value.budget, ["iterations_used", "tool_calls_used", "correction_used"])
@@ -271,7 +272,8 @@ export function parseOperatorQuestions(value: unknown, handoffs: readonly Author
     const h = handoffs.find(handoff => handoff.id === q.handoff_id);
     if (!h || h.scope_digest !== q.scope_digest || h.context_digest !== q.context_digest
       || q.kind === "attributed_meaning" && q.presentation && q.presentation.text !== h.question
-      || q.kind === "attributed_meaning" && !["read_clarification", "read_revision_clarification"].includes(h.consumer)
+      || q.kind === "attributed_meaning" && !(q.continuation === "action_rule_review"
+        ? h.consumer === "policy_clarification" : ["read_clarification", "read_revision_clarification"].includes(h.consumer))
       || q.kind === "input_bounds" && h.consumer !== "input_policy"
       || q.kind === "writer_maintenance" && h.consumer !== "version_maintenance"
       || h.state === "answered" && !q.disposition && (!q.raw_answer || h.answer !== q.raw_answer.text || h.actor !== q.raw_answer.actor)
@@ -344,7 +346,8 @@ export function operatorQuestionReadback(q: OperatorQuestion): string[] {
   const v = q.proposal?.value;
   if (!v || q.proposal?.disposition !== "proposed") return ["This answer is still pending. No interpretation or permission will be recorded.", ...q.material];
   if (v.kind === "attributed_meaning") return [
-    `Record your exact words as the business meaning of ${q.target.resource}${q.target.field ? ` / ${q.target.field}` : ""}:`,
+    q.continuation === "action_rule_review" ? "Record your exact words as a business statement for this Action question:"
+      : `Record your exact words as the business meaning of ${q.target.resource}${q.target.field ? ` / ${q.target.field}` : ""}:`,
     q.raw_answer!.text, ...q.material,
     "This records your statement for this task. It does not prove the statement or grant access, approval or execution.",
   ];

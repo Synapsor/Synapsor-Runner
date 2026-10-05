@@ -5722,7 +5722,7 @@ describe("boundary operator-plane CLI", () => {
       });
       const choose = fixture.session.chooseOption!;
       fixture.session.chooseOption = async (title, choices, options) => {
-        if (title === "SETUP NEEDS ATTENTION" || title === "SAVED CHANGED-RECORD QUESTION") return title.startsWith("SAVED") ? "keep" : "pause";
+        if (title === "SETUP NEEDS ATTENTION" || ["SAVED CHANGED-RECORD QUESTION", "SAVED BUSINESS STATEMENT"].includes(title)) return title.startsWith("SAVED") ? "keep" : "pause";
         return choose(title, choices, options);
       };
       const originalConfirm = fixture.session.confirm;
@@ -5762,7 +5762,7 @@ describe("boundary operator-plane CLI", () => {
         await fixture.writeResume(["maintenance.complete_visit", "maintenance.close_visit"],
           ["Keep first rule.", "Keep second rule.", "Prepare one additional follow-up, with its business reviewer still pending."]);
         await expect(run()).resolves.toBe(0);
-        const saved = await read(), q = saved.operator_questions.at(-1);
+        const saved = await read(), q = saved.operator_questions.filter((q: any) => q.kind === "writer_maintenance").at(-1);
         expect(physical).toBe(posture === "EOF" ? 2 : posture === "declined" ? 3 : 4);
         expect(q.raw_answer?.text).toBe(posture === "EOF" ? undefined : raw);
         expect(q.confirmation?.decision).toBe(posture === "confirmed" ? "new_attributed_decision" : undefined);
@@ -5787,11 +5787,11 @@ describe("boundary operator-plane CLI", () => {
         const restarted = await read();
         expect(physical).toBe(beforeRequests);
         expect(versionPrompts).toBe(beforeVersionPrompts);
-        expect(ordinaryPrompts).toBe(posture === "confirmed" ? 2 : 0);
+        expect(ordinaryPrompts).toBe(posture === "confirmed" ? 1 : 0);
         expect(prompt).toHaveBeenCalledTimes(versionPrompts + ordinaryPrompts);
         expect(prompt.mock.results.every(result => result.type === "return")).toBe(true);
         await expect(Promise.all(prompt.mock.results.map(result => result.value))).resolves.toEqual(
-          posture === "confirmed" ? [raw, undefined, undefined] : [posture === "EOF" ? undefined : raw]);
+          posture === "confirmed" ? [raw, undefined] : [posture === "EOF" ? undefined : raw]);
         expect(restarted.action.checkpoint.logical_turns).toEqual(counters);
         expect(restarted.generation_recovery).toEqual(generation);
         expect(restarted.operator_questions).toEqual(saved.operator_questions);
@@ -5837,6 +5837,7 @@ describe("boundary operator-plane CLI", () => {
     const choose = fixture.session.chooseOption!;
     fixture.session.chooseOption = async (title, choices, options) => {
       if (title === "SETUP NEEDS ATTENTION") return "pause";
+      if (title === "SAVED BUSINESS STATEMENT") { expect(options?.initialValue).toBe("keep"); return "keep"; }
       if (title === "SAVED CHANGED-RECORD QUESTION") {
         expect(options?.initialValue).toBe("keep");
         expect(options?.context).toContain(firstRaw);
@@ -5890,8 +5891,8 @@ describe("boundary operator-plane CLI", () => {
       expect(versionPrompts).toBe(1);
       phase = "replace";
       await expect(run()).resolves.toBe(0);
-      const saved = await read(), child = saved.operator_questions.at(-1);
-      expect(saved.operator_questions).toHaveLength(2);
+      const saved = await read(), child = saved.operator_questions.filter((q: any) => q.kind === "writer_maintenance").at(-1);
+      expect(saved.operator_questions.filter((q: any) => q.kind === "writer_maintenance")).toHaveLength(2);
       expect(saved.operator_questions[0]).toEqual(rootQuestion);
       expect(child).toMatchObject({ revision: rootQuestion.revision + 1, presentation: { text: rootQuestion.presentation.text },
         raw_answer: { text: replacement, actor: "local_installation_operator" },
@@ -5920,11 +5921,11 @@ describe("boundary operator-plane CLI", () => {
       const requests = physical, counters = structuredClone(saved.action.checkpoint.logical_turns);
       await expect(run()).resolves.toBe(0);
       const restarted = await read();
-      expect(physical).toBe(requests); expect(versionPrompts).toBe(2); expect(ordinaryPrompts).toBe(2);
+      expect(physical).toBe(requests); expect(versionPrompts).toBe(2); expect(ordinaryPrompts).toBe(1);
       expect(restarted.generation_recovery).toEqual(saved.generation_recovery);
       expect(restarted.operator_questions).toEqual(saved.operator_questions);
       expect(restarted.action.checkpoint.logical_turns).toEqual(counters);
-      await expect(Promise.all(prompt.mock.results.map(result => result.value))).resolves.toEqual([firstRaw, replacement, undefined, undefined]);
+      await expect(Promise.all(prompt.mock.results.map(result => result.value))).resolves.toEqual([firstRaw, replacement, undefined]);
       await fixture.expectRetained(["maintenance.complete_visit", "maintenance.close_visit"]);
     } finally { await fixture.dispose(); }
   }, 30_000);
@@ -5944,6 +5945,9 @@ describe("boundary operator-plane CLI", () => {
         "Keep first rule.", "Keep second rule.",
         "A new follow-up requires human approval, but its reviewer role and distinct reviewer count have not yet been supplied.",
       ]);
+      const originalChoose = fixture.session.chooseOption!;
+      fixture.session.chooseOption = (title, choices, options) => title === "SAVED BUSINESS STATEMENT"
+        ? Promise.resolve("review") : originalChoose(title, choices, options);
       fixture.session.promptText = async question => {
         prompts.push(question);
         if (question === compound) return roleOnly;
@@ -5997,6 +6001,9 @@ describe("boundary operator-plane CLI", () => {
     const question="Which maintenance role reviews otherwise valid follow-ups?";
     try {
       await fixture.writeResume(["maintenance.complete_visit","maintenance.close_visit"], ["Keep first rule.","Keep second rule.","Prepare follow-ups with owner-reviewed approval."]);
+      const originalChoose = fixture.session.chooseOption!;
+      fixture.session.chooseOption = (title, choices, options) => title === "SAVED BUSINESS STATEMENT"
+        ? Promise.resolve("review") : originalChoose(title, choices, options);
       let sends=0;
       const prompt=vi.fn(async(text:string)=>{expect(text).toBe(question);return undefined;});
       fixture.session.promptText=prompt;
@@ -11160,7 +11167,7 @@ describe("boundary operator-plane CLI", () => {
         "utf8",
       ));
       expect(confirmations).toBe(3);
-      expect(confirmationDefaults).toEqual([true, true, true]);
+      expect(confirmationDefaults).toEqual([true, true, false]);
       expect(confirmationPrompts[0]).toBe(
         "Confirm these boundary-wide production HTTP and trusted JWT scope settings?",
       );
@@ -12378,7 +12385,7 @@ describe("boundary operator-plane CLI", () => {
     }
   }, 20_000);
 
-  it("keeps a completed review inactive when the operator declines the default-yes activation handoff", async () => {
+  it("keeps a completed review inactive when the operator declines the default-No activation handoff", async () => {
     const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-boundary-activation-decline-"));
     const inspection = boundaryInspection();
     const build = buildAutoBoundary({
@@ -12429,7 +12436,7 @@ describe("boundary operator-plane CLI", () => {
       expect(prompts).toEqual([
         `Activate "${build.exploration_boundary.pack.name}" now?`,
       ]);
-      expect(defaults).toEqual([true]);
+      expect(defaults).toEqual([false]);
       expect(output).toContain("Boundary remains reviewed and inactive.");
       expect(output).toContain("No agent authority or source data changed.");
       expect(output).not.toContain("Type ACTIVATE");
@@ -15781,7 +15788,10 @@ describe("boundary operator-plane CLI", () => {
         chooseResource: async () => undefined,
         editFieldTiers: async () => undefined,
         promptText: async () => "second-reviewer",
-        confirm: async () => true,
+        confirm: async (title, options) => {
+          if (title.startsWith("Activate ")) expect(options?.defaultValue).toBe(false);
+          return true;
+        },
       };
       await expect(boundaryActivateCommandInternal(
         ["--project-root", root, "--actor", "second-reviewer"],
@@ -18662,6 +18672,75 @@ describe("public saved-job connection recovery control", () => {
   });
 });
 
+describe("B50 public business-answer adapter", () => {
+  it.each(["declined", "confirmed-save-interruption"] as const)("keeps exact answers and Resume boundaries: %s", async mode => {
+    const f = await staleSemanticRevalidationFixture();
+    const file = path.join(f.root, ".synapsor/boundary-authoring/resume.json");
+    const read = async () => JSON.parse(await fs.readFile(file, "utf8"));
+    const question = "Which maintenance reviewers should review this follow-up, and how many must agree?";
+    const raw = "  Two distinct maintenance reviewers approve each follow-up.\nKeep the scheduled visit requirement. café 🚦\t ";
+    let prompts = 0, confirmations = 0, interrupted = false;
+    const choose = f.session.chooseOption!, confirm = f.session.confirm;
+    f.session.chooseOption = async (title, choices, options) => title === "SAVED BUSINESS STATEMENT" ? "keep"
+      : title === "SETUP NEEDS ATTENTION" ? "pause" : choose(title, choices, options);
+    f.session.confirm = async (title, options) => {
+      if (title !== "Record this exact statement for the current question?") return confirm(title, options);
+      confirmations++;
+      expect(options?.defaultValue).toBe(false);
+      expect(options?.context).toContain(raw);
+      const s = await read(), q = s.operator_questions.at(-1);
+      expect(q.raw_answer.text).toBe(raw); expect(q.confirmation).toBeUndefined();
+      expect(q.proposal.value).toEqual({ kind: "attributed_meaning" });
+      return mode === "confirmed-save-interruption";
+    };
+    const prompt = vi.fn(async (_default?: string, current?: () => Promise<void>, options?: { preserveWhitespace?: boolean }) => {
+      await current?.(); expect(options?.preserveWhitespace).toBe(true); prompts++; return raw;
+    });
+    const requestJson = vi.fn(async () => ({ status: 200, body: { status: "completed", output: [
+      { type: "message", content: [{ type: "output_text", text: question }] }] } }));
+    const generator: typeof generateModelActionRuleDraft = async input => generateModelActionRuleDraft({ ...input,
+      onCheckpoint: async checkpoint => {
+        if (mode === "confirmed-save-interruption" && !interrupted && !checkpoint.pending_question
+          && (await read()).operator_questions?.at(-1)?.confirmation) {
+          interrupted = true;
+          throw new AskError("ASK_CANCELLED", "Controlled interruption after durable answer, before producer acknowledgement.", 499);
+        }
+        await input.onCheckpoint?.(checkpoint);
+      } });
+    const run = () => f.run(generator, async () => f.inspection, {
+      modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "inert-business-answer-control", dependencies: { requestJson } },
+      boundaryAuthoringChatFactory: () => ({ ...testBoundaryAuthoringChat(f.session), readOperator: prompt }),
+    });
+    try {
+      await f.writeResume(["maintenance.complete_visit", "maintenance.close_visit"],
+        ["Keep first rule.", "Keep second rule.", "Prepare one new follow-up; review choices remain pending."]);
+      const authority = await readActionRuleAuthorityDraft(f.root, "reviewed_staging_rules");
+      expect(await run()).toBe(0);
+      const saved = await read(), q = saved.operator_questions.at(-1);
+      expect(q.raw_answer.text).toBe(raw);
+      expect(saved.action.checkpoint.pending_question.question).toBe(question);
+      expect(q.evidence).toContainEqual(expect.objectContaining({ id: "action-producer-question" }));
+      if (mode === "declined") {
+        expect(q.disposition).toBe("declined"); expect(q.confirmation).toBeUndefined();
+        expect(saved.owner_handoffs.at(-1).state).toBe("waiting");
+      } else {
+        expect(interrupted).toBe(true); expect(q.confirmation.decision).toBe("new_attributed_decision");
+        expect(saved.owner_handoffs.at(-1).answer).toBe(raw);
+      }
+      const oldCalls = requestJson.mock.calls.length;
+      expect(await run()).toBe(0);
+      const reopened = await read();
+      expect(prompts).toBe(1); expect(confirmations).toBe(1);
+      expect(requestJson).toHaveBeenCalledTimes(oldCalls);
+      expect(reopened.operator_questions).toEqual(saved.operator_questions);
+      expect(reopened.owner_handoffs).toEqual(saved.owner_handoffs);
+      expect(reopened.action.checkpoint).toEqual(saved.action.checkpoint);
+      await f.expectRetained(["maintenance.complete_visit", "maintenance.close_visit"]);
+      expect(await readActionRuleAuthorityDraft(f.root, "reviewed_staging_rules")).toEqual(authority);
+    } finally { await f.dispose(); }
+  }, 30000);
+});
+
 // Q04/Q08 actual public Version controller controls; independent652 oracle.
 // Empty length is separate from requiredness/nullability; no private Source effects.
 describe("owner Q04/Q08 Version wording versus host readback", () => {
@@ -18680,7 +18759,7 @@ describe("owner Q04/Q08 Version wording versus host readback", () => {
     let calls = 0, prompts = 0, confirmations = 0;
     const presented: string[] = [];
     const oldChoose = f.session.chooseOption!, oldConfirm = f.session.confirm;
-    f.session.chooseOption = async (title, choices, options) => title === "SAVED CHANGED-RECORD QUESTION"
+    f.session.chooseOption = async (title, choices, options) => ["SAVED CHANGED-RECORD QUESTION", "SAVED BUSINESS STATEMENT"].includes(title)
       ? "keep" : title === "SETUP NEEDS ATTENTION" ? "pause" : oldChoose(title, choices, options);
     f.session.confirm = async (title, options) => {
       if (title !== "Record this planned counter maintenance for the current setup?") return oldConfirm(title, options);
@@ -18688,7 +18767,7 @@ describe("owner Q04/Q08 Version wording versus host readback", () => {
       expect(options?.defaultValue).toBe(false);
       expect(options?.context).toContain("Your exact words:");
       expect(options?.context).toContain(raw);
-      expect(options?.context).toContain("Counter: public.service_visits.c09.");
+      expect(options?.exactDetails?.lines).toContain("Counter: public.service_visits.c09.");
       expect(options?.context).toContain("Runner understood: every application that changes one of these records advances this counter on each update.");
       expect(options?.context?.join(" ")).toContain("Implementation remains unverified");
       const s = await read();
@@ -18731,7 +18810,7 @@ describe("owner Q04/Q08 Version wording versus host readback", () => {
         ["Keep first rule.", "Keep second rule.", "Prepare one new follow-up with its business reviewer still pending."]);
       const authority = await readActionRuleAuthorityDraft(f.root, "reviewed_staging_rules"), schema = canonicalJsonDigest(f.inspection);
       expect(await run()).toBe(0);
-      const s = await read(), q = s.operator_questions.at(-1);
+      const s = await read(), q = s.operator_questions.filter((q: any) => q.kind === "writer_maintenance").at(-1);
       expect(q.raw_answer.text).toBe(raw); expect(q.presentation.text).toBe(wording);
       expect(q.proposal.value).toEqual({ kind: "writer_maintenance", maintenance: "all_writers_increment" });
       expect(confirmations).toBe(1); expect(prompts).toBe(1); expect(calls).toBe(yes ? 4 : 3);

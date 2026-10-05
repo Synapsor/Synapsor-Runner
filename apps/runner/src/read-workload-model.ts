@@ -7,6 +7,7 @@ import { readWorkloadAssistanceCheckpoint, parseReadWorkloadAssistanceCheckpoint
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { parseOperatorQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
+import { operatorBusinessContext, operatorClarificationGate, presentOperatorClarification } from "./authoring-operator-presentation.js";
 import {
   AskError,
   askToolSurfaceDigest,
@@ -229,6 +230,10 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   let approvedValueContext: Extract<ModelReadValueContextDecision, { state: "provided" }> | undefined;
   let opaqueGuessBlockers: string[] = [];
   let workloadValidationBlockers: string[] = [];
+  const businessContext = () => operatorBusinessContext(catalog.resources);
+  const wording = operatorClarificationGate({ stage: "read", context: businessContext() });
+  const businessRequest = (request: ModelReadClarificationRequest): ModelReadClarificationRequest => ({ ...request,
+    question: presentOperatorClarification(request.question, { stage: "read", context: businessContext(), target: request }) });
   let clarificationResolved = false;
   let mechanicalClarificationResolved = false;
   let relationshipReviews = 0;
@@ -292,7 +297,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
         if (clarification && error instanceof ReadNamingEvidenceError
           && clarification.resource === error.target?.resource && clarification.field === error.target.field
           && !clarificationRequest && !valueRequest) {
-          clarificationRequest = clarification;
+          clarificationRequest = businessRequest(clarification);
           clarificationFromInvalidNaming = true;
           return { ok: true, value: { status: knownMeaning ? "naming_representation_correction_required" : "clarification_required_before_mapping",
             finding: { kind: knownMeaning ? "established_meaning_representation" : "missing_relevant_meaning", target: { resource: clarification.resource, ...(clarification.field ? { field: clarification.field } : {}) },
@@ -424,7 +429,14 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
             error_code: "READ_WORKLOAD_CLARIFICATION_REFUSED",
           };
         }
-        clarificationRequest = parsedRequest;
+        const presented = wording(parsedRequest.question, parsedRequest);
+        if (presented.state === "rephrase" && !correctionUsed) {
+          workloadValidationBlockers = [presented.guidance];
+          return { ok: false, error_code: "OPERATOR_QUESTION_BUSINESS_WORDING_REQUIRED", value: {
+            message: presented.guidance, authority_granted: false, source_query_executed: false, source_database_changed: false } };
+        }
+        clarificationRequest = { ...parsedRequest, question: presented.state === "question" ? presented.question
+          : presentOperatorClarification(parsedRequest.question, { stage: "read", context: businessContext(), target: parsedRequest }) };
         opaqueGuessBlockers = [];
         return {
           ok: true,
@@ -470,7 +482,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
           ? opaqueWorkloadClarificationRequest(args, catalog, activeClarifiedTargets(), effectiveMeanings)
           : undefined;
         if (interceptedClarification && !clarificationRequest && !valueRequest) {
-          clarificationRequest = interceptedClarification;
+          clarificationRequest = businessRequest(interceptedClarification);
           return {
             ok: true,
             value: {
@@ -594,6 +606,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
     OPAQUE_SELECTION_GUIDANCE,
     "If an opaque reviewed resource or field name makes the business meaning ambiguous, submit clarification_request for one exact catalog resource and optional field instead of guessing.",
     "Phrase that clarification around the concrete business uncertainty, not 'what does table X contain?'. When metadata suggests a meaning, state it as a tentative interpretation and ask what remains uncertain and why it matters to this job. Offer a reasoned suggested answer only when the supplied policy supports it. Suggestions are not accepted meanings or authorization; never infer broader customer access. Keep technical target identifiers in the structured resource/field properties, rather than making the operator inspect SQL.",
+    `Runner-supplied business labels (metadata/policy only): ${JSON.stringify(businessContext().references)}`,
     "Use clear reviewed business field names directly. Ask only for genuinely missing meaning; up to four distinct business questions can be answered in this mapping. Retain all earlier answers and never ask the same question again.",
     "Clear or already labeled fields need no operator_meanings entry. Do not turn a general business request into evidence for an unexplained coded column; ask its meaning instead.",
     "If and only if one exact reviewed field's observed values are indispensable to map the job, submit value_request instead of a workload. Runner has not queried those values and will ask the operator separately.",

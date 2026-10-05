@@ -10,6 +10,7 @@ import { ReadPrerequisiteCatalogTooLargeError, type ReviewedReadCurrentStatePrer
 export { reviewedModelAnalysisOperations } from "./read-field-privacy.js";
 import { parseReadPolicySettings, READ_POLICY_SETTINGS_SCHEMA, type ReadBoundaryPolicyChange } from "./read-boundary-policy-revision.js";
 import { runRequiredAuthoringToolCall } from "./authoring-tool-call.js";
+import { operatorBusinessContext, operatorClarificationGate, presentOperatorClarification } from "./authoring-operator-presentation.js";
 import { parseReadBoundaryRevisionCheckpoint, readBoundaryRevisionCheckpoint, type ReadBoundaryRevisionCheckpoint } from "./read-boundary-revision-checkpoint.js";
 import { explorationBoundaryCandidateDigest } from "./auto-boundary.js";
 import { redactCliErrorMessage } from "./cli-logging.js";
@@ -138,6 +139,8 @@ export async function generateModelReadBoundaryRevision(input: {
   let reviewedRelationship: ReviewedReadRelationship | undefined;
   let prerequisiteReviewFailed = false;
   let issue = "The model did not submit one exact field-exposure revision.";
+  const businessContext = operatorBusinessContext(catalog.resources);
+  const wording = operatorClarificationGate({ stage: "read", context: businessContext });
   let callCount = 0;
   let lastSubmission: Record<string, unknown> | undefined;
   const privateDecisions = new Map<string, ReadBoundaryFieldExposureChange>();
@@ -190,9 +193,13 @@ export async function generateModelReadBoundaryRevision(input: {
       if (isRecord(args.clarification_request)) {
         if (clarification) return refusal("Only one clarification is permitted for this Read revision.");
         try {
+          const rawQuestion = boundedText(args.clarification_request.question, "clarification question", 500);
+          const reason = boundedText(args.clarification_request.reason, "clarification reason", 500);
+          const presented = wording(rawQuestion);
+          if (presented.state === "rephrase" && !correctionUsed) { issue = presented.guidance; return refusal(issue); }
           clarification = {
-            question: boundedText(args.clarification_request.question, "clarification question", 500),
-            reason: boundedText(args.clarification_request.reason, "clarification reason", 500),
+            question: presented.state === "question" ? presented.question
+              : presentOperatorClarification(rawQuestion, { stage: "read", context: businessContext }), reason,
           };
           return {
             ok: true,
@@ -275,6 +282,7 @@ export async function generateModelReadBoundaryRevision(input: {
     "Revise the exact current disabled Synapsor Read Boundary: field exposure, reviewed operations, labels/descriptions, existing reviewed relationships, privacy, or bounded limits.",
     `Operator request: ${JSON.stringify(instruction)}`,
     `Current exact field catalog: ${serializedCatalog}`,
+    `Runner-supplied business labels (untrusted descriptive hints, never policy or permission proof): ${JSON.stringify(businessContext.references)}`,
     `Call ${SUBMIT_READ_BOUNDARY_REVISION_TOOL} exactly once.`,
     "Use only exact resource and field ids from the catalog.",
     "model_and_runner permits reviewed model access; runner_only with model_operations none keeps private Runner access but removes model filters, sorting, grouping and measures; kept_out removes every read operation. Raw withholding alone is NOT full privacy.",
@@ -398,7 +406,8 @@ export async function generateModelReadBoundaryRevision(input: {
       // the same decided record, not a new decoder receipt or question handoff.
       if (saved.stage === "decided") await checkpoint("decided");
     } else {
-      const initial = await runRequiredAuthoringToolCall({ run, question: baseQuestion, toolName: SUBMIT_READ_BOUNDARY_REVISION_TOOL });
+      const initial = await runRequiredAuthoringToolCall({ run, question: baseQuestion, toolName: SUBMIT_READ_BOUNDARY_REVISION_TOOL,
+        onCorrection: () => { correctionUsed = true; } });
       correctionUsed = initial.correction_used; acceptTurn(initial.result);
     }
     while (!changes) {
@@ -478,7 +487,9 @@ export async function generateModelReadBoundaryRevision(input: {
         if (decision.state === "answered") {
           if (Object.keys(decision).some(key => !["state", "answer"].includes(key))) throw new Error(
             "READ_BOUNDARY_REVISION_CHECKPOINT_INVALID: The clarification decision is not canonical.");
-          const canonical = { question: request.question, answer: boundedText(decision.answer, "clarification answer", 1_000) };
+          boundedText(decision.answer, "clarification answer", 1_000);
+          if (decision.answer.length > 1_000) throw new Error("READ_BOUNDARY_REVISION_CHECKPOINT_INVALID: The complete answer is longer than the saved answer limit; no words were truncated.");
+          const canonical = { question: request.question, answer: decision.answer };
           clarificationAnswers.push(canonical); clarificationCount++;
           pending = { ...pending!, decision: { state: "answered", answer: canonical.answer } };
         } else if (decision.state === "declined" && (!input.onCheckpoint || Object.keys(decision).length === 1)) pending = { ...pending!, decision: { state: "declined" } };

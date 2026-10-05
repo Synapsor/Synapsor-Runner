@@ -2,7 +2,9 @@ import type { ActionModelSuggestionSession } from "./action-tui.js";
 import type { AskAuthoringEpisodeBudget } from "./model-ask.js";
 import type { AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
 import { AskError } from "./model-provider-transport.js";
+import { isUnknownReadMeaning } from "./read-meaning-evidence.js";
 import { runOperatorQuestionModel, consumedOperatorQuestionFailure } from "./authoring-operator-question-model.js";
+import { presentOperatorClarification, type OperatorBusinessContext } from "./authoring-operator-presentation.js";
 import { parseOperatorQuestion, presentOperatorQuestion, proposeOperatorAnswer, confirmOperatorAnswer,
   leaveOperatorQuestionPending, stopOperatorVersionQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
 
@@ -41,6 +43,7 @@ export async function runVersionConversation(input: {
   egressAcknowledged: boolean;
   env?: NodeJS.ProcessEnv;
   signal?: AbortSignal;
+  businessContext?: OperatorBusinessContext;
 }): Promise<VersionConversationResult> {
   const { ports, binding } = input;
   const current = async () => {
@@ -68,6 +71,7 @@ export async function runVersionConversation(input: {
   const model = async (q: OperatorQuestion, stage: "present" | "answer-map") => {
     try {
       return await runOperatorQuestionModel({ question: q, stage, session: input.session,
+        businessContext: input.businessContext,
         actionLogicalTurnBudget: input.actionLogicalTurnBudget,
         reserveCorrection: () => input.reserveCorrection(input.rootQuestionId),
         authorityGuard: async expected => { const latest = await current();
@@ -98,7 +102,8 @@ export async function runVersionConversation(input: {
     q = await save(presentOperatorQuestion(q, result.question), q, result.completion);
   }
   if (!q.raw_answer) {
-    const answer = await ports.prompt(q.presentation!.text, { preserveWhitespace: true });
+    const answer = await ports.prompt(presentOperatorClarification(q.presentation!.text,
+      { stage: "version", context: input.businessContext, target: q.target }), { preserveWhitespace: true });
     await current();
     if (answer === undefined) return pending(await save(leaveOperatorQuestionPending(q, "cancelled"), q));
     const previous = q;
@@ -109,7 +114,8 @@ export async function runVersionConversation(input: {
       throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The exact owner answer was not durably acknowledged. Preserve its original words before interpretation.", 409);
     q = saved;
   }
-  if (!q.raw_answer!.text.trim()) return pending(await save(leaveOperatorQuestionPending(q, "unknown"), q));
+  if (!q.raw_answer!.text.trim() || isUnknownReadMeaning(q.raw_answer!.text))
+    return pending(await save(leaveOperatorQuestionPending(q, "unknown"), q));
   if (!q.proposal) {
     const result = await model(q, "answer-map");
     if (result.state === "question" || !result.completion)

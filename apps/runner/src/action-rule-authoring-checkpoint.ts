@@ -78,6 +78,7 @@ export type ActionAuthoringLogicalTurn = {
   iterations_used: number;
   tool_calls_used: number;
   used_version_corrections?: string[];
+  wording_correction_used?: true;
   completed?: { kind: "ordinary_clarification" | "compiled_draft";
     completion: AuthoringQuestionCompletion; material_digest: Digest };
   legacy_start?: { checkpoint_digest: Digest; completion: AuthoringQuestionCompletion };
@@ -153,11 +154,12 @@ export function parseActionRuleAuthoringCheckpoint(value: unknown): ActionRuleAu
     const ids = new Set<string>();
     for (let i = 0; i < turns.length; i += 1) {
       const turn = turns[i];
-      if (!object(turn) || Object.keys(turn).some(k => !["id", "origin_context_digest", "iterations_used", "tool_calls_used", "used_version_corrections", "completed", "legacy_start"].includes(k))
+      if (!object(turn) || Object.keys(turn).some(k => !["id", "origin_context_digest", "iterations_used", "tool_calls_used", "used_version_corrections", "wording_correction_used", "completed", "legacy_start"].includes(k))
         || !uuid(turn.id) || ids.has(turn.id as string) || !digest(turn.origin_context_digest)
         || !Number.isSafeInteger(turn.iterations_used) || (turn.iterations_used as number) < 0 || (turn.iterations_used as number) > 12
         || !Number.isSafeInteger(turn.tool_calls_used) || (turn.tool_calls_used as number) < 0 || (turn.tool_calls_used as number) > 24) throw fail();
       ids.add(turn.id as string);
+      if (turn.wording_correction_used !== undefined && turn.wording_correction_used !== true) throw fail();
       if (turn.used_version_corrections !== undefined && (!Array.isArray(turn.used_version_corrections)
         || !turn.used_version_corrections.length || turn.used_version_corrections.some(root => !uuid(root))
         || new Set(turn.used_version_corrections).size !== turn.used_version_corrections.length)) throw fail();
@@ -283,7 +285,7 @@ export function assertActionLogicalTurnJournalAdvance(previous: ActionRuleAuthor
   if (!before) {
     if (!after) return;
     if (after.length !== 1 || after[0]!.completed || after[0]!.iterations_used !== 0 || after[0]!.tool_calls_used !== 0
-      || after[0]!.used_version_corrections) throw fail();
+      || after[0]!.used_version_corrections || after[0]!.wording_correction_used) throw fail();
     if (previous && after[0]!.legacy_start?.checkpoint_digest !== previous.digest) throw fail();
     if (!previous && after[0]!.legacy_start) throw fail();
     return;
@@ -296,12 +298,13 @@ export function assertActionLogicalTurnJournalAdvance(previous: ActionRuleAuthor
       || canonicalJsonDigest(current.legacy_start ?? null) !== canonicalJsonDigest(old.legacy_start ?? null)
       || current.iterations_used < old.iterations_used || current.tool_calls_used < old.tool_calls_used) throw fail();
     const roots = old.used_version_corrections ?? [], nextRoots = current.used_version_corrections ?? [];
+    if (old.wording_correction_used && !current.wording_correction_used) throw fail();
     if (nextRoots.length < roots.length || roots.some((root, index) => nextRoots[index] !== root)) throw fail();
     if (after.length > before.length && !current.completed) throw fail();
   }
   if (after.length > before.length) {
     const tail = after.at(-1)!;
-    if (tail.completed || tail.legacy_start || tail.iterations_used !== 0 || tail.tool_calls_used !== 0 || tail.used_version_corrections) throw fail();
+    if (tail.completed || tail.legacy_start || tail.iterations_used !== 0 || tail.tool_calls_used !== 0 || tail.used_version_corrections || tail.wording_correction_used) throw fail();
   }
 }
 
@@ -319,7 +322,7 @@ export function actionLogicalTurnMaterialDigest(checkpoint: ActionRuleAuthoringC
 export function actionLogicalTurnBudget(input: {
   read(): ActionRuleAuthoringCheckpoint;
   save(next: ActionRuleAuthoringCheckpoint, expectedDigest: Digest): Promise<void>;
-}): AskAuthoringEpisodeBudget & { reserveCorrection(rootQuestionId: string): Promise<boolean> } {
+}): AskAuthoringEpisodeBudget & { reserveCorrection(rootQuestionId: string): Promise<boolean>; reserveWordingCorrection(): Promise<boolean> } {
   const tail = (checkpoint: ActionRuleAuthoringCheckpoint) => {
     const current = checkpoint.logical_turns?.at(-1);
     if (!current || current.completed) throw new AskError("ASK_ACTION_LOGICAL_TURN_PENDING", "The genuine owning Action turn is unavailable; preserve saved work.", 409);
@@ -355,6 +358,12 @@ export function actionLogicalTurnBudget(input: {
           throw new AskError("ASK_ACTION_VERSION_QUESTION_STALE", "The correction does not belong to the current pending Version root.", 409);
         if (turn.used_version_corrections?.includes(rootQuestionId)) return false;
         turn.used_version_corrections = [...turn.used_version_corrections ?? [], rootQuestionId]; return true;
+      });
+    },
+    async reserveWordingCorrection() {
+      return update(turn => {
+        if (turn.wording_correction_used) return false;
+        turn.wording_correction_used = true; return true;
       });
     },
   };

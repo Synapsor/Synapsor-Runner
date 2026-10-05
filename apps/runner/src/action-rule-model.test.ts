@@ -370,6 +370,37 @@ describe("conversational Action authoring tools", () => {
   });
   const say = (text: string) => ({ status: 200, body: { output: [{ type: "message", content: [{ type: "output_text", text }] }] } });
 
+  it.each([false, true])("B50 gates the actual Terra Action question before streaming or handoff (structured=%s)", async structured => {
+    const technical = "Should the optional acceptance note be stored in registrations.status_reason, or is there another authoritative field/source for it?";
+    const built = builtCatalog();
+    built.authoring.resources.push({ ...structuredClone(built.authoring.resources[0]!), name: "university.registrations",
+      fields: [{ name: "status_reason", label: "optional acceptance note", type: { kind: "string", max_length: 200, comparison: "exact" }, nullable: true,
+        role: "model_visible", writable: true }] });
+    const question = () => structured ? call("runner.submit_action_rule_draft", { status: "clarification", question: technical }) : say(technical);
+    const steps = [question(), question(), call("runner.submit_verification_boundary_draft"),
+      call("runner.submit_effect_envelope_draft"), call("runner.submit_action_rule_draft"),
+      call("runner.submit_approval_policy_draft"), call("runner.validate_action_draft", {}), say("The disabled draft is prepared.")];
+    const requests: string[] = [], onStream = vi.fn();
+    const input = requestInput(async request => {
+      requests.push(JSON.stringify(request.body));
+      if (requests.length <= 2) request.stream?.onEvent?.({ phase: "text_delta", text: technical });
+      if (!steps.length) throw new Error("Unexpected B50 request");
+      return steps.shift()!;
+    });
+    const askClarification = vi.fn(async (received: string) => {
+      expect(received).toContain("optional acceptance note");
+      expect(received).not.toContain("status_reason");
+      return "Keep the optional registrar note with the latest status change.";
+    });
+    const result = await converseActionRuleDraft({ ...input, builtCatalog: built, askClarification,
+      session: { ...input.session, dependencies: { ...input.session.dependencies, onStream } } });
+    expect(askClarification).toHaveBeenCalledOnce();
+    expect(requests[1]).toContain("Rephrase the same missing business question once");
+    expect(onStream).not.toHaveBeenCalledWith(expect.objectContaining({ text: technical, operator_text: true }));
+    expect(result.correction_used).toBe(true); expect(result.authority_granted).toBe(false);
+    expect(result.source_database_changed).toBe(false); expect(steps).toEqual([]);
+  });
+
   describe("mediated Version actual producer batch and owning checkpoint", () => {
     function controlled(provider: "openai" | "openai_compatible" = "openai") {
       const events: string[] = [], requests: unknown[] = [], queues: Array<ReturnType<typeof call> | ReturnType<typeof say>> = [];
@@ -1534,7 +1565,7 @@ describe("conversational Action authoring tools", () => {
   it.each([false, true])("still asks a genuine business question after saving a component (structured: %s)", async (structured) => {
     const question = structured ? "Please specify how many customer-service reviewers must approve valid exceptions." : "Which team should review valid exceptions?";
     const steps = [call("runner.submit_verification_boundary_draft"),
-      ...(structured ? [call("runner.submit_approval_policy_draft", { status: "clarification", question })] : []), say(question)];
+      ...(structured ? [call("runner.submit_approval_policy_draft", { status: "clarification", question })] : [say(question)])];
     const askClarification = vi.fn(async () => undefined);
     let checkpoint: ActionRuleAuthoringCheckpoint | undefined;
     await expect(converseActionRuleDraft({ ...requestInput(async () => steps.shift()!),
@@ -1641,7 +1672,7 @@ describe("conversational Action authoring tools", () => {
     expect(steps).toEqual([]);
   });
 
-  it.each([false, true])("streams business questions but defers a compiled recap only when policy review owns the turn (%s)", async (deferCompletionMessage) => {
+  it.each([false, true])("holds unvalidated business text until the question handler and defers owned compiled recaps (%s)", async (deferCompletionMessage) => {
     const question = "Who should review valid requests?";
     const recap = "The disabled pause draft is prepared for review.";
     const steps = [say(question), call("runner.submit_verification_boundary_draft"),
@@ -1659,7 +1690,8 @@ describe("conversational Action authoring tools", () => {
     const result = await converseActionRuleDraft({ ...input,
       session: { ...input.session, dependencies: { ...input.session.dependencies, onStream } },
       askClarification, deferCompletionMessage });
-    expect(onStream).toHaveBeenCalledWith(expect.objectContaining({ text: question, operator_text: true }));
+    expect(onStream).toHaveBeenCalledWith(expect.objectContaining({ text: question, operator_text: false }));
+    expect(askClarification).toHaveBeenCalledWith(question);
     expect(onStream).toHaveBeenCalledWith(expect.objectContaining({ text: recap, operator_text: !deferCompletionMessage }));
     expect(askClarification).toHaveBeenCalledTimes(1);
     expect(result.message).toBe(recap);

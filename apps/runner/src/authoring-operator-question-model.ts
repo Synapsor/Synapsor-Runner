@@ -4,6 +4,7 @@ import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { parseOperatorQuestion, proposeOperatorAnswer, type OperatorQuestion } from "./authoring-operator-question.js";
 import { policyTextSnapshot } from "./authoring-policy-source.js";
 import { runRequiredAuthoringToolCall } from "./authoring-tool-call.js";
+import { operatorClarificationGate, presentOperatorClarification, type OperatorBusinessContext } from "./authoring-operator-presentation.js";
 import { AskError, askToolSurfaceDigest, completedAuthoringQuestionSequence, resolveAskProviderConfiguration,
   runAskProviderTurn, type AskAuthorityGuard, type AskAuthoringEpisodeBudget, type AskToolDefinition,
   type AskToolGateway, type AskTurnResult } from "./model-ask.js";
@@ -51,6 +52,8 @@ export async function runOperatorQuestionModel(input: {
   /** Current checked Input root only. Produces bounded naming context, never
    * policy-source provenance for the child's captured answer. */
   inputContext?: { root: OperatorQuestion; policyText: string };
+  /** Host metadata/policy labels only; never source rows or observed values. */
+  businessContext?: OperatorBusinessContext;
   /** Pure domain validation; never save, display, adopt or grant in this hook. */
   validateProposal?(questionWithProposal: OperatorQuestion): void;
   env?: NodeJS.ProcessEnv;
@@ -98,7 +101,9 @@ export async function runOperatorQuestionModel(input: {
   const signal = input.signal ?? new AbortController().signal;
   const consumed: AskTurnResult[] = [];
   let staged: StagedDecision | undefined;
-  const safeIssue = "Use the supplied question_id, revision and exact evidence reference with only this stage's declared fields and value shape. No statement was adopted and no authority changed.";
+  let safeIssue = "Use the supplied question_id, revision and exact evidence reference with only this stage's declared fields and value shape. No statement was adopted and no authority changed.";
+  const wording = operatorClarificationGate({ stage: q.kind === "writer_maintenance" ? "version"
+    : q.kind === "input_bounds" ? "input" : "read", context: input.businessContext, target: q.target });
   const gateway: AskToolGateway = { mode: "authoring", listTools: () => tools, close: async () => {},
     async callTool(name, args) {
       try {
@@ -108,7 +113,11 @@ export async function runOperatorQuestionModel(input: {
           if (input.stage === "answer-map" || !onlyKeys(args, keys) || typeof args.question !== "string"
             || !args.question.trim() || args.question.length > 4_000 || /[\x00-\x08\x0b-\x1f\x7f]/u.test(args.question)
             || q.source_binding && args.source_reference !== canonicalJsonDigest(q.source_binding)) throw new Error("invalid question");
-          staged = { state: "question", question: args.question.trim() };
+          const presented = wording(args.question.trim());
+          if (presented.state === "rephrase" && !consumed.length) { safeIssue = presented.guidance; throw new Error("business wording required"); }
+          staged = { state: "question", question: presented.state === "question" ? presented.question
+            : presentOperatorClarification(args.question.trim(), { stage: q.kind === "writer_maintenance" ? "version"
+              : q.kind === "input_bounds" ? "input" : "read", context: input.businessContext, target: q.target }) };
         } else {
           if (input.stage === "present" || args.status !== "proposal" || !onlyKeys(args,
             ["question_id", "revision", "status", "answer_id", "source_reference", "disposition", "value"])) throw new Error("invalid proposal");
@@ -140,6 +149,7 @@ export async function runOperatorQuestionModel(input: {
       material: q.material, evidence: q.evidence, ...(q.raw_answer ? { answer_id: q.raw_answer.id, raw_answer: q.raw_answer.text } : {}),
       ...(q.presentation ? { presented_question: q.presentation.text } : {}),
       ...(q.source_binding ? { source_binding: q.source_binding, source_reference: canonicalJsonDigest(q.source_binding) } : {}) })}`,
+    `Runner-supplied business labels (metadata/policy only, never source values): ${JSON.stringify(input.businessContext?.references ?? [])}`,
     ...(namingContext ? [`Bounded current Input naming context (not a complete policy review): ${JSON.stringify(namingContext)}`] : []),
     ...(sourceText === undefined ? [] : [`Complete saved Source text (no truncation): ${JSON.stringify(sourceText)}`]),
     `Call ${TOOL} exactly once. Model prose is not confirmation, authority or a saved result.`,

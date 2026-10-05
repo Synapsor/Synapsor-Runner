@@ -31,6 +31,7 @@ const record=(value:unknown):value is Record<string,unknown>=>!!value && typeof 
 const exact=(value:Record<string,unknown>,keys:string[])=>Object.keys(value).every(key=>keys.includes(key) && value[key]!==undefined);
 const hash=(value:unknown)=>typeof value==="string" && /^sha256:[a-f0-9]{64}$/u.test(value);
 const text=(value:unknown,max:number)=>typeof value==="string" && !!value.trim() && value===value.trim() && value.length<=max;
+const rawAnswer=(value:unknown)=>typeof value==="string" && !!value.trim() && value.length<=1000;
 const count=(value:unknown)=>Number.isSafeInteger(value) && (value as number)>=0;
 const invalid=()=>new Error("READ_BOUNDARY_REVISION_CHECKPOINT_INVALID: The pending Read revision is malformed or changed; preserve it for inspection.");
 const jsonShape=(value:unknown):boolean=>value===null || typeof value==="string" || typeof value==="boolean"
@@ -67,13 +68,13 @@ export function parseReadBoundaryRevisionCheckpoint(value:unknown):ReadBoundaryR
       || ![c.request_digest,c.context_digest,c.response_digest].every(hash))throw invalid();
   }
   if(q.decision!==undefined && (!record(q.decision) || !exact(q.decision,["state","answer"])
-    || (q.decision.state==="answered" ? !text(q.decision.answer,1000) : q.decision.state!=="declined" || q.decision.answer!==undefined)))throw invalid();
+    || (q.decision.state==="answered" ? !rawAnswer(q.decision.answer) : q.decision.state!=="declined" || q.decision.answer!==undefined)))throw invalid();
   if(!exact(s,["call_count","correction_used","prerequisite_review_failed","issue","clarification_count","clarification_answers","private_decisions","reviewed_prerequisite","reviewed_relationship","usage"])
     || !count(s.call_count) || s.call_count===0 || typeof s.correction_used!=="boolean" || typeof s.prerequisite_review_failed!=="boolean"
     || typeof s.issue!=="string" || s.issue.length>1500 || !count(s.clarification_count)
     || (s.clarification_count as number)>(s.call_count as number)
     || !Array.isArray(s.clarification_answers) || s.clarification_answers.length!==Math.min(s.clarification_count as number,16)
-    || s.clarification_answers.some(answer=>!record(answer) || !exact(answer,["question","answer"]) || !text(answer.question,500) || !text(answer.answer,1000))
+    || s.clarification_answers.some(answer=>!record(answer) || !exact(answer,["question","answer"]) || !text(answer.question,500) || !rawAnswer(answer.answer))
     || !Array.isArray(s.private_decisions))throw invalid();
   if(q.decision && (q.decision as Record<string,unknown>).state==="answered") {
     const last=s.clarification_answers.at(-1);

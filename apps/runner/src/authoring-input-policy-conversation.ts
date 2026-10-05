@@ -4,6 +4,7 @@ import { makeSourceInputReview, assertSourceInputRequirements, type SourceInputP
 import { assertOperatorQuestionsAdvance, confirmOperatorAnswer, leaveOperatorQuestionPending, operatorQuestionEpisode, operatorQuestionReadback,
   parseOperatorQuestion, proposeOperatorAnswer, stopOperatorInputQuestion, type OperatorQuestion } from "./authoring-operator-question.js";
 import { consumedOperatorInputFailure, runOperatorQuestionModel } from "./authoring-operator-question-model.js";
+import { presentOperatorClarification, type OperatorBusinessContext } from "./authoring-operator-presentation.js";
 import { activePolicySource, loadPolicySources, policySourceSavedDigest, savePolicySources,
   PolicySourceChangedError, type PolicySourceSession } from "./authoring-policy-source.js";
 import { AskError, type completedAuthoringQuestionSequence } from "./model-ask.js";
@@ -83,6 +84,7 @@ export async function runSourceInputConversation(input: {
   projectRoot: string; sources: PolicySourceSession; session: ActionModelSuggestionSession;
   outcomes: string[]; store: string; actor: string; ports: SourceInputConversationPorts;
   egressAcknowledged: boolean; env?: NodeJS.ProcessEnv; signal?: AbortSignal;
+  businessContext?: OperatorBusinessContext;
 }): Promise<SourceInputConversationResult> {
   const ports = input.ports;
   const selected = () => selectedInputQuestions(ports.readQuestions(), input.outcomes);
@@ -146,6 +148,7 @@ export async function runSourceInputConversation(input: {
       if (question.source_binding) {
         const original = question, { source } = await pendingCurrent();
         const result = await interpret({ question, stage: "source-review", session: input.session,
+          businessContext: input.businessContext,
           episodeBudget: episode, reserveCorrection: episode.reserveCorrection,
           authorityGuard: async expected => { await pendingCurrent(undefined, original); return expected; },
           policyText: source.text, validateProposal: validateDomain, env: input.env,
@@ -171,7 +174,8 @@ export async function runSourceInputConversation(input: {
         if (!question.raw_answer) {
           const before = question;
           await pendingCurrent(undefined, before);
-          const raw = await ports.prompt(question.presentation.text, { preserveWhitespace: true });
+          const raw = await ports.prompt(presentOperatorClarification(question.presentation.text,
+            { stage: "input", context: input.businessContext, target: question.target }), { preserveWhitespace: true });
           if (raw === null) return pending(before, "cancelled");
           await withProjectAuthorityMutation(input.projectRoot, async permit => {
             await pendingCurrent(permit, before);
@@ -183,6 +187,7 @@ export async function runSourceInputConversation(input: {
         if (!question.raw_answer!.text.trim()) return pending(question, "unknown");
         const original = question, current = await pendingCurrent(undefined, question);
         const result = await interpret({ question, stage: "answer-map", session: input.session,
+          businessContext: input.businessContext,
           episodeBudget: episode, reserveCorrection: episode.reserveCorrection,
           authorityGuard: async expected => { await pendingCurrent(undefined, original); return expected; },
           inputContext: { root: selected().root, policyText: current.source.text },

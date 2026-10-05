@@ -6,6 +6,7 @@ import { buildActionAuthoringWorkUnitContract, pendingActionWorkUnitSourceReview
   type ActionWorkUnitSourceReview, type ActionWorkUnitSourceReviewStatus } from "./action-authoring-work-unit-contract.js";
 import { authoringQuestionSequenceCompletion, type AuthoringQuestionCompletion, authoringManualProducerInput } from "./authoring-generation-recovery.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
+import { operatorBusinessContext, operatorClarificationGate, presentOperatorClarification } from "./authoring-operator-presentation.js";
 import { historySelectorChanges, type HistorySelectorReview } from "./action-history-selector-review.js";
 import { Buffer } from "node:buffer";
 import { assertActionExecutionIntentPreserved } from "./action-execution-intent.js";
@@ -878,7 +879,18 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
         if (!phase) return phaseRefusal("This tool is outside the disabled authoring surface.");
         const parsed = parsePhaseSubmission(phase, args, !!baseline);
         if (parsed.state === "clarification") {
-          clarification = parsed.question;
+          const presented = businessWording(parsed.question);
+          if (presented.state === "rephrase") {
+            correctionUsed = true;
+            if (!mediatedVersion || await owningBudget.reserveWordingCorrection()) {
+              businessWordingReserved = mediatedVersion;
+              businessWordingIssue = presented.guidance;
+              return phaseRefusal(presented.guidance);
+            }
+            clarification = presentOperatorClarification(parsed.question, { stage: "action",
+              context: operatorBusinessContext(context.builtCatalog.authoring.resources) });
+          } else clarification = presented.question;
+          businessWordingIssue = undefined;
           return { ok: true, value: { status: "needs_operator_answer", question: clarification, authority_granted: false } };
         }
         let submission = baseline
@@ -958,12 +970,17 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   let mechanicalResponseRepairs = 0;
   let mechanicalResponseFeedback: string | undefined;
   let continuingDraftInternally = false;
+  let businessWording = operatorClarificationGate({ stage: "action", context: operatorBusinessContext(context.builtCatalog.authoring.resources) });
+  let businessWordingIssue: string | undefined;
+  let businessWordingReserved = false;
   let sourceInvocationReserved = false;
   const history: import("./model-ask.js").AskHistoryTurn[] = [];
   const askPendingQuestion = async () => {
     const pending = pendingQuestion!;
+    const beforeAnswerTurn = input.session.conversation?.turns.at(-1);
     if (!input.askClarification) throw new Error(`ACTION_RULE_MODEL_CLARIFICATION_REQUIRED: ${pending.question}`);
-    const answer = await input.askClarification(pending.question);
+    const answer = await input.askClarification(presentOperatorClarification(pending.question,
+      { stage: "action", context: operatorBusinessContext(context.builtCatalog.authoring.resources) }));
     if (answer === undefined) throw new Error("ACTION_RULE_MODEL_DRAFT_CANCELLED");
     if (input.signal?.aborted) throw new AskError("ASK_CANCELLED", "The saved question remains unanswered.", 499);
     const previousOperatorMessage = operatorMessage;
@@ -972,7 +989,12 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
     operatorMessage = answer.trim();
     if (operatorMessage) {
       operatorMessages = [...operatorMessages, boundedText(operatorMessage, "Business answer", 4_000)].slice(-16);
-      rememberModelAuthoringClarification(input.session.conversation, pending.question, operatorMessage);
+      const recorded = input.session.conversation?.turns.at(-1);
+      // The public question adapter has already saved this acknowledged turn.
+      // Ordinary direct callers still retain their own clarification history.
+      if (!recorded || recorded === beforeAnswerTurn || recorded.kind !== "clarification"
+        || recorded.question !== pending.question.trim() || recorded.answer !== operatorMessage.replace(/\r\n?/gu, "\n"))
+        rememberModelAuthoringClarification(input.session.conversation, pending.question, operatorMessage);
     } else {
       // A blank entry is not an answer. Keep the committed question and ask
       // locally again; never spend another generation to recreate it.
@@ -988,6 +1010,8 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       throw error;
     }
     clarificationCount += 1;
+    businessWording = operatorClarificationGate({ stage: "action", context: operatorBusinessContext(context.builtCatalog.authoring.resources) });
+    businessWordingReserved = false;
   };
   if (pendingVersion) {
     operatorMessage = pendingQuestion!.operator_message;
@@ -1001,6 +1025,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
   while (true) {
     if (input.signal?.aborted) throw new Error("ACTION_RULE_MODEL_DRAFT_CANCELLED");
     clarification = undefined;
+    businessWordingIssue = undefined;
     validationAttempted = false;
     const progressBefore = draftProgressRevision;
     const origin = await authoringManualProducerInput("action_rule_components");
@@ -1026,16 +1051,20 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       correctionUsed = true;
     }
     const result = await runAskProviderTurn({
-      ...(mediatedVersion ? { actionLogicalTurnBudget: owningBudget, stopAfterAuthoringToolBatch: () => Boolean(stagedVersion) } : {}),
+      ...(mediatedVersion ? { actionLogicalTurnBudget: owningBudget } : {}),
+      // A structured business question is a human handoff, not permission for
+      // another autonomous drafting call to guess its answer.
+      stopAfterAuthoringToolBatch: () => Boolean(stagedVersion || clarification),
       authoringInput: {consumer: "action_rule_components", operator_message: operatorMessage,
         ...(program ? {program_resume_revision: program.resume_revision as `sha256:${string}`} : {})},
       configuration, tools, gateway, authorityDigest,
       signal: input.signal ?? new AbortController().signal,
       dependencies: {
         ...input.session.dependencies,
+        // Uncompiled prose can be an unchecked question. Only the accepted
+        // host presentation may expose it; stream transport/progress normally.
         onStream: (event) => input.session.dependencies?.onStream?.({ ...event,
-          operator_text: !(compiled && input.deferCompletionMessage)
-            && !(!compiled && !clarification && (draftProgressRevision !== progressBefore || continuingDraftInternally)) }),
+          operator_text: Boolean(compiled) && !input.deferCompletionMessage }),
       },
       history: input.session.conversation ? modelAuthoringHistory(input.session.conversation, input.session) : history.slice(-16),
       question: [
@@ -1046,6 +1075,7 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
           `Generated repair context (not operator intent): ${JSON.stringify(intent)}`,
         ] : [`Current action intent: ${JSON.stringify(intent)}`]),
         `Current normalized structural catalog: ${serializeAuthoringCatalog(context.builtCatalog)}`,
+        `Runner-supplied business labels (metadata/policy only): ${JSON.stringify(operatorBusinessContext(context.builtCatalog.authoring.resources).references)}`,
         `Current work-unit contract: ${JSON.stringify(buildActionAuthoringWorkUnitContract({ ...workUnitContext(), intent,
           correction: workUnitRepairParent?.correction,
           expectedOutcome: input.expectedOutcome, components: { verification: submissions.verification as VerificationSubmission | undefined,
@@ -1075,9 +1105,9 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       continue;
     }
     const expressionRefusal = !compiled && diagnostics.some(item => item.code === "ACTION_RULE_EXPRESSION_KIND_INVALID");
-    const response = [
+    let response = [
       ...(expressionRefusal ? ["Runner validation: an invalid generated expression remains in the disabled draft. No valid expression was accepted; this does not establish a compiler capability limitation. Resume the saved draft to repair its representation and validate it. No authority or source data changed.", "Model response (not a compiler finding):"] : []),
-      result.answer.trim() || clarification || "What would you like to clarify before continuing?",
+      clarification || result.answer.trim() || "What would you like to clarify before continuing?",
     ].join("\n\n");
     const rememberResponse = () => {
       history.push({ question: operatorMessage, answer: response });
@@ -1095,6 +1125,30 @@ export async function generateModelActionRuleDraft(input: ModelActionRuleDraftIn
       ...(usage ? { usage } : {}),
       ...(initial && baseline ? { revision: { outcome: baseline.outcome, changed_phases: ACTION_RULE_PHASES.filter((phase) => canonicalJsonDigest(initial![phase]) !== canonicalJsonDigest(submissions[phase])), ...(reopenedDraft ? { reopened_draft: reopenedDraft } : {}) } } : {}),
     };
+    }
+    // A tool wording refusal and its accompanying prose are the same decoded
+    // response. Request one actual rephrase before considering a fallback.
+    if (businessWordingIssue || !clarification && /[?\uFF1F]/u.test(response)) {
+      const presented = businessWordingIssue ? { state: "rephrase" as const, guidance: businessWordingIssue } : businessWording(response);
+      if (presented.state === "rephrase") {
+        if (mediatedVersion && !businessWordingReserved && !await owningBudget.reserveWordingCorrection()) {
+          // A restart cannot mint another wording call. A fully consumed valid
+          // question may use the same local template, never replay transport.
+          response = presentOperatorClarification(response, { stage: "action",
+            context: operatorBusinessContext(context.builtCatalog.authoring.resources) });
+          businessWordingIssue = undefined;
+        } else {
+        businessWordingReserved = mediatedVersion;
+        correctionUsed = true;
+        mechanicalResponseFeedback = presented.guidance;
+        const completion = completedAuthoringQuestion(result);
+        if (mediatedVersion && completion) ordinaryCompletions.push(completion);
+        await saveCheckpoint();
+        continue;
+        }
+      } else {
+        response = presented.question;
+      }
     }
     // A saved component followed by status prose is still the model's work,
     // not a request for an operator acknowledgement. Genuine questions retain
@@ -1887,6 +1941,8 @@ async function runFocusedPhase(input: {
   let changedFields: RevisionField[] | undefined;
   let clarificationQuestion: string | undefined;
   let issue = `The model did not submit the ${input.phase} draft.`;
+  const businessContext = operatorBusinessContext(input.input.builtCatalog.authoring.resources);
+  const wording = operatorClarificationGate({ stage: "action", context: businessContext });
   let callCount = 0;
   const gateway: AskToolGateway = {
     mode: "authoring",
@@ -1900,7 +1956,11 @@ async function runFocusedPhase(input: {
           issue = "This compiler diagnostic requires one concise operator business-policy clarification before a replacement draft can be accepted.";
           return phaseRefusal(issue);
         }
-        if (parsed.state === "clarification") clarificationQuestion = parsed.question;
+        if (parsed.state === "clarification") {
+          const presented = wording(parsed.question);
+          if (presented.state === "rephrase") { issue = presented.guidance; return phaseRefusal(issue); }
+          clarificationQuestion = presented.question;
+        }
         else {
           if (input.phase === "effect") {
             const effective = revision
@@ -1948,6 +2008,7 @@ async function runFocusedPhase(input: {
     ] : [`Operator intent: ${JSON.stringify(input.intent)}`]),
     ...(input.input.operatorJob ? [`Original whole operator job: ${JSON.stringify(input.input.operatorJob)}`] : []),
     `Current normalized structural catalog: ${input.serializedCatalog}`,
+    `Runner-supplied business labels (metadata/policy only): ${JSON.stringify(businessContext.references)}`,
     `Current work-unit contract: ${JSON.stringify(buildActionAuthoringWorkUnitContract({ builtCatalog: input.input.builtCatalog,
       readBoundary: input.input.readBoundary, readBoundaryDigest: input.input.readBoundaryDigest,
       policySources: input.input.session.conversation?.policySources, intent: input.intent, expectedOutcome: input.input.expectedOutcome,

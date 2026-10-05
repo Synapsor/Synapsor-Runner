@@ -779,7 +779,7 @@ describe("model-assisted Read workload mapping", () => {
     const requestJson = vi.fn().mockResolvedValueOnce(response({ allowed: [{ id: "orders", description: "Read orders",
       plan: { kind: "rows", resource: "public.tbl_7", select: ["unknown_field"] } }], forbidden: [] }))
       .mockResolvedValueOnce(response({ clarification_request: { resource: "public.tbl_7", field: "col_2",
-        reason: "The proposed field did not exist", question: "What does col_2 represent?" } }))
+        reason: "The proposed field did not exist", question: "What does the selected business detail represent?" } }))
       .mockResolvedValue(response({ allowed: [{ id: "orders", description: "Read order lifecycle",
         plan: { kind: "rows", resource: "public.tbl_7", select: ["col_2"] } }], forbidden: [] }));
     const clarificationHandler = vi.fn(async () => ({ state: "answered" as const, answer: "Order lifecycle status" }));
@@ -926,7 +926,7 @@ describe("model-assisted Read workload mapping", () => {
       const requestJson = vi.fn().mockResolvedValueOnce({ status: 200, body: { output: [{
         type: "function_call", call_id: "naming_question", name: "runner__submit_read_workloads",
         arguments: JSON.stringify({ clarification_request: { resource: "public.tbl_7", field: "col_2",
-          reason: "Unknown coded field meaning", question: "What does col_2 represent?" } }),
+          reason: "Unknown coded field meaning", question: "What does the selected business detail represent?" } }),
       }] } }).mockResolvedValue({ status: 200, body: { output: [{
         type: "function_call", call_id: "answered_mapping", name: "runner__submit_read_workloads",
         arguments: JSON.stringify({ allowed: [{ id: "orders", description: "Read order lifecycle",
@@ -1772,7 +1772,7 @@ describe("model-assisted Read workload mapping", () => {
     expect(clarificationHandler).toHaveBeenCalledWith(expect.objectContaining({
       resource: "public.tbl_7",
       reason: expect.stringContaining("Runner intercepted"),
-      question: expect.stringContaining("what do the referenced fields col_2 mean"),
+      question: expect.stringContaining("business information"),
     }));
     expect(requests[1]).toContain("tbl_7 contains support tickets");
     expect(result.analysis.status).toBe("ready");
@@ -1796,7 +1796,7 @@ describe("model-assisted Read workload mapping", () => {
             clarification_request: {
               resource: "public.tbl_7",
               reason: "Need the same metadata again",
-              question: "Explain public.tbl_7 again",
+              question: "Explain the selected business records again",
             },
           }),
         }],
@@ -1834,7 +1834,7 @@ describe("model-assisted Read workload mapping", () => {
       requests.push(JSON.stringify(request.body));
       const index = attempt++;
       const args = index < 2 ? { clarification_request: { resource: "public.orders", field: `col_${index + 8}`,
-        reason: "The reviewed code has ambiguous business meaning.", question: `What business detail does col_${index + 8} represent?` } }
+        reason: "The reviewed code has ambiguous business meaning.", question: "What does this selected business detail mean?" } }
         : { allowed: [{ id: "order_details", description: "Review order delivery details", plan: {
           kind: "rows", resource: "public.orders", select: ["col_8", "col_9"],
         } }], forbidden: [] };

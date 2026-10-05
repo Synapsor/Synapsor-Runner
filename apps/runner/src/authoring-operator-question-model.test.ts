@@ -230,3 +230,28 @@ describe("shared operator-question model adapter; controlled real decoders only"
     expect(f.requestJson).toHaveBeenCalledOnce(); expect(f.episode.reserveCorrection).not.toHaveBeenCalled();
   });
 });
+
+
+describe("B50 real Terra technical questions", () => {
+  it.each([
+    { field: "section_id", label: "course section", question: "Does registrations.section_id represent the student-facing course section that may be shown with each registration, or should the registration display instead use fields reached through the listed course-section relationship?" },
+    { field: "status_reason", label: "optional acceptance note", question: "Should the optional acceptance note be stored in registrations.status_reason, or is there another authoritative field/source for it?" },
+  ])("rephrases once then uses Runner's business label for $field", async ({ field, label, question }) => {
+    const original = record(), { digest: _, ...body } = original;
+    const changed = { ...body, target: { ...body.target, resource: "university.registrations", field } };
+    const q = { ...changed, digest: canonicalJsonDigest(changed) };
+    const f = fixture(q, [{ ...information(q), question }]);
+    const result = await runOperatorQuestionModel({ ...f.input, businessContext: {
+      references: [{ resource: "university.registrations", field, label, origin: "policy_term" }],
+    } });
+    expect(f.requestJson).toHaveBeenCalledTimes(2);
+    expect(result).toMatchObject({ state: "question", correction_used: true });
+    if (result.state === "question") {
+      expect(result.question).not.toMatch(/\b[a-zA-Z][a-zA-Z0-9_]*\.[a-zA-Z][a-zA-Z0-9_]*\b|\b[a-zA-Z][a-zA-Z0-9]*_[a-zA-Z0-9_]+\b/u);
+      expect(result.question).toContain(label);
+    }
+    expect(q).toEqual({ ...changed, digest: canonicalJsonDigest(changed) });
+    expect(q.raw_answer).toBeUndefined(); expect(q.confirmation).toBeUndefined();
+    expect(f.episode.counts()).toEqual({ iterations: 2, tools: 2, correction: true });
+  });
+});
