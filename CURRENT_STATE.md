@@ -1,15 +1,15 @@
-# ACTIVE checkpoint1335 — B50 runtime fixed; freshness gate repaired (2026-10-05)
-Runtime 5ab2d3fdaaf9130a48bb2b8ed0665f1617db96ec; candidate see E/MAIN-CHECKPOINT1335.json; branch codex/b41-operator-resolution-20261001, private backup only; not frozen.
-B50 shared Read/Action/Input/Version + Resume question/raw answer/mapping/readback/default-No persistence; known metadata, untrusted COMMENT hints, one existing-budget rephrase then exact fallback.
-Private Read native parent/nested checkpoints and unused-field exact consent integrated; producer758P/0F/1existingS, nativeResume8P, unused156P, complete affectedCLI588P/0F; counts overlap.
-Current 20/50/64 encoders12PASS exact protected public payload; max932823/margin115753; missing private audit remains disclosed. E/MAIN-SIZE-READBACK1331.json.
-Tester found stale bundle after later test edits: ordinary rebuild1334 changed no bytes/modes; gate now rejects stale --version warning, stale-beforeFAIL/afterPASS/currentPASS. E/MAIN-FRESHNESS-GATE-REPAIR1335.json.
-1302 provenance narration/history/handoff-only wrong19–20, actual26–27; no accepted typed Source binding. E/b50-business-clarifications1312/main-transmitted-source-readback1316.json.
-Completed #6/#11/#12/#14/decoy PASS linked E/COVERAGE-CAUSES.json + E/MAIN-N3-AFTERFIX-READBACK1288.json; no repeated variants or real-model clean-run streak gate.
-Tester owns independent controls→Journey B publication/live retained-client edit/F3; Read active/Action disabled; sole paid operator. A honest PRE_SEND_SKIP/NOT REACHED/$0, historical partial jobs preserved.
-At most ONE conditional editingB≤$2 from legitimately published program, prefer JourneyB sameedit+client; cumulative lab$8/all holds/mandatory reserves counted, protected full50$20; no third sample/coaching/reroll.
-One v14 batch receipt; actual per-launch revision/checkpoint/isolation/disclosure/retry/currentness/live ledger; no routine Main countersign. Separate correctness/onboarding/editing/lifecycle-installed outcomes.
-Main next: renew exact inventory after gate fix, final controls/path dispositions→one full→PG/offline/type→freeze/independent installed/later qualification; prepared1332 full/1333offline not launched.
-Helper: Original50/support and final launcher; native Original50 continuation unestablished. Export PASS is inspection only, no full50/freeze acceptance substitute or fence clearing.
-Separate worktrees/HOME/ports/DBs; one heavy/one paid globally;48GiB cap/8GiB free floor/no protected deletion; resource1330 event-based human records plus automatic monitoring.
-CutoffOct6 17:00Z/finalOct7 17:00Z/prior conditional12h only; stop~97% USED (82%now) or affected binding boundary; detailed history E/main-handoff-history1325; routine authorized work continues.
+# ACTIVE checkpoint1340 — ordinary A stage preparation; gate repairs (2026-10-05)
+B50 runtime5ab2d3fdaaf9130a48bb2b8ed0665f1617db96ec, bundleSHA55469964 unchanged; candidate E/MAIN-CHECKPOINT1340.json; branch codex/b41-operator-resolution-20261001/private backup only, not frozen.
+Shared Read/Action/Input/Version + Resume question/raw answer/mapping/precise default-No persistence; known metadata/untrusted COMMENT, one existing-budget rephrase then exact fallback.
+Private Read native checkpoints/unused-field exact consent integrated; producer758P/0F/1existingS, nativeResume8P, unused156P, full affectedCLI588P/0F; current12 encodersPASS max932823/margin115753; counts overlap.
+Type-only checkpoint/model cycle fixed by shared type ownership, trusted-core/type/build0 and existing243P/0F; bundle unchanged. E/MAIN-TRUSTED-CORE-REPAIR1340.json; offline failure preserved, nine commands unrun.
+Freshness rebuild1334 genuine metadata/no byte changes; verifier now rejects stale diagnostic --version, beforeFAIL/afterPASS/currentPASS. E/MAIN-FRESHNESS-GATE-REPAIR1335.json.
+Owner1338: DO NOT SKIP A; ordinary scripted stage preparation allowed, labelled origin/no target mapping or answer seed. E/OWNER-A-STAGE-PREPARATION1338.json supersedes prior skip disposition; history retained.
+Helper ONE fresh student-stage1338-v1 + /var/tmp/hstudent1338/container synapsor-helper-student1338; SQL00→01→02→03 all0/no SQLfix; genuine public planning save/retry-review cancel then saved retry review, no induced observer refusal.
+Tester sole paid operator: A≤$2 at first B50 question on immutable rebuilt5ab2O2, after actual checkpoint/privacy/retry/ledger guards; v15 amendment applied, old PRE_SEND_SKIP/counters/holds exact, no cases bound yet.
+At most ONE conditional editingB≤$2 from published JourneyB same reviewed edit+retained client; lab$8/all history+holds+mandatory reserves counted, protected full50$20; no third sample/reroll/coaching/model switch.
+Tester also owns independent variants/Journey B publication/live edit/F3; helper supports isolated mechanics/Original50. Original export inspection PASS does not replace unestablished scripted full50 or clear native partial fences.
+1302 wrong19–20 narrative/history/handoff only, actual26–27/no accepted typed Source binding. Completed #6/#11/#12/#14/decoy PASS linked E/COVERAGE-CAUSES.json + MAIN-N3-AFTERFIX-READBACK1288.json; no clean-streak gate.
+Main next: renew exact candidate inventory→remaining offline/PG and one final full after controls/path dispositions→freeze/independent installed/later qualification. Report correctness/onboarding/editing/lifecycle separately; NOTREACHED/pending/draft≠completion.
+Separate worktrees/HOME/ports/DBs; one heavy/one paid globally;48GiB cap/8GiB floor/no protected deletion; resource1336 events plus automatic monitors; new helper stage aggregate96MiB stop within existing128MiB hold.
+CutoffOct6 17:00Z/finalOct7 17:00Z/prior conditional12h only; stop~97% USED (83%now) or affected binding boundary; ≤15-line active handoff, history E/main-handoff-history1325; continue routine authorized work.

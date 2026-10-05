@@ -1,9 +1,25 @@
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
-import type { ModelReadPrerequisiteClarification, ModelReadPrerequisiteProposal } from "./read-prerequisite-model.js";
-import { parseReadPrerequisiteBusinessDecisions, type ReadPrerequisiteBusinessDecision } from "./read-prerequisite-decisions.js";
+import type { ReadCurrentStatePrerequisiteSelection } from "./read-prerequisite.js";
+import { parseReadPrerequisiteBusinessDecisions, type ReadPrerequisiteBusinessDecision, type ReadPrerequisiteDecision } from "./read-prerequisite-decisions.js";
 
 type Digest = `sha256:${string}`;
+
+/** Pending producer payloads are shared with the model adapter without importing that adapter. */
+export type ModelReadPrerequisiteProposal = {
+  candidate_id: Digest;
+  selection: Omit<ReadCurrentStatePrerequisiteSelection, "semantic_consent">;
+  source_description: string;
+  positive_state_description: string;
+  selection_digest: Digest;
+};
+
+export type ModelReadPrerequisiteClarification = { question: string; reason: string;
+  /** Host-generated identity and question, not the model's claimed equivalence. */
+  decision?: ReadPrerequisiteDecision;
+  applicability?: "unanswered" | "changed";
+};
+
 export type ReadPrerequisiteCheckpoint = {
   schema_version: "synapsor.read-prerequisite-checkpoint.v1";
   input_digest: Digest; tool_digest: Digest;

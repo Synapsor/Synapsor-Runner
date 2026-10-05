@@ -1,5 +1,7 @@
 import { operatorBusinessContext, operatorClarificationGate, presentOperatorClarification } from "./authoring-operator-presentation.js";
-import { readPrerequisiteCheckpoint, parseReadPrerequisiteCheckpoint, type ReadPrerequisiteCheckpoint } from "./read-prerequisite-checkpoint.js";
+import { readPrerequisiteCheckpoint, parseReadPrerequisiteCheckpoint, type ReadPrerequisiteCheckpoint,
+  type ModelReadPrerequisiteClarification, type ModelReadPrerequisiteProposal } from "./read-prerequisite-checkpoint.js";
+export type { ModelReadPrerequisiteClarification, ModelReadPrerequisiteProposal } from "./read-prerequisite-checkpoint.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { isDeepStrictEqual } from "node:util";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -42,19 +44,6 @@ export type ReadPrerequisiteModelCatalog = ApprovedReadPrerequisiteMetadata & {
   entries: Array<SupportedReadCurrentStatePrerequisiteCandidate & { candidate_id: Digest }>;
 };
 
-export type ModelReadPrerequisiteProposal = {
-  candidate_id: Digest;
-  selection: Omit<ReadCurrentStatePrerequisiteSelection, "semantic_consent">;
-  source_description: string;
-  positive_state_description: string;
-  selection_digest: Digest;
-};
-
-export type ModelReadPrerequisiteClarification = { question: string; reason: string;
-  /** Host-generated identity and question, not the model's claimed equivalence. */
-  decision?: ReadPrerequisiteDecision;
-  applicability?: "unanswered" | "changed";
-};
 export type ModelReadPrerequisiteConfirmationRequest = ModelReadPrerequisiteProposal & {
   candidate: SupportedReadCurrentStatePrerequisiteCandidate;
   metadata_digest: Digest;
