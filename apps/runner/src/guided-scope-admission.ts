@@ -118,10 +118,11 @@ export async function reviewGuidedScopeAdmission(input: {
     decided_at: new Date().toISOString() }));
   const preview = await prepareBoundaryReviewMutationBatch(input.projectRoot, requests, checkedInspector, catalog.bindings);
   const details = selected.map(choice => `${choice.resourceId}: organization ${choice.mapping.tenant.field} <- ${choice.mapping.tenant.setting}; person ${choice.mapping.principal.field} <- ${choice.mapping.principal.setting}`);
-  input.session.rememberDetails?.("EXACT IDENTITY MAPPINGS", [...details, `Review: ${preview.decision_digest}`,
-    "Only disabled identity mappings change. Field exposure and runtime authority are unchanged."]);
+  const exact = { title: "EXACT IDENTITY MAPPINGS", lines: [...details, `Review: ${preview.decision_digest}`,
+    "Only disabled identity mappings change. Field exposure and runtime authority are unchanged."] };
+  input.session.rememberDetails?.(exact.title, exact.lines);
   const accepted = await input.session.confirm("Save these organization/person mappings in the disabled draft?", {
-    defaultValue: false, context: ["REVIEW IDENTITY MAPPING", ...details,
+    defaultValue: false, exactDetails: exact, context: ["REVIEW IDENTITY MAPPING", ...details,
       "Confirm these fields have the stated business meanings. Your application supplies identity; the agent cannot choose it.",
       "No records, field exposure or active permissions change. Read and Action review follow separately."] });
   if (!accepted) return { ready: false, changed: false, reason: "Identity mapping left unchanged. Resume this saved job when you are ready to review it." };

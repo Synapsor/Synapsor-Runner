@@ -1184,6 +1184,11 @@ export function createBoundaryAuthoringChat(input: {
     kind: "decision" | "permission" = isPermissionPrompt(prompt, options.context) ? "permission" : "decision",
   ): Promise<boolean | undefined> => {
     const permission = kind === "permission";
+    const decisionContext = meaningfulContext(options.context);
+    const exactDecision = options.exactDetails ?? {
+      title: prompt,
+      lines: decisionContext.length ? decisionContext : [`Decision: ${prompt}`],
+    };
     if (permission) {
       if (options.exactDetails) rememberDetails(options.exactDetails.title, options.exactDetails.lines);
       else rememberDetails("PERMISSION REQUEST", [...meaningfulContext(options.context), prompt]);
@@ -1197,7 +1202,8 @@ export function createBoundaryAuthoringChat(input: {
         ? permissionQuestion(prompt)
         : prompt,
       initialValue: options.defaultValue === true ? "yes" : "no",
-      ...(options.exactDetails ? { exactDetails: options.exactDetails } : {}),
+      ...(!permission ? { exactDetails: exactDecision }
+        : options.exactDetails ? { exactDetails: options.exactDetails } : {}),
       ...(/^Activate verified Action Boundary\b/u.test(prompt) ? { explainOnRequest: true } : {}),
       options: [
         {

@@ -877,17 +877,19 @@ describe("Boundary authoring chat", () => {
   it("offers exact details inside a reviewed-decision picker instead of advertising an unusable slash command", async () => {
     const memory = memoryIo({ choices: ["__view_runner_details__", "yes"] });
     const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
-    chat.rememberDetails("REVIEW USER/OWNER SCOPE", [
+    const exact = { title: "REVIEW USER/OWNER SCOPE", lines: [
       "support.charges: column principal_id [low-confidence candidate]",
       "support.refunds: column principal_id [low-confidence candidate]",
       "Agent authority changed: no",
-    ]);
+    ] };
+    chat.rememberDetails(exact.title, exact.lines);
 
     await expect(chat.session.confirm(
       "For trusted user scope, does principal_id store the authenticated principal ID?",
       {
         defaultValue: false,
         context: ["Default is No because schema names alone are not authorization proof."],
+        exactDetails: exact,
       },
     )).resolves.toBe(true);
 
@@ -944,6 +946,39 @@ describe("Boundary authoring chat", () => {
     expect(memory.choices).toHaveLength(2);
     expect(memory.writes.join("")).toContain("CURRENT COUNTER STATEMENT");
     expect(memory.choices[0]?.initialValue).toBe("no");
+    chat.close();
+  });
+
+
+  it.each(["no", undefined])("binds context-only inspection to this current decision (%s)", async (ending) => {
+    const memory = memoryIo({ choices: ["later", "__view_runner_details__", ending] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    await chat.session.chooseOption!("PRIOR DESTINATION", [
+      { value: "later", label: "Choose later" },
+    ], { context: ["An unrelated old destination record."] });
+    const start = memory.writes.length;
+    await expect(chat.session.confirm("Record the current note rule?", {
+      defaultValue: false,
+      context: ["Current note: maximum 23 characters; empty is allowed."],
+    })).resolves.toBe(ending === undefined ? undefined : false);
+    const details = memory.writes.slice(start).join("").split("RUNNER DETAILS").at(-1)!;
+    expect(details).toContain("Record the current note rule?");
+    expect(details).toContain("Current note: maximum 23");
+    expect(details).not.toContain("An unrelated old destination record.");
+    expect(memory.choices.slice(1).every(choice => choice.initialValue === "no")).toBe(true);
+    chat.close();
+  });
+
+  it("makes a first reviewed decision inspectable without an ambient page", async () => {
+    const memory = memoryIo({ choices: ["__view_runner_details__", "no"] });
+    const chat = createBoundaryAuthoringChat({ io: memory.io, color: false });
+    await expect(chat.session.confirm("Record this selected interpretation?", {
+      defaultValue: false, context: ["The current explanation is attributed and unverified."],
+    })).resolves.toBe(false);
+    expect(memory.choices).toHaveLength(2);
+    const details = memory.writes.join("").split("RUNNER DETAILS").at(-1)!;
+    expect(details).toContain("Record this selected interpretation?");
+    expect(details).toContain("The current explanation is attributed and unverified.");
     chat.close();
   });
 

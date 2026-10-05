@@ -4165,12 +4165,13 @@ async function reviewJobPrincipalScopeForResources(input: {
           resources: [...(current?.resources ?? []), view.resource_id],
         });
       }
-      input.session.rememberDetails?.("REVIEW USER/OWNER SCOPE", [
+      const exactScope = { title: "REVIEW USER/OWNER SCOPE", lines: [
         "The job asks for rows belonging to the authenticated person.",
         ...exact,
         "Column names are candidates, not authorization proof. Runner supplies confirmed values outside model arguments.",
         "This changes only the disabled draft. Read and Action authority remain off.",
-      ]);
+      ] };
+      input.session.rememberDetails?.(exactScope.title, exactScope.lines);
       const directColumnNames = new Set(needsConfirmation.flatMap(({ options }) =>
         options[0]?.kind === "direct" ? [options[0].value] : []));
       const confirmationPrompt = directColumnNames.size === 1
@@ -4179,6 +4180,7 @@ async function reviewJobPrincipalScopeForResources(input: {
       const accepted = await input.session.confirm(
         confirmationPrompt,
         {
+          exactDetails: exactScope,
           defaultValue: needsConfirmation.every(({ options }) =>
             options[0]!.confidence === "high" || options[0]!.confidence === "catalog_proven"),
           context: [
@@ -8621,7 +8623,8 @@ async function interactiveReadWorkloadAssistSessionInner(input: InteractiveReadW
           if (!await input.session.confirm("Save this exact disabled Action edit?", { defaultValue: false, context: [
             `Requested edit: ${semanticIntent}`, ...exactChanges,
             "Confirm only the requested changes. A model's changed-fields list does not authorize additional privacy, effect, approval or time-limit changes.",
-            "Decline to keep the request pending and preserve the saved rules. Read, Action and execution activation remain separate."] })) {
+            "Decline to keep the request pending and preserve the saved rules. Read, Action and execution activation remain separate."],
+            exactDetails: { title: "EXACT DISABLED ACTION EDIT", lines: exactChanges } })) {
             await persistAuthoringResume("action_drafting");
             return boundaryAssistResult(boundaryAssistBackNotice("The proposed differences were not accepted. The edit remains pending; no changed candidate was saved."));
           }
@@ -15707,6 +15710,7 @@ async function confirmAndActivateFocusedBoundary(input: {
       ? await input.session.confirmReviewedDisabled(
           `Keep "${context.candidate.pack.name}" fully reviewed but disabled so you can prepare dependent Safe Actions now?`,
           {
+            exactDetails: { title: "Exact Read Boundary review", lines: activationContext },
             context: [
               "READ BOUNDARY REVIEWED - ACTIVATION NOT CONFIRMED",
               `Boundary: ${context.candidate.pack.name}`,
