@@ -7,7 +7,7 @@ import type { AuthoringQuestionCompletion } from "./authoring-generation-recover
  * generation ledger in the same coordinated resume write. */
 export type AuthoringOwnerHandoff = {
   id: string;
-  consumer: "planning" | "read_clarification" | "read_value_context" | "read_revision_instruction" | "read_revision_clarification" | "policy_clarification" | "input_policy" | "version_maintenance";
+  consumer: "planning" | "read_clarification" | "read_value_context" | "read_revision_instruction" | "read_revision_clarification" | "read_revision_prerequisite" | "policy_clarification" | "input_policy" | "version_maintenance";
   scope_digest: `sha256:${string}`;
   context_digest: `sha256:${string}`;
   question: string;
@@ -58,7 +58,7 @@ export function parseOwnerHandoffs(value: unknown): AuthoringOwnerHandoff[] {
     const keys = ["id", "consumer", "scope_digest", "context_digest", "question", "recorded_at", "digest", "completion", "state",
       ...(record.state === "answered" ? ["answer", "actor", "answered_at", "answer_context_digest"] : [])];
     if (Object.keys(record).some(key => !keys.includes(key)) || typeof record.id !== "string" || record.id.length > 100
-      || ids.has(record.id) || !["planning", "read_clarification", "read_value_context", "read_revision_instruction", "read_revision_clarification", "policy_clarification", "input_policy", "version_maintenance"].includes(record.consumer)
+      || ids.has(record.id) || !["planning", "read_clarification", "read_value_context", "read_revision_instruction", "read_revision_clarification", "read_revision_prerequisite", "policy_clarification", "input_policy", "version_maintenance"].includes(record.consumer)
       || !digest(record.scope_digest) || !digest(record.context_digest) || !digest(record.digest)
       || typeof record.question !== "string" || !record.question.trim() || record.question.length > 4000
       || !date(record.recorded_at) || !["waiting", "answered"].includes(record.state) || waiting) throw invalid();
@@ -69,7 +69,7 @@ export function parseOwnerHandoffs(value: unknown): AuthoringOwnerHandoff[] {
       || typeof record.completion.operation_id !== "string" || !digest(record.completion.request_digest)
       || !digest(record.completion.context_digest) || !digest(record.completion.response_digest))) throw invalid();
     if (state === "waiting") waiting = true;
-    else if (typeof answer !== "string" || !answer.trim() || answer.length > 4000 || actor !== "local_installation_operator"
+    else if (typeof answer !== "string" || !answer.trim() || answer.length > (record.consumer === "read_revision_prerequisite" ? 8000 : 4000) || actor !== "local_installation_operator"
       || !date(answered_at) || !digest(answer_context_digest)) throw invalid();
   }
   return structuredClone(value) as AuthoringOwnerHandoff[];

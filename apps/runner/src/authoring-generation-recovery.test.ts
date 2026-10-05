@@ -6,7 +6,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import { AskError, completedAuthoringQuestion, askToolSurfaceDigest, resolveAskProviderConfiguration, runAskProviderTurn, secureAskJsonRequest,
   type ProviderHttpInput, type ProviderHttpResult, type AskToolCallResult } from "./model-ask.js";
-import { authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, assertAuthoringQuestionHandoff, authoringGenerationCurrentnessCode, authoringGenerationHandled, authoringTransportCheckpoint, configureAuthoringGenerationRecovery,
+import { authoringReadCheckpoint, assertAuthoringReadCheckpoint, authoringReadDecisionCheckpoint, assertAuthoringReadDecision, authoringQuestionCheckpoint, authoringQuestionAnswerCheckpoint, assertAuthoringQuestionHandoff, authoringGenerationCurrentnessCode, authoringGenerationHandled, authoringTransportCheckpoint, configureAuthoringGenerationRecovery,
   recoverAuthoringGeneration, prepareAuthoringManualRecovery, permitAuthoringManualRecovery,
   validateAuthoringTransportState, withAuthoringGenerationRecovery,
   isAuthoringGenerationStop, type AuthoringGenerationHost, type AuthoringTransportState } from "./authoring-generation-recovery.js";
@@ -607,6 +607,34 @@ describe("B33 exact completed consumer handoff", () => {
     const completion = completedAuthoringQuestion(result)!;
     return {digest: canonicalJsonDigest({completion, question: result.answer}), pending_question: {question: result.answer, completion}};
   }
+  it.each(["private_prerequisite", "prerequisite_mapping"] as const)("binds a native internal Read result without inventing human consent: %s", async kind => {
+    const f = await fixture("tool-question"), m = memory(f.endpoint, 0);
+    const record = { consumer: "read_revision" as const, kind, material_digest: canonicalJsonDigest({ reason: "Review the necessary access meaning." }) };
+    const completion = await enter(m, async () => {
+      const cp = await toolQuestion(f.endpoint, async () => ({ ok: true, value: { status: "internal_mapping_request" } }));
+      const completion = cp.pending_question.completion;
+      expect(() => authoringReadCheckpoint(m.read(), { ...completion, response_digest: canonicalJsonDigest("foreign response") }, record))
+        .toThrow("completed consumer association");
+      m.set(authoringReadCheckpoint(m.read(), completion, record));
+      return completion;
+    });
+    assertAuthoringReadCheckpoint(m.read(), completion, record);
+    if (kind === "prerequisite_mapping") {
+      const material = { reason: "Review the necessary access meaning." }, decision = { state: "confirmed", operator_evidence: "Use this exact proposed condition." };
+      expect(() => assertAuthoringReadDecision(m.read(), completion, material, decision)).toThrow("operator decision");
+      m.set(authoringReadDecisionCheckpoint(m.read(), completion, material, decision));
+      assertAuthoringReadDecision(m.read(), completion, material, decision);
+      expect(() => authoringReadDecisionCheckpoint(m.read(), completion, material, { state: "revise", instruction: "A different choice" })).toThrow("RESUME_INVALID");
+    }
+    expect(m.read().operations.every(op => op.state === "checkpointed")).toBe(true);
+    expect(m.read().operations.every(op => !op.question_handoff)).toBe(true);
+    expect(() => assertAuthoringReadCheckpoint(m.read(), completion, { ...record, material_digest: canonicalJsonDigest("wrong source") })).toThrow("RESUME_INVALID");
+    await enter(m, async () => {
+      expect(() => authoringReadCheckpoint(m.read(), completion, record)).toThrow("completed consumer association");
+      assertAuthoringReadCheckpoint(m.read(), completion, record);
+    });
+    expect(f.sends()).toBe(2); // Resume checks the persisted receipt; it cannot mint another native completion.
+  });
   it.each(["planning", "read_clarification", "read_value_context"] as const)("the actual completed turn binds the selected host consumer: %s", async consumer => {
     const f = await fixture("tool-question"), m = memory(f.endpoint, 0);
       const cp = await enter(m, async () => {

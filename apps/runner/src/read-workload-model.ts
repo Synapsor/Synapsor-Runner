@@ -231,7 +231,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   let opaqueGuessBlockers: string[] = [];
   let workloadValidationBlockers: string[] = [];
   const businessContext = () => operatorBusinessContext(catalog.resources);
-  const wording = operatorClarificationGate({ stage: "read", context: businessContext() });
+  let wording = operatorClarificationGate({ stage: "read", context: businessContext() });
   const businessRequest = (request: ModelReadClarificationRequest): ModelReadClarificationRequest => ({ ...request,
     question: presentOperatorClarification(request.question, { stage: "read", context: businessContext(), target: request }) });
   let clarificationResolved = false;
@@ -837,6 +837,7 @@ export async function generateModelReadWorkload(input: ModelReadWorkloadInput): 
   }
   const remap = async (question: string, nextPhase: ReadWorkloadDiagnostic["phase"] = "follow-up"): Promise<void> => {
     phase = nextPhase;
+    if (nextPhase !== "correction") wording = operatorClarificationGate({ stage: "read", context: businessContext() });
     const result = await (correctionUsed
       ? run(question).then((result) => ({ result, correction_used: false }))
       : runRequiredAuthoringToolCall({

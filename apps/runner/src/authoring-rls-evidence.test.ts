@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
+import fs from "node:fs/promises";
+import os from "node:os";
+import path from "node:path";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { SchemaInspection, TableInfo } from "@synapsor-runner/schema-inspector";
 import { buildAutoBoundary, explorationBoundaryCandidateDigest } from "./auto-boundary.js";
@@ -8,7 +11,10 @@ import { buildActionRuleAuthorityDraft } from "./action-rule-authority.js";
 import { inspectPolicyReviewSource, policyCoverageDraft } from "./authoring-policy-evidence.js";
 import { mergeActionProjectInspections } from "./action-tui.js";
 import { parsePolicyCoverage } from "./authoring-policy-coverage.js";
-import { policyTextSnapshot } from "./authoring-policy-source.js";
+import { authoringDestination, newPolicySourceSession, policyTextSnapshot, savePolicySources, loadPolicySources } from "./authoring-policy-source.js";
+import { excludedFieldReview, excludedFieldReviewBinding } from "./authoring-excluded-field-records.js";
+import { reviewExcludedFieldMetadata } from "./authoring-excluded-field-review.js";
+import { withProjectAuthorityMutation } from "./project-authority-mutation.js";
 import { preparePrivateActionSource } from "./action-rule-resource-review.js";
 
 const resource = "opaque.r8", outcome = "record.finish";
@@ -139,6 +145,98 @@ function privateFixture(origin: "private_review" | "retained_catalog" = "private
 }
 
 describe("digest-bound inspected RLS policy evidence", () => {
+  it("supplies only a reviewed exact unused-table field as negative access evidence", () => {
+    const f = fixture(), unused = structuredClone(f.inspection.tables[0]!);
+    unused.name = "private_notes";
+    f.inspection.tables.push(unused); refresh(f); f.compiled = compile(f);
+    const current = input(f), source = policyTextSnapshot(Buffer.from("The internal label must remain private."), "privacy.txt");
+    const sources = newPolicySourceSession(); sources.snapshots = [source]; sources.active = 1;
+    const model = { provider: "openai" as const, model: "gpt-test" };
+    const baseline = policyCoverageDraft(current);
+    const binding = excludedFieldReviewBinding({ draft: baseline, source: current.source, sourceSession: sources.id,
+      sourceDigest: source.digest as `sha256:${string}`, destination: authoringDestination(model) });
+    sources.excluded_field_reviews = [excludedFieldReview(binding, [{ resource: "opaque.private_notes", field: "label" }])];
+    const draft = policyCoverageDraft({ ...current, policySources: sources, authoringSession: model });
+    expect(draft.runner_evidence.excluded_field_access?.resources["opaque.private_notes"]?.fields.label)
+      .toMatchObject({ actual_values_returned: false, model_analysis: [], read_access_present: false, private_action_verification: false });
+    expect(JSON.stringify(draft)).not.toContain("opaque.private_notes.state");
+    expect(draft.runner_evidence.read_access["opaque.private_notes"]).toBeUndefined();
+    expect(draft.runner_evidence.source_constraints!.resources["opaque.private_notes"]).toBeUndefined();
+    const passage = { start: 1, end: 1, disposition: "implemented", interpretation: "The selected field is unavailable through this complete program.",
+      draft_paths: ["/runner_evidence/excluded_field_access/resources/opaque.private_notes/fields/label"],
+      field_checks: [{ resource: "opaque.private_notes", field: "label", expectation: "private" }] };
+    expect(parsePolicyCoverage({ passages: [passage] }, source, draft, []).passages[0]!.disposition).toBe("implemented");
+    expect(() => parsePolicyCoverage({ passages: [{ ...passage, field_checks: [{ resource: "opaque.private_notes", field: "state", expectation: "private" }] }] }, source, draft, []))
+      .toThrow("Field privacy evidence is not present");
+  });
+  it.each(["missing_consent", "missing_inspection", "missing_field", "source", "recipient", "read", "action", "alias", "unselected_action"])("does not transplant unused-field proof across %s", mode => {
+    const f = fixture(), unused = structuredClone(f.inspection.tables[0]!); unused.name = "private_notes";
+    f.inspection.tables.push(unused); refresh(f); f.compiled = compile(f);
+    const current = input(f), sources = newPolicySourceSession(), model = { provider: "openai" as const, model: "gpt-test" };
+    const source = policyTextSnapshot(Buffer.from("Private notes stay private."), "privacy.txt"); sources.snapshots = [source]; sources.active = 1;
+    const binding = excludedFieldReviewBinding({ draft: policyCoverageDraft(current), source: current.source, sourceSession: sources.id,
+      sourceDigest: source.digest as `sha256:${string}`, destination: authoringDestination(model) });
+    sources.excluded_field_reviews = [excludedFieldReview(binding, [{ resource: "opaque.private_notes", field: mode === "missing_field" ? "not_inspected" : "label" }])];
+    if (mode === "missing_consent") delete sources.excluded_field_reviews;
+    if (mode === "source") { sources.snapshots.push(policyTextSnapshot(Buffer.from("A different requirement."), "privacy.txt", 2)); sources.active = 2; }
+    if (mode === "recipient") model.model = "gpt-another";
+    if (mode === "read") current.read.pack.resources[0]!.selectable_fields.push("counter");
+    if (mode === "action") current.actions[0]!.draft.approval.required_approvals = 2;
+    if (mode === "unselected_action") current.actions[0]!.loaded.authority.rules[0]!.read_boundary_digest = canonicalJsonDigest("another Read");
+    if (mode === "alias") { const alias = structuredClone(current.read.pack.resources[0]!); alias.id = "business.notes"; alias.table = "private_notes"; current.read.pack.resources.push(alias); }
+    const sourceInput = mode === "missing_inspection" ? undefined : current.source;
+    if (mode === "alias") {
+      // An unsupported alias must preserve the existing exact-source refusal;
+      // it cannot manufacture a negative proof by matching physical names.
+      expect(() => policyCoverageDraft({ ...current, source: sourceInput, policySources: sources, authoringSession: model }))
+        .toThrow("POLICY_SOURCE_EVIDENCE_MISSING");
+      return;
+    }
+    const draft = policyCoverageDraft({ ...current, source: sourceInput, policySources: sources, authoringSession: model });
+    expect(draft.runner_evidence.excluded_field_access?.resources["opaque.private_notes"]).toBeUndefined();
+    expect(draft.runner_evidence.reviewed_excluded_field_metadata).toBeUndefined();
+  });
+  it.each(["confirm", "decline", "cancel", "source_changed", "reader_changed", "program_changed", "recipient_changed", "failed_save", "unconfirmed_save"])("records exact local metadata consent only after current default-No decision: %s", async mode => {
+    const root = await fs.mkdtemp(path.join(os.tmpdir(), "synapsor-unused-field-"));
+    const f = fixture(), unused = structuredClone(f.inspection.tables[0]!); unused.name = "private_notes";
+    f.inspection.tables.push(unused); refresh(f); f.compiled = compile(f);
+    const current = input(f), sources = newPolicySourceSession(), model = { provider: "openai" as const, model: "gpt-test" };
+    sources.snapshots = [policyTextSnapshot(Buffer.from("Private notes stay private."), "privacy.txt")]; sources.active = 1;
+    const before = structuredClone(current), rawRename = fs.rename.bind(fs);
+    let readerChanged = false;
+    await savePolicySources(root, sources);
+    const operationInput = { projectRoot: root, sources, source: current.source, destination: authoringDestination(model),
+      currentDraft: () => policyCoverageDraft(current), assertCurrent: async () => {},
+      assertMetadataCurrent: async () => { if (readerChanged) throw new Error("READER_CHANGED"); },
+      coordinated: (operation: (permit: import("./project-authority-mutation.js").ProjectAuthorityMutationPermit) => Promise<void>) => withProjectAuthorityMutation(root, operation),
+      session: { chooseOption: async (title: string) => title === "PRIVACY EVIDENCE FOR AN UNUSED SOURCE" ? "0" : "3",
+        confirm: vi.fn(async (_prompt: string, options: { defaultValue?: boolean }) => {
+          expect(options.defaultValue).toBe(false);
+          if (mode === "source_changed") { const changed = structuredClone(sources); changed.operator_messages = ["An unrelated new statement."]; await savePolicySources(root, changed); }
+          if (mode === "reader_changed") readerChanged = true;
+          if (mode === "program_changed") current.actions[0]!.draft.approval.required_approvals = 2;
+          if (mode === "recipient_changed") operationInput.destination = authoringDestination({ ...model, model: "changed" });
+          if (mode === "failed_save" || mode === "unconfirmed_save") vi.spyOn(fs, "rename").mockImplementation(async (from, to) => {
+            if (String(to).endsWith(`${sources.id}.json`)) { if (mode === "failed_save") throw new Error("INJECTED_SAVE_FAILURE"); return; }
+            await rawRename(from, to);
+          });
+          return mode === "cancel" ? undefined : mode !== "decline";
+        }) } as unknown as import("./boundary-cli-picker.js").BoundaryReviewInteractiveSession };
+    try {
+      const operation = reviewExcludedFieldMetadata(operationInput);
+      if (["source_changed", "reader_changed", "program_changed", "recipient_changed", "failed_save", "unconfirmed_save"].includes(mode)) await expect(operation).rejects.toThrow();
+      else expect(await operation).toMatchObject({ changed: mode === "confirm" });
+      expect(operationInput.session.confirm).toHaveBeenCalledOnce();
+      const saved = await loadPolicySources(root, sources.id);
+      expect(saved.excluded_field_reviews?.length ?? 0).toBe(mode === "confirm" ? 1 : 0);
+      if (mode === "confirm") {
+        expect(saved.excluded_field_reviews![0]!.fields).toEqual([{ resource: "opaque.private_notes", field: "label" }]);
+        const omitted = structuredClone(saved); delete omitted.excluded_field_reviews;
+        await expect(savePolicySources(root, omitted)).rejects.toThrow("EXCLUDED_FIELD_HISTORY_CHANGED");
+      }
+      if (mode !== "program_changed") expect(current).toEqual(before);
+    } finally { vi.restoreAllMocks(); await fs.rm(root, { recursive: true, force: true }); }
+  });
   it("proves an inspected unused field is excluded from the complete disabled bundle without adding private access", () => {
     const current = input(privateFixture()), before = structuredClone(current), draft = policyCoverageDraft(current);
     const excluded = draft.runner_evidence.excluded_field_access!;

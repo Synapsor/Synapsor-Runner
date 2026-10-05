@@ -102,7 +102,7 @@ it("retains a typed private field choice through correction, question pause and 
 it("explicit decline is durably decided while EOF remains waiting",async()=>{
   const {saved}=await paused();let decided:ReadBoundaryRevisionCheckpoint|undefined;const noSend=vi.fn();
   await expect(generateModelReadBoundaryRevision({...setup(noSend),resumeCheckpoint:saved,onCheckpoint:async(value:any)=>{decided=value;},clarificationHandler:async()=>({state:"declined"})} as any)).rejects.toThrow("READ_BOUNDARY_REVISION_CLARIFICATION_DECLINED");
-  expect(decided?.stage).toBe("decided");expect(decided?.pending_question.decision).toEqual({state:"declined"});expect(noSend).not.toHaveBeenCalled();
+  expect(decided?.stage).toBe("decided");expect(decided?.pending_question.kind === "clarification" ? decided.pending_question.decision : undefined).toEqual({state:"declined"});expect(noSend).not.toHaveBeenCalled();
 });
 
 it("closed parser refuses nested extras, changed digest and oversized records",async()=>{

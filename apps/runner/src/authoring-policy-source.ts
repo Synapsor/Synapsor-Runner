@@ -1,4 +1,5 @@
 import { AUTHORING_PROGRAM_CAPACITY } from "./authoring-program-capacity.js";
+import { assertExcludedFieldReviews, type ExcludedFieldReview } from "./authoring-excluded-field-records.js";
 import { assertSourceInputReviews, type SourceInputPolicyReview } from "./authoring-input-policy-records.js";
 import { assertScopedDisclosureReviews, type ScopedDisclosureReview, type ScopedDisclosureInventory } from "./authoring-scoped-disclosure-records.js";
 import { assertSourceTransactionReviews, type SourceTransactionReview } from "./authoring-source-transaction-review.js";
@@ -273,6 +274,8 @@ export type PolicySourceSession = {
   counting_decisions?: CountingDecision[];
   /** Attributable source-to-field requirements and owner decisions, never grants. */
   scoped_disclosure_reviews?: ScopedDisclosureReview[];
+  /** Exact unused-field metadata consent; never a privacy waiver or data grant. */
+  excluded_field_reviews?: ExcludedFieldReview[];
   /** Attributed source meaning, separate from compiled transaction capability. */
   source_transaction_reviews?: SourceTransactionReview[];
   input_policy_reviews?: SourceInputPolicyReview[];
@@ -439,6 +442,7 @@ export async function savePolicySources(root: string, session: PolicySourceSessi
     const file = sourcePath(root, session.id), temporary = `${file}.${randomUUID()}.tmp`;
     assertSourceInputReviews(session.input_policy_reviews);
     assertScopedDisclosureReviews(session.scoped_disclosure_reviews);
+    assertExcludedFieldReviews(session.excluded_field_reviews);
     assertSourceTransactionReviews(session.source_transaction_reviews);
     assertSourceTransactionScopeReviews(session.source_transaction_scope_reviews);
     assertCountingDecisions(session);
@@ -459,6 +463,9 @@ export async function savePolicySources(root: string, session: PolicySourceSessi
         canonicalJsonDigest(record) !== canonicalJsonDigest(session.coverage?.cross_source_counter_reviews?.[index] ?? null)))
         throw new Error('POLICY_RETAINED_DUTY_HISTORY_CHANGED: Prior cross-Source counter reviews must remain in order and unchanged.');
       const prior=existing.scoped_disclosure_reviews??[];
+      assertExcludedFieldReviews(existing.excluded_field_reviews);
+      if ((existing.excluded_field_reviews ?? []).some((r, i) => r.digest !== session.excluded_field_reviews?.[i]?.digest))
+        throw new Error("EXCLUDED_FIELD_HISTORY_CHANGED: Retain all earlier exact metadata-transfer decisions; no history was overwritten.");
       assertScopedDisclosureReviews(prior);
       if (prior.some((r,i)=>r.digest!==session.scoped_disclosure_reviews?.[i]?.digest))
         throw new Error("SCOPED_DISCLOSURE_HISTORY_CHANGED: Existing requirements and decisions must be retained; no review was overwritten.");
@@ -522,6 +529,7 @@ export async function loadPolicySources(root: string, id: string): Promise<Polic
     throw new Error("POLICY_COVERAGE_EPISODE_INVALID: Saved review attempt accounting is invalid; no provider call or retry was started.");
   }
   assertScopedDisclosureReviews(value.scoped_disclosure_reviews);
+  assertExcludedFieldReviews(value.excluded_field_reviews);
   assertSourceInputReviews(value.input_policy_reviews);
   assertSourceTransactionReviews(value.source_transaction_reviews);
   assertSourceTransactionScopeReviews(value.source_transaction_scope_reviews);

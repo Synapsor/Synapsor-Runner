@@ -29,6 +29,8 @@ export async function reviewReadPrerequisiteSelection(input: {
   session: BoundaryReviewInteractiveSession;
   assertCurrent: () => Promise<void>;
   rememberAnswer: (question: string, answer: string) => Promise<void>;
+  /** Existing question-contract adapter; provided words are captured exactly. */
+  reviewCorrection?: (question: string, supplied?: string) => Promise<string | undefined>;
 }): ReturnType<GenerateModelReadPrerequisiteInput["confirmSemanticSelection"]> {
   await input.assertCurrent();
   if (!input.session.chooseOption) return { state: "pending" };
@@ -56,14 +58,15 @@ export async function reviewReadPrerequisiteSelection(input: {
     ] } });
   await input.assertCurrent();
   if (selected === "revise") {
-    const question = "What should be explained or corrected in this private access condition?";
-    correction ??= await input.session.promptText(question);
+    const question = "What should be explained or corrected in the displayed private access condition?";
+    correction = input.reviewCorrection ? await input.reviewCorrection(question, correction)
+      : correction ?? await input.session.promptText(question);
     await input.assertCurrent();
     if (!correction?.trim()) return { state: "pending" };
     validateReadPrerequisiteBusinessAnswer(correction);
-    await input.rememberAnswer(question, correction.trim());
+    if (!input.reviewCorrection) await input.rememberAnswer(question, correction.trim());
     await input.assertCurrent();
-    return { state: "revise", instruction: correction.trim() };
+    return { state: "revise", instruction: input.reviewCorrection ? correction : correction.trim() };
   }
   if (selected !== "confirm") return { state: "pending" };
   const evidence = `Use this exact private access condition: ${mapping.selection_digest}`;

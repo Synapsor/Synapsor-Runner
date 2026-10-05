@@ -112,7 +112,7 @@ export function parseOperatorQuestion(value: unknown): OperatorQuestion {
   if (value.presentation !== undefined && (!object(value.presentation) || !exact(value.presentation, ["text", "recorded_at"])
     || !text(value.presentation.text, 4000) || !date(value.presentation.recorded_at))) invalid("Invalid saved presentation.");
   if (value.raw_answer !== undefined && (!value.presentation || !object(value.raw_answer) || !exact(value.raw_answer, ["id", "text", "actor", "recorded_at"])
-    || !id(value.raw_answer.id) || !text(value.raw_answer.text, 4000, true) || value.raw_answer.actor !== "local_installation_operator"
+    || !id(value.raw_answer.id) || !text(value.raw_answer.text, value.kind === "attributed_meaning" && ["read_prerequisite", "read_prerequisite_correction"].includes(String(value.target.phase)) ? 8000 : 4000, true) || value.raw_answer.actor !== "local_installation_operator"
     || !date(value.raw_answer.recorded_at))) invalid("Invalid trusted answer reference.");
   if (value.proposal !== undefined) validateProposal(value as OperatorQuestion, value.proposal);
   if (value.proposal_history !== undefined) {
@@ -273,11 +273,15 @@ export function parseOperatorQuestions(value: unknown, handoffs: readonly Author
     if (!h || h.scope_digest !== q.scope_digest || h.context_digest !== q.context_digest
       || q.kind === "attributed_meaning" && q.presentation && q.presentation.text !== h.question
       || q.kind === "attributed_meaning" && !(q.continuation === "action_rule_review"
-        ? h.consumer === "policy_clarification" : ["read_clarification", "read_revision_clarification"].includes(h.consumer))
+        ? h.consumer === "policy_clarification" : ["read_clarification", "read_revision_clarification", "read_revision_prerequisite"].includes(h.consumer))
       || q.kind === "input_bounds" && h.consumer !== "input_policy"
       || q.kind === "writer_maintenance" && h.consumer !== "version_maintenance"
       || h.state === "answered" && !q.disposition && (!q.raw_answer || h.answer !== q.raw_answer.text || h.actor !== q.raw_answer.actor)
       || q.confirmation && (h.state !== "answered" || !q.raw_answer?.text.trim())) invalid("The question has no exact attributable owner handoff.");
+    if (h.consumer === "read_revision_prerequisite"
+      && (q.kind !== "attributed_meaning" || q.continuation !== "read_mapping"
+        || !["read_prerequisite", "read_prerequisite_correction"].includes(q.target.phase)))
+      invalid("The private Read statement has no exact stage association.");
     if (q.budget_owner_id) {
       const root = result.find(record => record.id === q.budget_owner_id)!;
       const predecessors = result.filter(other => seen.has(other.id) && other.id !== q.id

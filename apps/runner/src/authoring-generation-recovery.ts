@@ -11,7 +11,7 @@ export type AuthoringQuestionCompletion = {
   response_digest: `sha256:${string}`;
 };
 export type AuthoringQuestionHandoff = {
-  consumer: "action_rule_clarification" | "planning" | "read_clarification" | "read_value_context" | "read_revision_instruction" | "read_revision_clarification" | "policy_clarification" | "input_policy" | "version_maintenance";
+  consumer: "action_rule_clarification" | "planning" | "read_clarification" | "read_value_context" | "read_revision_instruction" | "read_revision_clarification" | "read_revision_prerequisite" | "policy_clarification" | "input_policy" | "version_maintenance";
   question: string;
   answered?: {answer: string; actor: "local_installation_operator"; recorded_at: string; checkpoint_digest: `sha256:${string}`};
   checkpoint_digest: `sha256:${string}`;
@@ -31,6 +31,10 @@ export type AuthoringTransportOperation = {
    * from the live decoder sequence and committed with its owning Resume CAS. */
   action_checkpoint?: { consumer: "action_rule_components"; kind: "version_interpretation" | "compiled_draft";
     material_digest: `sha256:${string}`; response_digest: `sha256:${string}` };
+  /** Consumption of this exact native Read adapter result, separate from human consent. */
+  read_checkpoint?: { consumer: "read_revision"; kind: "private_prerequisite" | "prerequisite_mapping";
+    material_digest: `sha256:${string}`; response_digest: `sha256:${string}`;
+    decision?: { digest: `sha256:${string}`; actor: "local_installation_operator"; recorded_at: string } };
   producer_input?: ProviderHttpInput["authoringInput"];
   manual_recovery?: {
     id: string;
@@ -137,7 +141,7 @@ export function validateAuthoringTransportState(value: unknown): asserts value i
   }
   const seen = new Set<string>();
   for (const op of s.operations) {
-    if (!op || typeof op !== "object" || !exactKeys(op,["id","request_digest","context_digest","deadline","state","checkpoint_seen","question_handoff","action_checkpoint","producer_input","manual_recovery","attempts"]) || !id(op.id) || seen.has(op.id) || !digest(op.request_digest) || !digest(op.context_digest) || !date(op.deadline)
+    if (!op || typeof op !== "object" || !exactKeys(op,["id","request_digest","context_digest","deadline","state","checkpoint_seen","question_handoff","action_checkpoint","read_checkpoint","producer_input","manual_recovery","attempts"]) || !id(op.id) || seen.has(op.id) || !digest(op.request_digest) || !digest(op.context_digest) || !date(op.deadline)
       || !["in_flight","unsent","unknown","partial","received","handled","checkpointed","refused"].includes(op.state)
       || op.checkpoint_seen !== undefined && op.checkpoint_seen !== true
       || !Array.isArray(op.attempts) || !op.attempts.length || op.attempts.length > 3) throw invalid();
@@ -149,6 +153,19 @@ export function validateAuthoringTransportState(value: unknown): asserts value i
         || !digest(c.material_digest) || !digest(c.response_digest)
         || op.state !== "checkpointed" || op.checkpoint_seen !== true || op.attempts.at(-1)?.outcome !== "response") throw invalid();
     }
+    if (op.read_checkpoint !== undefined) {
+      const c = op.read_checkpoint;
+      if (!c || typeof c !== "object" || Array.isArray(c)
+        || !exactKeys(c, ["consumer", "kind", "material_digest", "response_digest", "decision"])
+        || c.consumer !== "read_revision" || !["private_prerequisite", "prerequisite_mapping"].includes(c.kind)
+        || !digest(c.material_digest) || !digest(c.response_digest)
+        || op.state !== "checkpointed" || op.checkpoint_seen !== true || op.attempts.at(-1)?.outcome !== "response") throw invalid();
+    }
+    if (op.read_checkpoint?.decision !== undefined) {
+      const d = op.read_checkpoint.decision;
+      if (op.read_checkpoint.kind !== "prerequisite_mapping" || !d || typeof d !== "object" || Array.isArray(d) || !exactKeys(d, ["digest", "actor", "recorded_at"])
+        || !digest(d.digest) || d.actor !== "local_installation_operator" || !date(d.recorded_at)) throw invalid();
+    }
     if (op.producer_input !== undefined) {
       const p = op.producer_input;
       if (!p || typeof p !== "object" || !exactKeys(p,["consumer","operator_message","program_resume_revision"])
@@ -158,11 +175,11 @@ export function validateAuthoringTransportState(value: unknown): asserts value i
     if (op.question_handoff !== undefined) {
       const h = op.question_handoff;
       if (!h || typeof h !== "object" || Array.isArray(h) || !exactKeys(h, ["consumer","question","answered","checkpoint_digest","question_digest","response_digest","recorded_at"])
-        || !["action_rule_clarification", "planning", "read_clarification", "read_value_context", "read_revision_instruction", "read_revision_clarification", "policy_clarification", "input_policy", "version_maintenance"].includes(h.consumer) || typeof h.question !== "string" || !h.question.trim() || h.question.length > 20_000
+        || !["action_rule_clarification", "planning", "read_clarification", "read_value_context", "read_revision_instruction", "read_revision_clarification", "read_revision_prerequisite", "policy_clarification", "input_policy", "version_maintenance"].includes(h.consumer) || typeof h.question !== "string" || !h.question.trim() || h.question.length > 20_000
         || canonicalJsonDigest(h.question) !== h.question_digest || !digest(h.checkpoint_digest) || !digest(h.question_digest)
         || !digest(h.response_digest) || !date(h.recorded_at) || op.attempts.at(-1)?.outcome !== "response" || op.state !== "checkpointed" || op.checkpoint_seen !== true) throw invalid();
       if (h.answered !== undefined && (!h.answered || typeof h.answered !== "object" || Array.isArray(h.answered) || !exactKeys(h.answered,["answer","actor","recorded_at","checkpoint_digest"])
-        || typeof h.answered.answer !== "string" || !h.answered.answer.trim() || h.answered.answer.length > 4_000
+        || typeof h.answered.answer !== "string" || !h.answered.answer.trim() || h.answered.answer.length > (h.consumer === "read_revision_prerequisite" ? 8_000 : 4_000)
         || h.answered.actor !== "local_installation_operator" || !date(h.answered.recorded_at) || !digest(h.answered.checkpoint_digest))) throw invalid();
     }
     seen.add(op.id);
@@ -358,6 +375,63 @@ export function authoringActionCheckpoint(state: AuthoringTransportState,
   last.state = "checkpointed"; last.checkpoint_seen = true;
   validateAuthoringTransportState(copy);
   return copy;
+}
+
+/** Same live decoder/CAS contract as the existing component adapter. No
+ * question is invented for an internal request or an exact mapping review. */
+export function authoringReadCheckpoint(state: AuthoringTransportState | undefined,
+  completion: AuthoringQuestionCompletion,
+  record: Omit<NonNullable<AuthoringTransportOperation["read_checkpoint"]>, "response_digest" | "decision">): AuthoringTransportState {
+  const known = authoringQuestionSequenceCompletion([completion]), frame = storage.getStore();
+  const refs = frame?.completedTurns.get(canonicalJsonDigest(completion));
+  if (!state || !known || !refs?.length || canonicalJsonDigest(known) !== canonicalJsonDigest(completion))
+    throw new AskError("ASK_GENERATION_OUTCOME_REQUIRES_INSPECTION", "The Read result has no current completed consumer association.", 409);
+  const copy = structuredClone(state), last = copy.operations.find(op => op.id === completion.operation_id);
+  if (!last || last.request_digest !== completion.request_digest || last.context_digest !== completion.context_digest
+    || !["handled", "checkpointed"].includes(last.state) || last.attempts.at(-1)?.outcome !== "response") throw invalid();
+  const checkpoint = { ...record, response_digest: completion.response_digest };
+  if (last.read_checkpoint && canonicalJsonDigest(last.read_checkpoint) !== canonicalJsonDigest(checkpoint)) throw invalid();
+  for (const ref of refs) {
+    const op = copy.operations.find(item => item.id === ref.id);
+    if (!op || !frame?.owned.has(op.id) || op.request_digest !== ref.request_digest || op.context_digest !== ref.context_digest
+      || op.attempts.at(-1)?.id !== ref.attempt_id || op.attempts.at(-1)?.outcome !== "response"
+      || !["handled", "checkpointed", "refused"].includes(op.state)) throw invalid();
+    if (op.state === "handled") { op.state = "checkpointed"; op.checkpoint_seen = true; }
+  }
+  last.read_checkpoint = checkpoint; last.state = "checkpointed"; last.checkpoint_seen = true;
+  validateAuthoringTransportState(copy); return copy;
+}
+export function assertAuthoringReadCheckpoint(state: AuthoringTransportState | undefined,
+  completion: AuthoringQuestionCompletion,
+  record: Omit<NonNullable<AuthoringTransportOperation["read_checkpoint"]>, "response_digest" | "decision">): void {
+  const op = state?.operations.find(item => item.id === completion.operation_id);
+  if (!op || op.state !== "checkpointed" || op.checkpoint_seen !== true || op.attempts.at(-1)?.outcome !== "response"
+    || op.request_digest !== completion.request_digest || op.context_digest !== completion.context_digest
+    || !op.read_checkpoint
+    || op.read_checkpoint.consumer !== record.consumer || op.read_checkpoint.kind !== record.kind
+    || op.read_checkpoint.material_digest !== record.material_digest || op.read_checkpoint.response_digest !== completion.response_digest)
+    throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The Read adapter has no exact committed native result. Preserve the saved job for inspection.");
+}
+
+/** Called under the owning human review/currentness/CAS save. This associates
+ * the explicit decision with its previously consumed exact proposal; it neither
+ * mints a completion nor permits another call. Reopen can only reuse its match. */
+export function authoringReadDecisionCheckpoint(state: AuthoringTransportState | undefined,
+  completion: AuthoringQuestionCompletion, material: unknown, decision: unknown): AuthoringTransportState {
+  assertAuthoringReadCheckpoint(state, completion, { consumer: "read_revision", kind: "prerequisite_mapping",
+    material_digest: canonicalJsonDigest(material) });
+  const copy = structuredClone(state!), receipt = copy.operations.find(op => op.id === completion.operation_id)!.read_checkpoint!;
+  const digest = canonicalJsonDigest(decision);
+  if (receipt.decision && receipt.decision.digest !== digest) throw invalid();
+  receipt.decision ??= { digest, actor: "local_installation_operator", recorded_at: new Date().toISOString() };
+  validateAuthoringTransportState(copy); return copy;
+}
+export function assertAuthoringReadDecision(state: AuthoringTransportState | undefined,
+  completion: AuthoringQuestionCompletion, material: unknown, decision: unknown): void {
+  assertAuthoringReadCheckpoint(state, completion, { consumer: "read_revision", kind: "prerequisite_mapping",
+    material_digest: canonicalJsonDigest(material) });
+  if (state!.operations.find(op => op.id === completion.operation_id)!.read_checkpoint!.decision?.digest !== canonicalJsonDigest(decision))
+    throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The private mapping has no exact saved operator decision.");
 }
 
 /** Prepare one exact question handoff for the SAME coordinated resume write as

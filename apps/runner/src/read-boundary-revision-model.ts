@@ -1,3 +1,4 @@
+import type { ReadPrerequisiteCheckpoint } from "./read-prerequisite-checkpoint.js";
 import type { ReadBoundaryFieldExposure, ReadBoundaryFieldExposureChange, ModelReadBoundaryRevisionClarification, ModelReadBoundaryRevisionClarificationDecision } from "./read-authoring-contract-types.js";
 export type { ReadBoundaryFieldExposure, ReadBoundaryFieldExposureChange, ModelReadBoundaryRevisionClarification, ModelReadBoundaryRevisionClarificationDecision } from "./read-authoring-contract-types.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
@@ -91,7 +92,11 @@ export async function generateModelReadBoundaryRevision(input: {
   /** Preview the complete candidate and its dependencies without saving it. */
   validateRevision?: (revision: Pick<ModelReadBoundaryRevisionResult, "changes" | "policy_changes" | "read_prerequisite" | "reviewed_relationship">) => Promise<void>;
   /** The host reviews additional metadata and semantic meaning; never activates access. */
-  reviewPrivatePrerequisite?: (request: { reason: string }) => Promise<ReviewedReadCurrentStatePrerequisite | undefined>;
+  reviewPrivatePrerequisite?: (request: { reason: string }, controls: {
+    resumeCheckpoint?: ReadPrerequisiteCheckpoint;
+    parentCompletion?: ReturnType<typeof completedAuthoringQuestion>;
+    onCheckpoint: (checkpoint: ReadPrerequisiteCheckpoint) => Promise<void>;
+  }) => Promise<ReviewedReadCurrentStatePrerequisite | undefined>;
   reviewRelationship?: (request: { from_resource: string; to_resource: string; reason: string }) => Promise<ReviewedReadRelationship | undefined>;
   dependencies?: AskProviderDependencies;
   conversation?: ModelAuthoringConversation;
@@ -140,7 +145,7 @@ export async function generateModelReadBoundaryRevision(input: {
   let prerequisiteReviewFailed = false;
   let issue = "The model did not submit one exact field-exposure revision.";
   const businessContext = operatorBusinessContext(catalog.resources);
-  const wording = operatorClarificationGate({ stage: "read", context: businessContext });
+  let wording = operatorClarificationGate({ stage: "read", context: businessContext });
   let callCount = 0;
   let lastSubmission: Record<string, unknown> | undefined;
   const privateDecisions = new Map<string, ReadBoundaryFieldExposureChange>();
@@ -381,6 +386,7 @@ export async function generateModelReadBoundaryRevision(input: {
   };
   const acceptTurn = (result: Awaited<ReturnType<typeof run>>) => {
     usage = mergeUsage(usage, result.usage); completion = completedAuthoringQuestion(result); pending = undefined;
+    if (clarification) wording = operatorClarificationGate({ stage: "read", context: businessContext });
   };
 
   try {
@@ -399,7 +405,9 @@ export async function generateModelReadBoundaryRevision(input: {
       callCount = s.call_count; correctionUsed = s.correction_used; prerequisiteReviewFailed = s.prerequisite_review_failed;
       issue = s.issue; clarificationCount = s.clarification_count; clarificationAnswers.push(...s.clarification_answers);
       reviewedPrerequisite = s.reviewed_prerequisite; reviewedRelationship = s.reviewed_relationship; usage = s.usage;
-      pending = saved.pending_question; completion = pending.completion; clarification = pending.request;
+      pending = saved.pending_question; completion = pending.completion;
+      if (pending.kind === "clarification") clarification = pending.request;
+      else prerequisiteRequest = pending.request;
       lastDecided = saved.stage === "decided" ? structuredClone(pending) : undefined;
       await revalidateStaged();
       // The host rechecks the saved answer's current context/CAS here. This is
@@ -444,8 +452,21 @@ export async function generateModelReadBoundaryRevision(input: {
         continue;
       }
       if (prerequisiteRequest) {
+        if (pending?.kind !== "private_prerequisite") {
+          pending = { kind: "private_prerequisite", request: structuredClone(prerequisiteRequest), ...(completion ? { completion } : {}) };
+          await checkpoint("waiting");
+        }
+        const parent = pending;
         try {
-          reviewedPrerequisite = await input.reviewPrivatePrerequisite!(prerequisiteRequest);
+          if (!reviewedPrerequisite) reviewedPrerequisite = await input.reviewPrivatePrerequisite!(prerequisiteRequest, {
+            ...(parent.nested_checkpoint ? { resumeCheckpoint: structuredClone(parent.nested_checkpoint) } : {}),
+            ...(parent.completion ? { parentCompletion: parent.completion } : {}),
+            onCheckpoint: async nested => {
+              assertCurrent();
+              pending = { ...parent, nested_checkpoint: structuredClone(nested) };
+              await checkpoint("waiting");
+            },
+          });
         } catch (error) {
           if (!(error instanceof ReadPrerequisiteCatalogTooLargeError)) throw error;
           prerequisiteRequest = undefined;
@@ -463,6 +484,7 @@ export async function generateModelReadBoundaryRevision(input: {
         }
         prerequisiteRequest = undefined;
         if (!reviewedPrerequisite) throw new Error("READ_PREREQUISITE_REVIEW_PENDING: The private access condition was not mapped. The previous draft remains unchanged. Resume this request to map an authoritative source; do not activate broader access.");
+        await checkpoint("decided");
         const result = await run([
           baseQuestion,
           `Runner validated this operator-confirmed private access check: ${JSON.stringify(reviewedPrerequisite)}. It is staged for this disabled revision, not saved or active.`,
@@ -473,7 +495,7 @@ export async function generateModelReadBoundaryRevision(input: {
         continue;
       }
       const request = clarification!;
-      const retained = pending?.decision;
+      const retained = pending?.kind === "clarification" ? pending.decision : undefined;
       if (!retained) {
         pending = { kind: "clarification", request: structuredClone(request), question: request.question, ...(completion ? { completion } : {}) };
         await checkpoint("waiting");
@@ -491,8 +513,8 @@ export async function generateModelReadBoundaryRevision(input: {
           if (decision.answer.length > 1_000) throw new Error("READ_BOUNDARY_REVISION_CHECKPOINT_INVALID: The complete answer is longer than the saved answer limit; no words were truncated.");
           const canonical = { question: request.question, answer: decision.answer };
           clarificationAnswers.push(canonical); clarificationCount++;
-          pending = { ...pending!, decision: { state: "answered", answer: canonical.answer } };
-        } else if (decision.state === "declined" && (!input.onCheckpoint || Object.keys(decision).length === 1)) pending = { ...pending!, decision: { state: "declined" } };
+          pending = { ...pending as Extract<ReadBoundaryRevisionCheckpoint["pending_question"], { kind: "clarification" }>, decision: { state: "answered", answer: canonical.answer } };
+        } else if (decision.state === "declined" && (!input.onCheckpoint || Object.keys(decision).length === 1)) pending = { ...pending as Extract<ReadBoundaryRevisionCheckpoint["pending_question"], { kind: "clarification" }>, decision: { state: "declined" } };
         else throw new Error("READ_BOUNDARY_REVISION_CHECKPOINT_INVALID: The clarification decision is not canonical.");
         await checkpoint("decided");
       }

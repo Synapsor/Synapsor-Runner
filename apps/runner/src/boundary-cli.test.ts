@@ -456,6 +456,7 @@ describe("boundary operator-plane CLI", () => {
       const hostCallbacks: number[] = [], operatorQuestions: number[] = [], metadataReviews: number[] = [], semanticReviews: number[] = [];
       let firstRecord: { decision_id: string; applicability_digest: string } | undefined;
       let inspectPrivateSource = false;
+      let lastDetails: unknown;
       const inspect = async () => {
         if (inspectPrivateSource && command === 2 && mode === "stale_proof") {
           const stale = structuredClone(inspection);
@@ -509,14 +510,17 @@ describe("boundary operator-plane CLI", () => {
               hostCallbacks.push(command);
               expect(request.reviewPrivatePrerequisite).toEqual(expect.any(Function));
               inspectPrivateSource = true;
-              try { await request.reviewPrivatePrerequisite!({ reason: "Map the policy's required current-state condition." }); }
+              try { return await generateModelReadBoundaryRevision(request); }
               finally { inspectPrivateSource = false; }
-              throw new Error("TARGET_B_HOST_MAPPING_PAUSED: preserve exact authorities for the next command.");
             },
             modelAuthoringSession: { provider: "openai", model: "gpt-test", apiKey: "session-secret", dependencies: {
               requestJson: async request => {
-                providerCalls++;
                 const body = request.body as { tools: Array<{ name: string; parameters: { oneOf: Array<{ properties?: { clarification_request?: { properties: { decision_id?: { enum: string[] } } } } }> } }> };
+                if (body.tools.some(tool => tool.name === "runner__submit_read_boundary_revision")) return {
+                  status: 200, body: { output: [{ type: "function_call", call_id: `parent_${command}`,
+                    name: "runner__submit_read_boundary_revision", arguments: JSON.stringify({
+                      private_prerequisite_request: { reason: "Map the policy's required current-state condition." } }) }] } };
+                providerCalls++;
                 const tool = body.tools.find(tool => tool.name === "runner__submit_read_prerequisite");
                 if (!tool) throw new Error("Unexpected provider call outside the actual private prerequisite mapper");
                 const ids = tool.parameters.oneOf.flatMap(branch => branch.properties?.clarification_request?.properties.decision_id?.enum ?? []);
@@ -533,6 +537,7 @@ describe("boundary operator-plane CLI", () => {
             } },
           });
         expect(await run(), JSON.stringify(vi.mocked(chat.rememberDetails).mock.calls)).toBe(0);
+        lastDetails = vi.mocked(chat.rememberDetails).mock.calls;
         const saved = JSON.parse(await fs.readFile(resumePath, "utf8"));
         expect(saved.action).toEqual(unfinished);
         const acknowledged = ["persist", "unrelated_passage", "changed_requirement", "stale_proof"].includes(mode)
@@ -542,8 +547,8 @@ describe("boundary operator-plane CLI", () => {
         if (command === 1 && acknowledged) firstRecord = structuredClone(saved.read_prerequisite_decisions[0]);
         if (command === 2 && firstRecord) {
           expect(saved.read_prerequisite_decisions[0].decision_id).toBe(firstRecord.decision_id);
-          if (mode === "changed_requirement") expect(saved.read_prerequisite_decisions[0].applicability_digest).not.toBe(firstRecord.applicability_digest);
-          else expect(saved.read_prerequisite_decisions[0]).toEqual(firstRecord);
+          expect(saved.read_prerequisite_decisions[0]).toEqual(firstRecord);
+          if (mode === "changed_requirement") expect(JSON.stringify(vi.mocked(chat.rememberDetails).mock.calls)).toContain("CHECKPOINT_STALE");
         }
         if (command === 1 && (mode === "failed_save" || mode === "noop_save")) {
           expect(providerCalls).toBe(1);
@@ -560,10 +565,10 @@ describe("boundary operator-plane CLI", () => {
       }
       failure.mockRestore();
       expect(hostCallbacks).toEqual([1, 2]);
-      expect(operatorQuestions).toEqual(["persist", "unrelated_passage", "stale_proof"].includes(mode) ? [1] : [1, 2]);
-      expect(scopeOptIns).toBe(mode === "missing_refs" || mode === "stale_refs" ? 0 : mode === "stale_proof" ? 1 : 2);
+      expect(operatorQuestions).toEqual([1]);
+      expect(scopeOptIns).toBe(mode === "missing_refs" || mode === "stale_refs" ? 0 : mode === "failed_save" || mode === "noop_save" ? 2 : 1);
       expect(metadataReviews).toEqual(mode === "stale_proof" ? [1] : [1, 2]);
-      expect(semanticReviews).toEqual(mode === "failed_save" || mode === "noop_save" ? [2] : mode === "stale_proof" ? [1] : [1, 2]);
+      expect(semanticReviews, JSON.stringify(lastDetails)).toEqual(mode === "failed_save" || mode === "noop_save" ? [2] : mode === "stale_proof" || mode === "changed_requirement" ? [1] : [1, 2]);
       expect(injected > 0).toBe(mode === "failed_save" || mode === "noop_save");
       expect(noDraft).not.toHaveBeenCalled();
     } finally { await fixture.dispose(); }
@@ -9152,7 +9157,7 @@ describe("boundary operator-plane CLI", () => {
                 return undefined;
               });
             try {
-              await expect(request.reviewPrivatePrerequisite!({ reason: "Review existing private current-status evidence." }))
+              await expect(request.reviewPrivatePrerequisite!({ reason: "Review existing private current-status evidence." }, { onCheckpoint: async () => { throw new Error("This metadata-only fixture has no native parent completion."); } }))
                 .resolves.toBeUndefined();
               expect(sourceReview).toHaveBeenCalledOnce();
               expect(sourceReview.mock.calls[0]![0].projectRoot).toBe(root);

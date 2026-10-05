@@ -156,10 +156,15 @@ function fieldPrivacyEvidence(draft: unknown) {
       || excluded.source_constraints_digest !== canonicalJsonDigest(evidence?.source_constraints)) {
       throw new Error("Incomplete field privacy evidence: selected Read, Actions or inspected metadata changed. Rebuild the exact selected authoring evidence.");
     }
+    const reviewed = evidenceRecord(evidence?.reviewed_excluded_field_metadata);
+    if (reviewed && excluded.reviewed_metadata_digest !== canonicalJsonDigest(reviewed))
+      throw new Error("Incomplete field privacy evidence: exact reviewed unused-field metadata changed.");
     for (const [resource, raw] of Object.entries(evidenceRecord(excluded.resources) ?? {})) {
       const entry = evidenceRecord(raw), inspected = evidenceRecord(evidenceRecord(evidenceRecord(evidence?.source_constraints)?.resources)?.[resource]);
       const columns = evidenceRecord(inspected?.columns);
-      if (entry?.resource !== resource || !columns || Object.keys(evidenceRecord(entry.fields) ?? {}).some(field => !(field in columns))) {
+      const extra = evidenceRecord(reviewed?.[resource]), reviewedColumns = evidenceRecord(extra?.columns);
+      if (entry?.resource !== resource || Object.keys(evidenceRecord(entry.fields) ?? {}).some(field => !(columns && Object.hasOwn(columns, field))
+        && !(extra?.resource === resource && evidenceRecord(reviewedColumns?.[field])?.inspected === true))) {
         throw new Error("Incomplete field privacy evidence: excluded fields require their exact inspected resource and column identity.");
       }
       add(resource, `/runner_evidence/excluded_field_access/resources/${escape(resource)}`, entry.fields, false);

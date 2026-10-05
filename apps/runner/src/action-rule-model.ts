@@ -1957,7 +1957,8 @@ async function runFocusedPhase(input: {
           return phaseRefusal(issue);
         }
         if (parsed.state === "clarification") {
-          const presented = wording(parsed.question);
+          let presented = wording(parsed.question);
+          if (presented.state === "rephrase" && (callCount > 1 || input.correctionOnly === true)) presented = wording(parsed.question);
           if (presented.state === "rephrase") { issue = presented.guidance; return phaseRefusal(issue); }
           clarificationQuestion = presented.question;
         }

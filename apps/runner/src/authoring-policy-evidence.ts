@@ -1,4 +1,5 @@
 import { SOURCE_RECEIPT_CONTRACT, ATOMIC_EFFECT_TRANSACTION } from "./authoring-receipt-contract.js";
+import { assertExcludedFieldReviews, excludedFieldReviewBinding } from "./authoring-excluded-field-records.js";
 import {sourceTransactionPreparedContext} from './authoring-source-transaction-review.js';
 import { actionSubjectCompatibility } from "./action-subject-compatibility.js";
 import { receiptReadExclusion, reviewEvidencePhases } from "./authoring-receipt-read-evidence.js";
@@ -10,7 +11,7 @@ import type { ActionRuleAuthorityReviewSubjectV1 } from "./action-rule-authority
 import { readBoundaryRevisionCatalog } from "./read-boundary-revision-model.js";
 import type { ManagedMcpProjectClient } from "./managed-mcp-project.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
-import { activePolicySource, type PolicyCoverage, type PolicyPassage, type PolicySourceSession } from "./authoring-policy-source.js";
+import { activePolicySource, authoringDestination, type PolicyCoverage, type PolicyPassage, type PolicySourceSession } from "./authoring-policy-source.js";
 import { hasReviewedCustomerReadEntry, reviewedReadEntryPaths } from "./read-relationship-access.js";
 import { policySourceConstraintEvidence, type PolicySourceInspection } from "./action-rule-source-evidence.js";
 import { inspectDatabase, rolePostureFingerprint, schemaFingerprintForInspection } from "@synapsor-runner/schema-inspector";
@@ -130,7 +131,7 @@ export function policyCoverageDraft(input: {
   reviewedVersionFields?: readonly ReviewedActionVersionField[];
   policySources?: PolicySourceSession;
   /** Current host-selected authoring session, not saved policy prose or a runtime client. */
-  authoringSession?: { provider: AskProvider; model: string };
+  authoringSession?: { provider: AskProvider; model: string; destination?: string };
   /** Sanitized current operator policy readback; no credentials, identities or source rows. */
   countingDomain?: CountingOutcomeDomain;
   operatorClarifications?: Array<{ question: string; answer: string }>;
@@ -364,6 +365,34 @@ export function policyCoverageDraft(input: {
       }]));
       return Object.keys(fields).length ? [[resource, { resource, fields }]] : [];
     })) : undefined;
+  // Explicit metadata consent can cover a field in an otherwise unused table.
+  // Do not expand source_constraints to the table or disclose its neighbours,
+  // descriptions, keys, types or CHECK text merely to establish exclusion.
+  const reviewedExcludedMetadata: Record<string, { resource: string; columns: Record<string, { inspected: true }> }> = {};
+  const excludedReviews = input.policySources?.excluded_field_reviews;
+  assertExcludedFieldReviews(excludedReviews);
+  if (excludedFields && input.source && policySource && input.authoringSession) {
+    const session = input.authoringSession;
+    const destination = session.destination ?? (session.provider !== "openai_compatible" ? authoringDestination(session) : undefined);
+    const binding = destination ? excludedFieldReviewBinding({ draft: { read: input.read, actions: actions.map(action => action.draft),
+      runner_evidence: { action_revision: input.authority ? { review_record_digest: input.authority.digest } : null } },
+      source: input.source, sourceSession: input.policySources!.id, sourceDigest: policySource.digest as `sha256:${string}`, destination }) : undefined;
+    for (const review of excludedReviews ?? []) {
+      if (!binding || canonicalJsonDigest(review.binding) !== canonicalJsonDigest(binding)) continue;
+      for (const target of review.fields) {
+        const tables = input.source.inspection.tables.filter(table => `${table.schema}.${table.name}` === target.resource);
+        if (tables.length !== 1 || tables[0]!.columns.filter(column => column.name === target.field).length !== 1
+          || input.read.pack.resources.some(resource => `${resource.schema}.${resource.table}` === target.resource)
+          || actions.some(action => action.verification_boundary.resources.some(resource => resource.resource === target.resource))) continue;
+        const metadata = reviewedExcludedMetadata[target.resource] ??= { resource: target.resource, columns: {} };
+        metadata.columns[target.field] = { inspected: true };
+        const resource = excludedFields[target.resource] ??= { resource: target.resource, fields: {} };
+        resource.fields[target.field] = { actual_values_returned: false, model_analysis: [], read_access_present: false,
+          private_action_verification: false,
+          meaning: "Exactly inspected field excluded from this complete selected Read and unused by these Actions. Identifier transfer was explicitly reviewed for this Source, recipient and current program. This is not business classification, database-wide privacy or another interface's permissions." };
+      }
+    }
+  }
   return {
     read: input.read,
     actions: actions.map((action) => action.draft),
@@ -384,9 +413,11 @@ export function policyCoverageDraft(input: {
       ...(input.policySources ? {source_transaction_requirement: sourceTransactionPreparedContext(input.policySources,
         input.transactionStoreDigest ?? input.countingDomain?.store_binding_digest ?? null,policySource?.digest)} : {}),
       ...(sourceConstraints ? { source_constraints: sourceConstraints } : {}),
+      ...(Object.keys(reviewedExcludedMetadata).length ? { reviewed_excluded_field_metadata: reviewedExcludedMetadata } : {}),
       ...(excludedFields && Object.keys(excludedFields).length ? { excluded_field_access: {
         selected_read_digest: canonicalJsonDigest(input.read), selected_actions_digest: canonicalJsonDigest(actions.map(action => action.draft)),
         source_constraints_digest: canonicalJsonDigest(sourceConstraints), resources: excludedFields,
+        ...(Object.keys(reviewedExcludedMetadata).length ? { reviewed_metadata_digest: canonicalJsonDigest(reviewedExcludedMetadata) } : {}),
       } } : {}),
       read_review: {
         meaning: "read.unresolved_decisions lists candidate review requirements, NOT current outstanding decisions. The following current digest-bound review status is authoritative for their confirmation, not activation.",

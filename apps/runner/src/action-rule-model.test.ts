@@ -2867,6 +2867,32 @@ describe("model-guided Action Rule authoring", () => {
     ]));
   });
 
+  it("uses the local business question when payload correction already consumed the phase allowance", async () => {
+    const built = builtCatalog(), resource = built.authoring.resources[0]!;
+    resource.fields.push({ name: "priority_note", label: "optional priority note",
+      type: { kind: "string", max_length: 200, comparison: "exact" }, nullable: true, role: "model_visible", writable: true });
+    let verificationCalls = 0;
+    const calls: string[] = [], questions: string[] = [];
+    const requestJson = phaseResponder(calls, name => {
+      if (name.endsWith("submit_verification_boundary_draft")) {
+        verificationCalls++;
+        if (verificationCalls === 1) return { unsupported_payload: true };
+        if (verificationCalls === 2) return { status: "clarification",
+          question: "Is the optional note in accounts.priority_note needed for this business rule?" };
+      }
+      return payloadFor(name);
+    });
+    const result = await generateModelActionRuleDraft({ session: { provider: "openai", model: "gpt-test", dependencies: { requestJson } },
+      intent: "Keep the existing business rule and ask only about a missing business meaning.",
+      builtCatalog: built, readBoundary: boundary(), readBoundaryDigest: readDigest,
+      egressAcknowledged: true, env: { OPENAI_API_KEY: "provider-test-key" },
+      askClarification: async question => { questions.push(question); return "The optional note is not needed for this rule."; } });
+    expect(questions).toHaveLength(1); expect(questions[0]).toContain("optional priority note");
+    expect(questions[0]).not.toContain("priority_note"); expect(verificationCalls).toBe(3);
+    expect(result.correction_used).toBe(true); expect(result.authority_granted).toBe(false);
+    expect(result.compiled.rule).toEqual(expect.objectContaining({ name: modelDraft().name }));
+  });
+
   it("edits one exact reviewed baseline without letting the model rename its authority or target", async () => {
     const calls: string[] = [];
     const requestBodies: string[] = [];

@@ -1855,6 +1855,37 @@ describe("model-assisted Read workload mapping", () => {
     expect(result.authority_granted).toBe(false);
   });
 
+  it("keeps two technical clarifications on their own target after the one wording correction", async () => {
+    const boundary = generatedBoundary(), resource = boundary.pack.resources[0]!;
+    resource.field_types.col_8 = "text"; resource.field_types.col_9 = "text";
+    resource.selectable_fields.push("col_8", "col_9");
+    resource.field_metadata = { ...resource.field_metadata,
+      col_8: { label: "Delivery preference" }, col_9: { label: "Gift wrapping preference" } };
+    const questions: string[] = [], bodies: string[] = [];
+    let calls = 0;
+    const requestJson = vi.fn(async request => {
+      bodies.push(JSON.stringify(request.body));
+      const field = calls++ < 2 ? "col_8" : "col_9";
+      const args = calls <= 3 ? { clarification_request: { resource: "public.orders", field,
+        reason: "Missing the business meaning", question: `What does orders.${field} mean for this view?` } }
+        : { allowed: [{ id: "order_preferences", description: "Review delivery and wrapping preferences",
+          plan: { kind: "rows", resource: "public.orders", select: ["col_8", "col_9"] } }], forbidden: [] };
+      return { status: 200, body: { output: [{ type: "function_call", call_id: `preference_${calls}`,
+        name: "runner__submit_read_workloads", arguments: JSON.stringify(args) }] } };
+    });
+    const answers = ["The stated delivery preference", "The stated gift wrapping preference"];
+    const result = await generateModelReadWorkload({ name: "order_preferences", allowedQuestions: ["Review both preferences"],
+      provider: "openai", model: "gpt-test", generatedBoundary: boundary, env: { OPENAI_API_KEY: "provider-test-key" },
+      egressAcknowledged: true, dependencies: { requestJson }, deferNarration: true,
+      clarificationHandler: async request => { questions.push(request.question); return { state: "answered", answer: answers.shift()! }; } });
+    expect(questions).toHaveLength(2);
+    expect(questions[0]).toContain("Delivery preference");
+    expect(questions[1]).toContain("Gift wrapping preference"); expect(questions[1]).not.toContain("Delivery preference");
+    expect(bodies[3]).toContain("The stated delivery preference"); expect(bodies[3]).toContain("The stated gift wrapping preference");
+    expect(requestJson).toHaveBeenCalledTimes(4);
+    expect(result.analysis.status).toBe("ready"); expect(result.authority_granted).toBe(false);
+  });
+
   it("bounds distinct follow-up questions and retains an explicit failure without accepting a draft", async () => {
     let count = 0;
     const boundary = generatedBoundary();

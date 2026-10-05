@@ -1,3 +1,8 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery, validateAuthoringTransportState, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+import { secureAskJsonRequest } from "./model-ask.js";
+import { readPrerequisiteCheckpoint, parseReadPrerequisiteCheckpoint, type ReadPrerequisiteCheckpoint } from "./read-prerequisite-checkpoint.js";
 import { describe, expect, it, vi } from "vitest";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -212,7 +217,9 @@ describe("host-scoped private Read business decisions", () => {
   it("uses a fixed host question even when model prose refers to a different decision", async () => {
     const f = scopedFixture();
     const clarificationHandler = vi.fn(async request => {
-      expect(request.question).toBe(f.source().question);
+      expect(request.decision).toEqual(f.source());
+      expect(request.question).not.toContain('coded.r7');
+      expect(request.question).toContain('authoritative for the required current-state condition');
       expect(request.question).not.toContain("waive");
       return { state: "declined" as const };
     });
@@ -341,7 +348,7 @@ describe("strict private Read prerequisite catalog and selection", () => {
     const clarificationHandler = vi.fn(async () => ({ state: "answered" as const, answer: "Yes, the owner maintains r7 as the authoritative current register." }));
     expect(await generateModelReadPrerequisite({ ...f.input, dependencies: { requestJson }, clarificationHandler })).toMatchObject({ state: "reviewed" });
     expect(clarificationHandler).toHaveBeenCalledOnce();
-    expect(clarificationHandler).toHaveBeenCalledWith(expect.objectContaining({ question: f.source().question }));
+    expect(clarificationHandler).toHaveBeenCalledWith(expect.objectContaining({ decision: f.source(), question: expect.not.stringContaining('coded.r7') }));
     expect(f.saved).toHaveLength(1);
   });
 
@@ -904,4 +911,241 @@ describe("host-confirmed model Read prerequisite mapping", () => {
     await expect(generateModelReadPrerequisite({ ...f.input, approvedBusinessClarifications: history, dependencies: { requestJson } })).rejects.toThrow("READ_PREREQUISITE_MODEL_INVALID");
     expect(requestJson).not.toHaveBeenCalled();
   });
+});
+
+it('retains a native prerequisite clarification across cancel and Resume without resampling', async () => {
+  const f = fixture(); let checkpoint: any;
+  const request = { clarification_request: { question: 'Which register establishes current admission?', reason: 'Source authority is unresolved.' } };
+  const first = model([request]);
+  const common = { ...f.input, onCheckpoint: async (next: unknown) => { checkpoint = structuredClone(next); } };
+  await expect(generateModelReadPrerequisite({ ...common, dependencies: { requestJson: first },
+    clarificationHandler: async () => ({ state: 'declined' }) } as any)).resolves.toMatchObject({ state: 'pending' });
+  expect(checkpoint?.pending.kind).toBe('clarification');
+  expect(checkpoint.state.new_questions).toBe(1);
+  const next = model([f.payload]); const clarification = vi.fn(async () => ({ state: 'answered', answer: 'The registrar maintains the current admission register.' }));
+  await expect(generateModelReadPrerequisite({ ...common, resumeCheckpoint: checkpoint, dependencies: { requestJson: next },
+    clarificationHandler: clarification } as any)).resolves.toMatchObject({ state: 'reviewed' });
+  expect(first).toHaveBeenCalledTimes(1); expect(next).toHaveBeenCalledTimes(1); expect(clarification).toHaveBeenCalledTimes(1);
+});
+
+describe('private Read prerequisite checkpoints', () => {
+  it('reopens an unconfirmed exact mapping without another model turn or a second review count', async () => {
+    const f = fixture(); let cp: any;
+    const first = model([f.payload]);
+    const common = { ...f.input, onCheckpoint: async (next: unknown) => { cp = structuredClone(next); } };
+    await expect(generateModelReadPrerequisite({ ...common, dependencies: { requestJson: first },
+      confirmSemanticSelection: async () => ({ state: 'pending' }) })).resolves.toMatchObject({ state: 'pending' });
+    expect(cp.pending.kind).toBe('semantic_confirmation');
+    const unused = model([]);
+    await expect(generateModelReadPrerequisite({ ...common, resumeCheckpoint: cp, dependencies: { requestJson: unused } }))
+      .resolves.toMatchObject({ state: 'reviewed', clarification_metrics: { semantic_reviews: 1 } });
+    expect(unused).not.toHaveBeenCalled(); expect(f.confirmSemanticSelection).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains an exact confirmed raw answer before the next model turn, without recording it twice', async () => {
+    const f = scopedFixture(); let cp: any;
+    const raw = '  Registrar\nmaintains the register. 🪷  ';
+    const first = model([f.ask('Which register?')]);
+    await expect(generateModelReadPrerequisite({ ...f.input, dependencies: { requestJson: first },
+      clarificationHandler: async () => ({ state: 'answered', answer: raw }), onCheckpoint: async next => {
+        cp = structuredClone(next); if (next.stage === 'decided') throw new Error('stop after actual durable save');
+      } })).rejects.toThrow('stop after actual durable save');
+    expect(cp.pending.decision.answer).toBe(raw); expect(cp.state.answers.at(-1).answer).toBe(raw);
+    const handler = vi.fn(); const next = model([f.payload]);
+    await expect(generateModelReadPrerequisite({ ...f.input, resumeCheckpoint: cp, clarificationHandler: handler,
+      dependencies: { requestJson: next } })).resolves.toMatchObject({ state: 'reviewed' });
+    expect(handler).not.toHaveBeenCalled(); expect(f.recordBusinessDecision).toHaveBeenCalledTimes(1);
+    expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains a confirmed mapping when continuation stops, without asking for confirmation again', async () => {
+    const f = fixture(); let cp: any;
+    await expect(generateModelReadPrerequisite({ ...f.input, dependencies: { requestJson: model([f.payload]) },
+      onCheckpoint: async next => { cp = structuredClone(next); if (next.stage === 'decided') throw new Error('saved then stopped'); } }))
+      .rejects.toThrow('saved then stopped');
+    const unused = model([]), confirm = vi.fn();
+    await expect(generateModelReadPrerequisite({ ...f.input, resumeCheckpoint: cp, dependencies: { requestJson: unused },
+      confirmSemanticSelection: confirm })).resolves.toMatchObject({ state: 'reviewed' });
+    expect(unused).not.toHaveBeenCalled(); expect(confirm).not.toHaveBeenCalled();
+  });
+
+  it.each(['instruction', 'model', 'inspection', 'history'])('rejects resumed %s drift before any callback or model request', async change => {
+    const f = fixture(); let cp: any;
+    await generateModelReadPrerequisite({ ...f.input, dependencies: { requestJson: model([f.payload]) },
+      onCheckpoint: async next => { cp = structuredClone(next); }, confirmSemanticSelection: async () => ({ state: 'pending' }) });
+    const input = { ...f.input, resumeCheckpoint: cp, dependencies: { requestJson: model([]) } };
+    if (change === 'instruction') input.instruction += ' changed';
+    if (change === 'model') input.model = 'different-model';
+    if (change === 'inspection') input.inspection = { ...input.inspection, server_version: '17' };
+    if (change === 'history') input.approvedBusinessClarifications = [{ question: 'Changed?', answer: 'New answer.' }];
+    await expect(generateModelReadPrerequisite(input)).rejects.toThrow('READ_PREREQUISITE_CHECKPOINT_STALE');
+    expect(input.dependencies.requestJson).not.toHaveBeenCalled(); expect(f.confirmSemanticSelection).not.toHaveBeenCalled();
+  });
+
+  it('retains the three-question cap through a declined third question and Resume', async () => {
+    const f = fixture(); let cp: any, answers = 0;
+    const q = (n: number) => ({ clarification_request: { question: `Which business condition ${n}?`, reason: 'Meaning unresolved.' } });
+    await generateModelReadPrerequisite({ ...f.input, dependencies: { requestJson: model([q(1), q(2), q(3)]) },
+      onCheckpoint: async next => { cp = structuredClone(next); },
+      clarificationHandler: async () => ++answers === 3 ? { state: 'declined' } : { state: 'answered', answer: `Business meaning ${answers}.` } });
+    expect(cp.state.new_questions).toBe(3);
+    const handler = vi.fn(async () => ({ state: 'answered' as const, answer: 'Third meaning.' }));
+    const next = model([q(4)]);
+    await expect(generateModelReadPrerequisite({ ...f.input, resumeCheckpoint: cp,
+      clarificationHandler: handler, dependencies: { requestJson: next } })).resolves.toMatchObject({ state: 'pending', clarification_metrics: { business_questions: 3 } });
+    expect(handler).toHaveBeenCalledTimes(1); expect(next).toHaveBeenCalledTimes(1);
+  });
+
+  it('does not renew the single required-tool correction on Resume', async () => {
+    const f = fixture(); let cp: any, calls = 0;
+    const plain = { status: 200, body: { output: [{ type: 'message', role: 'assistant', content: [{ type: 'output_text', text: 'Need more information.' }] }] } };
+    await generateModelReadPrerequisite({ ...f.input, dependencies: { requestJson: async () => ++calls === 1 ? plain : response({ clarification_request: { question: 'Which admission?', reason: 'Unknown meaning.' } }) },
+      onCheckpoint: async next => { cp = structuredClone(next); }, clarificationHandler: async () => ({ state: 'declined' }) });
+    expect(cp.state.correction_used).toBe(true);
+    const again = vi.fn(async () => plain);
+    await expect(generateModelReadPrerequisite({ ...f.input, resumeCheckpoint: cp,
+      clarificationHandler: async () => ({ state: 'answered', answer: 'Current registrar admission.' }), dependencies: { requestJson: again } }))
+      .rejects.toThrow('one correction attempt was already used');
+    expect(again).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops before the operator callback when the pending checkpoint cannot be saved', async () => {
+    const f = fixture(), handler = vi.fn();
+    await expect(generateModelReadPrerequisite({ ...f.input, clarificationHandler: handler,
+      dependencies: { requestJson: model([{ clarification_request: { question: 'Which admission?', reason: 'Unknown meaning.' } }]) },
+      onCheckpoint: async () => { throw new Error('CAS failed'); } })).rejects.toThrow('CAS failed');
+    expect(handler).not.toHaveBeenCalled();
+  });
+});
+
+it.each(['clarification', 'semantic_confirmation'])('retains the actual decoded native completion for prerequisite %s', async kind => {
+  const f = fixture(); let cp: ReadPrerequisiteCheckpoint | undefined;
+  let state: AuthoringTransportState = { version: 1, operations: [] };
+  const body = response(kind === 'clarification' ? { clarification_request: { question: 'Which admission register?', reason: 'Business meaning unresolved.' } } : f.payload).body;
+  const server = createServer(async (req, res) => { for await (const _chunk of req) {} res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(body)); });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const endpoint = new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/responses`);
+  const host = { available: () => true, read: () => state, current: async () => canonicalJsonDigest('private-prerequisite-native-origin'),
+    write: async (next: AuthoringTransportState) => { validateAuthoringTransportState(next); state = structuredClone(next); } };
+  const inspect = () => {
+    const op = state.operations.at(-1)!;
+    expect(op.state).toBe('handled');
+    expect(cp?.pending.completion).toEqual({ operation_id: op.id, request_digest: op.request_digest,
+      context_digest: op.context_digest, response_digest: canonicalJsonDigest(body) });
+  };
+  try {
+    await expect(withAuthoringGenerationRecovery(() => { configureAuthoringGenerationRecovery(host);
+      return generateModelReadPrerequisite({ ...f.input, onCheckpoint: async next => { cp = next; },
+        dependencies: { requestJson: request => secureAskJsonRequest({ ...request, endpoint, scope: 'custom_loopback' }) },
+        clarificationHandler: async () => { inspect(); return { state: 'declined' }; },
+        confirmSemanticSelection: async () => { inspect(); return { state: 'pending' }; } });
+    })).resolves.toMatchObject({ state: 'pending' });
+    expect(state.operations).toHaveLength(1);
+  } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+});
+
+it('rejects malformed checkpoint state and tampered candidate before Resume egress', async () => {
+  const f = fixture(); let cp!: ReadPrerequisiteCheckpoint;
+  await generateModelReadPrerequisite({ ...f.input, onCheckpoint: async next => { cp = next; },
+    dependencies: { requestJson: model([f.payload]) }, confirmSemanticSelection: async () => ({ state: 'pending' }) });
+  const { digest: _digest, schema_version: _version, ...base } = cp;
+  expect(() => readPrerequisiteCheckpoint({ ...base, state: { ...base.state, new_questions: 4 } })).toThrow('CHECKPOINT_INVALID');
+  expect(() => parseReadPrerequisiteCheckpoint({ ...cp, stage: 'decided' })).toThrow('CHECKPOINT_INVALID');
+  const altered = structuredClone(base); if (altered.pending.kind !== 'semantic_confirmation') throw new Error('wrong test stage');
+  altered.pending.proposal.selection.current_state.positive_state = 'not_admitted';
+  const malformed = readPrerequisiteCheckpoint(altered), unused = model([]);
+  await expect(generateModelReadPrerequisite({ ...f.input, resumeCheckpoint: malformed, dependencies: { requestJson: unused } })).rejects.toThrow('READ_PREREQUISITE_MODEL_INVALID');
+  expect(unused).not.toHaveBeenCalled();
+});
+
+it('resumes a decided semantic correction at the existing 16-answer bound without duplicating history', async () => {
+  const f = fixture(); let cp!: ReadPrerequisiteCheckpoint;
+  const approvedBusinessClarifications = Array.from({ length: 15 }, (_, i) => ({ question: `Earlier meaning ${i}?`, answer: `Declared meaning ${i}.` }));
+  await expect(generateModelReadPrerequisite({ ...f.input, approvedBusinessClarifications,
+    dependencies: { requestJson: model([f.payload]) }, confirmSemanticSelection: async () => ({ state: 'revise', instruction: 'Explain the same current admission mapping.' }),
+    onCheckpoint: async next => { cp = next; if (next.stage === 'decided') throw new Error('retained correction'); } })).rejects.toThrow('retained correction');
+  expect(cp.state.answers).toHaveLength(16);
+  const next = model([f.payload]);
+  await expect(generateModelReadPrerequisite({ ...f.input, approvedBusinessClarifications, resumeCheckpoint: cp, dependencies: { requestJson: next } }))
+    .resolves.toMatchObject({ state: 'reviewed', clarification_metrics: { semantic_reviews: 2 } });
+  expect(next).toHaveBeenCalledTimes(1);
+});
+
+it('accepts a fresh timestamp for otherwise identical re-inspected metadata without resampling', async () => {
+  const f = fixture(); let cp!: ReadPrerequisiteCheckpoint;
+  await generateModelReadPrerequisite({ ...f.input, onCheckpoint: async next => { cp = next; },
+    dependencies: { requestJson: model([f.payload]) }, confirmSemanticSelection: async () => ({ state: 'pending' }) });
+  const unused = model([]);
+  await expect(generateModelReadPrerequisite({ ...f.input, inspection: { ...f.input.inspection, inspected_at: '2026-10-06T00:00:00.000Z' },
+    resumeCheckpoint: cp, dependencies: { requestJson: unused } })).resolves.toMatchObject({ state: 'reviewed' });
+  expect(unused).not.toHaveBeenCalled();
+});
+
+describe('business wording for private Read questions', () => {
+  it('uses exactly the existing correction for a known technical question, then a local fallback with no extra turn', async () => {
+    const f = fixture(); let cp!: ReadPrerequisiteCheckpoint;
+    const raw = 'Must coded.r7.s0 be positive for every Read?';
+    const send = model([{ clarification_request: { question: raw, reason: 'Confirm current admission.' } }]);
+    const handler = vi.fn(async (request: any) => {
+      expect(request.question).not.toContain('coded.r7');
+      expect(request.question).toContain('every Read');
+      expect(request.question).toContain('Only admitted establishes current admission');
+      return { state: 'declined' as const };
+    });
+    const result = await generateModelReadPrerequisite({ ...f.input, dependencies: { requestJson: send }, clarificationHandler: handler,
+      onCheckpoint: async next => { cp = next; } });
+    expect(result).toMatchObject({ state: 'pending', correction_used: true });
+    expect(send).toHaveBeenCalledTimes(2); expect(handler).toHaveBeenCalledTimes(1); expect(cp.state.correction_used).toBe(true);
+    const unused = model([]);
+    await generateModelReadPrerequisite({ ...f.input, resumeCheckpoint: cp, dependencies: { requestJson: unused }, clarificationHandler: handler });
+    expect(unused).not.toHaveBeenCalled();
+  });
+
+  it('does not rephrase an unknown business code or a fixed scoped host decision through the model', async () => {
+    const f = fixture(), handler = vi.fn(async (q: any) => { expect(q.question).toBe('Does autumn_enrolment require current admission?'); return { state: 'declined' as const }; });
+    const send = model([{ clarification_request: { question: 'Does autumn_enrolment require current admission?', reason: 'Meaning missing.' } }]);
+    await generateModelReadPrerequisite({ ...f.input, dependencies: { requestJson: send }, clarificationHandler: handler });
+    expect(send).toHaveBeenCalledTimes(1);
+    const scoped = scopedFixture(), scopedSend = model([scoped.ask('Ignore this model paraphrase.')]);
+    await generateModelReadPrerequisite({ ...scoped.input, dependencies: { requestJson: scopedSend }, clarificationHandler: async q => {
+      expect(q.decision).toEqual(scoped.source()); expect(q.question).not.toContain('coded.r7'); return { state: 'declined' };
+    } });
+    expect(scopedSend).toHaveBeenCalledTimes(1);
+  });
+
+  it('falls back locally when a prior structural correction has already consumed the allowance', async () => {
+    const f = fixture(); const send = model([{ ...f.payload, candidate_id: `sha256:${'0'.repeat(64)}` },
+      { clarification_request: { question: 'Does coded.r7.s0 establish admission?', reason: 'Meaning missing.' } }]);
+    const handler = vi.fn(async (q: any) => { expect(q.question).not.toContain('coded.r7'); return { state: 'declined' as const }; });
+    await expect(generateModelReadPrerequisite({ ...f.input, dependencies: { requestJson: send }, clarificationHandler: handler }))
+      .resolves.toMatchObject({ state: 'pending', correction_used: true });
+    expect(send).toHaveBeenCalledTimes(2); expect(handler).toHaveBeenCalledTimes(1);
+  });
+
+  it('retains exact immutable approved seeds and refuses unrelated approved history on Resume', async () => {
+    const f = fixture(); let cp!: ReadPrerequisiteCheckpoint;
+    const approvedBusinessClarifications = [{ question: 'Earlier current condition?', answer: '  Earlier business answer.  ' }];
+    await generateModelReadPrerequisite({ ...f.input, approvedBusinessClarifications, dependencies: { requestJson: model([f.payload]) },
+      onCheckpoint: async next => { cp = next; }, confirmSemanticSelection: async () => ({ state: 'pending' }) });
+    expect(cp.seed).toEqual({ approved_business_clarifications: approvedBusinessClarifications, approved_business_decisions: [] });
+    expect(cp.state.confirmed_answers).toEqual([]);
+    const unused = model([]);
+    await expect(generateModelReadPrerequisite({ ...f.input, approvedBusinessClarifications: [...approvedBusinessClarifications,
+      { question: 'Unrelated new meaning?', answer: 'Not part of this mapping.' }], resumeCheckpoint: cp, dependencies: { requestJson: unused } }))
+      .rejects.toThrow('CHECKPOINT_STALE');
+    expect(unused).not.toHaveBeenCalled();
+  });
+});
+
+it('does not substitute an earlier technical question for a later missing business meaning', async () => {
+  const f = fixture(); const questions: string[] = [];
+  const first = { clarification_request: { question: 'Does coded.r7.s0 establish current admission?', reason: 'Need positive meaning.' } };
+  const second = { clarification_request: { question: 'Does coded.r7.d0 mark inclusive start?', reason: 'Need interval meaning.' } };
+  const send = model([first, first, second]);
+  await generateModelReadPrerequisite({ ...f.input, dependencies: { requestJson: send }, clarificationHandler: async q => {
+    questions.push(q.question); return questions.length === 1 ? { state: 'answered', answer: 'Admitted establishes current admission.' } : { state: 'declined' };
+  } });
+  expect(send).toHaveBeenCalledTimes(3); expect(questions).toHaveLength(2);
+  expect(questions[0]).toContain('current admission'); expect(questions[1]).toContain('mark inclusive start');
+  expect(questions[1]).not.toContain('establish current admission');
 });

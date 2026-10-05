@@ -1,3 +1,5 @@
+import { operatorBusinessContext, operatorClarificationGate, presentOperatorClarification } from "./authoring-operator-presentation.js";
+import { readPrerequisiteCheckpoint, parseReadPrerequisiteCheckpoint, type ReadPrerequisiteCheckpoint } from "./read-prerequisite-checkpoint.js";
 import { authoringRequestTimeoutSeconds } from "./authoring-request-timeout.js";
 import { isDeepStrictEqual } from "node:util";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
@@ -18,7 +20,7 @@ import { safeTerminalText } from "./terminal-syntax.js";
 import { applicableReadPrerequisiteBusinessDecision, buildReadPrerequisiteDecisions, parseReadPrerequisiteBusinessDecisions,
   type ReadPrerequisiteBusinessDecision, type ReadPrerequisiteDecision, type ReadPrerequisiteDecisionContext } from "./read-prerequisite-decisions.js";
 import {
-  askToolSurfaceDigest, resolveAskProviderConfiguration, runAskProviderTurn,
+  askToolSurfaceDigest, resolveAskProviderConfiguration, runAskProviderTurn, completedAuthoringQuestion,
   type AskProvider, type AskProviderDependencies, type AskToolDefinition, type AskToolGateway,
 } from "./model-ask.js";
 
@@ -107,6 +109,9 @@ export type GenerateModelReadPrerequisiteInput = {
     { state: "confirmed"; operator_evidence: string } | { state: "pending" }
     | { state: "revise"; instruction: string }
   >;
+  resumeCheckpoint?: ReadPrerequisiteCheckpoint;
+  /** Durable host save, under the parent's existing currentness/permit. A failure stops before the next turn. */
+  onCheckpoint?: (checkpoint: ReadPrerequisiteCheckpoint) => Promise<void>;
   dependencies?: AskProviderDependencies;
   signal?: AbortSignal;
 };
@@ -273,6 +278,9 @@ export async function generateModelReadPrerequisite(input: GenerateModelReadPrer
     context: input.businessDecisionContext, boundary: input.boundary, inspection: input.inspection, candidates: catalog.candidates,
   }) : [];
   const savedDecisions = parseReadPrerequisiteBusinessDecisions(input.approvedBusinessDecisions ?? []);
+  const seed: ReadPrerequisiteCheckpoint["seed"] = { approved_business_clarifications: structuredClone(answers),
+    approved_business_decisions: structuredClone(savedDecisions) };
+  const confirmedAnswers: Array<{ question: string; answer: string }> = [];
   const applicableAnswers = businessDecisions.flatMap(decision => {
     const answer = applicableReadPrerequisiteBusinessDecision(decision, savedDecisions);
     return answer ? [{ question: decision.question, answer: answer.answer }] : [];
@@ -326,6 +334,16 @@ export async function generateModelReadPrerequisite(input: GenerateModelReadPrer
   type Decision = { kind: "proposal"; proposal: ModelReadPrerequisiteProposal }
     | { kind: "clarification"; request: ModelReadPrerequisiteClarification } | { kind: "pending"; reason: string };
   let decision: Decision | undefined, issue = "No exact prerequisite decision was submitted.", turnCalls = 0;
+  const businessContext = operatorBusinessContext(catalog.candidates.map(candidate => ({
+    id: `${candidate.source.schema}.${candidate.source.table}`, description: candidate.catalog_descriptions.source,
+    fields: [
+      { id: candidate.subject.tenant_column }, { id: candidate.subject.principal_column },
+      { id: candidate.current_state.state_column, description: candidate.catalog_descriptions.state },
+      { id: candidate.current_state.effective_from_column, description: candidate.catalog_descriptions.effective_from },
+      { id: candidate.current_state.effective_until_column, description: candidate.catalog_descriptions.effective_until },
+    ],
+  })));
+  let wording = operatorClarificationGate({ stage: "read", context: businessContext });
   const gateway: AskToolGateway = {
     mode: "authoring", listTools: () => tools,
     async callTool(name, args) {
@@ -338,8 +356,20 @@ export async function generateModelReadPrerequisite(input: GenerateModelReadPrer
           const question = prose(request.question, "Business question", MAX_BUSINESS_QUESTION_CHARACTERS);
           const scoped = request.decision_id === undefined ? undefined : businessDecisions.find(item => item.decision_id === request.decision_id);
           if (request.decision_id !== undefined && !scoped) invalid("The business decision must refer to the host's current exact catalog.");
-          decision = { kind: "clarification", request: { question: scoped?.question ?? question,
-            reason: text(request.reason, "Question reason", 500), ...(scoped ? { decision: scoped,
+          const reason = text(request.reason, "Question reason", 500);
+          // Fixed host decision identities remain unchanged. Only presentation
+          // is translated locally; model prose gets the existing one correction.
+          const presented = scoped ? { state: "question" as const,
+            question: presentOperatorClarification(scoped.question, { stage: "read", context: businessContext }) } : wording(question);
+          if (presented.state === "rephrase" && !correctionUsed) {
+            issue = presented.guidance;
+            return { ok: false, error_code: "READ_PREREQUISITE_BUSINESS_WORDING_REQUIRED", value: {
+              error_code: "READ_PREREQUISITE_BUSINESS_WORDING_REQUIRED", message: issue, authority_granted: false,
+              source_query_executed: false, source_database_changed: false } };
+          }
+          decision = { kind: "clarification", request: { question: presented.state === "question" ? presented.question
+            : presentOperatorClarification(question, { stage: "read", context: businessContext }),
+            reason: presentOperatorClarification(reason, { stage: "read", context: businessContext }), ...(scoped ? { decision: scoped,
               applicability: savedDecisions.some(saved => saved.decision_id === scoped.decision_id) ? "changed" as const : "unanswered" as const } : {}) } };
         } else if (Object.hasOwn(args, "pending_reason")) {
           record(args, ["pending_reason"], "Pending response");
@@ -361,6 +391,54 @@ export async function generateModelReadPrerequisite(input: GenerateModelReadPrer
   const replayedDecisions = new Set<string>();
   let newQuestions = 0;
   let questionedProposal: ModelReadPrerequisiteProposal | undefined;
+  // A fresh inspection rechecks the same structural metadata on Resume. Its
+  // wall-clock timestamp is not catalog identity; the in-turn guard still
+  // compares the complete inspection, including that timestamp.
+  const { inspected_at: _inspectedAt, ...inspectionBinding } = initialBinding.inspection;
+  const inputDigest = canonicalJsonDigest(JSON.parse(JSON.stringify({ ...initialBinding, inspection: inspectionBinding,
+    provider: input.provider, model: input.model, base_url: input.baseUrl ?? null })));
+  let retained: ReadPrerequisiteCheckpoint["pending"] | undefined;
+  let retainedStage: "waiting" | "decided" = "waiting";
+  const save = async (stage: "waiting" | "decided") => {
+    if (!retained || !input.onCheckpoint) return;
+    assertCurrent();
+    await input.onCheckpoint(readPrerequisiteCheckpoint({ input_digest: inputDigest, tool_digest: authorityDigest,
+      stage, seed, pending: retained, state: { correction_used: correctionUsed, issue, new_questions: newQuestions,
+        answers, confirmed_answers: confirmedAnswers, saved_decisions: savedDecisions, questions: [...questions], replayed_decisions: [...replayedDecisions],
+        ...(questionedProposal ? { questioned_proposal: questionedProposal } : {}), metrics } }));
+    assertCurrent();
+  };
+  const validateProposal = (proposal: ModelReadPrerequisiteProposal) => {
+    const actual = parseReadPrerequisiteModelSelection({ candidate_id: proposal.candidate_id,
+      positive_state: proposal.selection.current_state.positive_state, source_description: proposal.source_description,
+      positive_state_description: proposal.positive_state_description }, catalog);
+    if (!isDeepStrictEqual(actual, proposal)) invalid("The retained proposal no longer matches its exact current candidate.");
+  };
+  if (input.resumeCheckpoint) {
+    const cp = parseReadPrerequisiteCheckpoint(input.resumeCheckpoint);
+    if (cp.input_digest !== inputDigest || cp.tool_digest !== authorityDigest || !isDeepStrictEqual(cp.seed, seed)) throw new Error(
+      "READ_PREREQUISITE_CHECKPOINT_STALE: The mapping input, inspected metadata, approved history or model destination changed; no replacement was sent.");
+    const s = cp.state;
+    if (!isDeepStrictEqual([...answers, ...s.confirmed_answers], s.answers)) invalid("Retained history is not the original approved context plus this mapping's own confirmed answers.");
+    for (const a of s.answers) {
+      prose(a.question, "Retained business question", MAX_BUSINESS_QUESTION_CHARACTERS);
+      validateReadPrerequisiteBusinessAnswer(a.answer);
+      if (redactCliErrorMessage(a.question) !== a.question) invalid("Retained business question contains credentials.");
+    }
+    if (s.questioned_proposal) validateProposal(s.questioned_proposal);
+    if (cp.pending.kind === "semantic_confirmation") validateProposal(cp.pending.proposal);
+    else if (cp.pending.request.decision && !businessDecisions.some(d => isDeepStrictEqual(d, cp.pending.kind === "clarification" && cp.pending.request.decision))) {
+      invalid("The retained business decision no longer has its exact current scope.");
+    }
+    if (s.replayed_decisions.some(id => !businessDecisions.some(d => d.decision_id === id))) invalid("Unknown retained decision.");
+    correctionUsed = s.correction_used; issue = s.issue; newQuestions = s.new_questions;
+    answers.splice(0, answers.length, ...s.answers); confirmedAnswers.push(...s.confirmed_answers); savedDecisions.splice(0, savedDecisions.length, ...s.saved_decisions);
+    questions.clear(); for (const q of s.questions) questions.add(q);
+    for (const id of s.replayed_decisions) replayedDecisions.add(id);
+    questionedProposal = s.questioned_proposal; Object.assign(metrics, s.metrics);
+    retained = cp.pending; retainedStage = cp.stage;
+    if (cp.stage === "decided") await save("decided");
+  }
   const baseQuestion = [
     "Map only the operator's required private current-state condition before EVERY Read, not an Action predicate or a public data resource.",
     `Operator request: ${JSON.stringify(instruction)}`,
@@ -399,17 +477,29 @@ export async function generateModelReadPrerequisite(input: GenerateModelReadPrer
         ...(questionedProposal ? [`Earlier proposal, questioned and not confirmed: ${JSON.stringify(questionedProposal)}`] : []),
         ...(correctionUsed && issue ? [`Exact rejection: ${issue}. This is the only correction: fix that mismatch without weakening the requested condition.`] : []),
       ].join("\n");
-      await runRequiredAuthoringToolCall({ run, question, toolName: TOOL, onCorrection: () => {
-        if (correctionUsed) invalid("The one correction attempt was already used; preserve setup pending.");
-        correctionUsed = true;
-      } });
-      const outcome = decision as Decision | undefined;
+      const resumed = retained;
+      let completion = resumed?.completion;
+      if (!resumed) {
+        const turn = await runRequiredAuthoringToolCall({ run, question, toolName: TOOL, onCorrection: () => {
+          if (correctionUsed) invalid("The one correction attempt was already used; preserve setup pending.");
+          correctionUsed = true;
+        } });
+        completion = completedAuthoringQuestion(turn.result);
+      }
+      const outcome: Decision | undefined = resumed
+        ? resumed.kind === "clarification" ? { kind: "clarification", request: resumed.request }
+          : { kind: "proposal", proposal: resumed.proposal }
+        : decision as Decision | undefined;
       if (!outcome) {
         if (!correctionUsed) { correctionUsed = true; continue; }
         throw new Error(`READ_PREREQUISITE_NOT_SUBMITTED: ${issue}`);
       }
+      // A later genuine question has its own wording. Retain the shared
+      // correction allowance, not the previous question's presentation text.
+      wording = operatorClarificationGate({ stage: "read", context: businessContext });
       if (outcome.kind === "pending") return pending(outcome.reason);
       if (outcome.kind === "clarification") {
+        if (resumed && retainedStage === "decided") { retained = undefined; continue; }
         // An unclassified correction can change the requirement itself. Keep
         // earlier records, but do not certify new applicability from model prose.
         const scoped = questionedProposal ? undefined : outcome.request.decision;
@@ -421,14 +511,18 @@ export async function generateModelReadPrerequisite(input: GenerateModelReadPrer
           continue;
         }
         const key = scoped?.decision_id ?? outcome.request.question.trim().toLowerCase();
-        if (!input.clarificationHandler || questions.has(key) || newQuestions >= MAX_CLARIFICATIONS) return pending(`Unresolved business meaning: ${outcome.request.question}`);
+        if (!input.clarificationHandler || !resumed && (questions.has(key) || newQuestions >= MAX_CLARIFICATIONS)) return pending(`Unresolved business meaning: ${outcome.request.question}`);
         if (scoped && !input.recordBusinessDecision) return pending("A host persistence callback is required before recording this scoped business answer. The decision remains pending.");
         if (answers.length >= MAX_BUSINESS_HISTORY_TURNS) return pending(`Business clarification history reached 16 turns; preserve the requested meaning pending without dropping prior answers: ${outcome.request.question}`);
-        questions.add(key);
-        newQuestions += 1;
-        metrics.business_questions += 1;
-        if (outcome.request.applicability === "changed") metrics.renewed_business_questions += 1;
         const clarification = questionedProposal ? { question: outcome.request.question, reason: outcome.request.reason } : outcome.request;
+        if (!resumed) {
+          questions.add(key); newQuestions += 1; metrics.business_questions += 1;
+          if (outcome.request.applicability === "changed") metrics.renewed_business_questions += 1;
+          retained = { kind: "clarification", request: structuredClone(clarification), ...(completion ? { completion } : {}) };
+          retainedStage = "waiting";
+          await save("waiting");
+        }
+        if (retainedStage === "decided") { retained = undefined; continue; }
         const answer = await input.clarificationHandler(structuredClone(clarification));
         assertCurrent();
         if (answer.state === "declined") return pending(`Business clarification left pending: ${outcome.request.question}`);
@@ -443,13 +537,20 @@ export async function generateModelReadPrerequisite(input: GenerateModelReadPrer
           assertCurrent();
           savedDecisions.splice(0, savedDecisions.length, ...next);
         }
-        answers.push(nextAnswers.at(-1)!);
+        answers.push(nextAnswers.at(-1)!); confirmedAnswers.push(nextAnswers.at(-1)!);
+        retained = { ...retained as Extract<ReadPrerequisiteCheckpoint["pending"], { kind: "clarification" }>,
+          decision: { state: "answered", answer: answer.answer } };
+        retainedStage = "decided"; await save("decided"); retained = undefined;
         continue;
       }
       const proposal = outcome.proposal;
       const { candidate_id: _id, ...candidate } = catalog.entries.find(entry => entry.candidate_id === proposal.candidate_id)!;
-      metrics.semantic_reviews += 1;
-      const confirmation = await input.confirmSemanticSelection(structuredClone({ ...proposal, candidate, metadata_digest: catalog.metadata_digest,
+      if (!resumed) {
+        metrics.semantic_reviews += 1;
+        retained = { kind: "semantic_confirmation", proposal: structuredClone(proposal), ...(completion ? { completion } : {}) };
+        retainedStage = "waiting"; await save("waiting");
+      }
+      const confirmation = (resumed?.kind === "semantic_confirmation" ? resumed.decision : undefined) ?? await input.confirmSemanticSelection(structuredClone({ ...proposal, candidate, metadata_digest: catalog.metadata_digest,
         ...(questionedProposal ? { previous_selection: questionedProposal.selection } : {}),
       }));
       assertCurrent();
@@ -459,10 +560,15 @@ export async function generateModelReadPrerequisite(input: GenerateModelReadPrer
         record(confirmation, ["state", "instruction"], "Host mapping correction");
         const answer = validateReadPrerequisiteBusinessAnswer(confirmed.instruction);
         const next = { question: "What should be explained or corrected in the displayed private access condition?", answer };
-        if (!businessHistoryWithinBounds([...answers, next])) return pending("The mapping review reached its complete business-history limit. The unconfirmed condition remains pending; no history was truncated or sent.");
-        answers.push(next);
-        questionedProposal = structuredClone(proposal);
-        for (const decision of businessDecisions) questions.delete(decision.question.trim().toLowerCase());
+        if (retainedStage !== "decided" && !businessHistoryWithinBounds([...answers, next])) return pending("The mapping review reached its complete business-history limit. The unconfirmed condition remains pending; no history was truncated or sent.");
+        if (retainedStage !== "decided") {
+          answers.push(next); confirmedAnswers.push(next); questionedProposal = structuredClone(proposal);
+          for (const decision of businessDecisions) questions.delete(decision.question.trim().toLowerCase());
+          retained = { ...retained as Extract<ReadPrerequisiteCheckpoint["pending"], { kind: "semantic_confirmation" }>,
+            decision: { state: "revise", instruction: answer } };
+          retainedStage = "decided"; await save("decided");
+        }
+        retained = undefined;
         continue;
       }
       record(confirmation, ["state", "operator_evidence"], "Host semantic confirmation");
@@ -473,6 +579,11 @@ export async function generateModelReadPrerequisite(input: GenerateModelReadPrer
       } }, input.inspection, input.boundary);
       assertReviewedReadCurrentStatePrerequisite(prerequisite, input.inspection);
       assertCurrent();
+      if (retainedStage !== "decided") {
+        retained = { ...retained as Extract<ReadPrerequisiteCheckpoint["pending"], { kind: "semantic_confirmation" }>,
+          decision: { state: "confirmed", operator_evidence: operatorEvidence } };
+        retainedStage = "decided"; await save("decided");
+      }
       return { ...posture(), state: "reviewed", reviewed_read_prerequisite: prerequisite,
         semantic_confirmation: { operator_evidence: operatorEvidence, selection_digest: proposal.selection_digest, metadata_digest: catalog.metadata_digest } };
     }

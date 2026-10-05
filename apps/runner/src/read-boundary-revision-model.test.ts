@@ -1,3 +1,8 @@
+import { createServer } from "node:http";
+import type { AddressInfo } from "node:net";
+import { canonicalJsonDigest } from "@synapsor-runner/protocol";
+import { configureAuthoringGenerationRecovery, withAuthoringGenerationRecovery, validateAuthoringTransportState, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+import { secureAskJsonRequest } from "./model-ask.js";
 import { describe, expect, it, vi } from "vitest";
 import { Ajv2020 } from "ajv/dist/2020.js";
 import {
@@ -1029,3 +1034,74 @@ function boundary(): ExplorationBoundaryDraft {
     unresolved_decisions: [],
   };
 }
+
+it('retains the actual prerequisite request before nesting and resumes without repeating its parent turn', async () => {
+  let checkpoint: any, calls = 0;
+  const common = { instruction: 'Require current admission before every read.', provider: 'openai' as const, model: 'gpt-test',
+    apiKey: 'test-key', boundary: boundary(), egressAcknowledged: true,
+    onCheckpoint: async (next: unknown) => { if (next) checkpoint = structuredClone(next); },
+    dependencies: { requestJson: async () => ({ status: 200, body: { output: [{ type: 'function_call', call_id: `nested_${++calls}`,
+      name: 'runner__submit_read_boundary_revision', arguments: JSON.stringify(calls === 1
+        ? { private_prerequisite_request: { reason: 'Current admission is required.' } } : { resource_changes: [] }) }] } }) } };
+  await expect(generateModelReadBoundaryRevision({ ...common, reviewPrivatePrerequisite: async () => undefined })).rejects.toThrow('READ_PREREQUISITE_REVIEW_PENDING');
+  expect(checkpoint?.pending_question.kind).toBe('private_prerequisite'); expect(calls).toBe(1);
+  await expect(generateModelReadBoundaryRevision({ ...common, resumeCheckpoint: checkpoint,
+    reviewPrivatePrerequisite: async () => privatePrerequisite(), revalidateStagedSelections: async () => undefined })).resolves.toMatchObject({ read_prerequisite: privatePrerequisite() });
+  expect(calls).toBe(2);
+});
+
+it('saves the real parent completion before the private prerequisite callback', async () => {
+  let cp: any, state: AuthoringTransportState = { version: 1, operations: [] };
+  const body = { output: [{ type: 'function_call', call_id: 'parent-prerequisite', name: 'runner__submit_read_boundary_revision',
+    arguments: JSON.stringify({ private_prerequisite_request: { reason: 'Current admission is required.' } }) }] };
+  const server = createServer(async (req, res) => { for await (const _chunk of req) {} res.setHeader('content-type', 'application/json'); res.end(JSON.stringify(body)); });
+  await new Promise<void>(resolve => server.listen(0, '127.0.0.1', resolve));
+  const endpoint = new URL(`http://127.0.0.1:${(server.address() as AddressInfo).port}/v1/responses`);
+  const host = { available: () => true, read: () => state, current: async () => canonicalJsonDigest('parent-prerequisite-native-origin'),
+    write: async (next: AuthoringTransportState) => { validateAuthoringTransportState(next); state = structuredClone(next); } };
+  try {
+    await expect(withAuthoringGenerationRecovery(() => { configureAuthoringGenerationRecovery(host);
+      return generateModelReadBoundaryRevision({ instruction: 'Require current admission before every read.', provider: 'openai', model: 'gpt-test', apiKey: 'test-key',
+        boundary: boundary(), egressAcknowledged: true, onCheckpoint: async next => { cp = structuredClone(next); },
+        dependencies: { requestJson: request => secureAskJsonRequest({ ...request, endpoint, scope: 'custom_loopback' }) },
+        reviewPrivatePrerequisite: async (_request, controls) => {
+          const op = state.operations.at(-1)!; expect(op.state).toBe('handled');
+          expect(cp.pending_question.kind).toBe('private_prerequisite'); expect(cp.pending_question).not.toHaveProperty('question');
+          expect(controls.parentCompletion).toEqual(cp.pending_question.completion);
+          expect(controls.parentCompletion).toEqual({ operation_id: op.id, request_digest: op.request_digest,
+            context_digest: op.context_digest, response_digest: canonicalJsonDigest(body) });
+          return undefined;
+        } });
+    })).rejects.toThrow('READ_PREREQUISITE_REVIEW_PENDING');
+    expect(state.operations).toHaveLength(1);
+  } finally { server.closeAllConnections(); await new Promise<void>(resolve => server.close(() => resolve())); }
+});
+
+it('fences a failed parent checkpoint before any nested callback', async () => {
+  const nested = vi.fn();
+  await expect(generateModelReadBoundaryRevision({ instruction: 'Require current admission.', provider: 'openai', model: 'gpt-test', apiKey: 'test-key',
+    boundary: boundary(), egressAcknowledged: true, reviewPrivatePrerequisite: nested,
+    dependencies: { requestJson: async () => ({ status: 200, body: { output: [{ type: 'function_call', call_id: 'parent', name: 'runner__submit_read_boundary_revision',
+      arguments: JSON.stringify({ private_prerequisite_request: { reason: 'Current admission is required.' } }) }] } }) },
+    onCheckpoint: async () => { throw new Error('parent CAS refused'); } })).rejects.toThrow('parent CAS refused');
+  expect(nested).not.toHaveBeenCalled();
+});
+
+it('revalidates a decided parent selection on Resume without repeating the nested review', async () => {
+  let cp: any; const nested = vi.fn(async () => privatePrerequisite()), revalidate = vi.fn(async () => undefined);
+  const initial = vi.fn(async () => ({ status: 200, body: { output: [{ type: 'function_call', call_id: 'parent', name: 'runner__submit_read_boundary_revision',
+    arguments: JSON.stringify({ private_prerequisite_request: { reason: 'Current admission is required.' } }) }] } }));
+  const common = { instruction: 'Require current admission.', provider: 'openai' as const, model: 'gpt-test', apiKey: 'test-key', boundary: boundary(), egressAcknowledged: true, reviewPrivatePrerequisite: nested };
+  await expect(generateModelReadBoundaryRevision({ ...common, dependencies: { requestJson: initial }, onCheckpoint: async next => {
+    cp = structuredClone(next); if (next?.stage === 'decided') throw new Error('saved selection');
+  } })).rejects.toThrow('saved selection');
+  expect(initial).toHaveBeenCalledTimes(1); expect(nested).toHaveBeenCalledTimes(1);
+  const follow = vi.fn(async () => ({ status: 200, body: { output: [{ type: 'function_call', call_id: 'followup', name: 'runner__submit_read_boundary_revision',
+    arguments: JSON.stringify({ resource_changes: [] }) }] } }));
+  await expect(generateModelReadBoundaryRevision({ ...common, resumeCheckpoint: cp, revalidateStagedSelections: async () => { throw new Error('actual Source drift'); },
+    dependencies: { requestJson: follow } })).rejects.toThrow('actual Source drift');
+  expect(follow).not.toHaveBeenCalled();
+  await expect(generateModelReadBoundaryRevision({ ...common, resumeCheckpoint: cp, revalidateStagedSelections: revalidate,
+    dependencies: { requestJson: follow } })).resolves.toMatchObject({ read_prerequisite: privatePrerequisite() });
+  expect(nested).toHaveBeenCalledTimes(1); expect(revalidate).toHaveBeenCalledTimes(1); expect(follow).toHaveBeenCalledTimes(1);
+});

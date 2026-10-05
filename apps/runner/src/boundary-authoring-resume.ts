@@ -1,4 +1,4 @@
-import { assertAuthoringQuestionHandoff, validateAuthoringTransportState, type AuthoringTransportState } from "./authoring-generation-recovery.js";
+import { assertAuthoringReadDecision, assertAuthoringReadCheckpoint, assertAuthoringQuestionHandoff, validateAuthoringTransportState, type AuthoringTransportState } from "./authoring-generation-recovery.js";
 import { AUTHORING_PROGRAM_CAPACITY, AUTHORING_PROGRAM_RESUME_VERSION } from "./authoring-program-capacity.js";
 import { ownerHandoffCheckpoint, parseOwnerHandoffs, type AuthoringOwnerHandoff } from "./authoring-owner-handoff.js";
 import { assertOperatorQuestionsAdvance, parseOperatorQuestions, type OperatorQuestion } from "./authoring-operator-question.js";
@@ -894,6 +894,37 @@ function assertReadRevisionHandoff(value: Record<string, unknown>): void {
   const generation = value.generation_recovery as AuthoringTransportState | undefined;
   if (generation) validateAuthoringTransportState(generation);
   const handoffs = parseOwnerHandoffs(value.owner_handoffs ?? []);
+  if (question.kind === "private_prerequisite") {
+    if (question.completion) assertAuthoringReadCheckpoint(generation, question.completion,
+      { consumer: "read_revision", kind: "private_prerequisite", material_digest: canonicalJsonDigest(question.request) });
+    else if (generation) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The private Read request lacks its native completion.");
+    const nested = question.nested_checkpoint;
+    if (!nested) return;
+    const p = nested.pending;
+    if (p.kind === "semantic_confirmation") {
+      if (p.completion) assertAuthoringReadCheckpoint(generation, p.completion,
+        { consumer: "read_revision", kind: "prerequisite_mapping", material_digest: canonicalJsonDigest(p.proposal) });
+      else if (generation) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The private mapping lacks its native completion.");
+      if (nested.stage === "decided" && p.completion) assertAuthoringReadDecision(generation, p.completion, p.proposal, p.decision);
+      return;
+    }
+    const h = [...handoffs].reverse().find(record => record.consumer === "read_revision_prerequisite"
+      && record.question === p.request.question
+      && canonicalJsonDigest(record.completion ?? null) === canonicalJsonDigest(p.completion ?? null));
+    if (!h) {
+      if (p.completion || generation || handoffs.length) throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The private clarification has no matching owner handoff.");
+      return;
+    }
+    if (nested.stage === "waiting") {
+      if (h.state !== "waiting") throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The private clarification is waiting on an answered handoff.");
+      if (p.completion) assertAuthoringQuestionHandoff(generation, ownerHandoffCheckpoint(h));
+    } else {
+      if (h.state !== "answered" || h.answer !== p.decision?.answer)
+        throw new Error("BOUNDARY_AUTHORING_RESUME_INVALID: The private clarification has no exact attributable answer.");
+      assertAnsweredOwnerHandoff(generation, h);
+    }
+    return;
+  }
   const handoff = [...handoffs].reverse().find(record => record.consumer === "read_revision_clarification"
     && record.question === question.question
     && canonicalJsonDigest(record.completion ?? null) === canonicalJsonDigest(question.completion ?? null));

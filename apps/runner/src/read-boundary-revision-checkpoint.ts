@@ -1,3 +1,4 @@
+import { parseReadPrerequisiteCheckpoint, type ReadPrerequisiteCheckpoint } from "./read-prerequisite-checkpoint.js";
 import { Buffer } from "node:buffer";
 import { canonicalJsonDigest } from "@synapsor-runner/protocol";
 import type { AuthoringQuestionCompletion } from "./authoring-generation-recovery.js";
@@ -14,6 +15,9 @@ export type ReadBoundaryRevisionCheckpoint = {
   pending_question: {
     kind: "clarification"; request: ModelReadBoundaryRevisionClarification; question: string;
     completion?: AuthoringQuestionCompletion; decision?: ModelReadBoundaryRevisionClarificationDecision;
+  } | {
+    kind: "private_prerequisite"; request: { reason: string };
+    completion?: AuthoringQuestionCompletion; nested_checkpoint?: ReadPrerequisiteCheckpoint;
   };
   state: {
     call_count: number; correction_used: boolean; prerequisite_review_failed: boolean;
@@ -45,7 +49,7 @@ export function readBoundaryRevisionCheckpoint(input:Omit<ReadBoundaryRevisionCh
 
 export function readBoundaryRevisionDecisionAnswer(checkpoint:ReadBoundaryRevisionCheckpoint):string {
   const saved=parseReadBoundaryRevisionCheckpoint(checkpoint);
-  if(saved.stage!=="decided")throw invalid();
+  if(saved.stage!=="decided" || saved.pending_question.kind!=="clarification")throw invalid();
   return saved.pending_question.decision!.state==="answered" ? saved.pending_question.decision!.answer : "Declined the exact Read revision clarification.";
 }
 
@@ -58,7 +62,12 @@ export function parseReadBoundaryRevisionCheckpoint(value:unknown):ReadBoundaryR
     || ![value.input_digest,value.boundary_digest,value.catalog_digest,value.tool_digest,value.digest].every(hash)
     || !["waiting","decided"].includes(value.stage as string) || !record(value.pending_question) || !record(value.state))throw invalid();
   const q=value.pending_question,s=value.state;
-  if(!exact(q,["kind","request","question","completion","decision"]) || q.kind!=="clarification" || !record(q.request)
+  if(q.kind==="private_prerequisite") {
+    if(!exact(q,["kind","request","completion","nested_checkpoint"]) || !record(q.request)
+      || !exact(q.request,["reason"]) || !text(q.request.reason,500)
+      || value.stage==="decided" && s.reviewed_prerequisite===undefined)throw invalid();
+    if(q.nested_checkpoint!==undefined)parseReadPrerequisiteCheckpoint(q.nested_checkpoint);
+  } else if(!exact(q,["kind","request","question","completion","decision"]) || q.kind!=="clarification" || !record(q.request)
     || !exact(q.request,["question","reason"]) || !text(q.request.question,500) || !text(q.request.reason,500)
     || q.question!==q.request.question || (value.stage==="waiting" ? q.decision!==undefined : !record(q.decision)))throw invalid();
   if(q.completion!==undefined) {
