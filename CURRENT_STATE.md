@@ -1,3 +1,21 @@
+# ACTIVE Owner amendment / B50 checkpoint1314 — 2026-10-05T19:34Z
+Owner amendment controls: Main B50 narrow shared question/raw-answer/mapping/readback/explicit decision adapters, including Resume; no new question engine.
+Presentation uses known target metadata, confirmed vocabulary/policy mappings; COMMENTs are untrusted descriptive hints, never policy/permission proof or row values.
+Permit intentional operator vocabulary/business codes/disambiguation; at most ONE wording-only rephrase in the existing allowance, then safe exact-target local template; no label means honest neutral wording + optional identity details.
+Keep raw answers, precise readbacks, default-No, currentness/CAS, pending/unknown/cancel/recovery fences; wording is not semantic proof or authority.
+Known actual Terra questions: baseline2FAIL; shared-core2PASS, complete Read/Action/Input/Version integration and independent hidden batch PENDING; candidate not ready.
+1302 provenance: wrong lines19–20 at three narrative/history/handoff paths; actual note26–27; ZERO saved typed source_binding/source_reference. Preserve old captures; no accepted-binding defect demonstrated.
+Already done: #6 rollback631, #11/#12 repeat/duty, #14 H1–H3 and decoy-parent controls PASS; link E/COVERAGE-CAUSES.json / E/MAIN-N3-AFTERFIX-READBACK1288.json; do not rerun completed variants.
+Tester sealed another-schema/entry-stage B50 variants before implementation; one small shared batch + representative public CLI, only actual model-visible inputs/declared answers.
+PAID: Owner authorizes ONE NEW Terra DEV case ≤$2 after B50 lands, legitimate stage-entry checkpoint, full B50 cycle with vague answer→follow-up; Tester sole paid operator. Supersedes prior $5; no unused old slot/reset.
+All old six cases/holds immutable; $8 lab and protected $20 full50, exact live guard/ledger before send; one chargeable request and one heavy suite globally.
+Tester B typed public quorum2/threshold4 edits PASS epoch10; removal/connected-client/F3 pending. Helper public removal-wire support + Original scripted full50/isolation/package work.
+Main final full once on integrated pin then current PG/offline/type/size; existing size12PASS, prior full8851P/19F/576S not overallPASS. Original50 supported continuation remains unestablished.
+48GiB cap /8GiB free floor, separate resources, lossless archiving/no protected deletion; private backup checkpoint pushes only. Stop near97% USED (current76%).
+Product cutoff Oct6 17:00Z; final Oct7 17:00Z (only existing conditional12h extension). Freeze tested integrated candidate, independent installed acceptance/paidqualification; report remaining blockers honestly.
+
+---
+
 # ACTIVE real student Terra diagnostic checkpoint1310 — 2026-10-05T19:05:49.295675+00:00
 
 Owner's latest priority controls: ONE fresh student-registration Terra DEV is running now at B1299's clean break, before F3. Main and Tester personally signed the concrete81-member preflight ad7afc95... / proposal6546af95... / plan74e139ae...; financial guard admitted precisely the sixth case1302, preserving all prior cases/holds/history. Product9e717671/current Sourcepin unchanged. Actual public CLI `start --project-root . --from-env DATABASE_URL --schema university --cli --timeout 600` is Tester's own real native process against the separate disposable student PG; no worker/execution/runtime approval or Source write.
