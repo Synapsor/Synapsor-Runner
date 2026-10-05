@@ -1,3 +1,19 @@
+# ACTIVE Owner-priority student diagnostic checkpoint1304 — 2026-10-05T18:29:57.487049+00:00
+
+Latest direct Owner amendment controls: run ONE fresh student-registration Terra DEV diagnostic next at B's clean break, before F3. B1299 is closed/preserved at expedite2/replacement1; the fresh student1302 setup now has original SQL00→01→02→03 all child exits0. Tester verified six FORCE-RLS tables, scoped Reader, 25 Source rows and enabled registrations/offers version triggers. No demo SQL/product change; private placeholder substitution only. Setup launch/auth/min-WAL harness errors preserved and narrowly repaired on the same fresh PG root.
+
+Main sealed E/student1302-main/{OWNER-AUTHORIZATION1302.json,SEALED-OPERATOR-PACKET1302.json,MAIN-FACT-ADOPTION1302.json}; Tester independently reviewed the unchanged businessfacts/oracles before run. Actual vague reason→narrower followup/clear sealed answer and Version unsure→qualified actual trigger answer remain required if reached; confirm/correct every actual readback. DefaultNo/privacy/disabled execution/no Source effect unchanged. Old1231 and all five financial diagnostic records remain terminal/immutable.
+
+New exact-sixth-only guard-v13 ce9213cf... has24 inert controls PASS and Helper independent static audit with no new blocker. Actual current financial ledger47257710... shows392 started inference,44 count records/43 started counts, no outstanding; lab1.227482875 USD. Adding maximum2 leaves lab3.227482875 and at least31.202951225 headroom, so protected20 remains intact. No new1302 financial registration or provider/count call yet.
+
+Timing actual-hook audit corrected prototype245s relay omitted proof/resource hooks. E/student1302-main/TIMING-ADDENDUM1302-V2.json SHA0b2c9dd4... binds actual original native-request timestamp+595s (CLI600,5s margin), clipped by campaign deadline. Holds240s/first45s; count/generation120s unchanged. Remaining-time gates run after actual hooks before reservation; insufficient late admission refuses before charges. Six actual-module inert algebra controls PASS; concrete final-host inert wiring/joint preflight pending. This supersedes the older relay245 prototype and old B/F3-first queue statement only.
+
+Fresh1302 unpaid native setup accidentally crossed consent straight into network-none planner: one UNSENT operation95af27b9... with three proven ClassA DNS attempts, API/provider/count0. Preserve/fence this /project wholly; no relabel/recovery/fourth attempt/reset. Under standing harness-fix approval Tester prepares a separate ordinary public metadata subproject and real state-write observer pause at consented zero-operation checkpoint before timer/dispatch. Both native-job lineage records belong to ONE future paid1302 case; failed unpaid state/evidence remains. No favorable model resampling or second paidcase.
+
+Helper1303 actual allocation upper45,250,576,905/headroom6,289,030,647; Tester future768MiB/combined stop640MiB, added256MiB once, no cleanupcredit. Live student-v2 f8bd1b8f... and failed-v1 a163ecb4... share one PG root43,085,824B; both retained. Storage48GiB/8GiB free floor. Product9e717671/current immutable pin unchanged. Main final unfiltered suite/PG/offline still prepared, not launched; size12PASS closed. Original full50 remains NOT ESTABLISHED with preserved ClassC limitation. Usage73% USED; stop only near97% USED/completion/genuine blocker. Commit+push PRIVATEbackup only.
+
+---
+
 # ACTIVE size and closed-stage checkpoint1298 — 2026-10-05T17:59:52.841397+00:00
 
 Owner resume controls: continue until about97% USED (3% remains), completion or a genuine blocker. Storage48GiB/8GiB free floor; protected evidence/containers preserved. Product9e717671 remains unchanged; documentation descendants do not alter the active pinned source. Independent reader-currentness2PASS and complete changed scopes283PASS remain closed. The ONE final unfiltered suite is NOT LAUNCHED until B/F3/settled product.
