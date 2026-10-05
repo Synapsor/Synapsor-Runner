@@ -1,3 +1,9 @@
+# ACTIVE resume1276 — 2026-10-05T15:13:53.988036+00:00
+
+Owner new-account resume supersedes usage stop below. Main65% used, stop only~97%. Storage48GiB/8GiBfreefloor. Prioritytoday: coherentjourneyB+connectedclient → Originalfull50 → F3 → ONE final settledfullsuite/freeze. Main decoy+rollbackcontrols completed; fullsuite retainsdecoy. E/MAIN-GENERALISATION-ISOLATION1276.json and PARALLEL-RESOURCE-RESUME1276.json are current resume records. Tester/helper active, sameworktrees/databases preserved. ONEadditionalfresh Terra≤$2 authorizedonlyafter90s holdfix and ifnofreezedelay; oldpaidcase remainsclosed. See CURRENT_STATE.md for scope and originalconditionalcommand.
+
+---
+
 # Main handoff at97% usage — 2026-10-05T11:46:29.920899+00:00
 
 Owner remaining-usage stop reached: API97% USED (about3% remaining) at11:44Z. Main and Tester stopped at closed boundaries; helper finite operations are closed and checkpointed. The account-switch pause is over; this is a separate usage stop. Resume only when Owner/session capacity permits.
