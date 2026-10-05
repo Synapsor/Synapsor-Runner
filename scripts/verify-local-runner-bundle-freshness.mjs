@@ -15,7 +15,7 @@ const fixtureRunnerRoot = path.join(tempRoot, "apps/runner");
 const fixtureCli = path.join(fixtureRunnerRoot, "dist/cli.js");
 
 try {
-  assert.equal(run(currentCli, ["--version"]).status, 0, "the repository Runner bundle is stale before the verifier starts");
+  assertRepositoryBundleFresh(currentCli);
   await fsp.mkdir(path.join(fixtureRunnerRoot, "dist"), { recursive: true });
   await fsp.mkdir(path.join(fixtureRunnerRoot, "src"), { recursive: true });
   await fsp.mkdir(path.join(tempRoot, "packages/config/src"), { recursive: true });
@@ -32,6 +32,8 @@ try {
   await fsp.utimes(runnerSource, old, old);
   await fsp.utimes(path.join(fixtureRunnerRoot, "dist/runner.mjs"), old, old);
   await fsp.utimes(workspaceSource, current, current);
+  assert.throws(() => assertRepositoryBundleFresh(fixtureCli), /repository Runner bundle is stale/,
+    "a stale bundle diagnostic must not satisfy the repository freshness preflight");
 
   for (const args of [
     ["--version"],
@@ -121,6 +123,13 @@ process.stdout.write('ready\\n');
     if (mode !== "exit-seven") assert.equal(result.stdout, "ready\nstopped\n", `${mode}: incomplete shutdown`);
   }
   process.stdout.write(`Runner launchers verified: ${modes.length * 2} child-exit/shutdown cases passed.\n`);
+}
+
+function assertRepositoryBundleFresh(cli) {
+  const result = run(cli, ["--version"]);
+  const message = "the repository Runner bundle is stale before the verifier starts";
+  assert.equal(result.status, 0, message);
+  assert.doesNotMatch(result.combined, /bundle is older than its source/i, message);
 }
 
 function run(cli, args, envOverrides = {}) {
