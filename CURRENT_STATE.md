@@ -1,6 +1,6 @@
 # Current project state
 
-**PAUSED by owner for account switch, 2026-10-05 UTC. Read [PAUSE_HANDOFF.md](PAUSE_HANDOFF.md) first. Full1194 finished: 8,406 pass / 464 fail / 576 skip. Corrected full rerun has NOT started. Historical running/next-step statements below are superseded by the pause handoff.**
+**RESUMED by owner on the new account. Read [RESUME_HANDOFF.md](RESUME_HANDOFF.md) first. Corrected full1214 is running; no final verdict. At approximately 3 percentage points usage (37% → 40%), checkpoint, hand off and STOP.**
 
 Checkpoint: 2026-10-05 UTC. **Unfrozen development; final installed acceptance is pending.**
 
