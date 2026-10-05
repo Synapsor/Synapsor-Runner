@@ -1,101 +1,33 @@
-# Controlling checkpoint — 2026-10-05T07:05Z
+# Active overnight checkpoint — 2026-10-05T08:20Z
 
-Owner resume and97%-used stopping rule remain active; account48%used. Actual full1214 finished8851PASS19FAIL576SKIP/exit1; exact19 fixture assertions allpass unchanged in complete affected9files391PASS0FAIL1existingopt-inSKIP. Types/build1227 PASS. Constant-effect fix87556ea0 integrated and independently validated; test-isolation e48f09a7. **No fullPASS/freeze/installed/B/F3 claim.** Helper actual wholeA restore PASS and progressing to read-only metadata/current public inspection. Tester active, authorizedONEfreshTerra remains preflight-pending. Main next actualPG/offline/size gates under fresh resources. See [active handoff](OVERNIGHT_HANDOFF.md) and E/MAIN-FULL-TRIAGE1227.json for exact evidence/commands. Older records below are historical where they conflict.
+Owner resume controls. Continue until about 3% usage **remains** (about 97% used), completion, a real blocker or deadline. Last account check: 58% used. The old account-switch pause and incremental-three-point stopping interpretation are superseded.
 
-# Current project state
+Worktree: `/home/sandesh-tiwari/.codex/worktrees/b36-scoped-private-evidence/synapsor-runner`. Branch: `codex/b41-operator-resolution-20261001`. Product/test commits: `87556ea0` (constant-effect envelope repair) and `e48f09a7` (isolated test fixtures and TSX child environment), based on `db67a64e`. Push checkpoints only to verified private `backup`, never `origin`; never commit root Runner configuration, credentials, ledgers or private fixtures.
 
-**ACTIVE overnight. Read [OVERNIGHT_HANDOFF.md](OVERNIGHT_HANDOFF.md) first. Owner usage rule is 3% remaining / about 97% used. Full1214 is running on unchanged Main source; literal repair ddd1c7ac is committed in an isolated worktree and awaits integration.**
+## Actual verification
 
-Checkpoint: 2026-10-05 UTC. **Unfrozen development; final installed acceptance is pending.**
+- Full1194: **8,406 pass / 464 fail / 576 skip**, exit 1. Upward config discovery was confirmed from the worktree root and personal home. Root config is preserved at E/`preserved-worktree-config1211/synapsor.runner.json`; personal `~/synapsor.runner.json` and `~/.synapsor/` remain untouched. Owned HOME/TMPDIR now live under `/var/tmp` with no ancestor Runner config.
+- Exactly one corrected unfiltered full1214: **8,851 pass / 19 fail / 576 skip**, exit 1, ended 06:50:32Z. The remaining failures were four fixture paths and fifteen TSX children dropping owned temp/cache settings. All 19 unchanged assertions subsequently passed in the complete affected nine-file run: **391 pass / 0 fail / 1 existing opt-in skip**. No assertion, timeout or skip was relaxed. Types and package build passed. Keep the original full result as FAIL; this is delta verification, not a new full PASS.
+- PostgreSQL retry with a shorter owned Unix socket: **42 native pass**, and **195 selected pass / 4 explicit backend-duplicate skips**. Each skipped PostgreSQL installed-CLI duplicate has an exact SQLite counterpart that passed. E/`PG-SCOPE-RESULT1229.json` declares the precise scope. Earlier failed launch and erroneous aggregate exit are retained. No whole conversational/installed acceptance is implied.
+- Offline static phase: **7 of 11 commands passed**. Local package, bundle freshness, public commands and packed offline gates remain pending.
+- Current production size encoders: **12 actual inert whole/scoped requests** across 20/50/64 outcomes and OpenAI/OpenRouter serializers passed canonical equality, full Source/history preservation and the request-size guard. Maximum **932,823 bytes**, minimum margin **115,753 bytes** below 1 MiB. E/`size-actual1237/CURRENT-REVIEW-PROFILES-RESULT1195-v2.json`. Derived size profiles are not compiled-64 or semantic acceptance.
 
-## What Synapsor Runner is
+The constant-effect repair has failing-before evidence, complete affected tests and independent known/withheld adapter passes. No safety boundary was weakened.
 
-An OSS MCP safety layer for PostgreSQL/MySQL agents: reviewed business Reads/Actions, proposal-first writes, approval outside the model, guarded execution and durable evidence. The model sees four tools: `app.describe_data`, `app.explore_data`, `app.describe_actions`, `app.request_change`. It never receives raw SQL, approval or apply tools.
+## Parallel lanes
 
-## Architecture relevant to this work
+- **Main:** collect the remaining four offline/package gates under fresh resource admission; investigate any current product defect; maintain precise results, code identity and backup checkpoints. No new duplicate full suite is currently launched.
+- **Helper `action_gap_prepare`:** proposal-only connected-client A support, then clean scripted ORIGINAL full50 DEV. Two fresh A attempts were fenced as Class C after harness information gaps; preserve both and never replay. Baseline connected MCP proposals were genuine, pending human review, with no execution or Source effect. Current old stage meaning has no valid provenance in the selected Read and disappeared from bounded history; coverage must ask a narrow question rather than guess. All-family adapter adequacy remains unproved. Finite offline controls and current public-controller investigation continue; no further live case is admitted yet. Local pool 1,253/2,000, A campaign 5/64 attempts consumed, 59 remaining. Original full50 has not started.
+- **Tester chat `01a0bcb8-0925-7380-911a-8bab207b9e0b`:** active; owner resume and 97%-used rule relayed. Own ACTIVE-HANDOFF controls Q04/Q07/Q08/Q16, coherent B, current F3 and the ONE newly authorized student-registration Terra DEV diagnostic. Demo SQL 00→01→02→03 passed on an isolated source, real metadata/doctor passed, scoped reader/writer verified; **no demo SQL fix was needed or made**. Version truth is per table: registrations and offerings have update triggers; students does not. No paid request has started. The inherited four-diagnostic guard is being amended narrowly for this exact authorized fifth case, preserving all prior cases, holds and limits and refusing a sixth.
 
-The CLI authoring flow turns policy text and operator answers into disabled Read/Action drafts, then performs BUSINESS review and explicit activation. The new conversation layer separates assistant question wording, captured raw answers, typed interpretation, Runner-owned business readback and explicit operator confirmation. Source/context bindings, provenance, currentness and compare-and-swap persistence remain host-controlled. Unknown answers remain pending; cancellation and uncertain model consumption retain durable fences.
+## Current limits and evidence
 
-Main implementation is in `apps/runner/src`; runtime tools in `packages/mcp-server`, metadata in `packages/schema-inspector`, control/evidence persistence in `packages/proposal-store`, guarded writeback in `packages/postgres` and `packages/mysql`. Source databases remain authoritative.
+Evidence E: `/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470`.
 
-**Work in this checkout**, not the older primary checkout:
-`/home/sandesh-tiwari/.codex/worktrees/b36-scoped-private-evidence/synapsor-runner`
+Actual recursive source pin: E/`integrated-source1227/SOURCE-PIN-READY1229.json`, SHA `a7d3f14448ad6f43277b01dd6d77cdecfbec27e0bb07049bf3e0806236fea051`; 11,731 file/link records plus separately verified external dependencies. Root handoffs and `.git` are masked; `.synapsor` is private tmpfs. The earlier 1227 indexed-only pin is historical. Any code/build change needs a renewed pin before live work.
 
-Branch: `codex/b41-operator-resolution-20261001`.
-Product/test HEAD: `db67a64ed907db189aa2a208b0f14325d80ed58e`, pushed to verified PRIVATE `backup` (`Synapsor/Synapsor-Runner-Backup`). Earlier WIP commits `9542de71` and `3c9d419f` are retained. No freeze is implied. Other worktrees contain no identified unique current tracked implementation; historical branches/evidence remain separate.
+Latest budget proof before this documentation checkpoint: E/`SIZE-ADMISSION1233.json`, conservative upper **42,868,609,545 bytes** against **42,949,672,960** (40 GiB). Account positive retained growth; retire only proved completed/unused future-write capacity. Keep inaccessible margins and old uncovered reservations; no deletion/cleanup credit. Free floor 8 GiB. Student fixture future 256 MiB remains held pending measured remaining capacity. Main PG is stopped gracefully with its volume/evidence retained; helper PG remains running. No container deletion.
 
-Evidence directory **E**:
-`/home/sandesh-tiwari/Desktop/C++/Progress docs tracking/r13-e07-20260911/authoring-reliability-20260930/authoring-dead-end-lab-20261002/operator-conversation-470`
+One heavy suite globally; one chargeable request globally. Separate lane worktrees/HOME/ports/DBs. Main makes no provider/key/count calls. Campaign $70.31628470, retest $50.64, lab $8; protect $20 full50. Fresh Terra cap $2, exact sealed facts, vague answer→narrow follow-up, Version unsure remains pending, truthful follow-up and confirm/correct every readback. Stop affected work for genuine authority/privacy/integrity/financial boundaries; continue independent authorized work. Product cutoff Oct 6 17:00Z, final Oct 7 17:00Z; conditional installed/full50-only extension Oct 8 05:00Z remains unused.
 
-## Files/components changed
-
-44 product/test files since `47a57ec0`; exact inventory: `git diff --name-only 47a57ec0..db67a64e`.
-
-- Conversation/controller/model: `authoring-operator-question*.ts`, `authoring-input-policy*.ts`, `authoring-version-conversation.ts`.
-- Public CLI/readback/resume: `boundary-commands.ts`, `boundary-authoring-chat.ts`, `boundary-authoring-resume.ts`, `boundary-cli-picker.ts`, `terminal-prompt.ts`, `guided-scope-admission.ts`.
-- Authoring/provenance/recovery: `action-rule-authoring-checkpoint.ts`, `action-rule-model.ts`, `action-work-unit-source-assessment.ts`, `authoring-generation-recovery.ts`, `authoring-owner-handoff.ts`, `authoring-policy-source.ts`, `authoring-prepared-policy-review.ts`, `authoring-retained-duties.ts`, `authoring-tool-call.ts`, `model-ask.ts`, `read-workload-model.ts`, and corresponding regression tests.
-
-## Implemented
-
-- Read-meaning, Input and Version operator conversations with typed interpretation, exact host readback and explicit confirmation; focused mapping receives bounded relevant identity/provenance rather than a full Source dump.
-- Saved Input Review uses the conversation controller. Pending Input decisions and confirmed-answer reuse preserve their distinct states.
-- Durable blank Resume, terminal interpretation boundaries, answer provenance, precise whitespace/UTF-16 readback and sanitized transcript rollback.
-- Fully consumed coverage is checkpointed before cancellation; fenced Resume does not create a requestless iteration; fresh repair reservation follows genuine turn creation.
-- Each decision's details view uses its own prompt/context or explicitly bound complete details. Unrelated cached client/Version text no longer substitutes for the current decision.
-
-These are implemented and tested at stated development scopes; whole-program/installed correctness is not yet established.
-
-## Verification completed
-
-- Latest affected-source rerun: **731 passed, 0 failed, 1 existing live-provider skip**, 20 files; explicit TypeScript build passed. Selected CLI controls: **51 passed**, 363 unselected.
-- Independent tester's current-details review: five real terminal probes passed, including original failures and a new withheld Version variant. Evidence: E/`MAIN-INDEPENDENT-DETAILS1191.json`.
-- Earlier listed source causes have original and independent unseen-variant passes at their recorded scopes: E/`COVERAGE-CAUSES.json`. Do not treat older aggregate fields as current whole-package acceptance.
-- Focused request sufficiency: seven Read/Input/Version families in both serializer modes, 14 positives and eight missing/hidden-data refusals. Broader helper audit: 14 families/23 controls. External expected Action/full-review ASTs remain labelled derived-oracle evidence.
-- Helper: harness controls, isolated component execution/receipt checks and package launch/metadata smoke passed. Installed question flow remains unestablished.
-- One real Terra diagnostic completed question → natural answer → mapping → Runner Input readback → explicit confirmation/save. Its next held operation is Class C fenced; no continuation or fifth diagnostic is authorized.
-- **Full1194 ended exit1: 8,406 pass / 464 fail / 576 skip.** Config discovery from worktree/personal ancestors was confirmed and filesystem isolation corrected. Exactly ONE full1214 rerun is active at E/`settled-source-full1214`, PID13571, normal20s/20s/oneworker. Absent EXIT is not PASS; standalone Vitest, not the entire package gate.
-
-## Current bugs/blockers
-
-- No final freeze or independent installed/F3 acceptance. Current-details source acceptance does not cover the whole lifecycle.
-- Remaining Q04/Q07/Q08/Q16 integration, coherent journey B (both Actions/quorum/shared rules), connected-client rule edits, current F3/privacy traces, and original full50/all12 → review/publication → edit37 → removal43 → restart remain incomplete.
-- Historical full50 partial operation126 and other Class C descendants stay fenced. Do not clear/replay them or import partial drafts into a supposed clean run.
-- Connected-client A plan has agreed fictional facts/oracles, but fresh complete restore, role-collision checks, current public revalidation and sufficient review responses remain undone: E/`helper-harness-smokes1160/connected-rule-edit-prep1189-v1`.
-- Current 20/50/64 final-request size measurement and final PostgreSQL/offline/package gates remain pending. Preserve complete Source/contracts; no limit increase or silent truncation.
-- Prior full1192 aborted after a launcher admission error; preserved as harness failure. Corrected `shared-dev-command-launch1193.py` requires positive resource admission and existing environment directories.
-
-## Decisions in force
-
-- Existing independent Tester chat: `01a0bcb8-0925-7380-911a-8bab207b9e0b`. Tester owns oracles/unseen variants/installed verdict and all paid operations; Main makes no provider calls. Helper `action_gap_prepare` is implementation support, not a substitute reviewer.
-- Generic fixes only: failing-first, blast-radius regressions and independent unseen variants. No fixture-specific product logic or weakened expectations. Preserve failed evidence.
-- Commit product/tests together and push each DEV checkpoint to verified private `backup` only. Never commit root `synapsor.runner.json`, credentials or private fixtures. No force-push/rebase/squash.
-- Caps: campaign **$70.31628470**, retest **$50.64**, lab **$8**, protected full50 **$20**, maximum $40 new exposure from its recorded anchor. Last liabilities: campaign **$37.063564975**, retest included **$17.384217375**, lab **$1.177714375**. Reconcile durable ledger before any send; retain holds.
-- 800 inference/100 count per journey; historical counters remain. Recorded ledger: 391 inference/43 count; retest historical 266/800; recovery 2/6, Class B 2/3. These have different scopes—do not reset or conflate them. One chargeable request globally; rolling 1.25× reservations.
-- Storage **40 GiB maximum**, free-disk floor **8 GiB**. Remeasure before fixtures. No pruning/deleting indexed evidence or uncovered resources.
-- Product cutoff **2026-10-06T17:00Z**; final deadline **2026-10-07T17:00Z**. Conditional final extension to **2026-10-08T05:00Z** is preapproved only if needed for installed acceptance/full50; unused.
-- One integrated freeze plus the existing conditional replacement; fallback `8fc487da` retained. Post-freeze Terra and full50 require independent acceptance/F3 and joint preflight.
-
-## Explicitly rejected approaches
-
-No replay/reclassification of partial Class C work; no new reconciliation framework. No model guessing business meaning, invented answers, automatic confirmation, model-filled private amounts or new private Read access. No hidden-oracle “good model” replies. No splicing separate fixtures into a composed PASS. No repeated terminal-driver redesign: prefer source tests and a small set of real screen checks. No product edits inside frozen installations or paid samples used as repair loops.
-
-## Exact next task and stopping point
-
-1. Inspect full1194's process/result files; collect its actual verdict without starting a duplicate heavy suite. Diagnose any failures at their real scope.
-2. Continue the agreed remaining integration checks above, coordinating resource slots with Tester. Use E/`CURRENT-PLAN1139.json`, `COVERAGE-CAUSES.json`, `SETTLED-GATE-PREPARATION1196-v2.json` and `size-current1195` for exact existing plans; do not reconstruct them from chat.
-3. After required source checks: settled full/types/real-PG/ten offline gates and 20/50/64 measurement → immutable freeze → independent installed/F3 → authorized post-fix Terra → protected full50 → sealed private delivery.
-
-Stop at completed delivery, controlling deadline, or a genuine safety/authority/financial boundary; continue unaffected offline work where permitted. This handoff does not pause or terminate full1194. No container restart is currently needed; do not restart all containers.
-
-
-
-## Owner continuation amendment — 2026-10-05 UTC (controlling)
-
-The owner explicitly authorized these changes after this handoff. They override conflicting earlier process instructions, including **“no fifth diagnostic” only for the one fresh diagnostic described below**. Historical Class C jobs remain fenced.
-
-- **Parallel lanes:** Main collects full1194, runs settled gates and 20/50/64 size measurements, and fixes discovered product defects. Helper `action_gap_prepare` owns the proposal-only connected-client live rule-edit check, then a clean scripted ORIGINAL full50 DEV run. Tester owns remaining Q04/Q07/Q08/Q16, coherent journey B, current F3, and the new Terra diagnostic. Separate worktrees/HOME/ports/DBs; one heavy suite and one chargeable request globally. No routine owner GO between already authorized steps.
-- **One fresh Terra DEV diagnostic:** Tester is the sole paid operator. Use `/home/sandesh-tiwari/Desktop/Synapsor Tutorials/test-1.8.0/claude-student-registration/demo/student-registration`, disposable PostgreSQL container, apply `00_roles.sql` → `01_schema.sql` → `02_seed.sql` → `03_rls_and_grants.sql` in order, and `business-policy.txt`. Fix and report any SQL defect. Real source CLI. Before the run, seal the operator packet with one deliberately vague answer (for example, drop reason “some kind of reason, I guess”), expecting a narrower follow-up rather than invented meaning; then a clear answer. Version “I'm not sure” must remain pending, followed by the true answer that the DB trigger increments version on every update. Confirm or correct every readback. Capture Terra questions, follow-ups and Runner readbacks. At most $2, within the $8 lab and all existing cumulative ceilings; preserve the protected $20 full50 allocation. Reconcile the durable ledger and reservations before sending. Schedule after full1194, parallel with B/connected-client; skip if it would delay freeze. This authorizes no replay or reset of prior paid attempts.
-- **Standing approvals through October 7 final:** storage up to 40 GiB with the 8 GiB free floor controlling; prefer lossless archiving, preserve indexed evidence. Fix harness/launcher/driver issues with a one-line cause and continue. Pre-seal fictional lab facts before runs with Tester review; never invent facts during a run. Owner corrected usage: at approximately 3% REMAINING (about97%used), commit/push a checkpoint, update the handoff and STOP. Incremental3-point stops are superseded. Stop affected work only for real business/authority decisions, privacy/integrity risk, exhausted limits or deadline.
-- **Speed rules remain:** sufficient model-visible information for scripted normal replies; light one-row DEV records; below-UI logic tests and a small real-terminal set; process measures; commit and push each checkpoint.
-
-Continuation observations: checkout `52179242` adds this handoff only over product/test `db67a64e`. Full1194 is still running without a final result. `RESOURCE-CONTINUATION1198.json` measures conservative usage 42,162,913,801 bytes under the 42,949,672,960-byte cap, with 46,336,393,216 bytes free; historical margins/reservations retained. These values are a checkpoint, not admission for concurrent new fixtures. Prepared size harness `measure-v2.mts` fixes swallowed second-request assertions: original catch controls 2 pass/5 fail, corrected controls 7 pass/0 fail (`size-current1195/HARNESS-CONTROLS1200.json`); actual size run remains pending. The existing Tester has received the new diagnostic authorization. A resumed helper in this chat is preparing the connected-client lane without competing with full1194.
+No freeze, full-suite PASS, whole journey B, full F3 or independent installed acceptance is claimed. See [OVERNIGHT_HANDOFF.md](OVERNIGHT_HANDOFF.md) for exact next commands and resource ownership.
